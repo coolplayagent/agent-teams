@@ -1,6 +1,7 @@
 # agent-teams
 
 Role-driven multi-agent orchestration framework built with strong typing and tool-only collaboration flow.
+Runtime model execution uses `pydantic_ai` with OpenAI-compatible endpoints.
 
 ## Quick start
 
@@ -39,6 +40,28 @@ uv run agent-teams roles-validate
 
 ```bash
 uv run agent-teams run-intent --intent "Draft a release note"
+```
+
+### 4.1) Stream run events
+
+```bash
+uv run agent-teams run-intent-stream --intent "Draft a release note"
+```
+
+### 4.2) Inject messages during a running stream (SDK)
+
+```python
+from pathlib import Path
+from agent_teams.interfaces.sdk.client import AgentTeamsApp
+from agent_teams.core.enums import InjectionSource
+from agent_teams.core.models import IntentInput
+
+app = AgentTeamsApp(config_dir=Path(".agent_teams"))
+stream = app.run_intent_stream(IntentInput(session_id="s1", intent="do multi-step work"))
+first_event = next(stream)
+app.inject_message(first_event.run_id, InjectionSource.USER, "Additional constraint from user")
+for event in stream:
+    print(event.event_type, event.payload_json)
 ```
 
 ### 5) Query task records

@@ -19,11 +19,11 @@ def _can_write(conn: sqlite3.Connection) -> bool:
 def open_sqlite(db_path: Path) -> sqlite3.Connection:
     file_dsn = str(db_path)
     try:
-        conn = sqlite3.connect(file_dsn, timeout=30.0)
+        conn = sqlite3.connect(file_dsn, timeout=30.0, check_same_thread=False)
         if _can_write(conn):
             return conn
         conn.close()
     except sqlite3.OperationalError:
         pass
 
-    return sqlite3.connect(MEMORY_DSN, uri=True, timeout=30.0)
+    return sqlite3.connect(MEMORY_DSN, uri=True, timeout=30.0, check_same_thread=False)

@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_teams.core.enums import EventType, InstanceStatus, ScopeType, TaskStatus
+from agent_teams.core.enums import EventType, InjectionSource, InstanceStatus, RunEventType, ScopeType, TaskStatus
 
 
 class SamplingConfig(BaseModel):
@@ -132,3 +132,24 @@ class VerificationResult(BaseModel):
     task_id: str
     passed: bool
     details: tuple[str, ...]
+
+
+class InjectionMessage(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    run_id: str = Field(min_length=1)
+    source: InjectionSource
+    content: str = Field(min_length=1)
+    priority: int = Field(ge=0)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+class RunEvent(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    run_id: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    task_id: str | None = None
+    event_type: RunEventType
+    payload_json: str = Field(default='{}')
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))

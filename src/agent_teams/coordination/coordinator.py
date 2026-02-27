@@ -27,8 +27,8 @@ class CoordinatorGraph:
     prompt_builder: RuntimePromptBuilder
     provider_factory: Callable[[RoleDefinition], LLMProvider]
 
-    def run(self, intent: IntentInput) -> tuple[str, str, str, str]:
-        trace_id = new_trace_id().value
+    def run(self, intent: IntentInput, trace_id: str | None = None) -> tuple[str, str, str, str]:
+        trace_id = trace_id or new_trace_id().value
         task = self._spec_builder(intent, trace_id)
         role_id = self._role_planner(task)
         instance_id = self._instance_creator(role_id, task, intent, trace_id)
@@ -46,7 +46,7 @@ class CoordinatorGraph:
             objective=intent.intent,
             scope=('deliverable',),
             dod=('response produced',),
-            verification=VerificationPlan(checklist=('echo',)),
+            verification=VerificationPlan(checklist=('non_empty_response',)),
         )
         self.tools.create_task(CreateTaskRequest(envelope=task))
         self.tools.emit_event(

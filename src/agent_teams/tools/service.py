@@ -52,7 +52,16 @@ class CollaborationTools:
         else:
             checklist = task.envelope.verification.checklist
             result = task.result.lower()
-            missing = tuple(item for item in checklist if item.lower() not in result)
+            missing_items: list[str] = []
+            for item in checklist:
+                key = item.lower()
+                if key == 'non_empty_response':
+                    if not task.result.strip():
+                        missing_items.append(item)
+                    continue
+                if key not in result:
+                    missing_items.append(item)
+            missing = tuple(missing_items)
             passed = len(missing) == 0
             details = ('All checklist items found in result',) if passed else missing
             event_type = EventType.VERIFICATION_PASSED if passed else EventType.VERIFICATION_FAILED

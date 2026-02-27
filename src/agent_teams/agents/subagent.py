@@ -27,4 +27,12 @@ class SubAgentRunner:
                 shared_state_snapshot=shared_state_snapshot,
             )
         )
-        return self.provider.generate(LLMRequest(system_prompt=system_prompt, user_prompt=task.objective))
+        return self.provider.generate(
+            LLMRequest(
+                run_id=task.trace_id,
+                trace_id=task.trace_id,
+                task_id=task.task_id,
+                system_prompt=system_prompt,
+                user_prompt=task.objective,
+            )
+        )

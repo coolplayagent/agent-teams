@@ -10,6 +10,7 @@ STAGE_ROLE_TO_FILE = {
 
 PREVIOUS_STAGE_FILE = {
     'design_builder': 'spec.md',
+    'coder': 'design.md',
     'verify': 'design.md',
 }
 

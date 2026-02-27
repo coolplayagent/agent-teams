@@ -4,7 +4,6 @@ import json
 
 from pydantic_ai import Agent
 
-from agent_teams.core.enums import TaskStatus
 from agent_teams.tools.runtime import ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
 from agent_teams.workflow.runtime_graph import load_graph
@@ -33,24 +32,9 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
 
             spec_id = str(stages.get('spec', {}).get('task_id', ''))
             design_id = str(stages.get('design', {}).get('task_id', ''))
+            code_id = str(stages.get('code', {}).get('task_id', ''))
             verify_id = str(stages.get('verify', {}).get('task_id', ''))
-            code_items = [item for item in graph.get('code_tasks', []) if isinstance(item, dict)]
-            code_ids = [str(item.get('task_id', '')) for item in code_items if str(item.get('task_id', ''))]
-            code_statuses = [_status(task_id) for task_id in code_ids]
-            completed = sum(1 for status in code_statuses if status == TaskStatus.COMPLETED.value)
-            running = sum(1 for status in code_statuses if status in (TaskStatus.RUNNING.value, TaskStatus.ASSIGNED.value))
-            failed = sum(1 for status in code_statuses if status in (TaskStatus.FAILED.value, TaskStatus.TIMEOUT.value))
-
-            if not bool(graph.get('code_materialized')):
-                code_stage_status = 'pending_materialization'
-            elif failed > 0:
-                code_stage_status = 'failed'
-            elif code_statuses and completed == len(code_statuses):
-                code_stage_status = 'completed'
-            elif running > 0:
-                code_stage_status = 'running'
-            else:
-                code_stage_status = 'created'
+            code_stage_status = _status(code_id)
 
             return json.dumps(
                 {
@@ -62,14 +46,6 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
                         'code': code_stage_status,
                         'verify': _status(verify_id),
                     },
-                    'code_shards': {
-                        'total': len(code_ids),
-                        'completed': completed,
-                        'running': running,
-                        'failed': failed,
-                    },
-                    'code_mode': graph.get('code_mode', 'pending'),
-                    'code_materialized': bool(graph.get('code_materialized')),
                 },
                 ensure_ascii=False,
             )

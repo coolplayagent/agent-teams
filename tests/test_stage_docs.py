@@ -22,6 +22,9 @@ def test_stage_doc_paths() -> None:
     assert str(previous_stage_doc_path(workspace_root=root, run_id=run_id, role_id='design_builder')).endswith(
         '.agent_teams/stage_docs/run123/spec.md'.replace('/', '\\')
     )
+    assert str(previous_stage_doc_path(workspace_root=root, run_id=run_id, role_id='coder')).endswith(
+        '.agent_teams/stage_docs/run123/design.md'.replace('/', '\\')
+    )
     assert str(previous_stage_doc_path(workspace_root=root, run_id=run_id, role_id='verify')).endswith(
         '.agent_teams/stage_docs/run123/design.md'.replace('/', '\\')
     )

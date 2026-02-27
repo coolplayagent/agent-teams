@@ -26,7 +26,6 @@ Turn specification into a concrete technical design ready for implementation.
 - Define data model and interface contracts.
 - Define key workflows and error handling.
 - Define test strategy and rollout considerations.
-- Produce a machine-readable module plan for code parallelization.
 
 # Constraints
 - Do not rewrite business requirements.
@@ -45,4 +44,3 @@ Use the exact sections:
 5. Error Handling
 6. Testing Strategy
 7. Rollout / Migration Notes
-8. MODULE_PLAN (JSON code block with `modules[]`, each including `module_id`, `files`, `complexity`, `scope`)

@@ -47,11 +47,11 @@ class CoordinatorGraph:
             objective=intent.intent,
             parent_instruction=(
                 'You are the workflow coordinator. For complex requests, orchestrate subagents with workflow tools in this '
-                'order: create_workflow_graph -> dispatch_ready_tasks -> get_workflow_status, and after design completion '
-                'call materialize_code_shards_from_design to enable code-parallel execution. For simple requests like '
+                'order: create_workflow_graph -> dispatch_ready_tasks -> get_workflow_status to execute a single code stage '
+                'workflow (spec -> design -> code -> verify). For simple requests like '
                 'greetings, respond directly without heavy orchestration. Ignore historical workflows from previous '
                 'runs/sessions and only act on current trace_id tasks. Assignment does not mean completion; rely on '
-                'query_task/get_workflow_status for real status.'
+                'get_workflow_status for real status.'
             ),
             scope=('end_to_end_delivery',),
             dod=('response produced',),

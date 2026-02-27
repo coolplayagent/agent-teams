@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+from agent_teams.core.enums import InstanceStatus
+from agent_teams.core.ids import new_instance_id
+from agent_teams.core.models import SubAgentInstance
+
+
+class InstancePool:
+    def __init__(self) -> None:
+        self._instances: list[SubAgentInstance] = []
+
+    def create_subagent(self, role_id: str) -> SubAgentInstance:
+        instance = SubAgentInstance(instance_id=new_instance_id().value, role_id=role_id)
+        self._instances.append(instance)
+        return instance
+
+    def mark_running(self, instance_id: str) -> SubAgentInstance:
+        return self._replace_status(instance_id, InstanceStatus.RUNNING)
+
+    def mark_idle(self, instance_id: str) -> SubAgentInstance:
+        return self._replace_status(instance_id, InstanceStatus.IDLE)
+
+    def mark_completed(self, instance_id: str) -> SubAgentInstance:
+        return self._replace_status(instance_id, InstanceStatus.COMPLETED, inc_completed=1)
+
+    def mark_failed(self, instance_id: str) -> SubAgentInstance:
+        return self._replace_status(instance_id, InstanceStatus.FAILED, inc_failed=1)
+
+    def mark_timeout(self, instance_id: str) -> SubAgentInstance:
+        return self._replace_status(instance_id, InstanceStatus.TIMEOUT)
+
+    def list_instances(self) -> tuple[SubAgentInstance, ...]:
+        return tuple(self._instances)
+
+    def get(self, instance_id: str) -> SubAgentInstance:
+        for instance in self._instances:
+            if instance.instance_id == instance_id:
+                return instance
+        raise KeyError(f'Unknown instance_id: {instance_id}')
+
+    def cleanup_idle(self, idle_ttl_seconds: int) -> tuple[str, ...]:
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=idle_ttl_seconds)
+        removed_ids: list[str] = []
+        kept: list[SubAgentInstance] = []
+        for instance in self._instances:
+            if instance.status == InstanceStatus.IDLE and instance.last_active_at < cutoff:
+                removed_ids.append(instance.instance_id)
+                continue
+            kept.append(instance)
+        self._instances = kept
+        return tuple(removed_ids)
+
+    def _replace_status(
+        self,
+        instance_id: str,
+        status: InstanceStatus,
+        inc_completed: int = 0,
+        inc_failed: int = 0,
+    ) -> SubAgentInstance:
+        for idx, instance in enumerate(self._instances):
+            if instance.instance_id != instance_id:
+                continue
+            updated = instance.model_copy(
+                update={
+                    'status': status,
+                    'last_active_at': datetime.now(tz=timezone.utc),
+                    'completed_tasks': instance.completed_tasks + inc_completed,
+                    'failed_tasks': instance.failed_tasks + inc_failed,
+                }
+            )
+            self._instances[idx] = updated
+            return updated
+        raise KeyError(f'Unknown instance_id: {instance_id}')

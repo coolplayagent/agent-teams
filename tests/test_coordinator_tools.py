@@ -4,7 +4,7 @@ from agent_teams.roles.registry import RoleLoader
 
 
 def test_coordinator_uses_workflow_tools_and_not_emit_event() -> None:
-    registry = RoleLoader().load_all(Path('roles'))
+    registry = RoleLoader().load_all(Path('.agent_teams/roles'))
     coordinator = registry.get('coordinator_agent')
     tools = set(coordinator.tools)
 

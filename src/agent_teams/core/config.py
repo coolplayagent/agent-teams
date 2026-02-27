@@ -32,7 +32,7 @@ def load_runtime_config(
     env_file = config_dir / '.env'
     pairs = _parse_env_file(env_file) if env_file.exists() else ()
 
-    resolved_roles_dir = roles_dir or Path(_get_value(pairs, 'AGENT_TEAMS_ROLES_DIR') or 'roles')
+    resolved_roles_dir = roles_dir or Path(_get_value(pairs, 'AGENT_TEAMS_ROLES_DIR') or config_dir / 'roles')
     resolved_db_path = db_path or _resolve_path(config_dir, _get_value(pairs, 'AGENT_TEAMS_DB_PATH') or 'agent_teams.db')
     endpoint = _parse_endpoint(pairs)
 

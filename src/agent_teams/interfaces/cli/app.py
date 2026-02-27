@@ -18,8 +18,9 @@ def run_intent(
     intent: str = typer.Option(..., '--intent'),
     session_id: str = 'default-session',
     config_dir: Path = Path('.agent_teams'),
+    debug: bool = typer.Option(False, '--debug', help='Enable verbose debug logs'),
 ) -> None:
-    sdk = AgentTeamsApp(config_dir=config_dir)
+    sdk = AgentTeamsApp(config_dir=config_dir, debug=debug)
     result = sdk.run_intent(IntentInput(session_id=session_id, intent=intent))
     typer.echo(result.model_dump_json(indent=2))
 
@@ -29,8 +30,9 @@ def run_intent_stream(
     intent: str = typer.Option(..., '--intent'),
     session_id: str = 'default-session',
     config_dir: Path = Path('.agent_teams'),
+    debug: bool = typer.Option(False, '--debug', help='Enable verbose debug logs'),
 ) -> None:
-    sdk = AgentTeamsApp(config_dir=config_dir)
+    sdk = AgentTeamsApp(config_dir=config_dir, debug=debug)
     for event in sdk.run_intent_stream(IntentInput(session_id=session_id, intent=intent)):
         typer.echo(event.model_dump_json())
 

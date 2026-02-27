@@ -12,6 +12,7 @@ from agent_teams.events.event_bus import EventBus
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.providers.llm import LLMProvider
 from agent_teams.roles.registry import RoleRegistry
+from agent_teams.runtime.console import log_debug
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
@@ -35,7 +36,7 @@ class CoordinatorGraph:
     def run(self, intent: IntentInput, trace_id: str | None = None) -> tuple[str, str, str, str]:
         trace_id = trace_id or new_trace_id().value
         self.role_registry.get(ROLE_COORDINATOR)
-        print(f'[coord:start] run={trace_id} session={intent.session_id} intent={intent.intent[:120]}')
+        log_debug(f'[coord:start] run={trace_id} session={intent.session_id} intent={intent.intent[:120]}')
 
         root_task = TaskEnvelope(
             task_id=new_task_id().value,
@@ -53,7 +54,7 @@ class CoordinatorGraph:
             verification=VerificationPlan(checklist=('non_empty_response',)),
         )
         self.task_repo.create(root_task)
-        print(f'[coord:root-task] run={trace_id} task={root_task.task_id}')
+        log_debug(f'[coord:root-task] run={trace_id} task={root_task.task_id}')
         self.event_bus.emit(
             EventEnvelope(
                 event_type=EventType.TASK_CREATED,
@@ -70,33 +71,33 @@ class CoordinatorGraph:
             session_id=intent.session_id,
             trace_id=trace_id,
         )
-        print(f'[coord:instance-ready] run={trace_id} instance={coordinator_instance_id} role={ROLE_COORDINATOR}')
+        log_debug(f'[coord:instance-ready] run={trace_id} instance={coordinator_instance_id} role={ROLE_COORDINATOR}')
 
         coordinator_result = self._task_executor(
             instance_id=coordinator_instance_id,
             role_id=ROLE_COORDINATOR,
             task=root_task,
         )
-        print(f'[coord:first-pass-done] run={trace_id} task={root_task.task_id}')
+        log_debug(f'[coord:first-pass-done] run={trace_id} task={root_task.task_id}')
 
         cycle = 0
         while cycle < MAX_ORCHESTRATION_CYCLES:
             cycle += 1
-            print(f'[coord:cycle] run={trace_id} cycle={cycle}')
+            log_debug(f'[coord:cycle] run={trace_id} cycle={cycle}')
             ran_any = self._run_pending_delegated_tasks(trace_id=trace_id, root_task_id=root_task.task_id)
             if not ran_any:
-                print(f'[coord:cycle-stop] run={trace_id} cycle={cycle} reason=no-pending-subtasks')
+                log_debug(f'[coord:cycle-stop] run={trace_id} cycle={cycle} reason=no-pending-subtasks')
                 break
             coordinator_result = self._task_executor(
                 instance_id=coordinator_instance_id,
                 role_id=ROLE_COORDINATOR,
                 task=root_task,
             )
-            print(f'[coord:cycle-pass-done] run={trace_id} cycle={cycle}')
+            log_debug(f'[coord:cycle-pass-done] run={trace_id} cycle={cycle}')
 
         verification = verify_task(self.task_repo, self.event_bus, root_task.task_id)
         status = 'completed' if verification.passed else 'failed'
-        print(f'[coord:finish] run={trace_id} status={status} root_task={root_task.task_id}')
+        log_debug(f'[coord:finish] run={trace_id} status={status} root_task={root_task.task_id}')
         return trace_id, root_task.task_id, status, coordinator_result
 
     def _run_pending_delegated_tasks(self, trace_id: str, root_task_id: str) -> bool:
@@ -114,7 +115,7 @@ class CoordinatorGraph:
                 instance = self.instance_pool.get(record.assigned_instance_id)
             except KeyError:
                 msg = f'Assigned instance not found: {record.assigned_instance_id}'
-                print(f'[coord:dispatch-error] run={trace_id} task={task.task_id} err={msg}')
+                log_debug(f'[coord:dispatch-error] run={trace_id} task={task.task_id} err={msg}')
                 self.task_repo.update_status(
                     task.task_id,
                     TaskStatus.FAILED,
@@ -131,7 +132,7 @@ class CoordinatorGraph:
                     )
                 )
                 continue
-            print(
+            log_debug(
                 f'[coord:dispatch] run={trace_id} task={task.task_id} '
                 f'instance={instance.instance_id} role={instance.role_id} status={record.status.value}'
             )
@@ -145,7 +146,7 @@ class CoordinatorGraph:
 
     def _create_instance(self, role_id: str, task: TaskEnvelope, session_id: str, trace_id: str) -> str:
         instance = self.instance_pool.create_subagent(role_id)
-        print(f'[subagent:create] run={trace_id} task={task.task_id} role={role_id} instance={instance.instance_id}')
+        log_debug(f'[subagent:create] run={trace_id} task={task.task_id} role={role_id} instance={instance.instance_id}')
         self.task_repo.update_status(
             task_id=task.task_id,
             status=TaskStatus.ASSIGNED,
@@ -187,7 +188,7 @@ class CoordinatorGraph:
         role_id: str,
         task: TaskEnvelope,
     ) -> str:
-        print(
+        log_debug(
             f'[subagent:start] run={task.trace_id} task={task.task_id} '
             f'instance={instance_id} role={role_id}'
         )
@@ -228,7 +229,7 @@ class CoordinatorGraph:
                     payload_json='{}',
                 )
             )
-            print(
+            log_debug(
                 f'[subagent:done] run={task.trace_id} task={task.task_id} '
                 f'instance={instance_id} role={role_id}'
             )
@@ -247,7 +248,7 @@ class CoordinatorGraph:
                     payload_json='{}',
                 )
             )
-            print(
+            log_debug(
                 f'[subagent:timeout] run={task.trace_id} task={task.task_id} '
                 f'instance={instance_id} role={role_id}'
             )
@@ -266,7 +267,7 @@ class CoordinatorGraph:
                     payload_json='{}',
                 )
             )
-            print(
+            log_debug(
                 f'[subagent:error] run={task.trace_id} task={task.task_id} '
                 f'instance={instance_id} role={role_id} err={exc}'
             )

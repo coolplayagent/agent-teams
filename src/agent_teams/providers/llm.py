@@ -7,6 +7,7 @@ from pathlib import Path
 
 from agent_teams.core.enums import RunEventType
 from agent_teams.core.models import ModelEndpointConfig, RunEvent
+from agent_teams.runtime.console import close_model_stream, is_debug, log_debug, log_model_output, log_model_stream_chunk
 from agent_teams.runtime.injection_manager import RunInjectionManager
 from agent_teams.runtime.run_event_hub import RunEventHub
 from agent_teams.state.agent_repo import AgentInstanceRepository
@@ -67,10 +68,11 @@ class OpenAICompatibleProvider(LLMProvider):
 
     def generate(self, request: LLMRequest) -> str:
         tool_rules = f'Available tools: {", ".join(self._allowed_tools)}.'
-        print(
-            f'[llm:start] role={request.role_id} run={request.run_id} '
-            f'task={request.task_id} instance={request.instance_id}'
-        )
+        if is_debug():
+            log_debug(
+                f'[llm:start] role={request.role_id} run={request.run_id} '
+                f'task={request.task_id} instance={request.instance_id}'
+            )
         self._run_event_hub.publish(
             RunEvent(
                 run_id=request.run_id,
@@ -126,7 +128,10 @@ class OpenAICompatibleProvider(LLMProvider):
                 if not text:
                     continue
 
-                print(text, end='', flush=True)
+                if is_debug():
+                    print(text, end='', flush=True)
+                else:
+                    log_model_stream_chunk(request.role_id, text)
                 printed_any = True
                 emitted_text_chunks.append(text)
                 self._run_event_hub.publish(
@@ -144,8 +149,10 @@ class OpenAICompatibleProvider(LLMProvider):
             deps=deps,
             event_stream_handler=_event_stream_handler,
         )
-        if printed_any:
+        if printed_any and is_debug():
             print()
+        if printed_any and not is_debug():
+            close_model_stream()
 
         text = self._extract_text(result.response)
         if not text and emitted_text_chunks:
@@ -160,6 +167,8 @@ class OpenAICompatibleProvider(LLMProvider):
                     payload_json=dumps({'text': text}),
                 )
             )
+        if text and not printed_any:
+            log_model_output(request.role_id, text)
         self._run_event_hub.publish(
             RunEvent(
                 run_id=request.run_id,
@@ -169,10 +178,11 @@ class OpenAICompatibleProvider(LLMProvider):
                 payload_json='{}',
             )
         )
-        print(
-            f'[llm:done] role={request.role_id} run={request.run_id} '
-            f'task={request.task_id} chars={len(text)}'
-        )
+        if is_debug():
+            log_debug(
+                f'[llm:done] role={request.role_id} run={request.run_id} '
+                f'task={request.task_id} chars={len(text)}'
+            )
         return text
 
     def _extract_text(self, response: object) -> str:

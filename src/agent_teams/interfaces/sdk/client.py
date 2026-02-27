@@ -27,6 +27,7 @@ from agent_teams.providers.llm import EchoProvider, LLMProvider, OpenAICompatibl
 from agent_teams.roles.registry import RoleLoader
 from agent_teams.runtime.injection_manager import RunInjectionManager
 from agent_teams.runtime.run_event_hub import RunEventHub
+from agent_teams.runtime.console import set_debug
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
@@ -41,7 +42,9 @@ class AgentTeamsApp:
         db_path: Path | None = None,
         model_config: ModelEndpointConfig | None = None,
         config_dir: Path = Path('.agent_teams'),
+        debug: bool = False,
     ) -> None:
+        set_debug(debug)
         runtime = load_runtime_config(config_dir=config_dir, roles_dir=roles_dir, db_path=db_path)
         effective_model_config = model_config or runtime.model_endpoint
 

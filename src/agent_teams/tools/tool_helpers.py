@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from agent_teams.core.enums import RunEventType
 from agent_teams.core.models import RunEvent
+from agent_teams.runtime.console import is_debug, log_debug, log_tool_call, log_tool_error
 from agent_teams.tools.runtime import ToolContext
 
 
@@ -69,24 +70,39 @@ def execute_tool(
 ) -> str:
     emit_tool_call(ctx, tool_name)
     started = time.perf_counter()
-    print(
-        f'[tool:start] tool={tool_name} run={ctx.deps.run_id} '
-        f'task={ctx.deps.task_id} instance={ctx.deps.instance_id} args={_safe_json(args_summary)}'
-    )
+    if is_debug():
+        log_debug(
+            f'[tool:start] tool={tool_name} run={ctx.deps.run_id} '
+            f'task={ctx.deps.task_id} instance={ctx.deps.instance_id} args={_safe_json(args_summary)}'
+        )
+    else:
+        log_tool_call(ctx.deps.role_id, tool_name, args_summary)
     try:
         base_result = action()
         result = with_injections(ctx, base_result)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        print(f'[tool:ok] tool={tool_name} elapsed_ms={elapsed_ms}')
+        if is_debug():
+            log_debug(f'[tool:ok] tool={tool_name} elapsed_ms={elapsed_ms}')
         emit_tool_result(ctx, tool_name)
         return result
     except Exception as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         payload = _error_payload(tool_name, exc)
-        print(
-            f'[tool:error] tool={tool_name} elapsed_ms={elapsed_ms} '
-            f'err_type={payload["error"]["type"]} msg={payload["error"]["message"]}'
-        )
+        if is_debug():
+            log_debug(
+                f'[tool:error] tool={tool_name} elapsed_ms={elapsed_ms} '
+                f'err_type={payload["error"]["type"]} msg={payload["error"]["message"]}'
+            )
+        else:
+            compact = json.dumps(
+                {
+                    'tool': tool_name,
+                    'type': payload['error']['type'],
+                    'message': str(payload['error']['message']),
+                },
+                ensure_ascii=False,
+            )
+            log_tool_error(ctx.deps.role_id, compact)
         emit_tool_result(ctx, tool_name)
         return json.dumps(payload, ensure_ascii=False)
 

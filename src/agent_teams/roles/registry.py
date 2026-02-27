@@ -61,6 +61,12 @@ class RoleLoader:
         if not body.strip():
             raise ValueError(f'Empty system prompt in {path}')
 
+        depends_on = parsed.get('depends_on', [])
+        if depends_on is None:
+            depends_on = []
+        if not isinstance(depends_on, list):
+            raise ValueError(f'depends_on must be a list in {path}')
+
         return RoleDefinition(
             role_id=str(parsed['role_id']),
             name=str(parsed['name']),
@@ -68,6 +74,7 @@ class RoleLoader:
             capabilities=tuple(str(item) for item in parsed['capabilities']),
             constraints=tuple(str(item) for item in parsed['constraints']),
             tools=tuple(str(item) for item in parsed['tools']),
+            depends_on=tuple(str(item) for item in depends_on),
             model_profile=str(parsed['model_profile']),
             system_prompt=body.strip(),
         )

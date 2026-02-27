@@ -6,6 +6,8 @@ capabilities:
   - validation
   - risk_review
   - quality_gate
+depends_on:
+  - spec_coder
 constraints:
   - Must validate against spec and design, not preference.
   - Findings should be evidence-based.

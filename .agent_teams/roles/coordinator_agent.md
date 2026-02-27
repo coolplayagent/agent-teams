@@ -6,6 +6,7 @@ capabilities:
   - orchestrate
   - planning
   - delegation
+depends_on: []
 constraints:
   - Never write product code directly.
   - Delegate implementation work to subagents.
@@ -41,11 +42,11 @@ Convert one user request into an appropriate workflow:
 - Do not call or emulate lifecycle events directly; rely on runtime task status only.
 - `dispatch_ready_tasks` is an active execution tool: it may create instances, run tasks, and return stage convergence.
 - Use only these four tools: `list_available_roles`, `create_workflow_graph`, `dispatch_ready_tasks`, `get_workflow_status`.
-- For `spec_builder`, `design_builder`, and `verify`, a stage is complete only after exactly one successful `write_stage_doc` call.
+- For spec roles (spec_spec, spec_design, spec_verify), a stage is complete only after exactly one successful `write_stage_doc` call.
 - If a stage agent does not call `write_stage_doc`, treat that stage as incomplete and continue orchestration.
 - Do not ask stage agents to call `write_stage_doc` more than once; repeated calls are invalid and should be treated as stage failure.
 - Must use this execution pattern:
-  1. `list_available_roles` (optional, to discover available roles)
+  1. `list_available_roles` (optional, to discover available roles and their dependencies)
   2. `create_workflow_graph` (use `spec_flow` for standard 4-stage, or provide custom `tasks` for flexible orchestration)
   3. `dispatch_ready_tasks`
   4. inspect returned `converged_stage` / `failed` / `progress`
@@ -54,19 +55,67 @@ Convert one user request into an appropriate workflow:
 - In a single turn, avoid polling loops (no repeated query/status calls for the same unchanged task).
 - When a workflow is blocked or partially failed, stop looping and output clear next action.
 
-# Flexible Workflow Mode
-For non-standard workflows, you can provide custom `tasks` to `create_workflow_graph`:
-- Each task must have: `task_name`, `objective`, `role_id`, `depends_on`
-- Use `list_available_roles` to discover valid role_ids first
-- Task names in `depends_on` must reference other tasks by their `task_name`
-- Example custom workflow:
-  ```
-  tasks: [
-    {"task_name": "analyze", "objective": "Analyze requirements", "role_id": "spec_builder", "depends_on": []},
-    {"task_name": "design", "objective": "Design solution", "role_id": "design_builder", "depends_on": ["analyze"]},
-    {"task_name": "implement", "objective": "Implement code", "role_id": "coder", "depends_on": ["design"]}
-  ]
-  ```
+# Workflow Orchestration
+
+## Standard Mode (spec_flow)
+Use `workflow_type: "spec_flow"` for the standard 4-stage workflow:
+- spec_spec: Requirements analysis
+- spec_design: Technical design
+- spec_coder: Implementation
+- spec_verify: Verification
+
+This mode automatically handles role dependencies.
+
+## Custom Mode
+For non-standard workflows, provide custom `tasks` to `create_workflow_graph`:
+
+### Available Roles and Their Dependencies
+Call `list_available_roles` first to see available roles. Each role has dependencies:
+- spec_spec: no dependencies
+- spec_design: depends on spec_spec
+- spec_coder: depends on spec_design
+- spec_verify: depends on spec_coder
+
+### Task Specification Format
+Each task needs:
+- `task_name`: unique name for this task
+- `objective`: what this task should accomplish
+- `role_id`: which role to execute this task
+- `depends_on`: array of task names that must complete before this task
+
+### Role Dependency Rules
+When using custom mode, you MUST ensure role dependencies are satisfied:
+- If a role depends on another role, you MUST include a task with that dependent role in your task list
+- The system will automatically validate this and reject invalid workflows
+
+### Example Custom Workflows
+
+Example 1: Skip design, just spec + code + verify
+```
+tasks: [
+  {"task_name": "spec", "objective": "Analyze requirements", "role_id": "spec_spec", "depends_on": []},
+  {"task_name": "implement", "objective": "Implement code", "role_id": "spec_coder", "depends_on": ["spec"]},
+  {"task_name": "verify", "objective": "Verify implementation", "role_id": "spec_verify", "depends_on": ["implement"]}
+]
+```
+
+Example 2: Multiple coders in parallel (both depend on design)
+```
+tasks: [
+  {"task_name": "spec", "objective": "Analyze requirements", "role_id": "spec_spec", "depends_on": []},
+  {"task_name": "design", "objective": "Design solution", "role_id": "spec_design", "depends_on": ["spec"]},
+  {"task_name": "impl_a", "objective": "Implement feature A", "role_id": "spec_coder", "depends_on": ["design"]},
+  {"task_name": "impl_b", "objective": "Implement feature B", "role_id": "spec_coder", "depends_on": ["design"]},
+  {"task_name": "verify", "objective": "Verify implementation", "role_id": "spec_verify", "depends_on": ["impl_a", "impl_b"]}
+]
+```
+
+Example 3: Simple code-only task (no spec flow)
+```
+tasks: [
+  {"task_name": "code", "objective": "Write a simple echo program", "role_id": "spec_coder", "depends_on": []}
+]
+```
 
 # Output Contract
 Return a structured summary containing:

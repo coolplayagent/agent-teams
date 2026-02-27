@@ -28,6 +28,7 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
                             'role_id': r.role_id,
                             'name': r.name,
                             'capabilities': list(r.capabilities),
+                            'depends_on': list(r.depends_on),
                             'tools': list(r.tools),
                         }
                         for r in roles

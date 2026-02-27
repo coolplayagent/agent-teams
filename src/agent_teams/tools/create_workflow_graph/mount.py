@@ -18,6 +18,7 @@ class TaskSpecModel(BaseModel):
     objective: str = Field(min_length=1)
     role_id: str = Field(min_length=1)
     depends_on: list[str] = Field(default_factory=list)
+    role_depends_on: list[str] = Field(default_factory=list)
     scope: list[str] = Field(default_factory=list)
     dod: list[str] = Field(default_factory=list)
     parent_instruction: str | None = None
@@ -35,13 +36,49 @@ def _parse_tasks_json(tasks_json: str | None) -> list[TaskSpecModel] | None:
     return None
 
 
-def _validate_roles(role_registry, tasks: list[TaskSpecModel]) -> None:
+def _validate_role_depends(role_registry, tasks: list[TaskSpecModel]) -> None:
     available_roles = {r.role_id for r in role_registry.list_roles()}
+    role_to_tasks: dict[str, list[str]] = {}
+    for task in tasks:
+        role_to_tasks.setdefault(task.role_id, []).append(task.task_name)
+
     for task in tasks:
         if task.role_id not in available_roles:
-            raise ValueError(
-                f"Invalid role_id '{task.role_id}'. Available roles: {sorted(available_roles)}"
-            )
+            raise ValueError(f"Invalid role_id '{task.role_id}'. Available roles: {sorted(available_roles)}")
+
+        role_def = role_registry.get(task.role_id)
+        required_roles = list(role_def.depends_on) or []
+        for required_role in required_roles:
+            if required_role not in role_to_tasks:
+                raise ValueError(
+                    f"Role '{task.role_id}' depends on '{required_role}', "
+                    f"but '{required_role}' is not in the task list. "
+                    f"Available roles in tasks: {list(role_to_tasks.keys())}. "
+                    f"Use list_available_roles to see all available roles."
+                )
+
+
+def _detect_cycle(tasks: list[TaskSpecModel]) -> None:
+    graph: dict[str, list[str]] = {task.task_name: task.depends_on for task in tasks}
+    visited: set[str] = set()
+    rec_stack: set[str] = set()
+
+    def dfs(node: str) -> bool:
+        visited.add(node)
+        rec_stack.add(node)
+        for dep in graph.get(node, []):
+            if dep not in visited:
+                if dfs(dep):
+                    return True
+            elif dep in rec_stack:
+                return True
+        rec_stack.remove(node)
+        return False
+
+    for task in tasks:
+        if task.task_name not in visited:
+            if dfs(task.task_name):
+                raise ValueError("Circular dependency detected in tasks")
 
 
 def _create_spec_flow_template(
@@ -143,7 +180,9 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
                         'tasks must be provided when workflow_type is "custom". '
                         'Use list_available_roles to see available roles.'
                     )
-                _validate_roles(ctx.deps.role_registry, parsed_tasks)
+
+            _validate_role_depends(ctx.deps.role_registry, parsed_tasks)
+            _detect_cycle(parsed_tasks)
 
             name_to_task_id: dict[str, str] = {}
 

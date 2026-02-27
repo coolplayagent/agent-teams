@@ -45,14 +45,6 @@ class CoordinatorGraph:
             parent_task_id=None,
             trace_id=trace_id,
             objective=intent.intent,
-            parent_instruction=(
-                'You are the workflow coordinator. For complex requests, orchestrate subagents with workflow tools in this '
-                'order: create_workflow_graph -> dispatch_ready_tasks -> get_workflow_status to execute a single code stage '
-                'workflow (spec -> design -> code -> verify). For simple requests like '
-                'greetings, respond directly without heavy orchestration. Ignore historical workflows from previous '
-                'runs/sessions and only act on current trace_id tasks. Assignment does not mean completion; rely on '
-                'get_workflow_status for real status.'
-            ),
             scope=('end_to_end_delivery',),
             dod=('response produced',),
             verification=VerificationPlan(checklist=('non_empty_response',)),

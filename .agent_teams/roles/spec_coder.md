@@ -6,6 +6,8 @@ capabilities:
   - implementation
   - refactor
   - testing
+depends_on:
+  - spec_design
 constraints:
   - Implement according to spec and design.
   - Keep changes minimal and scoped.

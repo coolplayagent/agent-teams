@@ -74,6 +74,7 @@ class RoleDefinition(BaseModel):
     capabilities: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     tools: tuple[str, ...] = ()
+    depends_on: tuple[str, ...] = ()
     model_profile: str = Field(default='default')
     system_prompt: str = Field(min_length=1)
 

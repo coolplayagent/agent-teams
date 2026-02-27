@@ -6,6 +6,8 @@ capabilities:
   - architecture
   - interfaces
   - data_model
+depends_on:
+  - spec_spec
 constraints:
   - Must align design to approved specification.
   - Keep design implementable and testable.

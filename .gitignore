@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+
+.agent_teams/.env
+.agent_teams/*.db
+.agent_teams/*.db-*
+
+tmp.db
+tmp.db-journal

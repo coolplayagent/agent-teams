@@ -5,6 +5,7 @@ from pathlib import Path
 from agent_teams.agents.instance_pool import InstancePool
 from agent_teams.agents.meta_agent import MetaAgent
 from agent_teams.coordination.coordinator import CoordinatorGraph
+from agent_teams.core.config import load_runtime_config
 from agent_teams.core.models import (
     IntentInput,
     ModelEndpointConfig,
@@ -28,14 +29,18 @@ from agent_teams.workflow.spec import WorkflowSpec
 class AgentTeamsApp:
     def __init__(
         self,
-        roles_dir: Path,
-        db_path: Path,
+        roles_dir: Path | None = None,
+        db_path: Path | None = None,
         model_config: ModelEndpointConfig | None = None,
+        config_dir: Path = Path('.agent_teams'),
     ) -> None:
-        role_registry = RoleLoader().load_all(roles_dir)
-        task_repo = TaskRepository(db_path)
-        shared_store = SharedStore(db_path)
-        event_bus = EventBus(db_path)
+        runtime = load_runtime_config(config_dir=config_dir, roles_dir=roles_dir, db_path=db_path)
+        effective_model_config = model_config or runtime.model_endpoint
+
+        role_registry = RoleLoader().load_all(runtime.paths.roles_dir)
+        task_repo = TaskRepository(runtime.paths.db_path)
+        shared_store = SharedStore(runtime.paths.db_path)
+        event_bus = EventBus(runtime.paths.db_path)
         instance_pool = InstancePool()
         tools = CollaborationTools(
             task_repo=task_repo,
@@ -46,10 +51,10 @@ class AgentTeamsApp:
 
         def provider_factory(_role: RoleDefinition) -> LLMProvider:
             provider: LLMProvider
-            if model_config is None:
+            if effective_model_config is None:
                 provider = EchoProvider()
             else:
-                provider = OpenAICompatibleProvider(model_config)
+                provider = OpenAICompatibleProvider(effective_model_config)
             return provider
 
         coordinator = CoordinatorGraph(

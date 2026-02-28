@@ -1,0 +1,472 @@
+/* components.css - Reusable UI chunks: Buttons, Tabs, Messages, Tools */
+
+.new-session-glow {
+    position: relative;
+}
+
+.new-session-glow::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, var(--primary), #ec4899);
+    z-index: 0;
+    border-radius: var(--radius-md);
+    filter: blur(8px);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.new-session-glow:hover::before {
+    opacity: 0.5;
+}
+
+.primary-btn {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.primary-btn:hover {
+    background-color: var(--primary-hover);
+}
+
+.primary-btn:active {
+    transform: scale(0.98);
+}
+
+.icon {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.icon-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.session-item {
+    padding: 0.75rem 1rem;
+    margin: 0 0.5rem 0.25rem 0.5rem;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.2s ease;
+}
+
+.session-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.session-item.active {
+    background-color: rgba(99, 102, 241, 0.15);
+    border-left: 3px solid var(--primary);
+}
+
+.session-id {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-time {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.status-indicator.online span {
+    width: 8px;
+    height: 8px;
+    background-color: var(--success);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--success);
+}
+
+.session-info {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.agent-tabs {
+    display: flex;
+    overflow-x: auto;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 1.5rem;
+    flex-shrink: 0;
+}
+
+.agent-tabs::-webkit-scrollbar {
+    height: 4px;
+}
+
+.agent-tabs::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
+
+.agent-tab {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.agent-tab:hover {
+    color: var(--text-primary);
+}
+
+.agent-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.system-intro {
+    text-align: center;
+    margin-top: 10vh;
+    animation: fadeIn 0.8s ease backwards;
+}
+
+.intro-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.system-intro h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(to right, #fff, #94a3b8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.system-intro p {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+/* Chat Messages */
+.message {
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s ease backwards;
+}
+
+.msg-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.msg-role {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+}
+
+.role-user {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.role-agent {
+    background-color: rgba(99, 102, 241, 0.2);
+    color: var(--primary-hover);
+}
+
+.role-coordinator_agent {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: var(--warning);
+}
+
+.msg-content {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: #f1f5f9;
+}
+
+/* Markdown Styling inside msg-content/msg-text */
+.msg-content p,
+.msg-text p {
+    margin-bottom: 0.75rem;
+}
+
+.msg-content pre,
+.msg-text pre {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+}
+
+.msg-content code,
+.msg-text code {
+    font-family: var(--font-mono);
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.msg-content pre code,
+.msg-text pre code {
+    background: none;
+    padding: 0;
+}
+
+.msg-content ul,
+.msg-content ol,
+.msg-text ul,
+.msg-text ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Tool Call Blocks */
+.tool-block {
+    margin: 0.5rem 0 1rem 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.tool-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background-color: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.tool-header:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tool-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+}
+
+.tool-title .name {
+    color: #f472b6;
+    font-weight: 500;
+}
+
+.tool-status {
+    display: flex;
+    align-items: center;
+}
+
+.spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.status-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.status-success {
+    color: var(--success);
+}
+
+.status-error {
+    color: var(--danger);
+}
+
+.tool-body {
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    font-size: 0.8125rem;
+    font-family: var(--font-mono);
+    display: none;
+    /* hidden by default, toggled via JS */
+}
+
+.tool-body.open {
+    display: block;
+    animation: fadeIn 0.3s;
+}
+
+.tool-args {
+    color: #a78bfa;
+    margin-bottom: 0.5rem;
+}
+
+.tool-result {
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+}
+
+.tool-result.error-text {
+    color: var(--danger);
+}
+
+#prompt-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 0.9375rem;
+    padding: 1rem 3.5rem 1rem 1.25rem;
+    resize: none;
+    max-height: 200px;
+    outline: none;
+    overflow-y: auto;
+}
+
+#prompt-input::placeholder {
+    color: var(--text-secondary);
+}
+
+#send-btn {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+#send-btn:hover {
+    opacity: 0.9;
+}
+
+#send-btn:disabled {
+    background-color: var(--border-color);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+}
+
+#send-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.sub-text {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.75rem;
+}
+
+.log-entry {
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    word-break: break-all;
+}
+
+.log-time {
+    color: var(--text-secondary);
+    margin-right: 0.5rem;
+}
+
+.log-error {
+    color: var(--danger);
+}
+
+.log-info {
+    color: var(--primary-hover);
+}
+
+/* Typing Indicator */
+.typing-indicator {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    height: 24px;
+}
+
+.typing-dot {
+    width: 6px;
+    height: 6px;
+    background-color: var(--text-secondary);
+    border-radius: 50%;
+    animation: typing 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.typing-dot:nth-child(2) {
+    animation-delay: -0.16s;
+}

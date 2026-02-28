@@ -2,7 +2,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Generator
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
@@ -179,14 +179,14 @@ def run_intent(session_id: str, req: IntentRequest, sdk: AgentTeamsApp = Depends
     return result.model_dump()
 
 @app.get("/session/{session_id}/intent/stream")
-async def run_intent_stream(session_id: str, intent: str, sdk: AgentTeamsApp = Depends(get_sdk)):
+def run_intent_stream(session_id: str, intent: str, sdk: AgentTeamsApp = Depends(get_sdk)):
     """
     Server-Sent Events (SSE) endpoint for intent streaming.
     """
     input_event = IntentInput(session_id=session_id, intent=intent)
     
-    async def event_generator() -> AsyncGenerator[str, None]:
-        # Wrap the synchronous generator in an async compatible way if needed
+    def event_generator() -> Generator[str, None, None]:
+        # Wrap the synchronous generator in an thread-pool compatible way
         # SDK yields RunEvent directly. We will serialize them as SSE data bytes.
         try:
             for event in sdk.run_intent_stream(input_event):

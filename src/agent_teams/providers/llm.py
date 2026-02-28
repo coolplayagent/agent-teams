@@ -94,6 +94,7 @@ class OpenAICompatibleProvider(LLMProvider):
             )
         self._run_event_hub.publish(
             RunEvent(
+                session_id=request.session_id,
                 run_id=request.run_id,
                 trace_id=request.trace_id,
                 task_id=request.task_id,
@@ -155,6 +156,7 @@ class OpenAICompatibleProvider(LLMProvider):
                                     emitted_text_chunks.append(text_delta)
                                     self._run_event_hub.publish(
                                         RunEvent(
+                                            session_id=request.session_id,
                                             run_id=request.run_id,
                                             trace_id=request.trace_id,
                                             task_id=request.task_id,
@@ -192,6 +194,7 @@ class OpenAICompatibleProvider(LLMProvider):
                             for msg in injections:
                                 self._run_event_hub.publish(
                                     RunEvent(
+                                        session_id=request.session_id,
                                         run_id=request.run_id,
                                         trace_id=request.trace_id,
                                         task_id=request.task_id,
@@ -233,6 +236,7 @@ class OpenAICompatibleProvider(LLMProvider):
         elif text and not emitted_text_chunks:
             self._run_event_hub.publish(
                 RunEvent(
+                    session_id=request.session_id,
                     run_id=request.run_id,
                     trace_id=request.trace_id,
                     task_id=request.task_id,
@@ -248,6 +252,7 @@ class OpenAICompatibleProvider(LLMProvider):
             log_model_output(request.role_id, text)
         self._run_event_hub.publish(
             RunEvent(
+                session_id=request.session_id,
                 run_id=request.run_id,
                 trace_id=request.trace_id,
                 task_id=request.task_id,

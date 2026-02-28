@@ -161,6 +161,7 @@ class InjectionMessage(BaseModel):
 class RunEvent(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
+    session_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
     trace_id: str = Field(min_length=1)
     task_id: str | None = None

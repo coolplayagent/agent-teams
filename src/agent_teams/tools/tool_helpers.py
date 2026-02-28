@@ -19,6 +19,7 @@ def execute_tool(
 ) -> str:
     ctx.deps.run_event_hub.publish(
         RunEvent(
+            session_id=ctx.deps.session_id,
             run_id=ctx.deps.run_id,
             trace_id=ctx.deps.trace_id,
             task_id=ctx.deps.task_id,
@@ -40,6 +41,7 @@ def execute_tool(
         
         ctx.deps.run_event_hub.publish(
             RunEvent(
+                session_id=ctx.deps.session_id,
                 run_id=ctx.deps.run_id,
                 trace_id=ctx.deps.trace_id,
                 task_id=ctx.deps.task_id,
@@ -58,6 +60,7 @@ def execute_tool(
         
         ctx.deps.run_event_hub.publish(
             RunEvent(
+                session_id=ctx.deps.session_id,
                 run_id=ctx.deps.run_id,
                 trace_id=ctx.deps.trace_id,
                 task_id=ctx.deps.task_id,

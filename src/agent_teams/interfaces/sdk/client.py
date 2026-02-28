@@ -78,7 +78,7 @@ class AgentTeamsApp:
         session_repo = SessionRepository(runtime.paths.db_path)
         instance_pool = InstancePool.from_repo(agent_repo)
         injection_manager = RunInjectionManager()
-        run_event_hub = RunEventHub()
+        run_event_hub = RunEventHub(event_log=event_log)
 
         prompt_builder = RuntimePromptBuilder()
 
@@ -169,6 +169,7 @@ class AgentTeamsApp:
         self._injection_manager.activate(run_id)
         self._run_event_hub.publish(
             RunEvent(
+                session_id=intent.session_id,
                 run_id=run_id,
                 trace_id=run_id,
                 task_id=None,
@@ -182,6 +183,7 @@ class AgentTeamsApp:
                 result = self._meta_agent.handle_intent(intent, trace_id=run_id)
                 self._run_event_hub.publish(
                     RunEvent(
+                        session_id=intent.session_id,
                         run_id=run_id,
                         trace_id=result.trace_id,
                         task_id=result.root_task_id,
@@ -192,6 +194,7 @@ class AgentTeamsApp:
             except Exception as exc:
                 self._run_event_hub.publish(
                     RunEvent(
+                        session_id=intent.session_id,
                         run_id=run_id,
                         trace_id=run_id,
                         task_id=None,
@@ -231,6 +234,7 @@ class AgentTeamsApp:
             )
             self._run_event_hub.publish(
                 RunEvent(
+                    session_id=record.session_id,
                     run_id=run_id,
                     trace_id=run_id,
                     task_id=None,
@@ -293,7 +297,7 @@ class AgentTeamsApp:
         
     def get_global_events(self, session_id: str) -> list[dict]:
         events = self._event_log.list_by_session(session_id)
-        return [e.model_dump() for e in events]
+        return list(events)
 
     def get_session_messages(self, session_id: str) -> list[dict]:
         import json

@@ -98,7 +98,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 trace_id=request.trace_id,
                 task_id=request.task_id,
                 event_type=RunEventType.MODEL_STEP_STARTED,
-                payload_json='{}',
+                payload_json=dumps({'role_id': request.role_id, 'instance_id': request.instance_id}),
             )
         )
         agent = build_collaboration_agent(
@@ -159,7 +159,11 @@ class OpenAICompatibleProvider(LLMProvider):
                                             trace_id=request.trace_id,
                                             task_id=request.task_id,
                                             event_type=RunEventType.TEXT_DELTA,
-                                            payload_json=dumps({'text': text_delta}),
+                                            payload_json=dumps({
+                                                'text': text_delta,
+                                                'role_id': request.role_id,
+                                                'instance_id': request.instance_id
+                                            }),
                                         )
                                     )
                         # Flush messages accumulated up to this node
@@ -231,7 +235,11 @@ class OpenAICompatibleProvider(LLMProvider):
                     trace_id=request.trace_id,
                     task_id=request.task_id,
                     event_type=RunEventType.TEXT_DELTA,
-                    payload_json=dumps({'text': text}),
+                    payload_json=dumps({
+                        'text': text,
+                        'role_id': request.role_id,
+                        'instance_id': request.instance_id
+                    }),
                 )
             )
         if text and not printed_any:
@@ -242,7 +250,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 trace_id=request.trace_id,
                 task_id=request.task_id,
                 event_type=RunEventType.MODEL_STEP_FINISHED,
-                payload_json='{}',
+                payload_json=dumps({'role_id': request.role_id, 'instance_id': request.instance_id}),
             )
         )
         if is_debug():

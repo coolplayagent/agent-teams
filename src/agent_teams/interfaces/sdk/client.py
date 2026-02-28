@@ -128,6 +128,7 @@ class AgentTeamsApp:
         self._run_event_hub = run_event_hub
         self._agent_repo = agent_repo
         self._session_repo = session_repo
+        self._message_repo = message_repo
 
     def _ensure_session(self, session_id: str | None) -> str:
         if not session_id:
@@ -261,3 +262,13 @@ class AgentTeamsApp:
 
     def list_roles(self) -> tuple[RoleDefinition, ...]:
         return self._role_registry.list_roles()
+
+    def list_agents_in_session(self, session_id: str) -> tuple[AgentRuntimeRecord, ...]:
+        return self._agent_repo.list_by_session(session_id)
+
+    def get_agent_messages(self, instance_id: str):
+        history = self._message_repo.get_history(instance_id)
+        out = []
+        for msg in history:
+            out.append(msg.model_dump())
+        return out

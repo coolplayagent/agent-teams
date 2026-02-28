@@ -15,11 +15,6 @@ from agent_teams.core.models import IntentInput, SessionRecord, TaskRecord
 from agent_teams.interfaces.sdk.client import AgentTeamsApp
 from agent_teams.roles.registry import RoleLoader
 from agent_teams.tools.defaults import build_default_registry
-from agent_teams.services.greeting import (
-    GreetingRequest,
-    GreetingResponse,
-    process_greeting_request
-)
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +111,15 @@ def update_session(session_id: str, req: UpdateSessionRequest, sdk: AgentTeamsAp
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
 
+@app.get("/session/{session_id}/agents")
+def list_session_agents(session_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
+    agents = sdk.list_agents_in_session(session_id)
+    return [agent.model_dump() for agent in agents]
+
+@app.get("/session/{session_id}/agents/{instance_id}/messages")
+def get_agent_messages(session_id: str, instance_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
+    return sdk.get_agent_messages(instance_id)
+
 # ---------------------------------------------------------
 # 3. Tasks APIs
 # ---------------------------------------------------------
@@ -189,35 +193,3 @@ async def run_intent_stream(session_id: str, intent: str, sdk: AgentTeamsApp = D
             yield f"data: {err_data}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
-
-# ---------------------------------------------------------
-# 6. Greeting Response APIs
-# ---------------------------------------------------------
-
-@app.post("/greeting/respond", response_model=GreetingResponse)
-def respond_to_greeting(req: GreetingRequest):
-    """
-    Process a greeting message and return a response.
-    
-    This endpoint handles simple greeting patterns in Chinese and English,
-    providing appropriate responses based on the matched pattern.
-    
-    Request body:
-    {
-        "message": "你好",
-        "user_id": "optional_user_identifier"
-    }
-    
-    Response:
-    {
-        "response": "你好！很高兴见到你。",
-        "matched_pattern": "chinese_formal",
-        "response_time_ms": 45,
-        "timestamp": "2024-01-01T12:00:00Z"
-    }
-    """
-    try:
-        return process_greeting_request(req)
-    except Exception as e:
-        logger.exception("Error processing greeting request")
-        raise HTTPException(status_code=500, detail=str(e))

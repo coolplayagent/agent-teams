@@ -213,6 +213,49 @@ body {
     overflow: hidden;
 }
 
+.agent-tabs {
+    display: flex;
+    overflow-x: auto;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 1.5rem;
+    flex-shrink: 0;
+}
+
+.agent-tabs::-webkit-scrollbar {
+    height: 4px;
+}
+
+.agent-tabs::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
+
+.agent-tab {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.agent-tab:hover {
+    color: var(--text-primary);
+}
+
+.agent-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
 .chat-scroll {
     flex: 1;
     overflow-y: auto;

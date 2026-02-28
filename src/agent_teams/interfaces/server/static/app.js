@@ -17,7 +17,8 @@ const els = {
     sendBtn: document.getElementById('send-btn'),
     systemLogs: document.getElementById('system-logs'),
     toggleInspector: document.getElementById('toggle-inspector'),
-    inspectorPanel: document.getElementById('inspector-panel')
+    inspectorPanel: document.getElementById('inspector-panel'),
+    agentTabs: document.getElementById('agent-tabs')
 };
 
 // Configure Marked.js for Markdown parsing
@@ -156,14 +157,150 @@ async function selectSession(sessionId) {
         }
     });
 
-    // In a full app, we would fetch existing chat history here.
-    // For now, since the Python backend doesn't yet have a GET /session/{id}/messages endpoint,
-    // we just clear the board.
+    // Create new elements to hold different views
     els.chatMessages.innerHTML = '';
+    state.agentViews = { main: els.chatMessages };
+    state.activeView = 'main';
+
+    buildAgentTabs(sessionId);
     sysLog(`Switched to session: ${sessionId}`);
 
     await loadSessions(); // refresh list to secure active state
 }
+
+async function buildAgentTabs(sessionId) {
+    els.agentTabs.innerHTML = '<button class="agent-tab active" data-target="main">Global Timeline</button>';
+    try {
+        const res = await fetch(`/session/${sessionId}/agents`);
+        const agents = await res.json();
+        agents.forEach(agent => {
+            addAgentTab(agent.role_id, agent.instance_id, false);
+        });
+        setupTabListeners();
+    } catch (e) {
+        sysLog(`Failed to load agents: ${e.message}`, 'log-error');
+    }
+}
+
+function addAgentTab(roleId, instanceId, makeActive = false) {
+    // avoid duplicates
+    if (document.querySelector(`.agent-tab[data-target="${instanceId}"]`)) return;
+
+    const friendlyName = roleId.replace('_', ' ').replace(/\\b\\w/g, l => l.toUpperCase());
+    const btn = document.createElement('button');
+    btn.className = 'agent-tab';
+    btn.dataset.target = instanceId;
+    btn.dataset.role = roleId;
+    btn.innerHTML = `<span style="font-size:14px;">🤖</span> ${friendlyName}`;
+    els.agentTabs.appendChild(btn);
+
+    // Create hidden view for this agent
+    const view = document.createElement('div');
+    view.className = 'chat-scroll';
+    view.id = `view-${instanceId}`;
+    view.style.display = 'none';
+    els.chatMessages.parentElement.appendChild(view);
+    state.agentViews[instanceId] = view;
+
+    setupTabListeners();
+
+    if (makeActive) {
+        switchTab(instanceId);
+    }
+}
+
+function setupTabListeners() {
+    els.agentTabs.querySelectorAll('.agent-tab').forEach(btn => {
+        btn.onclick = () => switchTab(btn.dataset.target);
+    });
+}
+
+async function switchTab(targetId) {
+    if (state.activeView === targetId) return;
+
+    // Update active tab styling
+    els.agentTabs.querySelectorAll('.agent-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.target === targetId);
+    });
+
+    // Hide all views, show targeted
+    Object.values(state.agentViews).forEach(view => {
+        view.style.display = 'none';
+    });
+    const targetView = state.agentViews[targetId];
+    targetView.style.display = 'block';
+    state.activeView = targetId;
+
+    // If it's a subagent and empty, fetch history
+    if (targetId !== 'main' && targetView.innerHTML === '') {
+        try {
+            targetView.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading messages...</div>';
+            const res = await fetch(`/session/${state.currentSessionId}/agents/${targetId}/messages`);
+            const messages = await res.json();
+
+            targetView.innerHTML = '';
+            if (messages.length === 0) {
+                targetView.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">No individual history yet</div>';
+            } else {
+                renderHistoricalMessages(targetView, messages, targetId);
+            }
+        } catch (e) {
+            targetView.innerHTML = `<div style="color:var(--danger); padding:1rem;">Failed to load history</div>`;
+        }
+    }
+
+    targetView.scrollTop = targetView.scrollHeight;
+}
+
+function renderHistoricalMessages(container, messages, instanceId) {
+    messages.forEach(msg => {
+        const div = document.createElement('div');
+        div.className = 'message';
+        let roleName = "Unknown";
+        let roleClass = "role-agent";
+        let contentHtml = "";
+
+        if (msg.role === 'user') {
+            roleName = "System / Instruction";
+            roleClass = "role-coordinator_agent";
+            contentHtml = (msg.parts[0]?.content || '').replace(/\\n/g, '<br>');
+        } else if (msg.role === 'model-response') {
+            const btn = document.querySelector(`.agent-tab[data-target="${instanceId}"]`);
+            roleName = btn ? btn.textContent.replace('🤖', '').trim() : "Assistant";
+
+            for (const part of msg.parts) {
+                if (part.part_kind === 'text') {
+                    contentHtml += marked.parse(part.content);
+                } else if (part.part_kind === 'tool-call') {
+                    contentHtml += `
+                        <div class="tool-block">
+                            <div class="tool-header" onclick="this.nextElementSibling.classList.toggle('open')">
+                                <div class="tool-title">Used Tool: <span class="name">${part.tool_name}</span></div>
+                                <div class="tool-status"><svg class="status-icon status-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div>
+                            </div>
+                            <div class="tool-body">
+                                <div class="tool-args">${JSON.stringify(part.args, null, 2)}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        } else if (msg.role === 'tool-return') {
+            return; // We skip standalone tool-returns as they disrupt the flow, usually attached to prior calls
+        }
+
+        if (!contentHtml) return;
+
+        div.innerHTML = `
+            <div class="msg-header">
+                <span class="msg-role ${roleClass}">${roleName}</span>
+            </div>
+            <div class="msg-content">${contentHtml}</div>
+        `;
+        container.appendChild(div);
+    });
+}
+
 
 
 // ----------------- Chat & Streaming ----------------- //
@@ -246,14 +383,15 @@ function startIntentStream(promptText) {
                 sysLog(`Run started (trace: ${data.trace_id})`);
             }
             else if (evType === 'model_step_started') {
-                // If the backend doesn't explicitly pass role in this payload, 
-                // we'll lazily create the container when TEXT or TOOL arrives.
+                if (payload.instance_id && payload.role_id) {
+                    addAgentTab(payload.role_id, payload.instance_id, false);
+                }
             }
             else if (evType === 'text_delta') {
-                // Determine role from somewhere? 
-                // Currently SDK text events don't embed role_id natively in payload.
-                // We'll assume the text belongs to the active agent or default.
                 const roleId = payload.role_id || 'agent';
+                if (payload.instance_id && payload.role_id) {
+                    addAgentTab(payload.role_id, payload.instance_id, false);
+                }
 
                 if (!currentAgentDiv || currentAgentDiv.dataset.role !== roleId) {
                     buildAgentContainer(roleId);
@@ -269,6 +407,10 @@ function startIntentStream(promptText) {
             }
             else if (evType === 'tool_call') {
                 const roleId = payload.role_id || 'agent';
+                if (payload.instance_id && payload.role_id) {
+                    addAgentTab(payload.role_id, payload.instance_id, false);
+                }
+
                 if (!currentAgentDiv || currentAgentDiv.dataset.role !== roleId) {
                     buildAgentContainer(roleId);
                 }

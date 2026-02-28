@@ -78,6 +78,13 @@ class AgentInstanceRepository:
         ).fetchall()
         return tuple(self._to_record(row) for row in rows)
 
+    def list_by_session(self, session_id: str) -> tuple[AgentRuntimeRecord, ...]:
+        rows = self._conn.execute(
+            'SELECT * FROM agent_instances WHERE session_id=? ORDER BY created_at ASC',
+            (session_id,),
+        ).fetchall()
+        return tuple(self._to_record(row) for row in rows)
+
     def _to_record(self, row: sqlite3.Row) -> AgentRuntimeRecord:
         return AgentRuntimeRecord(
             run_id=str(row['run_id']),

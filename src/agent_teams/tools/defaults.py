@@ -15,7 +15,7 @@ from agent_teams.tools.manage_state import TOOL_SPEC as MANAGE_STATE
 from agent_teams.tools.query_task import TOOL_SPEC as QUERY_TASK
 from agent_teams.tools.read import TOOL_SPEC as READ
 from agent_teams.tools.read_stage_input import TOOL_SPEC as READ_STAGE_INPUT
-from agent_teams.tools.registry.registry import ToolRegistry
+from agent_teams.tools.registry import ToolRegistry
 from agent_teams.tools.shell import TOOL_SPEC as SHELL
 from agent_teams.tools.verify_task import TOOL_SPEC as VERIFY_TASK
 from agent_teams.tools.write import TOOL_SPEC as WRITE

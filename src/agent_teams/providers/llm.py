@@ -18,7 +18,7 @@ from agent_teams.runtime.run_event_hub import RunEventHub
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.message_repo import MessageRepository
 from agent_teams.agents.builders.collaboration_agent import build_collaboration_agent
-from agent_teams.tools.registry.registry import ToolRegistry
+from agent_teams.tools.registry import ToolRegistry
 from agent_teams.tools.runtime import ToolDeps
 
 if TYPE_CHECKING:

@@ -33,7 +33,7 @@ from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.message_repo import MessageRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
-from agent_teams.tools.registry.defaults import build_default_registry
+from agent_teams.tools.defaults import build_default_registry
 from agent_teams.workflow.spec import WorkflowSpec
 
 

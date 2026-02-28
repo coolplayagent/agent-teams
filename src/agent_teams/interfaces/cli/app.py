@@ -10,7 +10,7 @@ from agent_teams.core.enums import RunEventType
 from agent_teams.core.models import IntentInput
 from agent_teams.interfaces.sdk.client import AgentTeamsApp
 from agent_teams.roles.registry import RoleLoader
-from agent_teams.tools.registry.defaults import build_default_registry
+from agent_teams.tools.defaults import build_default_registry
 
 app = typer.Typer(no_args_is_help=True)
 

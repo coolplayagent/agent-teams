@@ -103,10 +103,19 @@ class EventEnvelope(BaseModel):
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
-class IntentInput(BaseModel):
+class SessionRecord(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     session_id: str = Field(min_length=1)
+    metadata: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+class IntentInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    session_id: str | None = None
     intent: str = Field(min_length=1)
     parent_instruction: str | None = None
 

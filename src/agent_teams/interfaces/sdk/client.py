@@ -3,6 +3,7 @@ from __future__ import annotations
 from json import dumps
 from pathlib import Path
 from threading import Thread
+import uuid
 
 from agent_teams.agents.management.instance_pool import InstancePool
 from agent_teams.agents.core.meta_agent import MetaAgent
@@ -18,6 +19,7 @@ from agent_teams.core.models import (
     RoleDefinition,
     RunEvent,
     RunResult,
+    SessionRecord,
     SubAgentInstance,
     TaskEnvelope,
     TaskRecord,
@@ -31,6 +33,7 @@ from agent_teams.runtime.run_event_hub import RunEventHub
 from agent_teams.runtime.console import set_debug
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.message_repo import MessageRepository
+from agent_teams.state.session_repo import SessionRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
 from agent_teams.tools.defaults import build_default_registry
@@ -64,6 +67,7 @@ class AgentTeamsApp:
         event_log = EventLog(runtime.paths.db_path)
         agent_repo = AgentInstanceRepository(runtime.paths.db_path)
         message_repo = MessageRepository(runtime.paths.db_path)
+        session_repo = SessionRepository(runtime.paths.db_path)
         instance_pool = InstancePool.from_repo(agent_repo)
         injection_manager = RunInjectionManager()
         run_event_hub = RunEventHub()
@@ -123,8 +127,24 @@ class AgentTeamsApp:
         self._injection_manager = injection_manager
         self._run_event_hub = run_event_hub
         self._agent_repo = agent_repo
+        self._session_repo = session_repo
+
+    def _ensure_session(self, session_id: str | None) -> str:
+        if not session_id:
+            new_id = f"session-{uuid.uuid4().hex[:8]}"
+            self._session_repo.create(session_id=new_id)
+            return new_id
+        try:
+            # check if exists
+            self._session_repo.get(session_id)
+            return session_id
+        except KeyError:
+            # create if not found
+            self._session_repo.create(session_id=session_id)
+            return session_id
 
     def run_intent(self, intent: IntentInput) -> RunResult:
+        intent.session_id = self._ensure_session(intent.session_id)
         run_id = new_trace_id().value
         self._injection_manager.activate(run_id)
         try:
@@ -133,6 +153,7 @@ class AgentTeamsApp:
             self._injection_manager.deactivate(run_id)
 
     def run_intent_stream(self, intent: IntentInput):
+        intent.session_id = self._ensure_session(intent.session_id)
         run_id = new_trace_id().value
         queue = self._run_event_hub.subscribe(run_id)
         self._injection_manager.activate(run_id)
@@ -210,6 +231,20 @@ class AgentTeamsApp:
     def create_workflow(self, spec: WorkflowSpec) -> str:
         self._workflows.append(spec)
         return spec.workflow_id
+
+    def create_session(self, session_id: str | None = None, metadata: dict[str, str] | None = None) -> SessionRecord:
+        if not session_id:
+            session_id = f"session-{uuid.uuid4().hex[:8]}"
+        return self._session_repo.create(session_id=session_id, metadata=metadata)
+
+    def update_session(self, session_id: str, metadata: dict[str, str]) -> None:
+        self._session_repo.update_metadata(session_id, metadata)
+
+    def get_session(self, session_id: str) -> SessionRecord:
+        return self._session_repo.get(session_id)
+
+    def list_sessions(self) -> tuple[SessionRecord, ...]:
+        return self._session_repo.list_all()
 
     def submit_task(self, task: TaskEnvelope) -> str:
         self._task_repo.create(task)

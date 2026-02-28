@@ -25,7 +25,7 @@ DEFAULT_CONFIG_DIR = _get_project_root() / ".agent_teams"
 @app.command("run-intent")
 def run_intent(
     intent: str = typer.Option(..., "--intent"),
-    session_id: str = "default-session",
+    session_id: str | None = typer.Option(None, "--session-id"),
     config_dir: Path = DEFAULT_CONFIG_DIR,
     debug: bool = typer.Option(False, "--debug", help="Enable verbose debug logs"),
 ) -> None:
@@ -38,7 +38,7 @@ def run_intent(
 @app.command("run-intent-stream")
 def run_intent_stream(
     intent: str = typer.Option(..., "--intent"),
-    session_id: str = "default-session",
+    session_id: str | None = typer.Option(None, "--session-id"),
     config_dir: Path = DEFAULT_CONFIG_DIR,
     debug: bool = typer.Option(False, "--debug", help="Enable verbose debug logs"),
 ) -> None:
@@ -53,6 +53,45 @@ def run_intent_stream(
                 payload = json.loads(event.payload_json)
                 typer.echo(payload.get("content", ""), nl=False)
 
+@app.command("chat")
+def chat(
+    session_id: str | None = typer.Option(None, "--session-id"),
+    config_dir: Path = DEFAULT_CONFIG_DIR,
+    debug: bool = typer.Option(False, "--debug", help="Enable verbose debug logs"),
+) -> None:
+    sdk = AgentTeamsApp(config_dir=config_dir, debug=debug)
+    if not session_id:
+        record = sdk.create_session()
+        session_id = record.session_id
+    else:
+        sdk.get_session(session_id)
+        
+    typer.echo(f"Starting interactive chat (Session: {session_id}). Type 'exit' or 'quit' to stop.")
+    
+    while True:
+        try:
+            intent = typer.prompt("Prompt")
+        except typer.Abort:
+            typer.echo()
+            break
+            
+        if intent.strip().lower() in ("exit", "quit"):
+            break
+            
+        if not intent.strip():
+            continue
+            
+        for event in sdk.run_intent_stream(
+            IntentInput(session_id=session_id, intent=intent)
+        ):
+            if debug:
+                typer.echo(event.model_dump_json())
+            else:
+                if event.event_type == RunEventType.TEXT_DELTA:
+                    payload = json.loads(event.payload_json)
+                    typer.echo(payload.get("content", ""), nl=False)
+        typer.echo()
+
 
 @app.command("tasks-list")
 def tasks_list(config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
@@ -66,6 +105,33 @@ def tasks_query(task_id: str, config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
     sdk = AgentTeamsApp(config_dir=config_dir)
     task = sdk.query_task(task_id)
     typer.echo(task.model_dump_json(indent=2))
+
+
+@app.command("session-create")
+def session_create(
+    session_id: str | None = typer.Option(None, "--session-id"),
+    config_dir: Path = DEFAULT_CONFIG_DIR,
+) -> None:
+    sdk = AgentTeamsApp(config_dir=config_dir)
+    record = sdk.create_session(session_id=session_id)
+    typer.echo(record.model_dump_json(indent=2))
+
+
+@app.command("session-list")
+def session_list(config_dir: Path = DEFAULT_CONFIG_DIR) -> None:
+    sdk = AgentTeamsApp(config_dir=config_dir)
+    for record in sdk.list_sessions():
+        typer.echo(record.model_dump_json())
+
+
+@app.command("session-get")
+def session_get(
+    session_id: str,
+    config_dir: Path = DEFAULT_CONFIG_DIR,
+) -> None:
+    sdk = AgentTeamsApp(config_dir=config_dir)
+    record = sdk.get_session(session_id)
+    typer.echo(record.model_dump_json(indent=2))
 
 
 @app.command("roles-validate")

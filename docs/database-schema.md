@@ -4,15 +4,38 @@
 
 每次建立连接时均执行 `PRAGMA foreign_keys = ON`，启用外键约束。
 
-共有 **5 张表**，各司其职：
+共有 **6 张表**，各司其职：
 
 | 表名 | 所在模块 | 职责 |
 |---|---|---|
+| `sessions` | `state/session_repo.py` | 用户的会话记录及元数据存储 |
 | `agent_instances` | `state/agent_repo.py` | agent 实例的运行状态快照 |
 | `tasks` | `state/task_repo.py` | 任务记录（当前状态快照） |
 | `shared_state` | `state/shared_store.py` | 跨 agent 的共享 KV 状态 |
 | `events` | `state/event_log.py` | 业务事件流水（append-only） |
 | `messages` | `state/message_repo.py` | LLM 对话消息历史（append-only） |
+
+---
+
+## `sessions`
+
+存储用户的**会话记录 (Session)**，用于持久化多次交互间共享的生命周期与元数据。
+
+```sql
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    metadata   TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `session_id` | TEXT (PK) | 会话唯一 ID，格式如 `session-<uuid>`。 |
+| `metadata` | TEXT | 会话级别的元数据，JSON 格式，可用于存储一些动态扩展配置或用户偏好。 |
+| `created_at` | TEXT | 创建时间，ISO 8601（UTC）。 |
+| `updated_at` | TEXT | 最后更新时间，ISO 8601（UTC）。 |
 
 ---
 
@@ -219,7 +242,8 @@ CREATE INDEX idx_messages_task     ON messages(task_id)
 
 
 ```
-session_id ──┬── agent_instances
+session_id ──┬── sessions (PK)
+             ├── agent_instances
              ├── tasks
              ├── shared_state (scope=session)
              └── events

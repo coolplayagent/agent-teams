@@ -19,16 +19,25 @@ class TaskRepository:
         self._conn.execute(
             '''
             CREATE TABLE IF NOT EXISTS tasks (
-                task_id TEXT PRIMARY KEY,
-                envelope_json TEXT NOT NULL,
-                status TEXT NOT NULL,
+                task_id              TEXT PRIMARY KEY,
+                trace_id             TEXT NOT NULL,
+                session_id           TEXT NOT NULL,
+                parent_task_id       TEXT,
+                envelope_json        TEXT NOT NULL,
+                status               TEXT NOT NULL,
                 assigned_instance_id TEXT,
-                result TEXT,
-                error_message TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                result               TEXT,
+                error_message        TEXT,
+                created_at           TEXT NOT NULL,
+                updated_at           TEXT NOT NULL
             )
             '''
+        )
+        self._conn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_tasks_trace ON tasks(trace_id)'
+        )
+        self._conn.execute(
+            'CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id)'
         )
         self._conn.commit()
 
@@ -37,11 +46,15 @@ class TaskRepository:
         record = TaskRecord(envelope=envelope)
         self._conn.execute(
             '''
-            INSERT INTO tasks(task_id, envelope_json, status, assigned_instance_id, result, error_message, created_at, updated_at)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks(task_id, trace_id, session_id, parent_task_id, envelope_json, status,
+                              assigned_instance_id, result, error_message, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 envelope.task_id,
+                envelope.trace_id,
+                envelope.session_id,
+                envelope.parent_task_id,
                 envelope.model_dump_json(),
                 TaskStatus.CREATED.value,
                 None,
@@ -66,7 +79,8 @@ class TaskRepository:
         self._conn.execute(
             '''
             UPDATE tasks
-            SET status=?, assigned_instance_id=COALESCE(?, assigned_instance_id), result=COALESCE(?, result), error_message=COALESCE(?, error_message), updated_at=?
+            SET status=?, assigned_instance_id=COALESCE(?, assigned_instance_id),
+                result=COALESCE(?, result), error_message=COALESCE(?, error_message), updated_at=?
             WHERE task_id=?
             ''',
             (status.value, assigned_instance_id, result, error_message, now, task_id),
@@ -85,12 +99,15 @@ class TaskRepository:
 
     def list_by_trace(self, trace_id: str) -> tuple[TaskRecord, ...]:
         rows = self._conn.execute(
-            '''
-            SELECT * FROM tasks
-            WHERE json_extract(envelope_json, '$.trace_id')=?
-            ORDER BY created_at ASC
-            ''',
+            'SELECT * FROM tasks WHERE trace_id=? ORDER BY created_at ASC',
             (trace_id,),
+        ).fetchall()
+        return tuple(self._to_record(row) for row in rows)
+
+    def list_by_session(self, session_id: str) -> tuple[TaskRecord, ...]:
+        rows = self._conn.execute(
+            'SELECT * FROM tasks WHERE session_id=? ORDER BY created_at ASC',
+            (session_id,),
         ).fetchall()
         return tuple(self._to_record(row) for row in rows)
 

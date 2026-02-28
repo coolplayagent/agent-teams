@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from agent_teams.core.enums import EventType, TaskStatus
 from agent_teams.core.models import EventEnvelope, VerificationResult
-from agent_teams.events.event_bus import EventBus
+from agent_teams.state.event_log import EventLog
 from agent_teams.state.task_repo import TaskRepository
 
 
-def verify_task(task_repo: TaskRepository, event_bus: EventBus, task_id: str) -> VerificationResult:
+def verify_task(task_repo: TaskRepository, event_bus: EventLog, task_id: str) -> VerificationResult:
     task = task_repo.get(task_id)
     if task.status != TaskStatus.COMPLETED or task.result is None:
         passed = False

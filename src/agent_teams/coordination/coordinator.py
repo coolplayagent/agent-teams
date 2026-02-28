@@ -8,7 +8,7 @@ from agent_teams.core.enums import EventType, InstanceStatus, ScopeType, TaskSta
 from agent_teams.core.ids import new_task_id, new_trace_id
 from agent_teams.core.models import EventEnvelope, IntentInput, RoleDefinition, TaskEnvelope, VerificationPlan
 from agent_teams.coordination.task_execution_service import TaskExecutionService
-from agent_teams.events.event_bus import EventBus
+from agent_teams.state.event_log import EventLog
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.providers.llm import LLMProvider
 from agent_teams.roles.registry import RoleRegistry
@@ -28,7 +28,7 @@ class CoordinatorGraph:
     instance_pool: InstancePool
     task_repo: TaskRepository
     shared_store: SharedStore
-    event_bus: EventBus
+    event_bus: EventLog
     agent_repo: AgentInstanceRepository
     prompt_builder: RuntimePromptBuilder
     provider_factory: Callable[[RoleDefinition], LLMProvider]

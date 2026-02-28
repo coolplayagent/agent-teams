@@ -65,6 +65,12 @@ class AgentInstanceRepository:
         )
         self._conn.commit()
 
+    def list_all(self) -> tuple[AgentRuntimeRecord, ...]:
+        rows = self._conn.execute(
+            'SELECT * FROM agent_instances ORDER BY created_at ASC',
+        ).fetchall()
+        return tuple(self._to_record(row) for row in rows)
+
     def list_running(self, run_id: str) -> tuple[AgentRuntimeRecord, ...]:
         rows = self._conn.execute(
             'SELECT * FROM agent_instances WHERE run_id=? AND status=? ORDER BY created_at ASC',

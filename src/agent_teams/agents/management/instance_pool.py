@@ -11,6 +11,28 @@ class InstancePool:
     def __init__(self) -> None:
         self._instances: list[SubAgentInstance] = []
 
+    @classmethod
+    def from_repo(cls, repo: object) -> 'InstancePool':
+        """Rebuild pool from DB on startup, marking any stale RUNNING instances as FAILED."""
+        from agent_teams.state.agent_repo import AgentInstanceRepository
+        assert isinstance(repo, AgentInstanceRepository)
+        pool = cls()
+        for record in repo.list_all():
+            status = record.status
+            # Any instance left RUNNING in the DB means the process died mid-task; mark FAILED.
+            if status == InstanceStatus.RUNNING:
+                status = InstanceStatus.FAILED
+                repo.mark_status(record.instance_id, InstanceStatus.FAILED)
+            instance = SubAgentInstance(
+                instance_id=record.instance_id,
+                role_id=record.role_id,
+                status=status,
+                created_at=record.created_at,
+                last_active_at=record.updated_at,
+            )
+            pool._instances.append(instance)
+        return pool
+
     def create_subagent(self, role_id: str) -> SubAgentInstance:
         instance = SubAgentInstance(instance_id=new_instance_id().value, role_id=role_id)
         self._instances.append(instance)

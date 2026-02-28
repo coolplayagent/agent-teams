@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from pydantic_ai import RunContext
 
 from agent_teams.agents.management.instance_pool import InstancePool
-from agent_teams.events.event_bus import EventBus
+from agent_teams.state.event_log import EventLog
 from agent_teams.runtime.injection_manager import RunInjectionManager
 from agent_teams.runtime.run_event_hub import RunEventHub
 from agent_teams.state.agent_repo import AgentInstanceRepository
@@ -24,7 +24,7 @@ class ToolDeps:
     task_repo: TaskRepository
     instance_pool: InstancePool
     shared_store: SharedStore
-    event_bus: EventBus
+    event_bus: EventLog
     injection_manager: RunInjectionManager
     run_event_hub: RunEventHub
     agent_repo: AgentInstanceRepository

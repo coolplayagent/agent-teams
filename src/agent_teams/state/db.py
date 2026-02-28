@@ -21,9 +21,12 @@ def open_sqlite(db_path: Path) -> sqlite3.Connection:
     try:
         conn = sqlite3.connect(file_dsn, timeout=30.0, check_same_thread=False)
         if _can_write(conn):
+            conn.execute('PRAGMA foreign_keys = ON')
             return conn
         conn.close()
     except sqlite3.OperationalError:
         pass
 
-    return sqlite3.connect(MEMORY_DSN, uri=True, timeout=30.0, check_same_thread=False)
+    conn = sqlite3.connect(MEMORY_DSN, uri=True, timeout=30.0, check_same_thread=False)
+    conn.execute('PRAGMA foreign_keys = ON')
+    return conn

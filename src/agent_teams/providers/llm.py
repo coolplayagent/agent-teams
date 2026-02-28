@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterable
+import asyncio
+from collections.abc import AsyncIterable  # noqa: F401  kept for type annotations if needed
 from dataclasses import dataclass
 from json import dumps
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from pydantic_ai._agent_graph import ModelRequestNode
+from pydantic_ai._utils import get_event_loop
 
 from agent_teams.core.enums import RunEventType
 from agent_teams.core.models import ModelEndpointConfig, RunEvent
@@ -12,6 +16,7 @@ from agent_teams.runtime.console import close_model_stream, is_debug, log_debug,
 from agent_teams.runtime.injection_manager import RunInjectionManager
 from agent_teams.runtime.run_event_hub import RunEventHub
 from agent_teams.state.agent_repo import AgentInstanceRepository
+from agent_teams.state.message_repo import MessageRepository
 from agent_teams.agents.builders.collaboration_agent import build_collaboration_agent
 from agent_teams.tools.registry.registry import ToolRegistry
 from agent_teams.tools.runtime import ToolDeps
@@ -58,8 +63,9 @@ class OpenAICompatibleProvider(LLMProvider):
         workspace_root: Path,
         tool_registry: ToolRegistry,
         allowed_tools: tuple[str, ...],
+        message_repo: MessageRepository,
         role_registry: 'RoleRegistry',
-        task_execution_service: TaskExecutionService,
+        task_execution_service: 'TaskExecutionService',
     ) -> None:
         self._config = config
         self._task_repo = task_repo
@@ -74,8 +80,12 @@ class OpenAICompatibleProvider(LLMProvider):
         self._allowed_tools = allowed_tools
         self._role_registry = role_registry
         self._task_execution_service = task_execution_service
+        self._message_repo = message_repo
 
     def generate(self, request: LLMRequest) -> str:
+        return get_event_loop().run_until_complete(self._generate_async(request))
+
+    async def _generate_async(self, request: LLMRequest) -> str:
         tool_rules = f'Available tools: {", ".join(self._allowed_tools)}.'
         if is_debug():
             log_debug(
@@ -117,49 +127,63 @@ class OpenAICompatibleProvider(LLMProvider):
             role_registry=self._role_registry,
             task_execution_service=self._task_execution_service,
         )
+
         printed_any = False
         emitted_text_chunks: list[str] = []
+        history = self._message_repo.get_history(request.instance_id)
+        saved_count = 0
 
-        async def _event_stream_handler(_ctx, events: AsyncIterable[object]) -> None:
-            nonlocal printed_any
-            async for event in events:
-                kind = getattr(event, 'event_kind', None)
-                text: str | None = None
-                if kind == 'part_start':
-                    part = getattr(event, 'part', None)
-                    maybe = getattr(part, 'content', None)
-                    if isinstance(maybe, str) and maybe:
-                        text = maybe
-                elif kind == 'part_delta':
-                    delta = getattr(event, 'delta', None)
-                    maybe = getattr(delta, 'content_delta', None)
-                    if isinstance(maybe, str) and maybe:
-                        text = maybe
-
-                if not text:
-                    continue
-
-                if is_debug():
-                    print(text, end='', flush=True)
-                else:
-                    log_model_stream_chunk(request.role_id, text)
-                printed_any = True
-                emitted_text_chunks.append(text)
-                self._run_event_hub.publish(
-                    RunEvent(
-                        run_id=request.run_id,
-                        trace_id=request.trace_id,
-                        task_id=request.task_id,
-                        event_type=RunEventType.TEXT_DELTA,
-                        payload_json=dumps({'text': text}),
-                    )
-                )
-
-        result = agent.run_sync(
+        async with agent.iter(
             request.user_prompt,
             deps=deps,
-            event_stream_handler=_event_stream_handler,
-        )
+            message_history=history,
+        ) as agent_run:
+            async for node in agent_run:
+                if isinstance(node, ModelRequestNode):
+                    # Stream text chunks from this model response in real-time
+                    async with node.stream(agent_run.ctx) as stream:
+                        async for text_delta in stream.stream_text(delta=True):
+                            if text_delta:
+                                if is_debug():
+                                    print(text_delta, end='', flush=True)
+                                else:
+                                    log_model_stream_chunk(request.role_id, text_delta)
+                                printed_any = True
+                                emitted_text_chunks.append(text_delta)
+                                self._run_event_hub.publish(
+                                    RunEvent(
+                                        run_id=request.run_id,
+                                        trace_id=request.trace_id,
+                                        task_id=request.task_id,
+                                        event_type=RunEventType.TEXT_DELTA,
+                                        payload_json=dumps({'text': text_delta}),
+                                    )
+                                )
+                    # Flush messages accumulated up to this node
+                    all_new = agent_run.new_messages()
+                    to_save = list(all_new)[saved_count:]
+                    if to_save:
+                        self._message_repo.append(
+                            instance_id=request.instance_id,
+                            task_id=request.task_id,
+                            trace_id=request.trace_id,
+                            messages=to_save,
+                        )
+                        saved_count += len(to_save)
+
+        result = agent_run.result
+
+        # Flush any remaining messages (e.g. final tool results not yet saved)
+        all_new = result.new_messages()
+        to_save = list(all_new)[saved_count:]
+        if to_save:
+            self._message_repo.append(
+                instance_id=request.instance_id,
+                task_id=request.task_id,
+                trace_id=request.trace_id,
+                messages=to_save,
+            )
+
         if printed_any and is_debug():
             print()
         if printed_any and not is_debug():

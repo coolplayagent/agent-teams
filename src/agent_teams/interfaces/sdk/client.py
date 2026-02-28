@@ -22,7 +22,7 @@ from agent_teams.core.models import (
     TaskEnvelope,
     TaskRecord,
 )
-from agent_teams.events.event_bus import EventBus
+from agent_teams.state.event_log import EventLog
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.providers.llm import EchoProvider, LLMProvider, OpenAICompatibleProvider
 from agent_teams.roles.registry import RoleLoader
@@ -30,6 +30,7 @@ from agent_teams.runtime.injection_manager import RunInjectionManager
 from agent_teams.runtime.run_event_hub import RunEventHub
 from agent_teams.runtime.console import set_debug
 from agent_teams.state.agent_repo import AgentInstanceRepository
+from agent_teams.state.message_repo import MessageRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
 from agent_teams.tools.registry.defaults import build_default_registry
@@ -60,9 +61,10 @@ class AgentTeamsApp:
 
         task_repo = TaskRepository(runtime.paths.db_path)
         shared_store = SharedStore(runtime.paths.db_path)
-        event_bus = EventBus(runtime.paths.db_path)
+        event_log = EventLog(runtime.paths.db_path)
         agent_repo = AgentInstanceRepository(runtime.paths.db_path)
-        instance_pool = InstancePool()
+        message_repo = MessageRepository(runtime.paths.db_path)
+        instance_pool = InstancePool.from_repo(agent_repo)
         injection_manager = RunInjectionManager()
         run_event_hub = RunEventHub()
 
@@ -78,13 +80,14 @@ class AgentTeamsApp:
                     task_repo=task_repo,
                     instance_pool=instance_pool,
                     shared_store=shared_store,
-                    event_bus=event_bus,
+                    event_bus=event_log,
                     injection_manager=injection_manager,
                     run_event_hub=run_event_hub,
                     agent_repo=agent_repo,
                     workspace_root=Path.cwd(),
                     tool_registry=tool_registry,
                     allowed_tools=role.tools,
+                    message_repo=message_repo,
                     role_registry=role_registry,
                     task_execution_service=task_execution_service,
                 )
@@ -95,7 +98,7 @@ class AgentTeamsApp:
             instance_pool=instance_pool,
             task_repo=task_repo,
             shared_store=shared_store,
-            event_bus=event_bus,
+            event_bus=event_log,
             agent_repo=agent_repo,
             prompt_builder=prompt_builder,
             provider_factory=provider_factory,
@@ -106,7 +109,7 @@ class AgentTeamsApp:
             instance_pool=instance_pool,
             task_repo=task_repo,
             shared_store=shared_store,
-            event_bus=event_bus,
+            event_bus=event_log,
             agent_repo=agent_repo,
             prompt_builder=prompt_builder,
             provider_factory=provider_factory,

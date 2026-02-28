@@ -80,24 +80,20 @@ export function renderHistoricalMessages(container, messages, instanceId) {
 }
 
 export function addAgentTab(roleId, instanceId, makeActive = false) {
-    if (document.querySelector(`.agent-tab[data-target="${instanceId}"]`)) return;
-
-    const friendlyName = roleId.replace('_', ' ').replace(/\\b\\w/g, l => l.toUpperCase());
-    const btn = document.createElement('button');
-    btn.className = 'agent-tab';
-    btn.dataset.target = instanceId;
-    btn.dataset.role = roleId;
-    btn.innerHTML = `<span style="font-size:14px;">🤖</span> ${friendlyName}`;
-    els.agentTabs.appendChild(btn);
+    if (state.agentViews[instanceId]) return;
 
     const view = document.createElement('div');
     view.className = 'chat-scroll';
     view.id = `view-${instanceId}`;
+    view.dataset.role = roleId;
     view.style.display = 'none';
-    els.chatMessages.parentElement.appendChild(view);
-    state.agentViews[instanceId] = view;
 
-    btn.onclick = () => switchTab(instanceId);
+    // Insert before the input container so the input box stays at the bottom!
+    const parent = els.chatMessages.parentElement;
+    const inputContainer = parent.querySelector('.input-container');
+    parent.insertBefore(view, inputContainer);
+
+    state.agentViews[instanceId] = view;
 
     if (makeActive) {
         switchTab(instanceId);
@@ -266,4 +262,143 @@ export function processGlobalEvent(evType, payload, eventMeta, isHistorical = fa
     else {
         sysLog(`Unknown event type: ${evType} `, 'log-info');
     }
+}
+
+// Global callback for mermaid
+window.switchTabByRole = function (roleId) {
+    // Top-level Coordinator bypasses the instance_id check dynamically by acting on main or looking up directly
+    if (roleId === 'coordinator_agent') {
+        const coordView = document.querySelector(`.chat-scroll[data-role="coordinator_agent"]`);
+        if (coordView) {
+            switchTab(coordView.id.replace('view-', ''));
+        } else {
+            console.warn('Coordinator view not ready.');
+        }
+        return;
+    }
+
+    const view = document.querySelector(`.chat-scroll[data-role="${roleId}"]`);
+    if (view) {
+        switchTab(view.id.replace('view-', ''));
+    } else {
+        sysLog(`No active agent found for role: ${roleId}`, 'log-error');
+    }
+};
+
+export function renderNativeDAG(workflow) {
+    const canvas = document.getElementById('workflow-canvas');
+    const panel = document.getElementById('workflow-panel');
+
+    canvas.innerHTML = '';
+    panel.style.display = 'flex';
+
+    const container = document.createElement('div');
+    container.className = 'dag-container';
+
+    const nodeLevels = {};
+    let maxLevel = 0;
+
+    if (workflow && workflow.tasks) {
+        const tasks = workflow.tasks;
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const t in tasks) {
+                const deps = tasks[t].depends_on || [];
+                let maxDepLevel = 0;
+                deps.forEach(d => {
+                    if (nodeLevels[d] !== undefined) {
+                        maxDepLevel = Math.max(maxDepLevel, nodeLevels[d]);
+                    }
+                });
+                const newLevel = maxDepLevel + 1;
+                if (nodeLevels[t] !== newLevel) {
+                    nodeLevels[t] = newLevel;
+                    changed = true;
+                }
+            }
+        }
+        for (let t in nodeLevels) {
+            if (nodeLevels[t] > maxLevel) maxLevel = nodeLevels[t];
+        }
+    }
+
+    const layers = [];
+    layers.push([{ id: 'coordinator', title: 'Coordinator Agent', role: 'coordinator_agent', icon: '🤖' }]);
+
+    if (workflow && workflow.tasks) {
+        for (let i = 1; i <= maxLevel; i++) {
+            const layerNodes = [];
+            for (let t in nodeLevels) {
+                if (nodeLevels[t] === i) {
+                    layerNodes.push({
+                        id: t,
+                        title: t,
+                        role: workflow.tasks[t].role_id || t,
+                        icon: '⚡',
+                        deps: workflow.tasks[t].depends_on || []
+                    });
+                }
+            }
+            if (layerNodes.length > 0) layers.push(layerNodes);
+        }
+    }
+
+    layers.forEach((layer, lvlIndex) => {
+        const col = document.createElement('div');
+        col.className = 'dag-layer';
+        layer.forEach(node => {
+            const el = document.createElement('div');
+            el.className = 'dag-node';
+            el.id = `node-${node.id}`;
+            el.onclick = () => window.switchTabByRole(node.role);
+            el.innerHTML = `
+                <div class="node-icon">${node.icon}</div>
+                <div class="node-title">${node.title}</div>
+                <div class="node-role">${node.role}</div>
+            `;
+            col.appendChild(el);
+        });
+        container.appendChild(col);
+    });
+
+    canvas.appendChild(container);
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'dag-edges');
+    container.appendChild(svg);
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            const contRect = container.getBoundingClientRect();
+            layers.forEach((layer, lvlIndex) => {
+                if (lvlIndex === 0) return;
+                layer.forEach(node => {
+                    let sources = node.deps.length > 0 ? node.deps : ['coordinator'];
+                    sources.forEach(srcId => {
+                        const srcEl = document.getElementById(`node-${srcId}`);
+                        const dstEl = document.getElementById(`node-${node.id}`);
+                        if (srcEl && dstEl) {
+                            const srcRect = srcEl.getBoundingClientRect();
+                            const dstRect = dstEl.getBoundingClientRect();
+
+                            const startX = srcRect.right - contRect.left;
+                            const startY = srcRect.top + srcRect.height / 2 - contRect.top;
+
+                            const endX = dstRect.left - contRect.left;
+                            const endY = dstRect.top + dstRect.height / 2 - contRect.top;
+
+                            const curve = Math.abs(endX - startX) * 0.5;
+                            const d = `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`;
+
+                            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                            path.setAttribute('d', d);
+                            path.setAttribute('class', 'dag-edge-path');
+                            svg.appendChild(path);
+                        }
+                    });
+                });
+            });
+        });
+    });
 }

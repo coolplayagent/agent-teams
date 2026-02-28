@@ -138,6 +138,7 @@ class AgentTeamsApp:
         self._session_repo = session_repo
         self._message_repo = message_repo
         self._event_log = event_log
+        self._shared_store = shared_store
 
     def _ensure_session(self, session_id: str | None) -> str:
         if not session_id:
@@ -302,3 +303,17 @@ class AgentTeamsApp:
     def get_session_messages(self, session_id: str) -> list[dict]:
         import json
         return self._message_repo.get_messages_by_session(session_id)
+
+    def get_session_workflows(self, session_id: str) -> list[dict]:
+        import json
+        from agent_teams.core.enums import ScopeType
+        from agent_teams.core.models import ScopeRef
+
+        tasks = self._task_repo.list_by_session(session_id)
+        workflows = []
+        for t in tasks:
+            scope = ScopeRef(scope_type=ScopeType.TASK, scope_id=t.envelope.task_id)
+            obj = self._shared_store.get_state(scope, "workflow_graph")
+            if obj:
+                workflows.append(json.loads(obj))
+        return workflows

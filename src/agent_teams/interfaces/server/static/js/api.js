@@ -1,6 +1,8 @@
 // js/api.js
 import { state, els } from './state.js';
-import { sysLog, renderHistoricalMessages, resetDomStreams, processGlobalEvent, addAgentTab, scrollToBottom } from './dom.js';
+import { sysLog, renderHistoricalMessages, resetDomStreams, processGlobalEvent, addAgentTab, scrollToBottom, renderNativeDAG } from './dom.js';
+
+export let currentWorkflows = [];
 
 export async function loadSessions() {
     try {
@@ -54,7 +56,6 @@ export async function createNewSession(manualClick = true) {
 export async function selectSession(sessionId) {
     if (state.currentSessionId === sessionId) return;
     state.currentSessionId = sessionId;
-    els.sessionLabel.textContent = `Session: ${sessionId}`;
 
     document.querySelectorAll('.session-item').forEach(el => {
         el.classList.remove('active');
@@ -63,6 +64,10 @@ export async function selectSession(sessionId) {
         }
     });
 
+    // Cleanup subagent DOM nodes from the previous session to prevent half-screen UI overlap
+    document.querySelectorAll('.chat-scroll:not(#chat-messages)').forEach(el => el.remove());
+
+    els.chatMessages.style.display = 'block';
     els.chatMessages.innerHTML = '';
     state.agentViews = { main: els.chatMessages };
     state.activeView = 'main';
@@ -74,7 +79,6 @@ export async function selectSession(sessionId) {
 }
 
 export async function buildAgentTabs(sessionId) {
-    els.agentTabs.innerHTML = '<button class="agent-tab active" data-target="main">Global Timeline</button>';
     try {
         const res = await fetch(`/session/${sessionId}/agents`);
         const agents = await res.json();
@@ -82,11 +86,9 @@ export async function buildAgentTabs(sessionId) {
             addAgentTab(agent.role_id, agent.instance_id, false);
         });
 
-        // Set global timeline listener
-        els.agentTabs.querySelector('button[data-target="main"]').onclick = () => switchTab('main');
-
         await loadGlobalHistory(sessionId);
         await loadSessionMessages(sessionId);
+        await loadSessionWorkflows(sessionId);
     } catch (e) {
         sysLog(`Failed to load agents/history: ${e.message}`, 'log-error');
     }
@@ -236,10 +238,6 @@ export async function loadSessionMessages(sessionId) {
 export async function switchTab(targetId) {
     if (state.activeView === targetId) return;
 
-    els.agentTabs.querySelectorAll('.agent-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.target === targetId);
-    });
-
     Object.values(state.agentViews).forEach(view => {
         view.style.display = 'none';
     });
@@ -271,6 +269,9 @@ export function startIntentStream(promptText) {
     state.isGenerating = true;
     els.sendBtn.disabled = true;
     els.promptInput.disabled = true;
+
+    const panel = document.getElementById('workflow-panel');
+    if (panel) panel.classList.add('generating');
 
     if (state.activeEventSource) {
         state.activeEventSource.close();
@@ -308,8 +309,56 @@ export function endStream() {
         state.activeEventSource = null;
     }
     state.isGenerating = false;
+
+    const panel = document.getElementById('workflow-panel');
+    if (panel) panel.classList.remove('generating');
+
     els.sendBtn.disabled = false;
     els.promptInput.disabled = false;
     document.querySelectorAll('.typing-indicator').forEach(el => el.remove());
     els.promptInput.focus();
+}
+
+export async function loadSessionWorkflows(sessionId) {
+    try {
+        const res = await fetch(`/session/${sessionId}/workflows`);
+        if (!res.ok) return;
+        const workflows = await res.json();
+
+        currentWorkflows = workflows || [];
+
+        const sel = document.getElementById('workflow-selector');
+        if (!sel) return;
+
+        sel.innerHTML = '';
+        sel.onchange = (e) => {
+            const idx = parseInt(e.target.value);
+            if (idx >= 0 && idx < currentWorkflows.length) {
+                renderNativeDAG(currentWorkflows[idx]);
+            } else {
+                renderNativeDAG(null);
+            }
+        };
+
+        if (currentWorkflows.length > 0) {
+            currentWorkflows.forEach((wf, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = `Orchestration ${i + 1}`;
+                sel.appendChild(opt);
+            });
+            // Select the last one by default
+            sel.value = currentWorkflows.length - 1;
+            renderNativeDAG(currentWorkflows[currentWorkflows.length - 1]);
+        } else {
+            // No workflows, just show Coordinator
+            const opt = document.createElement('option');
+            opt.value = "-1";
+            opt.textContent = `Default Coordinator`;
+            sel.appendChild(opt);
+            renderNativeDAG(null);
+        }
+    } catch (e) {
+        console.error("Failed loading workflows", e);
+    }
 }

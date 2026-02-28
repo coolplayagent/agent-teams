@@ -45,7 +45,25 @@ function setupEventListeners() {
         startIntentStream(text);
     });
 
-    els.toggleInspector.addEventListener('click', () => {
-        els.inspectorPanel.classList.toggle('collapsed');
-    });
+    const toggleInsp = document.getElementById('toggle-inspector');
+    if (toggleInsp) {
+        toggleInsp.addEventListener('click', () => {
+            els.inspectorPanel.classList.toggle('collapsed');
+        });
+    }
+
+    const toggleSb = document.getElementById('toggle-sidebar');
+    if (toggleSb) {
+        toggleSb.addEventListener('click', () => {
+            const sb = document.querySelector('.sidebar');
+            if (sb) sb.classList.toggle('collapsed');
+        });
+    }
+
+    const glbtn = document.getElementById('global-timeline-btn');
+    if (glbtn) {
+        glbtn.addEventListener('click', () => {
+            import('./api.js').then(m => m.switchTab('main'));
+        });
+    }
 }

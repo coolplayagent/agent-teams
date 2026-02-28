@@ -128,6 +128,10 @@ def get_session_all_messages(session_id: str, sdk: AgentTeamsApp = Depends(get_s
 def get_agent_messages(session_id: str, instance_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
     return sdk.get_agent_messages(instance_id)
 
+@app.get("/session/{session_id}/workflows")
+def get_session_workflows(session_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
+    return sdk.get_session_workflows(session_id)
+
 # ---------------------------------------------------------
 # 3. Tasks APIs
 # ---------------------------------------------------------

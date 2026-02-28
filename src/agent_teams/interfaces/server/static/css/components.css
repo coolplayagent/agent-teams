@@ -123,6 +123,21 @@
     color: var(--text-secondary);
 }
 
+.workflow-select {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+    outline: none;
+    cursor: pointer;
+}
+
+.workflow-select:hover {
+    border-color: var(--text-secondary);
+}
+
 .agent-tabs {
     display: flex;
     overflow-x: auto;
@@ -164,6 +179,11 @@
 .agent-tab.active {
     color: var(--primary);
     border-bottom-color: var(--primary);
+}
+
+/* Hide dynamically added agent tabs - we use the DAG graph nodes for navigation now */
+.agent-tab:not([data-target="main"]) {
+    display: none !important;
 }
 
 .system-intro {

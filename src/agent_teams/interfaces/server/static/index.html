@@ -42,18 +42,39 @@
 
         <!-- Main Workspace -->
         <main class="workspace">
-            <!-- Topbar Info -->
-            <header class="topbar">
-                <div class="session-info">
-                    <span id="current-session-label">Select a session</span>
-                </div>
+            <!-- Topbar Actions -->
+            <header class="topbar"
+                style="justify-content: space-between; padding: 0 1rem; border-bottom: 1px solid var(--border-color); height: 50px;">
+                <button id="toggle-sidebar" class="icon-btn" title="Toggle Sidebar">
+                    <svg viewBox="0 0 24 24" fill="none" class="icon">
+                        <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" />
+                    </svg>
+                </button>
+                <div style="flex:1"></div>
+                <button id="toggle-inspector" class="icon-btn" title="Toggle Inspector">
+                    <svg viewBox="0 0 24 24" fill="none" class="icon">
+                        <path d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM9 3v18"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </button>
             </header>
 
             <!-- Chat Area -->
             <div class="chat-container">
-                <div class="agent-tabs" id="agent-tabs">
-                    <button class="agent-tab active" data-target="main">Global Timeline</button>
+                <!-- DAG Workspace Visualization -->
+                <div id="workflow-panel" class="workflow-panel">
+                    <div class="workflow-header">
+                        <div style="display:flex; align-items:center; gap:1rem;">
+                            <h4>Active Execution Graph</h4>
+                            <button id="global-timeline-btn" class="workflow-select"
+                                style="background:var(--primary); color:white; border:none;">Global Timeline</button>
+                        </div>
+                        <select id="workflow-selector" class="workflow-select"></select>
+                    </div>
+                    <div class="workflow-canvas" id="workflow-canvas"></div>
                 </div>
+
                 <div class="chat-scroll" id="chat-messages">
                     <!-- Intro -->
                     <div class="system-intro">
@@ -86,11 +107,6 @@
         <aside class="inspector" id="inspector-panel">
             <header>
                 <h3>System Logs</h3>
-                <button id="toggle-inspector" class="icon-btn">
-                    <svg viewBox="0 0 24 24" fill="none" class="icon">
-                        <path d="M18 15L12 9L6 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                    </svg>
-                </button>
             </header>
             <div class="logs-scroll" id="system-logs"></div>
         </aside>
@@ -99,7 +115,7 @@
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
-    <script type="module" src="/static/app.js"></script>
+    <script type="module" src="/static/app.js" ?v=4></script>
 </body>
 
 </html>

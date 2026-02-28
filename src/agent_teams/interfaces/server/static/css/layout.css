@@ -13,6 +13,13 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    transition: width 0.3s ease;
+}
+
+.sidebar.collapsed {
+    width: 0;
+    border-right: none;
+    overflow: hidden;
 }
 
 .sidebar-header {
@@ -132,4 +139,149 @@
     padding: 1rem;
     font-family: var(--font-mono);
     font-size: 0.75rem;
+}
+
+/* ----------------- WORKFLOW PANEL ----------------- */
+.workflow-panel {
+    background-color: var(--bg-surface-glass);
+    border-bottom: 1px solid var(--border-color);
+    padding: 1rem 1.5rem;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.workflow-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.workflow-header h4 {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.workflow-canvas {
+    width: 100%;
+    min-height: 200px;
+    display: flex;
+    overflow: auto;
+    padding: 1rem 0;
+}
+
+/* Custom DAG Layout */
+.dag-container {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4rem;
+    padding: 2rem 3rem;
+    width: 100%;
+    min-width: max-content;
+}
+
+.dag-layer {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    position: relative;
+    z-index: 2;
+}
+
+.dag-node {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.5rem;
+    min-width: 160px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    position: relative;
+}
+
+.dag-node:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+}
+
+.dag-node.active-tab {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.dag-node.running {
+    animation: nodePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    border-color: var(--primary-hover);
+}
+
+@keyframes nodePulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.6);
+    }
+
+    50% {
+        box-shadow: 0 0 0 8px rgba(79, 70, 229, 0);
+    }
+}
+
+.node-icon {
+    font-size: 1.5rem;
+}
+
+.node-title {
+    font-weight: 600;
+    color: #f8fafc;
+    font-size: 0.8125rem;
+    text-align: center;
+}
+
+.node-role {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+/* SVG Connectors */
+.dag-edges {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.dag-edge-path {
+    fill: none;
+    stroke: var(--border-color);
+    stroke-width: 2px;
+    transition: stroke 0.3s;
+}
+
+.workflow-panel.generating .dag-edge-path {
+    stroke: var(--primary);
+    stroke-dasharray: 6 6;
+    animation: flow-ant 1s linear infinite;
+}
+
+@keyframes flow-ant {
+    to {
+        stroke-dashoffset: -12;
+    }
 }

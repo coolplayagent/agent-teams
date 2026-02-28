@@ -1,6 +1,6 @@
 // js/state.js
 
-export const state= {
+export const state = {
 
     currentSessionId: null,
     isGenerating: false,
@@ -11,23 +11,22 @@ export const state= {
     activeView: 'main'
 }
 
-;
+    ;
 
-export const els= {
+export const els = {
     newBtn: document.getElementById('new-btn'),
-        sessionsList: document.getElementById('sessions-list'),
-        sessionLabel: document.getElementById('current-session-label'),
-        chatMessages: document.getElementById('chat-messages'),
-        chatForm: document.getElementById('chat-form'),
-        promptInput: document.getElementById('prompt-input'),
-        sendBtn: document.getElementById('send-btn'),
-        systemLogs: document.getElementById('system-logs'),
-        toggleInspector: document.getElementById('toggle-inspector'),
-        inspectorPanel: document.getElementById('inspector-panel'),
-        agentTabs: document.getElementById('agent-tabs')
-}
-
-;
+    sessionsList: document.getElementById('sessions-list'),
+    chatMessages: document.getElementById('chat-messages'),
+    chatForm: document.getElementById('chat-form'),
+    promptInput: document.getElementById('prompt-input'),
+    sendBtn: document.getElementById('send-btn'),
+    systemLogs: document.getElementById('system-logs'),
+    toggleInspector: document.getElementById('toggle-inspector'),
+    inspectorPanel: document.getElementById('inspector-panel'),
+    toggleSidebar: document.getElementById('toggle-sidebar'),
+    sidebar: document.querySelector('.sidebar'),
+    globalTimelineBtn: document.getElementById('global-timeline-btn')
+};
 
 // Configure Marked.js for Markdown parsing
 marked.setOptions({
@@ -36,11 +35,11 @@ marked.setOptions({
             return window.hljs.highlight(code, {
                 language: lang
             }).value;
+        }
+
+        return window.hljs ? window.hljs.highlightAuto(code).value : code;
     }
 
-    return window.hljs ? window.hljs.highlightAuto(code).value : code;
-}
-
-,
-breaks: true
+    ,
+    breaks: true
 });

@@ -245,7 +245,7 @@
 
 .node-title {
     font-weight: 600;
-    color: #f8fafc;
+    color: var(--text-node-title);
     font-size: 0.8125rem;
     text-align: center;
 }

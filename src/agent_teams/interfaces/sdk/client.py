@@ -112,6 +112,7 @@ class AgentTeamsApp:
             shared_store=shared_store,
             event_bus=event_log,
             agent_repo=agent_repo,
+            message_repo=message_repo,
             prompt_builder=prompt_builder,
             provider_factory=provider_factory,
         )
@@ -338,3 +339,72 @@ class AgentTeamsApp:
             if obj:
                 workflows.append(json.loads(obj))
         return workflows
+
+    def get_session_rounds(self, session_id: str) -> list[dict]:
+        """Aggregate a session timeline into specific rounds dict based on run_id."""
+        events = self._event_log.list_by_session(session_id)
+        
+        rounds_map = {}
+        for ev in events:
+            run_id = ev["trace_id"]
+            if run_id not in rounds_map:
+                from datetime import datetime
+                rounds_map[run_id] = {
+                    "run_id": run_id,
+                    "created_at": ev["occurred_at"],
+                    "intent": None,
+                    "coordinator_messages": [],
+                    "workflows": []
+                }
+            # Record the earliest seen timestamp as created_at
+            if ev["occurred_at"] < rounds_map[run_id]["created_at"]:
+                rounds_map[run_id]["created_at"] = ev["occurred_at"]
+                
+            # Grab Intent from RUN_STARTED payload if available
+            if ev["event_type"] == RunEventType.RUN_STARTED.value:
+                try:
+                    payload = json.loads(ev["payload_json"])
+                    # Intent string does not live in default payload easily yet...
+                    # we wait until checking coordinator messages below for the intent.
+                except:
+                    pass
+
+        # Fill in messages and workflows for each round
+        messages = self.get_session_messages(session_id)
+        for msg in messages:
+            run_id = msg["trace_id"]
+            if run_id in rounds_map:
+                # Store user messages in 'intent' explicitly 
+                content = msg.get("message", {})
+                if msg["role"] == "user":
+                    try:
+                        pts = content.get("parts", [])
+                        if pts and isinstance(pts[0], dict):
+                            rounds_map[run_id]["intent"] = pts[0].get("content", "")
+                    except:
+                        pass
+                # Append ALL coordinate agent messages to its round history
+                # We identify coordinator by whether it was root trace or not. Simply add all for now.
+                rounds_map[run_id]["coordinator_messages"].append(msg)
+                
+        # Fill in workflows via shared state bounded to the task's run trace ID
+        tasks = self._task_repo.list_by_session(session_id)
+        from agent_teams.core.enums import ScopeType
+        from agent_teams.core.models import ScopeRef
+        for task in tasks:
+            run_id = task.envelope.trace_id
+            if run_id in rounds_map:
+                scope = ScopeRef(scope_type=ScopeType.TASK, scope_id=task.envelope.task_id)
+                wf_str = self._shared_store.get_state(scope, "workflow_graph")
+                if wf_str:
+                    rounds_map[run_id]["workflows"].append(json.loads(wf_str))
+                    
+        # Return sorted by creation date descending
+        return sorted(list(rounds_map.values()), key=lambda x: x["created_at"], reverse=True)
+
+    def get_round(self, session_id: str, run_id: str) -> dict:
+        rounds = self.get_session_rounds(session_id)
+        for r in rounds:
+            if r["run_id"] == run_id:
+                return r
+        raise KeyError(f"Round {run_id} not found in session {session_id}")

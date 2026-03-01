@@ -67,6 +67,15 @@ class CoordinatorGraph:
             session_id=intent.session_id,
             trace_id=trace_id,
         )
+        
+        from pydantic_ai.messages import ModelRequest, UserPromptPart
+        self.task_execution_service.message_repo.append(
+            session_id=intent.session_id,
+            instance_id=coordinator_instance_id,
+            task_id=root_task.task_id,
+            trace_id=trace_id,
+            messages=[ModelRequest(parts=[UserPromptPart(content=intent.intent)])]
+        )
         log_debug(f'[coord:instance-ready] run={trace_id} instance={coordinator_instance_id} role={ROLE_COORDINATOR}')
 
         coordinator_result = self._task_executor(

@@ -25,6 +25,7 @@
     --bg-tool-header-hover: rgba(255, 255, 255, 0.05);
     --bg-tool-body: rgba(0, 0, 0, 0.4);
     --bg-tool-block: rgba(0, 0, 0, 0.2);
+    --code-bg: rgba(255, 255, 255, 0.1);
 }
 
 * {
@@ -57,6 +58,13 @@ body.light-theme {
     --bg-tool-header-hover: rgba(0, 0, 0, 0.04);
     --bg-tool-body: rgba(0, 0, 0, 0.02);
     --bg-tool-block: rgba(0, 0, 0, 0.03);
+
+    --text-on-primary: #ffffff;
+    --text-msg-content: #1e293b;
+    --text-tool-name: #c026d3;
+    --text-tool-args: #7c3aed;
+    --text-node-title: #0f172a;
+    --code-bg: rgba(0, 0, 0, 0.1);
 }
 
 body.light-theme .dag-node {

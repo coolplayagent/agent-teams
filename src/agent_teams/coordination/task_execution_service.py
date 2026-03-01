@@ -19,6 +19,8 @@ from agent_teams.state.task_repo import TaskRepository
 ROLE_COORDINATOR = 'coordinator_agent'
 
 
+from agent_teams.state.message_repo import MessageRepository
+
 @dataclass
 class TaskExecutionService:
     role_registry: RoleRegistry
@@ -27,6 +29,7 @@ class TaskExecutionService:
     shared_store: SharedStore
     event_bus: EventLog
     agent_repo: AgentInstanceRepository
+    message_repo: MessageRepository
     prompt_builder: RuntimePromptBuilder
     provider_factory: Callable[[RoleDefinition], LLMProvider]
 

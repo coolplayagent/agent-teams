@@ -59,6 +59,17 @@ def delete_session(session_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
 
+@router.get("/{session_id}/rounds")
+def get_session_rounds(session_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
+    return sdk.get_session_rounds(session_id)
+
+@router.get("/{session_id}/rounds/{run_id}")
+def get_session_round(session_id: str, run_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
+    try:
+        return sdk.get_round(session_id, run_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 @router.get("/{session_id}/agents")
 def list_session_agents(session_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
     agents = sdk.list_agents_in_session(session_id)

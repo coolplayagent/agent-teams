@@ -43,13 +43,16 @@ function _initSidebarResize() {
     if (!els.sidebar) return;
 
     const savedWidth = localStorage.getItem('agent_teams_sidebar_width');
+    let initialWidth = 280;
     if (savedWidth && /^\d+$/.test(savedWidth)) {
         const px = Number(savedWidth);
         if (px >= 180 && px <= 520) {
             els.sidebar.style.width = `${px}px`;
             els.sidebar.style.setProperty('--sidebar-width', `${px}px`);
+            initialWidth = px;
         }
     }
+    document.documentElement.style.setProperty('--sidebar-width', `${initialWidth}px`);
 
     const collapsed = localStorage.getItem('agent_teams_sidebar_collapsed');
     if (collapsed === '1') {
@@ -64,6 +67,7 @@ function _initSidebarResize() {
         const next = Math.max(180, Math.min(520, e.clientX));
         els.sidebar.style.width = `${next}px`;
         els.sidebar.style.setProperty('--sidebar-width', `${next}px`);
+        document.documentElement.style.setProperty('--sidebar-width', `${next}px`);
         localStorage.setItem('agent_teams_sidebar_width', String(next));
     };
 

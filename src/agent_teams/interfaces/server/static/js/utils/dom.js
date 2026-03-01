@@ -23,6 +23,7 @@ export const els = {
     sidebarResizer: qs('#sidebar-resizer'),
     sidebarToggleBtn: qs('#toggle-sidebar'),
     inspectorToggleBtn: qs('#toggle-inspector'),
+    rightRail: qs('#right-rail'),
     newSessionBtn: qs('#new-btn'),
     themeToggleBtn: qs('#toggle-theme'),
     promptInput: qs('#prompt-input'),

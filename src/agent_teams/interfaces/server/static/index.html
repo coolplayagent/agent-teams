@@ -69,12 +69,6 @@
                             stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
                 </button>
-                <button id="toggle-inspector" class="icon-btn" title="Toggle Logs">
-                    <svg viewBox="0 0 24 24" fill="none" class="icon">
-                        <path d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM9 3v18"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                    </svg>
-                </button>
             </header>
 
             <!-- Chat Area -->
@@ -140,6 +134,12 @@
             <aside class="inspector" id="inspector-panel">
                 <header>
                     <h3>System Logs</h3>
+                    <button id="toggle-inspector" class="icon-btn" title="Hide/Show Logs">
+                        <svg viewBox="0 0 24 24" fill="none" class="icon">
+                            <path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
                 </header>
                 <div class="logs-scroll" id="system-logs"></div>
             </aside>

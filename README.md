@@ -36,19 +36,27 @@ Then edit `.agent_teams/.env`.
 uv run agent-teams roles-validate
 ```
 
-### 4) Run an intent
+### 4) Start web server
+
+```bash
+uv run agent-teams serve
+```
+
+Then open http://127.0.0.1:8000 in your browser to access the web interface.
+
+### 5) Run an intent
 
 ```bash
 uv run agent-teams run-intent --intent "Draft a release note"
 ```
 
-### 4.1) Stream run events
+### 5.1) Stream run events
 
 ```bash
 uv run agent-teams run-intent-stream --intent "Draft a release note"
 ```
 
-### 4.2) Inject messages during a running stream (SDK)
+### 5.2) Inject messages during a running stream (SDK)
 
 ```python
 from pathlib import Path
@@ -64,7 +72,7 @@ for event in stream:
     print(event.event_type, event.payload_json)
 ```
 
-### 5) Query task records
+### 6) Query task records
 
 ```bash
 uv run agent-teams tasks-list

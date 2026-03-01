@@ -120,6 +120,37 @@
     overflow: hidden;
 }
 
+/* ----------------- WORKFLOW PANEL ----------------- */
+.workflow-collapsed {
+    display: none;
+    padding: 0.5rem 1rem;
+    background-color: var(--bg-surface);
+    border-top: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.workflow-collapsed:hover {
+    background-color: var(--bg-hover);
+}
+
+.workflow-collapsed .workflow-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.workflow-count {
+    background: var(--primary);
+    color: white;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
 .inspector header {
     padding: 1rem;
     border-bottom: 1px solid var(--border-color);
@@ -149,6 +180,8 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
+    max-height: 250px;
+    overflow: hidden;
 }
 
 .workflow-header {

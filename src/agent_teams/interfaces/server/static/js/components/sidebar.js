@@ -63,6 +63,18 @@ export async function loadSessions() {
     }
 }
 
+export function setSessionMode() {
+    els.sessionsList.style.display = 'block';
+    els.roundsList.style.display = 'none';
+    els.backBtn.style.display = 'none';
+}
+
+export function setRoundsMode() {
+    els.sessionsList.style.display = 'none';
+    els.roundsList.style.display = 'block';
+    els.backBtn.style.display = 'flex';
+}
+
 export async function handleNewSessionClick(manualClick = true) {
     try {
         const data = await startNewSession();

@@ -20,8 +20,7 @@ export const els = {
     toggleInspector: document.getElementById('toggle-inspector'),
     inspectorPanel: document.getElementById('inspector-panel'),
     toggleSidebar: document.getElementById('toggle-sidebar'),
-    sidebar: document.querySelector('.sidebar'),
-    globalTimelineBtn: document.getElementById('global-timeline-btn')
+    sidebar: document.querySelector('.sidebar')
 };
 
 // Configure Marked.js for Markdown parsing

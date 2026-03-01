@@ -14,33 +14,9 @@ export async function loadSessionWorkflows(sessionId) {
         const workflows = await fetchSessionWorkflows(sessionId);
         currentWorkflows = workflows || [];
 
-        const sel = els.workflowSelect;
-        if (!sel) return;
-
-        sel.innerHTML = '';
-        sel.onchange = (e) => {
-            const idx = parseInt(e.target.value);
-            if (idx >= 0 && idx < currentWorkflows.length) {
-                renderNativeDAG(currentWorkflows[idx]);
-            } else {
-                renderNativeDAG(null);
-            }
-        };
-
         if (currentWorkflows.length > 0) {
-            currentWorkflows.forEach((wf, i) => {
-                const opt = document.createElement('option');
-                opt.value = i;
-                opt.textContent = `Orchestration ${i + 1}`;
-                sel.appendChild(opt);
-            });
-            sel.value = currentWorkflows.length - 1;
             renderNativeDAG(currentWorkflows[currentWorkflows.length - 1]);
         } else {
-            const opt = document.createElement('option');
-            opt.value = "-1";
-            opt.textContent = `Default Coordinator`;
-            sel.appendChild(opt);
             renderNativeDAG(null);
         }
     } catch (e) {
@@ -60,10 +36,13 @@ export function updateDagActiveNode() {
 
 export function renderNativeDAG(workflow) {
     const canvas = document.getElementById('workflow-canvas');
-    if (!canvas || !els.workflowPanel) return;
+    if (!canvas) return;
 
     canvas.innerHTML = '';
-    els.workflowPanel.style.display = 'flex';
+
+    if (!workflow || !workflow.tasks) {
+        return;
+    }
 
     const container = document.createElement('div');
     container.className = 'dag-container';

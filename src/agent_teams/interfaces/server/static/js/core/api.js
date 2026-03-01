@@ -31,6 +31,12 @@ export async function fetchSessionWorkflows(sessionId) {
     return res.json();
 }
 
+export async function fetchSessionRounds(sessionId) {
+    const res = await fetch(`/api/v1/session/${sessionId}/rounds`);
+    if (!res.ok) throw new Error("Failed to fetch session rounds");
+    return res.json();
+}
+
 export async function fetchSessionAgents(sessionId) {
     const res = await fetch(`/api/v1/session/${sessionId}/agents`);
     if (!res.ok) throw new Error("Failed to fetch session agents");

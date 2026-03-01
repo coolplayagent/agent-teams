@@ -9,12 +9,16 @@ export const qsa = (selector, parent = document) => parent.querySelectorAll(sele
 // Cached references to persistent UI elements
 export const els = {
     sessionsList: qs('#sessions-list'),
+    roundsList: qs('#rounds-list'),
+    backBtn: qs('#back-btn'),
     inspectorPanel: qs('#inspector-panel'),
     systemLogs: qs('#system-logs'),
     chatMessages: qs('#chat-messages'),
     workflowPanel: qs('#workflow-panel'),
-    workflowSelect: qs('#workflow-selector'),
     workflowCanvas: qs('#workflow-canvas'),
+    workflowCollapsed: qs('#workflow-collapsed'),
+    workflowCount: qs('#workflow-count'),
+    collapseWorkflowBtn: qs('#collapse-workflow'),
     sidebar: qs('.sidebar'),
     sidebarToggleBtn: qs('#toggle-sidebar'),
     inspectorToggleBtn: qs('#toggle-inspector'),

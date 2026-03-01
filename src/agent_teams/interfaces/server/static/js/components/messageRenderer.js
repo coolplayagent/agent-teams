@@ -13,7 +13,7 @@ import { parseMarkdown } from '../utils/markdown.js';
  * @param {'user'|'model'|string} role
  * @param {string} label           - display name (e.g. "Coordinator", "hello_agent")
  * @param {Array}  parts           - pydantic-ai message parts array (may be empty)
- * @returns {{ wrapper, textEl, pendingToolBlocks }}  — refs for live streaming
+ * @returns {{ wrapper, contentEl, pendingToolBlocks }}  — refs for live streaming
  */
 export function renderMessageBlock(container, role, label, parts = []) {
     const safeLabel = label || 'Agent';
@@ -26,20 +26,19 @@ export function renderMessageBlock(container, role, label, parts = []) {
         <div class="msg-header">
             <span class="msg-role ${roleClass}">${safeLabel.toUpperCase()}</span>
         </div>
-        <div class="msg-content"><div class="msg-text"></div></div>
+        <div class="msg-content"></div>
     `;
     container.appendChild(wrapper);
     _scrollBottom(container);
 
-    const textEl = wrapper.querySelector('.msg-text');
     const contentEl = wrapper.querySelector('.msg-content');
     const pendingToolBlocks = {};
 
     if (parts.length > 0) {
-        _renderParts(contentEl, textEl, parts, pendingToolBlocks);
+        _renderParts(contentEl, parts, pendingToolBlocks);
     }
 
-    return { wrapper, textEl, contentEl, pendingToolBlocks };
+    return { wrapper, contentEl, pendingToolBlocks };
 }
 
 /**
@@ -76,8 +75,8 @@ export function renderHistoricalMessageList(container, messages) {
         }
 
         const label = _labelFromRole(role, msgItem.role_id, msgItem.instance_id);
-        const { wrapper, textEl, contentEl } = renderMessageBlock(container, role, label, []);
-        _renderParts(contentEl, textEl, parts, pendingToolBlocks);
+        const { wrapper, contentEl } = renderMessageBlock(container, role, label, []);
+        _renderParts(contentEl, parts, pendingToolBlocks);
     });
 
     _scrollBottom(container);
@@ -86,13 +85,21 @@ export function renderHistoricalMessageList(container, messages) {
 // ─── Streaming helpers ────────────────────────────────────────────────────────
 
 /** State for currently streaming message per panel/container */
-const _streamState = new Map(); // key = containerId or instanceId → { wrapper, textEl, raw, roleId }
+const _streamState = new Map(); // key = containerId or instanceId
 
 export function getOrCreateStreamBlock(container, instanceId, roleId, label) {
     let st = _streamState.get(instanceId);
     if (!st || st.container !== container) {
-        const { wrapper, textEl, contentEl } = renderMessageBlock(container, 'model', label, []);
-        st = { container, wrapper, textEl, contentEl, raw: '', roleId, label };
+        const { wrapper, contentEl } = renderMessageBlock(container, 'model', label, []);
+        st = {
+            container,
+            wrapper,
+            contentEl,
+            activeTextEl: null,
+            raw: '',
+            roleId,
+            label
+        };
         _streamState.set(instanceId, st);
     }
     return st;
@@ -101,15 +108,23 @@ export function getOrCreateStreamBlock(container, instanceId, roleId, label) {
 export function appendStreamChunk(instanceId, text) {
     const st = _streamState.get(instanceId);
     if (!st) return;
+
+    if (!st.activeTextEl) {
+        st.activeTextEl = document.createElement('div');
+        st.activeTextEl.className = 'msg-text';
+        st.contentEl.appendChild(st.activeTextEl);
+        st.raw = '';
+    }
+
     st.raw += text;
-    st.textEl.innerHTML = parseMarkdown(st.raw);
+    st.activeTextEl.innerHTML = parseMarkdown(st.raw);
     _scrollBottom(st.container);
 }
 
 export function finalizeStream(instanceId) {
     const st = _streamState.get(instanceId);
-    if (st) {
-        st.textEl.innerHTML = parseMarkdown(st.raw);
+    if (st && st.activeTextEl) {
+        st.activeTextEl.innerHTML = parseMarkdown(st.raw);
     }
     _streamState.delete(instanceId);
 }
@@ -127,33 +142,25 @@ export function appendToolCallBlock(container, instanceId, toolName, args) {
     let st = _streamState.get(instanceId);
     if (!st) {
         const label = toolName ? `tool` : 'agent';
-        const { wrapper, textEl, contentEl } = renderMessageBlock(container, 'model', label, []);
-        st = { container, wrapper, textEl, contentEl, raw: '', roleId: '', label };
+        const { wrapper, contentEl } = renderMessageBlock(container, 'model', label, []);
+        st = { container, wrapper, contentEl, activeTextEl: null, raw: '', roleId: '', label };
         _streamState.set(instanceId, st);
     }
+
+    // Finalize current text segment
+    st.activeTextEl = null;
+    st.raw = '';
 
     let argsStr = '';
     try {
         argsStr = typeof args === 'object' ? JSON.stringify(args, null, 2) : String(args || '');
-    } catch(e) {
+    } catch (e) {
         argsStr = String(args);
-    }
-    
-    // Explicit diagnostic fallback in raw text to guarantee visibility in the DOM flow
-    if (!st.raw.includes(`🛠️ **Tool Call**: \`${toolName}\``)) {
-        st.raw += `
-
-> 🛠️ **Tool Call**: \`${toolName}\`
-
-`;
-        if (st.textEl) st.textEl.innerHTML = parseMarkdown(st.raw);
     }
 
     const toolBlock = document.createElement('div');
     toolBlock.className = 'tool-block';
     toolBlock.dataset.toolName = toolName;
-    
-    // Enforce layout visibility
     toolBlock.style.display = 'block';
     toolBlock.style.visibility = 'visible';
 
@@ -170,13 +177,8 @@ export function appendToolCallBlock(container, instanceId, toolName, args) {
             <div class="tool-result">Processing...</div>
         </div>
     `;
-    
-    if (st.contentEl) {
-        st.contentEl.appendChild(toolBlock);
-    } else {
-        container.appendChild(toolBlock);
-    }
-    _scrollBottom(container);
+    st.contentEl.appendChild(toolBlock);
+    _scrollBottom(st.container || container);
     return toolBlock;
 }
 
@@ -184,7 +186,6 @@ export function updateToolResult(instanceId, toolName, result, isError) {
     const st = _streamState.get(instanceId);
     if (!st) return;
 
-    // find the last open tool block with matching name
     const blocks = st.contentEl.querySelectorAll(`.tool-block[data-tool-name="${toolName}"]`);
     const toolBlock = blocks[blocks.length - 1];
     if (!toolBlock) return;
@@ -205,8 +206,18 @@ export function updateToolResult(instanceId, toolName, result, isError) {
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
-function _renderParts(contentEl, textEl, parts, pendingToolBlocks) {
+function _renderParts(contentEl, parts, pendingToolBlocks) {
     let combinedText = '';
+
+    const flushText = () => {
+        if (combinedText.trim()) {
+            const textEl = document.createElement('div');
+            textEl.className = 'msg-text';
+            textEl.innerHTML = parseMarkdown(combinedText.trim());
+            contentEl.appendChild(textEl);
+            combinedText = '';
+        }
+    };
 
     parts.forEach(part => {
         const kind = part.part_kind;
@@ -214,11 +225,7 @@ function _renderParts(contentEl, textEl, parts, pendingToolBlocks) {
         if (kind === 'text' || kind === 'user-prompt') {
             combinedText += (part.content || '') + '\n\n';
         } else if (kind === 'tool-call' || (part.tool_name && part.args !== undefined)) {
-            // flush text first
-            if (combinedText.trim()) {
-                textEl.innerHTML = parseMarkdown(combinedText.trim());
-                combinedText = '';
-            }
+            flushText();
             const tb = _buildToolBlock(part.tool_name, part.args);
             contentEl.appendChild(tb);
             pendingToolBlocks[part.tool_name] = tb.querySelector('.tool-result');
@@ -235,9 +242,7 @@ function _renderParts(contentEl, textEl, parts, pendingToolBlocks) {
         }
     });
 
-    if (combinedText.trim()) {
-        textEl.innerHTML = parseMarkdown(combinedText.trim());
-    }
+    flushText();
 }
 
 function _buildToolBlock(toolName, args) {

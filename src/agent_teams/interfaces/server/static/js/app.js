@@ -11,12 +11,15 @@ import { loadSessionRounds, toggleWorkflow, createLiveRound } from './components
 import { setupNavbarBindings } from './components/navbar.js';
 import { clearAllPanels } from './components/agentPanel.js';
 import { clearAllStreamState } from './components/messageRenderer.js';
+import { initSettings, openSettings } from './components/settings.js';
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
     sysLog('System Initialized');
     setupNavbarBindings();
     setupEventBindings();
+    initSettings();
+    setupSettingsButton();
     await loadSessions();
 
     const firstSessionEl = document.querySelector('.session-item .session-id');
@@ -24,6 +27,13 @@ async function init() {
         await selectSession(firstSessionEl.textContent);
     } else {
         await handleNewSessionClick(false);
+    }
+}
+
+function setupSettingsButton() {
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+        settingsBtn.onclick = openSettings;
     }
 }
 

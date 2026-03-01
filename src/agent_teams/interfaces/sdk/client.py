@@ -176,6 +176,15 @@ class AgentTeamsApp:
         self._message_repo = message_repo
         self._event_log = event_log
         self._shared_store = shared_store
+        self._config_dir = config_dir
+        self._roles_dir = runtime.paths.roles_dir
+        self._db_path = runtime.paths.db_path
+        self._runtime = runtime
+        self._mcp_registry = mcp_registry
+        self._skill_registry = skill_registry
+        self._tool_registry = tool_registry
+        self._provider_factory = provider_factory
+        self._task_execution_service = task_execution_service
 
     def _ensure_session(self, session_id: str | None) -> str:
         if not session_id:
@@ -191,6 +200,156 @@ class AgentTeamsApp:
             self._session_repo.create(session_id=session_id)
             return session_id
 
+    def get_config_status(self) -> dict:
+        return {
+            "model": {
+                "loaded": True,
+                "profiles": list(self._runtime.llm_profiles.keys()),
+            },
+            "mcp": {
+                "loaded": True,
+                "servers": list(self._mcp_registry.list_names()),
+            },
+            "skills": {
+                "loaded": True,
+                "skills": list(self._skill_registry.list_names()),
+            },
+        }
+
+    def get_model_config(self) -> dict:
+        model_file = self._config_dir / "model.json"
+        if model_file.exists():
+            return loads(model_file.read_text("utf-8"))
+        return {}
+
+    def get_model_profiles(self) -> dict:
+        model_file = self._config_dir / "model.json"
+        if not model_file.exists():
+            return {}
+        config = loads(model_file.read_text("utf-8"))
+        result = {}
+        for name, profile in config.items():
+            result[name] = {
+                "model": profile.get("model", ""),
+                "base_url": profile.get("base_url", ""),
+                "has_api_key": bool(profile.get("api_key")),
+                "temperature": profile.get("temperature", 0.7),
+                "top_p": profile.get("top_p", 1.0),
+                "max_tokens": profile.get("max_tokens", 4096),
+            }
+        return result
+
+    def save_model_profile(self, name: str, profile: dict) -> None:
+        model_file = self._config_dir / "model.json"
+        config = {}
+        if model_file.exists():
+            config = loads(model_file.read_text("utf-8"))
+        config[name] = profile
+        model_file.write_text(dumps(config, indent=2), encoding="utf-8")
+        self.reload_model_config()
+
+    def delete_model_profile(self, name: str) -> None:
+        model_file = self._config_dir / "model.json"
+        if model_file.exists():
+            config = loads(model_file.read_text("utf-8"))
+            if name in config:
+                del config[name]
+                model_file.write_text(dumps(config, indent=2), encoding="utf-8")
+                self.reload_model_config()
+
+    def save_model_config(self, config: dict) -> None:
+        model_file = self._config_dir / "model.json"
+        model_file.write_text(dumps(config, indent=2), encoding="utf-8")
+        self.reload_model_config()
+
+    def reload_model_config(self) -> None:
+        self._runtime = load_runtime_config(
+            config_dir=self._config_dir,
+            roles_dir=self._roles_dir,
+            db_path=self._db_path,
+        )
+        self._recreate_task_execution_service()
+
+    def _recreate_task_execution_service(self) -> None:
+        from agent_teams.agents.core.subagent import SubAgentRunner
+
+        def provider_factory(role: RoleDefinition) -> LLMProvider:
+            profile_config = self._runtime.llm_profiles.get(role.model_profile)
+            config_to_use = profile_config or self._runtime.llm_profiles.get("default")
+
+            if config_to_use is None:
+                return EchoProvider()
+            return OpenAICompatibleProvider(
+                config_to_use,
+                task_repo=self._task_repo,
+                instance_pool=self._instance_pool,
+                shared_store=self._shared_store,
+                event_bus=self._event_log,
+                injection_manager=self._injection_manager,
+                run_event_hub=self._run_event_hub,
+                agent_repo=self._agent_repo,
+                workspace_root=Path.cwd(),
+                tool_registry=self._tool_registry,
+                mcp_registry=self._mcp_registry,
+                skill_registry=self._skill_registry,
+                allowed_tools=role.tools,
+                allowed_mcp_servers=role.mcp_servers,
+                allowed_skills=role.skills,
+                message_repo=self._message_repo,
+                role_registry=self._role_registry,
+                task_execution_service=self._task_execution_service,
+            )
+
+        self._provider_factory = provider_factory
+        self._task_execution_service = TaskExecutionService(
+            role_registry=self._role_registry,
+            instance_pool=self._instance_pool,
+            task_repo=self._task_repo,
+            shared_store=self._shared_store,
+            event_bus=self._event_log,
+            agent_repo=self._agent_repo,
+            message_repo=self._message_repo,
+            prompt_builder=RuntimePromptBuilder(),
+            provider_factory=provider_factory,
+            injection_manager=self._injection_manager,
+        )
+
+        self._meta_agent.coordinator.task_execution_service = (
+            self._task_execution_service
+        )
+
+    def reload_mcp_config(self) -> None:
+        self._mcp_registry = self._load_mcp_registry()
+        for role in self._role_registry.list_roles():
+            self._mcp_registry.validate_known(role.mcp_servers)
+
+    def reload_skills_config(self) -> None:
+        self._skill_registry = self._load_skill_registry()
+        for role in self._role_registry.list_roles():
+            self._skill_registry.validate_known(role.skills)
+
+    def _load_mcp_registry(self) -> McpRegistry:
+        mcp_specs = []
+        mcp_file = self._config_dir / "mcp.json"
+        if mcp_file.exists():
+            try:
+                mcp_data = loads(mcp_file.read_text("utf-8"))
+                servers = mcp_data.get("mcpServers", mcp_data)
+                for name, cfg in servers.items():
+                    wrapped_cfg = {"mcpServers": {name: cfg}}
+                    mcp_specs.append(McpServerSpec(name=name, config=wrapped_cfg))
+            except Exception as e:
+                print(f"Warning: Failed to load mcp.json: {e}")
+        return McpRegistry(tuple(mcp_specs))
+
+    def _load_skill_registry(self) -> SkillRegistry:
+        from agent_teams.skills.discovery import SkillsDirectory
+
+        skills_dir = self._config_dir / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        skill_directory = SkillsDirectory(base_dir=skills_dir)
+        return SkillRegistry(directory=skill_directory)
+
     async def run_intent(self, intent: IntentInput) -> RunResult:
         intent.session_id = self._ensure_session(intent.session_id)
         run_id = new_trace_id().value
@@ -202,6 +361,7 @@ class AgentTeamsApp:
 
     async def run_intent_stream(self, intent: IntentInput):
         import asyncio
+
         intent.session_id = self._ensure_session(intent.session_id)
         run_id = new_trace_id().value
         queue = self._run_event_hub.subscribe(run_id)

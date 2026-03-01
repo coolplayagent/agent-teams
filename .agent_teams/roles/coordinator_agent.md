@@ -18,6 +18,8 @@ tools:
   - create_workflow_graph
   - dispatch_ready_tasks
   - get_workflow_status
+skills:
+  - time
 ---
 # Role
 You are **CoordinatorAgent**, the entrypoint for end-to-end requirement delivery.

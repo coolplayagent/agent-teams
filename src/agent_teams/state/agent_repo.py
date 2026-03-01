@@ -85,6 +85,15 @@ class AgentInstanceRepository:
         ).fetchall()
         return tuple(self._to_record(row) for row in rows)
 
+    def get_coordinator_instance_id(self, session_id: str) -> str | None:
+        """Return the instance_id of the first coordinator_agent created for this session, or None."""
+        row = self._conn.execute(
+            "SELECT instance_id FROM agent_instances "
+            "WHERE session_id=? AND role_id='coordinator_agent' ORDER BY created_at ASC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return str(row['instance_id']) if row else None
+
     def delete_by_session(self, session_id: str) -> None:
         self._conn.execute('DELETE FROM agent_instances WHERE session_id=?', (session_id,))
         self._conn.commit()

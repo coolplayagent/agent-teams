@@ -61,13 +61,40 @@ class CoordinatorGraph:
             )
         )
 
-        coordinator_instance_id = self._create_instance(
-            role_id=ROLE_COORDINATOR,
-            task=root_task,
-            session_id=intent.session_id,
-            trace_id=trace_id,
-        )
-        
+        # Reuse coordinator instance across turns so message history is preserved.
+        existing_instance_id = self.agent_repo.get_coordinator_instance_id(intent.session_id)
+        known_ids = {i.instance_id for i in self.instance_pool.list_instances()}
+        if existing_instance_id and existing_instance_id in known_ids:
+            coordinator_instance_id = existing_instance_id
+            # Reset the instance status so the execution service accepts it.
+            self.instance_pool.mark_idle(coordinator_instance_id)
+            self.agent_repo.mark_status(coordinator_instance_id, InstanceStatus.IDLE)
+            # Associate the new root_task with this existing instance.
+            self.task_repo.update_status(
+                task_id=root_task.task_id,
+                status=TaskStatus.ASSIGNED,
+                assigned_instance_id=coordinator_instance_id,
+            )
+            self.event_bus.emit(
+                EventEnvelope(
+                    event_type=EventType.TASK_ASSIGNED,
+                    trace_id=trace_id,
+                    session_id=intent.session_id,
+                    task_id=root_task.task_id,
+                    instance_id=coordinator_instance_id,
+                    payload_json='{}',
+                )
+            )
+            log_debug(f'[coord:reuse-instance] run={trace_id} instance={coordinator_instance_id} role={ROLE_COORDINATOR}')
+        else:
+            coordinator_instance_id = self._create_instance(
+                role_id=ROLE_COORDINATOR,
+                task=root_task,
+                session_id=intent.session_id,
+                trace_id=trace_id,
+            )
+            log_debug(f'[coord:new-instance] run={trace_id} instance={coordinator_instance_id} role={ROLE_COORDINATOR}')
+
         from pydantic_ai.messages import ModelRequest, UserPromptPart
         self.task_execution_service.message_repo.append(
             session_id=intent.session_id,

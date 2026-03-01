@@ -33,7 +33,7 @@ export async function loadSessions() {
                     </svg>
                 </button>
             `;
-            
+
             const deleteBtn = div.querySelector('.session-delete-btn');
             deleteBtn.onclick = async (e) => {
                 e.stopPropagation();
@@ -47,15 +47,14 @@ export async function loadSessions() {
                             } else {
                                 await handleNewSessionClick(false);
                             }
-                        } else {
-                            await loadSessions();
                         }
+                        await loadSessions();
                     } catch (e) {
                         sysLog(`Error deleting session: ${e.message}`, 'log-error');
                     }
                 }
             };
-            
+
             els.sessionsList.appendChild(div);
         });
     } catch (e) {
@@ -85,6 +84,7 @@ export async function handleNewSessionClick(manualClick = true) {
             els.chatMessages.innerHTML = '';
         }
 
+        await loadSessions();
         await window.selectSession(data.session_id);
     } catch (e) {
         sysLog(`Error creating session: ${e.message}`, 'log-error');

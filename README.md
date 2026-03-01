@@ -3,6 +3,12 @@
 Role-driven multi-agent orchestration framework built with strong typing and tool-only collaboration flow.
 Runtime model execution uses `pydantic_ai` with OpenAI-compatible endpoints.
 
+## Web Interface
+
+![Agent Teams Web Interface](docs/agent_teams.png)
+
+Start the server with `uv run agent-teams serve` and open http://127.0.0.1:8000 in your browser.
+
 ## Quick start
 
 ### 1) Install dependencies

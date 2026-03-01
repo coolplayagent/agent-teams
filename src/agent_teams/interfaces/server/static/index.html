@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -81,7 +81,7 @@
                 <!-- Coordinator chat messages -->
                 <div class="chat-scroll" id="chat-messages">
                     <div class="system-intro">
-                        <div class="intro-icon">🛸</div>
+                        <div class="intro-icon">馃浉</div>
                         <h1>Welcome to Agent Teams</h1>
                         <p>Initialize a session or select from history to begin.</p>
                     </div>
@@ -103,7 +103,7 @@
 
                 <div id="workflow-panel" class="workflow-panel" style="display: none;">
                     <div class="workflow-header">
-                        <h4>Execution Graph — <span class="wf-hint">点击节点查看 Subagent 详情</span></h4>
+                        <h4>Execution Graph 鈥?<span class="wf-hint">鐐瑰嚮鑺傜偣鏌ョ湅 Subagent 璇︽儏</span></h4>
                         <button id="collapse-workflow" class="icon-btn" title="Collapse">
                             <svg viewBox="0 0 24 24" fill="none" class="icon">
                                 <path d="M19 9l-7 7-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -130,30 +130,25 @@
                     </form>
                     <div class="input-controls">
                         <div class="mode-selector-group">
-                            <label for="execution-mode-select" class="mode-label">模式</label>
+                            <label for="execution-mode-select" class="mode-label">妯″紡</label>
                             <select id="execution-mode-select" class="mode-select">
-                                <option value="ai">&#x1F916; AI 编排</option>
-                                <option value="auto">&#x26A1; 全自动</option>
-                                <option value="human">&#x1F9D1; 人工</option>
+                                <option value="ai">&#x1F916; AI 缂栨帓</option>
+                                <option value="auto">&#x26A1; 鍏ㄨ嚜鍔?/option>
+                                <option value="human">&#x1F9D1; 浜哄伐</option>
                             </select>
                         </div>
                         <label class="gate-label">
                             <input type="checkbox" id="confirmation-gate-check">
-                            <span>确认门</span>
+                            <span>纭闂?/span>
                         </label>
                     </div>
-                    <div class="sub-text">Enter to send · Shift+Enter for new line</div>
+                    <div class="sub-text">Enter to send 路 Shift+Enter for new line</div>
                 </div>
             </div>
         </main>
 
-        <!-- Agent Drawer (right side — subagent detail) -->
-        <aside class="agent-drawer" id="agent-drawer">
-            <div class="drawer-placeholder">
-                <div style="font-size:2rem;">⚡</div>
-                <p>点击 Execution Graph 中的节点<br>查看 Subagent 详情</p>
-            </div>
-        </aside>
+        <!-- Agent Drawer (right side 鈥?subagent detail) -->
+        <aside class="agent-drawer" id="agent-drawer"></aside>
 
         <!-- Logs/Inspector Panel -->
         <aside class="inspector" id="inspector-panel">

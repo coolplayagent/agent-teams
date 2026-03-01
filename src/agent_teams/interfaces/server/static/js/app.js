@@ -10,6 +10,7 @@ import { startIntentStream } from './core/stream.js';
 import { loadSessionRounds, toggleWorkflow, goBackToSessions, currentRounds, selectRound, createLiveRound } from './components/rounds.js';
 import { setupNavbarBindings } from './components/navbar.js';
 import { clearAllPanels } from './components/agentPanel.js';
+import { clearAllStreamState } from './components/messageRenderer.js';
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 async function init() {
@@ -41,7 +42,7 @@ init();
 
 // ─── Session selection ───────────────────────────────────────────────────────
 export async function selectSession(sessionId) {
-    if (state.currentSessionId === sessionId) return;
+    const isSameSession = state.currentSessionId === sessionId;
     state.currentSessionId = sessionId;
     state.instanceRoleMap = {};
 
@@ -54,9 +55,10 @@ export async function selectSession(sessionId) {
     state.agentViews = { main: els.chatMessages };
     state.activeView = 'main';
     clearAllPanels();
+    clearAllStreamState();
 
     await loadSessionRounds(sessionId);
-    sysLog(`Switched to session: ${sessionId}`);
+    sysLog(`${isSameSession ? 'Reloaded' : 'Switched to'} session: ${sessionId}`);
 }
 
 window.selectSession = selectSession;
@@ -73,6 +75,7 @@ async function handleSend() {
 
     els.promptInput.value = '';
     state.instanceRoleMap = {};
+    clearAllStreamState();
 
     // 1) Immediately create a live round entry in the sidebar and switch view
     createLiveRound(text);

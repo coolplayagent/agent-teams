@@ -98,6 +98,8 @@ class OpenAICompatibleProvider(LLMProvider):
                 run_id=request.run_id,
                 trace_id=request.trace_id,
                 task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
                 event_type=RunEventType.MODEL_STEP_STARTED,
                 payload_json=dumps({'role_id': request.role_id, 'instance_id': request.instance_id}),
             )
@@ -160,6 +162,8 @@ class OpenAICompatibleProvider(LLMProvider):
                                             run_id=request.run_id,
                                             trace_id=request.trace_id,
                                             task_id=request.task_id,
+                                            instance_id=request.instance_id,
+                                            role_id=request.role_id,
                                             event_type=RunEventType.TEXT_DELTA,
                                             payload_json=dumps({
                                                 'text': text_delta,
@@ -198,6 +202,8 @@ class OpenAICompatibleProvider(LLMProvider):
                                         run_id=request.run_id,
                                         trace_id=request.trace_id,
                                         task_id=request.task_id,
+                                        instance_id=request.instance_id,
+                                        role_id=request.role_id,
                                         event_type=RunEventType.INJECTION_APPLIED,
                                         payload_json=msg.model_dump_json(),
                                     )
@@ -240,6 +246,8 @@ class OpenAICompatibleProvider(LLMProvider):
                     run_id=request.run_id,
                     trace_id=request.trace_id,
                     task_id=request.task_id,
+                    instance_id=request.instance_id,
+                    role_id=request.role_id,
                     event_type=RunEventType.TEXT_DELTA,
                     payload_json=dumps({
                         'text': text,
@@ -256,6 +264,8 @@ class OpenAICompatibleProvider(LLMProvider):
                 run_id=request.run_id,
                 trace_id=request.trace_id,
                 task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
                 event_type=RunEventType.MODEL_STEP_FINISHED,
                 payload_json=dumps({'role_id': request.role_id, 'instance_id': request.instance_id}),
             )

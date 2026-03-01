@@ -168,6 +168,8 @@ class RunEvent(BaseModel):
     run_id: str = Field(min_length=1)
     trace_id: str = Field(min_length=1)
     task_id: str | None = None
+    instance_id: str | None = None
+    role_id: str | None = None
     event_type: RunEventType
     payload_json: str = Field(default='{}')
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))

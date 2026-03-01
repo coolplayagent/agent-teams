@@ -1,4 +1,4 @@
-/**
+﻿/**
  * core/eventRouter.js
  * Processes SSE RunEventType payloads and dispatches rendering to UI components.
  * Routes coordinator events to the main chat area; subagent events to agent panels.
@@ -21,20 +21,16 @@ import {
     removeGateCard,
 } from '../components/agentPanel.js';
 import { dispatchHumanTask } from './api.js';
-import { parseMarkdown } from '../utils/markdown.js';
 
 const COORDINATOR_ROLE = 'coordinator_agent';
 
-// ─── Main event dispatcher ────────────────────────────────────────────────────
 export function routeEvent(evType, payload, eventMeta) {
-    // Track activeRunId
     if (eventMeta?.run_id) state.activeRunId = eventMeta.run_id;
     if (eventMeta?.trace_id && !state.activeRunId) state.activeRunId = eventMeta.trace_id;
 
-    const instanceId = payload?.instance_id;
-    const roleId = payload?.role_id;
+    const instanceId = payload?.instance_id || eventMeta?.instance_id || null;
+    const roleId = payload?.role_id || eventMeta?.role_id || null;
 
-    // ── Lifecycle ────────────────────────────────────────────────────────────
     if (evType === 'run_started') {
         sysLog(`Run started (trace: ${eventMeta?.trace_id})`);
         state.activeAgentRoleId = COORDINATOR_ROLE;
@@ -53,7 +49,6 @@ export function routeEvent(evType, payload, eventMeta) {
         updateDagActiveNode();
     }
 
-    // ── Text streaming ───────────────────────────────────────────────────────
     else if (evType === 'text_delta') {
         const isCoordinator = !roleId || roleId === COORDINATOR_ROLE;
         const label = isCoordinator ? 'Coordinator' : (roleId || 'Agent');
@@ -71,26 +66,20 @@ export function routeEvent(evType, payload, eventMeta) {
         }
     }
 
-    else if (evType === 'run_finished' || evType === 'model_step_done') {
+    else if (evType === 'model_step_finished') {
         const key = instanceId || 'coordinator';
         finalizeStream(key);
-
-        if (evType === 'run_finished' && !instanceId) {
-            sysLog(`Run finished.`);
-            state.activeAgentRoleId = null;
-            state.isGenerating = false;
-            if (els.sendBtn) els.sendBtn.disabled = false;
-            if (els.promptInput) els.promptInput.disabled = false;
-            updateDagActiveNode();
-        }
     }
 
     else if (evType === 'run_completed') {
-        sysLog(`Run completed.`);
+        sysLog('Run completed.');
         state.isGenerating = false;
         state.activeAgentRoleId = null;
         if (els.sendBtn) els.sendBtn.disabled = false;
-        if (els.promptInput) { els.promptInput.disabled = false; els.promptInput.focus(); }
+        if (els.promptInput) {
+            els.promptInput.disabled = false;
+            els.promptInput.focus();
+        }
         finalizeStream('coordinator');
         updateDagActiveNode();
     }
@@ -102,7 +91,6 @@ export function routeEvent(evType, payload, eventMeta) {
         if (els.promptInput) els.promptInput.disabled = false;
     }
 
-    // ── Tool calls ───────────────────────────────────────────────────────────
     else if (evType === 'tool_call') {
         const isCoordinator = !roleId || roleId === COORDINATOR_ROLE;
         const container = isCoordinator
@@ -111,30 +99,27 @@ export function routeEvent(evType, payload, eventMeta) {
         if (!isCoordinator) openAgentPanel(instanceId, roleId);
         const streamKey = instanceId || 'coordinator';
         appendToolCallBlock(container, streamKey, payload.tool_name, payload.args);
-        sysLog(`[Tool] ${payload.tool_name}…`);
+        sysLog(`[Tool] ${payload.tool_name}`);
     }
 
     else if (evType === 'tool_result') {
         const streamKey = instanceId || 'coordinator';
         updateToolResult(streamKey, payload.tool_name, payload.result, !!payload.error);
 
-        // ★ Live DAG: when create_workflow_graph tool completes, render the graph immediately
         if (payload.tool_name === 'create_workflow_graph' && payload.result) {
             _tryRenderLiveDAG(payload.result);
         }
     }
 
-    // ── Human orchestration mode ─────────────────────────────────────────────
     else if (evType === 'awaiting_human_dispatch') {
-        _renderHumanDispatchPanel(payload, eventMeta);
+        _renderHumanDispatchPanel(payload);
     }
 
     else if (evType === 'human_task_dispatched') {
         document.querySelectorAll('.human-dispatch-panel').forEach(el => el.remove());
-        sysLog(`▶ Task dispatched: ${payload.task_id}`, 'log-info');
+        sysLog(`Task dispatched: ${payload.task_id}`, 'log-info');
     }
 
-    // ── Confirmation gate ────────────────────────────────────────────────────
     else if (evType === 'subagent_gate') {
         showGateCard(payload.instance_id, payload.role_id, {
             session_id: state.currentSessionId,
@@ -146,7 +131,7 @@ export function routeEvent(evType, payload, eventMeta) {
     }
 
     else if (evType === 'gate_resolved') {
-        removeGateCard(payload.instance_id || '', payload.task_id);
+        removeGateCard(payload.instance_id || instanceId || '', payload.task_id);
         sysLog(`Gate resolved: ${payload.action}`, 'log-info');
     }
 
@@ -155,15 +140,11 @@ export function routeEvent(evType, payload, eventMeta) {
     }
 }
 
-// ─── Live DAG render from tool result ─────────────────────────────────────────
-
 function _tryRenderLiveDAG(result) {
     try {
         const data = typeof result === 'string' ? JSON.parse(result) : result;
         if (!data.ok || !data.tasks) return;
 
-        // Convert the flat task array into a `{ tasks: { name: { role_id, depends_on } } }` format
-        // the tool returns tasks as an array: [{task_name, task_id, role_id, depends_on}, ...]
         const taskMap = {};
         const tasksArr = Array.isArray(data.tasks) ? data.tasks : Object.values(data.tasks);
         for (const t of tasksArr) {
@@ -176,22 +157,19 @@ function _tryRenderLiveDAG(result) {
 
         const workflow = { tasks: taskMap, workflow_id: data.workflow_id };
 
-        // Show the workflow panel
         const panel = document.getElementById('workflow-panel');
         if (panel) panel.style.display = 'flex';
         const collapsed = document.getElementById('workflow-collapsed');
         if (collapsed) collapsed.style.display = 'none';
 
         renderNativeDAG(workflow);
-        sysLog(`📊 Live DAG rendered (${Object.keys(taskMap).length} tasks)`);
+        sysLog(`Live DAG rendered (${Object.keys(taskMap).length} tasks)`);
     } catch (e) {
         console.error('Failed to render live DAG', e);
     }
 }
 
-// ─── Human dispatch panel ─────────────────────────────────────────────────────
-
-function _renderHumanDispatchPanel(payload, eventMeta) {
+function _renderHumanDispatchPanel(payload) {
     document.querySelectorAll('.human-dispatch-panel').forEach(el => el.remove());
     const container = els.chatMessages;
     if (!container) return;
@@ -204,13 +182,13 @@ function _renderHumanDispatchPanel(payload, eventMeta) {
         <div class="dispatch-task-row">
             <span class="dispatch-task-obj">${t.objective || t.task_id}</span>
             <span class="dispatch-task-role">${t.role_id || ''}</span>
-            <button class="dispatch-btn" data-task-id="${t.task_id}">&#x25B6; 执行</button>
+            <button class="dispatch-btn" data-task-id="${t.task_id}">&#x25B6; Run</button>
         </div>
     `).join('');
 
     panel.innerHTML = `
-        <div class="dispatch-header">&#x1F9D1;&#x200D;&#x1F4BC; 人工编排 — 选择要执行的子任务</div>
-        ${taskRows || '<div class="dispatch-empty">（无待执行任务）</div>'}
+        <div class="dispatch-header">Human orchestration - choose next sub-task</div>
+        ${taskRows || '<div class="dispatch-empty">(No pending tasks)</div>'}
     `;
 
     panel.querySelectorAll('.dispatch-btn').forEach(btn => {
@@ -218,13 +196,13 @@ function _renderHumanDispatchPanel(payload, eventMeta) {
             const taskId = btn.dataset.taskId;
             if (!state.activeRunId || !state.currentSessionId) return;
             btn.disabled = true;
-            btn.textContent = '派发中…';
+            btn.textContent = 'Dispatching...';
             try {
                 await dispatchHumanTask(state.currentSessionId, state.activeRunId, taskId);
             } catch (e) {
                 sysLog(`Dispatch failed: ${e.message}`, 'log-error');
                 btn.disabled = false;
-                btn.textContent = '▶ 执行';
+                btn.textContent = 'Run';
             }
         };
     });

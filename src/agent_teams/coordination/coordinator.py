@@ -256,6 +256,8 @@ class CoordinatorGraph:
                 run_id=trace_id,
                 trace_id=trace_id,
                 task_id=root_task.task_id,
+                instance_id=coordinator_instance_id,
+                role_id=ROLE_COORDINATOR,
                 event_type=RunEventType.AWAITING_HUMAN_DISPATCH,
                 payload={
                     'pending_tasks': [
@@ -299,6 +301,8 @@ class CoordinatorGraph:
                 run_id=trace_id,
                 trace_id=trace_id,
                 task_id=dispatched_task_id,
+                instance_id=instance.instance_id,
+                role_id=instance.role_id,
                 event_type=RunEventType.HUMAN_TASK_DISPATCHED,
                 payload={'task_id': dispatched_task_id, 'role_id': instance.role_id},
             )
@@ -417,6 +421,8 @@ class CoordinatorGraph:
             run_id=run_id,
             trace_id=task.trace_id,
             task_id=task.task_id,
+            instance_id=instance_id,
+            role_id=role_id,
             event_type=RunEventType.SUBAGENT_GATE,
             payload={
                 'task_id': task.task_id,
@@ -441,6 +447,8 @@ class CoordinatorGraph:
             run_id=run_id,
             trace_id=task.trace_id,
             task_id=task.task_id,
+            instance_id=instance_id,
+            role_id=role_id,
             event_type=RunEventType.GATE_RESOLVED,
             payload={'task_id': task.task_id, 'action': action, 'feedback': feedback},
         )
@@ -511,6 +519,8 @@ class CoordinatorGraph:
         run_id: str,
         trace_id: str,
         task_id: str | None,
+        instance_id: str | None,
+        role_id: str | None,
         event_type: RunEventType,
         payload: dict,
     ) -> None:
@@ -522,6 +532,8 @@ class CoordinatorGraph:
                 run_id=run_id,
                 trace_id=trace_id,
                 task_id=task_id,
+                instance_id=instance_id,
+                role_id=role_id,
                 event_type=event_type,
                 payload_json=dumps(payload),
             )

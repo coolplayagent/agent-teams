@@ -69,7 +69,7 @@ class EventLog:
                 event.trace_id,
                 event.session_id,
                 event.task_id,
-                None, # RunEvent doesn't have instance_id at root
+                event.instance_id,
                 event.payload_json,
                 event.occurred_at.isoformat(),
             ),

@@ -1,17 +1,14 @@
-/**
+﻿/**
  * components/rounds.js
  * Renders session rounds (sidebar list + main area coordinator view).
- * Historical messages use the unified messageRenderer.
  */
 import { els } from '../utils/dom.js';
-import { sysLog } from '../utils/logger.js';
 import { state } from '../core/state.js';
 import { fetchSessionRounds } from '../core/api.js';
 import { renderNativeDAG } from './workflow.js';
-import { setRoundsMode, setSessionMode } from './sidebar.js';
-import { renderHistoricalMessageList } from './messageRenderer.js';
+import { setSessionMode } from './sidebar.js';
+import { renderHistoricalMessageList, clearAllStreamState } from './messageRenderer.js';
 import { clearAllPanels } from './agentPanel.js';
-import { parseMarkdown } from '../utils/markdown.js';
 
 export let currentRounds = [];
 export let currentRound = null;
@@ -21,10 +18,9 @@ export async function loadSessionRounds(sessionId) {
         const rounds = await fetchSessionRounds(sessionId);
         currentRounds = rounds || [];
         renderRoundsListInSidebar(currentRounds);
-        // Show first (most recent) round
+
         if (currentRounds.length > 0) {
-            renderRoundContent(currentRounds[0]);
-            updateWorkflowState(currentRounds[0].workflows?.length ?? 0, currentRounds[0]);
+            selectRound(currentRounds[0]);
         } else {
             renderRoundContent(null);
             updateWorkflowState(0, null);
@@ -34,11 +30,6 @@ export async function loadSessionRounds(sessionId) {
     }
 }
 
-/**
- * Create an immediate "live round" entry in the sidebar and switch to a
- * streaming view in the main area.  Called right after the user hits Send
- * so they see the new round instantly, before any SSE events arrive.
- */
 export function createLiveRound(intentText) {
     const liveRound = {
         run_id: '__live__',
@@ -46,22 +37,25 @@ export function createLiveRound(intentText) {
         intent: intentText,
         coordinator_messages: [],
         workflows: [],
+        instance_role_map: {},
+        role_instance_map: {},
     };
 
-    // Prepend to the rounds array
     currentRounds = [liveRound, ...currentRounds];
     currentRound = liveRound;
 
     renderRoundsListInSidebar(currentRounds);
+    clearAllPanels();
+    clearAllStreamState();
+    state.instanceRoleMap = {};
 
-    // Clear main area and show the live header
     const container = els.chatMessages;
     if (container) {
         container.innerHTML = '';
         const headerEl = document.createElement('div');
         headerEl.className = 'round-detail-header';
         headerEl.innerHTML = `
-            <div class="round-detail-label">Round ${currentRounds.length === 1 ? 1 : 1} <span class="live-badge">LIVE</span></div>
+            <div class="round-detail-label">Round 1 <span class="live-badge">LIVE</span></div>
             <div class="round-detail-time">${new Date().toLocaleString()}</div>
             <div class="round-detail-intent">
                 <span class="intent-label">Intent:</span>
@@ -70,16 +64,13 @@ export function createLiveRound(intentText) {
         container.appendChild(headerEl);
     }
 
-    // Show the execution graph panel (collapsed initially)
     if (els.workflowPanel) {
         els.workflowPanel.style.display = 'flex';
         const canvas = document.getElementById('workflow-canvas');
-        if (canvas) canvas.innerHTML = '<div class="panel-empty">等待 Coordinator 创建 workflow graph…</div>';
+        if (canvas) canvas.innerHTML = '<div class="panel-empty">Waiting for coordinator to create workflow graph...</div>';
     }
     if (els.workflowCollapsed) els.workflowCollapsed.style.display = 'none';
 }
-
-// ─── Sidebar round list ──────────────────────────────────────────────────────
 
 function renderRoundsListInSidebar(rounds) {
     if (!els.roundsList) return;
@@ -100,7 +91,7 @@ function renderRoundsListInSidebar(rounds) {
         dot.className = 'round-item-dot';
 
         const label = round.run_id === '__live__'
-            ? `🔴 Round ${index + 1}: ${round.intent || '…'}`
+            ? `Live Round ${index + 1}: ${round.intent || ''}`
             : `Round ${index + 1}: ${round.intent || 'No intent'}`;
 
         const text = document.createElement('span');
@@ -120,12 +111,12 @@ export function selectRound(round) {
         el.classList.toggle('active', currentRounds[idx]?.run_id === round.run_id);
     });
 
-    // Clear agent panels when switching rounds
     clearAllPanels();
-    state.instanceRoleMap = {};
+    clearAllStreamState();
+    state.instanceRoleMap = round?.instance_role_map || {};
 
     renderRoundContent(round);
-    updateWorkflowState(round.workflows?.length ?? 0, round);
+    updateWorkflowState(round?.workflows?.length ?? 0, round);
 }
 
 function renderRoundContent(round) {
@@ -136,14 +127,13 @@ function renderRoundContent(round) {
     if (!round) {
         container.innerHTML = `
             <div class="system-intro">
-                <div class="intro-icon">🛸</div>
+                <div class="intro-icon">info</div>
                 <h1>Welcome to Agent Teams</h1>
                 <p>Select a session or create a new one to begin.</p>
             </div>`;
         return;
     }
 
-    // Round header
     const time = new Date(round.created_at).toLocaleString();
     const idx = currentRounds.indexOf(round);
     const headerEl = document.createElement('div');
@@ -157,7 +147,6 @@ function renderRoundContent(round) {
         </div>`;
     container.appendChild(headerEl);
 
-    // Coordinator messages — use unified renderer
     if (round.coordinator_messages?.length > 0) {
         renderHistoricalMessageList(container, round.coordinator_messages);
     }
@@ -201,12 +190,16 @@ export function goBackToSessions() {
     currentRound = null;
     currentRounds = [];
     clearAllPanels();
+    clearAllStreamState();
+    state.instanceRoleMap = {};
+
     els.chatMessages.innerHTML = `
         <div class="system-intro">
-            <div class="intro-icon">🛸</div>
+            <div class="intro-icon">info</div>
             <h1>Welcome to Agent Teams</h1>
             <p>Select a session from the sidebar to view details.</p>
         </div>`;
+
     if (els.workflowPanel) els.workflowPanel.style.display = 'none';
     if (els.workflowCollapsed) els.workflowCollapsed.style.display = 'none';
 }

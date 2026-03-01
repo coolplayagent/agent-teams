@@ -1,7 +1,6 @@
-/**
+﻿/**
  * components/workflow.js
  * Renders the Execution Graph DAG.
- * DAG nodes are clickable and open the subagent panel in the right drawer.
  */
 import { els } from '../utils/dom.js';
 import { sysLog } from '../utils/logger.js';
@@ -41,7 +40,6 @@ export function renderNativeDAG(workflow) {
     const container = document.createElement('div');
     container.className = 'dag-container';
 
-    // ── Compute topological levels ──────────────────────────────────────────
     const tasks = workflow.tasks;
     const nodeLevels = {};
     let maxLevel = 0;
@@ -51,16 +49,20 @@ export function renderNativeDAG(workflow) {
         for (const t in tasks) {
             const deps = tasks[t].depends_on || [];
             let maxDep = 0;
-            deps.forEach(d => { if (nodeLevels[d] !== undefined) maxDep = Math.max(maxDep, nodeLevels[d]); });
+            deps.forEach(d => {
+                if (nodeLevels[d] !== undefined) maxDep = Math.max(maxDep, nodeLevels[d]);
+            });
             const newLevel = maxDep + 1;
-            if (nodeLevels[t] !== newLevel) { nodeLevels[t] = newLevel; changed = true; }
+            if (nodeLevels[t] !== newLevel) {
+                nodeLevels[t] = newLevel;
+                changed = true;
+            }
         }
     }
     for (const t in nodeLevels) if (nodeLevels[t] > maxLevel) maxLevel = nodeLevels[t];
 
-    // ── Build layers ────────────────────────────────────────────────────────
     const layers = [
-        [{ id: 'coordinator', title: 'Coordinator', role: 'coordinator_agent', icon: '🤖', deps: [] }]
+        [{ id: 'coordinator', title: 'Coordinator', role: 'coordinator_agent', icon: 'C', deps: [] }]
     ];
     for (let i = 1; i <= maxLevel; i++) {
         const layerNodes = [];
@@ -70,7 +72,7 @@ export function renderNativeDAG(workflow) {
                     id: t,
                     title: t,
                     role: tasks[t].role_id || t,
-                    icon: '⚡',
+                    icon: 'A',
                     deps: tasks[t].depends_on || [],
                 });
             }
@@ -78,8 +80,7 @@ export function renderNativeDAG(workflow) {
         if (layerNodes.length > 0) layers.push(layerNodes);
     }
 
-    // ── Render nodes ────────────────────────────────────────────────────────
-    layers.forEach((layer) => {
+    layers.forEach(layer => {
         const col = document.createElement('div');
         col.className = 'dag-layer';
 
@@ -89,7 +90,6 @@ export function renderNativeDAG(workflow) {
             el.id = `node-${node.id}`;
             el.dataset.role = node.role;
 
-            // Resolve instance ID from state map (populated by model_step_started events)
             const instanceId = _instanceForRole(node.role);
             if (instanceId) el.dataset.instanceId = instanceId;
 
@@ -101,10 +101,8 @@ export function renderNativeDAG(workflow) {
                 <div class="node-role">${node.role}</div>
             `;
 
-            // Click → open agent panel (or coordinator chat)
             el.onclick = () => {
                 if (node.role === 'coordinator_agent') {
-                    // Just scroll back to top of coordinator chat
                     if (els.chatMessages) els.chatMessages.scrollTop = 0;
                     return;
                 }
@@ -112,8 +110,7 @@ export function renderNativeDAG(workflow) {
                 if (iid) {
                     openAgentPanel(iid, node.role);
                 } else {
-                    // Instance not yet running — open a placeholder panel
-                    openAgentPanel(`pending-${node.role}`, node.role);
+                    sysLog(`No instance mapped for role: ${node.role}`, 'log-info');
                 }
             };
 
@@ -124,7 +121,6 @@ export function renderNativeDAG(workflow) {
 
     canvas.appendChild(container);
 
-    // ── Draw SVG edges ──────────────────────────────────────────────────────
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'dag-edges');
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -176,7 +172,6 @@ export function renderNativeDAG(workflow) {
     });
 }
 
-// Look up instance ID from the role→instance map built during SSE events
 function _instanceForRole(roleId) {
     if (!state.instanceRoleMap) return null;
     for (const [iid, rid] of Object.entries(state.instanceRoleMap)) {

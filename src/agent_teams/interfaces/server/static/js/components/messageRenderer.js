@@ -75,7 +75,7 @@ export function renderHistoricalMessageList(container, messages) {
             return;
         }
 
-        const label = _labelFromRole(role, msgItem.instance_id);
+        const label = _labelFromRole(role, msgItem.role_id, msgItem.instance_id);
         const { wrapper, textEl, contentEl } = renderMessageBlock(container, role, label, []);
         _renderParts(contentEl, textEl, parts, pendingToolBlocks);
     });
@@ -116,6 +116,10 @@ export function finalizeStream(instanceId) {
 
 export function clearStreamState(instanceId) {
     _streamState.delete(instanceId);
+}
+
+export function clearAllStreamState() {
+    _streamState.clear();
 }
 
 /** Attach a tool-call block to the currently streaming message for instanceId */
@@ -236,8 +240,10 @@ function _roleClass(role, label) {
     return 'role-agent';
 }
 
-function _labelFromRole(role, instanceId) {
+function _labelFromRole(role, roleId, instanceId) {
     if (role === 'user') return 'System';
+    if (roleId === 'coordinator_agent') return 'Coordinator';
+    if (roleId) return roleId;
     return instanceId ? instanceId.slice(0, 8) : 'Agent';
 }
 

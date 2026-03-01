@@ -23,8 +23,17 @@ def execute_tool(
             run_id=ctx.deps.run_id,
             trace_id=ctx.deps.trace_id,
             task_id=ctx.deps.task_id,
+            instance_id=ctx.deps.instance_id,
+            role_id=ctx.deps.role_id,
             event_type=RunEventType.TOOL_CALL,
-            payload_json=json.dumps({"tool_name": tool_name, "args": args_summary, "role_id": ctx.deps.role_id}),
+            payload_json=json.dumps(
+                {
+                    "tool_name": tool_name,
+                    "args": args_summary,
+                    "role_id": ctx.deps.role_id,
+                    "instance_id": ctx.deps.instance_id,
+                }
+            ),
         )
     )
     started = time.perf_counter()
@@ -45,8 +54,18 @@ def execute_tool(
                 run_id=ctx.deps.run_id,
                 trace_id=ctx.deps.trace_id,
                 task_id=ctx.deps.task_id,
+                instance_id=ctx.deps.instance_id,
+                role_id=ctx.deps.role_id,
                 event_type=RunEventType.TOOL_RESULT,
-                payload_json=json.dumps({"tool_name": tool_name, "result": str(result), "error": False}),
+                payload_json=json.dumps(
+                    {
+                        "tool_name": tool_name,
+                        "result": str(result),
+                        "error": False,
+                        "role_id": ctx.deps.role_id,
+                        "instance_id": ctx.deps.instance_id,
+                    }
+                ),
             )
         )
         
@@ -64,8 +83,18 @@ def execute_tool(
                 run_id=ctx.deps.run_id,
                 trace_id=ctx.deps.trace_id,
                 task_id=ctx.deps.task_id,
+                instance_id=ctx.deps.instance_id,
+                role_id=ctx.deps.role_id,
                 event_type=RunEventType.TOOL_RESULT,
-                payload_json=json.dumps({"tool_name": tool_name, "result": compact_payload, "error": True}),
+                payload_json=json.dumps(
+                    {
+                        "tool_name": tool_name,
+                        "result": compact_payload,
+                        "error": True,
+                        "role_id": ctx.deps.role_id,
+                        "instance_id": ctx.deps.instance_id,
+                    }
+                ),
             )
         )
         

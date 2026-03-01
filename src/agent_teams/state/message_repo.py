@@ -110,6 +110,33 @@ class MessageRepository:
             })
         return results
 
+    def get_messages_for_instance(
+        self, session_id: str, instance_id: str
+    ) -> list[dict]:
+        """Return all messages for a single instance scoped to one session."""
+        rows = self._conn.execute(
+            'SELECT instance_id, task_id, trace_id, role, message_json, created_at '
+            'FROM messages WHERE session_id=? AND instance_id=? ORDER BY id ASC',
+            (session_id, instance_id),
+        ).fetchall()
+
+        import json
+        results = []
+        for row in rows:
+            msg_list = json.loads(str(row['message_json']))
+            msg = msg_list[0] if msg_list else {}
+            results.append(
+                {
+                    "instance_id": str(row["instance_id"]),
+                    "task_id": str(row["task_id"]),
+                    "trace_id": str(row["trace_id"]),
+                    "role": str(row["role"]),
+                    "created_at": str(row["created_at"]),
+                    "message": msg,
+                }
+            )
+        return results
+
     def delete_by_session(self, session_id: str) -> None:
         self._conn.execute('DELETE FROM messages WHERE session_id=?', (session_id,))
         self._conn.commit()

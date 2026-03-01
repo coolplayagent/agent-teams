@@ -97,7 +97,7 @@ def get_session_all_messages(session_id: str, sdk: AgentTeamsApp = Depends(get_s
 
 @router.get("/{session_id}/agents/{instance_id}/messages")
 def get_agent_messages(session_id: str, instance_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):
-    return sdk.get_agent_messages(instance_id)
+    return sdk.get_agent_messages(session_id, instance_id)
 
 @router.get("/{session_id}/workflows")
 def get_session_workflows(session_id: str, sdk: AgentTeamsApp = Depends(get_sdk)):

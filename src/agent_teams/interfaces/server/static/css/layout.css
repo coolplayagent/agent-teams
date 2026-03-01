@@ -460,8 +460,9 @@
     font-size: 0.875rem;
     resize: none;
     outline: none;
-    max-height: 100px;
+    max-height: 250px;
     overflow-y: auto;
+    align-self: center;
 }
 
 .panel-inject-input::placeholder {
@@ -525,7 +526,15 @@
 
 .sidebar.collapsed {
     width: 0 !important;
-    min-width: 0;
+    min-width: 0 !important;
+    flex-basis: 0 !important;
+    border-right: none !important;
+    padding: 0;
+    overflow: hidden;
+}
+
+.sidebar.collapsed+.sidebar-resizer {
+    display: none !important;
 }
 
 .sidebar-resizer {
@@ -534,6 +543,7 @@
     background: transparent;
     flex-shrink: 0;
     position: relative;
+    z-index: 50;
 }
 
 .sidebar-resizer:hover::after,
@@ -554,6 +564,7 @@
     background: transparent;
     flex-shrink: 0;
     position: relative;
+    z-index: 50;
 }
 
 .right-rail-resizer:hover::after,
@@ -711,9 +722,11 @@
     .right-rail {
         display: none;
     }
+
     .sidebar-resizer {
         display: none;
     }
+
     .right-rail-resizer {
         display: none;
     }

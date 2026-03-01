@@ -509,7 +509,7 @@
     font-size: 0.9375rem;
     padding: 1rem 3.5rem 1rem 1.25rem;
     resize: none;
-    max-height: 200px;
+    max-height: 250px;
     outline: none;
     overflow-y: auto;
 }
@@ -922,6 +922,7 @@
 .input-controls {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1rem;
     padding: 0.4rem 1.25rem 0;
     flex-wrap: wrap;

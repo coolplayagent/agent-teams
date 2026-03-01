@@ -28,6 +28,10 @@ async function init() {
 }
 
 function setupEventBindings() {
+    els.promptInput.addEventListener('input', () => {
+        els.promptInput.style.height = 'auto';
+        els.promptInput.style.height = els.promptInput.scrollHeight + 'px';
+    });
     els.promptInput.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
     });
@@ -73,6 +77,7 @@ async function handleSend() {
     const confirmationGate = gateEl ? gateEl.checked : false;
 
     els.promptInput.value = '';
+    els.promptInput.style.height = 'auto';
     state.instanceRoleMap = {};
     clearAllStreamState();
 

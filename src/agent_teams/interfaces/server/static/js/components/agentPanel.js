@@ -218,6 +218,7 @@ function _createPanel(instanceId, roleId) {
         const text = textarea.value.trim();
         if (!text || !state.activeRunId) return;
         textarea.value = '';
+        textarea.style.height = 'auto';
         try {
             const { injectMessage } = await import('../core/api.js');
             await injectMessage(state.activeRunId, text);
@@ -225,6 +226,10 @@ function _createPanel(instanceId, roleId) {
             // ignore
         }
     }
+    textarea.addEventListener('input', () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+    });
     sendBtn.onclick = sendInject;
     textarea.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendInject(); }

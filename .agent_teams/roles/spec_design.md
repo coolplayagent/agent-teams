@@ -3,16 +3,8 @@ role_id: spec_design
 name: Spec Design
 model_profile: default
 version: 1.0.0
-capabilities:
-  - architecture
-  - interfaces
-  - data_model
 depends_on:
   - spec_spec
-constraints:
-  - Must align design to approved specification.
-  - Keep design implementable and testable.
-  - Avoid speculative over-engineering.
 tools:
   - read_stage_input
   - write_stage_doc

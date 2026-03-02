@@ -16,11 +16,8 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
     async def create_task(
         ctx: ToolContext,
         objective: str,
-        scope: list[str],
-        dod: list[str],
         verification_checklist: list[str],
         parent_task_id: str | None = None,
-        parent_instruction: str | None = None,
     ) -> str:
         def _action() -> str:
             if ctx.deps.role_id == "coordinator_agent":
@@ -41,9 +38,6 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
                 trace_id=ctx.deps.trace_id,
                 parent_task_id=parent_task_id,
                 objective=objective,
-                parent_instruction=parent_instruction,
-                scope=tuple(scope),
-                dod=tuple(dod),
                 verification=VerificationPlan(checklist=tuple(verification_checklist)),
             )
             ctx.deps.task_repo.create(envelope)
@@ -54,11 +48,8 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
             tool_name="create_task",
             args_summary={
                 "objective_len": len(objective),
-                "scope_count": len(scope),
-                "dod_count": len(dod),
                 "verification_count": len(verification_checklist),
                 "parent_task_id": parent_task_id,
-                "has_parent_instruction": bool(parent_instruction),
             },
             action=_action,
         )

@@ -11,7 +11,5 @@ def test_task_envelope_requires_fields() -> None:
             task_id='',
             trace_id='t1',
             objective='obj',
-            scope=('a',),
-            dod=('b',),
             verification=VerificationPlan(checklist=('echo',)),
         )

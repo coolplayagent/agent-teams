@@ -17,14 +17,12 @@ class SubAgentRunner:
         self,
         task: TaskEnvelope,
         instance_id: str,
-        parent_instruction: str | None,
         shared_state_snapshot: tuple[tuple[str, str], ...],
     ) -> str:
         system_prompt = self.prompt_builder.build(
             PromptBuildInput(
                 role=self.role,
                 task=task,
-                parent_instruction=parent_instruction,
                 shared_state_snapshot=shared_state_snapshot,
             )
         )

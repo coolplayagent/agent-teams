@@ -3,15 +3,7 @@ role_id: spec_spec
 name: Spec Spec
 model_profile: default
 version: 1.0.0
-capabilities:
-  - requirements
-  - analysis
-  - acceptance_criteria
 depends_on: []
-constraints:
-  - Focus on requirement clarity and testability.
-  - Do not design implementation details deeply.
-  - Keep requirements verifiable.
 tools:
   - read_stage_input
   - write_stage_doc

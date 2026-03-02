@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from openai import max_retries
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -47,6 +48,7 @@ def build_collaboration_agent(
         system_prompt=system_prompt,
         toolsets=toolsets,
         tools=skill_tools,
+        retries=5,
     )
     specs = tool_registry.require(allowed_tools)
     for spec in specs:

@@ -33,8 +33,6 @@ class RoleLoader:
         "role_id",
         "name",
         "version",
-        "capabilities",
-        "constraints",
         "tools",
     )
     OPTIONAL_FIELDS = ("model_profile",)
@@ -83,8 +81,6 @@ class RoleLoader:
             role_id=str(parsed["role_id"]),
             name=str(parsed["name"]),
             version=str(parsed["version"]),
-            capabilities=tuple(str(item) for item in parsed["capabilities"]),
-            constraints=tuple(str(item) for item in parsed["constraints"]),
             tools=tuple(str(item) for item in parsed["tools"]),
             mcp_servers=tuple(str(item) for item in mcp_servers),
             skills=tuple(str(item) for item in skills),

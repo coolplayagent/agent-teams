@@ -55,9 +55,6 @@ class TaskEnvelope(BaseModel):
     parent_task_id: str | None = None
     trace_id: str = Field(min_length=1)
     objective: str = Field(min_length=1)
-    parent_instruction: str | None = None
-    scope: tuple[str, ...] = Field(min_length=1)
-    dod: tuple[str, ...] = Field(min_length=1)
     verification: VerificationPlan
     confirmation_gate: bool = False  # if True, pause after this task for human approval
 
@@ -80,8 +77,6 @@ class RoleDefinition(BaseModel):
     role_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     version: str = Field(min_length=1)
-    capabilities: tuple[str, ...] = ()
-    constraints: tuple[str, ...] = ()
     tools: tuple[str, ...] = ()
     mcp_servers: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
@@ -130,7 +125,6 @@ class IntentInput(BaseModel):
 
     session_id: str | None = None
     intent: str = Field(min_length=1)
-    parent_instruction: str | None = None
     execution_mode: ExecutionMode = ExecutionMode.AI
     confirmation_gate: bool = (
         False  # if True, every sub-task pauses for human approval after completion

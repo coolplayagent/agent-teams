@@ -3,16 +3,8 @@ role_id: spec_verify
 name: Spec Verify
 model_profile: default
 version: 1.0.0
-capabilities:
-  - validation
-  - risk_review
-  - quality_gate
 depends_on:
   - spec_coder
-constraints:
-  - Must validate against spec and design, not preference.
-  - Findings should be evidence-based.
-  - Final verdict must be explicit PASS or FAIL.
 tools:
   - read_stage_input
   - write_stage_doc

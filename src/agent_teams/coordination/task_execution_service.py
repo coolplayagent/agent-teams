@@ -65,7 +65,6 @@ class TaskExecutionService:
             result = await runner.run(
                 task=task,
                 instance_id=instance_id,
-                parent_instruction=task.parent_instruction,
                 shared_state_snapshot=snapshot,
             )
             self.task_repo.update_status(task.task_id, TaskStatus.COMPLETED, result=result)

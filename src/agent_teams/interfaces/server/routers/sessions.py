@@ -25,7 +25,6 @@ class UpdateSessionRequest(BaseModel):
 
 class IntentRequest(BaseModel):
     intent: str
-    parent_instruction: str | None = None
     execution_mode: ExecutionMode = ExecutionMode.AI
     confirmation_gate: bool = False
 
@@ -101,7 +100,6 @@ async def run_intent(session_id: str, req: IntentRequest, sdk: AgentTeamsApp = D
     input_event = IntentInput(
         session_id=session_id,
         intent=req.intent,
-        parent_instruction=req.parent_instruction,
         execution_mode=req.execution_mode,
         confirmation_gate=req.confirmation_gate,
     )

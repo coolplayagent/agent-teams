@@ -13,8 +13,7 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
         def _action() -> str:
             if ctx.deps.role_id == "spec_spec":
                 task = ctx.deps.task_repo.get(ctx.deps.task_id)
-                parent = task.envelope.parent_instruction or ""
-                return f"Requirement:\n{task.envelope.objective}\n\nParentInstruction:\n{parent}"
+                return f"Requirement:\n{task.envelope.objective}"
 
             try:
                 path = previous_stage_doc_path(
@@ -28,7 +27,7 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
                 pass
 
             task = ctx.deps.task_repo.get(ctx.deps.task_id)
-            return f"No previous stage document available.\n\nTaskObjective:\n{task.envelope.objective}\n\nParentInstruction:\n{task.envelope.parent_instruction or 'None'}"
+            return f"No previous stage document available.\n\nTaskObjective:\n{task.envelope.objective}"
 
         return await execute_tool(
             ctx,

@@ -15,7 +15,7 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
         List all available roles in the system.
 
         Returns:
-            List of roles with their role_id, name, capabilities, and available tools.
+            List of roles with their role_id, name, dependencies, and available tools.
             Use this to find valid role_id values before creating custom workflows.
         """
 
@@ -28,7 +28,6 @@ def mount(agent: Agent[ToolDeps, str]) -> None:
                         {
                             "role_id": r.role_id,
                             "name": r.name,
-                            "capabilities": list(r.capabilities),
                             "depends_on": list(r.depends_on),
                             "tools": list(r.tools),
                         }

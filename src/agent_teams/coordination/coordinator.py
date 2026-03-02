@@ -55,8 +55,6 @@ class CoordinatorGraph:
             parent_task_id=None,
             trace_id=trace_id,
             objective=intent.intent,
-            scope=('end_to_end_delivery',),
-            dod=('response produced',),
             verification=VerificationPlan(checklist=('non_empty_response',)),
             confirmation_gate=intent.confirmation_gate,
         )

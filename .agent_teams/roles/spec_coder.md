@@ -3,16 +3,8 @@ role_id: spec_coder
 name: Spec Coder
 model_profile: default
 version: 1.0.0
-capabilities:
-  - implementation
-  - refactor
-  - testing
 depends_on:
   - spec_design
-constraints:
-  - Implement according to spec and design.
-  - Keep changes minimal and scoped.
-  - Preserve code quality and typing.
 tools:
   - read_stage_input
   - grep

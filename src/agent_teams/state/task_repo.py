@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -116,8 +117,13 @@ class TaskRepository:
         self._conn.commit()
 
     def _to_record(self, row: sqlite3.Row) -> TaskRecord:
+        envelope_data = json.loads(str(row['envelope_json']))
+        if isinstance(envelope_data, dict):
+            envelope_data.pop('parent_instruction', None)
+            envelope_data.pop('scope', None)
+            envelope_data.pop('dod', None)
         return TaskRecord(
-            envelope=TaskEnvelope.model_validate_json(str(row['envelope_json'])),
+            envelope=TaskEnvelope.model_validate(envelope_data),
             status=TaskStatus(str(row['status'])),
             assigned_instance_id=str(row['assigned_instance_id']) if row['assigned_instance_id'] else None,
             result=str(row['result']) if row['result'] else None,

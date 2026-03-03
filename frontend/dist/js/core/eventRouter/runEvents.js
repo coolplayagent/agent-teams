@@ -30,9 +30,16 @@ export function handleRunStarted(eventMeta) {
 export function handleModelStepStarted(instanceId, roleId) {
     if (instanceId && roleId) {
         if (!state.instanceRoleMap) state.instanceRoleMap = {};
+        if (!state.roleInstanceMap) state.roleInstanceMap = {};
+        if (!state.autoSwitchedSubagentInstances) state.autoSwitchedSubagentInstances = {};
         state.instanceRoleMap[instanceId] = roleId;
+        state.roleInstanceMap[roleId] = instanceId;
         if (roleId !== COORDINATOR_ROLE) {
             getPanelScrollContainer(instanceId, roleId);
+            if (!state.autoSwitchedSubagentInstances[instanceId]) {
+                state.autoSwitchedSubagentInstances[instanceId] = true;
+                openAgentPanel(instanceId, roleId);
+            }
         }
     }
     state.activeAgentRoleId = roleId;

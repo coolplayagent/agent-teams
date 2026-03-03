@@ -16,11 +16,13 @@ export function updateWorkflowByRound(round) {
         els.workflowCollapsed.style.display = 'none';
         els.workflowPanel.style.display = 'none';
         state.instanceRoleMap = {};
+        state.roleInstanceMap = {};
         if (canvas) canvas.innerHTML = '';
         return;
     }
 
     state.instanceRoleMap = round.instance_role_map || {};
+    state.roleInstanceMap = buildRoleInstanceMap(round);
 
     const workflowCount = round.workflows?.length ?? 0;
     els.workflowCount.textContent = String(workflowCount);
@@ -31,6 +33,21 @@ export function updateWorkflowByRound(round) {
     } else if (canvas) {
         canvas.innerHTML = '<div class="panel-empty">No workflow graph for this round.</div>';
     }
+}
+
+function buildRoleInstanceMap(round) {
+    const fromRound = round?.role_instance_map;
+    if (fromRound && typeof fromRound === 'object') {
+        return { ...fromRound };
+    }
+
+    const reverse = {};
+    const instanceRole = round?.instance_role_map || {};
+    Object.entries(instanceRole).forEach(([instanceId, roleId]) => {
+        if (!instanceId || !roleId) return;
+        reverse[roleId] = instanceId;
+    });
+    return reverse;
 }
 
 export function toggleWorkflow() {

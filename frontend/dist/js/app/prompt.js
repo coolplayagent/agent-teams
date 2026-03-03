@@ -29,6 +29,8 @@ export async function handleSend() {
     els.promptInput.value = '';
     els.promptInput.style.height = 'auto';
     state.instanceRoleMap = {};
+    state.roleInstanceMap = {};
+    state.autoSwitchedSubagentInstances = {};
     clearAllStreamState();
 
     createLiveRound(text);

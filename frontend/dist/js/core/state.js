@@ -10,6 +10,8 @@ export const state = {
     activeRunId: null,
     pausedSubagent: null,
     instanceRoleMap: {}, // instanceId -> roleId, built from model_step_started SSE events
+    roleInstanceMap: {}, // roleId -> latest instanceId
+    autoSwitchedSubagentInstances: {}, // instanceId -> true, auto-opened once per run
 };
 
 export const els = {

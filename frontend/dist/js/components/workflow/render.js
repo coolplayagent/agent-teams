@@ -53,7 +53,7 @@ export function renderNativeDAG(workflow) {
             el.id = `node-${node.id}`;
             el.dataset.role = node.role;
 
-            const instanceId = instanceForRole(node.role);
+            const instanceId = currentInstanceForRole(node.role);
             if (instanceId) el.dataset.instanceId = instanceId;
 
             if (state.activeAgentRoleId === node.role) el.classList.add('running');
@@ -65,7 +65,9 @@ export function renderNativeDAG(workflow) {
             `;
 
             el.onclick = () => {
-                const iid = el.dataset.instanceId || instanceId;
+                const latest = currentInstanceForRole(node.role);
+                if (latest) el.dataset.instanceId = latest;
+                const iid = latest || el.dataset.instanceId || null;
                 if (iid) {
                     openAgentPanel(iid, node.role);
                 } else {
@@ -92,9 +94,16 @@ export function renderNativeDAG(workflow) {
     });
 }
 
-function instanceForRole(roleId) {
+function currentInstanceForRole(roleId) {
+    if (!roleId) return null;
+
+    const byRole = state.roleInstanceMap?.[roleId];
+    if (byRole) return byRole;
+
     if (!state.instanceRoleMap) return null;
-    for (const [iid, rid] of Object.entries(state.instanceRoleMap)) {
+    const entries = Object.entries(state.instanceRoleMap);
+    for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+        const [iid, rid] = entries[idx];
         if (rid === roleId) return iid;
     }
     return null;

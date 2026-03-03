@@ -300,7 +300,8 @@ def build_session_rounds(
         ev_role = payload.get("role_id")
         if isinstance(ev_instance, str) and isinstance(ev_role, str):
             by_run_instance_role.setdefault(run_id, {})[ev_instance] = ev_role
-            by_run_role_instance.setdefault(run_id, {}).setdefault(ev_role, ev_instance)
+            # Keep the latest seen instance for each role in the run timeline.
+            by_run_role_instance.setdefault(run_id, {})[ev_role] = ev_instance
 
     for rec in agent_repo.list_by_session(session_id):
         run_map = by_run_instance_role.setdefault(rec.run_id, {})

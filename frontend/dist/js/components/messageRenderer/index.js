@@ -1,10 +1,10 @@
 /**
- * components/messageRenderer.js
- * Backward-compatible facade. New implementation lives under ./messageRenderer/.
+ * components/messageRenderer/index.js
+ * Public API for message rendering features.
  */
+export { renderMessageBlock } from './helpers.js';
+export { renderHistoricalMessageList } from './history.js';
 export {
-    renderMessageBlock,
-    renderHistoricalMessageList,
     getOrCreateStreamBlock,
     appendStreamChunk,
     finalizeStream,
@@ -15,4 +15,4 @@ export {
     markToolInputValidationFailed,
     attachToolApprovalControls,
     markToolApprovalResolved,
-} from './messageRenderer/index.js';
+} from './stream.js';

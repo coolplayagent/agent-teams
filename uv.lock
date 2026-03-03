@@ -20,6 +20,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
     { name = "pydantic-ai-slim", extra = ["fastmcp"] },
@@ -36,6 +37,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.100.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "pydantic", specifier = ">=2.7.0" },
     { name = "pydantic-ai" },
     { name = "pydantic-ai-slim", extras = ["fastmcp"] },

@@ -87,7 +87,7 @@ Then open http://127.0.0.1:8000 in your browser to access the web interface.
 uv run agent-teams prompt -m "Draft a release note"
 ```
 
-### 5.1) Legacy alias (still available)
+### 5.1) Legacy alias
 
 ```bash
 uv run agent-teams run-intent --intent "Draft a release note"

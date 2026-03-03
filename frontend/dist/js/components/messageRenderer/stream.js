@@ -178,6 +178,9 @@ export function attachToolApprovalControls(instanceId, toolName, payload, handle
         }
     }
 
+    const body = toolBlock.querySelector('.tool-body');
+    if (body) body.classList.add('open');
+
     const approveBtn = approvalEl.querySelector('.gate-approve-btn');
     const denyBtn = approvalEl.querySelector('.gate-revise-btn');
     const stateEl = approvalEl.querySelector('.tool-approval-state');

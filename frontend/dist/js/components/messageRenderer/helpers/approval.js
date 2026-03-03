@@ -19,6 +19,10 @@ export function decoratePendingApprovalBlock(toolBlock, approval) {
         resultEl.classList.add('warning-text');
         resultEl.innerHTML = parseMarkdown(formatPendingApprovalResult(approval));
     }
+    if (String(approval?.status || 'requested').toLowerCase() === 'requested') {
+        const body = toolBlock.querySelector('.tool-body');
+        if (body) body.classList.add('open');
+    }
 
     let approvalEl = toolBlock.querySelector('.tool-approval-inline');
     if (!approvalEl) {

@@ -6,6 +6,7 @@ import { initSettings, openSettings } from '../components/settings.js';
 import { toggleWorkflow } from '../components/rounds.js';
 import { handleNewSessionClick, loadSessions } from '../components/sidebar.js';
 import { setupNavbarBindings } from '../components/navbar.js';
+import { primeNotificationPermission } from '../utils/notifications.js';
 import { stopRun } from '../core/api.js';
 import { state } from '../core/state.js';
 import { endStream, resumeRunStream } from '../core/stream.js';
@@ -13,6 +14,12 @@ import { els } from '../utils/dom.js';
 import { sysLog } from '../utils/logger.js';
 
 export function setupEventBindings(handleSend) {
+    const onFirstGesture = () => {
+        primeNotificationPermission();
+    };
+    document.addEventListener('pointerdown', onFirstGesture, { once: true, passive: true });
+    document.addEventListener('keydown', onFirstGesture, { once: true });
+
     els.promptInput.addEventListener('input', () => {
         els.promptInput.style.height = 'auto';
         els.promptInput.style.height = `${els.promptInput.scrollHeight}px`;

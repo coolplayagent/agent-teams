@@ -1,6 +1,6 @@
 # Repository Guidelines (Simplified)
 
-数据库schema与api的修改不需要考虑兼容旧版本，修改后需要同步修改docs目录下对应的文档。
+Database schema and API changes do not need to maintain backward compatibility; after making changes, sync the corresponding documentation in the docs/ directory.
 
 ## Project Layout
 - Core code: `src/agent_teams/`
@@ -14,7 +14,7 @@
   - `interfaces/cli`: CLI (HTTP client)
   - `interfaces/sdk`: Python HTTP client
 - Frontend: `frontend/` (served from `frontend/dist`)
-- Tests: `tests/test_*.py`
+- Tests: `tests/` (mirrors `src/agent_teams/` structure)
 
 ## Dev Commands
 - Install deps: `uv sync`
@@ -37,6 +37,8 @@
 - Do not directly access backend internal repositories from interface layer.
 
 ## Testing
+- Tests directory `tests/` must mirror the structure of `src/agent_teams/`
+- When adding new tests, create corresponding subdirectories and `__init__.py`
 - Add/update tests for behavior changes, especially orchestration and streaming.
 - Use focused unit tests first; add integration tests for run/SSE flows when needed.
 

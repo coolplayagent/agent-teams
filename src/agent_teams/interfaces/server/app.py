@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import logging
-from pathlib import Path
 import signal
 import time
 
@@ -11,27 +10,29 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent_teams.application.service import AgentTeamsService
+from agent_teams.interfaces.server.config_paths import get_config_dir, get_frontend_dist_dir
 from agent_teams.interfaces.server.routers import logs, roles, runs, sessions, system, tasks, workflows
 from agent_teams.runtime.logging import configure_logging, get_logger, log_event
 from agent_teams.runtime.trace import bind_trace_context, generate_request_id
 
 logger = get_logger(__name__)
-
-
-def _get_project_root() -> Path:
-    return Path(__file__).resolve().parent.parent.parent.parent.parent
-
-
-DEFAULT_CONFIG_DIR = _get_project_root() / ".agent_teams"
-FRONTEND_DIST_DIR = _get_project_root() / "frontend" / "dist"
+FRONTEND_DIST_DIR = get_frontend_dist_dir()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_logging(persist_db_path=DEFAULT_CONFIG_DIR / "agent_teams.db")
+    config_dir = get_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
+    configure_logging(persist_db_path=config_dir / "agent_teams.db")
     _register_signal_handlers()
-    app.state.service = AgentTeamsService(config_dir=DEFAULT_CONFIG_DIR, debug=False)
-    log_event(logger, logging.INFO, event='app.startup', message='Agent Teams server started')
+    app.state.service = AgentTeamsService(config_dir=config_dir, debug=False)
+    log_event(
+        logger,
+        logging.INFO,
+        event='app.startup',
+        message='Agent Teams server started',
+        payload={'config_dir': str(config_dir)},
+    )
     yield
     log_event(logger, logging.INFO, event='app.shutdown', message='Agent Teams server stopped')
 

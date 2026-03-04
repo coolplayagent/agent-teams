@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -271,9 +272,16 @@ def chat(
 def serve(
     host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the server to"),
     port: int = typer.Option(8000, "--port", help="Port to bind the server to"),
+    config_dir: str | None = typer.Option(
+        None,
+        "--config-dir",
+        help="Override runtime config directory (default: ./.agent_teams)",
+    ),
 ) -> None:
     import uvicorn
 
+    if config_dir:
+        os.environ["AGENT_TEAMS_CONFIG_DIR"] = config_dir
     from agent_teams.interfaces.server.app import app as fastapi_app
 
     typer.echo(f"Starting Agent Teams server on http://{host}:{port}")

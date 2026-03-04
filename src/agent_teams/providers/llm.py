@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from json import dumps
 from pathlib import Path
@@ -141,12 +142,18 @@ class OpenAICompatibleProvider(LLMProvider):
                 ),
             )
         )
+        model_settings: dict[str, object] = {
+            # Some OpenAI-compatible providers return cumulative usage in each stream chunk.
+            # Enabling this flag makes pydantic-ai keep the last chunk usage instead of summing chunks.
+            "openai_continuous_usage_stats": True,
+        }
         agent = build_collaboration_agent(
             model_name=self._config.model,
             base_url=self._config.base_url,
             api_key=self._config.api_key,
             system_prompt=f"{request.system_prompt}\n\n{tool_rules}",
             allowed_tools=self._allowed_tools,
+            model_settings=model_settings,
             allowed_mcp_servers=self._allowed_mcp_servers,
             allowed_skills=self._allowed_skills,
             tool_registry=self._tool_registry,
@@ -186,6 +193,10 @@ class OpenAICompatibleProvider(LLMProvider):
         restarted = False
         result = None
         is_first_iteration = True
+        request_level_input_tokens = 0
+        request_level_output_tokens = 0
+        request_level_requests = 0
+        saw_request_level_usage = False
 
         while True:
             control_ctx.raise_if_cancelled()
@@ -200,6 +211,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 async for node in agent_run:
                     control_ctx.raise_if_cancelled()
                     if isinstance(node, ModelRequestNode):
+                        usage_before = deepcopy(agent_run.usage())
                         # Stream text chunks from this model response in real-time
                         async with node.stream(agent_run.ctx) as stream:
                             async for text_delta in stream.stream_text(delta=True):
@@ -231,6 +243,23 @@ class OpenAICompatibleProvider(LLMProvider):
                                             ),
                                         )
                                     )
+                        usage_after = stream.usage()
+                        request_level_input_tokens += self._usage_delta_int(
+                            after=usage_after,
+                            before=usage_before,
+                            field_name="input_tokens",
+                        )
+                        request_level_output_tokens += self._usage_delta_int(
+                            after=usage_after,
+                            before=usage_before,
+                            field_name="output_tokens",
+                        )
+                        request_level_requests += self._usage_delta_int(
+                            after=usage_after,
+                            before=usage_before,
+                            field_name="requests",
+                        )
+                        saw_request_level_usage = True
 
                     # After each node (ModelRequestNode or others like CallToolsNode),
                     # scan for new messages to emit tool call/result events
@@ -300,16 +329,24 @@ class OpenAICompatibleProvider(LLMProvider):
                     )
                 # Record and publish token usage
                 usage = result.usage()
+                input_tokens = request_level_input_tokens
+                output_tokens = request_level_output_tokens
+                requests = request_level_requests
+                if not saw_request_level_usage:
+                    input_tokens = self._usage_field_int(usage, "input_tokens")
+                    output_tokens = self._usage_field_int(usage, "output_tokens")
+                    requests = self._usage_field_int(usage, "requests")
+                tool_calls = self._usage_field_int(usage, "tool_calls")
                 if self._token_usage_repo is not None:
                     self._token_usage_repo.record(
                         session_id=request.session_id,
                         run_id=request.run_id,
                         instance_id=request.instance_id,
                         role_id=request.role_id,
-                        input_tokens=usage.input_tokens,
-                        output_tokens=usage.output_tokens,
-                        requests=usage.requests,
-                        tool_calls=usage.tool_calls,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        requests=requests,
+                        tool_calls=tool_calls,
                     )
                 self._run_event_hub.publish(
                     RunEvent(
@@ -321,11 +358,11 @@ class OpenAICompatibleProvider(LLMProvider):
                         role_id=request.role_id,
                         event_type=RunEventType.TOKEN_USAGE,
                         payload_json=dumps({
-                            'input_tokens': usage.input_tokens,
-                            'output_tokens': usage.output_tokens,
-                            'total_tokens': usage.total_tokens,
-                            'requests': usage.requests,
-                            'tool_calls': usage.tool_calls,
+                            'input_tokens': input_tokens,
+                            'output_tokens': output_tokens,
+                            'total_tokens': input_tokens + output_tokens,
+                            'requests': requests,
+                            'tool_calls': tool_calls,
                             'role_id': request.role_id,
                             'instance_id': request.instance_id,
                         }),
@@ -385,6 +422,22 @@ class OpenAICompatibleProvider(LLMProvider):
                 f"task={request.task_id} chars={len(text)}"
             )
         return text
+
+    def _usage_field_int(self, usage_obj: object, field_name: str) -> int:
+        value = getattr(usage_obj, field_name, 0)
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return max(0, value)
+        if isinstance(value, float):
+            return max(0, int(value))
+        return 0
+
+    def _usage_delta_int(self, *, after: object, before: object, field_name: str) -> int:
+        after_value = self._usage_field_int(after, field_name)
+        before_value = self._usage_field_int(before, field_name)
+        delta = after_value - before_value
+        return delta if delta > 0 else 0
 
     def _extract_text(self, response: object) -> str:
         parts = getattr(response, "parts", None)

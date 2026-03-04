@@ -185,12 +185,15 @@ class OpenAICompatibleProvider(LLMProvider):
         saved_count = 0
         restarted = False
         result = None
+        is_first_iteration = True
 
         while True:
             control_ctx.raise_if_cancelled()
             restarted = False
+            prompt_for_iteration = request.user_prompt if is_first_iteration else None
+            is_first_iteration = False
             async with agent.iter(
-                request.user_prompt if not history else None,
+                prompt_for_iteration,
                 deps=deps,
                 message_history=history,
             ) as agent_run:

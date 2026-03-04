@@ -5,6 +5,7 @@
 export {
     currentWorkflows,
     loadSessionWorkflows,
+    refreshDagNodeStatuses,
     updateDagActiveNode,
     renderNativeDAG,
 } from './workflow/index.js';

@@ -30,7 +30,12 @@ export function setupEventBindings(handleSend) {
             void handleSend();
         }
     });
-    els.sendBtn.onclick = handleSend;
+    if (els.chatForm) {
+        els.chatForm.addEventListener('submit', e => {
+            e.preventDefault();
+            void handleSend();
+        });
+    }
     if (els.stopBtn) {
         els.stopBtn.onclick = async () => {
             if (!state.activeRunId) return;

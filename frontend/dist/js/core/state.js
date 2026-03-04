@@ -13,6 +13,7 @@ export const state = {
     instanceRoleMap: {}, // instanceId -> roleId, built from model_step_started SSE events
     roleInstanceMap: {}, // roleId -> latest instanceId
     taskInstanceMap: {}, // taskId -> instanceId
+    taskStatusMap: {}, // taskId -> task status
     autoSwitchedSubagentInstances: {}, // instanceId -> true, auto-opened once per run
 };
 

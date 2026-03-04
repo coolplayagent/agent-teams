@@ -167,7 +167,8 @@ Response shape:
       "workflows": [],
       "instance_role_map": {},
       "role_instance_map": {},
-      "task_instance_map": {}
+      "task_instance_map": {},
+      "task_status_map": {}
     }
   ],
   "has_more": false,
@@ -179,6 +180,7 @@ Field notes:
 - `instance_role_map`: `instance_id -> role_id`
 - `role_instance_map`: `role_id -> latest instance_id` in this run
 - `task_instance_map`: `task_id -> assigned instance_id` (use this when a workflow has multiple tasks with the same `role_id`)
+- `task_status_map`: `task_id -> task status` (`created|assigned|running|completed|failed|timeout|stopped`)
 
 ### `GET /sessions/{session_id}/rounds/{run_id}`
 Gets one round projection.

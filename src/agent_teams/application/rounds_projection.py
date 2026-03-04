@@ -320,6 +320,7 @@ def build_session_rounds(
     by_run_instance_role: dict[str, dict[str, str]] = {}
     by_run_role_instance: dict[str, dict[str, str]] = {}
     by_run_task_instance: dict[str, dict[str, str]] = {}
+    by_run_task_status: dict[str, dict[str, str]] = {}
 
     for ev, payload in parsed_events:
         run_id_value = ev.get("trace_id")
@@ -341,6 +342,8 @@ def build_session_rounds(
 
     for task in session_tasks:
         run_id = task.envelope.trace_id
+        status_map = by_run_task_status.setdefault(run_id, {})
+        status_map[task.envelope.task_id] = task.status.value
         assigned_instance_id = task.assigned_instance_id
         if not assigned_instance_id:
             continue
@@ -388,6 +391,7 @@ def build_session_rounds(
                 "instance_role_map": by_run_instance_role.get(run_id, {}),
                 "role_instance_map": by_run_role_instance.get(run_id, {}),
                 "task_instance_map": by_run_task_instance.get(run_id, {}),
+                "task_status_map": by_run_task_status.get(run_id, {}),
             }
         occurred_at: str = cast(str, ev["occurred_at"])
         created_at: str = cast(str, rounds_map[run_id]["created_at"])

@@ -261,6 +261,37 @@
     border-color: var(--primary-hover);
 }
 
+.dag-node.status-pending {
+    border-style: dashed;
+    border-color: rgba(245, 158, 11, 0.55);
+    opacity: 0.82;
+}
+
+.dag-node.status-running {
+    border-color: rgba(99, 102, 241, 0.65);
+}
+
+.dag-node.status-completed {
+    border-color: rgba(16, 185, 129, 0.6);
+}
+
+.dag-node.status-failed {
+    border-color: rgba(239, 68, 68, 0.68);
+}
+
+.dag-node.status-timeout {
+    border-color: rgba(245, 158, 11, 0.72);
+}
+
+.dag-node.status-stopped {
+    border-color: rgba(156, 163, 175, 0.75);
+}
+
+.dag-node.status-unknown {
+    border-style: dashed;
+    border-color: rgba(148, 163, 184, 0.55);
+}
+
 @keyframes nodePulse {
 
     0%,
@@ -288,6 +319,57 @@
     font-size: 0.7rem;
     color: var(--text-secondary);
     font-family: var(--font-mono);
+}
+
+.node-state {
+    font-size: 0.62rem;
+    line-height: 1;
+    padding: 0.16rem 0.38rem;
+    border-radius: 999px;
+    margin-top: 0.2rem;
+    border: 1px solid transparent;
+}
+
+.node-state-pending {
+    color: var(--warning);
+    border-color: rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.12);
+}
+
+.node-state-running {
+    color: var(--primary-hover);
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(99, 102, 241, 0.12);
+}
+
+.node-state-completed {
+    color: var(--success);
+    border-color: rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.node-state-failed {
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.node-state-timeout {
+    color: var(--warning);
+    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.14);
+}
+
+.node-state-stopped {
+    color: var(--text-secondary);
+    border-color: rgba(156, 163, 175, 0.55);
+    background: rgba(156, 163, 175, 0.12);
+}
+
+.node-state-unknown {
+    color: var(--text-secondary);
+    border-color: rgba(148, 163, 184, 0.45);
+    background: rgba(148, 163, 184, 0.1);
 }
 
 /* SVG Connectors */

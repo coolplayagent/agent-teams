@@ -4,6 +4,7 @@
  */
 import { state } from '../state.js';
 import { sysLog } from '../../utils/logger.js';
+import { refreshDagNodeStatuses } from '../../components/workflow.js';
 import {
     handleModelStepFinished,
     handleModelStepStarted,
@@ -39,6 +40,20 @@ export function routeEvent(evType, payload, eventMeta) {
     if (instanceId && taskId) {
         if (!state.taskInstanceMap) state.taskInstanceMap = {};
         state.taskInstanceMap[taskId] = instanceId;
+    }
+    if (taskId) {
+        if (!state.taskStatusMap) state.taskStatusMap = {};
+        const byEvent = statusFromEventType(evType);
+        if (byEvent) {
+            state.taskStatusMap[taskId] = byEvent;
+        } else if (evType === 'model_step_started') {
+            state.taskStatusMap[taskId] = 'running';
+        } else if (evType === 'model_step_finished' && state.taskStatusMap[taskId] === 'running') {
+            state.taskStatusMap[taskId] = 'completed';
+        }
+    }
+    if (taskId || instanceId) {
+        refreshDagNodeStatuses();
     }
 
     if (evType === 'run_started') {
@@ -79,5 +94,26 @@ export function routeEvent(evType, payload, eventMeta) {
         handleGateResolved(payload, instanceId);
     } else {
         sysLog(`[evt] ${evType}`, 'log-info');
+    }
+}
+
+function statusFromEventType(evType) {
+    switch (evType) {
+        case 'task_created':
+            return 'created';
+        case 'task_assigned':
+            return 'assigned';
+        case 'task_started':
+            return 'running';
+        case 'task_completed':
+            return 'completed';
+        case 'task_failed':
+            return 'failed';
+        case 'task_timeout':
+            return 'timeout';
+        case 'task_stopped':
+            return 'stopped';
+        default:
+            return '';
     }
 }

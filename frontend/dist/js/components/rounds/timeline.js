@@ -77,6 +77,7 @@ function renderSessionTimeline(rounds, opts = { preserveScroll: true }) {
         state.instanceRoleMap = {};
         state.roleInstanceMap = {};
         state.taskInstanceMap = {};
+        state.taskStatusMap = {};
         roundsState.activeRunId = null;
         setRoundPendingApprovals('', [], {});
         renderRoundNavigator([], selectRound);

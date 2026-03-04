@@ -165,7 +165,13 @@ def test_build_session_rounds_includes_task_instance_map() -> None:
     assert len(rounds) == 1
     round_item = rounds[0]
     task_instance_map = cast(dict[str, str], round_item["task_instance_map"])
+    task_status_map = cast(dict[str, str], round_item["task_status_map"])
     assert task_instance_map == {
         "task-first": "inst-first",
         "task-second": "inst-second",
+    }
+    assert task_status_map == {
+        "task-first": "created",
+        "task-second": "created",
+        "task-unassigned": "created",
     }

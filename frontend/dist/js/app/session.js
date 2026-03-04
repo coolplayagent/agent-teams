@@ -16,6 +16,7 @@ export async function selectSession(sessionId) {
     state.instanceRoleMap = {};
     state.roleInstanceMap = {};
     state.taskInstanceMap = {};
+    state.taskStatusMap = {};
     state.activeAgentRoleId = null;
     state.activeAgentInstanceId = null;
     state.autoSwitchedSubagentInstances = {};

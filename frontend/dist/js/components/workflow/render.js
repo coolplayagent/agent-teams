@@ -58,6 +58,10 @@ export function renderNativeDAG(workflow) {
 
             const instanceId = currentInstanceForTask(node.taskId, node.role);
             if (instanceId) el.dataset.instanceId = instanceId;
+            const status = resolveNodeStatus(node.taskId, instanceId);
+            const statusMeta = statusMetaFor(status);
+            el.dataset.status = status;
+            el.classList.add(`status-${statusMeta.classSuffix}`);
 
             if (state.activeAgentInstanceId) {
                 if (el.dataset.instanceId === state.activeAgentInstanceId) {
@@ -71,6 +75,7 @@ export function renderNativeDAG(workflow) {
                 <div class="node-icon">${node.icon}</div>
                 <div class="node-title">${node.title}</div>
                 <div class="node-role">${node.role}</div>
+                <div class="node-state node-state-${statusMeta.classSuffix}">${statusMeta.label}</div>
             `;
 
             el.onclick = () => {
@@ -80,7 +85,9 @@ export function renderNativeDAG(workflow) {
                 if (iid) {
                     openAgentPanel(iid, node.role);
                 } else {
-                    sysLog(`No instance mapped for role: ${node.role}`, 'log-info');
+                    const latestStatus = resolveNodeStatus(node.taskId, latest);
+                    const latestMeta = statusMetaFor(latestStatus);
+                    sysLog(`Task ${node.title} status: ${latestMeta.label}`, 'log-info');
                 }
             };
 
@@ -112,9 +119,41 @@ function nodeIconFromTaskName(taskName) {
 function currentInstanceForTask(taskId, roleId) {
     if (taskId) {
         const byTask = state.taskInstanceMap?.[taskId];
-        if (byTask) return byTask;
+        return byTask || null;
     }
     return currentInstanceForRole(roleId);
+}
+
+function resolveNodeStatus(taskId, instanceId) {
+    if (state.activeAgentInstanceId && instanceId && state.activeAgentInstanceId === instanceId) {
+        return 'running';
+    }
+    if (taskId) {
+        const fromTask = String(state.taskStatusMap?.[taskId] || '');
+        if (fromTask) return fromTask;
+    }
+    if (instanceId) return 'completed';
+    return 'created';
+}
+
+function statusMetaFor(status) {
+    switch (status) {
+        case 'created':
+            return { label: 'Pending', classSuffix: 'pending' };
+        case 'assigned':
+        case 'running':
+            return { label: 'Running', classSuffix: 'running' };
+        case 'completed':
+            return { label: 'Completed', classSuffix: 'completed' };
+        case 'failed':
+            return { label: 'Failed', classSuffix: 'failed' };
+        case 'timeout':
+            return { label: 'Timeout', classSuffix: 'timeout' };
+        case 'stopped':
+            return { label: 'Stopped', classSuffix: 'stopped' };
+        default:
+            return { label: 'Unknown', classSuffix: 'unknown' };
+    }
 }
 
 function currentInstanceForRole(roleId) {
@@ -131,3 +170,4 @@ function currentInstanceForRole(roleId) {
     }
     return null;
 }
+

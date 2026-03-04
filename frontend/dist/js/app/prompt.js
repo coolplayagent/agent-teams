@@ -11,7 +11,15 @@ import { sysLog } from '../utils/logger.js';
 
 export async function handleSend() {
     const text = els.promptInput.value.trim();
-    if (!text || state.isGenerating || !state.currentSessionId) return;
+    if (!text) return;
+    if (state.isGenerating) {
+        sysLog('A run is still in progress. Please wait for completion before sending the next message.', 'log-info');
+        return;
+    }
+    if (!state.currentSessionId) {
+        sysLog('No active session selected. Please select or create a session first.', 'log-error');
+        return;
+    }
     if (state.pausedSubagent) {
         const paused = state.pausedSubagent;
         sysLog(

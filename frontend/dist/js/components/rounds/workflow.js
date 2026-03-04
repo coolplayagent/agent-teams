@@ -18,6 +18,7 @@ export function updateWorkflowByRound(round) {
         state.instanceRoleMap = {};
         state.roleInstanceMap = {};
         state.taskInstanceMap = {};
+        state.taskStatusMap = {};
         if (canvas) canvas.innerHTML = '';
         return;
     }
@@ -25,6 +26,7 @@ export function updateWorkflowByRound(round) {
     state.instanceRoleMap = round.instance_role_map || {};
     state.roleInstanceMap = buildRoleInstanceMap(round);
     state.taskInstanceMap = round.task_instance_map || {};
+    state.taskStatusMap = round.task_status_map || {};
 
     const workflowCount = round.workflows?.length ?? 0;
     els.workflowCount.textContent = String(workflowCount);

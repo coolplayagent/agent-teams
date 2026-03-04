@@ -28,7 +28,7 @@ FRONTEND_DIST_DIR = _get_project_root() / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_logging()
+    configure_logging(persist_db_path=DEFAULT_CONFIG_DIR / "agent_teams.db")
     _register_signal_handlers()
     app.state.service = AgentTeamsService(config_dir=DEFAULT_CONFIG_DIR, debug=False)
     log_event(logger, logging.INFO, event='app.startup', message='Agent Teams server started')

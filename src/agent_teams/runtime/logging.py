@@ -5,8 +5,11 @@ import logging
 import os
 import traceback
 from datetime import UTC, datetime
+
+from pathlib import Path
 from typing import Any
 
+from agent_teams.runtime.log_persistence import PersistentLogHandler
 from agent_teams.runtime.trace import get_trace_context
 
 SERVICE_NAME = 'agent_teams'
@@ -60,10 +63,11 @@ class JsonFormatter(logging.Formatter):
                 'message': str(exc_value),
                 'stack': ''.join(traceback.format_exception(exc_type, exc_value, exc_tb)),
             }
+
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
-def configure_logging() -> None:
+def configure_logging(*, persist_db_path: Path | None = None) -> None:
     level_name = os.getenv('AGENT_TEAMS_LOG_LEVEL', 'INFO').upper()
     level = getattr(logging, level_name, logging.INFO)
     fmt = os.getenv('AGENT_TEAMS_LOG_FORMAT', 'json').lower()
@@ -72,13 +76,19 @@ def configure_logging() -> None:
     root.handlers.clear()
     root.setLevel(level)
 
-    handler = logging.StreamHandler()
+    stream_handler = logging.StreamHandler()
     if fmt == 'console':
-        handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(name)s: %(message)s'))
+        stream_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s %(name)s: %(message)s'))
     else:
-        handler.setFormatter(JsonFormatter())
+        stream_handler.setFormatter(JsonFormatter())
+    root.addHandler(stream_handler)
 
-    root.addHandler(handler)
+    if _persistence_enabled():
+        db_path = persist_db_path or Path(os.getenv('AGENT_TEAMS_LOG_DB_PATH', '.agent_teams/agent_teams.db'))
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        persistent_handler = PersistentLogHandler(db_path=db_path)
+        persistent_handler.setFormatter(JsonFormatter())
+        root.addHandler(persistent_handler)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -117,6 +127,11 @@ def sanitize_payload(payload: Any) -> Any:
     if isinstance(payload, str):
         return _truncate(_mask_sensitive(payload))
     return payload
+
+
+def _persistence_enabled() -> bool:
+    raw = os.getenv('AGENT_TEAMS_LOG_PERSIST', '1').strip().lower()
+    return raw in {'1', 'true', 'yes', 'on'}
 
 
 def _mask_sensitive(value: str) -> str:

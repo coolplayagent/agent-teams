@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent_teams.interfaces.server.deps import get_service
+from agent_teams.interfaces.server.deps import get_system_config_service
 from agent_teams.interfaces.server.routers import system
 
 
@@ -57,7 +57,7 @@ class _FakeSystemService:
 def _create_test_client(fake_service: object) -> TestClient:
     app = FastAPI()
     app.include_router(system.router, prefix="/api")
-    app.dependency_overrides[get_service] = lambda: fake_service
+    app.dependency_overrides[get_system_config_service] = lambda: fake_service
     return TestClient(app)
 
 

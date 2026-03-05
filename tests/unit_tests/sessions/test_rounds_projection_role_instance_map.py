@@ -3,7 +3,7 @@
 import json
 from typing import cast
 
-from agent_teams.application.rounds_projection import build_session_rounds
+from agent_teams.sessions.rounds_projection import build_session_rounds
 from agent_teams.workflow.models import TaskEnvelope, TaskRecord, VerificationPlan
 from agent_teams.runs.enums import RunEventType
 from agent_teams.state.agent_repo import AgentInstanceRepository

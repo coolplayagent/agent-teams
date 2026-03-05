@@ -1,0 +1,222 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+
+from agent_teams.agents.core.meta_agent import MetaAgent
+from agent_teams.agents.management.instance_pool import InstancePool
+from agent_teams.coordination.coordinator import CoordinatorGraph
+from agent_teams.coordination.human_gate import GateManager
+from agent_teams.coordination.task_execution_service import TaskExecutionService
+from agent_teams.env.config_manager import ConfigManager
+from agent_teams.env.runtime_config import RuntimeConfig, load_runtime_config
+from agent_teams.env.runtime_config_service import RuntimeConfigService
+from agent_teams.mcp.registry import McpRegistry
+from agent_teams.notifications import NotificationService
+from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
+from agent_teams.providers.llm import LLMProvider
+from agent_teams.providers.runtime_factory import (
+    create_provider_factory,
+    create_task_execution_service,
+)
+from agent_teams.roles.models import RoleDefinition
+from agent_teams.roles.registry import RoleLoader, RoleRegistry
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.manager import RunManager
+from agent_teams.sessions import SessionService
+from agent_teams.skills.registry import SkillRegistry
+from agent_teams.state.agent_repo import AgentInstanceRepository
+from agent_teams.state.event_log import EventLog
+from agent_teams.state.message_repo import MessageRepository
+from agent_teams.state.session_repo import SessionRepository
+from agent_teams.state.shared_store import SharedStore
+from agent_teams.state.task_repo import TaskRepository
+from agent_teams.state.token_usage_repo import TokenUsageRepository
+from agent_teams.tools.approval_state import ToolApprovalManager
+from agent_teams.tools.defaults import build_default_registry
+from agent_teams.tools.policy import ToolApprovalPolicy
+from agent_teams.tools.registry import ToolRegistry
+from agent_teams.triggers import TriggerRepository, TriggerService
+from agent_teams.workflow.orchestration_service import WorkflowOrchestrationService
+
+
+class ServerContainer:
+    def __init__(
+        self,
+        *,
+        config_dir: Path,
+        roles_dir: Path | None = None,
+        db_path: Path | None = None,
+    ) -> None:
+        runtime = load_runtime_config(
+            config_dir=config_dir,
+            roles_dir=roles_dir,
+            db_path=db_path,
+        )
+        self.config_dir: Path = config_dir
+        self.runtime: RuntimeConfig = runtime
+
+        self.config_manager: ConfigManager = ConfigManager(config_dir=config_dir)
+        self.role_registry: RoleRegistry = RoleLoader().load_all(runtime.paths.roles_dir)
+        self.tool_registry: ToolRegistry = build_default_registry()
+        self.mcp_registry: McpRegistry = self.config_manager.load_mcp_registry()
+        self.skill_registry: SkillRegistry = self.config_manager.load_skill_registry()
+
+        for role in self.role_registry.list_roles():
+            self.tool_registry.validate_known(role.tools)
+            self.mcp_registry.validate_known(role.mcp_servers)
+            self.skill_registry.validate_known(role.skills)
+
+        self.task_repo: TaskRepository = TaskRepository(runtime.paths.db_path)
+        self.shared_store: SharedStore = SharedStore(runtime.paths.db_path)
+        self.event_log: EventLog = EventLog(runtime.paths.db_path)
+        self.agent_repo: AgentInstanceRepository = AgentInstanceRepository(
+            runtime.paths.db_path
+        )
+        self.message_repo: MessageRepository = MessageRepository(runtime.paths.db_path)
+        self.session_repo: SessionRepository = SessionRepository(runtime.paths.db_path)
+        self.token_usage_repo: TokenUsageRepository = TokenUsageRepository(
+            runtime.paths.db_path
+        )
+        self.trigger_repo: TriggerRepository = TriggerRepository(runtime.paths.db_path)
+        self.trigger_service: TriggerService = TriggerService(trigger_repo=self.trigger_repo)
+
+        self.instance_pool: InstancePool = InstancePool.from_repo(self.agent_repo)
+        self.injection_manager: RunInjectionManager = RunInjectionManager()
+        self.run_control_manager: RunControlManager = RunControlManager()
+        self.run_event_hub: RunEventHub = RunEventHub(event_log=self.event_log)
+        self.notification_service: NotificationService = NotificationService(
+            run_event_hub=self.run_event_hub,
+            get_config=self.config_manager.get_notification_config,
+        )
+        self.gate_manager: GateManager = GateManager()
+        self.tool_approval_manager: ToolApprovalManager = ToolApprovalManager()
+        self.tool_approval_policy: ToolApprovalPolicy = ToolApprovalPolicy()
+        self.run_control_manager.bind_runtime(
+            run_event_hub=self.run_event_hub,
+            injection_manager=self.injection_manager,
+            agent_repo=self.agent_repo,
+            task_repo=self.task_repo,
+            message_repo=self.message_repo,
+            instance_pool=self.instance_pool,
+            event_bus=self.event_log,
+        )
+
+        self._provider_factory: Callable[[RoleDefinition], LLMProvider]
+        self.task_execution_service: TaskExecutionService
+        self.workflow_service: WorkflowOrchestrationService
+        self._build_runtime_services()
+
+        coordinator = CoordinatorGraph(
+            role_registry=self.role_registry,
+            instance_pool=self.instance_pool,
+            task_repo=self.task_repo,
+            shared_store=self.shared_store,
+            event_bus=self.event_log,
+            agent_repo=self.agent_repo,
+            prompt_builder=RuntimePromptBuilder(),
+            provider_factory=self._provider_factory,
+            task_execution_service=self.task_execution_service,
+            run_control_manager=self.run_control_manager,
+            gate_manager=self.gate_manager,
+            run_event_hub=self.run_event_hub,
+        )
+        self.meta_agent: MetaAgent = MetaAgent(coordinator=coordinator)
+        self.run_service: RunManager = RunManager(
+            meta_agent=self.meta_agent,
+            injection_manager=self.injection_manager,
+            run_event_hub=self.run_event_hub,
+            run_control_manager=self.run_control_manager,
+            tool_approval_manager=self.tool_approval_manager,
+            session_repo=self.session_repo,
+            notification_service=self.notification_service,
+        )
+        self.session_service: SessionService = SessionService(
+            session_repo=self.session_repo,
+            task_repo=self.task_repo,
+            agent_repo=self.agent_repo,
+            shared_store=self.shared_store,
+            message_repo=self.message_repo,
+            event_log=self.event_log,
+            token_usage_repo=self.token_usage_repo,
+        )
+        self.config_service: RuntimeConfigService = RuntimeConfigService(
+            config_dir=config_dir,
+            roles_dir=self.runtime.paths.roles_dir,
+            db_path=self.runtime.paths.db_path,
+            runtime=self.runtime,
+            config_manager=self.config_manager,
+            role_registry=self.role_registry,
+            mcp_registry=self.mcp_registry,
+            skill_registry=self.skill_registry,
+            on_runtime_reloaded=self._on_runtime_reloaded,
+            on_mcp_reloaded=self._on_mcp_reloaded,
+            on_skill_reloaded=self._on_skill_reloaded,
+        )
+
+    def _build_runtime_services(self) -> None:
+        def get_task_execution_service() -> TaskExecutionService:
+            return self.task_execution_service
+
+        self._provider_factory = create_provider_factory(
+            runtime=self.runtime,
+            task_repo=self.task_repo,
+            instance_pool=self.instance_pool,
+            shared_store=self.shared_store,
+            event_log=self.event_log,
+            injection_manager=self.injection_manager,
+            run_event_hub=self.run_event_hub,
+            agent_repo=self.agent_repo,
+            tool_registry=self.tool_registry,
+            mcp_registry=self.mcp_registry,
+            skill_registry=self.skill_registry,
+            message_repo=self.message_repo,
+            role_registry=self.role_registry,
+            run_control_manager=self.run_control_manager,
+            tool_approval_manager=self.tool_approval_manager,
+            tool_approval_policy=self.tool_approval_policy,
+            notification_service=self.notification_service,
+            get_task_execution_service=get_task_execution_service,
+            token_usage_repo=self.token_usage_repo,
+        )
+        self.task_execution_service = create_task_execution_service(
+            role_registry=self.role_registry,
+            instance_pool=self.instance_pool,
+            task_repo=self.task_repo,
+            shared_store=self.shared_store,
+            event_log=self.event_log,
+            agent_repo=self.agent_repo,
+            message_repo=self.message_repo,
+            provider_factory=self._provider_factory,
+            injection_manager=self.injection_manager,
+            run_control_manager=self.run_control_manager,
+        )
+        self.workflow_service = WorkflowOrchestrationService(
+            task_repo=self.task_repo,
+            shared_store=self.shared_store,
+            role_registry=self.role_registry,
+            instance_pool=self.instance_pool,
+            agent_repo=self.agent_repo,
+            task_execution_service=self.task_execution_service,
+            injection_manager=self.injection_manager,
+        )
+
+    def _refresh_coordinator_runtime(self) -> None:
+        self._build_runtime_services()
+        self.meta_agent.coordinator.provider_factory = self._provider_factory
+        self.meta_agent.coordinator.task_execution_service = self.task_execution_service
+
+    def _on_runtime_reloaded(self, runtime: RuntimeConfig) -> None:
+        self.runtime = runtime
+        self._refresh_coordinator_runtime()
+
+    def _on_mcp_reloaded(self, mcp_registry: McpRegistry) -> None:
+        self.mcp_registry = mcp_registry
+        self._refresh_coordinator_runtime()
+
+    def _on_skill_reloaded(self, skill_registry: SkillRegistry) -> None:
+        self.skill_registry = skill_registry
+        self._refresh_coordinator_runtime()

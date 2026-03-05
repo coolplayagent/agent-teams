@@ -5,7 +5,7 @@ from typing import Callable
 
 from agent_teams.agents.management.instance_pool import InstancePool
 from agent_teams.coordination.task_execution_service import TaskExecutionService
-from agent_teams.application.runtime_config import RuntimeConfig
+from agent_teams.env.runtime_config import RuntimeConfig
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.notifications import NotificationService
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder

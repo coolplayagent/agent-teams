@@ -7,8 +7,8 @@ from typing import cast
 import pytest
 
 from agent_teams.agents.core.meta_agent import MetaAgent
-from agent_teams.application.run_manager import RunManager
 from agent_teams.runs.enums import RunEventType
+from agent_teams.runs.manager import RunManager
 from agent_teams.runs.models import IntentInput
 from agent_teams.notifications import (
     NotificationChannel,
@@ -24,6 +24,8 @@ from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
+from agent_teams.state.session_models import SessionRecord
+from agent_teams.state.session_repo import SessionRepository
 from agent_teams.state.task_repo import TaskRepository
 
 
@@ -76,6 +78,16 @@ class _EventBus:
         return None
 
 
+class _SessionRepo:
+    def get(self, session_id: str) -> SessionRecord:
+        return SessionRecord(session_id=session_id)
+
+    def create(
+        self, session_id: str, metadata: dict[str, str] | None = None
+    ) -> SessionRecord:
+        return SessionRecord(session_id=session_id, metadata=metadata or {})
+
+
 def _make_run_manager(control: RunControlManager) -> RunManager:
     hub = RunEventHub()
     injection = RunInjectionManager()
@@ -94,6 +106,7 @@ def _make_run_manager(control: RunControlManager) -> RunManager:
         run_event_hub=hub,
         run_control_manager=control,
         tool_approval_manager=ToolApprovalManager(),
+        session_repo=cast(SessionRepository, cast(object, _SessionRepo())),
     )
 
 
@@ -109,10 +122,7 @@ def test_create_run_blocked_when_paused_subagent_exists() -> None:
     manager = _make_run_manager(control)
 
     with pytest.raises(RuntimeError):
-        manager.create_run(
-            IntentInput(session_id="session-1", intent="hello"),
-            ensure_session=lambda s: s or "session-1",
-        )
+        manager.create_run(IntentInput(session_id="session-1", intent="hello"))
 
 
 def test_stop_pending_run_emits_run_stopped_event() -> None:
@@ -134,6 +144,7 @@ def test_stop_pending_run_emits_run_stopped_event() -> None:
         run_event_hub=hub,
         run_control_manager=control,
         tool_approval_manager=ToolApprovalManager(),
+        session_repo=cast(SessionRepository, cast(object, _SessionRepo())),
         notification_service=NotificationService(
             run_event_hub=hub,
             get_config=lambda: NotificationConfig(
@@ -145,10 +156,7 @@ def test_stop_pending_run_emits_run_stopped_event() -> None:
         ),
     )
 
-    run_id, _ = manager.create_run(
-        IntentInput(session_id="session-1", intent="hello"),
-        ensure_session=lambda s: s or "session-1",
-    )
+    run_id, _ = manager.create_run(IntentInput(session_id="session-1", intent="hello"))
     queue = hub.subscribe(run_id)
     manager.stop_run(run_id)
 

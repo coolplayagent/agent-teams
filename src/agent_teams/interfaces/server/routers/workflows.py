@@ -5,9 +5,11 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_teams.application.service import AgentTeamsService
-from agent_teams.application.workflow_orchestration_service import WorkflowTaskSpecInput
-from agent_teams.interfaces.server.deps import get_service
+from agent_teams.interfaces.server.deps import get_workflow_service
+from agent_teams.workflow.orchestration_service import (
+    WorkflowOrchestrationService,
+    WorkflowTaskSpecInput,
+)
 
 router = APIRouter(prefix='/workflows', tags=['Workflows'])
 
@@ -35,10 +37,10 @@ class DispatchTasksRequest(BaseModel):
 def create_workflow_for_run(
     run_id: str,
     req: CreateWorkflowRequest,
-    service: AgentTeamsService = Depends(get_service),
+    service: WorkflowOrchestrationService = Depends(get_workflow_service),
 ) -> dict[str, object]:
     try:
-        return service.create_workflow_graph_for_run(
+        return service.create_workflow_graph(
             run_id=run_id,
             objective=req.objective,
             workflow_type=req.workflow_type,
@@ -54,10 +56,10 @@ def create_workflow_for_run(
 def get_workflow_status_for_run(
     run_id: str,
     workflow_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: WorkflowOrchestrationService = Depends(get_workflow_service),
 ) -> dict[str, object]:
     try:
-        return service.get_workflow_status_for_run(run_id=run_id, workflow_id=workflow_id)
+        return service.get_workflow_status(run_id=run_id, workflow_id=workflow_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -69,10 +71,10 @@ async def dispatch_tasks_for_run(
     run_id: str,
     workflow_id: str,
     req: DispatchTasksRequest,
-    service: AgentTeamsService = Depends(get_service),
+    service: WorkflowOrchestrationService = Depends(get_workflow_service),
 ) -> dict[str, object]:
     try:
-        return await service.dispatch_tasks_for_run(
+        return await service.dispatch_tasks(
             run_id=run_id,
             workflow_id=workflow_id,
             action=req.action,

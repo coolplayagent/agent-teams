@@ -6,11 +6,11 @@ from typing import Annotated, ClassVar
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.application.service import AgentTeamsService
-from agent_teams.interfaces.server.deps import get_service
+from agent_teams.interfaces.server.deps import get_trigger_service
 from agent_teams.logger import get_logger, log_event
 from agent_teams.trace import bind_trace_context
 from agent_teams.triggers import (
+    TriggerService,
     TriggerAuthRejectedError,
     TriggerCreateInput,
     TriggerDefinition,
@@ -36,7 +36,7 @@ class TriggerEventListResponse(BaseModel):
 @router.post("", response_model=TriggerDefinition)
 def create_trigger(
     req: TriggerCreateInput,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerDefinition:
     try:
         created = service.create_trigger(req)
@@ -55,7 +55,7 @@ def create_trigger(
 
 @router.get("", response_model=list[TriggerDefinition])
 def list_triggers(
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> list[TriggerDefinition]:
     return list(service.list_triggers())
 
@@ -63,7 +63,7 @@ def list_triggers(
 @router.get("/{trigger_id}", response_model=TriggerDefinition)
 def get_trigger(
     trigger_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerDefinition:
     try:
         return service.get_trigger(trigger_id)
@@ -75,7 +75,7 @@ def get_trigger(
 def update_trigger(
     trigger_id: str,
     req: TriggerUpdateInput,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerDefinition:
     try:
         updated = service.update_trigger(trigger_id, req)
@@ -97,7 +97,7 @@ def update_trigger(
 @router.post("/{trigger_id}:enable", response_model=TriggerDefinition)
 def enable_trigger(
     trigger_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerDefinition:
     try:
         return service.set_trigger_status(trigger_id, TriggerStatus.ENABLED)
@@ -108,7 +108,7 @@ def enable_trigger(
 @router.post("/{trigger_id}:disable", response_model=TriggerDefinition)
 def disable_trigger(
     trigger_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerDefinition:
     try:
         return service.set_trigger_status(trigger_id, TriggerStatus.DISABLED)
@@ -119,10 +119,10 @@ def disable_trigger(
 @router.post("/{trigger_id}:rotate-token", response_model=TriggerDefinition)
 def rotate_trigger_token(
     trigger_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerDefinition:
     try:
-        return service.rotate_trigger_token(trigger_id)
+        return service.rotate_public_token(trigger_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -131,14 +131,14 @@ def rotate_trigger_token(
 async def ingest_event(
     req: TriggerIngestInput,
     request: Request,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerIngestResult:
     raw_body = (await request.body()).decode("utf-8", errors="replace")
     headers = {name: value for name, value in request.headers.items()}
     remote_addr = request.client.host if request.client is not None else None
     try:
-        result = service.ingest_trigger_event(
-            req,
+        result = service.ingest_event(
+            event=req,
             headers=headers,
             remote_addr=remote_addr,
             raw_body=raw_body,
@@ -158,13 +158,13 @@ async def ingest_event(
 async def ingest_webhook(
     public_token: str,
     request: Request,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerIngestResult:
     raw_body = (await request.body()).decode("utf-8", errors="replace")
     headers = {name: value for name, value in request.headers.items()}
     remote_addr = request.client.host if request.client is not None else None
     try:
-        result = service.ingest_trigger_webhook(
+        result = service.ingest_webhook(
             public_token=public_token,
             raw_body=raw_body,
             headers=headers,
@@ -196,12 +196,12 @@ async def ingest_webhook(
 @router.get("/{trigger_id}/events", response_model=TriggerEventListResponse)
 def list_trigger_events(
     trigger_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
     limit: int = 50,
     cursor_event_id: str | None = None,
 ) -> TriggerEventListResponse:
     try:
-        items, next_cursor = service.list_trigger_events(
+        items, next_cursor = service.list_events(
             trigger_id,
             limit=limit,
             cursor_event_id=cursor_event_id,
@@ -214,9 +214,9 @@ def list_trigger_events(
 @router.get("/events/{event_id}", response_model=TriggerEventRecord)
 def get_trigger_event(
     event_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[TriggerService, Depends(get_trigger_service)],
 ) -> TriggerEventRecord:
     try:
-        return service.get_trigger_event(event_id)
+        return service.get_event(event_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

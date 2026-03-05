@@ -1,4 +1,4 @@
-﻿from agent_teams.application.service import AgentTeamsService
+﻿from agent_teams.sessions.rounds_projection import collect_pending_tool_approvals
 from agent_teams.runs.enums import RunEventType
 
 
@@ -19,7 +19,7 @@ def test_collect_pending_tool_approvals_ignores_validation_failure_events() -> N
         ),
     ]
 
-    result = AgentTeamsService._collect_pending_tool_approvals(parsed_events)
+    result = collect_pending_tool_approvals(parsed_events)
     assert result == {}
 
 
@@ -96,7 +96,7 @@ def test_collect_pending_tool_approvals_tracks_only_requested_without_result() -
         ),
     ]
 
-    result = AgentTeamsService._collect_pending_tool_approvals(parsed_events)
+    result = collect_pending_tool_approvals(parsed_events)
     assert "run-1" in result
     pending = result["run-1"]
     assert pending == [
@@ -111,4 +111,5 @@ def test_collect_pending_tool_approvals_tracks_only_requested_without_result() -
             "feedback": "",
         }
     ]
+
 

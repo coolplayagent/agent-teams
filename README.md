@@ -8,7 +8,6 @@ Runtime model execution uses `pydantic_ai` with OpenAI-compatible endpoints.
 Core code lives under `src/agent_teams/`:
 
 - `agents/`: agent construction, lifecycle, and execution composition
-- `application/`: application services and facades
 - `coordination/`: cross-role coordination strategies
 - `env/`: runtime environment loading and env-related CLI support
 - `interfaces/`: external interfaces
@@ -23,6 +22,7 @@ Core code lives under `src/agent_teams/`:
 - `providers/`: LLM provider integrations
 - `roles/`: role definitions and role validation
 - `runs/`: run-time orchestration, run control, event streaming, and injection flows
+- `sessions/`: session lifecycle and round projection services
 - `shared_types/`: cross-domain shared type aliases and lightweight contracts
 - `skills/`: skill loading/registry support
 - `state/`: persistence and state repositories
@@ -167,7 +167,7 @@ curl -X PUT http://127.0.0.1:8000/api/system/configs/notifications \
 
 Unit and integration tests are split under `tests/`:
 
-- `tests/unit_tests/`: mirrors backend modules (`agents/`, `application/`, `env/`, `interfaces/`, `logger/`, `notifications/`, `paths/`, `providers/`, `roles/`, `runs/`, `skills/`, `tools/`, `trace/`, `triggers/`, `workflow/`)
+- `tests/unit_tests/`: mirrors backend modules (`agents/`, `env/`, `interfaces/`, `logger/`, `notifications/`, `paths/`, `providers/`, `roles/`, `runs/`, `sessions/`, `skills/`, `state/`, `tools/`, `trace/`, `triggers/`, `workflow/`)
 - `tests/integration_tests/`: integration scenarios split by `api/`, `browser/`, and shared `support/`
 
 Run unit tests:

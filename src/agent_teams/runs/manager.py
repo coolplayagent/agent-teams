@@ -3,7 +3,8 @@
 import asyncio
 from json import dumps
 import logging
-from typing import Callable, cast
+import uuid
+from typing import cast
 
 from agent_teams.agents.core.meta_agent import MetaAgent
 from agent_teams.logger import get_logger, log_event
@@ -18,6 +19,7 @@ from agent_teams.runs.control import RunControlManager
 from agent_teams.runs.event_stream import RunEventHub
 from agent_teams.runs.ids import new_trace_id
 from agent_teams.runs.models import IntentInput, RunEvent, RunResult
+from agent_teams.state.session_repo import SessionRepository
 from agent_teams.tools.approval_state import (
     ToolApprovalAction,
     ToolApprovalManager,
@@ -36,6 +38,7 @@ class RunManager:
         run_event_hub: RunEventHub,
         run_control_manager: RunControlManager,
         tool_approval_manager: ToolApprovalManager,
+        session_repo: SessionRepository,
         notification_service: NotificationService | None = None,
     ) -> None:
         self._meta_agent: MetaAgent = meta_agent
@@ -43,17 +46,25 @@ class RunManager:
         self._run_event_hub: RunEventHub = run_event_hub
         self._run_control_manager: RunControlManager = run_control_manager
         self._tool_approval_manager: ToolApprovalManager = tool_approval_manager
+        self._session_repo: SessionRepository = session_repo
         self._notification_service: NotificationService | None = notification_service
         self._pending_runs: dict[str, IntentInput] = {}
         self._running_run_ids: set[str] = set()
 
-    async def run_intent(
-        self,
-        intent: IntentInput,
-        *,
-        ensure_session: Callable[[str | None], str],
-    ) -> RunResult:
-        session_id = ensure_session(intent.session_id)
+    def _ensure_session(self, session_id: str | None) -> str:
+        if not session_id:
+            new_id = f"session-{uuid.uuid4().hex[:8]}"
+            _ = self._session_repo.create(session_id=new_id)
+            return new_id
+        try:
+            _ = self._session_repo.get(session_id)
+            return session_id
+        except KeyError:
+            _ = self._session_repo.create(session_id=session_id)
+            return session_id
+
+    async def run_intent(self, intent: IntentInput) -> RunResult:
+        session_id = self._ensure_session(intent.session_id)
         intent.session_id = session_id
         self._run_control_manager.assert_session_allows_main_input(session_id)
         run_id = new_trace_id().value
@@ -78,13 +89,8 @@ class RunManager:
             finally:
                 self._injection_manager.deactivate(run_id)
 
-    def create_run(
-        self,
-        intent: IntentInput,
-        *,
-        ensure_session: Callable[[str | None], str],
-    ) -> tuple[str, str]:
-        session_id = ensure_session(intent.session_id)
+    def create_run(self, intent: IntentInput) -> tuple[str, str]:
+        session_id = self._ensure_session(intent.session_id)
         intent.session_id = session_id
         self._run_control_manager.assert_session_allows_main_input(session_id)
         run_id = new_trace_id().value
@@ -237,13 +243,8 @@ class RunManager:
                 self._run_event_hub.unsubscribe_all(run_id)
                 break
 
-    async def run_intent_stream(
-        self,
-        intent: IntentInput,
-        *,
-        ensure_session: Callable[[str | None], str],
-    ):
-        run_id, _ = self.create_run(intent, ensure_session=ensure_session)
+    async def run_intent_stream(self, intent: IntentInput):
+        run_id, _ = self.create_run(intent)
         async for event in self.stream_run_events(run_id):
             yield event
 

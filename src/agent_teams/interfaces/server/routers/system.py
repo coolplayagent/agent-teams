@@ -3,9 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.application.service import AgentTeamsService
+from agent_teams.env.runtime_config_service import RuntimeConfigService
+from agent_teams.interfaces.server.deps import get_system_config_service
 from agent_teams.shared_types.json_types import JsonObject
-from agent_teams.interfaces.server.deps import get_service
 
 router = APIRouter(prefix="/system", tags=["System"])
 
@@ -16,17 +16,23 @@ def health_check() -> dict[str, str]:
 
 
 @router.get("/configs")
-def get_config_status(service: AgentTeamsService = Depends(get_service)) -> JsonObject:
+def get_config_status(
+    service: RuntimeConfigService = Depends(get_system_config_service),
+) -> JsonObject:
     return service.get_config_status()
 
 
 @router.get("/configs/model")
-def get_model_config(service: AgentTeamsService = Depends(get_service)) -> JsonObject:
+def get_model_config(
+    service: RuntimeConfigService = Depends(get_system_config_service),
+) -> JsonObject:
     return service.get_model_config()
 
 
 @router.get("/configs/model/profiles")
-def get_model_profiles(service: AgentTeamsService = Depends(get_service)) -> dict[str, JsonObject]:
+def get_model_profiles(
+    service: RuntimeConfigService = Depends(get_system_config_service),
+) -> dict[str, JsonObject]:
     return service.get_model_profiles()
 
 
@@ -45,7 +51,7 @@ class ModelProfileRequest(BaseModel):
 def save_model_profile(
     name: str,
     req: ModelProfileRequest,
-    service: AgentTeamsService = Depends(get_service),
+    service: RuntimeConfigService = Depends(get_system_config_service),
 ) -> dict[str, str]:
     try:
         service.save_model_profile(
@@ -67,7 +73,7 @@ def save_model_profile(
 @router.delete("/configs/model/profiles/{name}")
 def delete_model_profile(
     name: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: RuntimeConfigService = Depends(get_system_config_service),
 ) -> dict[str, str]:
     try:
         service.delete_model_profile(name)
@@ -85,7 +91,7 @@ class ModelConfigRequest(BaseModel):
 @router.put("/configs/model")
 def save_model_config(
     req: ModelConfigRequest,
-    service: AgentTeamsService = Depends(get_service),
+    service: RuntimeConfigService = Depends(get_system_config_service),
 ) -> dict[str, str]:
     try:
         service.save_model_config(req.config)
@@ -96,7 +102,7 @@ def save_model_config(
 
 @router.get("/configs/notifications")
 def get_notification_config(
-    service: AgentTeamsService = Depends(get_service),
+    service: RuntimeConfigService = Depends(get_system_config_service),
 ) -> JsonObject:
     return service.get_notification_config()
 
@@ -110,7 +116,7 @@ class NotificationConfigRequest(BaseModel):
 @router.put("/configs/notifications")
 def save_notification_config(
     req: NotificationConfigRequest,
-    service: AgentTeamsService = Depends(get_service),
+    service: RuntimeConfigService = Depends(get_system_config_service),
 ) -> dict[str, str]:
     try:
         service.save_notification_config(req.config)
@@ -120,7 +126,9 @@ def save_notification_config(
 
 
 @router.post("/configs/model:reload")
-def reload_model_config(service: AgentTeamsService = Depends(get_service)) -> dict[str, str]:
+def reload_model_config(
+    service: RuntimeConfigService = Depends(get_system_config_service),
+) -> dict[str, str]:
     try:
         service.reload_model_config()
         return {"status": "ok"}
@@ -129,7 +137,9 @@ def reload_model_config(service: AgentTeamsService = Depends(get_service)) -> di
 
 
 @router.post("/configs/mcp:reload")
-def reload_mcp_config(service: AgentTeamsService = Depends(get_service)) -> dict[str, str]:
+def reload_mcp_config(
+    service: RuntimeConfigService = Depends(get_system_config_service),
+) -> dict[str, str]:
     try:
         service.reload_mcp_config()
         return {"status": "ok"}
@@ -138,7 +148,9 @@ def reload_mcp_config(service: AgentTeamsService = Depends(get_service)) -> dict
 
 
 @router.post("/configs/skills:reload")
-def reload_skills_config(service: AgentTeamsService = Depends(get_service)) -> dict[str, str]:
+def reload_skills_config(
+    service: RuntimeConfigService = Depends(get_system_config_service),
+) -> dict[str, str]:
     try:
         service.reload_skills_config()
         return {"status": "ok"}

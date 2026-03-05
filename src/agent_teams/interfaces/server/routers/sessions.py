@@ -3,8 +3,8 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, Depends, HTTPException
 
-from agent_teams.application.service import AgentTeamsService
-from agent_teams.interfaces.server.deps import get_service
+from agent_teams.interfaces.server.deps import get_session_service
+from agent_teams.sessions import SessionService
 from agent_teams.state.session_models import SessionRecord
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
@@ -26,20 +26,20 @@ class UpdateSessionRequest(BaseModel):
 @router.post("", response_model=SessionRecord)
 def create_session(
     req: CreateSessionRequest,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> SessionRecord:
     return service.create_session(session_id=req.session_id, metadata=req.metadata)
 
 
 @router.get("", response_model=list[SessionRecord])
-def list_sessions(service: AgentTeamsService = Depends(get_service)) -> list[SessionRecord]:
+def list_sessions(service: SessionService = Depends(get_session_service)) -> list[SessionRecord]:
     return list(service.list_sessions())
 
 
 @router.get("/{session_id}", response_model=SessionRecord)
 def get_session(
     session_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> SessionRecord:
     try:
         return service.get_session(session_id)
@@ -51,7 +51,7 @@ def get_session(
 def update_session(
     session_id: str,
     req: UpdateSessionRequest,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> dict[str, str]:
     try:
         service.update_session(session_id, req.metadata)
@@ -63,7 +63,7 @@ def update_session(
 @router.delete("/{session_id}")
 def delete_session(
     session_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> dict[str, str]:
     try:
         service.delete_session(session_id)
@@ -77,7 +77,7 @@ def get_session_rounds(
     session_id: str,
     limit: int = 8,
     cursor_run_id: str | None = None,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> dict[str, object]:
     return service.get_session_rounds(
         session_id,
@@ -90,7 +90,7 @@ def get_session_rounds(
 def get_round(
     session_id: str,
     run_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> dict[str, object]:
     try:
         return service.get_round(session_id, run_id)
@@ -101,7 +101,7 @@ def get_round(
 @router.get("/{session_id}/agents")
 def list_session_agents(
     session_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> list[dict[str, object]]:
     return [record.model_dump() for record in service.list_agents_in_session(session_id)]
 
@@ -109,7 +109,7 @@ def list_session_agents(
 @router.get("/{session_id}/events")
 def get_session_events(
     session_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> list[dict[str, object]]:
     return service.get_global_events(session_id)
 
@@ -117,7 +117,7 @@ def get_session_events(
 @router.get("/{session_id}/messages")
 def get_session_messages(
     session_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> list[dict[str, object]]:
     return service.get_session_messages(session_id)
 
@@ -126,7 +126,7 @@ def get_session_messages(
 def get_agent_messages(
     session_id: str,
     instance_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> list[dict[str, object]]:
     return service.get_agent_messages(session_id, instance_id)
 
@@ -134,7 +134,7 @@ def get_agent_messages(
 @router.get("/{session_id}/workflows")
 def get_session_workflows(
     session_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> list[dict[str, object]]:
     return service.get_session_workflows(session_id)
 
@@ -142,7 +142,7 @@ def get_session_workflows(
 @router.get("/{session_id}/token-usage")
 def get_session_token_usage(
     session_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> dict[str, object]:
     summary = service.get_token_usage_by_session(session_id)
     return {
@@ -170,7 +170,7 @@ def get_session_token_usage(
 def get_run_token_usage(
     session_id: str,
     run_id: str,
-    service: AgentTeamsService = Depends(get_service),
+    service: SessionService = Depends(get_session_service),
 ) -> dict[str, object]:
     usage = service.get_token_usage_by_run(run_id)
     return {

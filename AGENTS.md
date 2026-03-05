@@ -6,7 +6,6 @@ Database schema and API changes do not need to maintain backward compatibility. 
 - Core code: `src/agent_teams/`
 - Main modules:
   - `agents/`: agent construction, lifecycle, and execution composition
-  - `application/`: application services and facades
   - `coordination/`: cross-role coordination strategies
   - `env/`: runtime environment loading and env-related CLI support
   - `interfaces/`: external interfaces
@@ -21,6 +20,7 @@ Database schema and API changes do not need to maintain backward compatibility. 
   - `providers/`: LLM provider integrations
   - `roles/`: role definitions and role validation
   - `runs/`: run-time orchestration, run control, event streaming, and injection flows
+  - `sessions/`: session lifecycle and round projection services
   - `shared_types/`: cross-domain shared type aliases and lightweight contracts
   - `skills/`: skill loading/registry support
   - `state/`: persistence and state repositories
@@ -29,7 +29,7 @@ Database schema and API changes do not need to maintain backward compatibility. 
   - `workflow/`: workflow orchestration core
 - Frontend: `frontend/dist` (currently `css/` and `js/` assets)
 - Tests:
-  - `tests/unit_tests/`: unit tests, currently covering `agents/`, `application/`, `env/`, `interfaces/`, `logger/`, `notifications/`, `paths/`, `providers/`, `roles/`, `runs/`, `skills/`, `tools/`, `trace/`, `triggers/`, `workflow/`
+  - `tests/unit_tests/`: unit tests, currently covering `agents/`, `env/`, `interfaces/`, `logger/`, `notifications/`, `paths/`, `providers/`, `roles/`, `runs/`, `sessions/`, `skills/`, `state/`, `tools/`, `trace/`, `triggers/`, `workflow/`
   - `tests/integration_tests/`: integration scenarios split by `api/`, `browser/`, and shared `support/`
 
 ## Core Principles

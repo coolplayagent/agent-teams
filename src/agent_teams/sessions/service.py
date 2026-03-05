@@ -4,7 +4,7 @@ import json
 import uuid
 from typing import cast
 
-from agent_teams.application.rounds_projection import (
+from agent_teams.sessions.rounds_projection import (
     build_session_rounds,
     find_round_by_run_id,
     paginate_rounds,
@@ -18,6 +18,11 @@ from agent_teams.state.session_models import SessionRecord
 from agent_teams.state.session_repo import SessionRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
+from agent_teams.state.token_usage_repo import (
+    RunTokenUsage,
+    SessionTokenUsage,
+    TokenUsageRepository,
+)
 
 
 class SessionService:
@@ -30,6 +35,7 @@ class SessionService:
         shared_store: SharedStore,
         message_repo: MessageRepository,
         event_log: EventLog,
+        token_usage_repo: TokenUsageRepository,
     ) -> None:
         self._session_repo: SessionRepository = session_repo
         self._task_repo: TaskRepository = task_repo
@@ -37,6 +43,7 @@ class SessionService:
         self._shared_store: SharedStore = shared_store
         self._message_repo: MessageRepository = message_repo
         self._event_log: EventLog = event_log
+        self._token_usage_repo: TokenUsageRepository = token_usage_repo
 
     def create_session(
         self,
@@ -65,6 +72,7 @@ class SessionService:
         self._task_repo.delete_by_session(session_id)
         self._agent_repo.delete_by_session(session_id)
         self._session_repo.delete(session_id)
+        self._token_usage_repo.delete_by_session(session_id)
 
     def get_session(self, session_id: str) -> SessionRecord:
         return self._session_repo.get(session_id)
@@ -130,3 +138,9 @@ class SessionService:
     def get_round(self, session_id: str, run_id: str) -> dict[str, object]:
         rounds = self.build_session_rounds(session_id)
         return find_round_by_run_id(rounds, session_id=session_id, run_id=run_id)
+
+    def get_token_usage_by_run(self, run_id: str) -> RunTokenUsage:
+        return self._token_usage_repo.get_by_run(run_id)
+
+    def get_token_usage_by_session(self, session_id: str) -> SessionTokenUsage:
+        return self._token_usage_repo.get_by_session(session_id)

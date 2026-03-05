@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
-from agent_teams.application.service import AgentTeamsService
+from agent_teams.interfaces.server.container import ServerContainer
 from agent_teams.interfaces.server.config_paths import (
     get_config_dir,
     get_frontend_dist_dir,
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config_dir=config_dir, persist_db_path=config_dir / "agent_teams.db"
     )
     _register_signal_handlers()
-    app.state.service = AgentTeamsService(config_dir=config_dir, debug=False)
+    app.state.container = ServerContainer(config_dir=config_dir)
     log_event(
         logger,
         logging.INFO,

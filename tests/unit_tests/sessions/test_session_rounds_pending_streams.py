@@ -1,4 +1,4 @@
-﻿from agent_teams.application.service import AgentTeamsService
+﻿from agent_teams.sessions.rounds_projection import collect_pending_stream_snapshots
 from agent_teams.runs.enums import RunEventType
 
 
@@ -45,7 +45,7 @@ def test_collect_pending_stream_snapshots_deduplicates_persisted_text() -> None:
         }
     ]
 
-    result = AgentTeamsService._collect_pending_stream_snapshots(
+    result = collect_pending_stream_snapshots(
         parsed_events,
         session_messages,
         {"run-1": {"inst-coord": "coordinator_agent"}},
@@ -108,7 +108,7 @@ def test_collect_pending_stream_snapshots_returns_only_unpersisted_delta() -> No
         }
     ]
 
-    result = AgentTeamsService._collect_pending_stream_snapshots(
+    result = collect_pending_stream_snapshots(
         parsed_events,
         session_messages,
         {"run-1": {"inst-coord": "coordinator_agent"}},
@@ -149,7 +149,7 @@ def test_collect_pending_stream_snapshots_tracks_subagent_by_instance() -> None:
         ),
     ]
 
-    result = AgentTeamsService._collect_pending_stream_snapshots(
+    result = collect_pending_stream_snapshots(
         parsed_events,
         [],
         {"run-2": {"inst-coder": "spec_coder"}},
@@ -163,4 +163,5 @@ def test_collect_pending_stream_snapshots_tracks_subagent_by_instance() -> None:
             },
         }
     }
+
 

@@ -8,6 +8,7 @@ from agent_teams.shared_types.json_types import JsonObject, JsonValue
 from agent_teams.logger import get_logger
 from agent_teams.mcp.registry import McpRegistry, McpServerSpec
 from agent_teams.notifications import NotificationConfig, default_notification_config
+from agent_teams.skills.discovery import SkillsDirectory
 from agent_teams.skills.registry import SkillRegistry
 
 logger = get_logger(__name__)
@@ -99,8 +100,6 @@ class ConfigManager:
         return McpRegistry(tuple(mcp_specs))
 
     def load_skill_registry(self) -> SkillRegistry:
-        from agent_teams.skills.discovery import SkillsDirectory
-
         skills_dir = self._config_dir / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
         skill_directory = SkillsDirectory(base_dir=skills_dir)

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent_teams.interfaces.server.deps import get_service
+from agent_teams.interfaces.server.deps import get_trigger_service
 from agent_teams.interfaces.server.routers import triggers
 from agent_teams.triggers import (
     TriggerAuthMode,
@@ -82,12 +82,12 @@ class _FakeTriggerService:
         self.trigger = self.trigger.model_copy(update={"status": status})
         return self.trigger
 
-    def rotate_trigger_token(self, trigger_id: str) -> TriggerDefinition:
+    def rotate_public_token(self, trigger_id: str) -> TriggerDefinition:
         _ = self.get_trigger(trigger_id)
         self.trigger = self.trigger.model_copy(update={"public_token": "token-rotated"})
         return self.trigger
 
-    def ingest_trigger_event(self, _req: object, **_kwargs: object) -> TriggerIngestResult:
+    def ingest_event(self, _req: object, **_kwargs: object) -> TriggerIngestResult:
         return TriggerIngestResult(
             accepted=True,
             event_id=self.event.event_id,
@@ -97,7 +97,7 @@ class _FakeTriggerService:
             trigger_name=self.trigger.name,
         )
 
-    def ingest_trigger_webhook(self, **_kwargs: object) -> TriggerIngestResult:
+    def ingest_webhook(self, **_kwargs: object) -> TriggerIngestResult:
         return TriggerIngestResult(
             accepted=True,
             event_id=self.event.event_id,
@@ -107,12 +107,12 @@ class _FakeTriggerService:
             trigger_name=self.trigger.name,
         )
 
-    def get_trigger_event(self, event_id: str) -> TriggerEventRecord:
+    def get_event(self, event_id: str) -> TriggerEventRecord:
         if event_id != self.event.event_id:
             raise KeyError(event_id)
         return self.event
 
-    def list_trigger_events(
+    def list_events(
         self, _trigger_id: str, *, limit: int, cursor_event_id: str | None
     ) -> tuple[tuple[TriggerEventRecord, ...], str | None]:
         _ = (limit, cursor_event_id)
@@ -120,7 +120,7 @@ class _FakeTriggerService:
 
 
 class _FakeRejectingTriggerService(_FakeTriggerService):
-    def ingest_trigger_webhook(self, **_kwargs: object) -> TriggerIngestResult:
+    def ingest_webhook(self, **_kwargs: object) -> TriggerIngestResult:
         raise TriggerAuthRejectedError(
             "forbidden",
             _build_event(status=TriggerEventStatus.REJECTED_AUTH),
@@ -130,7 +130,7 @@ class _FakeRejectingTriggerService(_FakeTriggerService):
 def _create_test_client(fake_service: object) -> TestClient:
     app = FastAPI()
     app.include_router(triggers.router, prefix="/api")
-    app.dependency_overrides[get_service] = lambda: fake_service
+    app.dependency_overrides[get_trigger_service] = lambda: fake_service
     return TestClient(app)
 
 

@@ -9,9 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_teams.application.service import AgentTeamsService
-from agent_teams.interfaces.server.deps import get_service
+from agent_teams.interfaces.server.deps import get_run_service
 from agent_teams.logger import get_logger, log_event
+from agent_teams.runs.manager import RunManager
 from agent_teams.runs.enums import ExecutionMode, InjectionSource
 from agent_teams.runs.models import IntentInput
 from agent_teams.trace import bind_trace_context
@@ -65,7 +65,7 @@ class InjectSubagentRequest(BaseModel):
 @router.post("", response_model=CreateRunResponse)
 def create_run(
     req: CreateRunRequest,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[RunManager, Depends(get_run_service)],
 ) -> CreateRunResponse:
     started = time.perf_counter()
     try:
@@ -102,7 +102,7 @@ def create_run(
 @router.get("/{run_id}/events")
 async def stream_run_events(
     run_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[RunManager, Depends(get_run_service)],
 ) -> StreamingResponse:
     async def event_generator():
         event_count = 0
@@ -154,7 +154,7 @@ async def stream_run_events(
 def inject_message(
     run_id: str,
     req: InjectMessageRequest,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[RunManager, Depends(get_run_service)],
 ) -> dict[str, object]:
     try:
         result = service.inject_message(
@@ -176,7 +176,7 @@ def inject_message(
 @router.get("/{run_id}/tool-approvals")
 def list_tool_approvals(
     run_id: str,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[RunManager, Depends(get_run_service)],
 ) -> list[dict[str, str]]:
     with bind_trace_context(trace_id=run_id, run_id=run_id):
         result = service.list_open_tool_approvals(run_id)
@@ -195,7 +195,7 @@ def resolve_tool_approval(
     run_id: str,
     tool_call_id: str,
     req: ResolveToolApprovalRequest,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[RunManager, Depends(get_run_service)],
 ) -> dict[str, str]:
     try:
         service.resolve_tool_approval(
@@ -223,7 +223,7 @@ def resolve_tool_approval(
 def stop_run(
     run_id: str,
     req: StopRunRequest,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[RunManager, Depends(get_run_service)],
 ) -> dict[str, str]:
     try:
         if req.scope == "main":
@@ -267,7 +267,7 @@ def inject_subagent(
     run_id: str,
     instance_id: str,
     req: InjectSubagentRequest,
-    service: Annotated[AgentTeamsService, Depends(get_service)],
+    service: Annotated[RunManager, Depends(get_run_service)],
 ) -> dict[str, str]:
     try:
         service.inject_subagent_message(

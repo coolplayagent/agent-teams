@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -32,6 +33,8 @@ from agent_teams.trace import bind_trace_context, generate_request_id
 logger = get_logger(__name__)
 FRONTEND_DIST_DIR = get_frontend_dist_dir()
 RequestHandler = Callable[[Request], Awaitable[Response]]
+SignalHandler = Callable[[int, FrameType | None], None]
+SignalHandlerRef = int | SignalHandler | None
 
 
 @asynccontextmanager
@@ -119,6 +122,24 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 
 def _register_signal_handlers() -> None:
+    registered_signals = (signal.SIGTERM, signal.SIGINT)
+    previous_handlers: dict[int, SignalHandlerRef] = {
+        sig: signal.getsignal(sig) for sig in registered_signals
+    }
+
+    def _forward_to_previous_handler(
+        sig: int, frame: FrameType | None, previous_handler: SignalHandlerRef
+    ) -> None:
+        if previous_handler is None or previous_handler == signal.SIG_IGN:
+            return
+        if callable(previous_handler):
+            previous_handler(sig, frame)
+            return
+        if previous_handler == signal.SIG_DFL:
+            if sig == signal.SIGINT:
+                raise KeyboardInterrupt
+            raise SystemExit(128 + sig)
+
     def _on_signal(sig: int, _frame: FrameType | None) -> None:
         signame = signal.Signals(sig).name
         log_event(
@@ -128,9 +149,10 @@ def _register_signal_handlers() -> None:
             message="Shutdown signal received",
             payload={"signal": signame},
         )
-        logging.shutdown()
+        previous_handler = previous_handlers.get(sig)
+        _forward_to_previous_handler(sig, _frame, previous_handler)
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
+    for sig in registered_signals:
         _ = signal.signal(sig, _on_signal)
 
 

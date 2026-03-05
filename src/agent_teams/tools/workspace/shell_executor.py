@@ -1,16 +1,24 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 import os
+import shlex
 import shutil
 import subprocess
-import asyncio
 from pathlib import Path
 from typing import AsyncGenerator
 
+from agent_teams.env import get_env_var
+from agent_teams.tools.workspace.shell_policy import (
+    DEFAULT_TIMEOUT_SECONDS,
+    MAX_TIMEOUT_SECONDS,
+)
+
 
 def resolve_bash_path() -> str:
-    """查找 bash 可执行文件路径"""
-    env_path = os.getenv("GIT_BASH_PATH")
+    """Resolve the bash executable path for shell commands."""
+    env_path = get_env_var("GIT_BASH_PATH")
     if env_path and Path(env_path).exists():
         return env_path
 
@@ -31,12 +39,7 @@ def resolve_bash_path() -> str:
 
 
 def normalize_timeout(timeout_ms: int | None) -> int:
-    """标准化超时时间 (毫秒)"""
-    from agent_teams.tools.workspace.shell_policy import (
-        DEFAULT_TIMEOUT_SECONDS,
-        MAX_TIMEOUT_SECONDS,
-    )
-
+    """Normalize timeout in milliseconds and apply policy limits."""
     if timeout_ms is None:
         return DEFAULT_TIMEOUT_SECONDS * 1000
 
@@ -66,18 +69,16 @@ COMMAND_PATH_PATTERNS = [
 
 
 def extract_paths_from_command(command: str) -> list[str]:
-    """从命令中提取路径参数"""
-    import shlex
-
-    paths = []
+    """Extract candidate path arguments from shell commands."""
+    paths: list[str] = []
     lines = command.split("\n")
 
     for line in lines:
-        line = line.strip()
-        if not line:
+        stripped_line = line.strip()
+        if not stripped_line:
             continue
 
-        parts = shlex.split(line)
+        parts = shlex.split(stripped_line)
         if not parts:
             continue
 
@@ -93,7 +94,7 @@ def extract_paths_from_command(command: str) -> list[str]:
                 if not part.startswith("-"):
                     paths.append(part)
                     break
-        elif cmd in ("mkdir",):
+        elif cmd == "mkdir":
             for part in parts[1:]:
                 if part.startswith("-"):
                     continue
@@ -109,17 +110,7 @@ async def spawn_shell(
     timeout_ms: int = 30000,
     env: dict[str, str] | None = None,
 ) -> AsyncGenerator[tuple[str, str], None]:
-    """流式执行 shell 命令
-
-    Args:
-        command: 要执行的命令
-        cwd: 工作目录
-        timeout_ms: 超时时间 (毫秒)
-        env: 环境变量
-
-    Yields:
-        (stream_type, data): stdout 或 stderr 的数据块
-    """
+    """Run shell command with streaming stdout/stderr chunks."""
     bash = resolve_bash_path()
 
     shell_env = os.environ.copy()
@@ -142,7 +133,7 @@ async def spawn_shell(
 
     queue: asyncio.Queue[tuple[str, str] | None] = asyncio.Queue()
 
-    async def _pump(stream_name: str, stream) -> None:
+    async def _pump(stream_name: str, stream: asyncio.StreamReader) -> None:
         while True:
             chunk = await stream.read(4096)
             if not chunk:
@@ -190,7 +181,7 @@ def run_git_bash(
     workdir: Path,
     timeout_seconds: int,
 ) -> tuple[int, str, str, bool]:
-    """同步执行 shell 命令 (保持向后兼容)"""
+    """Run command synchronously under bash for compatibility."""
     bash = resolve_bash_path()
     try:
         proc = subprocess.run(

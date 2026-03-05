@@ -1,10 +1,10 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import ast
 import json
 import logging
 import logging.config
-import os
 import traceback
 from configparser import ConfigParser
 from datetime import UTC, datetime
@@ -13,6 +13,7 @@ from types import TracebackType
 from typing import cast, override
 
 from agent_teams.core.types import JsonObject, JsonValue
+from agent_teams.env import load_merged_env_vars
 from agent_teams.logger.log_persistence import PersistentLogHandler
 from agent_teams.trace import get_trace_context
 
@@ -21,6 +22,8 @@ LOGGER_CONFIG_FILENAME = "logger.ini"
 DEFAULT_LOG_FILENAME = "agent_teams.log"
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FORMAT = "json"
+
+_RUNTIME_ENV_VALUES: dict[str, str] | None = None
 
 type LogExcInfo = (
     bool
@@ -71,7 +74,7 @@ class JsonFormatter(logging.Formatter):
             "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "service": SERVICE_NAME,
-            "env": os.getenv("AGENT_TEAMS_ENV", "dev"),
+            "env": _get_runtime_env_value("AGENT_TEAMS_ENV", "dev"),
             "logger": record.name,
             "message": record.getMessage(),
         }
@@ -122,6 +125,8 @@ class JsonFormatter(logging.Formatter):
 def configure_logging(
     *, config_dir: Path | None = None, persist_db_path: Path | None = None
 ) -> None:
+    _refresh_runtime_env_values()
+
     resolved_config_dir = (config_dir or Path(".agent_teams")).resolve()
     resolved_config_dir.mkdir(parents=True, exist_ok=True)
 
@@ -242,25 +247,38 @@ def sanitize_payload(payload: JsonValue) -> JsonValue:
     return payload
 
 
+def _refresh_runtime_env_values() -> None:
+    global _RUNTIME_ENV_VALUES
+    _RUNTIME_ENV_VALUES = load_merged_env_vars()
+
+
+def _get_runtime_env_value(key: str, default: str) -> str:
+    values = _RUNTIME_ENV_VALUES
+    if values is None:
+        _refresh_runtime_env_values()
+        values = _RUNTIME_ENV_VALUES
+    if values is None:
+        return default
+    return values.get(key, default)
+
+
 def _persistence_enabled() -> bool:
-    raw = os.getenv("AGENT_TEAMS_LOG_PERSIST", "1").strip().lower()
+    raw = _get_runtime_env_value("AGENT_TEAMS_LOG_PERSIST", "1").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
 def _resolve_log_level() -> int:
-    level_name = os.getenv("AGENT_TEAMS_LOG_LEVEL", DEFAULT_LOG_LEVEL).strip().upper()
-    resolved = getattr(logging, level_name, logging.INFO)
+    level_name = _get_runtime_env_value("AGENT_TEAMS_LOG_LEVEL", DEFAULT_LOG_LEVEL)
+    resolved = getattr(logging, level_name.strip().upper(), logging.INFO)
     if isinstance(resolved, int):
         return resolved
     return logging.INFO
 
 
 def _apply_console_formatter(root: logging.Logger) -> None:
-    format_name = (
-        os.getenv("AGENT_TEAMS_LOG_FORMAT", DEFAULT_LOG_FORMAT).strip().lower()
-    )
+    format_name = _get_runtime_env_value("AGENT_TEAMS_LOG_FORMAT", DEFAULT_LOG_FORMAT)
     formatter: logging.Formatter
-    if format_name == "console":
+    if format_name.strip().lower() == "console":
         formatter = logging.Formatter(
             "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
         )
@@ -277,7 +295,7 @@ def _apply_console_formatter(root: logging.Logger) -> None:
 def _resolve_persist_db_path(*, persist_db_path: Path | None, config_dir: Path) -> Path:
     if persist_db_path is not None:
         return persist_db_path.resolve()
-    raw_path = os.getenv("AGENT_TEAMS_LOG_DB_PATH", "agent_teams.db")
+    raw_path = _get_runtime_env_value("AGENT_TEAMS_LOG_DB_PATH", "agent_teams.db")
     return _resolve_path(raw_path=raw_path, config_dir=config_dir)
 
 

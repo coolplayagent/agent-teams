@@ -5,6 +5,7 @@ __pycache__/
 .tmp/
 *.egg-info/
 .idea/
+coverage.json
 
 .agent_teams/stage_docs
 .agent_teams/.env

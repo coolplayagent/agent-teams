@@ -1,5 +1,7 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from uuid import uuid4
@@ -23,7 +25,7 @@ class TraceContext(BaseModel):
     role_id: str | None = None
     tool_call_id: str | None = None
 
-    def merged(self, **updates: str | None) -> "TraceContext":
+    def merged(self, **updates: str | None) -> TraceContext:
         return TraceContext(
             trace_id=updates.get("trace_id", self.trace_id),
             request_id=updates.get("request_id", self.request_id),
@@ -61,7 +63,7 @@ def reset_trace_context(token: Token[TraceContext | None]) -> None:
 
 
 @contextmanager
-def bind_trace_context(**updates: str | None):
+def bind_trace_context(**updates: str | None) -> Generator[TraceContext, None, None]:
     token = set_trace_context(**updates)
     try:
         yield get_trace_context()

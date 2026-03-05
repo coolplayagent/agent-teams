@@ -19,6 +19,8 @@ Database schema and API changes do not need to maintain backward compatibility. 
   - `tests/integration_tests/`: integration tests (API/SSE and end-to-end backend flows)
 
 ## Core Principles
+- **提交规范**: 禁止绕过pre-commit的检查
+- **文件编码规范**: 在python文件头统一添加utf-8编码声明
 - **Strong typing**: Never use untyped `{}` structures, `typing.Any`, or `dataclass` for domain contracts. Use explicit strong types and Pydantic v2 models for schema safety.
 - **Clean code**: Follow SOLID principles, keep modules high-cohesion/low-coupling, and depend on abstractions rather than concrete implementations.
 - **Public interfaces**: Expose package-level public APIs through `__init__.py`.

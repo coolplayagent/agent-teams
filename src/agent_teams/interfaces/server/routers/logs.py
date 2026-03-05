@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent_teams.core.types import JsonObject
 from agent_teams.logger import get_logger, log_event
-from agent_teams.runtime.trace import bind_trace_context, generate_trace_id
+from agent_teams.trace import bind_trace_context, generate_trace_id
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
 logger = get_logger(__name__)

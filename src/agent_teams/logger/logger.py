@@ -14,7 +14,7 @@ from typing import cast, override
 
 from agent_teams.core.types import JsonObject, JsonValue
 from agent_teams.logger.log_persistence import PersistentLogHandler
-from agent_teams.runtime.trace import get_trace_context
+from agent_teams.trace import get_trace_context
 
 SERVICE_NAME = "agent_teams"
 LOGGER_CONFIG_FILENAME = "logger.ini"

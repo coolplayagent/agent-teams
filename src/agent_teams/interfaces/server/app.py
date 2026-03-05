@@ -27,7 +27,7 @@ from agent_teams.interfaces.server.routers import (
     workflows,
 )
 from agent_teams.logger import configure_logging, get_logger, log_event
-from agent_teams.runtime.trace import bind_trace_context, generate_request_id
+from agent_teams.trace import bind_trace_context, generate_request_id
 
 logger = get_logger(__name__)
 FRONTEND_DIST_DIR = get_frontend_dist_dir()

@@ -15,7 +15,7 @@ from agent_teams.logger import (
     log_event,
     log_tool_call,
 )
-from agent_teams.runtime.trace import bind_trace_context
+from agent_teams.trace import bind_trace_context
 
 
 def test_configure_logging_loads_ini_and_builds_rotating_handler(

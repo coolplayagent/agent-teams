@@ -17,7 +17,7 @@ from agent_teams.runtime.tool_approval_manager import (
     ToolApprovalAction,
     ToolApprovalManager,
 )
-from agent_teams.runtime.trace import bind_trace_context
+from agent_teams.trace import bind_trace_context
 
 logger = get_logger(__name__)
 

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -19,6 +19,7 @@ from agent_teams.interfaces.cli.prompt_cli import (
     stream_events as _stream_events_impl,
 )
 from agent_teams.interfaces.server.cli import build_server_app
+from agent_teams.prompting.cli import build_prompts_app
 from agent_teams.roles.cli import build_roles_app
 from agent_teams.interfaces.cli.approvals import build_approvals_app
 from agent_teams.triggers.cli import build_triggers_app
@@ -99,9 +100,7 @@ def _start_server_daemon(host: str, port: int) -> None:
         )
         detached_process = int(getattr(subprocess, "DETACHED_PROCESS", 0))
         create_no_window = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        creationflags = (
-            create_new_process_group | detached_process | create_no_window
-        )
+        creationflags = create_new_process_group | detached_process | create_no_window
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= int(getattr(subprocess, "STARTF_USESHOWWINDOW", 0))
         startupinfo.wShowWindow = int(getattr(subprocess, "SW_HIDE", 0))
@@ -210,6 +209,11 @@ triggers_app = build_triggers_app(
     auto_start_if_needed=_trigger_auto_start,
     default_base_url=DEFAULT_BASE_URL,
 )
+prompts_app = build_prompts_app(
+    request_json=_module_request_json,
+    auto_start_if_needed=_module_auto_start,
+    default_base_url=DEFAULT_BASE_URL,
+)
 
 
 def _stream_events(base_url: str, run_id: str, debug: bool) -> None:
@@ -264,6 +268,7 @@ app.add_typer(roles_app, name="roles")
 app.add_typer(approvals_app, name="approvals")
 app.add_typer(env_app, name="env")
 app.add_typer(triggers_app, name="triggers")
+app.add_typer(prompts_app, name="prompts")
 
 
 def main() -> None:
@@ -276,4 +281,3 @@ def _require_object_response(
     if isinstance(payload, dict):
         return payload
     raise RuntimeError(f"Expected JSON object from {path}")
-

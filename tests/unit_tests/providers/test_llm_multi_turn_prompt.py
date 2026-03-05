@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -19,6 +19,7 @@ from agent_teams.runs.injection_queue import RunInjectionManager
 from agent_teams.runs.control import RunControlManager
 from agent_teams.runs.event_stream import RunEventHub
 from agent_teams.tools.approval_state import ToolApprovalManager
+from agent_teams.prompting.provider_augment import PromptSkillInstruction
 from agent_teams.skills.registry import SkillRegistry
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
@@ -45,7 +46,9 @@ class _FakeControlContext:
 
 
 class _FakeRunControlManager:
-    def context(self, *, run_id: str, instance_id: str | None = None) -> _FakeControlContext:
+    def context(
+        self, *, run_id: str, instance_id: str | None = None
+    ) -> _FakeControlContext:
         _ = (run_id, instance_id)
         return _FakeControlContext()
 
@@ -70,6 +73,18 @@ class _FakeSharedStore:
 
 class _FakeEventLog:
     pass
+
+
+class _FakeSkillRegistry:
+    def __init__(self, entries: tuple[PromptSkillInstruction, ...]) -> None:
+        self._entries = entries
+        self.requested: list[tuple[str, ...]] = []
+
+    def get_instruction_entries(
+        self, skill_names: tuple[str, ...]
+    ) -> tuple[PromptSkillInstruction, ...]:
+        self.requested.append(skill_names)
+        return self._entries
 
 
 class _FakeMessageRepo:
@@ -126,7 +141,9 @@ class _FakeAgent:
     def __init__(self) -> None:
         self.prompts: list[str | None] = []
 
-    def iter(self, prompt: str | None, *, deps: object, message_history: object) -> _FakeAgentRun:
+    def iter(
+        self, prompt: str | None, *, deps: object, message_history: object
+    ) -> _FakeAgentRun:
         _ = (deps, message_history)
         self.prompts.append(prompt)
         return _FakeAgentRun()
@@ -314,7 +331,19 @@ class _FakeAgentWithMutableUsageNode:
         return _FakeAgentRunWithMutableUsage()
 
 
-def _build_provider(message_repo: _FakeMessageRepo, hub: _FakeRunEventHub) -> OpenAICompatibleProvider:
+def _build_provider(
+    message_repo: _FakeMessageRepo,
+    hub: _FakeRunEventHub,
+    *,
+    allowed_tools: tuple[str, ...] = (),
+    allowed_skills: tuple[str, ...] = (),
+    skill_registry: object | None = None,
+) -> OpenAICompatibleProvider:
+    registry = (
+        cast(SkillRegistry, skill_registry)
+        if skill_registry is not None
+        else cast(SkillRegistry, object())
+    )
     config = ModelEndpointConfig(
         model="gpt-test",
         base_url="http://localhost",
@@ -326,16 +355,18 @@ def _build_provider(message_repo: _FakeMessageRepo, hub: _FakeRunEventHub) -> Op
         instance_pool=cast(InstancePool, cast(object, _FakeInstancePool())),
         shared_store=cast(SharedStore, cast(object, _FakeSharedStore())),
         event_bus=cast(EventLog, cast(object, _FakeEventLog())),
-        injection_manager=cast(RunInjectionManager, cast(object, _FakeInjectionManager())),
+        injection_manager=cast(
+            RunInjectionManager, cast(object, _FakeInjectionManager())
+        ),
         run_event_hub=cast(RunEventHub, cast(object, hub)),
         agent_repo=cast(AgentInstanceRepository, object()),
         workspace_root=Path("."),
         tool_registry=cast(ToolRegistry, object()),
         mcp_registry=cast(McpRegistry, object()),
-        skill_registry=cast(SkillRegistry, object()),
-        allowed_tools=(),
+        skill_registry=registry,
+        allowed_tools=allowed_tools,
         allowed_mcp_servers=(),
-        allowed_skills=(),
+        allowed_skills=allowed_skills,
         message_repo=cast(MessageRepository, cast(object, message_repo)),
         role_registry=cast(RoleRegistry, object()),
         task_execution_service=cast(TaskExecutionService, object()),
@@ -349,7 +380,9 @@ def _build_provider(message_repo: _FakeMessageRepo, hub: _FakeRunEventHub) -> Op
 
 
 @pytest.mark.asyncio
-async def test_generate_passes_current_turn_prompt_even_with_existing_history(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_generate_passes_current_turn_prompt_even_with_existing_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_agent = _FakeAgent()
     fake_message_repo = _FakeMessageRepo()
     fake_hub = _FakeRunEventHub()
@@ -415,6 +448,59 @@ async def test_generate_enables_continuous_stream_usage_stats(
 
 
 @pytest.mark.asyncio
+async def test_generate_builds_augmented_system_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_agent = _FakeAgent()
+    fake_message_repo = _FakeMessageRepo()
+    fake_hub = _FakeRunEventHub()
+    fake_skill_registry = _FakeSkillRegistry(
+        (
+            PromptSkillInstruction(
+                name="time",
+                instructions="Normalize all times to UTC.",
+            ),
+        )
+    )
+    provider = _build_provider(
+        fake_message_repo,
+        fake_hub,
+        allowed_tools=("dispatch_tasks",),
+        allowed_skills=("time",),
+        skill_registry=fake_skill_registry,
+    )
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_builder(**kwargs: object) -> _FakeAgent:
+        captured_kwargs.update(kwargs)
+        return fake_agent
+
+    monkeypatch.setattr(llm_module, "build_collaboration_agent", _fake_builder)
+
+    request = LLMRequest(
+        run_id="run-augment",
+        trace_id="run-augment",
+        task_id="task-augment",
+        session_id="session-augment",
+        instance_id="inst-augment",
+        role_id="coordinator_agent",
+        system_prompt="## Role\nBase system prompt.",
+        user_prompt="## Objective\ncurrent turn",
+    )
+
+    _ = await provider.generate(request)
+
+    system_prompt_obj = captured_kwargs.get("system_prompt")
+    assert isinstance(system_prompt_obj, str)
+    assert "## Tool Rules" in system_prompt_obj
+    assert "dispatch_tasks" in system_prompt_obj
+    assert "## Skill Instructions" in system_prompt_obj
+    assert "### Skill: time" in system_prompt_obj
+    assert "Normalize all times to UTC." in system_prompt_obj
+    assert fake_skill_registry.requested == [("time",)]
+
+
+@pytest.mark.asyncio
 async def test_generate_token_usage_tracks_request_level_delta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -474,7 +560,9 @@ async def test_generate_token_usage_delta_works_with_mutated_usage_object(
     provider = _build_provider(fake_message_repo, fake_hub)
     fake_agent = _FakeAgentWithMutableUsageNode()
 
-    monkeypatch.setattr(llm_module, "ModelRequestNode", _FakeModelRequestNodeMutatesUsage)
+    monkeypatch.setattr(
+        llm_module, "ModelRequestNode", _FakeModelRequestNodeMutatesUsage
+    )
     monkeypatch.setattr(
         llm_module,
         "build_collaboration_agent",
@@ -506,5 +594,3 @@ async def test_generate_token_usage_delta_works_with_mutated_usage_object(
     assert payload["total_tokens"] == 39
     assert payload["requests"] == 1
     assert payload["tool_calls"] == 5
-
-

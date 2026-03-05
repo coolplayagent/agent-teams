@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
 import io
 import inspect
@@ -12,7 +13,7 @@ from agent_teams.skills.discovery import SkillsDirectory
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
 
-from agent_teams.skills.models import SkillMetadata
+from agent_teams.skills.models import SkillInstructionEntry, SkillMetadata
 
 
 class SkillRegistry(BaseModel):
@@ -61,13 +62,30 @@ class SkillRegistry(BaseModel):
         return tuple(sorted(s.metadata.name for s in all_skills))
 
     def get_instructions(self, skill_names: tuple[str, ...]) -> str:
+        entries = self.get_instruction_entries(skill_names)
+        return "\n\n".join(entry.instructions for entry in entries)
+
+    def get_instruction_entries(
+        self, skill_names: tuple[str, ...]
+    ) -> tuple[SkillInstructionEntry, ...]:
+        self.validate_known(skill_names)
         all_skills = self.directory.list_skills()
-        results = []
+        entries: list[SkillInstructionEntry] = []
         for name in skill_names:
-            skill = next((s for s in all_skills if s.metadata.name == name), None)
-            if skill and skill.metadata.instructions:
-                results.append(f"## Skill: {name}\n{skill.metadata.instructions}")
-        return "\n\n".join(results)
+            skill = next(
+                (item for item in all_skills if item.metadata.name == name), None
+            )
+            if skill is None:
+                continue
+            instructions = skill.metadata.instructions.strip()
+            if instructions:
+                entries.append(
+                    SkillInstructionEntry(
+                        name=skill.metadata.name,
+                        instructions=instructions,
+                    )
+                )
+        return tuple(entries)
 
     async def list_skills(self, ctx: ToolContext) -> JsonObject:
         return await execute_tool(
@@ -213,5 +231,3 @@ def _normalize_script_result(value: object) -> JsonValue:
             normalized[str(key)] = _normalize_script_result(item)
         return normalized
     return str(value)
-
-

@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
 import json
 from copy import deepcopy
@@ -49,6 +50,11 @@ from agent_teams.tools.registry import ToolRegistry
 from agent_teams.tools.runtime import ToolDeps
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.notifications import NotificationService
+from agent_teams.prompting.provider_augment import (
+    PromptSkillInstruction,
+    ProviderPromptAugmentInput,
+    build_provider_augmented_system_prompt,
+)
 from agent_teams.skills.registry import SkillRegistry
 
 if TYPE_CHECKING:
@@ -149,7 +155,26 @@ class OpenAICompatibleProvider(LLMProvider):
         return await self._generate_async(request)
 
     async def _generate_async(self, request: LLMRequest) -> str:
-        tool_rules = f"Available tools: {', '.join(self._allowed_tools)}."
+        skill_instructions = (
+            tuple(
+                PromptSkillInstruction(
+                    name=entry.name,
+                    instructions=entry.instructions,
+                )
+                for entry in self._skill_registry.get_instruction_entries(
+                    self._allowed_skills
+                )
+            )
+            if self._allowed_skills
+            else ()
+        )
+        agent_system_prompt = build_provider_augmented_system_prompt(
+            ProviderPromptAugmentInput(
+                system_prompt=request.system_prompt,
+                allowed_tools=self._allowed_tools,
+                skill_instructions=skill_instructions,
+            )
+        )
         log_event(
             LOGGER,
             logging.DEBUG,
@@ -182,7 +207,7 @@ class OpenAICompatibleProvider(LLMProvider):
             model_name=self._config.model,
             base_url=self._config.base_url,
             api_key=self._config.api_key,
-            system_prompt=f"{request.system_prompt}\n\n{tool_rules}",
+            system_prompt=agent_system_prompt,
             allowed_tools=self._allowed_tools,
             model_settings=model_settings,
             allowed_mcp_servers=self._allowed_mcp_servers,
@@ -599,5 +624,3 @@ class OpenAICompatibleProvider(LLMProvider):
                 for key, entry in entries.items()
             }
         return str(value)
-
-

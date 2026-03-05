@@ -1,0 +1,156 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+from typer.testing import CliRunner
+
+from agent_teams.interfaces.cli import app as cli_app
+
+runner = CliRunner()
+
+
+def test_prompts_get_builds_preview_payload(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_autostart(base_url: str, autostart: bool) -> None:
+        captured["base_url"] = base_url
+        captured["autostart"] = autostart
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, object] | list[object]:
+        _ = (base_url, timeout_seconds)
+        captured["method"] = method
+        captured["path"] = path
+        captured["payload"] = payload
+        return {
+            "role_id": "coordinator_agent",
+            "objective": "Draft release note",
+            "tools": ["dispatch_tasks"],
+            "skills": ["time"],
+            "runtime_system_prompt": "runtime",
+            "provider_system_prompt": "provider",
+            "user_prompt": "user",
+            "tool_prompt": "tool",
+            "skill_prompt": "skill",
+        }
+
+    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
+    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+
+    result = runner.invoke(
+        cli_app.app,
+        [
+            "prompts",
+            "get",
+            "--role-id",
+            "coordinator_agent",
+            "--objective",
+            "Draft release note",
+            "--tool",
+            "dispatch_tasks",
+            "--skill",
+            "time",
+            "--shared-state-json",
+            '{"lang":"zh-CN"}',
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "base_url": cli_app.DEFAULT_BASE_URL,
+        "autostart": True,
+        "method": "POST",
+        "path": "/api/prompts:preview",
+        "payload": {
+            "role_id": "coordinator_agent",
+            "objective": "Draft release note",
+            "shared_state": {"lang": "zh-CN"},
+            "tools": ["dispatch_tasks"],
+            "skills": ["time"],
+        },
+    }
+    assert '"provider_system_prompt": "provider"' in result.output
+
+
+def test_prompts_get_without_role_id_shows_available_roles(monkeypatch) -> None:
+    captured: list[str] = []
+
+    def fake_autostart(base_url: str, autostart: bool) -> None:
+        _ = (base_url, autostart)
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, object] | list[object]:
+        _ = (base_url, method, payload, timeout_seconds)
+        captured.append(path)
+        return [
+            {"role_id": "coordinator_agent"},
+            {"role_id": "writer_agent"},
+        ]
+
+    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
+    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+
+    result = runner.invoke(cli_app.app, ["prompts", "get"])
+
+    assert result.exit_code == 2
+    assert captured == ["/api/roles"]
+    assert "Missing required option: --role-id" in result.output
+    assert "coordinator_agent" in result.output
+    assert "Usage: agent-teams prompts get --role-id <role_id>" in result.output
+
+
+def test_prompts_get_default_output_prints_raw_prompt_sections(monkeypatch) -> None:
+    def fake_autostart(base_url: str, autostart: bool) -> None:
+        _ = (base_url, autostart)
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, object] | list[object]:
+        _ = (base_url, method, path, payload, timeout_seconds)
+        return {
+            "role_id": "coordinator_agent",
+            "objective": "Draft release note",
+            "tools": ["dispatch_tasks"],
+            "skills": ["time"],
+            "runtime_system_prompt": "## Role\nruntime line",
+            "provider_system_prompt": "## Tool Rules\nprovider line",
+            "user_prompt": "## Objective\nuser line",
+            "tool_prompt": "## Tool Rules\ntool line",
+            "skill_prompt": "## Skill Instructions\nskill line",
+        }
+
+    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
+    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+
+    result = runner.invoke(
+        cli_app.app,
+        [
+            "prompts",
+            "get",
+            "--role-id",
+            "coordinator_agent",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "## Tool Rules\nprovider line" in result.output
+    assert "runtime line" not in result.output
+    assert "tool line" not in result.output
+    assert "skill line" not in result.output
+    assert "role_id:" not in result.output
+    assert "+-" not in result.output

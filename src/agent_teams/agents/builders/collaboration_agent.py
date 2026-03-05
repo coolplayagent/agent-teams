@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from pydantic_ai import Agent
@@ -32,9 +33,6 @@ def build_collaboration_agent(
     if skill_registry and allowed_skills:
         skill_registry.validate_known(allowed_skills)
         skill_tools = skill_registry.get_toolset_tools(allowed_skills)
-        instructions = skill_registry.get_instructions(allowed_skills)
-        if instructions:
-            system_prompt = f"{system_prompt}\n\n{instructions}"
 
     model = OpenAIChatModel(
         model_name,

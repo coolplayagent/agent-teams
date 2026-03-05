@@ -139,6 +139,16 @@ for event in client.stream_run_events(run.run_id):
     print(event.get("event_type"))
 ```
 
+### 5.3) Preview assembled prompts for a role
+
+```bash
+uv run agent-teams prompts get --role-id coordinator_agent
+```
+
+```bash
+uv run agent-teams prompts get --role-id coordinator_agent --format json --section provider
+```
+
 ### 6) List triggers
 
 ```bash

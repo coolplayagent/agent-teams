@@ -421,7 +421,50 @@ Validates role files against registered tools.
 
 ---
 
-## 9. Frontend Log API
+## 9. Prompt APIs
+
+### `POST /prompts:preview`
+Builds prompt preview payload for a specific role.
+
+Request:
+```json
+{
+  "role_id": "coordinator_agent",
+  "objective": "Draft release note",
+  "shared_state": {"lang": "zh-CN", "priority": 1},
+  "tools": ["dispatch_tasks"],
+  "skills": ["time"]
+}
+```
+
+Request notes:
+- `role_id` is required.
+- `objective` is optional; server fills a default preview objective when omitted.
+- `shared_state` is optional and defaults to `{}`.
+- `tools` / `skills` are optional overrides. If omitted, role defaults are used.
+
+Response:
+```json
+{
+  "role_id": "coordinator_agent",
+  "objective": "Draft release note",
+  "tools": ["dispatch_tasks"],
+  "skills": ["time"],
+  "runtime_system_prompt": "...",
+  "provider_system_prompt": "...",
+  "user_prompt": "...",
+  "tool_prompt": "...",
+  "skill_prompt": "..."
+}
+```
+
+Error behavior:
+- `404`: unknown role id
+- `400`: unknown tool/skill override
+
+---
+
+## 10. Frontend Log API
 
 ### `POST /logs/frontend`
 Ingests frontend structured logs in batch.
@@ -450,7 +493,7 @@ Request:
 
 ---
 
-## 10. Trigger APIs
+## 11. Trigger APIs
 
 ### trigger enums
 

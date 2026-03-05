@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,3 +38,10 @@ class Skill(BaseModel):
 
     metadata: SkillMetadata
     directory: Path
+
+
+class SkillInstructionEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    instructions: str = Field(min_length=1)

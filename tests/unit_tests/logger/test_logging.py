@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.logger import (
     configure_logging,
     get_logger,
@@ -143,3 +143,5 @@ class _RootLoggerSnapshot:
         for handler in current_handlers:
             if handler not in self._handlers:
                 handler.close()
+
+

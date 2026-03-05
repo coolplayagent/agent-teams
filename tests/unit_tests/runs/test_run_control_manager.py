@@ -1,8 +1,8 @@
-import asyncio
+﻿import asyncio
 
 import pytest
 
-from agent_teams.runtime.run_control_manager import RunControlManager
+from agent_teams.runs.control import RunControlManager
 
 
 def test_request_run_stop_cancels_run_task() -> None:
@@ -93,3 +93,4 @@ def test_session_guard_blocks_main_input_when_paused() -> None:
     )
     with pytest.raises(RuntimeError):
         mgr.assert_session_allows_main_input('session-1')
+

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.core.models import RoleDefinition, TaskEnvelope
+from agent_teams.roles.models import RoleDefinition
+from agent_teams.workflow.models import TaskEnvelope
 
 
 class PromptBuildInput(BaseModel):

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import UTC, datetime
 import hashlib
@@ -9,7 +9,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.triggers.models import (
     TriggerAuthMode,
     TriggerAuthPolicy,
@@ -439,3 +439,5 @@ __all__ = [
     "TriggerNameConflictError",
     "TriggerService",
 ]
+
+

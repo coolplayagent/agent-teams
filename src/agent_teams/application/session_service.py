@@ -9,11 +9,12 @@ from agent_teams.application.rounds_projection import (
     find_round_by_run_id,
     paginate_rounds,
 )
-from agent_teams.core.enums import ScopeType
-from agent_teams.core.models import AgentRuntimeRecord, ScopeRef, SessionRecord
+from agent_teams.agents.models import AgentRuntimeRecord
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
+from agent_teams.state.scope_models import ScopeRef, ScopeType
+from agent_teams.state.session_models import SessionRecord
 from agent_teams.state.session_repo import SessionRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository

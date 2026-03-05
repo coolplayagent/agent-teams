@@ -1,5 +1,5 @@
-from agent_teams.core.enums import TaskStatus
-from agent_teams.core.models import TaskEnvelope, TaskRecord, VerificationPlan
+﻿from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.models import TaskEnvelope, TaskRecord, VerificationPlan
 from agent_teams.tools.workflow.dispatch_tasks import (
     _converged_stage,
     _latest_completed_task,
@@ -59,3 +59,4 @@ def test_converged_stage_and_next_action() -> None:
     failed_stage = _converged_stage(progress=progress, failed=failed)
     assert failed_stage == 'failed'
     assert _next_action(failed_stage, failed=failed) == 'revise'
+

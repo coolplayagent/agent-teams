@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import ast
@@ -12,7 +12,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import cast, override
 
-from agent_teams.core.types import JsonObject, JsonValue
+from agent_teams.shared_types.json_types import JsonObject, JsonValue
 from agent_teams.env import load_merged_env_vars
 from agent_teams.logger.log_persistence import PersistentLogHandler
 from agent_teams.trace import get_trace_context
@@ -377,3 +377,5 @@ def _safe_json(value: object) -> str:
     if len(text) > 300:
         return text[:300] + "...(truncated)"
     return text
+
+

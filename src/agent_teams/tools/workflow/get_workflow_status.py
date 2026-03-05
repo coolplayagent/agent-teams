@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 
 from pydantic_ai import Agent
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
@@ -67,4 +67,6 @@ def register(agent: Agent[ToolDeps, str]) -> None:
             args_summary={'workflow_id': workflow_id},
             action=_action,
         )
+
+
 

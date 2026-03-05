@@ -1,4 +1,4 @@
-# Repository Guidelines
+﻿# Repository Guidelines
 
 Database schema and API changes do not need to maintain backward compatibility. After making such changes, update the corresponding documentation in the `docs/` directory in the same task.
 
@@ -8,7 +8,6 @@ Database schema and API changes do not need to maintain backward compatibility. 
   - `agents/`: agent construction, lifecycle, and execution composition
   - `application/`: application services and facades
   - `coordination/`: cross-role coordination strategies
-  - `core/`: domain models, enums, IDs, and base contracts
   - `env/`: runtime environment loading and env-related CLI support
   - `interfaces/`: external interfaces
     - `interfaces/server/`: FastAPI HTTP/SSE API and routers
@@ -21,7 +20,8 @@ Database schema and API changes do not need to maintain backward compatibility. 
   - `prompting/`: prompt assembly and prompt-layer abstractions
   - `providers/`: LLM provider integrations
   - `roles/`: role definitions and role validation
-  - `runtime/`: run-time orchestration and approval-related flows
+  - `runs/`: run-time orchestration, run control, event streaming, and injection flows
+  - `shared_types/`: cross-domain shared type aliases and lightweight contracts
   - `skills/`: skill loading/registry support
   - `state/`: persistence and state repositories
   - `tools/`: built-in tools (`stage/`, `workflow/`, `workspace/`)
@@ -29,7 +29,7 @@ Database schema and API changes do not need to maintain backward compatibility. 
   - `workflow/`: workflow orchestration core
 - Frontend: `frontend/dist` (currently `css/` and `js/` assets)
 - Tests:
-  - `tests/unit_tests/`: unit tests, currently covering `agents/`, `application/`, `core/`, `env/`, `interfaces/`, `paths/`, `providers/`, `roles/`, `runtime/`, `skills/`, `tools/`, `trace/`, `triggers/`
+  - `tests/unit_tests/`: unit tests, currently covering `agents/`, `application/`, `env/`, `interfaces/`, `logger/`, `notifications/`, `paths/`, `providers/`, `roles/`, `runs/`, `skills/`, `tools/`, `trace/`, `triggers/`, `workflow/`
   - `tests/integration_tests/`: integration scenarios split by `api/`, `browser/`, and shared `support/`
 
 ## Core Principles

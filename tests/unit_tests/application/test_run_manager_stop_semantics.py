@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import asyncio
@@ -8,8 +8,8 @@ import pytest
 
 from agent_teams.agents.core.meta_agent import MetaAgent
 from agent_teams.application.run_manager import RunManager
-from agent_teams.core.enums import RunEventType
-from agent_teams.core.models import IntentInput
+from agent_teams.runs.enums import RunEventType
+from agent_teams.runs.models import IntentInput
 from agent_teams.notifications import (
     NotificationChannel,
     NotificationConfig,
@@ -17,10 +17,10 @@ from agent_teams.notifications import (
     NotificationService,
 )
 from agent_teams.agents.management.instance_pool import InstancePool
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
@@ -156,3 +156,5 @@ def test_stop_pending_run_emits_run_stopped_event() -> None:
     assert event.event_type == RunEventType.RUN_STOPPED
     notification_event = queue.get_nowait()
     assert notification_event.event_type == RunEventType.NOTIFICATION_REQUESTED
+
+

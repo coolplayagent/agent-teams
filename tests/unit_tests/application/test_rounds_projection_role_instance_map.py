@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import cast
 
 from agent_teams.application.rounds_projection import build_session_rounds
-from agent_teams.core.models import TaskEnvelope, TaskRecord, VerificationPlan
-from agent_teams.core.enums import RunEventType
+from agent_teams.workflow.models import TaskEnvelope, TaskRecord, VerificationPlan
+from agent_teams.runs.enums import RunEventType
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.shared_store import SharedStore
@@ -175,3 +175,4 @@ def test_build_session_rounds_includes_task_instance_map() -> None:
         "task-second": "created",
         "task-unassigned": "created",
     }
+

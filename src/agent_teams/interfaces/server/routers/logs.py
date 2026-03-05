@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
@@ -7,7 +7,7 @@ from typing import ClassVar
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.logger import get_logger, log_event
 from agent_teams.trace import bind_trace_context, generate_trace_id
 
@@ -70,3 +70,5 @@ def _to_level(level: str) -> int:
         "error": logging.ERROR,
     }
     return table[level]
+
+

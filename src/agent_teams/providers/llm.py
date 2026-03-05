@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from copy import deepcopy
@@ -21,9 +21,9 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from agent_teams.core.enums import RunEventType
-from agent_teams.core.models import ModelEndpointConfig, RunEvent
-from agent_teams.core.types import JsonValue
+from agent_teams.shared_types.json_types import JsonValue
+from agent_teams.providers.model_config import ModelEndpointConfig
+from agent_teams.runs.enums import RunEventType
 from agent_teams.state.event_log import EventLog
 from agent_teams.logger import (
     close_model_stream,
@@ -33,10 +33,11 @@ from agent_teams.logger import (
     log_model_stream_chunk,
 )
 from agent_teams.agents.management.instance_pool import InstancePool
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.runs.models import RunEvent
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.message_repo import MessageRepository
 from agent_teams.state.shared_store import SharedStore
@@ -598,3 +599,5 @@ class OpenAICompatibleProvider(LLMProvider):
                 for key, entry in entries.items()
             }
         return str(value)
+
+

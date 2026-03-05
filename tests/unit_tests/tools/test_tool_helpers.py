@@ -1,11 +1,11 @@
-import asyncio
+﻿import asyncio
 from dataclasses import dataclass
 from typing import cast
 
-from agent_teams.core.enums import RunEventType
-from agent_teams.core.types import JsonObject
+from agent_teams.runs.enums import RunEventType
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.notifications import NotificationService, default_notification_config
-from agent_teams.runtime.run_event_hub import RunEventHub
+from agent_teams.runs.event_stream import RunEventHub
 from agent_teams.tools.runtime import ToolContext
 from agent_teams.tools.tool_helpers import execute_tool
 
@@ -172,3 +172,6 @@ def test_execute_tool_approval_uses_model_tool_call_id_when_present() -> None:
     assert result['ok'] is True
     assert manager.last_open is not None
     assert manager.last_open['tool_call_id'] == 'call-model-123'
+
+
+

@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 
 
 class McpServerSpec(BaseModel):
@@ -40,3 +40,5 @@ class McpRegistry:
 
     def list_names(self) -> tuple[str, ...]:
         return tuple(sorted(self._specs.keys()))
+
+

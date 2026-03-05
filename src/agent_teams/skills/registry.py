@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import inspect
@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pydantic_ai import Tool
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.core.types import JsonObject, JsonValue
+from agent_teams.shared_types.json_types import JsonObject, JsonValue
 from agent_teams.skills.discovery import SkillsDirectory
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
@@ -213,3 +213,5 @@ def _normalize_script_result(value: object) -> JsonValue:
             normalized[str(key)] = _normalize_script_result(item)
         return normalized
     return str(value)
+
+

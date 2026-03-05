@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from agent_teams.core.models import RunEvent
+from agent_teams.runs.models import RunEvent
 from agent_teams.state.event_log import EventLog
 
 

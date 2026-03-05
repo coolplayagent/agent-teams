@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -24,20 +24,8 @@ from agent_teams.application.workflow_orchestration_service import (
     WorkflowType,
 )
 from agent_teams.coordination.task_execution_service import TaskExecutionService
-from agent_teams.core.config import load_runtime_config, RuntimeConfig
-from agent_teams.core.types import JsonObject
-from agent_teams.core.enums import InjectionSource
-from agent_teams.core.models import (
-    InjectionMessage,
-    AgentRuntimeRecord,
-    IntentInput,
-    RoleDefinition,
-    RunResult,
-    SessionRecord,
-    SubAgentInstance,
-    TaskEnvelope,
-    TaskRecord,
-)
+from agent_teams.application.runtime_config import load_runtime_config, RuntimeConfig
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.application.rounds_projection import (
     collect_pending_stream_snapshots,
     collect_pending_tool_approvals,
@@ -49,15 +37,20 @@ from agent_teams.notifications import NotificationConfig, NotificationService
 from agent_teams.paths import get_project_root
 from agent_teams.providers.llm import LLMProvider
 from agent_teams.roles.registry import RoleRegistry
-from agent_teams.runtime.gate_manager import GateManager
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.roles.models import RoleDefinition
+from agent_teams.coordination.human_gate import GateManager
+from agent_teams.runs.enums import InjectionSource
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.runs.models import InjectionMessage, IntentInput, RunResult
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.skills.registry import SkillRegistry
+from agent_teams.agents.models import AgentRuntimeRecord, SubAgentInstance
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
+from agent_teams.state.session_models import SessionRecord
 from agent_teams.state.session_repo import SessionRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
@@ -78,6 +71,7 @@ from agent_teams.triggers import (
     TriggerStatus,
     TriggerUpdateInput,
 )
+from agent_teams.workflow.models import TaskEnvelope, TaskRecord
 from agent_teams.workflow.spec import WorkflowSpec
 
 
@@ -553,3 +547,5 @@ class AgentTeamsService:
             limit=limit,
             cursor_event_id=cursor_event_id,
         )
+
+

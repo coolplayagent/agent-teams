@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 
 
 class TriggerSourceType(str, Enum):
@@ -144,3 +144,5 @@ class TriggerIngestResult(BaseModel):
     status: TriggerEventStatus
     trigger_id: str = Field(min_length=1)
     trigger_name: str = Field(min_length=1)
+
+

@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from agent_teams.application.service import AgentTeamsService
-from agent_teams.core.models import TaskRecord
 from agent_teams.interfaces.server.deps import get_service
+from agent_teams.workflow.models import TaskRecord
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 

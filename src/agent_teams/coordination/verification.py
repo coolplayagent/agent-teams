@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from agent_teams.core.enums import EventType, TaskStatus
-from agent_teams.core.models import EventEnvelope, VerificationResult
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.events import EventEnvelope, EventType
+from agent_teams.workflow.models import VerificationResult
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.task_repo import TaskRepository
 
@@ -40,4 +41,3 @@ def verify_task(task_repo: TaskRepository, event_bus: EventLog, task_id: str) ->
         )
     )
     return verification
-

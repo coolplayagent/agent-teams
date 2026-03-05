@@ -10,10 +10,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_teams.application.service import AgentTeamsService
-from agent_teams.core.enums import ExecutionMode, InjectionSource
-from agent_teams.core.models import IntentInput
 from agent_teams.interfaces.server.deps import get_service
 from agent_teams.logger import get_logger, log_event
+from agent_teams.runs.enums import ExecutionMode, InjectionSource
+from agent_teams.runs.models import IntentInput
 from agent_teams.trace import bind_trace_context
 
 logger = get_logger(__name__)

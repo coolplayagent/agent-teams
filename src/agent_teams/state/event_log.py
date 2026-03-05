@@ -1,11 +1,12 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
 
-from agent_teams.core.models import EventEnvelope, RunEvent
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
+from agent_teams.runs.models import RunEvent
 from agent_teams.state.db import open_sqlite
+from agent_teams.workflow.events import EventEnvelope
 
 
 class EventLog:
@@ -107,3 +108,5 @@ class EventLog:
             "payload_json": str(row["payload_json"]),
             "occurred_at": str(row["occurred_at"]),
         }
+
+

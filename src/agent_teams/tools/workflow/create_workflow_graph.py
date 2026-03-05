@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Literal
 from uuid import uuid4
@@ -6,12 +6,12 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent
 
-from agent_teams.core.models import TaskEnvelope, VerificationPlan
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.roles.registry import RoleRegistry
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
 from agent_teams.workflow.runtime_graph import load_graph, save_graph
+from agent_teams.workflow.models import TaskEnvelope, VerificationPlan
 
 
 class TaskSpecModel(BaseModel):
@@ -233,4 +233,6 @@ def _format_tasks_for_response(graph: dict[str, object]) -> dict[str, dict[str, 
         name: {'task_id': info.get('task_id', ''), 'role_id': info.get('role_id', '')}
         for name, info in tasks.items()
     }
+
+
 

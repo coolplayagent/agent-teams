@@ -1,5 +1,5 @@
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.core.enums import InjectionSource
+﻿from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.enums import InjectionSource
 
 
 def test_injection_manager_isolated_by_recipient() -> None:
@@ -16,3 +16,5 @@ def test_injection_manager_isolated_by_recipient() -> None:
     assert a1[0].content == 'm1'
     assert len(a2) == 1
     assert a2[0].content == 'm2'
+
+

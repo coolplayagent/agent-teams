@@ -5,9 +5,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agent_teams.core.enums import TaskStatus
-from agent_teams.core.models import TaskEnvelope, TaskRecord
 from agent_teams.state.db import open_sqlite
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.models import TaskEnvelope, TaskRecord
 
 
 class TaskRepository:

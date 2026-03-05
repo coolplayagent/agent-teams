@@ -1,6 +1,6 @@
-import pytest
+﻿import pytest
 
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.tools.approval_state import ToolApprovalManager
 
 
 def test_tool_approval_manager_open_list_resolve() -> None:
@@ -39,4 +39,5 @@ def test_tool_approval_manager_missing_entry() -> None:
             tool_call_id='missing',
             action='deny',
         )
+
 

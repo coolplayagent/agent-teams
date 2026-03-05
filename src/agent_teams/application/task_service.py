@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from agent_teams.agents.management.instance_pool import InstancePool
-from agent_teams.core.models import (
-    RoleDefinition,
-    SubAgentInstance,
-    TaskEnvelope,
-    TaskRecord,
-)
+from agent_teams.agents.models import SubAgentInstance
 from agent_teams.roles.registry import RoleRegistry
+from agent_teams.roles.models import RoleDefinition
 from agent_teams.state.task_repo import TaskRepository
+from agent_teams.workflow.models import TaskEnvelope, TaskRecord
 
 
 class TaskService:

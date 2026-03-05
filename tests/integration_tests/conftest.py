@@ -39,7 +39,7 @@ def integration_env(
     )
 
     shared_env = os.environ.copy()
-    python_paths = [str(repo_root), str(repo_root / "src")]
+    python_paths = [str(repo_root), str(repo_root / "src"), str(repo_root / "tests")]
     existing_pythonpath = shared_env.get("PYTHONPATH", "")
     if existing_pythonpath:
         python_paths.append(existing_pythonpath)

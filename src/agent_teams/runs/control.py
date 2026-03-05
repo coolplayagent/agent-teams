@@ -9,24 +9,18 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 
-from agent_teams.core.enums import (
-    InjectionSource,
-    InstanceStatus,
-    RunEventType,
-    TaskStatus,
-    EventType,
-)
-from agent_teams.core.models import (
-    InjectionMessage,
-    RunEvent,
-    TaskEnvelope,
-    EventEnvelope,
-)
+from agent_teams.agents.enums import InstanceStatus
+from agent_teams.agents.models import AgentRuntimeRecord
+from agent_teams.runs.enums import InjectionSource, RunEventType
+from agent_teams.runs.models import InjectionMessage, RunEvent
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.events import EventEnvelope, EventType
+from agent_teams.workflow.models import TaskEnvelope
 
 if TYPE_CHECKING:
     from agent_teams.agents.management.instance_pool import InstancePool
-    from agent_teams.runtime.injection_manager import RunInjectionManager
-    from agent_teams.runtime.run_event_hub import RunEventHub
+    from agent_teams.runs.event_stream import RunEventHub
+    from agent_teams.runs.injection_queue import RunInjectionManager
     from agent_teams.state.agent_repo import AgentInstanceRepository
     from agent_teams.state.event_log import EventLog
     from agent_teams.state.message_repo import MessageRepository
@@ -67,7 +61,7 @@ class PausedSubagent(BaseModel):
     paused_at: datetime
 
 
-class RunControlManager:
+class _RunTaskRegistry:
     def __init__(self) -> None:
         self._lock = Lock()
         self._run_tasks: dict[str, asyncio.Task[None]] = {}
@@ -75,7 +69,142 @@ class RunControlManager:
         self._instance_tasks: dict[tuple[str, str], asyncio.Task[str]] = {}
         self._instance_context: dict[tuple[str, str], tuple[str, str, str | None]] = {}
         self._subagent_stop_requested: set[tuple[str, str]] = set()
+
+    def register_run_task(self, *, run_id: str, task: asyncio.Task[None]) -> None:
+        with self._lock:
+            self._run_tasks[run_id] = task
+            self._run_stop_requested.discard(run_id)
+
+    def unregister_run_task(self, run_id: str) -> None:
+        with self._lock:
+            self._run_tasks.pop(run_id, None)
+            self._run_stop_requested.discard(run_id)
+
+    def request_run_stop(self, run_id: str) -> bool:
+        with self._lock:
+            task = self._run_tasks.get(run_id)
+            self._run_stop_requested.add(run_id)
+            if task is not None and not task.done():
+                task.cancel()
+            for (rid, _), inst_task in list(self._instance_tasks.items()):
+                if rid == run_id and not inst_task.done():
+                    inst_task.cancel()
+            return task is not None
+
+    def is_run_stop_requested(self, run_id: str) -> bool:
+        with self._lock:
+            return run_id in self._run_stop_requested
+
+    def register_instance_task(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+        instance_id: str,
+        role_id: str,
+        task_id: str | None,
+        task: asyncio.Task[str],
+    ) -> None:
+        key = (run_id, instance_id)
+        with self._lock:
+            self._instance_tasks[key] = task
+            self._instance_context[key] = (session_id, role_id, task_id)
+
+    def unregister_instance_task(self, *, run_id: str, instance_id: str) -> None:
+        key = (run_id, instance_id)
+        with self._lock:
+            self._instance_tasks.pop(key, None)
+            self._instance_context.pop(key, None)
+
+    def request_subagent_stop(
+        self, *, run_id: str, instance_id: str
+    ) -> tuple[str, str, str | None] | None:
+        key = (run_id, instance_id)
+        with self._lock:
+            self._subagent_stop_requested.add(key)
+            context = self._instance_context.get(key)
+            if context is None:
+                return None
+            task = self._instance_tasks.get(key)
+            if task is not None and not task.done():
+                task.cancel()
+            return context
+
+    def is_subagent_stop_requested(self, *, run_id: str, instance_id: str) -> bool:
+        with self._lock:
+            return (run_id, instance_id) in self._subagent_stop_requested
+
+    def clear_subagent_stop(self, *, run_id: str, instance_id: str) -> None:
+        with self._lock:
+            self._subagent_stop_requested.discard((run_id, instance_id))
+
+
+class _SubagentPauseRegistry:
+    def __init__(self) -> None:
+        self._lock = Lock()
         self._paused_by_session: dict[str, PausedSubagent] = {}
+
+    def pause(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        instance_id: str,
+        role_id: str,
+        task_id: str | None,
+        reason: str,
+    ) -> PausedSubagent:
+        paused = PausedSubagent(
+            session_id=session_id,
+            run_id=run_id,
+            instance_id=instance_id,
+            role_id=role_id,
+            task_id=task_id,
+            reason=reason,
+            paused_at=datetime.now(tz=timezone.utc),
+        )
+        with self._lock:
+            self._paused_by_session[session_id] = paused
+        return paused
+
+    def get(self, session_id: str) -> PausedSubagent | None:
+        with self._lock:
+            return self._paused_by_session.get(session_id)
+
+    def is_paused(self, *, session_id: str, instance_id: str) -> bool:
+        with self._lock:
+            paused = self._paused_by_session.get(session_id)
+            return paused is not None and paused.instance_id == instance_id
+
+    def release(
+        self,
+        *,
+        session_id: str,
+        instance_id: str | None = None,
+    ) -> PausedSubagent | None:
+        with self._lock:
+            paused = self._paused_by_session.get(session_id)
+            if paused is None:
+                return None
+            if instance_id is not None and paused.instance_id != instance_id:
+                return None
+            self._paused_by_session.pop(session_id, None)
+            return paused
+
+    def clear_for_run(self, run_id: str) -> tuple[PausedSubagent, ...]:
+        with self._lock:
+            removed: list[PausedSubagent] = []
+            for session_id, paused in list(self._paused_by_session.items()):
+                if paused.run_id == run_id:
+                    self._paused_by_session.pop(session_id, None)
+                    removed.append(paused)
+            return tuple(removed)
+
+
+class RunControlManager:
+    def __init__(self) -> None:
+        self._run_tasks = _RunTaskRegistry()
+        self._paused = _SubagentPauseRegistry()
 
         self._run_event_hub: RunEventHub | None = None
         self._injection_manager: RunInjectionManager | None = None
@@ -138,29 +267,17 @@ class RunControlManager:
         session_id: str,
         task: asyncio.Task[None],
     ) -> None:
-        with self._lock:
-            self._run_tasks[run_id] = task
-            self._run_stop_requested.discard(run_id)
+        _ = session_id
+        self._run_tasks.register_run_task(run_id=run_id, task=task)
 
     def unregister_run_task(self, run_id: str) -> None:
-        with self._lock:
-            self._run_tasks.pop(run_id, None)
-            self._run_stop_requested.discard(run_id)
+        self._run_tasks.unregister_run_task(run_id)
 
     def request_run_stop(self, run_id: str) -> bool:
-        with self._lock:
-            task = self._run_tasks.get(run_id)
-            self._run_stop_requested.add(run_id)
-            if task is not None and not task.done():
-                task.cancel()
-            for (rid, _), inst_task in list(self._instance_tasks.items()):
-                if rid == run_id and not inst_task.done():
-                    inst_task.cancel()
-            return task is not None
+        return self._run_tasks.request_run_stop(run_id)
 
     def is_run_stop_requested(self, run_id: str) -> bool:
-        with self._lock:
-            return run_id in self._run_stop_requested
+        return self._run_tasks.is_run_stop_requested(run_id)
 
     def publish_run_stopped(self, *, session_id: str, run_id: str, reason: str) -> None:
         self._require_run_event_hub().publish(
@@ -208,16 +325,17 @@ class RunControlManager:
         task_id: str | None,
         task: asyncio.Task[str],
     ) -> None:
-        key = (run_id, instance_id)
-        with self._lock:
-            self._instance_tasks[key] = task
-            self._instance_context[key] = (session_id, role_id, task_id)
+        self._run_tasks.register_instance_task(
+            run_id=run_id,
+            session_id=session_id,
+            instance_id=instance_id,
+            role_id=role_id,
+            task_id=task_id,
+            task=task,
+        )
 
     def unregister_instance_task(self, *, run_id: str, instance_id: str) -> None:
-        key = (run_id, instance_id)
-        with self._lock:
-            self._instance_tasks.pop(key, None)
-            self._instance_context.pop(key, None)
+        self._run_tasks.unregister_instance_task(run_id=run_id, instance_id=instance_id)
 
     def stop_subagent(self, *, run_id: str, instance_id: str) -> dict[str, str]:
         record = self._require_agent_repo().get_instance(instance_id)
@@ -402,27 +520,20 @@ class RunControlManager:
     def request_subagent_stop(
         self, *, run_id: str, instance_id: str
     ) -> PausedSubagent | None:
-        key = (run_id, instance_id)
-        with self._lock:
-            context = self._instance_context.get(key)
-            if context is None:
-                return None
-            session_id, role_id, task_id = context
-            paused = PausedSubagent(
-                session_id=session_id,
-                run_id=run_id,
-                instance_id=instance_id,
-                role_id=role_id,
-                task_id=task_id,
-                reason="stopped_by_user",
-                paused_at=datetime.now(tz=timezone.utc),
-            )
-            self._paused_by_session[session_id] = paused
-            self._subagent_stop_requested.add(key)
-            task = self._instance_tasks.get(key)
-            if task is not None and not task.done():
-                task.cancel()
-            return paused
+        context = self._run_tasks.request_subagent_stop(
+            run_id=run_id, instance_id=instance_id
+        )
+        if context is None:
+            return None
+        session_id, role_id, task_id = context
+        return self._paused.pause(
+            session_id=session_id,
+            run_id=run_id,
+            instance_id=instance_id,
+            role_id=role_id,
+            task_id=task_id,
+            reason="stopped_by_user",
+        )
 
     def pause_subagent(
         self,
@@ -434,32 +545,27 @@ class RunControlManager:
         task_id: str | None,
         reason: str = "stopped_by_user",
     ) -> PausedSubagent:
-        paused = PausedSubagent(
+        paused = self._paused.pause(
             session_id=session_id,
             run_id=run_id,
             instance_id=instance_id,
             role_id=role_id,
             task_id=task_id,
             reason=reason,
-            paused_at=datetime.now(tz=timezone.utc),
         )
-        with self._lock:
-            self._paused_by_session[session_id] = paused
-            self._subagent_stop_requested.add((run_id, instance_id))
+        self._run_tasks.request_subagent_stop(run_id=run_id, instance_id=instance_id)
         return paused
 
     def is_subagent_stop_requested(self, *, run_id: str, instance_id: str) -> bool:
-        with self._lock:
-            return (run_id, instance_id) in self._subagent_stop_requested
+        return self._run_tasks.is_subagent_stop_requested(
+            run_id=run_id, instance_id=instance_id
+        )
 
     def get_paused_subagent(self, session_id: str) -> PausedSubagent | None:
-        with self._lock:
-            return self._paused_by_session.get(session_id)
+        return self._paused.get(session_id)
 
     def is_subagent_paused(self, *, session_id: str, instance_id: str) -> bool:
-        with self._lock:
-            paused = self._paused_by_session.get(session_id)
-            return paused is not None and paused.instance_id == instance_id
+        return self._paused.is_paused(session_id=session_id, instance_id=instance_id)
 
     def release_paused_subagent(
         self,
@@ -467,24 +573,18 @@ class RunControlManager:
         session_id: str,
         instance_id: str | None = None,
     ) -> PausedSubagent | None:
-        with self._lock:
-            paused = self._paused_by_session.get(session_id)
-            if paused is None:
-                return None
-            if instance_id is not None and paused.instance_id != instance_id:
-                return None
-            self._paused_by_session.pop(session_id, None)
-            self._subagent_stop_requested.discard((paused.run_id, paused.instance_id))
-            return paused
+        paused = self._paused.release(session_id=session_id, instance_id=instance_id)
+        if paused is not None:
+            self._run_tasks.clear_subagent_stop(
+                run_id=paused.run_id, instance_id=paused.instance_id
+            )
+        return paused
 
     def clear_paused_subagent_for_run(self, run_id: str) -> None:
-        with self._lock:
-            for session_id, paused in list(self._paused_by_session.items()):
-                if paused.run_id == run_id:
-                    self._paused_by_session.pop(session_id, None)
-                    self._subagent_stop_requested.discard(
-                        (paused.run_id, paused.instance_id)
-                    )
+        for paused in self._paused.clear_for_run(run_id):
+            self._run_tasks.clear_subagent_stop(
+                run_id=paused.run_id, instance_id=paused.instance_id
+            )
 
     def get_coordinator_instance_id(self, session_id: str) -> str | None:
         return self._require_agent_repo().get_coordinator_instance_id(session_id)
@@ -503,7 +603,7 @@ class RunControlManager:
         return None
 
     def _publish_injection_event(
-        self, *, run_id: str, record, created: InjectionMessage
+        self, *, run_id: str, record: AgentRuntimeRecord, created: InjectionMessage
     ) -> None:
         self._require_run_event_hub().publish(
             RunEvent(

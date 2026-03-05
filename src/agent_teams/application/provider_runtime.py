@@ -1,12 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
 
 from agent_teams.agents.management.instance_pool import InstancePool
 from agent_teams.coordination.task_execution_service import TaskExecutionService
-from agent_teams.core.config import RuntimeConfig
-from agent_teams.core.models import RoleDefinition
+from agent_teams.application.runtime_config import RuntimeConfig
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.notifications import NotificationService
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
@@ -16,10 +15,11 @@ from agent_teams.providers.llm import (
     OpenAICompatibleProvider,
 )
 from agent_teams.roles.registry import RoleRegistry
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.roles.models import RoleDefinition
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.skills.registry import SkillRegistry
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
@@ -114,3 +114,4 @@ def create_task_execution_service(
         injection_manager=injection_manager,
         run_control_manager=run_control_manager,
     )
+

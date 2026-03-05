@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from agent_teams.core.enums import InstanceStatus
-from agent_teams.core.ids import new_instance_id
-from agent_teams.core.models import SubAgentInstance
+from agent_teams.agents.enums import InstanceStatus
+from agent_teams.agents.ids import new_instance_id
+from agent_teams.agents.models import SubAgentInstance
 
 
 class InstancePool:

@@ -1,16 +1,18 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Literal
 
 from pydantic_ai import Agent
 
-from agent_teams.core.enums import InjectionSource, InstanceStatus, TaskStatus
-from agent_teams.core.models import TaskRecord
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
+from agent_teams.agents.enums import InstanceStatus
+from agent_teams.runs.enums import InjectionSource
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
 from agent_teams.workflow.runtime_graph import get_ready_tasks, load_graph
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.models import TaskRecord
 
 DispatchAction = Literal['next', 'revise']
 
@@ -308,3 +310,5 @@ def _next_action(converged_stage: str, failed: list[dict[str, str]]) -> str:
     if converged_stage.startswith('progress_'):
         return 'next'
     return 'inspect_status'
+
+

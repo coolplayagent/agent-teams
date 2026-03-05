@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 
 
 class ToolError(BaseModel):
@@ -23,4 +23,6 @@ class ToolResultEnvelope(BaseModel):
     data: JsonValue | None = None
     error: ToolError | None = None
     meta: JsonObject = Field(default_factory=dict)
+
+
 

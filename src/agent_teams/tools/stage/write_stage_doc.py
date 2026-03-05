@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pydantic_ai import Agent
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.stage.docs import current_stage_doc_path, write_stage_doc_once
 from agent_teams.tools.tool_helpers import execute_tool
@@ -28,3 +28,5 @@ def register(agent: Agent[ToolDeps, str]) -> None:
             args_summary={'role_id': ctx.deps.role_id, 'content_len': len(content)},
             action=_action,
         )
+
+

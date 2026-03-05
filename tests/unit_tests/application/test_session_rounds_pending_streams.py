@@ -1,5 +1,5 @@
-from agent_teams.application.service import AgentTeamsService
-from agent_teams.core.enums import RunEventType
+﻿from agent_teams.application.service import AgentTeamsService
+from agent_teams.runs.enums import RunEventType
 
 
 def test_collect_pending_stream_snapshots_deduplicates_persisted_text() -> None:
@@ -163,3 +163,4 @@ def test_collect_pending_stream_snapshots_tracks_subagent_by_instance() -> None:
             },
         }
     }
+

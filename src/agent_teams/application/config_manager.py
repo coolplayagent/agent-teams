@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from json import dumps, loads
 from pathlib import Path
 from typing import cast
 
-from agent_teams.core.types import JsonObject, JsonValue
+from agent_teams.shared_types.json_types import JsonObject, JsonValue
 from agent_teams.logger import get_logger
 from agent_teams.mcp.registry import McpRegistry, McpServerSpec
 from agent_teams.notifications import NotificationConfig, default_notification_config
@@ -128,3 +128,5 @@ def _normalize_json_value(value: object) -> JsonValue:
             normalized[key_str] = _normalize_json_value(item)
         return normalized
     return str(value)
+
+

@@ -10,7 +10,6 @@ Core code lives under `src/agent_teams/`:
 - `agents/`: agent construction, lifecycle, and execution composition
 - `application/`: application services and facades
 - `coordination/`: cross-role coordination strategies
-- `core/`: domain models, enums, IDs, and base contracts
 - `env/`: runtime environment loading and env-related CLI support
 - `interfaces/`: external interfaces
   - `interfaces/server/`: FastAPI HTTP/SSE API and routers
@@ -23,7 +22,8 @@ Core code lives under `src/agent_teams/`:
 - `prompting/`: prompt assembly and prompt-layer abstractions
 - `providers/`: LLM provider integrations
 - `roles/`: role definitions and role validation
-- `runtime/`: run-time orchestration and approval-related flows
+- `runs/`: run-time orchestration, run control, event streaming, and injection flows
+- `shared_types/`: cross-domain shared type aliases and lightweight contracts
 - `skills/`: skill loading/registry support
 - `state/`: persistence and state repositories
 - `tools/`: built-in tools (`stage/`, `workflow/`, `workspace/`)
@@ -167,7 +167,7 @@ curl -X PUT http://127.0.0.1:8000/api/system/configs/notifications \
 
 Unit and integration tests are split under `tests/`:
 
-- `tests/unit_tests/`: mirrors backend modules (`agents/`, `application/`, `core/`, `env/`, `interfaces/`, `paths/`, `providers/`, `roles/`, `runtime/`, `skills/`, `tools/`, `trace/`, `triggers/`)
+- `tests/unit_tests/`: mirrors backend modules (`agents/`, `application/`, `env/`, `interfaces/`, `logger/`, `notifications/`, `paths/`, `providers/`, `roles/`, `runs/`, `skills/`, `tools/`, `trace/`, `triggers/`, `workflow/`)
 - `tests/integration_tests/`: integration scenarios split by `api/`, `browser/`, and shared `support/`
 
 Run unit tests:

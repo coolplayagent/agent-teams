@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from agent_teams.application.service import AgentTeamsService
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.interfaces.server.deps import get_service
 
 router = APIRouter(prefix="/system", tags=["System"])
@@ -144,3 +144,5 @@ def reload_skills_config(service: AgentTeamsService = Depends(get_service)) -> d
         return {"status": "ok"}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+

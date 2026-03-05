@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from threading import Lock
 
-from agent_teams.core.enums import InjectionSource
-from agent_teams.core.models import InjectionMessage
+from agent_teams.runs.enums import InjectionSource
+from agent_teams.runs.models import InjectionMessage
 
 
 class RunInjectionManager:
@@ -47,12 +47,14 @@ class RunInjectionManager:
         )
         with self._lock:
             if run_id not in self._active_runs:
-                raise KeyError(f'Run is not active: {run_id}')
+                raise KeyError(f"Run is not active: {run_id}")
             per_run = self._queues.setdefault(run_id, {})
             per_run.setdefault(recipient_instance_id, []).append(message)
         return message
 
-    def drain_at_boundary(self, run_id: str, recipient_instance_id: str) -> tuple[InjectionMessage, ...]:
+    def drain_at_boundary(
+        self, run_id: str, recipient_instance_id: str
+    ) -> tuple[InjectionMessage, ...]:
         with self._lock:
             queue = self._queues.get(run_id, {}).get(recipient_instance_id, [])
             if not queue:

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -7,7 +7,7 @@ from queue import Empty, Full, Queue
 from threading import Event, Thread
 from typing import cast, override
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.state.log_repo import LogRepository
 
 
@@ -75,3 +75,5 @@ class PersistentLogHandler(logging.Handler):
                 break
 
         self._repo.append_many(rows)
+
+

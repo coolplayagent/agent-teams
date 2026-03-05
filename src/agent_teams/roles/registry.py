@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from agent_teams.core.models import RoleDefinition
+from agent_teams.roles.models import RoleDefinition
 
 
 class RoleRegistry:

@@ -1,8 +1,8 @@
-import pytest
+﻿import pytest
 
 from pydantic import ValidationError
 
-from agent_teams.core.models import TaskEnvelope, VerificationPlan
+from agent_teams.workflow.models import TaskEnvelope, VerificationPlan
 
 
 def test_task_envelope_requires_fields() -> None:
@@ -14,3 +14,4 @@ def test_task_envelope_requires_fields() -> None:
             objective='obj',
             verification=VerificationPlan(checklist=('echo',)),
         )
+

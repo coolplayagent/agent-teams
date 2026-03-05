@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from typing import cast
 
-from agent_teams.core.enums import ScopeType, TaskStatus
-from agent_teams.core.models import ScopeRef, StateMutation, TaskRecord
+from agent_teams.state.scope_models import ScopeRef, ScopeType, StateMutation
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.models import TaskRecord
 from agent_teams.state.shared_store import SharedStore
 
 WORKFLOW_GRAPH_KEY = 'workflow_graph'

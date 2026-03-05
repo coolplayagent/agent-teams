@@ -1,18 +1,18 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from collections.abc import Callable
 from json import dumps
 
-from agent_teams.core.enums import RunEventType
-from agent_teams.core.models import RunEvent
 from agent_teams.notifications.models import (
     NotificationConfig,
     NotificationContext,
     NotificationRequest,
     NotificationType,
 )
-from agent_teams.runtime.run_event_hub import RunEventHub
+from agent_teams.runs.enums import RunEventType
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.runs.models import RunEvent
 
 
 class NotificationService:
@@ -69,3 +69,4 @@ class NotificationService:
         if context.tool_call_id:
             return f"{notification_type.value}:{context.run_id}:{context.tool_call_id}"
         return f"{notification_type.value}:{context.run_id}"
+

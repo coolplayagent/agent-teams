@@ -5,8 +5,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agent_teams.core.models import SessionRecord
 from agent_teams.state.db import open_sqlite
+from agent_teams.state.session_models import SessionRecord
 
 
 class SessionRepository:

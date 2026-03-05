@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import sqlite3
 from pathlib import Path
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.state.db import open_sqlite
 
 
@@ -82,3 +82,5 @@ class LogRepository:
             values,
         )
         self._conn.commit()
+
+

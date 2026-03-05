@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import logging
@@ -7,36 +7,29 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_teams.agents.enums import InstanceStatus
 from agent_teams.agents.management.instance_pool import InstancePool
-from agent_teams.core.enums import (
-    EventType,
-    ExecutionMode,
-    InstanceStatus,
-    RunEventType,
-    TaskStatus,
-)
-from agent_teams.core.ids import new_task_id, new_trace_id
-from agent_teams.core.models import (
-    EventEnvelope,
-    IntentInput,
-    RoleDefinition,
-    RunEvent,
-    TaskEnvelope,
-    VerificationPlan,
-)
 from agent_teams.coordination.verification import verify_task
 from agent_teams.coordination.task_execution_service import TaskExecutionService
 from agent_teams.state.event_log import EventLog
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.providers.llm import LLMProvider
 from agent_teams.roles.registry import RoleRegistry
+from agent_teams.roles.models import RoleDefinition
 from agent_teams.logger import get_logger, log_event
-from agent_teams.runtime.gate_manager import GateManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
+from agent_teams.coordination.human_gate import GateManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.enums import ExecutionMode, RunEventType
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.runs.ids import new_trace_id
+from agent_teams.runs.models import IntentInput, RunEvent
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.events import EventEnvelope, EventType
+from agent_teams.workflow.ids import new_task_id
+from agent_teams.workflow.models import TaskEnvelope, VerificationPlan
 
 ROLE_COORDINATOR = "coordinator_agent"
 MAX_ORCHESTRATION_CYCLES = 8
@@ -380,3 +373,4 @@ class CoordinatorGraph(BaseModel):
         return await self.task_execution_service.execute(
             instance_id=instance_id, role_id=role_id, task=task
         )
+

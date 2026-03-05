@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import logging
@@ -6,25 +6,24 @@ from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict
 
+from agent_teams.agents.enums import InstanceStatus
 from agent_teams.agents.management.instance_pool import InstancePool
 from agent_teams.agents.core.subagent import SubAgentRunner
-from agent_teams.core.enums import EventType, InstanceStatus, ScopeType, TaskStatus
-from agent_teams.core.models import (
-    EventEnvelope,
-    RoleDefinition,
-    ScopeRef,
-    TaskEnvelope,
-)
 from agent_teams.logger import get_logger, log_event
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.roles.registry import RoleRegistry
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
+from agent_teams.roles.models import RoleDefinition
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
+from agent_teams.state.scope_models import ScopeRef, ScopeType
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.events import EventEnvelope, EventType
+from agent_teams.workflow.models import TaskEnvelope
 
 ROLE_COORDINATOR = "coordinator_agent"
 LOGGER = get_logger(__name__)
@@ -244,3 +243,4 @@ class TaskExecutionService(BaseModel):
                 ),
             )
             raise
+

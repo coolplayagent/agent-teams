@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 from collections.abc import Callable
@@ -14,16 +14,16 @@ from agent_teams.application.provider_runtime import (
 )
 from agent_teams.coordination.task_execution_service import TaskExecutionService
 from agent_teams.coordination.coordinator import CoordinatorGraph
-from agent_teams.core.config import RuntimeConfig, load_runtime_config
-from agent_teams.core.models import RoleDefinition
+from agent_teams.application.runtime_config import RuntimeConfig, load_runtime_config
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.roles.registry import RoleLoader
 from agent_teams.roles.registry import RoleRegistry
-from agent_teams.runtime.gate_manager import GateManager
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.roles.models import RoleDefinition
+from agent_teams.coordination.human_gate import GateManager
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
@@ -209,3 +209,4 @@ def build_service_components(
         trigger_repo=trigger_repo,
         trigger_service=trigger_service,
     )
+

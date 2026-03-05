@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import json
 from pathlib import Path
 from typing import cast
@@ -11,13 +11,13 @@ from pydantic_ai.messages import (
     ToolReturnPart,
 )
 
-from agent_teams.core.enums import RunEventType
-from agent_teams.core.models import ModelEndpointConfig
+from agent_teams.runs.enums import RunEventType
+from agent_teams.providers.model_config import ModelEndpointConfig
 from agent_teams.providers.llm import LLMRequest, OpenAICompatibleProvider
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
@@ -180,3 +180,5 @@ def test_publish_tool_events_skips_retry_without_tool_name() -> None:
     )
 
     assert hub.events == []
+
+

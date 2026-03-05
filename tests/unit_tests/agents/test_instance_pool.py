@@ -1,5 +1,5 @@
-from agent_teams.agents.management.instance_pool import InstancePool
-from agent_teams.core.enums import InstanceStatus
+﻿from agent_teams.agents.management.instance_pool import InstancePool
+from agent_teams.agents.enums import InstanceStatus
 
 
 def test_instance_lifecycle() -> None:
@@ -12,3 +12,4 @@ def test_instance_lifecycle() -> None:
 
     pool.mark_timeout(instance.instance_id)
     assert pool.get(instance.instance_id).status == InstanceStatus.TIMEOUT
+

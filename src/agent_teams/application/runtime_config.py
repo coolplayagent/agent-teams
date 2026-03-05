@@ -7,8 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.core.models import ModelEndpointConfig, SamplingConfig
 from agent_teams.env import load_merged_env_vars
+from agent_teams.providers.model_config import ModelEndpointConfig, SamplingConfig
 
 
 class RuntimePaths(BaseModel):

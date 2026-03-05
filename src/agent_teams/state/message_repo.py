@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import sqlite3
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.state.db import open_sqlite
 
 
@@ -161,3 +161,5 @@ def _role(msg: ModelMessage) -> str:
     if isinstance(msg, ModelResponse):
         return 'assistant'
     return 'unknown'
+
+

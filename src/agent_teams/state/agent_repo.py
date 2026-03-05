@@ -4,8 +4,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agent_teams.core.enums import InstanceStatus
-from agent_teams.core.models import AgentRuntimeRecord
+from agent_teams.agents.enums import InstanceStatus
+from agent_teams.agents.models import AgentRuntimeRecord
 from agent_teams.state.db import open_sqlite
 
 

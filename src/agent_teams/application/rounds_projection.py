@@ -1,14 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
 from typing import Callable, cast
 
-from agent_teams.core.enums import RunEventType, ScopeType
-from agent_teams.core.types import JsonObject
-from agent_teams.core.models import ScopeRef
+from agent_teams.shared_types.json_types import JsonObject
+from agent_teams.runs.enums import RunEventType
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
+from agent_teams.state.scope_models import ScopeRef, ScopeType
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
 
@@ -482,3 +482,5 @@ def find_round_by_run_id(
         if round_item["run_id"] == run_id:
             return round_item
     raise KeyError(f"Round {run_id} not found in session {session_id}")
+
+

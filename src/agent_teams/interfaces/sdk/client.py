@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from collections.abc import Generator
@@ -7,7 +7,7 @@ from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.core.types import JsonArray, JsonObject, JsonValue
+from agent_teams.shared_types.json_types import JsonArray, JsonObject, JsonValue
 
 
 class RunHandle(BaseModel):
@@ -266,3 +266,5 @@ def _expect_str(value: JsonValue | None, field_name: str) -> str:
     if isinstance(value, str):
         return value
     raise RuntimeError(f"Expected string field '{field_name}' in server response")
+
+

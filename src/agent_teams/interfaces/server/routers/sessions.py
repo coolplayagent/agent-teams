@@ -4,8 +4,8 @@ from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, Depends, HTTPException
 
 from agent_teams.application.service import AgentTeamsService
-from agent_teams.core.models import SessionRecord
 from agent_teams.interfaces.server.deps import get_service
+from agent_teams.state.session_models import SessionRecord
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
 

@@ -1,5 +1,5 @@
-from agent_teams.application.service import AgentTeamsService
-from agent_teams.core.enums import RunEventType
+﻿from agent_teams.application.service import AgentTeamsService
+from agent_teams.runs.enums import RunEventType
 
 
 def test_collect_pending_tool_approvals_ignores_validation_failure_events() -> None:
@@ -111,3 +111,4 @@ def test_collect_pending_tool_approvals_tracks_only_requested_without_result() -
             "feedback": "",
         }
     ]
+

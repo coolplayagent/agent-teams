@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -9,11 +9,11 @@ from agent_teams.agents.management.instance_pool import InstancePool
 from agent_teams.coordination.task_execution_service import TaskExecutionService
 from agent_teams.roles.registry import RoleRegistry
 from agent_teams.notifications import NotificationService
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.state.event_log import EventLog
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_event_hub import RunEventHub
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.event_stream import RunEventHub
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
@@ -50,3 +50,4 @@ class ToolDeps(BaseModel):
 
 
 ToolContext = RunContext[ToolDeps]
+

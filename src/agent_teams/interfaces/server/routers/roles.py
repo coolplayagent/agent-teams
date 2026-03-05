@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
 from agent_teams.application.service import AgentTeamsService
-from agent_teams.core.config import load_runtime_config
+from agent_teams.application.runtime_config import load_runtime_config
 from agent_teams.interfaces.server.config_paths import get_config_dir
 from agent_teams.interfaces.server.deps import get_service
 from agent_teams.roles.registry import RoleLoader
@@ -27,3 +27,4 @@ def validate_roles() -> dict[str, int | bool]:
         tool_registry.validate_known(role.tools)
 
     return {"valid": True, "loaded_count": len(registry.list_roles())}
+

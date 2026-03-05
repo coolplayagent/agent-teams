@@ -1,13 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
 from pydantic_ai import Agent
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
+from agent_teams.tools.file_utils import resolve_workspace_path
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
-from agent_teams.tools.file_utils import resolve_workspace_path
 
 DEFAULT_READ_LIMIT = 2000
 MAX_LINE_LENGTH = 2000
@@ -61,7 +61,7 @@ BINARY_EXTENSIONS = {
 
 
 def is_binary_file(file_path: Path, file_size: int = 0) -> bool:
-    """检测文件是否为二进制"""
+    """Detect whether the target file should be treated as binary."""
     ext = file_path.suffix.lower()
     if ext in BINARY_EXTENSIONS:
         return True
@@ -95,7 +95,7 @@ async def read_file_content(
     limit: int = DEFAULT_READ_LIMIT,
     max_bytes: int = MAX_BYTES,
 ) -> tuple[list[str], int, bool, bool]:
-    """流式读取文件内容"""
+    """Read file content with line and byte limits."""
     lines: list[str] = []
     total_lines = 0
     bytes_count = 0
@@ -133,7 +133,7 @@ def read_directory(
     offset: int = 1,
     limit: int = DEFAULT_READ_LIMIT,
 ) -> tuple[list[str], int, bool]:
-    """读取目录内容"""
+    """Read directory entries with offset and limit pagination."""
     entries = []
 
     for entry in dir_path.iterdir():
@@ -237,3 +237,4 @@ def register(agent: Agent[ToolDeps, str]) -> None:
             args_summary={"path": path, "offset": offset, "limit": limit},
             action=_action,
         )
+

@@ -21,17 +21,8 @@ class _GateEntry(BaseModel):
 
 
 class GateManager:
-    """
-    Manages per-task confirmation gates.
-
-    After a subagent completes, the coordinator calls `open_gate()` to pause
-    execution.  The HTTP endpoint calls `resolve_gate()` with the human's
-    decision.  The coordinator thread is unblocked via `wait_for_gate()`.
-    """
-
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        # { run_id: { task_id: _GateEntry } }
         self._gates: dict[str, dict[str, _GateEntry]] = {}
 
     def open_gate(
@@ -42,7 +33,6 @@ class GateManager:
         role_id: str,
         summary: str,
     ) -> None:
-        """Register a new gate that blocks until the human resolves it."""
         with self._lock:
             self._gates.setdefault(run_id, {})[task_id] = _GateEntry(
                 instance_id=instance_id,
@@ -57,7 +47,6 @@ class GateManager:
         action: GateAction,
         feedback: str = "",
     ) -> None:
-        """Called by the HTTP handler when the user clicks Approve or Revise."""
         with self._lock:
             entry = self._gates.get(run_id, {}).get(task_id)
         if entry is None:
@@ -72,10 +61,6 @@ class GateManager:
         task_id: str,
         timeout: float = 300.0,
     ) -> tuple[GateAction, str]:
-        """
-        Block the calling thread until the gate is resolved (or times out).
-        Returns (action, feedback).  Raises TimeoutError on timeout.
-        """
         with self._lock:
             entry = self._gates.get(run_id, {}).get(task_id)
         if entry is None:
@@ -92,13 +77,11 @@ class GateManager:
         return entry.action, entry.feedback
 
     def close_gate(self, run_id: str, task_id: str) -> None:
-        """Remove a gate entry after it has been resolved."""
         with self._lock:
             run_gates = self._gates.get(run_id, {})
             run_gates.pop(task_id, None)
 
     def list_open_gates(self, run_id: str) -> list[dict[str, str]]:
-        """Return metadata about currently open gates for a run (for API use)."""
         with self._lock:
             entries = dict(self._gates.get(run_id, {}))
         result: list[dict[str, str]] = []

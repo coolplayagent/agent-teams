@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -20,7 +20,7 @@ from agent_teams.interfaces.cli.prompt_cli import (
 )
 from agent_teams.interfaces.server.cli import build_server_app
 from agent_teams.roles.cli import build_roles_app
-from agent_teams.runtime.cli import build_approvals_app
+from agent_teams.interfaces.cli.approvals import build_approvals_app
 from agent_teams.triggers.cli import build_triggers_app
 
 app = typer.Typer(no_args_is_help=False, pretty_exceptions_enable=False)
@@ -276,3 +276,4 @@ def _require_object_response(
     if isinstance(payload, dict):
         return payload
     raise RuntimeError(f"Expected JSON object from {path}")
+

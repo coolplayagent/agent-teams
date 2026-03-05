@@ -1,20 +1,22 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_teams.agents.enums import InstanceStatus
 from agent_teams.agents.management.instance_pool import InstancePool
 from agent_teams.coordination.task_execution_service import TaskExecutionService
-from agent_teams.core.enums import InjectionSource, InstanceStatus, TaskStatus
-from agent_teams.core.models import TaskEnvelope, TaskRecord, VerificationPlan
 from agent_teams.roles.registry import RoleRegistry
-from agent_teams.runtime.injection_manager import RunInjectionManager
+from agent_teams.runs.enums import InjectionSource
+from agent_teams.runs.injection_queue import RunInjectionManager
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
 from agent_teams.workflow.runtime_graph import get_ready_tasks, load_graph, save_graph
+from agent_teams.workflow.enums import TaskStatus
+from agent_teams.workflow.models import TaskEnvelope, TaskRecord, VerificationPlan
 
 WorkflowType = Literal["spec_flow", "custom"]
 DispatchAction = Literal["next", "revise"]
@@ -521,3 +523,4 @@ def _next_action(converged_stage: str, failed: list[dict[str, str]]) -> str:
     if converged_stage.startswith("progress_"):
         return "next"
     return "inspect_status"
+

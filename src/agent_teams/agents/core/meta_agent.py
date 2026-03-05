@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.core.models import IntentInput, RunResult
 from agent_teams.coordination.coordinator import CoordinatorGraph
+from agent_teams.runs.models import IntentInput, RunResult
 
 
 class MetaAgent(BaseModel):

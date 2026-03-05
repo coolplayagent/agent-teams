@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -11,21 +11,21 @@ from pydantic_ai.messages import ModelRequest, UserPromptPart
 
 import agent_teams.providers.llm as llm_module
 from agent_teams.coordination.task_execution_service import TaskExecutionService
-from agent_teams.core.models import ModelEndpointConfig
+from agent_teams.providers.model_config import ModelEndpointConfig
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.providers.llm import LLMRequest, OpenAICompatibleProvider
 from agent_teams.roles.registry import RoleRegistry
-from agent_teams.runtime.injection_manager import RunInjectionManager
-from agent_teams.runtime.run_control_manager import RunControlManager
-from agent_teams.runtime.run_event_hub import RunEventHub
-from agent_teams.runtime.tool_approval_manager import ToolApprovalManager
+from agent_teams.runs.injection_queue import RunInjectionManager
+from agent_teams.runs.control import RunControlManager
+from agent_teams.runs.event_stream import RunEventHub
+from agent_teams.tools.approval_state import ToolApprovalManager
 from agent_teams.skills.registry import SkillRegistry
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
 from agent_teams.state.message_repo import MessageRepository
 from agent_teams.state.shared_store import SharedStore
 from agent_teams.state.task_repo import TaskRepository
-from agent_teams.core.models import RunEvent
+from agent_teams.runs.models import RunEvent
 from agent_teams.tools.policy import ToolApprovalPolicy
 from agent_teams.tools.registry import ToolRegistry
 from agent_teams.agents.management.instance_pool import InstancePool
@@ -506,3 +506,5 @@ async def test_generate_token_usage_delta_works_with_mutated_usage_object(
     assert payload["total_tokens"] == 39
     assert payload["requests"] == 1
     assert payload["tool_calls"] == 5
+
+

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import difflib
 import os
@@ -7,14 +7,14 @@ from pathlib import Path
 
 from pydantic_ai import Agent
 
-from agent_teams.core.types import JsonObject
+from agent_teams.shared_types.json_types import JsonObject
 from agent_teams.tools.runtime import ToolContext, ToolDeps
 from agent_teams.tools.tool_helpers import execute_tool
 from agent_teams.tools.file_utils import resolve_workspace_path
 
 
 def generate_diff(old_path: str, old_content: str, new_content: str) -> str:
-    """生成 unified diff 格式"""
+    """鐢熸垚 unified diff 鏍煎紡"""
     old_lines = old_content.splitlines(keepends=True)
     new_lines = new_content.splitlines(keepends=True)
 
@@ -26,7 +26,7 @@ def generate_diff(old_path: str, old_content: str, new_content: str) -> str:
 
 
 def format_diff_short(old_content: str, new_content: str) -> str:
-    """生成简短 diff"""
+    """鐢熸垚绠€鐭?diff"""
     old_lines = old_content.splitlines()
     new_lines = new_content.splitlines()
 
@@ -47,7 +47,7 @@ def format_diff_short(old_content: str, new_content: str) -> str:
 
 
 def atomic_write(file_path: Path, content: str, encoding: str = "utf-8") -> None:
-    """原子写入文件"""
+    """鍘熷瓙鍐欏叆鏂囦欢"""
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     fd, temp_path = tempfile.mkstemp(
@@ -107,3 +107,5 @@ def register(agent: Agent[ToolDeps, str]) -> None:
             },
             action=_action,
         )
+
+

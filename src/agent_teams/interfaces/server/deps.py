@@ -3,12 +3,16 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from agent_teams.env.runtime_config_service import RuntimeConfigService
 from agent_teams.interfaces.server.container import ServerContainer
+from agent_teams.interfaces.server.config_status_service import ConfigStatusService
+from agent_teams.mcp.config_reload_service import McpConfigReloadService
 from agent_teams.mcp.service import McpService
+from agent_teams.notifications.settings_service import NotificationSettingsService
+from agent_teams.providers.model_config_service import ModelConfigService
 from agent_teams.roles.registry import RoleRegistry
 from agent_teams.runs.manager import RunManager
 from agent_teams.sessions import SessionService
+from agent_teams.skills.config_reload_service import SkillsConfigReloadService
 from agent_teams.skills.registry import SkillRegistry
 from agent_teams.state.task_repo import TaskRepository
 from agent_teams.tools.registry import ToolRegistry
@@ -36,8 +40,24 @@ def get_trigger_service(request: Request) -> TriggerService:
     return get_container(request).trigger_service
 
 
-def get_system_config_service(request: Request) -> RuntimeConfigService:
-    return get_container(request).config_service
+def get_config_status_service(request: Request) -> ConfigStatusService:
+    return get_container(request).config_status_service
+
+
+def get_model_config_service(request: Request) -> ModelConfigService:
+    return get_container(request).model_config_service
+
+
+def get_notification_settings_service(request: Request) -> NotificationSettingsService:
+    return get_container(request).notification_settings_service
+
+
+def get_mcp_config_reload_service(request: Request) -> McpConfigReloadService:
+    return get_container(request).mcp_config_reload_service
+
+
+def get_skills_config_reload_service(request: Request) -> SkillsConfigReloadService:
+    return get_container(request).skills_config_reload_service
 
 
 def get_mcp_service(request: Request) -> McpService:

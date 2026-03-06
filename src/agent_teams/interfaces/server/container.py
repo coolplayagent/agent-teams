@@ -9,15 +9,17 @@ from agent_teams.agents.management.instance_pool import InstancePool
 from agent_teams.coordination.coordinator import CoordinatorGraph
 from agent_teams.coordination.human_gate import GateManager
 from agent_teams.coordination.task_execution_service import TaskExecutionService
-from agent_teams.env.config_manager import ConfigManager
-from agent_teams.env.runtime_config import RuntimeConfig, load_runtime_config
-from agent_teams.env.runtime_config_service import RuntimeConfigService
+from agent_teams.interfaces.server.config_status_service import ConfigStatusService
 from agent_teams.mcp.config_manager import McpConfigManager
+from agent_teams.mcp.config_reload_service import McpConfigReloadService
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.mcp.service import McpService
-from agent_teams.notifications import NotificationService
+from agent_teams.notifications import NotificationConfigManager, NotificationService
+from agent_teams.notifications.settings_service import NotificationSettingsService
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.providers.llm import LLMProvider
+from agent_teams.providers.model_config_manager import ModelConfigManager
+from agent_teams.providers.model_config_service import ModelConfigService
 from agent_teams.providers.runtime_factory import (
     create_provider_factory,
     create_task_execution_service,
@@ -28,7 +30,9 @@ from agent_teams.runs.control import RunControlManager
 from agent_teams.runs.event_stream import RunEventHub
 from agent_teams.runs.injection_queue import RunInjectionManager
 from agent_teams.runs.manager import RunManager
+from agent_teams.runs.runtime_config import RuntimeConfig, load_runtime_config
 from agent_teams.sessions import SessionService
+from agent_teams.skills.config_reload_service import SkillsConfigReloadService
 from agent_teams.skills.registry import SkillRegistry
 from agent_teams.state.agent_repo import AgentInstanceRepository
 from agent_teams.state.event_log import EventLog
@@ -62,7 +66,12 @@ class ServerContainer:
         self.config_dir: Path = config_dir
         self.runtime: RuntimeConfig = runtime
 
-        self.config_manager: ConfigManager = ConfigManager(config_dir=config_dir)
+        self.model_config_manager: ModelConfigManager = ModelConfigManager(
+            config_dir=config_dir
+        )
+        self.notification_config_manager: NotificationConfigManager = (
+            NotificationConfigManager(config_dir=config_dir)
+        )
         self.mcp_config_manager: McpConfigManager = McpConfigManager(
             project_config_dir=config_dir
         )
@@ -103,7 +112,7 @@ class ServerContainer:
         self.run_event_hub: RunEventHub = RunEventHub(event_log=self.event_log)
         self.notification_service: NotificationService = NotificationService(
             run_event_hub=self.run_event_hub,
-            get_config=self.config_manager.get_notification_config,
+            get_config=self.notification_config_manager.get_notification_config,
         )
         self.gate_manager: GateManager = GateManager()
         self.tool_approval_manager: ToolApprovalManager = ToolApprovalManager()
@@ -156,19 +165,35 @@ class ServerContainer:
             event_log=self.event_log,
             token_usage_repo=self.token_usage_repo,
         )
-        self.config_service: RuntimeConfigService = RuntimeConfigService(
+        self.config_status_service: ConfigStatusService = ConfigStatusService(
+            get_runtime=lambda: self.runtime,
+            get_mcp_registry=lambda: self.mcp_registry,
+            get_skill_registry=lambda: self.skill_registry,
+        )
+        self.model_config_service: ModelConfigService = ModelConfigService(
             config_dir=config_dir,
             roles_dir=self.runtime.paths.roles_dir,
             db_path=self.runtime.paths.db_path,
-            runtime=self.runtime,
-            config_manager=self.config_manager,
+            model_config_manager=self.model_config_manager,
+            get_runtime=lambda: self.runtime,
+            on_runtime_reloaded=self._on_runtime_reloaded,
+        )
+        self.notification_settings_service: NotificationSettingsService = (
+            NotificationSettingsService(
+                notification_config_manager=self.notification_config_manager
+            )
+        )
+        self.mcp_config_reload_service: McpConfigReloadService = McpConfigReloadService(
             mcp_config_manager=self.mcp_config_manager,
             role_registry=self.role_registry,
-            mcp_registry=self.mcp_registry,
-            skill_registry=self.skill_registry,
-            on_runtime_reloaded=self._on_runtime_reloaded,
             on_mcp_reloaded=self._on_mcp_reloaded,
-            on_skill_reloaded=self._on_skill_reloaded,
+        )
+        self.skills_config_reload_service: SkillsConfigReloadService = (
+            SkillsConfigReloadService(
+                config_dir=config_dir,
+                role_registry=self.role_registry,
+                on_skill_reloaded=self._on_skill_reloaded,
+            )
         )
 
     def _build_runtime_services(self) -> None:

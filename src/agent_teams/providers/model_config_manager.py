@@ -5,11 +5,10 @@ from json import dumps, loads
 from pathlib import Path
 from typing import cast
 
-from agent_teams.notifications import NotificationConfig, default_notification_config
 from agent_teams.shared_types.json_types import JsonObject
 
 
-class ConfigManager:
+class ModelConfigManager:
     def __init__(self, *, config_dir: Path) -> None:
         self._config_dir: Path = config_dir
 
@@ -59,23 +58,6 @@ class ConfigManager:
     def save_model_config(self, config: JsonObject) -> None:
         model_file = self._config_dir / "model.json"
         _ = model_file.write_text(dumps(config, indent=2), encoding="utf-8")
-
-    def get_notification_config(self) -> NotificationConfig:
-        notification_file = self._config_dir / "notifications.json"
-        if not notification_file.exists():
-            return default_notification_config()
-        try:
-            payload = _load_json_object(notification_file)
-            return NotificationConfig.model_validate(payload)
-        except Exception:
-            return default_notification_config()
-
-    def save_notification_config(self, config: NotificationConfig) -> None:
-        notification_file = self._config_dir / "notifications.json"
-        _ = notification_file.write_text(
-            dumps(config.model_dump(mode="json"), indent=2),
-            encoding="utf-8",
-        )
 
 
 def _load_json_object(file_path: Path) -> JsonObject:

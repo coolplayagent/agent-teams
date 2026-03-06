@@ -6,6 +6,7 @@ from agent_teams.skills.discovery import (
     get_project_skills_dir,
     get_user_skills_dir,
 )
+from agent_teams.skills.config_reload_service import SkillsConfigReloadService
 from agent_teams.skills.models import (
     Skill,
     SkillInstructionEntry,
@@ -18,6 +19,7 @@ from agent_teams.skills.registry import SkillRegistry
 
 __all__ = [
     "Skill",
+    "SkillsConfigReloadService",
     "SkillInstructionEntry",
     "SkillMetadata",
     "SkillResource",

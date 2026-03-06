@@ -1,11 +1,22 @@
-﻿from __future__ import annotations
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-from agent_teams.env.runtime_config_service import RuntimeConfigService
-from agent_teams.interfaces.server.deps import get_system_config_service
+from agent_teams.interfaces.server.deps import (
+    get_config_status_service,
+    get_mcp_config_reload_service,
+    get_model_config_service,
+    get_notification_settings_service,
+    get_skills_config_reload_service,
+)
+from agent_teams.interfaces.server.config_status_service import ConfigStatusService
+from agent_teams.mcp.config_reload_service import McpConfigReloadService
+from agent_teams.notifications.settings_service import NotificationSettingsService
+from agent_teams.providers.model_config_service import ModelConfigService
 from agent_teams.providers.model_config import ProviderType
+from agent_teams.skills.config_reload_service import SkillsConfigReloadService
 from agent_teams.shared_types.json_types import JsonObject
 
 router = APIRouter(prefix="/system", tags=["System"])
@@ -18,21 +29,21 @@ def health_check() -> dict[str, str]:
 
 @router.get("/configs")
 def get_config_status(
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ConfigStatusService = Depends(get_config_status_service),
 ) -> JsonObject:
     return service.get_config_status()
 
 
 @router.get("/configs/model")
 def get_model_config(
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ModelConfigService = Depends(get_model_config_service),
 ) -> JsonObject:
     return service.get_model_config()
 
 
 @router.get("/configs/model/profiles")
 def get_model_profiles(
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ModelConfigService = Depends(get_model_config_service),
 ) -> dict[str, JsonObject]:
     return service.get_model_profiles()
 
@@ -53,7 +64,7 @@ class ModelProfileRequest(BaseModel):
 def save_model_profile(
     name: str,
     req: ModelProfileRequest,
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ModelConfigService = Depends(get_model_config_service),
 ) -> dict[str, str]:
     try:
         service.save_model_profile(
@@ -76,7 +87,7 @@ def save_model_profile(
 @router.get("/configs/model/providers/models")
 def get_provider_models(
     provider: ProviderType | None = Query(default=None),
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ModelConfigService = Depends(get_model_config_service),
 ) -> list[JsonObject]:
     return [
         model.model_dump(mode="json")
@@ -87,7 +98,7 @@ def get_provider_models(
 @router.delete("/configs/model/profiles/{name}")
 def delete_model_profile(
     name: str,
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ModelConfigService = Depends(get_model_config_service),
 ) -> dict[str, str]:
     try:
         service.delete_model_profile(name)
@@ -105,7 +116,7 @@ class ModelConfigRequest(BaseModel):
 @router.put("/configs/model")
 def save_model_config(
     req: ModelConfigRequest,
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ModelConfigService = Depends(get_model_config_service),
 ) -> dict[str, str]:
     try:
         service.save_model_config(req.config)
@@ -116,7 +127,7 @@ def save_model_config(
 
 @router.get("/configs/notifications")
 def get_notification_config(
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: NotificationSettingsService = Depends(get_notification_settings_service),
 ) -> JsonObject:
     return service.get_notification_config()
 
@@ -130,7 +141,7 @@ class NotificationConfigRequest(BaseModel):
 @router.put("/configs/notifications")
 def save_notification_config(
     req: NotificationConfigRequest,
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: NotificationSettingsService = Depends(get_notification_settings_service),
 ) -> dict[str, str]:
     try:
         service.save_notification_config(req.config)
@@ -141,7 +152,7 @@ def save_notification_config(
 
 @router.post("/configs/model:reload")
 def reload_model_config(
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: ModelConfigService = Depends(get_model_config_service),
 ) -> dict[str, str]:
     try:
         service.reload_model_config()
@@ -152,7 +163,7 @@ def reload_model_config(
 
 @router.post("/configs/mcp:reload")
 def reload_mcp_config(
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: McpConfigReloadService = Depends(get_mcp_config_reload_service),
 ) -> dict[str, str]:
     try:
         service.reload_mcp_config()
@@ -163,11 +174,10 @@ def reload_mcp_config(
 
 @router.post("/configs/skills:reload")
 def reload_skills_config(
-    service: RuntimeConfigService = Depends(get_system_config_service),
+    service: SkillsConfigReloadService = Depends(get_skills_config_reload_service),
 ) -> dict[str, str]:
     try:
         service.reload_skills_config()
         return {"status": "ok"}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-

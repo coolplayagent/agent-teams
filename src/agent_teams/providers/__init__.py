@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from agent_teams.providers.llm import EchoProvider, LLMProvider, OpenAICompatibleProvider
+from agent_teams.providers.llm import (
+    EchoProvider,
+    LLMProvider,
+    OpenAICompatibleProvider,
+)
+from agent_teams.providers.model_config_manager import ModelConfigManager
+from agent_teams.providers.model_config_service import ModelConfigService
 from agent_teams.providers.model_config import (
     ModelEndpointConfig,
     ProviderModelInfo,
@@ -18,6 +24,8 @@ __all__ = [
     "EchoProvider",
     "LLMProvider",
     "ModelEndpointConfig",
+    "ModelConfigManager",
+    "ModelConfigService",
     "OpenAICompatibleProvider",
     "ProviderModelInfo",
     "ProviderRegistry",

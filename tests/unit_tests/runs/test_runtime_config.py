@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_teams.env import runtime_config
+from agent_teams.runs import runtime_config
 
 
 def test_load_runtime_config_uses_project_config_dir_by_default(

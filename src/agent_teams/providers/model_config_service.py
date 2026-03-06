@@ -1,0 +1,67 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+
+from agent_teams.providers.model_config import ProviderModelInfo, ProviderType
+from agent_teams.providers.model_config_manager import ModelConfigManager
+from agent_teams.providers.registry import list_provider_models
+from agent_teams.runs.runtime_config import RuntimeConfig, load_runtime_config
+from agent_teams.shared_types.json_types import JsonObject
+
+
+class ModelConfigService:
+    def __init__(
+        self,
+        *,
+        config_dir: Path,
+        roles_dir: Path,
+        db_path: Path,
+        model_config_manager: ModelConfigManager,
+        get_runtime: Callable[[], RuntimeConfig],
+        on_runtime_reloaded: Callable[[RuntimeConfig], None],
+    ) -> None:
+        self._config_dir: Path = config_dir
+        self._roles_dir: Path = roles_dir
+        self._db_path: Path = db_path
+        self._model_config_manager: ModelConfigManager = model_config_manager
+        self._get_runtime: Callable[[], RuntimeConfig] = get_runtime
+        self._on_runtime_reloaded: Callable[[RuntimeConfig], None] = on_runtime_reloaded
+
+    @property
+    def runtime(self) -> RuntimeConfig:
+        return self._get_runtime()
+
+    def get_model_config(self) -> JsonObject:
+        return self._model_config_manager.get_model_config()
+
+    def get_model_profiles(self) -> dict[str, JsonObject]:
+        return self._model_config_manager.get_model_profiles()
+
+    def get_provider_models(
+        self,
+        *,
+        provider: ProviderType | None = None,
+    ) -> tuple[ProviderModelInfo, ...]:
+        return list_provider_models(self.runtime.llm_profiles, provider)
+
+    def save_model_profile(self, name: str, profile: JsonObject) -> None:
+        self._model_config_manager.save_model_profile(name, profile)
+        self.reload_model_config()
+
+    def delete_model_profile(self, name: str) -> None:
+        self._model_config_manager.delete_model_profile(name)
+        self.reload_model_config()
+
+    def save_model_config(self, config: JsonObject) -> None:
+        self._model_config_manager.save_model_config(config)
+        self.reload_model_config()
+
+    def reload_model_config(self) -> None:
+        runtime = load_runtime_config(
+            config_dir=self._config_dir,
+            roles_dir=self._roles_dir,
+            db_path=self._db_path,
+        )
+        self._on_runtime_reloaded(runtime)

@@ -38,12 +38,57 @@ class SkillsDirectory:
         max_depth: int = 3,
         fallback_dirs: tuple[Path, ...] = (),
     ) -> None:
-        self.base_dir = base_dir.expanduser().resolve()
+        self.base_dir = _resolve_dir(base_dir)
         self.max_depth = max_depth
-        self.fallback_dirs = tuple(
-            item.expanduser().resolve() for item in fallback_dirs
-        )
+        self.fallback_dirs = tuple(_resolve_dir(item) for item in fallback_dirs)
         self._skills: dict[str, Skill] = {}
+
+    @classmethod
+    def from_skill_dirs(
+        cls,
+        *,
+        project_skills_dir: Path,
+        user_skills_dir: Path | None = None,
+        max_depth: int = 3,
+    ) -> SkillsDirectory:
+        resolved_project_skills_dir = _resolve_dir(project_skills_dir)
+        resolved_project_skills_dir.mkdir(parents=True, exist_ok=True)
+        fallback_dirs = (
+            (_resolve_dir(user_skills_dir),) if user_skills_dir is not None else ()
+        )
+        return cls(
+            base_dir=resolved_project_skills_dir,
+            max_depth=max_depth,
+            fallback_dirs=fallback_dirs,
+        )
+
+    @classmethod
+    def from_config_dirs(
+        cls,
+        *,
+        project_config_dir: Path,
+        user_home_dir: Path | None = None,
+        max_depth: int = 3,
+    ) -> SkillsDirectory:
+        return cls.from_skill_dirs(
+            project_skills_dir=_resolve_dir(project_config_dir) / "skills",
+            user_skills_dir=get_user_skills_dir(user_home_dir=user_home_dir),
+            max_depth=max_depth,
+        )
+
+    @classmethod
+    def from_default_scopes(
+        cls,
+        *,
+        project_root: Path | None = None,
+        user_home_dir: Path | None = None,
+        max_depth: int = 3,
+    ) -> SkillsDirectory:
+        return cls.from_skill_dirs(
+            project_skills_dir=get_project_skills_dir(project_root=project_root),
+            user_skills_dir=get_user_skills_dir(user_home_dir=user_home_dir),
+            max_depth=max_depth,
+        )
 
     def discover(self) -> None:
         self._skills.clear()
@@ -171,6 +216,10 @@ class SkillsDirectory:
             scripts=scripts,
         )
         return Skill(metadata=metadata, directory=path.parent, scope=scope)
+
+
+def _resolve_dir(path: Path) -> Path:
+    return path.expanduser().resolve()
 
 
 def _as_object_mapping(value: object) -> dict[str, object] | None:

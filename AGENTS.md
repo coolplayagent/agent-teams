@@ -1,4 +1,4 @@
-﻿# Repository Guidelines
+# Repository Guidelines
 
 ## Project Layout
 - Core code: `src/agent_teams/`
@@ -36,6 +36,7 @@
 - **编程规范**: 禁止使用 `os.path`，应使用 `pathlib.Path`。
 - **Strong typing**: Never use untyped `{}` structures, `typing.Any`, or `dataclass` for domain contracts. Use explicit strong types and Pydantic v2 models for schema safety.
 - **Clean code**: Follow SOLID principles, keep modules high-cohesion/low-coupling, and depend on abstractions rather than concrete implementations.
+- **模块配置职责**: 每个模块负责管理自身配置，禁止将模块专属配置集中堆放到无关模块中。
 - **Public interfaces**: Expose package-level public APIs through `__init__.py`.
 - **Test-driven changes**: Every feature and bug fix must be guarded by unit tests. Unit test directories and files must correspond one-to-one with business code paths (for example, `src/agent_teams/tools/` -> `tests/unit_tests/tools/`).
 - **No emoji policy**: Do not use emoji in code, comments, docs, or commit messages.

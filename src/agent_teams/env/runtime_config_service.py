@@ -105,7 +105,9 @@ class RuntimeConfigService:
         self._on_mcp_reloaded(mcp_registry)
 
     def reload_skills_config(self) -> None:
-        skill_registry = self._config_manager.load_skill_registry()
+        skill_registry = SkillRegistry.from_config_dirs(
+            project_config_dir=self._config_dir
+        )
         for role in self._role_registry.list_roles():
             skill_registry.validate_known(role.skills)
         self._skill_registry = skill_registry

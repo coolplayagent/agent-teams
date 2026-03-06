@@ -7,8 +7,6 @@ from typing import TypedDict
 
 import typer
 
-from agent_teams.env.config_manager import ConfigManager
-from agent_teams.paths import get_project_config_dir
 from agent_teams.skills.models import Skill, SkillResource, SkillScope, SkillScript
 from agent_teams.skills.registry import SkillRegistry
 
@@ -119,9 +117,7 @@ def skills_show(
 
 
 def load_skill_registry() -> SkillRegistry:
-    config_dir = get_project_config_dir()
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return ConfigManager(config_dir=config_dir).load_skill_registry()
+    return SkillRegistry.from_default_scopes()
 
 
 def render_skill_list_table(skills: tuple[Skill, ...]) -> None:

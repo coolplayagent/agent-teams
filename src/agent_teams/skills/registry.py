@@ -6,6 +6,7 @@ import importlib.util
 import inspect
 import io
 from contextlib import redirect_stdout
+from pathlib import Path
 from types import ModuleType
 
 from pydantic import BaseModel, ConfigDict
@@ -24,14 +25,60 @@ class SkillRegistry(BaseModel):
 
     directory: SkillsDirectory
 
+    @classmethod
+    def from_skill_dirs(
+        cls,
+        *,
+        project_skills_dir: Path,
+        user_skills_dir: Path | None = None,
+        max_depth: int = 3,
+    ) -> SkillRegistry:
+        return cls(
+            directory=SkillsDirectory.from_skill_dirs(
+                project_skills_dir=project_skills_dir,
+                user_skills_dir=user_skills_dir,
+                max_depth=max_depth,
+            )
+        )
+
+    @classmethod
+    def from_config_dirs(
+        cls,
+        *,
+        project_config_dir: Path,
+        user_home_dir: Path | None = None,
+        max_depth: int = 3,
+    ) -> SkillRegistry:
+        return cls(
+            directory=SkillsDirectory.from_config_dirs(
+                project_config_dir=project_config_dir,
+                user_home_dir=user_home_dir,
+                max_depth=max_depth,
+            )
+        )
+
+    @classmethod
+    def from_default_scopes(
+        cls,
+        *,
+        project_root: Path | None = None,
+        user_home_dir: Path | None = None,
+        max_depth: int = 3,
+    ) -> SkillRegistry:
+        return cls(
+            directory=SkillsDirectory.from_default_scopes(
+                project_root=project_root,
+                user_home_dir=user_home_dir,
+                max_depth=max_depth,
+            )
+        )
+
     def list_skill_definitions(self) -> tuple[Skill, ...]:
-        self.directory.discover()
-        skills = self.directory.list_skills()
+        skills = self._get_effective_skill_map().values()
         return tuple(sorted(skills, key=lambda item: item.metadata.name))
 
     def get_skill_definition(self, name: str) -> Skill | None:
-        self.directory.discover()
-        return self.directory.get_skill(name)
+        return self._get_effective_skill_map().get(name)
 
     def get_toolset_tools(self, skill_names: tuple[str, ...]) -> list[Tool[ToolDeps]]:
         _ = skill_names
@@ -60,7 +107,7 @@ class SkillRegistry(BaseModel):
         return tools
 
     def validate_known(self, skill_names: tuple[str, ...]) -> None:
-        known = {skill.metadata.name for skill in self.list_skill_definitions()}
+        known = set(self._get_effective_skill_map().keys())
         missing = [name for name in skill_names if name not in known]
         if missing:
             raise ValueError(f"Unknown skills: {missing}")
@@ -76,12 +123,10 @@ class SkillRegistry(BaseModel):
         self, skill_names: tuple[str, ...]
     ) -> tuple[SkillInstructionEntry, ...]:
         self.validate_known(skill_names)
-        all_skills = self.directory.list_skills()
+        skill_map = self._get_effective_skill_map()
         entries: list[SkillInstructionEntry] = []
         for name in skill_names:
-            skill = next(
-                (item for item in all_skills if item.metadata.name == name), None
-            )
+            skill = skill_map.get(name)
             if skill is None:
                 continue
             instructions = skill.metadata.instructions.strip()
@@ -112,7 +157,10 @@ class SkillRegistry(BaseModel):
             return _skill_to_json(skill)
 
         return await execute_tool(
-            ctx, tool_name="load_skill", args_summary={"name": name}, action=_action
+            ctx,
+            tool_name="load_skill",
+            args_summary={"name": name},
+            action=_action,
         )
 
     async def read_skill_resource(
@@ -188,6 +236,10 @@ class SkillRegistry(BaseModel):
             args_summary=args or {},
             action=_action,
         )
+
+    def _get_effective_skill_map(self) -> dict[str, Skill]:
+        self.directory.discover()
+        return {skill.metadata.name: skill for skill in self.directory.list_skills()}
 
 
 def _resolve_script_entrypoint(

@@ -66,7 +66,9 @@ class ServerContainer:
         )
         self.tool_registry: ToolRegistry = build_default_registry()
         self.mcp_registry: McpRegistry = self.config_manager.load_mcp_registry()
-        self.skill_registry: SkillRegistry = self.config_manager.load_skill_registry()
+        self.skill_registry: SkillRegistry = SkillRegistry.from_config_dirs(
+            project_config_dir=config_dir
+        )
 
         for role in self.role_registry.list_roles():
             self.tool_registry.validate_known(role.tools)

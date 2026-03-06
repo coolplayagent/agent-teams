@@ -17,6 +17,7 @@ from agent_teams.interfaces.server.container import ServerContainer
 from agent_teams.interfaces.server.config_paths import get_frontend_dist_dir
 from agent_teams.interfaces.server.routers import (
     logs,
+    mcp,
     prompts,
     roles,
     runs,
@@ -67,6 +68,7 @@ app = FastAPI(
 )
 
 app.include_router(system.router, prefix="/api")
+app.include_router(mcp.router, prefix="/api")
 app.include_router(sessions.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")

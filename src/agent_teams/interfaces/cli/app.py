@@ -20,6 +20,7 @@ from agent_teams.interfaces.cli.prompt_cli import (
     stream_events as _stream_events_impl,
 )
 from agent_teams.interfaces.server.cli import build_server_app
+from agent_teams.mcp.mcp_cli import mcp_app
 from agent_teams.prompting.cli import build_prompts_app
 from agent_teams.roles.cli import build_roles_app
 from agent_teams.skills.cli import skills_app
@@ -268,6 +269,7 @@ app.add_typer(server_app, name="server")
 app.add_typer(roles_app, name="roles")
 app.add_typer(approvals_app, name="approvals")
 app.add_typer(env_app, name="env")
+app.add_typer(mcp_app, name="mcp")
 app.add_typer(triggers_app, name="triggers")
 app.add_typer(prompts_app, name="prompts")
 app.add_typer(skills_app, name="skills")

@@ -1,0 +1,110 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+from json import loads
+from pathlib import Path
+from typing import cast
+
+from agent_teams.logger import get_logger
+from agent_teams.mcp.models import McpConfigScope, McpServerSpec
+from agent_teams.mcp.registry import McpRegistry
+from agent_teams.paths import get_project_config_dir, get_user_config_dir
+from agent_teams.shared_types.json_types import JsonObject, JsonValue
+
+logger = get_logger(__name__)
+_MCP_FILE_NAME = "mcp.json"
+
+
+def get_user_mcp_file_path(user_home_dir: Path | None = None) -> Path:
+    return get_user_config_dir(user_home_dir=user_home_dir) / _MCP_FILE_NAME
+
+
+def get_project_mcp_file_path(project_root: Path | None = None) -> Path:
+    return get_project_config_dir(project_root=project_root) / _MCP_FILE_NAME
+
+
+class McpConfigManager:
+    def __init__(
+        self,
+        *,
+        project_config_dir: Path,
+        user_home_dir: Path | None = None,
+    ) -> None:
+        self._project_config_dir: Path = project_config_dir.expanduser().resolve()
+        self._user_home_dir: Path | None = user_home_dir
+
+    def load_registry(self) -> McpRegistry:
+        merged_specs: dict[str, McpServerSpec] = {}
+        for source, file_path in self._iter_sources():
+            for spec in _load_specs_from_file(file_path=file_path, source=source):
+                merged_specs[spec.name] = spec
+        return McpRegistry(tuple(merged_specs.values()))
+
+    def _iter_sources(self) -> tuple[tuple[McpConfigScope, Path], ...]:
+        return (
+            (McpConfigScope.USER, get_user_mcp_file_path(self._user_home_dir)),
+            (McpConfigScope.PROJECT, self._project_config_dir / _MCP_FILE_NAME),
+        )
+
+
+def _load_specs_from_file(
+    *, file_path: Path, source: McpConfigScope
+) -> tuple[McpServerSpec, ...]:
+    if not file_path.exists():
+        return ()
+
+    try:
+        payload = _load_json_object(file_path)
+    except Exception as exc:
+        logger.warning("Failed to load %s: %s", file_path.name, exc)
+        return ()
+
+    maybe_servers = payload.get("mcpServers", payload)
+    if not isinstance(maybe_servers, dict):
+        return ()
+
+    specs: list[McpServerSpec] = []
+    for raw_name, raw_config in maybe_servers.items():
+        name = str(raw_name)
+        normalized_server_config = _normalize_to_json_object(raw_config)
+        wrapped_config: JsonObject = {
+            "mcpServers": {name: normalized_server_config},
+        }
+        specs.append(
+            McpServerSpec(
+                name=name,
+                config=wrapped_config,
+                server_config=normalized_server_config,
+                source=source,
+            )
+        )
+    return tuple(specs)
+
+
+def _load_json_object(file_path: Path) -> JsonObject:
+    raw = cast(object, loads(file_path.read_text(encoding="utf-8-sig")))
+    if isinstance(raw, dict):
+        return cast(JsonObject, raw)
+    return {}
+
+
+def _normalize_to_json_object(value: object) -> JsonObject:
+    normalized = _normalize_json_value(value)
+    if isinstance(normalized, dict):
+        return normalized
+    return {}
+
+
+def _normalize_json_value(value: object) -> JsonValue:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, list):
+        items = cast(list[object], value)
+        return [_normalize_json_value(item) for item in items]
+    if isinstance(value, dict):
+        entries = cast(dict[object, object], value)
+        normalized: JsonObject = {}
+        for key, item in entries.items():
+            normalized[str(key)] = _normalize_json_value(item)
+        return normalized
+    return str(value)

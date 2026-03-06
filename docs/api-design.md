@@ -109,6 +109,11 @@ Reloads model config into runtime.
 ### `POST /system/configs/mcp:reload`
 Reloads MCP config into runtime.
 
+MCP config merge order:
+- `~/.agent_teams/mcp.json` (user scope)
+- `.agent_teams/mcp.json` (project scope, overrides user scope by server name)
+
+
 ### `POST /system/configs/skills:reload`
 Reloads skills config into runtime.
 
@@ -421,7 +426,43 @@ Validates role files against registered tools.
 
 ---
 
-## 9. Prompt APIs
+## 9. MCP APIs
+
+### `GET /mcp/servers`
+Lists effective MCP servers after user/project merge.
+
+Response:
+```json
+[
+  {
+    "name": "filesystem",
+    "source": "project",
+    "transport": "stdio"
+  }
+]
+```
+
+### `GET /mcp/servers/{server_name}/tools`
+Lists tools exposed by one MCP server.
+
+Response:
+```json
+{
+  "server": "filesystem",
+  "source": "project",
+  "transport": "stdio",
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read a file"
+    }
+  ]
+}
+```
+
+---
+
+## 10. Prompt APIs
 
 ### `POST /prompts:preview`
 Builds prompt preview payload for a specific role.
@@ -464,7 +505,7 @@ Error behavior:
 
 ---
 
-## 10. Frontend Log API
+## 11. Frontend Log API
 
 ### `POST /logs/frontend`
 Ingests frontend structured logs in batch.
@@ -493,7 +534,7 @@ Request:
 
 ---
 
-## 11. Trigger APIs
+## 12. Trigger APIs
 
 ### trigger enums
 
@@ -657,3 +698,7 @@ Response:
 ```json
 {"accepted": 1}
 ```
+
+
+
+

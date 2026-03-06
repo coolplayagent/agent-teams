@@ -1,17 +1,13 @@
-﻿from __future__ import annotations
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from importlib import import_module
+from typing import TYPE_CHECKING, cast
 
-from pydantic_ai.toolsets.fastmcp import FastMCPToolset
+from agent_teams.mcp.models import McpServerSpec, McpToolInfo
 
-from agent_teams.shared_types.json_types import JsonObject
-
-
-class McpServerSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    name: str
-    config: JsonObject
+if TYPE_CHECKING:
+    from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 
 
 class McpRegistry:
@@ -20,17 +16,10 @@ class McpRegistry:
         self._toolsets: dict[str, FastMCPToolset] = {}
 
     def get_toolsets(self, names: tuple[str, ...]) -> tuple[FastMCPToolset, ...]:
-        missing = [name for name in names if name not in self._specs]
-        if missing:
-            raise ValueError(f"Unknown MCP servers: {missing}")
-
-        toolsets = []
+        self.validate_known(names)
+        toolsets: list[FastMCPToolset] = []
         for name in names:
-            if name not in self._toolsets:
-                spec = self._specs[name]
-                # FastMCPToolset is already an AbstractToolset and handles its own async methods
-                self._toolsets[name] = FastMCPToolset(spec.config)
-            toolsets.append(self._toolsets[name])
+            toolsets.append(self._get_or_create_toolset(name))
         return tuple(toolsets)
 
     def validate_known(self, names: tuple[str, ...]) -> None:
@@ -41,4 +30,42 @@ class McpRegistry:
     def list_names(self) -> tuple[str, ...]:
         return tuple(sorted(self._specs.keys()))
 
+    def list_specs(self) -> tuple[McpServerSpec, ...]:
+        return tuple(self._specs[name] for name in self.list_names())
 
+    def get_spec(self, name: str) -> McpServerSpec:
+        spec = self._specs.get(name)
+        if spec is None:
+            raise ValueError(f"Unknown MCP server: {name}")
+        return spec
+
+    async def list_tools(self, name: str) -> tuple[McpToolInfo, ...]:
+        toolset = self._get_or_create_toolset(name)
+        async with toolset:
+            mcp_tools = await toolset.client.list_tools()
+        return tuple(
+            McpToolInfo(
+                name=str(tool.name),
+                description=tool.description
+                if isinstance(tool.description, str)
+                else "",
+            )
+            for tool in mcp_tools
+        )
+
+    def _get_or_create_toolset(self, name: str) -> FastMCPToolset:
+        existing = self._toolsets.get(name)
+        if existing is not None:
+            return existing
+
+        spec = self.get_spec(name)
+        toolset_type = _load_fastmcp_toolset_type()
+        toolset = toolset_type(spec.config)
+        self._toolsets[name] = toolset
+        return toolset
+
+
+def _load_fastmcp_toolset_type() -> type[FastMCPToolset]:
+    module = import_module("pydantic_ai.toolsets.fastmcp")
+    toolset_type = getattr(module, "FastMCPToolset")
+    return cast("type[FastMCPToolset]", toolset_type)

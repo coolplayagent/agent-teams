@@ -12,7 +12,9 @@ from agent_teams.coordination.task_execution_service import TaskExecutionService
 from agent_teams.env.config_manager import ConfigManager
 from agent_teams.env.runtime_config import RuntimeConfig, load_runtime_config
 from agent_teams.env.runtime_config_service import RuntimeConfigService
+from agent_teams.mcp.config_manager import McpConfigManager
 from agent_teams.mcp.registry import McpRegistry
+from agent_teams.mcp.service import McpService
 from agent_teams.notifications import NotificationService
 from agent_teams.prompting.runtime_prompt_builder import RuntimePromptBuilder
 from agent_teams.providers.llm import LLMProvider
@@ -61,11 +63,15 @@ class ServerContainer:
         self.runtime: RuntimeConfig = runtime
 
         self.config_manager: ConfigManager = ConfigManager(config_dir=config_dir)
+        self.mcp_config_manager: McpConfigManager = McpConfigManager(
+            project_config_dir=config_dir
+        )
         self.role_registry: RoleRegistry = RoleLoader().load_all(
             runtime.paths.roles_dir
         )
         self.tool_registry: ToolRegistry = build_default_registry()
-        self.mcp_registry: McpRegistry = self.config_manager.load_mcp_registry()
+        self.mcp_registry: McpRegistry = self.mcp_config_manager.load_registry()
+        self.mcp_service: McpService = McpService(registry=self.mcp_registry)
         self.skill_registry: SkillRegistry = SkillRegistry.from_config_dirs(
             project_config_dir=config_dir
         )
@@ -156,6 +162,7 @@ class ServerContainer:
             db_path=self.runtime.paths.db_path,
             runtime=self.runtime,
             config_manager=self.config_manager,
+            mcp_config_manager=self.mcp_config_manager,
             role_registry=self.role_registry,
             mcp_registry=self.mcp_registry,
             skill_registry=self.skill_registry,
@@ -222,6 +229,7 @@ class ServerContainer:
 
     def _on_mcp_reloaded(self, mcp_registry: McpRegistry) -> None:
         self.mcp_registry = mcp_registry
+        self.mcp_service.replace_registry(mcp_registry)
         self._refresh_coordinator_runtime()
 
     def _on_skill_reloaded(self, skill_registry: SkillRegistry) -> None:

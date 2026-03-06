@@ -7,6 +7,7 @@ from typing import cast
 
 from agent_teams.env.config_manager import ConfigManager
 from agent_teams.env.runtime_config import RuntimeConfig, load_runtime_config
+from agent_teams.mcp.config_manager import McpConfigManager
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.notifications import NotificationConfig
 from agent_teams.roles.registry import RoleRegistry
@@ -23,6 +24,7 @@ class RuntimeConfigService:
         db_path: Path,
         runtime: RuntimeConfig,
         config_manager: ConfigManager,
+        mcp_config_manager: McpConfigManager,
         role_registry: RoleRegistry,
         mcp_registry: McpRegistry,
         skill_registry: SkillRegistry,
@@ -35,6 +37,7 @@ class RuntimeConfigService:
         self._db_path: Path = db_path
         self._runtime: RuntimeConfig = runtime
         self._config_manager: ConfigManager = config_manager
+        self._mcp_config_manager: McpConfigManager = mcp_config_manager
         self._role_registry: RoleRegistry = role_registry
         self._mcp_registry: McpRegistry = mcp_registry
         self._skill_registry: SkillRegistry = skill_registry
@@ -98,7 +101,7 @@ class RuntimeConfigService:
         self._on_runtime_reloaded(runtime)
 
     def reload_mcp_config(self) -> None:
-        mcp_registry = self._config_manager.load_mcp_registry()
+        mcp_registry = self._mcp_config_manager.load_registry()
         for role in self._role_registry.list_roles():
             mcp_registry.validate_known(role.mcp_servers)
         self._mcp_registry = mcp_registry

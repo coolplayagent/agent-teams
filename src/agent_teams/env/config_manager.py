@@ -5,12 +5,8 @@ from json import dumps, loads
 from pathlib import Path
 from typing import cast
 
-from agent_teams.logger import get_logger
-from agent_teams.mcp.registry import McpRegistry, McpServerSpec
 from agent_teams.notifications import NotificationConfig, default_notification_config
-from agent_teams.shared_types.json_types import JsonObject, JsonValue
-
-logger = get_logger(__name__)
+from agent_teams.shared_types.json_types import JsonObject
 
 
 class ConfigManager:
@@ -80,43 +76,9 @@ class ConfigManager:
             encoding="utf-8",
         )
 
-    def load_mcp_registry(self) -> McpRegistry:
-        mcp_specs: list[McpServerSpec] = []
-        mcp_file = self._config_dir / "mcp.json"
-        if mcp_file.exists():
-            try:
-                mcp_data = _load_json_object(mcp_file)
-                maybe_servers = mcp_data.get("mcpServers", mcp_data)
-                if not isinstance(maybe_servers, dict):
-                    maybe_servers = {}
-                for name, cfg in maybe_servers.items():
-                    wrapped_cfg: JsonObject = {
-                        "mcpServers": {name: _normalize_json_value(cfg)},
-                    }
-                    mcp_specs.append(McpServerSpec(name=name, config=wrapped_cfg))
-            except Exception as exc:
-                logger.warning("Failed to load mcp.json: %s", exc)
-        return McpRegistry(tuple(mcp_specs))
-
 
 def _load_json_object(file_path: Path) -> JsonObject:
     raw = cast(object, loads(file_path.read_text("utf-8")))
     if isinstance(raw, dict):
         return cast(JsonObject, raw)
     return {}
-
-
-def _normalize_json_value(value: object) -> JsonValue:
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, list):
-        items = cast(list[object], value)
-        return [_normalize_json_value(item) for item in items]
-    if isinstance(value, dict):
-        entries = cast(dict[object, object], value)
-        normalized: JsonObject = {}
-        for key, item in entries.items():
-            key_str: str = str(key)
-            normalized[key_str] = _normalize_json_value(item)
-        return normalized
-    return str(value)

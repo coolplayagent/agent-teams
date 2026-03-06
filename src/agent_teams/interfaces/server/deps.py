@@ -1,9 +1,11 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from fastapi import Request
 
 from agent_teams.env.runtime_config_service import RuntimeConfigService
 from agent_teams.interfaces.server.container import ServerContainer
+from agent_teams.mcp.service import McpService
 from agent_teams.roles.registry import RoleRegistry
 from agent_teams.runs.manager import RunManager
 from agent_teams.sessions import SessionService
@@ -36,6 +38,10 @@ def get_trigger_service(request: Request) -> TriggerService:
 
 def get_system_config_service(request: Request) -> RuntimeConfigService:
     return get_container(request).config_service
+
+
+def get_mcp_service(request: Request) -> McpService:
+    return get_container(request).mcp_service
 
 
 def get_task_repo(request: Request) -> TaskRepository:

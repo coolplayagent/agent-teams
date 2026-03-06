@@ -1,4 +1,4 @@
-# agent-teams
+﻿# agent-teams
 
 Role-driven multi-agent orchestration framework built with strong typing and tool-only collaboration flow.
 Runtime model execution uses `pydantic_ai` with OpenAI-compatible endpoints.
@@ -128,7 +128,18 @@ uv run agent-teams -m "Draft a release note"
 uv run agent-teams env list
 ```
 
-### 5.2) Create a run and stream events (HTTP SDK)
+### 5.2) Inspect merged MCP servers
+
+`mcp` config now follows module-local scope merge rules:
+- `~/.agent_teams/mcp.json` (user scope)
+- `.agent_teams/mcp.json` (project scope, overrides user servers with the same name)
+
+```bash
+uv run agent-teams mcp list
+uv run agent-teams mcp tools filesystem --format json
+```
+
+### 5.3) Create a run and stream events (HTTP SDK)
 
 ```python
 from agent_teams.interfaces.sdk.client import AgentTeamsClient
@@ -139,7 +150,7 @@ for event in client.stream_run_events(run.run_id):
     print(event.get("event_type"))
 ```
 
-### 5.3) Preview assembled prompts for a role
+### 5.4) Preview assembled prompts for a role
 
 ```bash
 uv run agent-teams prompts get --role-id coordinator_agent
@@ -198,3 +209,4 @@ Run browser automation tests (Playwright):
 uv run playwright install chromium
 uv run pytest -q tests/integration_tests/browser
 ```
+

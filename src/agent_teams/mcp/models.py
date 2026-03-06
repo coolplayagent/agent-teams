@@ -1,0 +1,46 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict
+
+from agent_teams.shared_types.json_types import JsonObject
+
+
+class McpConfigScope(str, Enum):
+    USER = "user"
+    PROJECT = "project"
+
+
+class McpToolInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    description: str = ""
+
+
+class McpServerSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    config: JsonObject
+    server_config: JsonObject
+    source: McpConfigScope
+
+
+class McpServerSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    source: McpConfigScope
+    transport: str
+
+
+class McpServerToolsSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    server: str
+    source: McpConfigScope
+    transport: str
+    tools: tuple[McpToolInfo, ...] = ()

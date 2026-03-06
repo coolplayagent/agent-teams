@@ -1,44 +1,32 @@
-﻿from __future__ import annotations
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from agent_teams.mcp.config_manager import (
+    McpConfigManager,
+    get_project_mcp_file_path,
+    get_user_mcp_file_path,
+)
+from agent_teams.mcp.mcp_cli import build_mcp_app
+from agent_teams.mcp.models import (
+    McpConfigScope,
+    McpServerSpec,
+    McpServerSummary,
+    McpServerToolsSummary,
+    McpToolInfo,
+)
+from agent_teams.mcp.registry import McpRegistry
+from agent_teams.mcp.service import McpService
 
-from pydantic_ai.toolsets.fastmcp import FastMCPToolset
-
-from agent_teams.shared_types.json_types import JsonObject
-
-
-class McpServerSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    name: str
-    config: JsonObject
-
-
-class McpRegistry:
-    def __init__(self, specs: tuple[McpServerSpec, ...] = ()) -> None:
-        self._specs = {spec.name: spec for spec in specs}
-        self._toolsets: dict[str, FastMCPToolset] = {}
-
-    def get_toolsets(self, names: tuple[str, ...]) -> tuple[FastMCPToolset, ...]:
-        missing = [name for name in names if name not in self._specs]
-        if missing:
-            raise ValueError(f"Unknown MCP servers: {missing}")
-
-        toolsets = []
-        for name in names:
-            if name not in self._toolsets:
-                spec = self._specs[name]
-                # FastMCPToolset is already an AbstractToolset and handles its own async methods
-                self._toolsets[name] = FastMCPToolset(spec.config)
-            toolsets.append(self._toolsets[name])
-        return tuple(toolsets)
-
-    def validate_known(self, names: tuple[str, ...]) -> None:
-        missing = [name for name in names if name not in self._specs]
-        if missing:
-            raise ValueError(f"Unknown MCP servers: {missing}")
-
-    def list_names(self) -> tuple[str, ...]:
-        return tuple(sorted(self._specs.keys()))
-
-
+__all__ = [
+    "McpConfigManager",
+    "McpConfigScope",
+    "McpRegistry",
+    "McpServerSpec",
+    "McpServerSummary",
+    "McpServerToolsSummary",
+    "McpService",
+    "McpToolInfo",
+    "build_mcp_app",
+    "get_project_mcp_file_path",
+    "get_user_mcp_file_path",
+]

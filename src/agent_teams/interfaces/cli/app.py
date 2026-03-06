@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 import typer
 
 from agent_teams.env.env_cli import env_app
+from agent_teams.interfaces.cli.approvals import build_approvals_app
 from agent_teams.interfaces.cli.prompt_cli import (
     execute_prompt as _execute_prompt_impl,
     root_command as _root_command_impl,
@@ -21,7 +22,7 @@ from agent_teams.interfaces.cli.prompt_cli import (
 from agent_teams.interfaces.server.cli import build_server_app
 from agent_teams.prompting.cli import build_prompts_app
 from agent_teams.roles.cli import build_roles_app
-from agent_teams.interfaces.cli.approvals import build_approvals_app
+from agent_teams.skills.cli import skills_app
 from agent_teams.triggers.cli import build_triggers_app
 
 app = typer.Typer(no_args_is_help=False, pretty_exceptions_enable=False)
@@ -269,6 +270,7 @@ app.add_typer(approvals_app, name="approvals")
 app.add_typer(env_app, name="env")
 app.add_typer(triggers_app, name="triggers")
 app.add_typer(prompts_app, name="prompts")
+app.add_typer(skills_app, name="skills")
 
 
 def main() -> None:

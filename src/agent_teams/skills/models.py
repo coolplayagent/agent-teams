@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class SkillScope(str, Enum):
+    USER = "user"
+    PROJECT = "project"
 
 
 class SkillResource(BaseModel):
@@ -38,6 +44,7 @@ class Skill(BaseModel):
 
     metadata: SkillMetadata
     directory: Path
+    scope: SkillScope
 
 
 class SkillInstructionEntry(BaseModel):

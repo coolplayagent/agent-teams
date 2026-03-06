@@ -1,14 +1,15 @@
-﻿from __future__ import annotations
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
 from json import dumps, loads
 from pathlib import Path
 from typing import cast
 
-from agent_teams.shared_types.json_types import JsonObject, JsonValue
 from agent_teams.logger import get_logger
 from agent_teams.mcp.registry import McpRegistry, McpServerSpec
 from agent_teams.notifications import NotificationConfig, default_notification_config
-from agent_teams.skills.discovery import SkillsDirectory
+from agent_teams.shared_types.json_types import JsonObject, JsonValue
+from agent_teams.skills.discovery import SkillsDirectory, get_user_skills_dir
 from agent_teams.skills.registry import SkillRegistry
 
 logger = get_logger(__name__)
@@ -102,7 +103,10 @@ class ConfigManager:
     def load_skill_registry(self) -> SkillRegistry:
         skills_dir = self._config_dir / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
-        skill_directory = SkillsDirectory(base_dir=skills_dir)
+        skill_directory = SkillsDirectory(
+            base_dir=skills_dir,
+            fallback_dirs=(get_user_skills_dir(),),
+        )
         return SkillRegistry(directory=skill_directory)
 
 
@@ -127,5 +131,3 @@ def _normalize_json_value(value: object) -> JsonValue:
             normalized[key_str] = _normalize_json_value(item)
         return normalized
     return str(value)
-
-

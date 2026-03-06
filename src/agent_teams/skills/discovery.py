@@ -1,31 +1,75 @@
-import yaml
-from pathlib import Path
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 
-from agent_teams.skills.models import Skill, SkillMetadata, SkillResource, SkillScript
+from pathlib import Path
+import re
+
+import yaml
+
+from agent_teams.logger import get_logger
+from agent_teams.paths import get_project_root, get_user_home_dir
+from agent_teams.skills.models import (
+    Skill,
+    SkillMetadata,
+    SkillResource,
+    SkillScope,
+    SkillScript,
+)
+
+logger = get_logger(__name__)
+_SCRIPT_DESCRIPTION_PATTERN = re.compile(
+    r"^- ([\w-]+):\s*(.*?)(?:\s*\((.*?)\))?$",
+    re.MULTILINE,
+)
+
+
+def get_user_skills_dir(user_home_dir: Path | None = None) -> Path:
+    resolved_home = (
+        get_user_home_dir()
+        if user_home_dir is None
+        else user_home_dir.expanduser().resolve()
+    )
+    return resolved_home / ".agent_teams" / "skills"
+
+
+def get_project_skills_dir(project_root: Path | None = None) -> Path:
+    resolved_project_root = (
+        get_project_root()
+        if project_root is None
+        else project_root.expanduser().resolve()
+    )
+    return resolved_project_root / ".agent_teams" / "skills"
+
 
 class SkillsDirectory:
-    def __init__(self, base_dir: Path, max_depth: int = 3):
-        self.base_dir = base_dir
+    def __init__(
+        self,
+        base_dir: Path,
+        max_depth: int = 3,
+        fallback_dirs: tuple[Path, ...] = (),
+    ) -> None:
+        self.base_dir = base_dir.expanduser().resolve()
         self.max_depth = max_depth
+        self.fallback_dirs = tuple(
+            item.expanduser().resolve() for item in fallback_dirs
+        )
         self._skills: dict[str, Skill] = {}
 
     def discover(self) -> None:
-        """Scan the directory for SKILL.md files and load them."""
-        if not self.base_dir.exists():
-            return
-            
         self._skills.clear()
-        
-        # We do a basic glob search here. For max_depth, a simple approach is rglob and manual check.
-        for path in self.base_dir.rglob("SKILL.md"):
-            try:
-                rel = path.relative_to(self.base_dir)
-                if len(rel.parts) <= self.max_depth + 1:
-                    skill = self._load_skill(path)
-                    if skill:
+        for scope, base_dir in self._iter_sources():
+            if not base_dir.exists():
+                continue
+            for path in sorted(base_dir.rglob("SKILL.md")):
+                try:
+                    rel = path.relative_to(base_dir)
+                    if len(rel.parts) > self.max_depth + 1:
+                        continue
+                    skill = self._load_skill(path=path, scope=scope)
+                    if skill is not None:
                         self._skills[skill.metadata.name] = skill
-            except Exception as e:
-                print(f"Failed to load skill at {path}: {e}")
+                except Exception as exc:
+                    logger.warning("Failed to load skill at %s: %s", path, exc)
 
     def list_skills(self) -> list[Skill]:
         return list(self._skills.values())
@@ -33,17 +77,23 @@ class SkillsDirectory:
     def get_skill(self, name: str) -> Skill | None:
         return self._skills.get(name)
 
+    def _iter_sources(self) -> tuple[tuple[SkillScope, Path], ...]:
+        fallback_sources = tuple(
+            (SkillScope.USER, base_dir) for base_dir in self.fallback_dirs
+        )
+        return (*fallback_sources, (SkillScope.PROJECT, self.base_dir))
+
     def _split_front_matter(self, content: str) -> tuple[str, str]:
-        if not content.startswith('---'):
+        if not content.startswith("---"):
             raise ValueError("SKILL.md must start with YAML front matter")
 
         lines = content.splitlines(keepends=True)
-        if not lines or lines[0].strip() != '---':
+        if not lines or lines[0].strip() != "---":
             raise ValueError("SKILL.md must start with YAML front matter")
 
         end_index = None
         for idx in range(1, len(lines)):
-            if lines[idx].strip() == '---':
+            if lines[idx].strip() == "---":
                 end_index = idx
                 break
 
@@ -54,85 +104,96 @@ class SkillsDirectory:
         body = "".join(lines[end_index + 1 :])
         return front_matter, body
 
-    def _load_skill(self, path: Path) -> Skill | None:
+    def _load_skill(self, *, path: Path, scope: SkillScope) -> Skill | None:
         raw = path.read_text(encoding="utf-8")
         try:
             front_matter, body = self._split_front_matter(raw)
-            data = yaml.safe_load(front_matter)
-        except Exception as e:
-            print(f"Skipping {path} due to parsing error: {e}")
+            data = _as_object_mapping(yaml.safe_load(front_matter))
+        except Exception as exc:
+            logger.warning("Skipping %s due to parsing error: %s", path, exc)
             return None
 
-        if not isinstance(data, dict):
+        if data is None:
             return None
 
-        name = data.get("name")
-        description = data.get("description", "")
+        raw_name = data.get("name")
+        name = raw_name if isinstance(raw_name, str) else ""
+        raw_description = data.get("description", "")
+        description = raw_description if isinstance(raw_description, str) else ""
         if not name:
             return None
 
-        # Parse resources from YAML and auto-discover in resources/ or assets/
-        resources = {}
-        if "resources" in data and isinstance(data["resources"], dict):
-            for r_name, r_data in data["resources"].items():
-                r_path = None
-                if "path" in r_data:
-                    r_path = path.parent / r_data["path"]
-                resources[r_name] = SkillResource(
-                    name=r_name,
-                    description=r_data.get("description", ""),
-                    path=r_path
+        resources: dict[str, SkillResource] = {}
+        resource_entries = _as_object_mapping(data.get("resources"))
+        if resource_entries is not None:
+            for resource_name, raw_resource in resource_entries.items():
+                resource_data = _as_object_mapping(raw_resource)
+                if resource_data is None:
+                    continue
+                resources[resource_name] = SkillResource(
+                    name=resource_name,
+                    description=_coerce_string(resource_data.get("description")),
+                    path=_resolve_optional_path(path.parent, resource_data.get("path")),
                 )
-        
-        # Auto-discover in resources/ directory
-        for r_dir_name in ["resources", "assets"]:
-            r_dir = path.parent / r_dir_name
-            if r_dir.exists() and r_dir.is_dir():
-                for r_path in r_dir.glob("*"):
-                    if r_path.is_file() and r_path.name not in resources:
-                        resources[r_path.name] = SkillResource(
-                            name=r_path.name,
-                            description=f"Auto-discovered resource: {r_path.name}",
-                            path=r_path
-                        )
 
-        # Parse scripts from scripts/ directory and correlate with markdown body
-        scripts = {}
+        for resource_dir_name in ["resources", "assets"]:
+            resource_dir = path.parent / resource_dir_name
+            if not resource_dir.exists() or not resource_dir.is_dir():
+                continue
+            for resource_path in sorted(resource_dir.glob("*")):
+                if resource_path.is_file() and resource_path.name not in resources:
+                    resources[resource_path.name] = SkillResource(
+                        name=resource_path.name,
+                        description=f"Auto-discovered resource: {resource_path.name}",
+                        path=resource_path,
+                    )
+
+        scripts: dict[str, SkillScript] = {}
         scripts_dir = path.parent / "scripts"
-        
-        # Simple extraction of descriptions from markdown: look for lines like "- name: description (path)"
-        import re
-        script_meta = {}
-        # Find lines in the format: - name: description (optional path)
-        # or - name: description
-        matches = re.finditer(r'^- ([\w-]+):\s*(.*?)(?:\s*\((.*?)\))?$', body, re.MULTILINE)
-        for m in matches:
-            s_name, s_desc, s_path = m.groups()
-            script_meta[s_name] = (s_desc.strip(), s_path)
+        script_meta: dict[str, tuple[str, str | None]] = {}
+        for match in _SCRIPT_DESCRIPTION_PATTERN.finditer(body):
+            script_name, script_description, script_path = match.groups()
+            script_meta[script_name] = (script_description.strip(), script_path)
 
         if scripts_dir.exists() and scripts_dir.is_dir():
-            for script_path in scripts_dir.glob("*.py"):
-                s_name = script_path.stem
-                desc, _ = script_meta.get(s_name, (f"Execute {s_name} script.", None))
-                scripts[s_name] = SkillScript(
-                    name=s_name,
-                    description=desc,
-                    path=script_path
+            for script_path in sorted(scripts_dir.glob("*.py")):
+                script_name = script_path.stem
+                description_text, _ = script_meta.get(
+                    script_name, (f"Execute {script_name} script.", None)
                 )
-                # Also add as a resource to allow reading the script source
+                scripts[script_name] = SkillScript(
+                    name=script_name,
+                    description=description_text,
+                    path=script_path,
+                )
                 resource_name = f"scripts/{script_path.name}"
                 resources[resource_name] = SkillResource(
                     name=resource_name,
-                    description=f"Script source: {s_name}",
-                    path=script_path
+                    description=f"Script source: {script_name}",
+                    path=script_path,
                 )
 
         metadata = SkillMetadata(
             name=name,
             description=description,
             instructions=body.strip(),
-            resources=resources, # Retaining existing resource parsing for now
-            scripts=scripts
+            resources=resources,
+            scripts=scripts,
         )
+        return Skill(metadata=metadata, directory=path.parent, scope=scope)
 
-        return Skill(metadata=metadata, directory=path.parent)
+
+def _as_object_mapping(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    return {str(key): item for key, item in value.items()}
+
+
+def _coerce_string(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _resolve_optional_path(base_dir: Path, value: object) -> Path | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return base_dir / value

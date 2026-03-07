@@ -91,12 +91,18 @@ class JsonFormatter(logging.Formatter):
             payload["run_id"] = context.run_id
         if context.task_id:
             payload["task_id"] = context.task_id
+        if context.trigger_id:
+            payload["trigger_id"] = context.trigger_id
         if context.instance_id:
             payload["instance_id"] = context.instance_id
         if context.role_id:
             payload["role_id"] = context.role_id
         if context.tool_call_id:
             payload["tool_call_id"] = context.tool_call_id
+        if context.span_id:
+            payload["span_id"] = context.span_id
+        if context.parent_span_id:
+            payload["parent_span_id"] = context.parent_span_id
 
         event = getattr(record, "event", None)
         if event:

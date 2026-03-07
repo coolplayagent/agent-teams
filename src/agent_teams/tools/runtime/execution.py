@@ -16,10 +16,9 @@ from agent_teams.notifications import NotificationContext, NotificationType
 from agent_teams.runs.enums import RunEventType
 from agent_teams.runs.models import RunEvent
 from agent_teams.shared_types.json_types import JsonObject, JsonValue
-from agent_teams.state.approval_ticket_repo import (
-    ApprovalTicketStatus,
-)
+from agent_teams.state.approval_ticket_repo import ApprovalTicketStatus
 from agent_teams.state.run_runtime_repo import RunRuntimePhase, RunRuntimeStatus
+from agent_teams.trace import trace_span
 from agent_teams.tools.runtime.context import ToolContext
 from agent_teams.tools.runtime.models import ToolError, ToolResultEnvelope
 
@@ -34,123 +33,139 @@ async def execute_tool(
     action: Callable[[], object | Awaitable[object]] | object,
 ) -> JsonObject:
     """Run a tool action with approval, logging, and normalized envelopes."""
-    started = time.perf_counter()
     tool_call_id = ctx.tool_call_id or f"toolcall_{uuid4().hex[:12]}"
-    if LOGGER.isEnabledFor(logging.DEBUG):
-        log_event(
-            LOGGER,
-            logging.DEBUG,
-            event="runtime.debug",
-            message=(
-                f"[tool:start] tool={tool_name} run={ctx.deps.run_id} "
-                f"task={ctx.deps.task_id} instance={ctx.deps.instance_id} "
-                f"args={_safe_json(args_summary)}"
-            ),
-        )
-    else:
-        log_tool_call(ctx.deps.role_id, tool_name, args_summary)
-
-    meta: JsonObject = {}
-    _raise_if_stopped(ctx)
-    approval_ticket_id, approval_error = await _handle_tool_approval(
-        ctx=ctx,
-        tool_name=tool_name,
-        args_summary=args_summary,
-        meta=meta,
-        tool_call_id=tool_call_id,
-    )
-    if approval_error is not None:
-        elapsed_ms = int((time.perf_counter() - started) * 1000)
-        meta["duration_ms"] = elapsed_ms
-        envelope = _envelope(
-            ok=False,
-            tool_name=tool_name,
-            error=approval_error,
-            meta=meta,
-        )
-        return envelope
-    ctx.deps.run_runtime_repo.ensure(
+    with trace_span(
+        LOGGER,
+        component="tools.runtime",
+        operation="execute_tool",
+        attributes={"tool_name": tool_name},
+        trace_id=ctx.deps.trace_id,
         run_id=ctx.deps.run_id,
+        task_id=ctx.deps.task_id,
         session_id=ctx.deps.session_id,
-        root_task_id=ctx.deps.task_id,
-    )
-    ctx.deps.run_runtime_repo.update(
-        ctx.deps.run_id,
-        status=RunRuntimeStatus.RUNNING,
-        phase=RunRuntimePhase.COORDINATOR_RUNNING
-        if ctx.deps.role_id == "coordinator_agent"
-        else RunRuntimePhase.SUBAGENT_RUNNING,
-        active_instance_id=ctx.deps.instance_id,
-        active_task_id=ctx.deps.task_id,
-        active_role_id=ctx.deps.role_id,
-        active_subagent_instance_id=(
-            None if ctx.deps.role_id == "coordinator_agent" else ctx.deps.instance_id
-        ),
-        last_error=None,
-    )
-
-    try:
-        _raise_if_stopped(ctx)
-        result = action() if callable(action) else action
-        if inspect.isawaitable(result):
-            result = await result
-        _raise_if_stopped(ctx)
-        normalized_result = _normalize_json_value(result)
-
-        elapsed_ms = int((time.perf_counter() - started) * 1000)
-        meta["duration_ms"] = elapsed_ms
-
-        if LOGGER.isEnabledFor(logging.DEBUG):
-            log_event(
-                LOGGER,
-                logging.DEBUG,
-                event="runtime.debug",
-                message=f"[tool:ok] tool={tool_name} elapsed_ms={elapsed_ms}",
-            )
-
-        envelope = _envelope(
-            ok=True,
-            tool_name=tool_name,
-            data=normalized_result,
-            meta=meta,
-        )
-        if approval_ticket_id:
-            ctx.deps.approval_ticket_repo.mark_completed(approval_ticket_id)
-        return envelope
-    except Exception as exc:
-        elapsed_ms = int((time.perf_counter() - started) * 1000)
-        meta["duration_ms"] = elapsed_ms
-        error = _error_payload(exc)
-
+        instance_id=ctx.deps.instance_id,
+        role_id=ctx.deps.role_id,
+        tool_call_id=tool_call_id,
+    ):
+        started = time.perf_counter()
         if LOGGER.isEnabledFor(logging.DEBUG):
             log_event(
                 LOGGER,
                 logging.DEBUG,
                 event="runtime.debug",
                 message=(
-                    f"[tool:error] tool={tool_name} elapsed_ms={elapsed_ms} "
-                    f"err_type={error.type} msg={error.message}"
+                    f"[tool:start] tool={tool_name} run={ctx.deps.run_id} "
+                    f"task={ctx.deps.task_id} instance={ctx.deps.instance_id} "
+                    f"args={_safe_json(args_summary)}"
                 ),
             )
         else:
-            compact = json.dumps(
-                {
-                    "tool": tool_name,
-                    "type": error.type,
-                    "message": error.message,
-                },
-                ensure_ascii=False,
-            )
-            log_tool_error(ctx.deps.role_id, compact)
-        envelope = _envelope(
-            ok=False,
+            log_tool_call(ctx.deps.role_id, tool_name, args_summary)
+
+        meta: JsonObject = {}
+        _raise_if_stopped(ctx)
+        approval_ticket_id, approval_error = await _handle_tool_approval(
+            ctx=ctx,
             tool_name=tool_name,
-            error=error,
+            args_summary=args_summary,
             meta=meta,
+            tool_call_id=tool_call_id,
         )
-        if approval_ticket_id:
-            ctx.deps.approval_ticket_repo.mark_completed(approval_ticket_id)
-        return envelope
+        if approval_error is not None:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            meta["duration_ms"] = elapsed_ms
+            envelope = _envelope(
+                ok=False,
+                tool_name=tool_name,
+                error=approval_error,
+                meta=meta,
+            )
+            return envelope
+
+        ctx.deps.run_runtime_repo.ensure(
+            run_id=ctx.deps.run_id,
+            session_id=ctx.deps.session_id,
+            root_task_id=ctx.deps.task_id,
+        )
+        ctx.deps.run_runtime_repo.update(
+            ctx.deps.run_id,
+            status=RunRuntimeStatus.RUNNING,
+            phase=RunRuntimePhase.COORDINATOR_RUNNING
+            if ctx.deps.role_id == "coordinator_agent"
+            else RunRuntimePhase.SUBAGENT_RUNNING,
+            active_instance_id=ctx.deps.instance_id,
+            active_task_id=ctx.deps.task_id,
+            active_role_id=ctx.deps.role_id,
+            active_subagent_instance_id=(
+                None
+                if ctx.deps.role_id == "coordinator_agent"
+                else ctx.deps.instance_id
+            ),
+            last_error=None,
+        )
+
+        try:
+            _raise_if_stopped(ctx)
+            result = action() if callable(action) else action
+            if inspect.isawaitable(result):
+                result = await result
+            _raise_if_stopped(ctx)
+            normalized_result = _normalize_json_value(result)
+
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            meta["duration_ms"] = elapsed_ms
+
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                log_event(
+                    LOGGER,
+                    logging.DEBUG,
+                    event="runtime.debug",
+                    message=f"[tool:ok] tool={tool_name} elapsed_ms={elapsed_ms}",
+                )
+
+            envelope = _envelope(
+                ok=True,
+                tool_name=tool_name,
+                data=normalized_result,
+                meta=meta,
+            )
+            if approval_ticket_id:
+                ctx.deps.approval_ticket_repo.mark_completed(approval_ticket_id)
+            return envelope
+        except Exception as exc:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            meta["duration_ms"] = elapsed_ms
+            error = _error_payload(exc)
+
+            if LOGGER.isEnabledFor(logging.DEBUG):
+                log_event(
+                    LOGGER,
+                    logging.DEBUG,
+                    event="runtime.debug",
+                    message=(
+                        f"[tool:error] tool={tool_name} elapsed_ms={elapsed_ms} "
+                        f"err_type={error.type} msg={error.message}"
+                    ),
+                )
+            else:
+                compact = json.dumps(
+                    {
+                        "tool": tool_name,
+                        "type": error.type,
+                        "message": error.message,
+                    },
+                    ensure_ascii=False,
+                )
+                log_tool_error(ctx.deps.role_id, compact)
+            envelope = _envelope(
+                ok=False,
+                tool_name=tool_name,
+                error=error,
+                meta=meta,
+            )
+            if approval_ticket_id:
+                ctx.deps.approval_ticket_repo.mark_completed(approval_ticket_id)
+            return envelope
 
 
 def _error_payload(exc: Exception) -> ToolError:

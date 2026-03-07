@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+from typing import cast
 
 from agent_teams.skills.discovery import SkillsDirectory
 from agent_teams.skills.models import SkillScope
 from agent_teams.skills.registry import SkillRegistry
+from agent_teams.shared_types.json_types import JsonObject
+from agent_teams.tools.runtime import ToolContext
+from agent_teams.trace import get_trace_context
 
 
 def test_get_toolset_tools_builds_skill_tools_without_annotation_errors() -> None:
@@ -171,6 +176,62 @@ def test_registry_from_config_dirs_creates_project_skills_directory(
     assert registry.list_skill_definitions() == ()
 
 
+def test_run_skill_script_binds_nested_trace_context(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "time"
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: time\n"
+        "description: timezone helper\n"
+        "---\n"
+        "- trace_context: Returns active trace context.\n",
+        encoding="utf-8",
+    )
+    (scripts_dir / "trace_context.py").write_text(
+        "# -*- coding: utf-8 -*-\n"
+        "from __future__ import annotations\n\n"
+        "from agent_teams.trace import get_trace_context\n\n"
+        "def run(ctx):\n"
+        "    current = get_trace_context()\n"
+        "    return {\n"
+        "        'trace_id': current.trace_id,\n"
+        "        'run_id': current.run_id,\n"
+        "        'task_id': current.task_id,\n"
+        "        'session_id': current.session_id,\n"
+        "        'instance_id': current.instance_id,\n"
+        "        'role_id': current.role_id,\n"
+        "        'tool_call_id': current.tool_call_id,\n"
+        "        'span_id': current.span_id,\n"
+        "        'parent_span_id': current.parent_span_id,\n"
+        "    }\n",
+        encoding="utf-8",
+    )
+    registry = SkillRegistry(directory=SkillsDirectory(base_dir=tmp_path / "skills"))
+
+    result = asyncio.run(
+        registry.run_skill_script(
+            cast(ToolContext, cast(object, _FakeCtx())),
+            skill_name="time",
+            script_name="trace_context",
+        )
+    )
+
+    assert result["ok"] is True
+    data = cast(JsonObject, result["data"])
+    assert data["trace_id"] == "trace-1"
+    assert data["run_id"] == "run-1"
+    assert data["task_id"] == "task-1"
+    assert data["session_id"] == "session-1"
+    assert data["instance_id"] == "inst-1"
+    assert data["role_id"] == "spec_coder"
+    assert data["tool_call_id"] == "toolcall-1"
+    assert isinstance(data["span_id"], str)
+    assert isinstance(data["parent_span_id"], str)
+    assert data["span_id"] != data["parent_span_id"]
+    assert get_trace_context().trace_id is None
+
+
 def _write_skill(
     skill_dir: Path, *, name: str, description: str, instructions: str
 ) -> None:
@@ -179,3 +240,60 @@ def _write_skill(
         f"---\nname: {name}\ndescription: {description}\n---\n{instructions}\n",
         encoding="utf-8",
     )
+
+
+class _FakeRunEventHub:
+    def publish(self, event: object) -> None:
+        _ = event
+
+
+class _FakeRunControlManager:
+    def raise_if_cancelled(
+        self,
+        *,
+        run_id: str,
+        instance_id: str | None = None,
+    ) -> None:
+        _ = (run_id, instance_id)
+
+
+class _FakeApprovalManager:
+    def open_approval(self, **kwargs: object) -> None:
+        _ = kwargs
+
+    def wait_for_approval(self, **kwargs: object) -> tuple[str, str]:
+        _ = kwargs
+        return ("approve", "")
+
+    def close_approval(self, **kwargs: object) -> None:
+        _ = kwargs
+
+
+class _FakePolicy:
+    timeout_seconds = 0.01
+
+    def requires_approval(self, tool_name: str) -> bool:
+        _ = tool_name
+        return False
+
+
+class _FakeDeps:
+    def __init__(self) -> None:
+        self.run_id = "run-1"
+        self.trace_id = "trace-1"
+        self.task_id = "task-1"
+        self.session_id = "session-1"
+        self.instance_id = "inst-1"
+        self.role_id = "spec_coder"
+        self.run_event_hub = _FakeRunEventHub()
+        self.run_control_manager = _FakeRunControlManager()
+        self.tool_approval_manager = _FakeApprovalManager()
+        self.tool_approval_policy = _FakePolicy()
+        self.notification_service = None
+
+
+class _FakeCtx:
+    def __init__(self) -> None:
+        self.deps = _FakeDeps()
+        self.tool_call_id = "toolcall-1"
+        self.retry = 0

@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from typing import ClassVar
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
@@ -15,27 +16,26 @@ _TRACE_CONTEXT: ContextVar[TraceContext | None] = ContextVar(
 
 class TraceContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    _field_names: ClassVar[frozenset[str]]
 
     trace_id: str | None = None
     request_id: str | None = None
     session_id: str | None = None
     run_id: str | None = None
     task_id: str | None = None
+    trigger_id: str | None = None
     instance_id: str | None = None
     role_id: str | None = None
     tool_call_id: str | None = None
+    span_id: str | None = None
+    parent_span_id: str | None = None
 
     def merged(self, **updates: str | None) -> TraceContext:
-        return TraceContext(
-            trace_id=updates.get("trace_id", self.trace_id),
-            request_id=updates.get("request_id", self.request_id),
-            session_id=updates.get("session_id", self.session_id),
-            run_id=updates.get("run_id", self.run_id),
-            task_id=updates.get("task_id", self.task_id),
-            instance_id=updates.get("instance_id", self.instance_id),
-            role_id=updates.get("role_id", self.role_id),
-            tool_call_id=updates.get("tool_call_id", self.tool_call_id),
-        )
+        _validate_trace_updates(updates)
+        merged_data = self.model_dump()
+        for key, value in updates.items():
+            merged_data[key] = value
+        return TraceContext.model_validate(merged_data)
 
 
 def get_trace_context() -> TraceContext:
@@ -69,3 +69,12 @@ def bind_trace_context(**updates: str | None) -> Generator[TraceContext, None, N
         yield get_trace_context()
     finally:
         reset_trace_context(token)
+
+
+TraceContext._field_names = frozenset(TraceContext.model_fields.keys())
+
+
+def _validate_trace_updates(updates: dict[str, str | None]) -> None:
+    unknown = sorted(key for key in updates if key not in TraceContext._field_names)
+    if unknown:
+        raise ValueError(f"Unknown trace context fields: {unknown}")

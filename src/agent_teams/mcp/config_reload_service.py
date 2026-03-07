@@ -3,9 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from agent_teams.logger import get_logger
 from agent_teams.mcp.config_manager import McpConfigManager
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.roles.registry import RoleRegistry
+from agent_teams.trace import trace_span
+
+LOGGER = get_logger(__name__)
 
 
 class McpConfigReloadService:
@@ -21,7 +25,12 @@ class McpConfigReloadService:
         self._on_mcp_reloaded: Callable[[McpRegistry], None] = on_mcp_reloaded
 
     def reload_mcp_config(self) -> None:
-        mcp_registry = self._mcp_config_manager.load_registry()
-        for role in self._role_registry.list_roles():
-            mcp_registry.validate_known(role.mcp_servers)
-        self._on_mcp_reloaded(mcp_registry)
+        with trace_span(
+            LOGGER,
+            component="mcp.config",
+            operation="reload",
+        ):
+            mcp_registry = self._mcp_config_manager.load_registry()
+            for role in self._role_registry.list_roles():
+                mcp_registry.validate_known(role.mcp_servers)
+            self._on_mcp_reloaded(mcp_registry)

@@ -4,8 +4,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from agent_teams.logger import get_logger
 from agent_teams.roles.registry import RoleRegistry
 from agent_teams.skills.registry import SkillRegistry
+from agent_teams.trace import trace_span
+
+LOGGER = get_logger(__name__)
 
 
 class SkillsConfigReloadService:
@@ -21,9 +25,15 @@ class SkillsConfigReloadService:
         self._on_skill_reloaded: Callable[[SkillRegistry], None] = on_skill_reloaded
 
     def reload_skills_config(self) -> None:
-        skill_registry = SkillRegistry.from_config_dirs(
-            project_config_dir=self._config_dir
-        )
-        for role in self._role_registry.list_roles():
-            skill_registry.validate_known(role.skills)
-        self._on_skill_reloaded(skill_registry)
+        with trace_span(
+            LOGGER,
+            component="skills.config",
+            operation="reload",
+            attributes={"config_dir": str(self._config_dir)},
+        ):
+            skill_registry = SkillRegistry.from_config_dirs(
+                project_config_dir=self._config_dir
+            )
+            for role in self._role_registry.list_roles():
+                skill_registry.validate_known(role.skills)
+            self._on_skill_reloaded(skill_registry)

@@ -19,7 +19,7 @@ from agent_teams.logger import (
 )
 from agent_teams.logger.log_persistence import PersistentLogHandler
 from agent_teams.logger import logger as logger_module
-from agent_teams.trace import bind_trace_context
+from agent_teams.trace import bind_trace_context, trace_span
 
 
 def test_configure_logging_loads_ini_and_builds_rotating_handler(
@@ -78,14 +78,19 @@ def test_log_event_writes_json_log_with_trace_context(
         configure_logging(config_dir=tmp_path)
         logger = get_logger("tests.unit.logger")
 
-        with bind_trace_context(trace_id="trace-1", request_id="req-1"):
-            log_event(
-                logger,
-                logging.INFO,
-                event="unit.test",
-                message="logger test",
-                payload={"secret": "Bearer test-token", "values": ["a", "b"]},
-            )
+        with bind_trace_context(
+            trace_id="trace-1",
+            request_id="req-1",
+            trigger_id="trigger-1",
+        ):
+            with trace_span(logger, component="logger.tests", operation="write_log"):
+                log_event(
+                    logger,
+                    logging.INFO,
+                    event="unit.test",
+                    message="logger test",
+                    payload={"secret": "Bearer test-token", "values": ["a", "b"]},
+                )
 
         for handler in logging.getLogger().handlers:
             flush = getattr(handler, "flush", None)
@@ -95,10 +100,19 @@ def test_log_event_writes_json_log_with_trace_context(
         log_path = tmp_path / "logs" / "agent_teams.log"
         lines = log_path.read_text(encoding="utf-8").splitlines()
         assert lines
-        payload = cast(JsonObject, json.loads(lines[-1]))
+        payload = cast(
+            JsonObject,
+            next(
+                json.loads(line)
+                for line in reversed(lines)
+                if json.loads(line).get("event") == "unit.test"
+            ),
+        )
         assert payload["event"] == "unit.test"
         assert payload["trace_id"] == "trace-1"
         assert payload["request_id"] == "req-1"
+        assert payload["trigger_id"] == "trigger-1"
+        assert str(payload["span_id"]).startswith("span_")
         payload_field = payload.get("payload")
         assert isinstance(payload_field, dict)
         assert payload_field.get("secret") == "***"

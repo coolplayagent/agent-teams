@@ -10,6 +10,7 @@ from agent_teams.mcp.models import McpConfigScope, McpServerSpec
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.paths import get_project_config_dir, get_user_config_dir
 from agent_teams.shared_types.json_types import JsonObject, JsonValue
+from agent_teams.trace import trace_span
 
 logger = get_logger(__name__)
 _MCP_FILE_NAME = "mcp.json"
@@ -34,11 +35,17 @@ class McpConfigManager:
         self._user_home_dir: Path | None = user_home_dir
 
     def load_registry(self) -> McpRegistry:
-        merged_specs: dict[str, McpServerSpec] = {}
-        for source, file_path in self._iter_sources():
-            for spec in _load_specs_from_file(file_path=file_path, source=source):
-                merged_specs[spec.name] = spec
-        return McpRegistry(tuple(merged_specs.values()))
+        with trace_span(
+            logger,
+            component="mcp.config",
+            operation="load_registry",
+            attributes={"project_config_dir": str(self._project_config_dir)},
+        ):
+            merged_specs: dict[str, McpServerSpec] = {}
+            for source, file_path in self._iter_sources():
+                for spec in _load_specs_from_file(file_path=file_path, source=source):
+                    merged_specs[spec.name] = spec
+            return McpRegistry(tuple(merged_specs.values()))
 
     def _iter_sources(self) -> tuple[tuple[McpConfigScope, Path], ...]:
         return (
@@ -50,35 +57,41 @@ class McpConfigManager:
 def _load_specs_from_file(
     *, file_path: Path, source: McpConfigScope
 ) -> tuple[McpServerSpec, ...]:
-    if not file_path.exists():
-        return ()
+    with trace_span(
+        logger,
+        component="mcp.config",
+        operation="load_specs_from_file",
+        attributes={"file_path": str(file_path), "source": source.value},
+    ):
+        if not file_path.exists():
+            return ()
 
-    try:
-        payload = _load_json_object(file_path)
-    except Exception as exc:
-        logger.warning("Failed to load %s: %s", file_path.name, exc)
-        return ()
+        try:
+            payload = _load_json_object(file_path)
+        except Exception as exc:
+            logger.warning("Failed to load %s: %s", file_path.name, exc)
+            return ()
 
-    maybe_servers = payload.get("mcpServers", payload)
-    if not isinstance(maybe_servers, dict):
-        return ()
+        maybe_servers = payload.get("mcpServers", payload)
+        if not isinstance(maybe_servers, dict):
+            return ()
 
-    specs: list[McpServerSpec] = []
-    for raw_name, raw_config in maybe_servers.items():
-        name = str(raw_name)
-        normalized_server_config = _normalize_to_json_object(raw_config)
-        wrapped_config: JsonObject = {
-            "mcpServers": {name: normalized_server_config},
-        }
-        specs.append(
-            McpServerSpec(
-                name=name,
-                config=wrapped_config,
-                server_config=normalized_server_config,
-                source=source,
+        specs: list[McpServerSpec] = []
+        for raw_name, raw_config in maybe_servers.items():
+            name = str(raw_name)
+            normalized_server_config = _normalize_to_json_object(raw_config)
+            wrapped_config: JsonObject = {
+                "mcpServers": {name: normalized_server_config},
+            }
+            specs.append(
+                McpServerSpec(
+                    name=name,
+                    config=wrapped_config,
+                    server_config=normalized_server_config,
+                    source=source,
+                )
             )
-        )
-    return tuple(specs)
+        return tuple(specs)
 
 
 def _load_json_object(file_path: Path) -> JsonObject:

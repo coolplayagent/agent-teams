@@ -15,6 +15,7 @@ from agent_teams.skills.models import (
     SkillScope,
     SkillScript,
 )
+from agent_teams.trace import trace_span
 
 logger = get_logger(__name__)
 _SCRIPT_DESCRIPTION_PATTERN = re.compile(
@@ -91,20 +92,30 @@ class SkillsDirectory:
         )
 
     def discover(self) -> None:
-        self._skills.clear()
-        for scope, base_dir in self._iter_sources():
-            if not base_dir.exists():
-                continue
-            for path in sorted(base_dir.rglob("SKILL.md")):
-                try:
-                    rel = path.relative_to(base_dir)
-                    if len(rel.parts) > self.max_depth + 1:
-                        continue
-                    skill = self._load_skill(path=path, scope=scope)
-                    if skill is not None:
-                        self._skills[skill.metadata.name] = skill
-                except Exception as exc:
-                    logger.warning("Failed to load skill at %s: %s", path, exc)
+        with trace_span(
+            logger,
+            component="skills.discovery",
+            operation="discover",
+            attributes={
+                "base_dir": str(self.base_dir),
+                "fallback_dirs": [str(path) for path in self.fallback_dirs],
+                "max_depth": self.max_depth,
+            },
+        ):
+            self._skills.clear()
+            for scope, base_dir in self._iter_sources():
+                if not base_dir.exists():
+                    continue
+                for path in sorted(base_dir.rglob("SKILL.md")):
+                    try:
+                        rel = path.relative_to(base_dir)
+                        if len(rel.parts) > self.max_depth + 1:
+                            continue
+                        skill = self._load_skill(path=path, scope=scope)
+                        if skill is not None:
+                            self._skills[skill.metadata.name] = skill
+                    except Exception as exc:
+                        logger.warning("Failed to load skill at %s: %s", path, exc)
 
     def list_skills(self) -> list[Skill]:
         return list(self._skills.values())
@@ -140,82 +151,92 @@ class SkillsDirectory:
         return front_matter, body
 
     def _load_skill(self, *, path: Path, scope: SkillScope) -> Skill | None:
-        raw = path.read_text(encoding="utf-8")
-        try:
-            front_matter, body = self._split_front_matter(raw)
-            data = _as_object_mapping(yaml.safe_load(front_matter))
-        except Exception as exc:
-            logger.warning("Skipping %s due to parsing error: %s", path, exc)
-            return None
+        with trace_span(
+            logger,
+            component="skills.discovery",
+            operation="load_skill",
+            attributes={"path": str(path), "scope": scope.value},
+        ):
+            raw = path.read_text(encoding="utf-8")
+            try:
+                front_matter, body = self._split_front_matter(raw)
+                data = _as_object_mapping(yaml.safe_load(front_matter))
+            except Exception as exc:
+                logger.warning("Skipping %s due to parsing error: %s", path, exc)
+                return None
 
-        if data is None:
-            return None
+            if data is None:
+                return None
 
-        raw_name = data.get("name")
-        name = raw_name if isinstance(raw_name, str) else ""
-        raw_description = data.get("description", "")
-        description = raw_description if isinstance(raw_description, str) else ""
-        if not name:
-            return None
+            raw_name = data.get("name")
+            name = raw_name if isinstance(raw_name, str) else ""
+            raw_description = data.get("description", "")
+            description = raw_description if isinstance(raw_description, str) else ""
+            if not name:
+                return None
 
-        resources: dict[str, SkillResource] = {}
-        resource_entries = _as_object_mapping(data.get("resources"))
-        if resource_entries is not None:
-            for resource_name, raw_resource in resource_entries.items():
-                resource_data = _as_object_mapping(raw_resource)
-                if resource_data is None:
-                    continue
-                resources[resource_name] = SkillResource(
-                    name=resource_name,
-                    description=_coerce_string(resource_data.get("description")),
-                    path=_resolve_optional_path(path.parent, resource_data.get("path")),
-                )
-
-        for resource_dir_name in ["resources", "assets"]:
-            resource_dir = path.parent / resource_dir_name
-            if not resource_dir.exists() or not resource_dir.is_dir():
-                continue
-            for resource_path in sorted(resource_dir.glob("*")):
-                if resource_path.is_file() and resource_path.name not in resources:
-                    resources[resource_path.name] = SkillResource(
-                        name=resource_path.name,
-                        description=f"Auto-discovered resource: {resource_path.name}",
-                        path=resource_path,
+            resources: dict[str, SkillResource] = {}
+            resource_entries = _as_object_mapping(data.get("resources"))
+            if resource_entries is not None:
+                for resource_name, raw_resource in resource_entries.items():
+                    resource_data = _as_object_mapping(raw_resource)
+                    if resource_data is None:
+                        continue
+                    resources[resource_name] = SkillResource(
+                        name=resource_name,
+                        description=_coerce_string(resource_data.get("description")),
+                        path=_resolve_optional_path(
+                            path.parent, resource_data.get("path")
+                        ),
                     )
 
-        scripts: dict[str, SkillScript] = {}
-        scripts_dir = path.parent / "scripts"
-        script_meta: dict[str, tuple[str, str | None]] = {}
-        for match in _SCRIPT_DESCRIPTION_PATTERN.finditer(body):
-            script_name, script_description, script_path = match.groups()
-            script_meta[script_name] = (script_description.strip(), script_path)
+            for resource_dir_name in ["resources", "assets"]:
+                resource_dir = path.parent / resource_dir_name
+                if not resource_dir.exists() or not resource_dir.is_dir():
+                    continue
+                for resource_path in sorted(resource_dir.glob("*")):
+                    if resource_path.is_file() and resource_path.name not in resources:
+                        resources[resource_path.name] = SkillResource(
+                            name=resource_path.name,
+                            description=(
+                                f"Auto-discovered resource: {resource_path.name}"
+                            ),
+                            path=resource_path,
+                        )
 
-        if scripts_dir.exists() and scripts_dir.is_dir():
-            for script_path in sorted(scripts_dir.glob("*.py")):
-                script_name = script_path.stem
-                description_text, _ = script_meta.get(
-                    script_name, (f"Execute {script_name} script.", None)
-                )
-                scripts[script_name] = SkillScript(
-                    name=script_name,
-                    description=description_text,
-                    path=script_path,
-                )
-                resource_name = f"scripts/{script_path.name}"
-                resources[resource_name] = SkillResource(
-                    name=resource_name,
-                    description=f"Script source: {script_name}",
-                    path=script_path,
-                )
+            scripts: dict[str, SkillScript] = {}
+            scripts_dir = path.parent / "scripts"
+            script_meta: dict[str, tuple[str, str | None]] = {}
+            for match in _SCRIPT_DESCRIPTION_PATTERN.finditer(body):
+                script_name, script_description, script_path = match.groups()
+                script_meta[script_name] = (script_description.strip(), script_path)
 
-        metadata = SkillMetadata(
-            name=name,
-            description=description,
-            instructions=body.strip(),
-            resources=resources,
-            scripts=scripts,
-        )
-        return Skill(metadata=metadata, directory=path.parent, scope=scope)
+            if scripts_dir.exists() and scripts_dir.is_dir():
+                for script_path in sorted(scripts_dir.glob("*.py")):
+                    script_name = script_path.stem
+                    description_text, _ = script_meta.get(
+                        script_name, (f"Execute {script_name} script.", None)
+                    )
+                    scripts[script_name] = SkillScript(
+                        name=script_name,
+                        description=description_text,
+                        path=script_path,
+                    )
+                    resource_name = f"scripts/{script_path.name}"
+                    resources[resource_name] = SkillResource(
+                        name=resource_name,
+                        description=f"Script source: {script_name}",
+                        path=script_path,
+                    )
+
+            metadata = SkillMetadata(
+                name=name,
+                description=description,
+                instructions=body.strip(),
+                resources=resources,
+                scripts=scripts,
+            )
+            return Skill(metadata=metadata, directory=path.parent, scope=scope)
 
 
 def _resolve_dir(path: Path) -> Path:

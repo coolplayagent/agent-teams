@@ -12,12 +12,16 @@ from types import ModuleType
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Tool
 
+from agent_teams.logger import get_logger
 from agent_teams.shared_types.json_types import JsonObject, JsonValue
 from agent_teams.skills.discovery import SkillsDirectory
 from agent_teams.skills.models import Skill, SkillInstructionEntry
+from agent_teams.trace import trace_span
 from agent_teams.tools.runtime import ToolContext, ToolDeps, execute_tool
 
 type SkillEntrypoint = Callable[..., object]
+
+LOGGER = get_logger(__name__)
 
 
 class SkillRegistry(BaseModel):
@@ -74,11 +78,22 @@ class SkillRegistry(BaseModel):
         )
 
     def list_skill_definitions(self) -> tuple[Skill, ...]:
-        skills = self._get_effective_skill_map().values()
-        return tuple(sorted(skills, key=lambda item: item.metadata.name))
+        with trace_span(
+            LOGGER,
+            component="skills.registry",
+            operation="list_skill_definitions",
+        ):
+            skills = self._get_effective_skill_map().values()
+            return tuple(sorted(skills, key=lambda item: item.metadata.name))
 
     def get_skill_definition(self, name: str) -> Skill | None:
-        return self._get_effective_skill_map().get(name)
+        with trace_span(
+            LOGGER,
+            component="skills.registry",
+            operation="get_skill_definition",
+            attributes={"skill_name": name},
+        ):
+            return self._get_effective_skill_map().get(name)
 
     def get_toolset_tools(self, skill_names: tuple[str, ...]) -> list[Tool[ToolDeps]]:
         _ = skill_names
@@ -107,10 +122,16 @@ class SkillRegistry(BaseModel):
         return tools
 
     def validate_known(self, skill_names: tuple[str, ...]) -> None:
-        known = set(self._get_effective_skill_map().keys())
-        missing = [name for name in skill_names if name not in known]
-        if missing:
-            raise ValueError(f"Unknown skills: {missing}")
+        with trace_span(
+            LOGGER,
+            component="skills.registry",
+            operation="validate_known",
+            attributes={"skill_names": list(skill_names)},
+        ):
+            known = set(self._get_effective_skill_map().keys())
+            missing = [name for name in skill_names if name not in known]
+            if missing:
+                raise ValueError(f"Unknown skills: {missing}")
 
     def list_names(self) -> tuple[str, ...]:
         return tuple(skill.metadata.name for skill in self.list_skill_definitions())
@@ -122,22 +143,28 @@ class SkillRegistry(BaseModel):
     def get_instruction_entries(
         self, skill_names: tuple[str, ...]
     ) -> tuple[SkillInstructionEntry, ...]:
-        self.validate_known(skill_names)
-        skill_map = self._get_effective_skill_map()
-        entries: list[SkillInstructionEntry] = []
-        for name in skill_names:
-            skill = skill_map.get(name)
-            if skill is None:
-                continue
-            instructions = skill.metadata.instructions.strip()
-            if instructions:
-                entries.append(
-                    SkillInstructionEntry(
-                        name=skill.metadata.name,
-                        instructions=instructions,
+        with trace_span(
+            LOGGER,
+            component="skills.registry",
+            operation="get_instruction_entries",
+            attributes={"skill_names": list(skill_names)},
+        ):
+            self.validate_known(skill_names)
+            skill_map = self._get_effective_skill_map()
+            entries: list[SkillInstructionEntry] = []
+            for name in skill_names:
+                skill = skill_map.get(name)
+                if skill is None:
+                    continue
+                instructions = skill.metadata.instructions.strip()
+                if instructions:
+                    entries.append(
+                        SkillInstructionEntry(
+                            name=skill.metadata.name,
+                            instructions=instructions,
+                        )
                     )
-                )
-        return tuple(entries)
+            return tuple(entries)
 
     async def list_skills(self, ctx: ToolContext) -> JsonObject:
         return await execute_tool(
@@ -151,10 +178,23 @@ class SkillRegistry(BaseModel):
 
     async def load_skill(self, ctx: ToolContext, name: str) -> JsonObject:
         async def _action() -> JsonValue:
-            skill = self.get_skill_definition(name)
-            if skill is None:
-                raise KeyError(f"Skill not found: {name}")
-            return _skill_to_json(skill)
+            with trace_span(
+                LOGGER,
+                component="skills.registry",
+                operation="load_skill",
+                attributes={"skill_name": name},
+                trace_id=ctx.deps.trace_id,
+                run_id=ctx.deps.run_id,
+                task_id=ctx.deps.task_id,
+                session_id=ctx.deps.session_id,
+                instance_id=ctx.deps.instance_id,
+                role_id=ctx.deps.role_id,
+                tool_call_id=ctx.tool_call_id,
+            ):
+                skill = self.get_skill_definition(name)
+                if skill is None:
+                    raise KeyError(f"Skill not found: {name}")
+                return _skill_to_json(skill)
 
         return await execute_tool(
             ctx,
@@ -167,15 +207,31 @@ class SkillRegistry(BaseModel):
         self, ctx: ToolContext, skill_name: str, resource_path: str
     ) -> JsonObject:
         async def _action() -> JsonValue:
-            skill = self.get_skill_definition(skill_name)
-            if skill is None:
-                raise KeyError(f"Skill not found: {skill_name}")
-            resource = skill.metadata.resources.get(resource_path)
-            if resource is None or resource.path is None:
-                raise FileNotFoundError(
-                    f"Resource {resource_path} not found in skill {skill_name}"
-                )
-            return resource.path.read_text("utf-8")
+            with trace_span(
+                LOGGER,
+                component="skills.registry",
+                operation="read_skill_resource",
+                attributes={
+                    "skill_name": skill_name,
+                    "resource_path": resource_path,
+                },
+                trace_id=ctx.deps.trace_id,
+                run_id=ctx.deps.run_id,
+                task_id=ctx.deps.task_id,
+                session_id=ctx.deps.session_id,
+                instance_id=ctx.deps.instance_id,
+                role_id=ctx.deps.role_id,
+                tool_call_id=ctx.tool_call_id,
+            ):
+                skill = self.get_skill_definition(skill_name)
+                if skill is None:
+                    raise KeyError(f"Skill not found: {skill_name}")
+                resource = skill.metadata.resources.get(resource_path)
+                if resource is None or resource.path is None:
+                    raise FileNotFoundError(
+                        f"Resource {resource_path} not found in skill {skill_name}"
+                    )
+                return resource.path.read_text("utf-8")
 
         return await execute_tool(
             ctx,
@@ -192,43 +248,62 @@ class SkillRegistry(BaseModel):
         args: JsonObject | None = None,
     ) -> JsonObject:
         async def _action() -> JsonValue:
-            skill = self.get_skill_definition(skill_name)
-            if skill is None:
-                raise KeyError(f"Skill not found: {skill_name}")
+            with trace_span(
+                LOGGER,
+                component="skills.registry",
+                operation="run_skill_script",
+                attributes={
+                    "skill_name": skill_name,
+                    "script_name": script_name,
+                    "has_args": bool(args),
+                },
+                trace_id=ctx.deps.trace_id,
+                run_id=ctx.deps.run_id,
+                task_id=ctx.deps.task_id,
+                session_id=ctx.deps.session_id,
+                instance_id=ctx.deps.instance_id,
+                role_id=ctx.deps.role_id,
+                tool_call_id=ctx.tool_call_id,
+            ):
+                skill = self.get_skill_definition(skill_name)
+                if skill is None:
+                    raise KeyError(f"Skill not found: {skill_name}")
 
-            script = skill.metadata.scripts.get(script_name)
-            if script is None:
-                raise KeyError(f"Script {script_name} not found in skill {skill_name}")
+                script = skill.metadata.scripts.get(script_name)
+                if script is None:
+                    raise KeyError(
+                        f"Script {script_name} not found in skill {skill_name}"
+                    )
 
-            spec = importlib.util.spec_from_file_location(
-                f"skill_script_{skill_name}_{script_name}", script.path
-            )
-            if spec is None or spec.loader is None:
-                raise ImportError(
-                    f"Could not load script {script_name} from {script.path}"
+                spec = importlib.util.spec_from_file_location(
+                    f"skill_script_{skill_name}_{script_name}", script.path
                 )
+                if spec is None or spec.loader is None:
+                    raise ImportError(
+                        f"Could not load script {script_name} from {script.path}"
+                    )
 
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            run_fn = _resolve_script_entrypoint(module, skill_name, script_name)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                run_fn = _resolve_script_entrypoint(module, skill_name, script_name)
 
-            stdout_buffer = io.StringIO()
-            with redirect_stdout(stdout_buffer):
-                if inspect.iscoroutinefunction(run_fn):
-                    try:
-                        ret = await run_fn(ctx, **(args or {}))
-                    except TypeError:
-                        ret = await run_fn()
-                else:
-                    try:
-                        ret = run_fn(ctx, **(args or {}))
-                    except TypeError:
-                        ret = run_fn()
+                stdout_buffer = io.StringIO()
+                with redirect_stdout(stdout_buffer):
+                    if inspect.iscoroutinefunction(run_fn):
+                        try:
+                            ret = await run_fn(ctx, **(args or {}))
+                        except TypeError:
+                            ret = await run_fn()
+                    else:
+                        try:
+                            ret = run_fn(ctx, **(args or {}))
+                        except TypeError:
+                            ret = run_fn()
 
-            output = stdout_buffer.getvalue().strip()
-            if output:
-                return output
-            return _normalize_script_result(ret)
+                output = stdout_buffer.getvalue().strip()
+                if output:
+                    return output
+                return _normalize_script_result(ret)
 
         return await execute_tool(
             ctx,
@@ -238,8 +313,15 @@ class SkillRegistry(BaseModel):
         )
 
     def _get_effective_skill_map(self) -> dict[str, Skill]:
-        self.directory.discover()
-        return {skill.metadata.name: skill for skill in self.directory.list_skills()}
+        with trace_span(
+            LOGGER,
+            component="skills.registry",
+            operation="build_effective_skill_map",
+        ):
+            self.directory.discover()
+            return {
+                skill.metadata.name: skill for skill in self.directory.list_skills()
+            }
 
 
 def _resolve_script_entrypoint(

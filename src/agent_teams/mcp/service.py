@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from agent_teams.logger import get_logger
 from agent_teams.mcp.models import McpServerSummary, McpServerToolsSummary
 from agent_teams.mcp.registry import McpRegistry
 from agent_teams.shared_types.json_types import JsonObject
+from agent_teams.trace import trace_span
+
+LOGGER = get_logger(__name__)
 
 
 class McpService:
@@ -14,24 +18,35 @@ class McpService:
         self._registry = registry
 
     def list_servers(self) -> tuple[McpServerSummary, ...]:
-        return tuple(
-            McpServerSummary(
-                name=spec.name,
-                source=spec.source,
-                transport=_detect_transport(spec.server_config),
+        with trace_span(
+            LOGGER,
+            component="mcp.service",
+            operation="list_servers",
+        ):
+            return tuple(
+                McpServerSummary(
+                    name=spec.name,
+                    source=spec.source,
+                    transport=_detect_transport(spec.server_config),
+                )
+                for spec in self._registry.list_specs()
             )
-            for spec in self._registry.list_specs()
-        )
 
     async def list_server_tools(self, name: str) -> McpServerToolsSummary:
-        spec = self._registry.get_spec(name)
-        tools = await self._registry.list_tools(name)
-        return McpServerToolsSummary(
-            server=spec.name,
-            source=spec.source,
-            transport=_detect_transport(spec.server_config),
-            tools=tools,
-        )
+        with trace_span(
+            LOGGER,
+            component="mcp.service",
+            operation="list_server_tools",
+            attributes={"server_name": name},
+        ):
+            spec = self._registry.get_spec(name)
+            tools = await self._registry.list_tools(name)
+            return McpServerToolsSummary(
+                server=spec.name,
+                source=spec.source,
+                transport=_detect_transport(spec.server_config),
+                tools=tools,
+            )
 
 
 def _detect_transport(server_config: JsonObject) -> str:

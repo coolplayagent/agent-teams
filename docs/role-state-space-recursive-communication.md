@@ -4,6 +4,8 @@
 
 This document describes how the current `roles`, `agents`, and `coordination` modules implement role-scoped communication based on state-space boundaries and recursive feedback loops.
 
+多 Agent 协作的本质，不是消息传递，而是角色作用域状态空间之间，在约束下进行的递归状态变换与反馈控制。
+
 The design follows these principles:
 
 1. Role is prior to instance: role defines state-space boundaries, instance only executes transitions.

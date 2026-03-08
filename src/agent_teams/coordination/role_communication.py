@@ -42,6 +42,9 @@ class RoleStateSpace(BaseModel):
         return self
 
     def allows_transition(self, from_state: str, to_state: str) -> bool:
+        state_set = set(self.states)
+        if from_state not in state_set or to_state not in state_set:
+            return False
         if from_state == to_state:
             return True
         return any(

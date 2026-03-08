@@ -131,6 +131,68 @@ def test_exchange_rejects_mismatched_memory_scope_role() -> None:
         )
 
 
+
+
+def test_role_state_space_rejects_unknown_noop_transition() -> None:
+    state_space = RoleStateSpace(
+        role_id="planner",
+        states=("pending", "running", "done"),
+        initial_state="pending",
+        transitions=(
+            RoleStateTransition(from_state="pending", to_state="running"),
+            RoleStateTransition(from_state="running", to_state="done"),
+        ),
+    )
+
+    assert state_space.allows_transition("unknown", "unknown") is False
+
+
+def test_execute_role_transition_rejects_unknown_noop_transition() -> None:
+    state_space = RoleStateSpace(
+        role_id="reviewer",
+        states=("queued", "reviewing", "approved"),
+        initial_state="queued",
+        transitions=(
+            RoleStateTransition(from_state="queued", to_state="reviewing"),
+            RoleStateTransition(from_state="reviewing", to_state="approved"),
+        ),
+    )
+    execution = RoleInstanceExecution(
+        instance_id="instance-r1",
+        role_id="reviewer",
+        transition=RoleStateTransition(from_state="unknown", to_state="unknown"),
+    )
+
+    with pytest.raises(ValueError, match="outside role state space boundary"):
+        _ = execute_role_transition(state_space, execution)
+
+
+def test_validate_role_communication_rejects_unknown_noop_transition() -> None:
+    receiver_space = RoleStateSpace(
+        role_id="reviewer",
+        states=("queued", "reviewing", "approved"),
+        initial_state="queued",
+        transitions=(
+            RoleStateTransition(from_state="queued", to_state="reviewing"),
+            RoleStateTransition(from_state="reviewing", to_state="approved"),
+        ),
+    )
+    exchange = RoleCommunicationExchange(
+        sender_role_id="planner",
+        receiver_role_id="reviewer",
+        memory_scope=RoleConversationMemoryScope(
+            workspace_id="workspace-alpha",
+            role_id="reviewer",
+            conversation_id="session-a:reviewer",
+        ),
+        transition=RoleStateTransition(from_state="unknown", to_state="unknown"),
+        content="state unchanged",
+    )
+
+    validation = validate_role_communication(receiver_space, exchange)
+
+    assert validation.valid is False
+
 def test_build_memory_scope_from_binding_returns_conversation_scope_identity() -> None:
     binding = RoleAgentBinding(
         role_id="reviewer",

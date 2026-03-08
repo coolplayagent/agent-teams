@@ -78,6 +78,7 @@ Use `execute_role_transition(role_state_space, execution)` before applying a tra
 Checks:
 - instance role must match role state-space role.
 - transition must be inside allowed role transitions.
+- no-op transitions (`from_state == to_state`) are only accepted when the state exists inside the declared role state-space.
 
 ### Step 4: Validate communication exchange
 

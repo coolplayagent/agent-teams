@@ -258,6 +258,17 @@
     color: var(--primary, #1f6b57);
 }
 
+.connectors-card-action:disabled {
+    cursor: default;
+    opacity: 0.64;
+}
+
+.connectors-card-action.is-complete {
+    border-color: rgba(2, 122, 72, 0.32);
+    color: var(--success, #027a48);
+    background: rgba(2, 122, 72, 0.08);
+}
+
 .connectors-runtime-card {
     cursor: pointer;
 }
@@ -288,6 +299,31 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.connectors-runtime-toolbar {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.connectors-runtime-system-path-status {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 6px;
+    color: var(--text-secondary, #475569);
+    background: var(--bg-surface-muted, #f8fafc);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.connectors-runtime-system-path-status.is-success {
+    color: var(--success, #027a48);
+    background: rgba(2, 122, 72, 0.1);
+}
+
+.connectors-runtime-system-path-status.is-danger {
+    color: var(--danger, #b42318);
+    background: rgba(229, 72, 77, 0.08);
 }
 
 .connectors-runtime-list {
@@ -674,6 +710,12 @@ body:not(.light-theme) .connectors-card-menu:hover {
     color: var(--primary);
 }
 
+body:not(.light-theme) .connectors-card-action.is-complete {
+    border-color: rgba(124, 201, 164, 0.35);
+    color: #8dd4ae;
+    background: rgba(124, 201, 164, 0.12);
+}
+
 body:not(.light-theme) .connectors-error-copy {
     background: rgba(194, 123, 114, 0.12);
     border-color: rgba(194, 123, 114, 0.28);
@@ -699,6 +741,20 @@ body:not(.light-theme) .connectors-runtime-status.is-ready {
 body:not(.light-theme) .connectors-runtime-status.is-error,
 body:not(.light-theme) .connectors-runtime-error {
     color: #e3a39c;
+}
+
+body:not(.light-theme) .connectors-runtime-system-path-status {
+    background: var(--bg-surface-muted);
+}
+
+body:not(.light-theme) .connectors-runtime-system-path-status.is-success {
+    color: #8bcf9a;
+    background: rgba(139, 207, 154, 0.1);
+}
+
+body:not(.light-theme) .connectors-runtime-system-path-status.is-danger {
+    color: #e3a39c;
+    background: rgba(194, 123, 114, 0.12);
 }
 
 @media (max-width: 1280px) {

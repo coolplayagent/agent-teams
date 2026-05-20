@@ -73,6 +73,7 @@ export {
     fetchGitHubAccountRepositories,
     fetchTriggers,
     fetchConnectors,
+    addRuntimeToolsSystemPath,
     fetchRuntimeToolDownload,
     fetchRuntimeTools,
     startRuntimeToolDownload,

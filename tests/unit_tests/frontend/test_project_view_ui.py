@@ -4860,6 +4860,8 @@ const beforeHtml = els.projectViewContent.innerHTML;
 document.querySelector("[data-runtime-tools-open]")?.onclick?.({ stopPropagation() {} });
 await flushTasks();
 const openedHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+document.querySelector("[data-runtime-tools-system-path-add]")?.onclick?.();
+await flushTasks();
 document.querySelector("[data-runtime-tool-download]")?.onclick?.();
 await flushTasks();
 document.querySelector("[data-runtime-tools-modal-close]")?.onclick?.();
@@ -4871,6 +4873,7 @@ console.log(JSON.stringify({
     openedHtml,
     closedHtml,
     downloadRequests: globalThis.__runtimeToolDownloadRequests || [],
+    systemPathRequests: globalThis.__runtimeToolsSystemPathRequests || 0,
 }));
 """.strip(),
         mock_api_source="""
@@ -4894,6 +4897,7 @@ export async function fetchRuntimeTools() {
     assert "data-runtime-tools-modal" in str(payload["openedHtml"])
     assert 'data-runtime-tool-download="rg"' in str(payload["openedHtml"])
     assert payload["downloadRequests"] == ["rg"]
+    assert payload["systemPathRequests"] == 1
     assert "data-runtime-tools-modal" not in str(payload["closedHtml"])
 
 
@@ -7974,6 +7978,18 @@ export async function fetchRuntimeToolDownload(jobId) {
     };
 }
 """.strip(),
+        "addRuntimeToolsSystemPath": """
+export async function addRuntimeToolsSystemPath() {
+    globalThis.__runtimeToolsSystemPathRequests =
+        (globalThis.__runtimeToolsSystemPathRequests || 0) + 1;
+    return {
+        status: "updated",
+        bin_dir: "C:/Users/test/.relay-teams/bin",
+        message: "Runtime tools bin directory has been added to the system PATH.",
+        requires_terminal_restart: true,
+    };
+}
+""".strip(),
         "fetchW3Connector": """
 export async function fetchW3Connector() {
     return null;
@@ -8705,6 +8721,7 @@ export function renderRuntimeToolsModalMarkup({ runtimeToolsResponse, runtimeToo
     return `
         <div data-runtime-tools-modal>
             <button data-runtime-tools-modal-close>Close</button>
+            <button data-runtime-tools-system-path-add>Path</button>
             ${runtimeTools.map(tool => `<button data-runtime-tool-download="${tool.tool_id}">${runtimeToolJobs[tool.download_job_id || `${tool.tool_id}-job`]?.status || tool.status}</button>`).join("")}
         </div>
     `;

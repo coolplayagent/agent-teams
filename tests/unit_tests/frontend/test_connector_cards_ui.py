@@ -107,6 +107,8 @@ def test_runtime_tools_card_renders_before_items_load() -> None:
         check=False,
         cwd=str(repo_root),
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
     )
 
@@ -121,6 +123,77 @@ def test_runtime_tools_card_renders_before_items_load() -> None:
 
     assert "data-runtime-tools-card" in page_html
     assert 'data-runtime-tool="' not in page_html
+
+
+def test_runtime_tools_modal_renders_system_environment_button() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    module_path = (
+        repo_root
+        / "frontend"
+        / "dist"
+        / "js"
+        / "components"
+        / "connectors"
+        / "connectorCards.js"
+    )
+
+    completed = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            (
+                "globalThis.document = { "
+                "getElementById() { return null; }, "
+                "querySelector() { return null; }, "
+                "querySelectorAll() { return []; }, "
+                "body: null "
+                "}; "
+                f"const mod = await import({module_path.as_uri()!r}); "
+                "const runtimeToolsResponse = { items: [{ tool_id: 'gh', display_name: 'GitHub CLI', status: 'ready' }] }; "
+                "const supportedResponse = { ...runtimeToolsResponse, system_path: { supported: true, added: false, bin_dir: 'C:/bin' } }; "
+                "const addedResponse = { ...runtimeToolsResponse, system_path: { supported: true, added: true, bin_dir: 'C:/bin' } }; "
+                "const modalHtml = mod.renderRuntimeToolsModalMarkup({ "
+                "runtimeToolsResponse, systemPathBusy: true, systemPathMessage: 'done', systemPathTone: 'success' "
+                "}); "
+                "const pendingHtml = mod.renderRuntimeToolsModalMarkup({ runtimeToolsResponse }); "
+                "const supportedHtml = mod.renderRuntimeToolsModalMarkup({ runtimeToolsResponse: supportedResponse }); "
+                "const addedHtml = mod.renderRuntimeToolsModalMarkup({ runtimeToolsResponse: addedResponse }); "
+                "console.log(JSON.stringify({ modalHtml, pendingHtml, supportedHtml, addedHtml }));"
+            ),
+        ],
+        capture_output=True,
+        check=False,
+        cwd=str(repo_root),
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+
+    if completed.returncode != 0:
+        raise AssertionError(
+            "Node import failed:\n"
+            f"STDOUT:\n{completed.stdout}\n"
+            f"STDERR:\n{completed.stderr}"
+        )
+
+    payload = json.loads(completed.stdout.strip())
+    modal_html = str(payload["modalHtml"])
+    pending_html = str(payload["pendingHtml"])
+    supported_html = str(payload["supportedHtml"])
+    added_html = str(payload["addedHtml"])
+
+    assert "data-runtime-tools-system-path-add" in modal_html
+    assert "disabled" in modal_html
+    assert "done" in modal_html
+    assert "data-runtime-tools-system-path-add disabled" in pending_html
+    assert "data-runtime-tools-system-path-add disabled" not in supported_html
+    assert "is-complete" in added_html
+    assert (
+        "Added to system environment variables" in added_html
+        or "已添加到系统环境变量" in added_html
+    )
 
 
 def test_relay_knowledge_update_available_renders_update_action() -> None:

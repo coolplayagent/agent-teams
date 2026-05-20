@@ -10,6 +10,9 @@ from relay_teams.binary_tools.models import (
     BinaryToolPathSource,
     BinaryToolSourceKind,
     BinaryToolStatus,
+    BinaryToolSystemPathResult,
+    BinaryToolSystemPathState,
+    BinaryToolSystemPathStatus,
 )
 from relay_teams.binary_tools.service import (
     BinaryToolDownloadError,
@@ -29,6 +32,9 @@ __all__ = [
     "BinaryToolService",
     "BinaryToolSourceKind",
     "BinaryToolStatus",
+    "BinaryToolSystemPathResult",
+    "BinaryToolSystemPathState",
+    "BinaryToolSystemPathStatus",
     "BinaryToolUnavailableError",
     "UnsupportedBinaryToolError",
 ]

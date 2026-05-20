@@ -140,8 +140,24 @@ export function renderConnectorsCardPageMarkup({
 export function renderRuntimeToolsModalMarkup({
     runtimeToolsResponse,
     runtimeToolJobs = {},
+    systemPathBusy = false,
+    systemPathAdded = false,
+    systemPathMessage = '',
+    systemPathTone = 'info',
 } = {}) {
     const items = getRuntimeToolItems(runtimeToolsResponse);
+    const pathState = runtimeToolsResponse?.system_path;
+    const pathKnown = pathState !== undefined && pathState !== null;
+    const pathSupported = pathState?.supported === true;
+    const pathAdded = systemPathAdded || Boolean(pathState?.added);
+    const pathDisabled = systemPathBusy || pathAdded || !pathSupported;
+    const pathLabel = systemPathBusy
+        ? t('feature.connectors.runtime_tools.system_path_adding')
+        : pathAdded
+            ? t('feature.connectors.runtime_tools.system_path_added')
+            : pathSupported || !pathKnown
+                ? t('feature.connectors.runtime_tools.system_path_add')
+                : t('feature.connectors.runtime_tools.system_path_unsupported');
     return `
         <div class="modal gateway-feature-modal connectors-runtime-modal" data-runtime-tools-modal>
             <div class="modal-content gateway-feature-modal-content connectors-runtime-modal-content" role="dialog" aria-modal="true" aria-labelledby="runtime-tools-modal-title">
@@ -154,6 +170,12 @@ export function renderRuntimeToolsModalMarkup({
                     </button>
                 </div>
                 <div class="gateway-feature-modal-body connectors-runtime-modal-body">
+                    <div class="connectors-runtime-toolbar">
+                        <button class="connectors-card-action${pathAdded ? ' is-complete' : ''}" type="button" data-runtime-tools-system-path-add${pathDisabled ? ' disabled' : ''}>
+                            ${escapeHtml(pathLabel)}
+                        </button>
+                    </div>
+                    ${systemPathMessage ? `<p class="connectors-runtime-system-path-status is-${escapeHtml(systemPathTone || 'info')}">${escapeHtml(systemPathMessage)}</p>` : ''}
                     ${items.length > 0
                         ? renderRuntimeToolsList(items, runtimeToolJobs)
                         : `<p class="connectors-runtime-empty">${escapeHtml(t('feature.connectors.runtime_tools.empty'))}</p>`

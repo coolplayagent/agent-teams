@@ -32,6 +32,9 @@ from relay_teams.binary_tools.models import (
     BinaryToolPathSource,
     BinaryToolSourceKind,
     BinaryToolStatus,
+    BinaryToolSystemPathResult,
+    BinaryToolSystemPathState,
+    BinaryToolSystemPathStatus,
 )
 from relay_teams.env.clawhub_cli import (
     ClawHubCliInstallResult,
@@ -99,6 +102,7 @@ _NPM_INSTALL_TIMEOUT_SECONDS = 180.0
 _MANAGED_TOOL_INSTALL_LOCK_POLL_SECONDS = 0.05
 _LATEST_RELEASE_CACHE_SECONDS = 300.0
 _LATEST_RELEASE_TIMEOUT_SECONDS = 2.0
+_SYSTEM_PATH_STATE_CACHE_SECONDS = 30.0
 _MANAGED_TOOL_INSTALL_LOCKS_LOCK = threading.Lock()
 _MANAGED_TOOL_INSTALL_LOCKS: dict[tuple[BinaryToolId, str], threading.Lock] = {}
 _CLAWHUB_INSTALL_LOCK = threading.Lock()
@@ -197,6 +201,9 @@ class BinaryToolService:
         self._release_target_cache: dict[
             BinaryToolId, tuple[float, BinaryToolReleaseTarget]
         ] = {}
+        self._system_path_state_cache: (
+            tuple[float, BinaryToolSystemPathState] | None
+        ) = None
         self._release_target_locks = {
             tool_id: asyncio.Lock() for tool_id in BinaryToolId
         }
@@ -212,7 +219,8 @@ class BinaryToolService:
                 for target in targets
             )
         )
-        return BinaryToolListResponse(items=tuple(items))
+        system_path = await asyncio.to_thread(self.system_path_state)
+        return BinaryToolListResponse(items=tuple(items), system_path=system_path)
 
     def inspect_tool(self, tool_id: BinaryToolId | str) -> BinaryToolItem:
         resolved_tool_id = self._normalize_tool_id(tool_id)
@@ -477,6 +485,166 @@ class BinaryToolService:
             raise KeyError(f"Unknown binary tool download job: {job_id}")
         return job
 
+    def add_managed_bin_dir_to_system_path(self) -> BinaryToolSystemPathResult:
+        if os.name != "nt":
+            raise BinaryToolUnavailableError(
+                "Adding runtime tools to the system PATH is only supported on Windows."
+            )
+        bin_dir = self._managed_bin_dir(ensure_parent=True)
+        if self._managed_bin_dir_on_windows_machine_path(bin_dir, use_cache=False):
+            _append_process_path(bin_dir)
+            return BinaryToolSystemPathResult(
+                status=BinaryToolSystemPathStatus.ALREADY_ADDED,
+                bin_dir=str(bin_dir),
+                message="Runtime tools bin directory is already on the system PATH.",
+            )
+        script_path = bin_dir / f"relay-teams-add-system-path-{uuid.uuid4().hex}.ps1"
+        script_path.write_text(
+            _build_windows_system_path_script(bin_dir),
+            encoding="utf-8-sig",
+        )
+        try:
+            completed = self._run_elevated_powershell_script(script_path)
+        except OSError as exc:
+            raise PermissionError(
+                "Failed to start elevated PowerShell for the system PATH update."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise PermissionError(
+                "Administrator approval timed out or the system PATH update did not finish."
+            ) from exc
+        finally:
+            script_path.unlink(missing_ok=True)
+        if completed.returncode != 0:
+            message = _first_meaningful_line(completed.stderr, completed.stdout)
+            raise PermissionError(
+                message
+                or "Administrator approval was not granted or the system PATH update failed."
+            )
+        _append_process_path(bin_dir)
+        self._system_path_state_cache = (
+            time.monotonic(),
+            BinaryToolSystemPathState(
+                supported=True,
+                added=True,
+                bin_dir=str(bin_dir),
+            ),
+        )
+        return BinaryToolSystemPathResult(
+            status=BinaryToolSystemPathStatus.UPDATED,
+            bin_dir=str(bin_dir),
+            message="Runtime tools bin directory has been added to the system PATH.",
+        )
+
+    def system_path_state(self) -> BinaryToolSystemPathState:
+        bin_dir = self._managed_bin_dir()
+        supported = os.name == "nt"
+        cached = self._system_path_state_cache
+        now = time.monotonic()
+        if (
+            cached is not None
+            and now - cached[0] <= _SYSTEM_PATH_STATE_CACHE_SECONDS
+            and cached[1].bin_dir == str(bin_dir)
+            and cached[1].supported == supported
+        ):
+            return cached[1]
+        state = BinaryToolSystemPathState(
+            supported=supported,
+            added=supported
+            and self._managed_bin_dir_on_windows_machine_path(bin_dir, use_cache=False),
+            bin_dir=str(bin_dir),
+        )
+        self._system_path_state_cache = (now, state)
+        return state
+
+    def _managed_bin_dir_on_windows_machine_path(
+        self,
+        bin_dir: Path,
+        *,
+        use_cache: bool,
+    ) -> bool:
+        if use_cache:
+            cached = self._system_path_state_cache
+            if (
+                cached is not None
+                and time.monotonic() - cached[0] <= _SYSTEM_PATH_STATE_CACHE_SECONDS
+                and cached[1].bin_dir == str(bin_dir)
+                and cached[1].supported
+            ):
+                return cached[1].added
+        machine_path = self._read_windows_machine_path()
+        added = machine_path is not None and _path_contains(machine_path, bin_dir)
+        self._system_path_state_cache = (
+            time.monotonic(),
+            BinaryToolSystemPathState(
+                supported=True,
+                added=added,
+                bin_dir=str(bin_dir),
+            ),
+        )
+        return added
+
+    @staticmethod
+    def _run_elevated_powershell_script(
+        script_path: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        script_literal = _powershell_single_quoted(str(script_path))
+        command = (
+            "$ErrorActionPreference = 'Stop'; "
+            "$process = Start-Process -FilePath 'powershell.exe' "
+            "-ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', "
+            f"'-File', {script_literal}) "
+            "-Verb RunAs -Wait -PassThru; "
+            "exit $process.ExitCode"
+        )
+        return subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                command,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+        )
+
+    @staticmethod
+    def _read_windows_machine_path() -> str | None:
+        try:
+            completed = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    "[Environment]::GetEnvironmentVariable('Path', 'Machine')",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            LOGGER.warning("Failed to read Windows machine PATH: %s", exc)
+            return None
+        if completed.returncode != 0:
+            LOGGER.warning(
+                "Failed to read Windows machine PATH: %s",
+                _first_meaningful_line(completed.stderr, completed.stdout)
+                or completed.returncode,
+            )
+            return None
+        return completed.stdout
+
     async def download_tool_to_path(
         self,
         tool_id: BinaryToolId | str,
@@ -616,10 +784,15 @@ class BinaryToolService:
         ensure_parent: bool = False,
     ) -> Path:
         resolved_tool_id = self._normalize_tool_id(tool_id)
+        bin_dir = self._managed_bin_dir(ensure_parent=ensure_parent)
+        return bin_dir / self.executable_name(resolved_tool_id)
+
+    def _managed_bin_dir(self, *, ensure_parent: bool = False) -> Path:
         bin_dir = self._bin_dir if self._bin_dir is not None else get_app_bin_dir()
+        bin_dir = bin_dir.expanduser().resolve()
         if ensure_parent:
             bin_dir.mkdir(parents=True, exist_ok=True)
-        return bin_dir / self.executable_name(resolved_tool_id)
+        return bin_dir
 
     def executable_name(
         self,
@@ -1260,6 +1433,79 @@ def _github_token_from_env() -> str | None:
 def _normalize_secret_value(value: str | None) -> str | None:
     normalized = str(value or "").strip()
     return normalized or None
+
+
+def _build_windows_system_path_script(bin_dir: Path) -> str:
+    target_literal = _powershell_single_quoted(str(bin_dir))
+    return f"""
+$ErrorActionPreference = 'Stop'
+$target = {target_literal}
+$current = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$parts = @()
+if (-not [string]::IsNullOrWhiteSpace($current)) {{
+    $parts = $current -split ';' | ForEach-Object {{ $_.Trim() }} | Where-Object {{ $_ }}
+}}
+$targetKey = $target.Replace('/', '\\').TrimEnd('\\')
+$exists = $false
+foreach ($part in $parts) {{
+    $partKey = $part.Replace('/', '\\').TrimEnd('\\')
+    if ($partKey.Equals($targetKey, [StringComparison]::OrdinalIgnoreCase)) {{
+        $exists = $true
+        break
+    }}
+}}
+if (-not $exists) {{
+    $nextParts = @($parts) + $target
+    [Environment]::SetEnvironmentVariable('Path', ($nextParts -join ';'), 'Machine')
+}}
+Add-Type -Namespace RelayTeams -Name NativeMethods -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError=true, CharSet=System.Runtime.InteropServices.CharSet.Auto)]
+public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out System.UIntPtr lpdwResult);
+'@
+$result = [System.UIntPtr]::Zero
+[RelayTeams.NativeMethods]::SendMessageTimeout([System.IntPtr]0xffff, 0x1A, [System.UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result) | Out-Null
+""".lstrip()
+
+
+def _powershell_single_quoted(value: str) -> str:
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
+
+
+def _append_process_path(path: Path) -> None:
+    current_path = os.environ.get("PATH", "")
+    if _path_contains(current_path, path):
+        return
+    separator = _path_separator()
+    os.environ["PATH"] = (
+        f"{current_path}{separator}{path}" if current_path else str(path)
+    )
+
+
+def _path_contains(raw_path: str, path: Path) -> bool:
+    target = _normalize_path_for_compare(path)
+    separator = _path_separator()
+    for raw_entry in raw_path.split(separator):
+        normalized = raw_entry.strip()
+        if not normalized:
+            continue
+        if _normalize_path_text_for_compare(normalized) == target:
+            return True
+    return False
+
+
+def _path_separator() -> str:
+    return ";" if os.name == "nt" else pathsep
+
+
+def _normalize_path_for_compare(path: Path) -> str:
+    return _normalize_path_text_for_compare(str(path.expanduser()))
+
+
+def _normalize_path_text_for_compare(value: str) -> str:
+    if os.name == "nt":
+        value = value.replace("/", "\\")
+    return value.rstrip("\\/").casefold()
 
 
 def _managed_tool_install_lock(

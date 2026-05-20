@@ -39,6 +39,11 @@ class BinaryToolDownloadStatus(str, Enum):
     FAILED = "failed"
 
 
+class BinaryToolSystemPathStatus(str, Enum):
+    ALREADY_ADDED = "already_added"
+    UPDATED = "updated"
+
+
 class BinaryToolItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -56,10 +61,19 @@ class BinaryToolItem(BaseModel):
     error_message: str | None = None
 
 
+class BinaryToolSystemPathState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    supported: bool = False
+    added: bool = False
+    bin_dir: str = Field(min_length=1)
+
+
 class BinaryToolListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: tuple[BinaryToolItem, ...]
+    system_path: BinaryToolSystemPathState | None = None
 
 
 class BinaryToolDownloadJob(BaseModel):
@@ -77,3 +91,12 @@ class BinaryToolDownloadJob(BaseModel):
     message: str = Field(min_length=1)
     path: str | None = None
     error_message: str | None = None
+
+
+class BinaryToolSystemPathResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: BinaryToolSystemPathStatus
+    bin_dir: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    requires_terminal_restart: bool = True

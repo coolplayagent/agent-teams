@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -9,6 +10,8 @@ from relay_teams.binary_tools import (
     BinaryToolDownloadJob,
     BinaryToolListResponse,
     BinaryToolService,
+    BinaryToolSystemPathResult,
+    BinaryToolUnavailableError,
     UnsupportedBinaryToolError,
 )
 from relay_teams.connector import (
@@ -98,6 +101,21 @@ async def download_runtime_tool(
         return await service.start_download(tool_id)
     except UnsupportedBinaryToolError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runtime-tools/system-path:add",
+    response_model=BinaryToolSystemPathResult,
+)
+async def add_runtime_tools_to_system_path(
+    service: Annotated[BinaryToolService, Depends(get_binary_tool_service)],
+) -> BinaryToolSystemPathResult:
+    try:
+        return await asyncio.to_thread(service.add_managed_bin_dir_to_system_path)
+    except BinaryToolUnavailableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get(

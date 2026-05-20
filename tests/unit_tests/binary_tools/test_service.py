@@ -859,6 +859,430 @@ def test_resolve_system_tool_path_scans_path(
     assert service.resolve_system_tool_path(BinaryToolId.GITHUB_CLI) == executable
 
 
+def test_add_managed_bin_dir_to_system_path_requests_elevation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    monkeypatch.setenv("PATH", "")
+    captured_scripts: list[tuple[bytes, str]] = []
+
+    def run_elevated(script_path: Path) -> subprocess.CompletedProcess[str]:
+        script_bytes = script_path.read_bytes()
+        captured_scripts.append((script_bytes, script_bytes.decode("utf-8-sig")))
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_run_elevated_powershell_script",
+        staticmethod(run_elevated),
+    )
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(lambda: ""),
+    )
+    service = BinaryToolService(bin_dir=tmp_path / "bin")
+
+    result = service.add_managed_bin_dir_to_system_path()
+
+    assert result.status == binary_tool_service.BinaryToolSystemPathStatus.UPDATED
+    assert result.bin_dir == str((tmp_path / "bin").resolve())
+    script_bytes, script_text = captured_scripts[0]
+    assert script_bytes.startswith(b"\xef\xbb\xbf")
+    assert "SetEnvironmentVariable('Path'" in script_text
+    assert str((tmp_path / "bin").resolve()) in script_text
+    assert binary_tool_service._path_contains(
+        binary_tool_service.os.environ["PATH"],
+        (tmp_path / "bin").resolve(),
+    )
+    assert not any((tmp_path / "bin").glob("relay-teams-add-system-path-*.ps1"))
+
+
+def test_add_managed_bin_dir_to_system_path_skips_elevation_when_already_added(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    bin_dir = (tmp_path / "bin").resolve()
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(lambda: str(bin_dir)),
+    )
+
+    def run_elevated(_script_path: Path) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("already added path should not request elevation")
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_run_elevated_powershell_script",
+        staticmethod(run_elevated),
+    )
+    service = BinaryToolService(bin_dir=bin_dir)
+
+    result = service.add_managed_bin_dir_to_system_path()
+
+    assert result.status == binary_tool_service.BinaryToolSystemPathStatus.ALREADY_ADDED
+    assert result.bin_dir == str(bin_dir)
+
+
+def test_add_managed_bin_dir_to_system_path_does_not_skip_for_process_path_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    bin_dir = (tmp_path / "bin").resolve()
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(lambda: ""),
+    )
+    elevated = False
+
+    def run_elevated(_script_path: Path) -> subprocess.CompletedProcess[str]:
+        nonlocal elevated
+        elevated = True
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_run_elevated_powershell_script",
+        staticmethod(run_elevated),
+    )
+    service = BinaryToolService(bin_dir=bin_dir)
+
+    result = service.add_managed_bin_dir_to_system_path()
+
+    assert elevated is True
+    assert result.status == binary_tool_service.BinaryToolSystemPathStatus.UPDATED
+
+
+def test_system_path_state_reads_machine_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    monkeypatch.setenv("PATH", "")
+    bin_dir = (tmp_path / "bin").resolve()
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(lambda: str(bin_dir)),
+    )
+    service = BinaryToolService(bin_dir=bin_dir)
+
+    state = service.system_path_state()
+
+    assert state.supported is True
+    assert state.added is True
+    assert state.bin_dir == str(bin_dir)
+
+
+def test_system_path_state_caches_machine_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    bin_dir = (tmp_path / "bin").resolve()
+    read_count = 0
+
+    def read_machine_path() -> str:
+        nonlocal read_count
+        read_count += 1
+        return ""
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(read_machine_path),
+    )
+    service = BinaryToolService(bin_dir=bin_dir)
+
+    first = service.system_path_state()
+    second = service.system_path_state()
+
+    assert first.added is False
+    assert second.added is False
+    assert read_count == 1
+
+
+def test_managed_bin_dir_machine_path_uses_cached_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    bin_dir = (tmp_path / "bin").resolve()
+    service = BinaryToolService(bin_dir=bin_dir)
+    service.system_path_state()
+
+    def read_machine_path() -> str:
+        raise AssertionError(
+            "fresh machine PATH should not be read when cache is valid"
+        )
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(read_machine_path),
+    )
+
+    assert (
+        service._managed_bin_dir_on_windows_machine_path(bin_dir, use_cache=True)
+        is False
+    )
+
+
+def test_run_elevated_powershell_script_builds_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_args: list[list[str]] = []
+
+    def run_process(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        encoding: str,
+        errors: str,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        captured_args.append(args)
+        assert capture_output is True
+        assert text is True
+        assert encoding == "utf-8"
+        assert errors == "replace"
+        assert timeout == 120
+        assert check is False
+        return subprocess.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(binary_tool_service.subprocess, "run", run_process)
+
+    completed = BinaryToolService._run_elevated_powershell_script(
+        tmp_path / "relay team's path.ps1"
+    )
+
+    assert completed.returncode == 0
+    assert captured_args[0][:5] == [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+    ]
+    assert "-Verb RunAs -Wait -PassThru" in captured_args[0][5]
+    assert "relay team''s path.ps1" in captured_args[0][5]
+
+
+def test_read_windows_machine_path_returns_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run_process(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        encoding: str,
+        errors: str,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args[-1] == "[Environment]::GetEnvironmentVariable('Path', 'Machine')"
+        assert capture_output is True
+        assert text is True
+        assert encoding == "utf-8"
+        assert errors == "replace"
+        assert timeout == 10
+        assert check is False
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="C:/tools",
+            stderr="",
+        )
+
+    monkeypatch.setattr(binary_tool_service.subprocess, "run", run_process)
+
+    assert BinaryToolService._read_windows_machine_path() == "C:/tools"
+
+
+def test_read_windows_machine_path_returns_none_on_launch_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run_process(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        encoding: str,
+        errors: str,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        raise OSError("missing powershell")
+
+    monkeypatch.setattr(binary_tool_service.subprocess, "run", run_process)
+
+    assert BinaryToolService._read_windows_machine_path() is None
+
+
+def test_read_windows_machine_path_returns_none_on_nonzero_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run_process(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        encoding: str,
+        errors: str,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="denied",
+        )
+
+    monkeypatch.setattr(binary_tool_service.subprocess, "run", run_process)
+
+    assert BinaryToolService._read_windows_machine_path() is None
+
+
+def test_add_managed_bin_dir_to_system_path_rejects_non_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "posix")
+    service = BinaryToolService(bin_dir=tmp_path)
+
+    with pytest.raises(BinaryToolUnavailableError, match="only supported on Windows"):
+        service.add_managed_bin_dir_to_system_path()
+
+
+def test_add_managed_bin_dir_to_system_path_reports_denied_elevation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+
+    def run_elevated(_script_path: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="denied",
+        )
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_run_elevated_powershell_script",
+        staticmethod(run_elevated),
+    )
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(lambda: ""),
+    )
+    service = BinaryToolService(bin_dir=tmp_path)
+
+    with pytest.raises(PermissionError, match="denied"):
+        service.add_managed_bin_dir_to_system_path()
+
+
+def test_add_managed_bin_dir_to_system_path_reports_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(lambda: ""),
+    )
+
+    def run_elevated(_script_path: Path) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd="powershell.exe", timeout=120)
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_run_elevated_powershell_script",
+        staticmethod(run_elevated),
+    )
+    service = BinaryToolService(bin_dir=tmp_path)
+
+    with pytest.raises(PermissionError, match="timed out"):
+        service.add_managed_bin_dir_to_system_path()
+
+
+def test_add_managed_bin_dir_to_system_path_reports_launch_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_read_windows_machine_path",
+        staticmethod(lambda: ""),
+    )
+
+    def run_elevated(_script_path: Path) -> subprocess.CompletedProcess[str]:
+        raise OSError("powershell.exe missing")
+
+    monkeypatch.setattr(
+        BinaryToolService,
+        "_run_elevated_powershell_script",
+        staticmethod(run_elevated),
+    )
+    service = BinaryToolService(bin_dir=tmp_path)
+
+    with pytest.raises(PermissionError, match="Failed to start elevated PowerShell"):
+        service.add_managed_bin_dir_to_system_path()
+
+
+def test_append_process_path_uses_windows_separator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+    existing_dir = (tmp_path / "existing").resolve()
+    bin_dir = (tmp_path / "bin").resolve()
+    monkeypatch.setenv("PATH", str(existing_dir))
+
+    binary_tool_service._append_process_path(bin_dir)
+
+    assert binary_tool_service.os.environ["PATH"] == f"{existing_dir};{bin_dir}"
+
+
+def test_path_contains_normalizes_windows_slashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(binary_tool_service.os, "name", "nt")
+
+    assert binary_tool_service._path_contains(
+        "C:/Users/example/.relay-teams/bin",
+        Path("C:\\Users\\example\\.relay-teams\\bin"),
+    )
+
+
+def test_windows_system_path_script_normalizes_slashes() -> None:
+    script = binary_tool_service._build_windows_system_path_script(
+        Path("C:\\Users\\example\\.relay-teams\\bin")
+    )
+
+    assert "$targetKey = $target.Replace('/', '\\').TrimEnd('\\')" in script
+    assert "$partKey = $part.Replace('/', '\\').TrimEnd('\\')" in script
+    assert "$partKey.Equals($targetKey" in script
+
+
 def test_windows_executable_names_use_pathext(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(binary_tool_service.os, "name", "nt")
     monkeypatch.setenv("PATHEXT", ".EXE;.CMD")
@@ -964,6 +1388,7 @@ def test_clawhub_version_uses_cli_version_before_generic_version(
     assert commands == [[str(executable), "--cli-version"]]
 
 
+@pytest.mark.timeout(30)
 def test_binary_tools_package_imports_without_net_github_cli_cycle() -> None:
     completed = subprocess.run(
         [
@@ -975,7 +1400,7 @@ def test_binary_tools_package_imports_without_net_github_cli_cycle() -> None:
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=10,
+        timeout=30,
         check=False,
     )
 

@@ -3,6 +3,7 @@
  * Renders the main workspace snapshot for a selected project.
  */
 import {
+    addRuntimeToolsSystemPath,
     createDiscordGatewayAccount,
     createAutomationProject,
     createXiaolubanGatewayAccount,
@@ -247,6 +248,10 @@ function createInitialGatewayFeatureState() {
         runtimeToolsResponse: null,
         runtimeToolJobs: {},
         runtimeToolsModalOpen: false,
+        runtimeToolsSystemPathBusy: false,
+        runtimeToolsSystemPathAdded: false,
+        runtimeToolsSystemPathMessage: '',
+        runtimeToolsSystemPathTone: '',
         connectorSearch: '',
         connectorStatusFilter: 'all',
         connectorModalProvider: '',
@@ -4342,6 +4347,7 @@ async function loadGatewayRuntimeTools(requestToken, signal = null) {
         currentGatewayFeatureState = {
             ...currentGatewayFeatureState,
             runtimeToolsResponse,
+            runtimeToolsSystemPathAdded: Boolean(runtimeToolsResponse?.system_path?.added),
         };
         resumeRuntimeToolDownloadPolling(runtimeToolsResponse);
         renderGatewayFeatureView();
@@ -5957,6 +5963,10 @@ function renderRuntimeToolsModal() {
     return renderRuntimeToolsModalMarkup({
         runtimeToolsResponse: currentGatewayFeatureState.runtimeToolsResponse,
         runtimeToolJobs: currentGatewayFeatureState.runtimeToolJobs,
+        systemPathBusy: currentGatewayFeatureState.runtimeToolsSystemPathBusy,
+        systemPathAdded: currentGatewayFeatureState.runtimeToolsSystemPathAdded,
+        systemPathMessage: currentGatewayFeatureState.runtimeToolsSystemPathMessage,
+        systemPathTone: currentGatewayFeatureState.runtimeToolsSystemPathTone,
     });
 }
 
@@ -6489,6 +6499,81 @@ function bindRuntimeToolsModalHandlers(root) {
             void handleDownloadRuntimeTool(button.getAttribute('data-runtime-tool-download'));
         });
     });
+    root.querySelectorAll('[data-runtime-tools-system-path-add]').forEach(button => {
+        button.addEventListener('click', () => {
+            void handleAddRuntimeToolsSystemPath();
+        });
+    });
+}
+
+async function handleAddRuntimeToolsSystemPath() {
+    if (currentGatewayFeatureState.runtimeToolsSystemPathBusy) {
+        return;
+    }
+    if (
+        currentGatewayFeatureState.runtimeToolsSystemPathAdded
+        || currentGatewayFeatureState.runtimeToolsResponse?.system_path?.added
+    ) {
+        return;
+    }
+    currentGatewayFeatureState = {
+        ...currentGatewayFeatureState,
+        runtimeToolsSystemPathBusy: true,
+        runtimeToolsSystemPathMessage: '',
+        runtimeToolsSystemPathTone: '',
+    };
+    renderGatewayFeatureModal();
+    try {
+        const result = await addRuntimeToolsSystemPath();
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
+            runtimeToolsSystemPathBusy: false,
+            runtimeToolsSystemPathAdded: true,
+            runtimeToolsResponse: withRuntimeToolsSystemPathAdded(
+                currentGatewayFeatureState.runtimeToolsResponse,
+                result,
+            ),
+            runtimeToolsSystemPathMessage: String(result?.message || t('feature.connectors.runtime_tools.system_path_success')),
+            runtimeToolsSystemPathTone: 'success',
+        };
+        if (currentFeatureViewId === FEATURE_VIEW_IDS.gateway) {
+            renderGatewayFeatureModal();
+            showToast({
+                title: t('feature.connectors.runtime_tools.system_path_add'),
+                message: t('feature.connectors.runtime_tools.system_path_success'),
+                tone: 'success',
+            });
+        }
+    } catch (error) {
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
+            runtimeToolsSystemPathBusy: false,
+            runtimeToolsSystemPathMessage: String(error?.message || error || ''),
+            runtimeToolsSystemPathTone: 'danger',
+        };
+        if (currentFeatureViewId === FEATURE_VIEW_IDS.gateway) {
+            renderGatewayFeatureModal();
+            showToast({
+                title: t('feature.connectors.runtime_tools.system_path_failed'),
+                message: String(error?.message || error || ''),
+                tone: 'danger',
+            });
+        }
+    }
+}
+
+function withRuntimeToolsSystemPathAdded(runtimeToolsResponse, result) {
+    const existingState = runtimeToolsResponse?.system_path || {};
+    const binDir = String(result?.bin_dir || existingState.bin_dir || '');
+    return {
+        ...(runtimeToolsResponse || {}),
+        system_path: {
+            ...existingState,
+            supported: existingState.supported !== false,
+            added: true,
+            ...(binDir ? { bin_dir: binDir } : {}),
+        },
+    };
 }
 
 async function handleDownloadRuntimeTool(toolId) {
@@ -6530,6 +6615,7 @@ async function refreshRuntimeToolsStatus() {
         currentGatewayFeatureState = {
             ...currentGatewayFeatureState,
             runtimeToolsResponse,
+            runtimeToolsSystemPathAdded: Boolean(runtimeToolsResponse?.system_path?.added),
         };
         resumeRuntimeToolDownloadPolling(runtimeToolsResponse);
     } catch (error) {

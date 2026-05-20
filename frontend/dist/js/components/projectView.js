@@ -80,7 +80,6 @@ import {
 import { clearAllPanels } from './agentPanel.js';
 import { clearNewSessionDraft } from './newSessionDraft.js';
 import { hideRoundNavigator } from './rounds/navigator.js';
-import { setSubagentRailExpanded } from './subagentRail.js';
 import {
     bindClawHubSettingsHandlers,
     loadClawHubSettingsPanel,
@@ -2806,7 +2805,6 @@ function openFeatureShell(featureId) {
     clearNewSessionDraft();
     clearAllPanels();
     hideRoundNavigator();
-    setSubagentRailExpanded(false);
     setProjectViewVisible(true);
 }
 
@@ -4168,7 +4166,6 @@ export async function openWorkspaceProjectView(workspace) {
     clearNewSessionDraft();
     clearAllPanels();
     hideRoundNavigator();
-    setSubagentRailExpanded(false);
     setProjectViewVisible(true);
 
     const restoredFromCache = restoreProjectViewState(workspaceId);

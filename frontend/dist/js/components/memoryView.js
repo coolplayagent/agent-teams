@@ -23,7 +23,6 @@ import { clearAllPanels } from './agentPanel.js';
 import { clearNewSessionDraft } from './newSessionDraft.js';
 import { hideProjectView, prepareExternalFeatureView } from './projectView.js';
 import { hideRoundNavigator } from './rounds/navigator.js';
-import { setSubagentRailExpanded } from './subagentRail.js';
 
 const MEMORY_FEATURE_ID = 'memory';
 const MEMORY_LIMIT = 40;
@@ -117,7 +116,6 @@ function enterMemoryFeatureView() {
     clearNewSessionDraft();
     clearAllPanels();
     hideRoundNavigator();
-    setSubagentRailExpanded(false);
     bindLanguageRefresh();
 }
 

@@ -6,7 +6,7 @@ import os
 import base64
 import re
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import subprocess
@@ -310,6 +310,8 @@ def _extract_zip_archive(*, archive: zipfile.ZipFile, target_dir: Path) -> None:
             raise ValueError(
                 f"Plugin archive contains unsupported symlink: {item.filename}"
             )
+        if _zip_member_path_is_unsafe(item.filename):
+            raise ValueError(f"Plugin archive path is unsafe: {item.filename}")
         member_filename = _zip_member_filesystem_name(item.filename)
         destination = (target_dir / member_filename).resolve()
         try:
@@ -348,6 +350,19 @@ def _zip_member_filesystem_name(
         if sanitized:
             sanitized_parts.append(sanitized)
     return "/".join(sanitized_parts)
+
+
+def _zip_member_path_is_unsafe(filename: str) -> bool:
+    normalized = filename.replace("\\", "/")
+    if re.match(r"^[A-Za-z]:", normalized):
+        return True
+    path = PurePosixPath(normalized)
+    if path.is_absolute():
+        return True
+    for part in normalized.split("/"):
+        if part.strip(" ") == "..":
+            return True
+    return False
 
 
 def _extract_tar_archive(*, archive: tarfile.TarFile, target_dir: Path) -> None:

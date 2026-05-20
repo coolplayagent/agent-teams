@@ -55,10 +55,6 @@ import {
     startThinkingBlock,
 } from '../../components/messageRenderer.js';
 import {
-    openAgentPanel,
-    getPanelScrollContainer,
-} from '../../components/agentPanel.js';
-import {
     coordinatorContainerFor,
 } from './utils.js';
 import { markSessionTerminalRunViewed } from '../api.js';
@@ -115,10 +111,6 @@ export function handleModelStepStarted(eventMeta, instanceId, roleId) {
             void refreshSubagentRail(state.currentSessionId, {
                 preserveSelection: true,
             });
-            if (state.autoSwitchedSubagentInstances[instanceId] !== true) {
-                state.autoSwitchedSubagentInstances[instanceId] = true;
-                openAgentPanel(instanceId, roleId, { reveal: false });
-            }
         }
         if (normalModeSubagent) {
             rememberNormalModeSubagentSession(state.currentSessionId, {
@@ -141,7 +133,6 @@ export function handleTextDelta(payload, eventMeta, instanceId, roleId) {
     const isPrimary = !roleId || isRunPrimaryRoleId(roleId, runId);
     const label = isPrimary ? primaryLabel : (roleId || 'Agent');
     const streamKey = isPrimary ? 'primary' : (instanceId || roleId);
-    const normalModeSubagent = isNormalModeSubagentRun(runId, roleId);
 
     if (isPrimary) {
         if (state.activeSubagentSession) {
@@ -158,16 +149,14 @@ export function handleTextDelta(payload, eventMeta, instanceId, roleId) {
         getOrCreateStreamBlock(container, streamKey, primaryRoleId, label, runId);
         appendStreamChunk(streamKey, payload.text || '', runId, primaryRoleId, label);
     } else {
-        const container = normalModeSubagent
-            ? getActiveSubagentSessionStreamContainer(instanceId)
-            : getPanelScrollContainer(instanceId, roleId);
-        if (normalModeSubagent && !container) {
-            applyStreamOverlayEvent('text_delta', payload, {
+        const container = getActiveSubagentSessionStreamContainer(instanceId);
+        if (!container) {
+            applySubagentOverlay('text_delta', payload, {
                 runId,
                 instanceId,
                 roleId,
                 label,
-                eventId: eventMeta?.event_id || '',
+                eventMeta,
             });
             return;
         }
@@ -185,7 +174,6 @@ export function handleOutputDelta(payload, eventMeta, instanceId, roleId) {
     const label = isPrimary ? primaryLabel : (roleId || 'Agent');
     const streamKey = isPrimary ? 'primary' : (instanceId || roleId);
     const output = Array.isArray(payload?.output) ? payload.output : [];
-    const normalModeSubagent = isNormalModeSubagentRun(runId, roleId);
 
     if (isPrimary) {
         if (state.activeSubagentSession) {
@@ -209,16 +197,14 @@ export function handleOutputDelta(payload, eventMeta, instanceId, roleId) {
         return;
     }
 
-    const container = normalModeSubagent
-        ? getActiveSubagentSessionStreamContainer(instanceId)
-        : getPanelScrollContainer(instanceId, roleId);
-    if (normalModeSubagent && !container) {
-        applyStreamOverlayEvent('output_delta', payload, {
+    const container = getActiveSubagentSessionStreamContainer(instanceId);
+    if (!container) {
+        applySubagentOverlay('output_delta', payload, {
             runId,
             instanceId,
             roleId,
             label,
-            eventId: eventMeta?.event_id || '',
+            eventMeta,
         });
         return;
     }
@@ -254,7 +240,6 @@ export function handleThinkingStarted(payload, eventMeta, instanceId, roleId) {
     const isPrimary = !roleId || isRunPrimaryRoleId(roleId, runId);
     const label = isPrimary ? getRunPrimaryRoleLabel(runId) : (roleId || 'Agent');
     const partIndex = payload?.part_index ?? 0;
-    const normalModeSubagent = isNormalModeSubagentRun(runId, roleId);
 
     if (isPrimary) {
         if (state.activeSubagentSession) {
@@ -279,16 +264,14 @@ export function handleThinkingStarted(payload, eventMeta, instanceId, roleId) {
         return;
     }
 
-    const container = normalModeSubagent
-        ? getActiveSubagentSessionStreamContainer(instanceId)
-        : getPanelScrollContainer(instanceId, roleId);
-    if (normalModeSubagent && !container) {
-        applyStreamOverlayEvent('thinking_started', payload, {
+    const container = getActiveSubagentSessionStreamContainer(instanceId);
+    if (!container) {
+        applySubagentOverlay('thinking_started', payload, {
             runId,
             instanceId,
             roleId,
             label,
-            eventId: eventMeta?.event_id || '',
+            eventMeta,
         });
         return;
     }
@@ -308,7 +291,6 @@ export function handleThinkingDelta(payload, eventMeta, instanceId, roleId) {
     const label = isPrimary ? getRunPrimaryRoleLabel(runId) : (roleId || 'Agent');
     const partIndex = payload?.part_index ?? 0;
     const text = payload?.text || '';
-    const normalModeSubagent = isNormalModeSubagentRun(runId, roleId);
 
     if (isPrimary) {
         if (state.activeSubagentSession) {
@@ -333,16 +315,14 @@ export function handleThinkingDelta(payload, eventMeta, instanceId, roleId) {
         return;
     }
 
-    const container = normalModeSubagent
-        ? getActiveSubagentSessionStreamContainer(instanceId)
-        : getPanelScrollContainer(instanceId, roleId);
-    if (normalModeSubagent && !container) {
-        applyStreamOverlayEvent('thinking_delta', payload, {
+    const container = getActiveSubagentSessionStreamContainer(instanceId);
+    if (!container) {
+        applySubagentOverlay('thinking_delta', payload, {
             runId,
             instanceId,
             roleId,
             label,
-            eventId: eventMeta?.event_id || '',
+            eventMeta,
         });
         return;
     }
@@ -360,7 +340,6 @@ export function handleThinkingFinished(payload, eventMeta, instanceId, roleId) {
     const primaryRoleId = getRunPrimaryRoleId(runId);
     const isPrimary = !roleId || isRunPrimaryRoleId(roleId, runId);
     const partIndex = payload?.part_index ?? 0;
-    const normalModeSubagent = isNormalModeSubagentRun(runId, roleId);
 
     if (isPrimary && state.activeSubagentSession) {
         applyStreamOverlayEvent('thinking_finished', payload, {
@@ -371,12 +350,13 @@ export function handleThinkingFinished(payload, eventMeta, instanceId, roleId) {
         });
         return;
     }
-    if (!isPrimary && normalModeSubagent && !getActiveSubagentSessionStreamContainer(instanceId)) {
-        applyStreamOverlayEvent('thinking_finished', payload, {
+    if (!isPrimary && !getActiveSubagentSessionStreamContainer(instanceId)) {
+        applySubagentOverlay('thinking_finished', payload, {
             runId,
             instanceId,
             roleId,
-            eventId: eventMeta?.event_id || '',
+            label: roleId || 'Agent',
+            eventMeta,
         });
         return;
     }
@@ -388,11 +368,29 @@ export function handleThinkingFinished(payload, eventMeta, instanceId, roleId) {
     });
 }
 
+function applySubagentOverlay(evType, payload, options = {}) {
+    const runId = String(options.runId || '').trim();
+    const roleId = String(options.roleId || '').trim();
+    applyStreamOverlayEvent(evType, payload, {
+        runId,
+        instanceId: options.instanceId,
+        roleId,
+        label: options.label,
+        eventId: options.eventMeta?.event_id || '',
+    });
+}
+
+function clearActiveModelStepIfCurrent(instanceId) {
+    if (!instanceId || state.activeAgentInstanceId === instanceId) {
+        state.activeAgentInstanceId = null;
+        state.activeAgentRoleId = null;
+    }
+}
+
 export function handleModelStepFinished(eventMeta, instanceId, roleIdOverride = '') {
     const roleId = String(roleIdOverride || state.instanceRoleMap?.[instanceId] || '').trim();
     const runId = eventMeta?.run_id || eventMeta?.trace_id || state.activeRunId || '';
     const isPrimary = !instanceId || (!roleId && instanceId === 'primary') || isRunPrimaryRoleId(roleId, runId);
-    const normalModeSubagent = isNormalModeSubagentRun(runId, roleId);
     if (isPrimary && state.activeSubagentSession) {
         applyStreamOverlayEvent('model_step_finished', {}, {
             runId,
@@ -401,20 +399,19 @@ export function handleModelStepFinished(eventMeta, instanceId, roleIdOverride = 
             cleanupDelayMs: 1200,
             eventId: eventMeta?.event_id || '',
         });
+        clearActiveModelStepIfCurrent(instanceId);
         return;
     }
     const key = isPrimary ? 'primary' : instanceId;
-    if (!isPrimary && normalModeSubagent) {
-        if (!getActiveSubagentSessionStreamContainer(instanceId)) {
-            applyStreamOverlayEvent('model_step_finished', {}, {
-                runId,
-                instanceId,
-                roleId,
-                cleanupDelayMs: 1200,
-                eventId: eventMeta?.event_id || '',
-            });
-            return;
-        }
+    if (!isPrimary && !getActiveSubagentSessionStreamContainer(instanceId)) {
+        applySubagentOverlay('model_step_finished', {}, {
+            runId,
+            instanceId,
+            roleId,
+            eventMeta,
+        });
+        clearActiveModelStepIfCurrent(instanceId);
+        return;
     }
     finalizeStream(key, isPrimary ? getRunPrimaryRoleId(runId) : roleId, { runId });
     if (
@@ -424,10 +421,7 @@ export function handleModelStepFinished(eventMeta, instanceId, roleIdOverride = 
     ) {
         markSubagentStatus(instanceId, 'completed');
     }
-    if (!instanceId || state.activeAgentInstanceId === instanceId) {
-        state.activeAgentInstanceId = null;
-        state.activeAgentRoleId = null;
-    }
+    clearActiveModelStepIfCurrent(instanceId);
 }
 
 export function handleSubagentRunTerminal(instanceId, status, eventMeta = null, roleIdOverride = '') {

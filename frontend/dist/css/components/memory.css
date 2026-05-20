@@ -578,8 +578,7 @@
 }
 
 .memory-row-tags,
-.memory-detail-tags,
-.agent-panel-memory-tags {
+.memory-detail-tags {
     display: flex;
     align-items: center;
     gap: 0.35rem;
@@ -587,8 +586,7 @@
 }
 
 .memory-row-tags span,
-.memory-detail-tags span,
-.agent-panel-memory-tags span {
+.memory-detail-tags span {
     max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -680,46 +678,6 @@
 
 .memory-detail-note {
     color: var(--text-secondary);
-}
-
-.agent-panel-memory-list {
-    display: grid;
-    gap: 0.55rem;
-}
-
-.agent-panel-memory-item {
-    display: grid;
-    gap: 0.38rem;
-    padding: 0.65rem;
-    border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
-    border-radius: 8px;
-    background: var(--bg-surface-muted);
-}
-
-.agent-panel-memory-item-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    min-width: 0;
-}
-
-.agent-panel-memory-item-head strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.agent-panel-memory-item-head span,
-.agent-panel-memory-item p {
-    color: var(--text-secondary);
-    font-size: 0.78rem;
-}
-
-.agent-panel-memory-item p {
-    margin: 0;
-    overflow-wrap: anywhere;
 }
 
 @media (max-width: 920px) {

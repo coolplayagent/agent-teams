@@ -43,7 +43,7 @@ console.log(JSON.stringify({
             "options": {"preserveSelection": True},
         }
     ]
-    assert payload["openCalls"] == [{"instanceId": "writer-1", "roleId": "writer"}]
+    assert payload["openCalls"] == []
     assert payload["instanceRoleMap"] == {"writer-1": "writer"}
     assert payload["roleInstanceMap"] == {"writer": "writer-1"}
     assert payload["activeAgentRoleId"] == "writer"
@@ -76,11 +76,8 @@ console.log(JSON.stringify({
 """.strip(),
     )
 
-    assert payload["openCalls"] == [
-        {"instanceId": "writer-1", "roleId": "writer"},
-        {"instanceId": "reviewer-1", "roleId": "reviewer"},
-    ]
-    assert payload["autoSwitched"] == {"writer-1": True, "reviewer-1": True}
+    assert payload["openCalls"] == []
+    assert payload["autoSwitched"] == {}
 
 
 def test_model_step_started_tracks_normal_mode_subagents_as_child_sessions(
@@ -127,6 +124,56 @@ console.log(JSON.stringify({
     ]
     assert payload["activeAgentRoleId"] == "writer"
     assert payload["activeAgentInstanceId"] == "writer-1"
+
+
+def test_visible_normal_mode_subagent_text_delta_uses_live_renderer_overlay(
+    tmp_path: Path,
+) -> None:
+    payload = _run_run_events_script(
+        tmp_path=tmp_path,
+        runner_source="""
+const { handleTextDelta } = await import('./runEvents.mjs');
+const { state } = await import('./mockState.mjs');
+
+state.currentSessionMode = 'normal';
+state.currentSessionId = 'session-1';
+state.mainAgentRoleId = 'MainAgent';
+globalThis.__activeSubagentSessionStreamContainer = { id: 'subagent-body' };
+
+handleTextDelta(
+    { text: 'visible live subagent chunk' },
+    { run_id: 'subagent_run_live', event_id: 41 },
+    'inst-subagent',
+    'Writer',
+);
+
+console.log(JSON.stringify({
+    overlayCalls: globalThis.__overlayCalls,
+    streamBlocks: globalThis.__streamBlockCalls,
+    streamChunks: globalThis.__appendStreamChunkCalls,
+}));
+""".strip(),
+    )
+
+    assert payload["overlayCalls"] == []
+    assert payload["streamBlocks"] == [
+        {
+            "containerId": "subagent-body",
+            "streamKey": "inst-subagent",
+            "roleId": "Writer",
+            "label": "Writer",
+            "runId": "subagent_run_live",
+        }
+    ]
+    assert payload["streamChunks"] == [
+        {
+            "streamKey": "inst-subagent",
+            "text": "visible live subagent chunk",
+            "runId": "subagent_run_live",
+            "roleId": "Writer",
+            "label": "Writer",
+        }
+    ]
 
 
 def test_terminal_run_event_marks_current_main_session_viewed(
@@ -1015,6 +1062,8 @@ state.currentSessionId = 'session-1';
 state.currentSessionMode = 'orchestration';
 state.coordinatorRoleId = 'Coordinator';
 state.instanceRoleMap['writer-1'] = 'writer';
+state.activeAgentInstanceId = 'writer-1';
+state.activeAgentRoleId = 'writer';
 
 handleModelStepFinished(
     { run_id: 'run-parent', trace_id: 'run-parent' },
@@ -1024,18 +1073,29 @@ handleModelStepFinished(
 console.log(JSON.stringify({
     finalizeCalls: globalThis.__finalizeStreamCalls,
     statusCalls: globalThis.__markSubagentStatusCalls,
+    overlayCalls: globalThis.__overlayCalls,
+    activeAgentInstanceId: state.activeAgentInstanceId,
+    activeAgentRoleId: state.activeAgentRoleId,
 }));
 """.strip(),
     )
 
-    assert payload["finalizeCalls"] == [
+    assert payload["finalizeCalls"] == []
+    assert payload["statusCalls"] == []
+    assert payload["overlayCalls"] == [
         {
-            "instanceId": "writer-1",
-            "roleId": "writer",
-            "options": {"runId": "run-parent"},
+            "evType": "model_step_finished",
+            "payload": {},
+            "options": {
+                "eventId": "",
+                "instanceId": "writer-1",
+                "roleId": "writer",
+                "runId": "run-parent",
+            },
         }
     ]
-    assert payload["statusCalls"] == []
+    assert payload["activeAgentInstanceId"] is None
+    assert payload["activeAgentRoleId"] is None
 
 
 def _run_run_events_script(tmp_path: Path, runner_source: str) -> dict[str, object]:
@@ -1252,24 +1312,24 @@ export function sysLog(...args) {
     )
     (tmp_path / "mockMessageRenderer.mjs").write_text(
         """
-export function appendThinkingChunk() {
-    return undefined;
+export function appendThinkingChunk(streamKey, partIndex, text, options) {
+    globalThis.__appendThinkingChunkCalls.push({ streamKey, partIndex, text, options });
 }
 
-export function applyStreamOverlayEvent() {
-    return undefined;
+export function applyStreamOverlayEvent(evType, payload, options) {
+    globalThis.__overlayCalls.push({ evType, payload, options });
 }
 
-export function appendStreamChunk() {
-    return undefined;
+export function appendStreamChunk(streamKey, text, runId, roleId, label) {
+    globalThis.__appendStreamChunkCalls.push({ streamKey, text, runId, roleId, label });
 }
 
-export function appendStreamOutputParts() {
-    return undefined;
+export function appendStreamOutputParts(streamKey, output, options) {
+    globalThis.__appendStreamOutputPartsCalls.push({ streamKey, output, options });
 }
 
-export function finalizeThinking() {
-    return undefined;
+export function finalizeThinking(streamKey, partIndex, options) {
+    globalThis.__finalizeThinkingCalls.push({ streamKey, partIndex, options });
 }
 
 export function finalizeStream(instanceId, roleId = '', options = null) {
@@ -1288,12 +1348,18 @@ export function getRunTimelineSnapshot() {
     return null;
 }
 
-export function getOrCreateStreamBlock() {
-    return undefined;
+export function getOrCreateStreamBlock(container, streamKey, roleId, label, runId) {
+    globalThis.__streamBlockCalls.push({
+        containerId: container?.id || '',
+        streamKey,
+        roleId,
+        label,
+        runId,
+    });
 }
 
-export function startThinkingBlock() {
-    return undefined;
+export function startThinkingBlock(streamKey, partIndex, options) {
+    globalThis.__startThinkingBlockCalls.push({ streamKey, partIndex, options });
 }
 """.strip(),
         encoding="utf-8",
@@ -1357,6 +1423,13 @@ globalThis.__markNormalModeSubagentSessionsStoppedForParentCalls = [];
 globalThis.__finalizeStreamCalls = [];
 globalThis.__reconcileTerminalRunStreamStateCalls = [];
 globalThis.__settleActiveSubagentSessionAfterTerminalCalls = [];
+globalThis.__appendThinkingChunkCalls = [];
+globalThis.__overlayCalls = [];
+globalThis.__appendStreamChunkCalls = [];
+globalThis.__appendStreamOutputPartsCalls = [];
+globalThis.__finalizeThinkingCalls = [];
+globalThis.__streamBlockCalls = [];
+globalThis.__startThinkingBlockCalls = [];
 globalThis.__sysLogCalls = [];
 globalThis.__activeSubagentSession = null;
 globalThis.__activeSubagentSessionStreamContainer = null;

@@ -2,7 +2,7 @@
  * components/subagentSessions.js
  * Normal-mode subagent child-session cache, navigation, and read-only view.
  */
-import { fetchSessionSubagents } from '../core/api.js';
+import { fetchSessionSubagents, resolveGate } from '../core/api.js';
 import {
     abortMainSessionRestore,
     restoreMainSessionView,
@@ -26,6 +26,8 @@ const recentParentStopCandidateTimestampsBySession = new Map();
 const queuedSubagentSessionLoads = [];
 const parentStoppedSessionIds = new Set();
 const parentStoppedSubagentInstanceIdsBySession = new Map();
+const resolvedSubagentGateKeys = new Set();
+const resolvedSubagentGateKeyOrder = [];
 let activeSubagentRenderSequence = 0;
 let activeSubagentRenderController = null;
 let subagentSessionsChangedFrame = 0;
@@ -34,6 +36,7 @@ let pendingSubagentSessionsChangedDetail = null;
 let activeSubagentSessionLoadCount = 0;
 const MAX_PARALLEL_SUBAGENT_SESSION_LOADS = 2;
 const TERMINAL_REFRESH_DELAYS_MS = [120, 250, 500, 900, 1400];
+const MAX_RESOLVED_SUBAGENT_GATE_KEYS = 240;
 
 export function getSessionSubagentSessions(sessionId) {
     return [...(subagentSessionsBySessionId.get(String(sessionId || '').trim()) || [])];
@@ -713,6 +716,135 @@ export function getActiveSubagentSessionStreamContainer(instanceId) {
         return null;
     }
     return els.chatMessages?.querySelector?.('.subagent-session-body') || null;
+}
+
+export async function showSubagentGateCard(instanceId, roleId, gatePayload = {}) {
+    const safeInstanceId = String(instanceId || '').trim();
+    const safeRoleId = String(roleId || '').trim();
+    if (!safeInstanceId) {
+        return;
+    }
+    const sessionId = String(gatePayload.session_id || state.currentSessionId || '').trim();
+    if (!sessionId) {
+        return;
+    }
+    const taskId = String(gatePayload.task_id || '').trim();
+    if (isSubagentGateResolved(safeInstanceId, taskId)) {
+        return;
+    }
+    if (getActiveSubagentSession()?.instanceId !== safeInstanceId) {
+        await openSubagentSession(sessionId, {
+            sessionId,
+            instanceId: safeInstanceId,
+            roleId: safeRoleId,
+            runId: String(gatePayload.run_id || state.activeRunId || '').trim(),
+            title: safeRoleId || safeInstanceId,
+            status: 'paused',
+        });
+    }
+    if (isSubagentGateResolved(safeInstanceId, taskId)) {
+        return;
+    }
+    const container = getActiveSubagentSessionStreamContainer(safeInstanceId);
+    if (!container) {
+        return;
+    }
+    if (isSubagentGateResolved(safeInstanceId, taskId)) {
+        return;
+    }
+    container.querySelectorAll?.('.gate-card').forEach(card => card.remove());
+    const card = document.createElement('div');
+    card.className = 'gate-card';
+    card.dataset.taskId = taskId;
+    card.innerHTML = `
+        <div class="gate-header">${escapeHtml(t('subagent.gate_header'))}</div>
+        <div class="gate-summary">${escapeHtml(gatePayload.summary || '')}</div>
+        <div class="gate-role">${escapeHtml(t('subagent.gate_role'))} <strong>${escapeHtml(safeRoleId)}</strong></div>
+        <div class="gate-actions">
+            <button class="gate-approve-btn">${escapeHtml(t('subagent.gate_approve'))}</button>
+            <button class="gate-revise-btn">${escapeHtml(t('subagent.gate_revise'))}</button>
+        </div>
+        <div class="gate-feedback-area" style="display:none">
+            <textarea class="gate-feedback-input" placeholder="${escapeAttribute(t('subagent.gate_feedback_placeholder'))}" rows="3"></textarea>
+            <button class="gate-submit-revise-btn">${escapeHtml(t('subagent.gate_submit'))}</button>
+        </div>
+    `;
+
+    async function doResolve(action, feedback = '') {
+        card.querySelectorAll('button').forEach(button => {
+            button.disabled = true;
+        });
+        try {
+            await resolveGate(gatePayload.run_id || state.activeRunId, taskId, action, feedback);
+        } catch (e) {
+            card.querySelectorAll('button').forEach(button => {
+                button.disabled = false;
+            });
+            sysLog(`Failed to resolve gate: ${e.message || e}`, 'log-error');
+        }
+    }
+
+    card.querySelector('.gate-approve-btn')?.addEventListener('click', () => {
+        void doResolve('approve');
+    });
+    card.querySelector('.gate-revise-btn')?.addEventListener('click', () => {
+        const area = card.querySelector('.gate-feedback-area');
+        if (area) {
+            area.style.display = area.style.display === 'none' ? 'block' : 'none';
+        }
+    });
+    card.querySelector('.gate-submit-revise-btn')?.addEventListener('click', () => {
+        const feedback = String(card.querySelector('.gate-feedback-input')?.value || '').trim();
+        void doResolve('revise', feedback);
+    });
+
+    container.appendChild(card);
+    container.scrollTop = container.scrollHeight;
+}
+
+export function removeSubagentGateCard(instanceId, taskId) {
+    rememberResolvedSubagentGate(instanceId, taskId);
+    const container = getActiveSubagentSessionStreamContainer(instanceId);
+    const safeTaskId = String(taskId || '').trim();
+    const selector = safeTaskId
+        ? `.gate-card[data-task-id="${safeTaskId}"]`
+        : '.gate-card';
+    container?.querySelector?.(selector)?.remove();
+}
+
+function rememberResolvedSubagentGate(instanceId, taskId) {
+    const key = buildSubagentGateKey(instanceId, taskId);
+    if (!key || resolvedSubagentGateKeys.has(key)) {
+        return;
+    }
+    resolvedSubagentGateKeys.add(key);
+    resolvedSubagentGateKeyOrder.push(key);
+    while (resolvedSubagentGateKeyOrder.length > MAX_RESOLVED_SUBAGENT_GATE_KEYS) {
+        const expiredKey = resolvedSubagentGateKeyOrder.shift();
+        if (expiredKey) {
+            resolvedSubagentGateKeys.delete(expiredKey);
+        }
+    }
+}
+
+function isSubagentGateResolved(instanceId, taskId) {
+    const key = buildSubagentGateKey(instanceId, taskId);
+    const instanceKey = buildSubagentGateKey(instanceId, '');
+    return Boolean(
+        key
+        && (
+            resolvedSubagentGateKeys.has(key)
+            || (instanceKey && resolvedSubagentGateKeys.has(instanceKey))
+        )
+    );
+}
+
+function buildSubagentGateKey(instanceId, taskId) {
+    const safeInstanceId = String(instanceId || '').trim();
+    if (!safeInstanceId) {
+        return '';
+    }
+    return `${safeInstanceId}::${String(taskId || '').trim()}`;
 }
 
 export function buildSubagentSessionLabel(record) {

@@ -1,6 +1,6 @@
 /**
  * components/agentPanel/state.js
- * Shared state for subagent drawer panels.
+ * Shared state for background subagent context.
  */
 const panels = new Map();
 let activeInstanceId = null;

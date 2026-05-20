@@ -14,6 +14,7 @@ from relay_teams.env.environment_variable_models import (
     EnvironmentVariableScope,
 )
 from relay_teams.interfaces.server.container import ServerContainer
+from relay_teams.persistence.sqlite_repository import SharedSqliteRepository
 from relay_teams.plugins.config_manager import PluginConfigManager
 from relay_teams.roles import RoleLoader
 from relay_teams.skills.discovery import SkillsDirectory
@@ -423,6 +424,25 @@ def test_container_registers_discord_repositories_for_shutdown_close(
 
     assert container.discord_account_repository in container._async_closeables
     assert container.discord_inbound_queue_repo in container._async_closeables
+
+
+def test_container_registers_all_shared_sqlite_repositories_for_shutdown_close(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    _write_model_config(config_dir, api_key="initial-secret")
+    container = ServerContainer(config_dir=config_dir)
+
+    closeables = set(container._async_closeables)
+    missing = [
+        name
+        for name, value in vars(container).items()
+        if isinstance(value, SharedSqliteRepository) and value not in closeables
+    ]
+
+    assert missing == []
 
 
 def test_roles_reload_updates_long_lived_role_registry_references(

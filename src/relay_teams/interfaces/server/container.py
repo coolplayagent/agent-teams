@@ -1256,6 +1256,7 @@ class ServerContainer:
             self.run_intent_repo,
             self.background_task_repository,
             self.todo_repository,
+            self.board_todo_repository,
             self.run_state_repo,
             self.trigger_repository,
             self.session_repo,

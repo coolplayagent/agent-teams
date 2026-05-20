@@ -26,6 +26,8 @@ const recentParentStopCandidateTimestampsBySession = new Map();
 const queuedSubagentSessionLoads = [];
 const parentStoppedSessionIds = new Set();
 const parentStoppedSubagentInstanceIdsBySession = new Map();
+const resolvedSubagentGateKeys = new Set();
+const resolvedSubagentGateKeyOrder = [];
 let activeSubagentRenderSequence = 0;
 let activeSubagentRenderController = null;
 let subagentSessionsChangedFrame = 0;
@@ -34,6 +36,7 @@ let pendingSubagentSessionsChangedDetail = null;
 let activeSubagentSessionLoadCount = 0;
 const MAX_PARALLEL_SUBAGENT_SESSION_LOADS = 2;
 const TERMINAL_REFRESH_DELAYS_MS = [120, 250, 500, 900, 1400];
+const MAX_RESOLVED_SUBAGENT_GATE_KEYS = 240;
 
 export function getSessionSubagentSessions(sessionId) {
     return [...(subagentSessionsBySessionId.get(String(sessionId || '').trim()) || [])];
@@ -725,6 +728,10 @@ export async function showSubagentGateCard(instanceId, roleId, gatePayload = {})
     if (!sessionId) {
         return;
     }
+    const taskId = String(gatePayload.task_id || '').trim();
+    if (isSubagentGateResolved(safeInstanceId, taskId)) {
+        return;
+    }
     if (getActiveSubagentSession()?.instanceId !== safeInstanceId) {
         await openSubagentSession(sessionId, {
             sessionId,
@@ -735,12 +742,17 @@ export async function showSubagentGateCard(instanceId, roleId, gatePayload = {})
             status: 'paused',
         });
     }
+    if (isSubagentGateResolved(safeInstanceId, taskId)) {
+        return;
+    }
     const container = getActiveSubagentSessionStreamContainer(safeInstanceId);
     if (!container) {
         return;
     }
+    if (isSubagentGateResolved(safeInstanceId, taskId)) {
+        return;
+    }
     container.querySelectorAll?.('.gate-card').forEach(card => card.remove());
-    const taskId = String(gatePayload.task_id || '').trim();
     const card = document.createElement('div');
     card.className = 'gate-card';
     card.dataset.taskId = taskId;
@@ -791,12 +803,48 @@ export async function showSubagentGateCard(instanceId, roleId, gatePayload = {})
 }
 
 export function removeSubagentGateCard(instanceId, taskId) {
+    rememberResolvedSubagentGate(instanceId, taskId);
     const container = getActiveSubagentSessionStreamContainer(instanceId);
     const safeTaskId = String(taskId || '').trim();
     const selector = safeTaskId
         ? `.gate-card[data-task-id="${safeTaskId}"]`
         : '.gate-card';
     container?.querySelector?.(selector)?.remove();
+}
+
+function rememberResolvedSubagentGate(instanceId, taskId) {
+    const key = buildSubagentGateKey(instanceId, taskId);
+    if (!key || resolvedSubagentGateKeys.has(key)) {
+        return;
+    }
+    resolvedSubagentGateKeys.add(key);
+    resolvedSubagentGateKeyOrder.push(key);
+    while (resolvedSubagentGateKeyOrder.length > MAX_RESOLVED_SUBAGENT_GATE_KEYS) {
+        const expiredKey = resolvedSubagentGateKeyOrder.shift();
+        if (expiredKey) {
+            resolvedSubagentGateKeys.delete(expiredKey);
+        }
+    }
+}
+
+function isSubagentGateResolved(instanceId, taskId) {
+    const key = buildSubagentGateKey(instanceId, taskId);
+    const instanceKey = buildSubagentGateKey(instanceId, '');
+    return Boolean(
+        key
+        && (
+            resolvedSubagentGateKeys.has(key)
+            || (instanceKey && resolvedSubagentGateKeys.has(instanceKey))
+        )
+    );
+}
+
+function buildSubagentGateKey(instanceId, taskId) {
+    const safeInstanceId = String(instanceId || '').trim();
+    if (!safeInstanceId) {
+        return '';
+    }
+    return `${safeInstanceId}::${String(taskId || '').trim()}`;
 }
 
 export function buildSubagentSessionLabel(record) {

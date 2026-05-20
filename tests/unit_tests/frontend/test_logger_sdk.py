@@ -64,6 +64,40 @@ console.log(JSON.stringify(globalThis.__capturedBatches));
     assert event["session_id"] == "session-ui"
 
 
+def test_syslog_surfaces_error_feedback_without_system_log_panel(
+    tmp_path: Path,
+) -> None:
+    payload = _run_frontend_logger_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { flushFrontendLogs, sysLog } from "./logger.mjs";
+
+sysLog("Session load failed", "log-error");
+sysLog("Background sync complete", "log-info");
+await flushFrontendLogs();
+
+console.log(JSON.stringify([{
+    batches: globalThis.__capturedBatches,
+    toasts: globalThis.__feedbackToasts,
+}]));
+""".strip(),
+    )
+
+    result = cast(dict[str, JsonValue], payload[0])
+    toasts = cast(list[dict[str, JsonValue]], result["toasts"])
+    assert toasts == [
+        {
+            "message": "Session load failed",
+            "tone": "error",
+            "durationMs": 6500,
+            "dedupeKey": "syslog:error:Session load failed",
+        }
+    ]
+    batches = cast(list[dict[str, JsonValue]], result["batches"])
+    events = cast(list[dict[str, JsonValue]], batches[0]["events"])
+    assert [event["level"] for event in events] == ["error", "info"]
+
+
 def _run_frontend_logger_script(
     tmp_path: Path,
     runner_source: str,
@@ -79,15 +113,15 @@ export const state = {
     source_path = repo_root / "frontend" / "dist" / "js" / "utils" / "logger.js"
 
     logger_module_path = tmp_path / "logger.mjs"
-    mock_dom_path = tmp_path / "mockDom.mjs"
+    mock_feedback_path = tmp_path / "mockFeedback.mjs"
     mock_state_path = tmp_path / "mockState.mjs"
     runner_path = tmp_path / "runner.mjs"
 
-    mock_dom_path.write_text(
+    mock_feedback_path.write_text(
         """
-export const els = {
-    systemLogs: null,
-};
+export function showToast(payload) {
+    globalThis.__feedbackToasts.push(payload);
+}
 """.strip(),
         encoding="utf-8",
     )
@@ -96,13 +130,14 @@ export const els = {
     source_text = (
         source_path.read_text(encoding="utf-8")
         .replace("../core/state.js", "./mockState.mjs")
-        .replace("./dom.js", "./mockDom.mjs")
+        .replace("./feedback.js", "./mockFeedback.mjs")
     )
     logger_module_path.write_text(source_text, encoding="utf-8")
 
     runner_path.write_text(
         f"""
 globalThis.__capturedBatches = [];
+globalThis.__feedbackToasts = [];
 globalThis.location = {{ pathname: "/chat" }};
 globalThis.document = {{ title: "agent-teams" }};
 Object.defineProperty(globalThis, "navigator", {{

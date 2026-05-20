@@ -1062,6 +1062,8 @@ state.currentSessionId = 'session-1';
 state.currentSessionMode = 'orchestration';
 state.coordinatorRoleId = 'Coordinator';
 state.instanceRoleMap['writer-1'] = 'writer';
+state.activeAgentInstanceId = 'writer-1';
+state.activeAgentRoleId = 'writer';
 
 handleModelStepFinished(
     { run_id: 'run-parent', trace_id: 'run-parent' },
@@ -1072,6 +1074,8 @@ console.log(JSON.stringify({
     finalizeCalls: globalThis.__finalizeStreamCalls,
     statusCalls: globalThis.__markSubagentStatusCalls,
     overlayCalls: globalThis.__overlayCalls,
+    activeAgentInstanceId: state.activeAgentInstanceId,
+    activeAgentRoleId: state.activeAgentRoleId,
 }));
 """.strip(),
     )
@@ -1090,6 +1094,8 @@ console.log(JSON.stringify({
             },
         }
     ]
+    assert payload["activeAgentInstanceId"] is None
+    assert payload["activeAgentRoleId"] is None
 
 
 def _run_run_events_script(tmp_path: Path, runner_source: str) -> dict[str, object]:

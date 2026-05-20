@@ -380,6 +380,13 @@ function applySubagentOverlay(evType, payload, options = {}) {
     });
 }
 
+function clearActiveModelStepIfCurrent(instanceId) {
+    if (!instanceId || state.activeAgentInstanceId === instanceId) {
+        state.activeAgentInstanceId = null;
+        state.activeAgentRoleId = null;
+    }
+}
+
 export function handleModelStepFinished(eventMeta, instanceId, roleIdOverride = '') {
     const roleId = String(roleIdOverride || state.instanceRoleMap?.[instanceId] || '').trim();
     const runId = eventMeta?.run_id || eventMeta?.trace_id || state.activeRunId || '';
@@ -392,6 +399,7 @@ export function handleModelStepFinished(eventMeta, instanceId, roleIdOverride = 
             cleanupDelayMs: 1200,
             eventId: eventMeta?.event_id || '',
         });
+        clearActiveModelStepIfCurrent(instanceId);
         return;
     }
     const key = isPrimary ? 'primary' : instanceId;
@@ -402,6 +410,7 @@ export function handleModelStepFinished(eventMeta, instanceId, roleIdOverride = 
             roleId,
             eventMeta,
         });
+        clearActiveModelStepIfCurrent(instanceId);
         return;
     }
     finalizeStream(key, isPrimary ? getRunPrimaryRoleId(runId) : roleId, { runId });
@@ -412,10 +421,7 @@ export function handleModelStepFinished(eventMeta, instanceId, roleIdOverride = 
     ) {
         markSubagentStatus(instanceId, 'completed');
     }
-    if (!instanceId || state.activeAgentInstanceId === instanceId) {
-        state.activeAgentInstanceId = null;
-        state.activeAgentRoleId = null;
-    }
+    clearActiveModelStepIfCurrent(instanceId);
 }
 
 export function handleSubagentRunTerminal(instanceId, status, eventMeta = null, roleIdOverride = '') {

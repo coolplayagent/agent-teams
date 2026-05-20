@@ -4111,6 +4111,14 @@ def test_zip_member_filesystem_name_preserves_windows_sanitization() -> None:
     assert trailing_dot_name == "quality/trailing/file.txt"
 
 
+def test_zip_member_path_safety_rejects_absolute_and_drive_paths() -> None:
+    assert plugin_installers._zip_member_path_is_unsafe("/quality/plugin.json") is True
+    assert (
+        plugin_installers._zip_member_path_is_unsafe("C:/quality/plugin.json") is True
+    )
+    assert plugin_installers._zip_member_path_is_unsafe("quality/plugin.json") is False
+
+
 def test_installer_filesystem_path_adds_windows_long_path_prefix(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

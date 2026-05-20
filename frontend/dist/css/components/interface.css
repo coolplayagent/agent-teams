@@ -760,20 +760,8 @@
     background: var(--bg-surface);
 }
 
-.subagent-role-select,
-.panel-inject-input,
 .gate-feedback-input {
     border-radius: 8px;
-}
-
-.subagent-meta-empty,
-.panel-empty,
-.panel-loading {
-    color: var(--text-secondary);
-}
-
-.log-entry {
-    border-bottom: 1px solid var(--border-color);
 }
 
 @media (max-width: 960px) {

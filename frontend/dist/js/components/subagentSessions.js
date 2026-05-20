@@ -2,7 +2,7 @@
  * components/subagentSessions.js
  * Normal-mode subagent child-session cache, navigation, and read-only view.
  */
-import { fetchSessionSubagents } from '../core/api.js';
+import { fetchSessionSubagents, resolveGate } from '../core/api.js';
 import {
     abortMainSessionRestore,
     restoreMainSessionView,
@@ -713,6 +713,90 @@ export function getActiveSubagentSessionStreamContainer(instanceId) {
         return null;
     }
     return els.chatMessages?.querySelector?.('.subagent-session-body') || null;
+}
+
+export async function showSubagentGateCard(instanceId, roleId, gatePayload = {}) {
+    const safeInstanceId = String(instanceId || '').trim();
+    const safeRoleId = String(roleId || '').trim();
+    if (!safeInstanceId) {
+        return;
+    }
+    const sessionId = String(gatePayload.session_id || state.currentSessionId || '').trim();
+    if (!sessionId) {
+        return;
+    }
+    if (getActiveSubagentSession()?.instanceId !== safeInstanceId) {
+        await openSubagentSession(sessionId, {
+            sessionId,
+            instanceId: safeInstanceId,
+            roleId: safeRoleId,
+            runId: String(gatePayload.run_id || state.activeRunId || '').trim(),
+            title: safeRoleId || safeInstanceId,
+            status: 'paused',
+        });
+    }
+    const container = getActiveSubagentSessionStreamContainer(safeInstanceId);
+    if (!container) {
+        return;
+    }
+    container.querySelectorAll?.('.gate-card').forEach(card => card.remove());
+    const taskId = String(gatePayload.task_id || '').trim();
+    const card = document.createElement('div');
+    card.className = 'gate-card';
+    card.dataset.taskId = taskId;
+    card.innerHTML = `
+        <div class="gate-header">${escapeHtml(t('subagent.gate_header'))}</div>
+        <div class="gate-summary">${escapeHtml(gatePayload.summary || '')}</div>
+        <div class="gate-role">${escapeHtml(t('subagent.gate_role'))} <strong>${escapeHtml(safeRoleId)}</strong></div>
+        <div class="gate-actions">
+            <button class="gate-approve-btn">${escapeHtml(t('subagent.gate_approve'))}</button>
+            <button class="gate-revise-btn">${escapeHtml(t('subagent.gate_revise'))}</button>
+        </div>
+        <div class="gate-feedback-area" style="display:none">
+            <textarea class="gate-feedback-input" placeholder="${escapeAttribute(t('subagent.gate_feedback_placeholder'))}" rows="3"></textarea>
+            <button class="gate-submit-revise-btn">${escapeHtml(t('subagent.gate_submit'))}</button>
+        </div>
+    `;
+
+    async function doResolve(action, feedback = '') {
+        card.querySelectorAll('button').forEach(button => {
+            button.disabled = true;
+        });
+        try {
+            await resolveGate(gatePayload.run_id || state.activeRunId, taskId, action, feedback);
+        } catch (e) {
+            card.querySelectorAll('button').forEach(button => {
+                button.disabled = false;
+            });
+            sysLog(`Failed to resolve gate: ${e.message || e}`, 'log-error');
+        }
+    }
+
+    card.querySelector('.gate-approve-btn')?.addEventListener('click', () => {
+        void doResolve('approve');
+    });
+    card.querySelector('.gate-revise-btn')?.addEventListener('click', () => {
+        const area = card.querySelector('.gate-feedback-area');
+        if (area) {
+            area.style.display = area.style.display === 'none' ? 'block' : 'none';
+        }
+    });
+    card.querySelector('.gate-submit-revise-btn')?.addEventListener('click', () => {
+        const feedback = String(card.querySelector('.gate-feedback-input')?.value || '').trim();
+        void doResolve('revise', feedback);
+    });
+
+    container.appendChild(card);
+    container.scrollTop = container.scrollHeight;
+}
+
+export function removeSubagentGateCard(instanceId, taskId) {
+    const container = getActiveSubagentSessionStreamContainer(instanceId);
+    const safeTaskId = String(taskId || '').trim();
+    const selector = safeTaskId
+        ? `.gate-card[data-task-id="${safeTaskId}"]`
+        : '.gate-card';
+    container?.querySelector?.(selector)?.remove();
 }
 
 export function buildSubagentSessionLabel(record) {

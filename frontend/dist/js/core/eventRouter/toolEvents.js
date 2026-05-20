@@ -18,9 +18,6 @@ import {
     updateToolResult,
 } from '../../components/messageRenderer.js';
 import {
-    getPanelScrollContainer,
-} from '../../components/agentPanel.js';
-import {
     getActiveSubagentSessionStreamContainer,
 } from '../../components/subagentSessions.js';
 import {
@@ -212,21 +209,6 @@ function resolveToolEventTarget(instanceId, roleId, eventMeta) {
         isCoordinator,
         container: isCoordinator
             ? (state.activeSubagentSession ? null : coordinatorContainerFor(eventMeta))
-            : (
-                isNormalModeSubagentRun(runId, roleId)
-                    ? getActiveSubagentSessionStreamContainer(instanceId)
-                    : getPanelScrollContainer(instanceId, roleId)
-            ),
+            : getActiveSubagentSessionStreamContainer(instanceId),
     };
-}
-
-function isNormalModeSubagentRun(runId, roleId) {
-    const safeRunId = String(runId || '').trim();
-    const safeRoleId = String(roleId || '').trim();
-    return !!(
-        state.currentSessionMode === 'normal'
-        && safeRunId.startsWith('subagent_run_')
-        && safeRoleId
-        && !isRunPrimaryRoleId(safeRoleId, safeRunId)
-    );
 }

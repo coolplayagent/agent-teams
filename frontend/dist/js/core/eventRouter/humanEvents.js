@@ -8,15 +8,15 @@ import {
     markPausedSubagent,
 } from '../../app/recovery.js';
 import { sysLog } from '../../utils/logger.js';
-import {
-    removeGateCard,
-    showGateCard,
-} from '../../components/agentPanel.js';
 import { markSubagentStatus } from '../../components/subagentRail.js';
-import { updateNormalModeSubagentSessionStatus } from '../../components/subagentSessions.js';
+import {
+    removeSubagentGateCard,
+    showSubagentGateCard,
+    updateNormalModeSubagentSessionStatus,
+} from '../../components/subagentSessions.js';
 
 export function handleSubagentGate(payload) {
-    showGateCard(payload.instance_id, payload.role_id, {
+    void showSubagentGateCard(payload.instance_id, payload.role_id, {
         session_id: state.currentSessionId,
         run_id: state.activeRunId,
         task_id: payload.task_id,
@@ -26,7 +26,7 @@ export function handleSubagentGate(payload) {
 }
 
 export function handleGateResolved(payload, instanceId) {
-    removeGateCard(payload.instance_id || instanceId || '', payload.task_id);
+    removeSubagentGateCard(payload.instance_id || instanceId || '', payload.task_id);
     sysLog(`Gate resolved: ${payload.action}`, 'log-info');
 }
 
@@ -49,7 +49,7 @@ export function handleSubagentStopped(payload, eventMeta = null) {
     };
     markPausedSubagent({ ...payload, run_id: runId });
     sysLog(
-        `Subagent paused: ${payload.role_id || payload.instance_id}. Send follow-up in subagent panel.`,
+        `Subagent paused: ${payload.role_id || payload.instance_id}. Open it from the sidebar to continue.`,
         'log-info',
     );
 }

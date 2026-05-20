@@ -7,20 +7,20 @@ import subprocess
 from typing import cast
 
 
-def test_subagent_rail_dom_refs_are_cached() -> None:
+def test_subagent_rail_dom_refs_are_removed_from_persistent_shell() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     shared_dom_source = (
         repo_root / "frontend" / "dist" / "js" / "utils" / "dom.js"
     ).read_text(encoding="utf-8")
 
-    for expected_ref in (
+    for removed_ref in (
         'rightRail: qs("#right-rail")',
         'rightRailResizer: qs("#right-rail-resizer")',
         'subagentRoleSelect: qs("#subagent-role-select")',
         'subagentStatusSummary: qs("#subagent-status-summary")',
         'subagentRoleMeta: qs("#subagent-role-meta")',
     ):
-        assert expected_ref in shared_dom_source
+        assert removed_ref not in shared_dom_source
 
 
 def test_subagent_rail_filters_dynamic_coordinator_role(tmp_path: Path) -> None:
@@ -42,12 +42,7 @@ rememberLiveSubagent("writer-2", "writer");
 console.log(JSON.stringify({
     sessionAgents: state.sessionAgents,
     sessionTasks: state.sessionTasks,
-    selectedRoleId: state.selectedRoleId,
-    summaryText: globalThis.__elements.subagentStatusSummary.textContent,
-    selectorHtml: globalThis.__elements.subagentRoleSelect.innerHTML,
-    metaHtml: globalThis.__elements.subagentRoleMeta.innerHTML,
-    metaHidden: globalThis.__elements.subagentRoleMeta.hidden,
-    openAgentPanelCalls: globalThis.__openAgentPanelCalls,
+    summary: (await import("./subagentRail.mjs")).getLiveSubagentSummary("session-1"),
     rememberedSubagents: globalThis.__rememberedSubagents,
 }));
 """.strip(),
@@ -86,27 +81,11 @@ console.log(JSON.stringify({
             "evidence_bundle": None,
         }
     ]
-    assert payload["selectedRoleId"] == "writer"
-    assert payload["summaryText"] == "1 running / 1 roles"
-    selector_html = cast(str, payload["selectorHtml"])
-    meta_html = cast(str, payload["metaHtml"])
-    open_agent_panel_calls = cast(list[object], payload["openAgentPanelCalls"])
-
-    assert "Coordinator" not in selector_html
-    assert "MainAgent" not in selector_html
-    assert "writer" in selector_html
-    assert meta_html == ""
-    assert payload["metaHidden"] is True
-    assert open_agent_panel_calls == [
-        {
-            "instanceId": "writer-1",
-            "roleId": "writer",
-            "options": {
-                "reveal": False,
-                "forceRefresh": False,
-            },
-        },
-    ]
+    assert payload["summary"] == {
+        "isLoading": False,
+        "count": 1,
+        "runningCount": 1,
+    }
     assert payload["rememberedSubagents"] == [
         {
             "sessionId": "session-1",
@@ -150,73 +129,43 @@ console.log(JSON.stringify({
     ]
 
 
-def test_subagent_rail_rebuilds_labels_when_language_changes(tmp_path: Path) -> None:
+def test_subagent_rail_initialize_clears_stale_right_rail_storage(
+    tmp_path: Path,
+) -> None:
     payload = _run_subagent_rail_script(
         tmp_path=tmp_path,
         runner_source="""
-const { initializeSubagentRail, rememberLiveSubagent } = await import("./subagentRail.mjs");
+const { initializeSubagentRail } = await import("./subagentRail.mjs");
 
+localStorage.setItem("agent_teams_right_rail_collapsed", "1");
 initializeSubagentRail();
-rememberLiveSubagent("writer-2", "writer");
-globalThis.__language = "zh-CN";
-document.dispatchEvent(new CustomEvent("agent-teams-language-changed"));
 
 console.log(JSON.stringify({
-    summaryText: globalThis.__elements.subagentStatusSummary.textContent,
+    stored: localStorage.getItem("agent_teams_right_rail_collapsed"),
     clearPanelCalls: globalThis.__clearAllPanelsCalls,
 }));
 """.strip(),
     )
 
-    assert payload["summaryText"] == "1 个运行中 / 1 个角色"
-    assert payload["clearPanelCalls"] == 1
+    assert payload == {
+        "stored": None,
+        "clearPanelCalls": 0,
+    }
 
 
-def test_subagent_rail_ignores_stale_persisted_collapsed_state(tmp_path: Path) -> None:
+def test_subagent_rail_does_not_export_right_rail_expansion_api(tmp_path: Path) -> None:
     payload = _run_subagent_rail_script(
         tmp_path=tmp_path,
         runner_source="""
-const { initializeSubagentRail, setSubagentRailExpanded } = await import("./subagentRail.mjs");
-const { state } = await import("./mockState.mjs");
-
-localStorage.setItem("agent_teams_right_rail_collapsed", "1");
-initializeSubagentRail();
-const afterInitialize = {
-    expanded: state.rightRailExpanded,
-    railCollapsed: globalThis.__elements.rightRail.classList.contains("collapsed"),
-    resizerHidden: globalThis.__elements.rightRailResizer.classList.contains("hidden"),
-    stored: localStorage.getItem("agent_teams_right_rail_collapsed"),
-};
-
-setSubagentRailExpanded(false);
-const afterTemporaryCollapse = {
-    expanded: state.rightRailExpanded,
-    railCollapsed: globalThis.__elements.rightRail.classList.contains("collapsed"),
-    resizerHidden: globalThis.__elements.rightRailResizer.classList.contains("hidden"),
-    stored: localStorage.getItem("agent_teams_right_rail_collapsed"),
-};
+const mod = await import("./subagentRail.mjs");
 
 console.log(JSON.stringify({
-    afterInitialize,
-    afterTemporaryCollapse,
+    hasSetSubagentRailExpanded: typeof mod.setSubagentRailExpanded === "function",
 }));
 """.strip(),
     )
 
-    assert payload == {
-        "afterInitialize": {
-            "expanded": True,
-            "railCollapsed": False,
-            "resizerHidden": False,
-            "stored": None,
-        },
-        "afterTemporaryCollapse": {
-            "expanded": False,
-            "railCollapsed": True,
-            "resizerHidden": True,
-            "stored": None,
-        },
-    }
+    assert payload == {"hasSetSubagentRailExpanded": False}
 
 
 def test_subagent_rail_force_refreshes_agents_and_tasks(tmp_path: Path) -> None:
@@ -300,7 +249,7 @@ await refreshSubagentRail("session-1");
 
 console.log(JSON.stringify({
     sessionAgents: state.sessionAgents,
-    summaryText: globalThis.__elements.subagentStatusSummary.textContent,
+    summary: (await import("./subagentRail.mjs")).getLiveSubagentSummary("session-1"),
 }));
 """.strip(),
     )
@@ -319,7 +268,11 @@ console.log(JSON.stringify({
             "reflection_updated_at": "",
         }
     ]
-    assert payload["summaryText"] == "1 running / 1 roles"
+    assert payload["summary"] == {
+        "isLoading": False,
+        "count": 1,
+        "runningCount": 1,
+    }
 
 
 def test_subagent_rail_preserves_newer_terminal_state_over_stale_running_task(
@@ -361,7 +314,7 @@ markSubagentStatus("writer-1", "completed");
 console.log(JSON.stringify({
     sessionAgents: state.sessionAgents,
     sessionTasks: state.sessionTasks,
-    summaryText: globalThis.__elements.subagentStatusSummary.textContent,
+    summary: (await import("./subagentRail.mjs")).getLiveSubagentSummary("session-1"),
 }));
 """.strip(),
     )
@@ -399,7 +352,11 @@ console.log(JSON.stringify({
             "evidence_bundle": None,
         }
     ]
-    assert payload["summaryText"] == "0 running / 1 roles"
+    assert payload["summary"] == {
+        "isLoading": False,
+        "count": 1,
+        "runningCount": 0,
+    }
 
 
 def test_subagent_rail_preserves_newer_role_record_over_stale_task_instance(
@@ -439,8 +396,7 @@ await refreshSubagentRail("session-1");
 
 console.log(JSON.stringify({
     sessionAgents: state.sessionAgents,
-    summaryText: globalThis.__elements.subagentStatusSummary.textContent,
-    openAgentPanelCalls: globalThis.__openAgentPanelCalls,
+    summary: (await import("./subagentRail.mjs")).getLiveSubagentSummary("session-1"),
 }));
 """.strip(),
     )
@@ -459,17 +415,11 @@ console.log(JSON.stringify({
             "reflection_updated_at": "",
         }
     ]
-    assert payload["summaryText"] == "0 running / 1 roles"
-    assert payload["openAgentPanelCalls"] == [
-        {
-            "instanceId": "writer-2",
-            "roleId": "writer",
-            "options": {
-                "reveal": False,
-                "forceRefresh": False,
-            },
-        },
-    ]
+    assert payload["summary"] == {
+        "isLoading": False,
+        "count": 1,
+        "runningCount": 0,
+    }
 
 
 def test_subagent_rail_projects_running_task_without_agent_snapshot(
@@ -502,8 +452,7 @@ await refreshSubagentRail("session-1");
 console.log(JSON.stringify({
     sessionAgents: state.sessionAgents,
     selectedRoleId: state.selectedRoleId,
-    summaryText: globalThis.__elements.subagentStatusSummary.textContent,
-    openAgentPanelCalls: globalThis.__openAgentPanelCalls,
+    summary: (await import("./subagentRail.mjs")).getLiveSubagentSummary("session-1"),
 }));
 """.strip(),
     )
@@ -522,18 +471,12 @@ console.log(JSON.stringify({
             "reflection_updated_at": "",
         }
     ]
-    assert payload["selectedRoleId"] == "writer"
-    assert payload["summaryText"] == "1 running / 1 roles"
-    assert payload["openAgentPanelCalls"] == [
-        {
-            "instanceId": "writer-1",
-            "roleId": "writer",
-            "options": {
-                "reveal": False,
-                "forceRefresh": False,
-            },
-        },
-    ]
+    assert payload["selectedRoleId"] is None
+    assert payload["summary"] == {
+        "isLoading": False,
+        "count": 1,
+        "runningCount": 1,
+    }
 
 
 def test_subagent_rail_counts_unique_running_instances(tmp_path: Path) -> None:
@@ -568,13 +511,17 @@ await refreshSubagentRail("session-1");
 
 console.log(JSON.stringify({
     sessionAgents: state.sessionAgents,
-    summaryText: globalThis.__elements.subagentStatusSummary.textContent,
+    summary: (await import("./subagentRail.mjs")).getLiveSubagentSummary("session-1"),
 }));
 """.strip(),
     )
 
     assert len(cast(list[object], payload["sessionAgents"])) == 2
-    assert payload["summaryText"] == "1 running / 2 roles"
+    assert payload["summary"] == {
+        "isLoading": False,
+        "count": 2,
+        "runningCount": 1,
+    }
 
 
 def _run_subagent_rail_script(tmp_path: Path, runner_source: str) -> dict[str, object]:
@@ -585,7 +532,6 @@ def _run_subagent_rail_script(tmp_path: Path, runner_source: str) -> dict[str, o
 
     mock_api_path = tmp_path / "mockApi.mjs"
     mock_state_path = tmp_path / "mockState.mjs"
-    mock_agent_panel_path = tmp_path / "mockAgentPanel.mjs"
     mock_subagent_sessions_path = tmp_path / "mockSubagentSessions.mjs"
     mock_dom_path = tmp_path / "mockDom.mjs"
     mock_i18n_path = tmp_path / "mockI18n.mjs"
@@ -685,7 +631,6 @@ export const state = {
     activeRunId: null,
     coordinatorRoleId: null,
     mainAgentRoleId: null,
-    rightRailExpanded: true,
 };
 
 export function isReservedSystemRoleId(roleId) {
@@ -704,18 +649,6 @@ export function isPrimaryRoleId(roleId) {
 
 export function isPrimaryOrReservedRoleId(roleId) {
     return isPrimaryRoleId(roleId) || isReservedSystemRoleId(roleId);
-}
-""".strip(),
-        encoding="utf-8",
-    )
-    mock_agent_panel_path.write_text(
-        """
-export function clearAllPanels() {
-    globalThis.__clearAllPanelsCalls += 1;
-}
-
-export function openAgentPanel(instanceId, roleId, options = {}) {
-    globalThis.__openAgentPanelCalls.push({ instanceId, roleId, options });
 }
 """.strip(),
         encoding="utf-8",
@@ -777,7 +710,6 @@ export function sysLog() {
         source_path.read_text(encoding="utf-8")
         .replace("../core/api.js", "./mockApi.mjs")
         .replace("../core/state.js", "./mockState.mjs")
-        .replace("./agentPanel.js", "./mockAgentPanel.mjs")
         .replace("./subagentSessions.js", "./mockSubagentSessions.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
         .replace("../utils/i18n.js", "./mockI18n.mjs")
@@ -830,13 +762,7 @@ function createElement() {{
 
 globalThis.Date = FixedDate;
 globalThis.__elements = {{
-    subagentRoleSelect: createElement(),
-    subagentStatusSummary: createElement(),
-    subagentRoleMeta: createElement(),
-    rightRail: createElement(),
-    rightRailResizer: createElement(),
 }};
-globalThis.__openAgentPanelCalls = [];
 globalThis.__clearAllPanelsCalls = 0;
 globalThis.__rememberedSubagents = [];
 globalThis.__fetchSessionAgentsCalls = [];

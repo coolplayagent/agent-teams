@@ -43,7 +43,7 @@ console.log(JSON.stringify({
             "options": {"preserveSelection": True},
         }
     ]
-    assert payload["openCalls"] == [{"instanceId": "writer-1", "roleId": "writer"}]
+    assert payload["openCalls"] == []
     assert payload["instanceRoleMap"] == {"writer-1": "writer"}
     assert payload["roleInstanceMap"] == {"writer": "writer-1"}
     assert payload["activeAgentRoleId"] == "writer"
@@ -76,11 +76,8 @@ console.log(JSON.stringify({
 """.strip(),
     )
 
-    assert payload["openCalls"] == [
-        {"instanceId": "writer-1", "roleId": "writer"},
-        {"instanceId": "reviewer-1", "roleId": "reviewer"},
-    ]
-    assert payload["autoSwitched"] == {"writer-1": True, "reviewer-1": True}
+    assert payload["openCalls"] == []
+    assert payload["autoSwitched"] == {}
 
 
 def test_model_step_started_tracks_normal_mode_subagents_as_child_sessions(
@@ -1074,18 +1071,25 @@ handleModelStepFinished(
 console.log(JSON.stringify({
     finalizeCalls: globalThis.__finalizeStreamCalls,
     statusCalls: globalThis.__markSubagentStatusCalls,
+    overlayCalls: globalThis.__overlayCalls,
 }));
 """.strip(),
     )
 
-    assert payload["finalizeCalls"] == [
+    assert payload["finalizeCalls"] == []
+    assert payload["statusCalls"] == []
+    assert payload["overlayCalls"] == [
         {
-            "instanceId": "writer-1",
-            "roleId": "writer",
-            "options": {"runId": "run-parent"},
+            "evType": "model_step_finished",
+            "payload": {},
+            "options": {
+                "eventId": "",
+                "instanceId": "writer-1",
+                "roleId": "writer",
+                "runId": "run-parent",
+            },
         }
     ]
-    assert payload["statusCalls"] == []
 
 
 def _run_run_events_script(tmp_path: Path, runner_source: str) -> dict[str, object]:

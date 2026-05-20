@@ -26,7 +26,8 @@ def test_live_subagent_open_is_guarded_after_session_switch_race() -> None:
 
     assert "void selectSession(sessionId).then(() => {" in bootstrap_script
     assert "if (state.currentSessionId === sessionId) {" in bootstrap_script
-    assert "openSelectedSubagent();" in bootstrap_script
+    assert "void selectSubagentSession(sessionId, subagent);" in bootstrap_script
+    assert "openSelectedSubagent();" not in bootstrap_script
 
 
 def test_opening_subagent_session_hides_main_input_container(tmp_path: Path) -> None:
@@ -66,6 +67,10 @@ export async function fetchAgentMessages() {
 export async function fetchSessionSubagents(sessionId) {
     globalThis.__fetchSessionSubagentsCalls.push(sessionId);
     return globalThis.__fetchSessionSubagentsPayload || [];
+}
+
+export async function resolveGate() {
+    return { status: "ok" };
 }
 """.strip(),
         encoding="utf-8",
@@ -374,6 +379,10 @@ def test_return_to_main_session_clears_subagent_view_before_hydration(
 export async function fetchSessionSubagents() {
     return [];
 }
+
+export async function resolveGate() {
+    return { status: "ok" };
+}
 """.strip(),
         encoding="utf-8",
     )
@@ -625,6 +634,10 @@ export async function fetchSessionSubagents(sessionId, options = {}) {
     });
     return [];
 }
+
+export async function resolveGate() {
+    return { status: "ok" };
+}
 """.strip(),
         encoding="utf-8",
     )
@@ -742,7 +755,7 @@ def test_return_to_main_session_ignores_stale_hydration_after_subagent_reentry(
     module_under_test_path.write_text(source_text, encoding="utf-8")
 
     (tmp_path / "mockApi.mjs").write_text(
-        "export async function fetchSessionSubagents() { return []; }\n",
+        "export async function fetchSessionSubagents() { return []; }\nexport async function resolveGate() { return { status: 'ok' }; }\n",
         encoding="utf-8",
     )
     (tmp_path / "mockStream.mjs").write_text(
@@ -932,6 +945,10 @@ export async function fetchSessionSubagents() {
             conversation_id: "conv-1",
         },
     ];
+}
+
+export async function resolveGate() {
+    return { status: "ok" };
 }
 """.strip(),
         encoding="utf-8",
@@ -1123,6 +1140,10 @@ export async function fetchSessionSubagents(sessionId) {
             resolve([]);
         });
     });
+}
+
+export async function resolveGate() {
+    return { status: "ok" };
 }
 """.strip(),
         encoding="utf-8",
@@ -1316,6 +1337,10 @@ export async function fetchAgentMessages() {
 
 export async function fetchSessionSubagents() {
     return [];
+}
+
+export async function resolveGate() {
+    return { status: "ok" };
 }
 """.strip(),
         encoding="utf-8",
@@ -1840,6 +1865,10 @@ export async function fetchSessionSubagents() {
     globalThis.__subagentFetches += 1;
     return [];
 }
+
+export async function resolveGate() {
+    return { status: "ok" };
+}
 """.strip(),
         encoding="utf-8",
     )
@@ -2090,6 +2119,10 @@ export async function fetchAgentMessages() {
 
 export async function fetchSessionSubagents() {
     return [];
+}
+
+export async function resolveGate() {
+    return { status: "ok" };
 }
 """.strip(),
         encoding="utf-8",

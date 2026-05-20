@@ -1,16 +1,33 @@
 /**
  * components/agentPanel.js
- * Backward-compatible facade. New implementation lives under ./agentPanel/.
+ * Compatibility facade for subagent state shared by rounds and context widgets.
  */
-export {
-    openAgentPanel,
-    closeAgentPanel,
-    clearAllPanels,
-    loadAgentHistory,
-    getPanelScrollContainer,
-    showGateCard,
-    removeGateCard,
-    setRoundPendingApprovals,
+import {
+    clearPanels,
     getActiveInstanceId,
     getActiveRoundRunId,
-} from './agentPanel/index.js';
+    setActiveInstanceId,
+    setActiveRoundContext,
+} from './agentPanel/state.js';
+import { state } from '../core/state.js';
+
+export function closeAgentPanel() {
+    setActiveInstanceId(null);
+    state.selectedRoleId = null;
+    state.activeAgentRoleId = null;
+    state.activeAgentInstanceId = null;
+}
+
+export function clearAllPanels() {
+    clearPanels();
+    setActiveInstanceId(null);
+    state.selectedRoleId = null;
+    state.activeAgentRoleId = null;
+    state.activeAgentInstanceId = null;
+}
+
+export function setRoundPendingApprovals(runId, pendingApprovals) {
+    setActiveRoundContext(runId, pendingApprovals);
+}
+
+export { getActiveInstanceId, getActiveRoundRunId };

@@ -631,10 +631,6 @@ body.light-theme .markdown-table-wrap {
     background: var(--bg-surface);
 }
 
-body.light-theme .subagent-task-row {
-    background: transparent;
-}
-
 body.light-theme .round-detail-header,
 body.light-theme .recovery-banner,
 body.light-theme .gate-card,
@@ -642,9 +638,7 @@ body.light-theme .system-intro {
     border-color: var(--border-color);
 }
 
-body.light-theme .subagent-role-select,
 body.light-theme .gate-feedback-input,
-body.light-theme .panel-inject-input,
 body.light-theme .composer-select-field select,
 body.light-theme .composer-mode-inline-select {
     background: var(--bg-surface);

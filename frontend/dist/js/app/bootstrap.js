@@ -9,11 +9,7 @@ import { openNewSessionDraft } from "../components/newSessionDraft.js";
 import { initializeContextIndicators } from "../components/contextIndicators.js";
 import { initializeSessionTokenUsage } from "../components/sessionTokenUsage.js";
 import { initializeSessionDebugBadge } from "../components/sessionDebugBadge.js";
-import {
-  initializeSubagentRail,
-  openSubagentAgent,
-  selectSubagentRole,
-} from "../components/subagentRail.js";
+import { initializeSubagentRail } from "../components/subagentRail.js";
 import { initializeObservability } from "../components/observability.js";
 import { initializeImagePreview } from "../components/imagePreview.js";
 import { initializeVoiceInput } from "../components/voiceInput.js";
@@ -163,29 +159,15 @@ export async function initApp(selectSession, selectSubagentSession, handleSend) 
     if (!sessionId || !roleId) {
       return;
     }
-    const openSelectedSubagent = () => {
-      const instanceId = String(subagent?.instanceId || "").trim();
-      if (
-        instanceId
-        && openSubagentAgent(instanceId, roleId, {
-          reveal: true,
-          forceRefresh: true,
-          record: subagent,
-        })
-      ) {
-        return;
-      }
-      selectSubagentRole(roleId, { reveal: true, forceRefresh: true });
-    };
     if (state.currentSessionId !== sessionId) {
       void selectSession(sessionId).then(() => {
         if (state.currentSessionId === sessionId) {
-          openSelectedSubagent();
+          void selectSubagentSession(sessionId, subagent);
         }
       });
       return;
     }
-    openSelectedSubagent();
+    void selectSubagentSession(sessionId, subagent);
   });
 
   const firstSessionEl = document.querySelector(".session-item");

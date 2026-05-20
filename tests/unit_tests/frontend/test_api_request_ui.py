@@ -75,7 +75,9 @@ console.log(JSON.stringify({
     }
 
 
-def test_request_json_adds_json_content_type_for_w3_payloads(tmp_path: Path) -> None:
+def test_connectors_api_uses_expected_methods_and_payload_headers(
+    tmp_path: Path,
+) -> None:
     repo_root = Path(__file__).resolve().parents[3]
     request_source_path = (
         repo_root / "frontend" / "dist" / "js" / "core" / "api" / "request.js"
@@ -127,7 +129,8 @@ globalThis.fetch = async (url, options = {}) => {
     return { ok: true, json: async () => ({ ok: true }), text: async () => '' };
 };
 
-const { saveW3Connector, testW3Connector } = await import('./connectors.mjs');
+const { addRuntimeToolsSystemPath, saveW3Connector, testW3Connector } = await import('./connectors.mjs');
+await addRuntimeToolsSystemPath();
 await saveW3Connector({ username: 'u', password: 'p' });
 await testW3Connector({ username: 'u', password: 'p' });
 console.log(JSON.stringify(globalThis.__fetchCalls));
@@ -154,6 +157,12 @@ console.log(JSON.stringify(globalThis.__fetchCalls));
     calls = json.loads(completed.stdout)
     assert calls == [
         {
+            "url": "/api/connectors/runtime-tools/system-path:add",
+            "method": "POST",
+            "headers": {},
+            "body": "",
+        },
+        {
             "url": "/api/connectors/w3",
             "method": "PUT",
             "headers": {"Content-Type": "application/json"},
@@ -166,6 +175,57 @@ console.log(JSON.stringify(globalThis.__fetchCalls));
             "body": '{"username":"u","password":"p"}',
         },
     ]
+
+
+def test_core_api_facade_exports_runtime_tools_system_path(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    core_api_url = (repo_root / "frontend" / "dist" / "js" / "core" / "api.js").as_uri()
+    runner_path = tmp_path / "runner-core-api-facade.mjs"
+
+    runner_path.write_text(
+        f"""
+globalThis.document = {{
+    getElementById: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    createElement: () => ({{}}),
+}};
+globalThis.window = {{}};
+globalThis.localStorage = {{
+    getItem: () => null,
+    setItem: () => {{}},
+    removeItem: () => {{}},
+}};
+
+const api = await import({json.dumps(core_api_url)});
+console.log(JSON.stringify({{
+    addRuntimeToolsSystemPath: typeof api.addRuntimeToolsSystemPath,
+}}));
+""".strip(),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        ["node", str(runner_path)],
+        capture_output=True,
+        check=False,
+        cwd=str(repo_root),
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            "Node runner failed:\n"
+            f"STDOUT:\n{completed.stdout}\n"
+            f"STDERR:\n{completed.stderr}"
+        )
+
+    assert json.loads(completed.stdout) == {
+        "addRuntimeToolsSystemPath": "function",
+    }
 
 
 def test_request_json_emits_backend_status_hints(tmp_path: Path) -> None:

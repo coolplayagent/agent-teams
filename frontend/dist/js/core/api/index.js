@@ -189,6 +189,7 @@ export {
 } from './triggers.js';
 
 export {
+    addRuntimeToolsSystemPath,
     fetchConnectors,
     fetchRuntimeToolDownload,
     fetchRuntimeTools,

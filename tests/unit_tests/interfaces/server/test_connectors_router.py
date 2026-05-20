@@ -14,6 +14,10 @@ from relay_teams.binary_tools import (
     BinaryToolPathSource,
     BinaryToolSourceKind,
     BinaryToolStatus,
+    BinaryToolSystemPathResult,
+    BinaryToolSystemPathState,
+    BinaryToolSystemPathStatus,
+    BinaryToolUnavailableError,
     UnsupportedBinaryToolError,
 )
 from relay_teams.connector import (
@@ -154,7 +158,12 @@ class _FakeBinaryToolService:
                     path="/tmp/rg",
                     executable_name="rg",
                 ),
-            )
+            ),
+            system_path=BinaryToolSystemPathState(
+                supported=True,
+                added=False,
+                bin_dir="C:/Users/test/.relay-teams/bin",
+            ),
         )
 
     async def start_download(self, tool_id: str) -> BinaryToolDownloadJob:
@@ -166,6 +175,23 @@ class _FakeBinaryToolService:
         if job_id != self.job.job_id:
             raise KeyError(job_id)
         return self.job
+
+    def add_managed_bin_dir_to_system_path(self) -> BinaryToolSystemPathResult:
+        return BinaryToolSystemPathResult(
+            status=BinaryToolSystemPathStatus.UPDATED,
+            bin_dir="C:/Users/test/.relay-teams/bin",
+            message="Runtime tools bin directory has been added to the system PATH.",
+        )
+
+
+class _UnsupportedSystemPathBinaryToolService(_FakeBinaryToolService):
+    def add_managed_bin_dir_to_system_path(self) -> BinaryToolSystemPathResult:
+        raise BinaryToolUnavailableError("unsupported")
+
+
+class _DeniedSystemPathBinaryToolService(_FakeBinaryToolService):
+    def add_managed_bin_dir_to_system_path(self) -> BinaryToolSystemPathResult:
+        raise PermissionError("denied")
 
 
 def test_list_connectors_router_returns_summary_and_real_items() -> None:
@@ -258,6 +284,11 @@ def test_list_runtime_tools_router_returns_items() -> None:
     payload = response.json()
     assert payload["items"][0]["tool_id"] == "rg"
     assert payload["items"][0]["status"] == "ready"
+    assert payload["system_path"] == {
+        "supported": True,
+        "added": False,
+        "bin_dir": "C:/Users/test/.relay-teams/bin",
+    }
 
 
 def test_download_runtime_tool_router_returns_job() -> None:
@@ -288,11 +319,40 @@ def test_get_runtime_tool_download_router_returns_job() -> None:
     assert response.json()["status"] == "running"
 
 
-def _client() -> TestClient:
+def test_add_runtime_tools_to_system_path_router_returns_result() -> None:
+    client = _client()
+
+    response = client.post("/api/connectors/runtime-tools/system-path:add")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "updated"
+    assert payload["bin_dir"] == "C:/Users/test/.relay-teams/bin"
+
+
+def test_add_runtime_tools_to_system_path_router_returns_400_when_unsupported() -> None:
+    client = _client(binary_tool_service=_UnsupportedSystemPathBinaryToolService)
+
+    response = client.post("/api/connectors/runtime-tools/system-path:add")
+
+    assert response.status_code == 400
+
+
+def test_add_runtime_tools_to_system_path_router_returns_403_when_denied() -> None:
+    client = _client(binary_tool_service=_DeniedSystemPathBinaryToolService)
+
+    response = client.post("/api/connectors/runtime-tools/system-path:add")
+
+    assert response.status_code == 403
+
+
+def _client(
+    binary_tool_service: type[_FakeBinaryToolService] = _FakeBinaryToolService,
+) -> TestClient:
     app = FastAPI()
     app.include_router(connectors.router, prefix="/api")
     app.dependency_overrides[get_connector_service] = _FakeConnectorService
-    app.dependency_overrides[get_binary_tool_service] = _FakeBinaryToolService
+    app.dependency_overrides[get_binary_tool_service] = binary_tool_service
     return TestClient(app)
 
 

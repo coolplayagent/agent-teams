@@ -3503,11 +3503,17 @@ Response fields:
   - `status`: `ready`, `missing`, `downloading`, or `error`
   - `path_source`: `managed`, `system`, or `npm_global`
   - `path`
-  - `executable_name`
-  - `download_job_id`, when a download is currently running
-  - `error_message`
+    - `executable_name`
+    - `download_job_id`, when a download is currently running
+    - `error_message`
+  - `system_path`
+    - `supported`: whether this host supports adding the managed bin directory
+      to the system environment variables
+    - `added`: whether the managed bin directory is already present on the
+      system `Path`
+    - `bin_dir`: resolved app bin directory
 
-Notes:
+  Notes:
 - `rg` and `gh` are downloaded from their pinned GitHub release assets into the
   app bin directory when manually downloaded or first needed by runtime paths.
 - `clawhub` is installed with npm and reports system or npm global paths.
@@ -3538,6 +3544,20 @@ Response fields:
 - `message`
 - `path`
 - `error_message`
+
+### `POST /connectors/runtime-tools/system-path:add`
+
+On Windows, prompts for administrator elevation and adds the Agent Teams app bin
+directory to the machine-level `Path` environment variable. The elevated helper
+  is idempotent, skips elevation when the bin directory is already present, and
+  broadcasts the standard Windows environment-change message after updating
+  `Path`. Non-Windows hosts return `400`; denied elevation returns `403`.
+
+  Response fields:
+  - `status`: `updated` or `already_added`
+- `bin_dir`: resolved app bin directory
+- `message`
+- `requires_terminal_restart`: `true`
 
 ### `GET /connectors/runtime-tools/downloads/{job_id}`
 

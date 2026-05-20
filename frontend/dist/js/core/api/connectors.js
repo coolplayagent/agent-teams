@@ -44,6 +44,14 @@ export async function fetchRuntimeToolDownload(jobId) {
     );
 }
 
+export async function addRuntimeToolsSystemPath() {
+    return requestJson(
+        '/api/connectors/runtime-tools/system-path:add',
+        { method: 'POST' },
+        'Failed to add runtime tools to system environment variables',
+    );
+}
+
 export async function fetchW3Connector(options = {}) {
     return requestJson(
         '/api/connectors/w3',

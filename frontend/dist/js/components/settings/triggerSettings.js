@@ -331,7 +331,7 @@ function renderRecords() {
         return `<div class="settings-empty-state"><h4>${escapeHtml(t('settings.triggers.none'))}</h4><p>${escapeHtml(t('settings.triggers.none_copy'))}</p></div>`;
     }
     return `
-        <div class="role-records trigger-records">
+        <div class="settings-record-list role-records trigger-records">
             ${state.feishuTriggers.map(trigger => renderTriggerRecord(trigger)).join('')}
         </div>
     `;
@@ -342,21 +342,21 @@ function renderTriggerRecord(trigger) {
     const appName = resolveAppName(trigger.source_config);
     const triggerId = escapeHtml(trigger.trigger_id);
     return `
-        <div class="role-record trigger-record" data-trigger-id="${triggerId}">
+        <div class="role-record settings-record trigger-record" data-trigger-id="${triggerId}">
             <div class="role-record-main">
                 <div class="role-record-title-row trigger-record-title-row">
-                    <div class="role-record-title">${escapeHtml(trigger.name || t('settings.triggers.unnamed'))}</div>
+                    <div class="settings-record-title role-record-title">${escapeHtml(trigger.name || t('settings.triggers.unnamed'))}</div>
                     <div class="profile-card-chips role-record-chips">
                         <span class="profile-card-chip">${escapeHtml(enabled ? t('settings.field.enabled') : t('settings.roles.disabled'))}</span>
                         <span class="profile-card-chip">${escapeHtml(trigger.secret_status?.app_secret_configured ? t('settings.triggers.credentials_ready') : t('settings.triggers.credentials_missing'))}</span>
                     </div>
                 </div>
-                ${appName ? `<div class="role-record-meta trigger-record-meta"><span>${escapeHtml(appName)}</span></div>` : ''}
+                ${appName ? `<div class="settings-record-meta role-record-meta trigger-record-meta"><span>${escapeHtml(appName)}</span></div>` : ''}
             </div>
             <div class="role-record-actions trigger-record-actions">
                 <button class="settings-inline-action settings-list-action trigger-record-toggle-btn" data-trigger-id="${triggerId}" type="button">${escapeHtml(enabled ? t('settings.triggers.disable_trigger') : t('settings.triggers.enable_trigger'))}</button>
                 <button class="settings-inline-action settings-list-action trigger-record-edit-btn" data-trigger-id="${triggerId}" type="button">${escapeHtml(t('settings.roles.edit'))}</button>
-                <button class="settings-inline-action settings-list-action trigger-record-delete-btn" data-trigger-id="${triggerId}" type="button">${escapeHtml(t('settings.triggers.delete_trigger'))}</button>
+                <button class="settings-inline-action settings-list-action settings-danger-action trigger-record-delete-btn" data-trigger-id="${triggerId}" type="button">${escapeHtml(t('settings.triggers.delete_trigger'))}</button>
             </div>
         </div>
     `;
@@ -366,12 +366,12 @@ function renderWeChatBody() {
     return `
         <div class="gateway-wechat-shell">
             ${renderWeChatStatus()}
-            <div class="role-record gateway-wechat-connect-card">
+            <div class="role-record settings-record gateway-wechat-connect-card">
                 <div class="role-record-main">
                     <div class="role-record-title-row">
-                        <div class="role-record-title">${escapeHtml(t('settings.gateway.connect_wechat'))}</div>
+                        <div class="settings-record-title role-record-title">${escapeHtml(t('settings.gateway.connect_wechat'))}</div>
                     </div>
-                    <div class="role-record-meta">
+                    <div class="settings-record-meta role-record-meta">
                         <span>${escapeHtml(t('settings.gateway.wechat_none_copy'))}</span>
                     </div>
                 </div>
@@ -400,12 +400,12 @@ function renderWeChatLoginPanel() {
         return '';
     }
     return `
-        <div class="role-record gateway-wechat-login-panel">
+        <div class="role-record settings-record gateway-wechat-login-panel">
             <div class="role-record-main">
                 <div class="role-record-title-row">
-                    <div class="role-record-title">${escapeHtml(t('settings.gateway.qr_title'))}</div>
+                    <div class="settings-record-title role-record-title">${escapeHtml(t('settings.gateway.qr_title'))}</div>
                 </div>
-                <div class="role-record-meta">
+                <div class="settings-record-meta role-record-meta">
                     <span>${escapeHtml(t('settings.gateway.qr_copy'))}</span>
                 </div>
                 <div class="gateway-wechat-qr-shell">
@@ -421,7 +421,7 @@ function renderWeChatAccounts() {
         return `<div class="settings-empty-state"><h4>${escapeHtml(t('settings.gateway.wechat_none'))}</h4><p>${escapeHtml(t('settings.gateway.wechat_none_copy'))}</p></div>`;
     }
     return `
-        <div class="role-records trigger-records gateway-wechat-records">
+        <div class="settings-record-list role-records trigger-records gateway-wechat-records">
             ${state.wechatAccounts.map(account => renderWeChatAccountRecord(account)).join('')}
         </div>
     `;
@@ -431,16 +431,16 @@ function renderWeChatAccountRecord(account) {
     const accountId = escapeHtml(account.account_id);
     const runningLabel = account.running ? t('settings.gateway.status_running') : (isEnabled(account) ? t('settings.field.enabled') : t('settings.roles.disabled'));
     return `
-        <div class="role-record gateway-wechat-record" data-account-id="${accountId}">
+        <div class="role-record settings-record gateway-wechat-record" data-account-id="${accountId}">
             <div class="role-record-main">
                 <div class="role-record-title-row trigger-record-title-row">
-                    <div class="role-record-title">${escapeHtml(account.display_name || account.account_id)}</div>
+                    <div class="settings-record-title role-record-title">${escapeHtml(account.display_name || account.account_id)}</div>
                     <div class="profile-card-chips role-record-chips">
                         <span class="profile-card-chip">${escapeHtml(runningLabel)}</span>
                         <span class="profile-card-chip">${escapeHtml(account.account_id)}</span>
                     </div>
                 </div>
-                <div class="role-record-meta trigger-record-meta">
+                <div class="settings-record-meta role-record-meta trigger-record-meta">
                     <span>${escapeHtml(account.workspace_id)}</span>
                     ${account.last_error ? `<span>${escapeHtml(`${t('settings.gateway.last_error')}: ${account.last_error}`)}</span>` : ''}
                 </div>
@@ -448,7 +448,7 @@ function renderWeChatAccountRecord(account) {
             <div class="role-record-actions trigger-record-actions">
                 <button class="settings-inline-action settings-list-action gateway-wechat-toggle-btn" data-account-id="${accountId}" type="button">${escapeHtml(isEnabled(account) ? t('settings.gateway.disable_account') : t('settings.gateway.enable_account'))}</button>
                 <button class="settings-inline-action settings-list-action gateway-wechat-edit-btn" data-account-id="${accountId}" type="button">${escapeHtml(t('settings.roles.edit'))}</button>
-                <button class="settings-inline-action settings-list-action gateway-wechat-delete-btn" data-account-id="${accountId}" type="button">${escapeHtml(t('settings.gateway.delete_account'))}</button>
+                <button class="settings-inline-action settings-list-action settings-danger-action gateway-wechat-delete-btn" data-account-id="${accountId}" type="button">${escapeHtml(t('settings.gateway.delete_account'))}</button>
             </div>
         </div>
     `;

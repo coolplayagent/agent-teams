@@ -253,19 +253,19 @@ function renderAgentsList() {
     }
 
     listEl.innerHTML = `
-        <div class="role-records">
+        <div class="settings-record-list role-records">
             ${agentSummaries.map(agent => `
-                <div class="role-record${agent.agent_id === selectedAgentId ? ' active' : ''}" data-agent-id="${escapeHtml(agent.agent_id)}">
+                <div class="role-record settings-record${agent.agent_id === selectedAgentId ? ' active' : ''}" data-agent-id="${escapeHtml(agent.agent_id)}">
                     <div class="role-record-main">
                         <div class="role-record-title-row">
-                            <div class="role-record-title">${escapeHtml(agent.name || agent.agent_id)}</div>
+                            <div class="settings-record-title role-record-title">${escapeHtml(agent.name || agent.agent_id)}</div>
                             <div class="role-record-id">${escapeHtml(agent.agent_id)}</div>
                             <div class="profile-card-chips role-record-chips">
                                 <span class="profile-card-chip">${escapeHtml(formatProtocolLabel(agent.protocol))}</span>
                                 <span class="profile-card-chip">${escapeHtml(formatTransportLabel(agent.transport))}</span>
                             </div>
                         </div>
-                        <div class="role-record-meta">
+                        <div class="settings-record-meta role-record-meta">
                             <span>${escapeHtml(agent.description || t('settings.agents.no_description'))}</span>
                         </div>
                     </div>

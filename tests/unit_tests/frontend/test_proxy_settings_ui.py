@@ -389,7 +389,7 @@ def test_proxy_settings_styles_keep_a_single_editor_surface() -> None:
 
     assert "gap: 0;" in panel_rule
     assert "min-width: 0;" in editor_rule
-    assert "padding: 1rem 0;" in section_rule
+    assert "padding: 0.95rem 0;" in section_rule
     assert "border-top: 1px solid var(--settings-divider);" in section_rule
     assert "margin-top: 0;" in split_rule
     assert "border-radius: 6px;" in input_rule

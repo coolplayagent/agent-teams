@@ -991,13 +991,12 @@ function cloneGroups(groups) {
 
 function renderMergedHooksShell() {
     const groupedMarkup = renderGroupedHooksMarkup();
+    const warningMarkup = renderRuntimeLoadWarning();
     return `
-        <section class="proxy-form-section">
-            <div class="settings-content-stack hooks-config-editor">
-                ${renderRuntimeLoadWarning()}
-                ${groupedMarkup || renderNoHooksState()}
-            </div>
-        </section>
+        <div class="settings-content-stack hooks-config-editor">
+            ${warningMarkup}
+            ${groupedMarkup || renderNoHooksState()}
+        </div>
     `;
 }
 
@@ -1045,9 +1044,9 @@ function renderEventGroup(eventName, cards) {
         return '';
     }
     return `
-        <section class="proxy-form-section">
-            <div class="proxy-form-section-header">
-                <h5>${escapeHtml(eventName)}</h5>
+        <section class="hooks-event-group">
+            <div class="settings-form-section-header hooks-event-group-header">
+                <h5 class="settings-form-section-title">${escapeHtml(eventName)}</h5>
             </div>
             <div class="settings-content-stack hooks-config-editor">
                 ${cards.join('')}
@@ -1080,14 +1079,14 @@ function renderUserHookCard(group) {
         renderDetailItem(t('settings.hooks.handler_type'), typeSummary || t('settings.hooks.all')),
     ]);
     return `
-        <section class="mcp-status-card hooks-runtime-card hooks-runtime-card-editable">
-            <div class="mcp-status-card-header">
+        <section class="settings-record general-setting-card mcp-status-card hooks-runtime-card hooks-runtime-card-editable">
+            <div class="settings-form-section-header general-setting-card-head mcp-status-card-header">
                 <div class="mcp-status-card-heading">
-                    <div class="mcp-status-card-name">${escapeHtml(resolveGroupTitle(group))}</div>
+                    <div class="settings-record-title mcp-status-card-name">${escapeHtml(resolveGroupTitle(group))}</div>
                 </div>
                 <div class="settings-inline-actions">
                     <button class="secondary-btn section-action-btn" type="button" data-hooks-action="edit-group" data-group-id="${group.id}">${escapeHtml(t('settings.hooks.edit_group'))}</button>
-                    <button class="secondary-btn section-action-btn" type="button" data-hooks-action="remove-group" data-group-id="${group.id}">${escapeHtml(t('settings.hooks.delete_group'))}</button>
+                    <button class="secondary-btn section-action-btn settings-danger-action" type="button" data-hooks-action="remove-group" data-group-id="${group.id}">${escapeHtml(t('settings.hooks.delete_group'))}</button>
                 </div>
             </div>
             <div class="hooks-runtime-detail-list status-list">
@@ -1110,14 +1109,14 @@ function renderGroupEditor(group) {
         })
         : renderStaticField(t('settings.hooks.event_name'), group.event_name);
     return `
-        <section class="mcp-status-card hooks-config-card hooks-config-card-editing">
-            <div class="mcp-status-card-header">
+        <section class="settings-form-section general-setting-card mcp-status-card hooks-config-card hooks-config-card-editing">
+            <div class="settings-form-section-header general-setting-card-head mcp-status-card-header">
                 <div class="mcp-status-card-heading">
-                    <div class="mcp-status-card-name">${escapeHtml(resolveGroupTitle(group))}</div>
+                    <div class="settings-form-section-title mcp-status-card-name">${escapeHtml(resolveGroupTitle(group))}</div>
                 </div>
                 <div class="settings-inline-actions">
                     <button class="secondary-btn section-action-btn" type="button" data-hooks-action="edit-group" data-group-id="${group.id}">${escapeHtml(t('settings.action.cancel'))}</button>
-                    <button class="secondary-btn section-action-btn" type="button" data-hooks-action="remove-group" data-group-id="${group.id}">${escapeHtml(t('settings.hooks.delete_group'))}</button>
+                    <button class="secondary-btn section-action-btn settings-danger-action" type="button" data-hooks-action="remove-group" data-group-id="${group.id}">${escapeHtml(t('settings.hooks.delete_group'))}</button>
                 </div>
             </div>
             <div class="proxy-form-grid">
@@ -1140,8 +1139,8 @@ function renderGroupEditor(group) {
                 ${renderStaticField(t('settings.hooks.handler_type'), typeSummary || t('settings.hooks.all'))}
             </div>
             <div class="hooks-handler-stack">
-                <div class="proxy-form-section-header">
-                    <h6>${escapeHtml(t('settings.hooks.handlers'))}</h6>
+                <div class="proxy-form-section-header settings-form-section-header">
+                    <h6 class="settings-form-section-title">${escapeHtml(t('settings.hooks.handlers'))}</h6>
                     <button class="secondary-btn section-action-btn" type="button" data-hooks-action="add-handler" data-group-id="${group.id}">${escapeHtml(t('settings.hooks.add_handler'))}</button>
                 </div>
                 ${group.handlers.map((handler, index) => renderHandlerEditor(group, handler, index)).join('')}
@@ -1155,7 +1154,7 @@ function renderHandlerEditor(group, handler, index) {
     const collapsed = isHandlerEditorCollapsed(group, handler.id);
     const bodyId = `hooks-handler-body-${group.id}-${handler.id}`;
     return `
-        <div class="hooks-handler-card${collapsed ? ' hooks-handler-card-collapsed' : ''}">
+        <div class="settings-form-section hooks-handler-card${collapsed ? ' hooks-handler-card-collapsed' : ''}">
             <div class="hooks-handler-card-header">
                 <button
                     class="hooks-handler-toggle"
@@ -1170,7 +1169,7 @@ function renderHandlerEditor(group, handler, index) {
                     <span class="hooks-handler-title">${escapeHtml(resolveHandlerEditorTitle(handler, index))}</span>
                     <span class="hooks-handler-hint">${escapeHtml(t(collapsed ? 'settings.hooks.expand_handler' : 'settings.hooks.collapse_handler'))}</span>
                 </button>
-                <button class="secondary-btn section-action-btn" type="button" data-hooks-action="remove-handler" data-group-id="${group.id}" data-handler-id="${handler.id}">${escapeHtml(t('settings.hooks.delete_handler'))}</button>
+                <button class="secondary-btn section-action-btn settings-danger-action" type="button" data-hooks-action="remove-handler" data-group-id="${group.id}" data-handler-id="${handler.id}">${escapeHtml(t('settings.hooks.delete_handler'))}</button>
             </div>
             <div class="hooks-handler-card-body" id="${escapeHtml(bodyId)}" ${collapsed ? 'hidden' : ''}>
                 <div class="proxy-form-grid">
@@ -1342,10 +1341,10 @@ function resolveHandlerEditorTitle(handler, index) {
 function renderHookCard(hook) {
     const detailRows = buildRuntimeHookRows(hook);
     return `
-        <section class="mcp-status-card hooks-runtime-card">
-            <div class="mcp-status-card-header">
+        <section class="settings-record general-setting-card mcp-status-card hooks-runtime-card">
+            <div class="settings-form-section-header general-setting-card-head mcp-status-card-header">
                 <div class="mcp-status-card-heading">
-                    <div class="mcp-status-card-name">${escapeHtml(resolveHookName(hook))}</div>
+                    <div class="settings-record-title mcp-status-card-name">${escapeHtml(resolveHookName(hook))}</div>
                 </div>
             </div>
             <div class="hooks-runtime-detail-list status-list">

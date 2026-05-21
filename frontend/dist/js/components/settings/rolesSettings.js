@@ -327,17 +327,17 @@ function renderRolesList() {
     }
 
     listEl.innerHTML = `
-        <div class="role-records">
+        <div class="settings-record-list role-records">
             ${roleSummaries
         .map(role => `
-            <div class="role-record${role.role_id === selectedRoleId ? ' active' : ''}" data-role-id="${escapeHtml(role.role_id)}">
+            <div class="role-record settings-record${role.role_id === selectedRoleId ? ' active' : ''}" data-role-id="${escapeHtml(role.role_id)}">
                 <div class="role-record-main">
                     <div class="role-record-title-row">
-                        <div class="role-record-title">${escapeHtml(role.name)}</div>
+                        <div class="settings-record-title role-record-title">${escapeHtml(role.name)}</div>
                         <div class="role-record-id">${escapeHtml(role.role_id)}</div>
                         ${renderRoleUsageChips(role.role_id)}
                     </div>
-                    <div class="role-record-meta">
+                    <div class="settings-record-meta role-record-meta">
                         <span>v${escapeHtml(role.version)}</span>
                         <span>${escapeHtml(role.model_profile)}</span>
                         <span>${escapeHtml(role.execution_surface || 'api')}</span>
@@ -348,7 +348,7 @@ function renderRolesList() {
                 <div class="role-record-actions">
                     <button class="settings-inline-action settings-list-action role-record-edit-btn" data-role-id="${escapeHtml(role.role_id)}" type="button">${escapeHtml(t('settings.roles.edit'))}</button>
                     ${role.deletable === true
-            ? `<button class="settings-inline-action settings-list-action role-record-delete-btn" data-role-id="${escapeHtml(role.role_id)}" type="button">${escapeHtml(t('settings.action.delete'))}</button>`
+            ? `<button class="settings-inline-action settings-list-action settings-danger-action role-record-delete-btn" data-role-id="${escapeHtml(role.role_id)}" type="button">${escapeHtml(t('settings.action.delete'))}</button>`
             : ''}
                 </div>
             </div>

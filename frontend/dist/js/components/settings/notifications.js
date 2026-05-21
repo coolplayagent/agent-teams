@@ -83,8 +83,8 @@ export function getLoadedNotificationConfig() {
 
 export function renderNotificationSettingsSectionMarkup() {
     return `
-        <section class="proxy-form-section general-setting-card">
-            <div class="proxy-form-section-header general-setting-card-head general-setting-card-head-compact">
+        <section class="proxy-form-section settings-form-section general-setting-card">
+            <div class="proxy-form-section-header settings-form-section-header general-setting-card-head general-setting-card-head-compact">
                 <div class="general-setting-card-copy-block">
                     <h5 data-i18n="settings.panel.notifications.title">Notifications</h5>
                 </div>

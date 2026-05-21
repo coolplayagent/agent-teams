@@ -10,30 +10,6 @@
     gap: 0.75rem;
 }
 
-.plugins-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    min-height: 40px;
-}
-
-.plugins-toolbar-stats {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    color: var(--text-secondary);
-    font-size: 0.82rem;
-    font-weight: 600;
-}
-
-.plugins-toolbar-stats span {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-}
-
 .plugins-layout {
     display: grid;
     grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
@@ -43,8 +19,7 @@
 
 .plugins-list,
 .plugins-detail-panel,
-.plugins-editor-panel,
-.plugins-empty-state {
+.plugins-editor-panel {
     border: 1px solid var(--settings-border-soft);
     border-radius: 8px;
     background: var(--settings-surface-bg);
@@ -79,7 +54,7 @@
 
 .plugin-row.is-selected {
     background: color-mix(in srgb, var(--primary) 9%, var(--settings-surface-bg));
-    box-shadow: inset 3px 0 0 var(--primary);
+    box-shadow: inset 2px 0 0 var(--settings-border-default);
 }
 
 .plugin-row-main,
@@ -130,28 +105,33 @@
     align-items: center;
     min-height: 22px;
     border: 1px solid var(--settings-border-soft);
-    border-radius: 999px;
+    border-radius: 4px;
     padding: 0 0.5rem;
     color: var(--text-secondary);
-    background: var(--settings-surface-muted-bg);
+    background: transparent;
     font-size: 0.72rem;
     font-weight: 650;
 }
 
 .plugin-status-pill.is-enabled {
-    border-color: color-mix(in srgb, var(--success) 45%, var(--settings-border-soft));
-    color: var(--success);
+    border-color: var(--settings-border-soft);
+    color: var(--text-secondary);
 }
 
 .plugin-status-pill.is-disabled,
 .plugin-diagnostics-pill {
-    color: var(--warning);
-    border-color: color-mix(in srgb, var(--warning) 45%, var(--settings-border-soft));
+    color: var(--text-secondary);
+    border-color: var(--settings-border-soft);
 }
 
 .plugins-detail-panel {
     min-width: 0;
-    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
     overflow: hidden;
 }
 
@@ -167,7 +147,6 @@
 }
 
 .plugin-detail-title h5,
-.plugins-empty-state h5,
 .plugins-editor-panel h5 {
     margin: 0;
     color: var(--text-primary);
@@ -195,15 +174,12 @@
 
 .plugin-detail-actions {
     justify-content: flex-start;
-    padding-bottom: 0.85rem;
-    border-bottom: 1px solid var(--settings-divider);
+    padding: 0;
+    border-bottom: 0;
 }
 
 .plugin-detail-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.65rem;
-    padding: 0.9rem 0;
+    padding: 0 1rem;
 }
 
 .plugin-detail-item,
@@ -214,11 +190,12 @@
     justify-content: space-between;
     gap: 0.75rem;
     min-width: 0;
-    min-height: 34px;
-    padding: 0.5rem 0.65rem;
-    border: 1px solid var(--settings-border-soft);
-    border-radius: 6px;
-    background: var(--settings-surface-muted-bg);
+    min-height: 38px;
+    padding: 0.7rem 0;
+    border: 0;
+    border-bottom: 1px solid var(--settings-divider);
+    border-radius: 0;
+    background: transparent;
 }
 
 .plugin-detail-item span,
@@ -242,8 +219,8 @@
 }
 
 .plugin-detail-section {
-    padding-top: 0.85rem;
-    border-top: 1px solid var(--settings-divider);
+    padding-top: 0.95rem;
+    border-top: 1px solid var(--settings-border-soft);
 }
 
 .plugin-detail-section h6 {
@@ -255,9 +232,7 @@
 
 .plugin-component-grid,
 .plugin-config-summary {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem;
+    padding: 0 1rem;
 }
 
 .plugin-chip-row {
@@ -297,19 +272,13 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    padding: 1rem;
 }
 
 .plugins-form-grid {
-    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
 }
 
 .plugins-form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
     min-width: 0;
 }
 
@@ -405,11 +374,15 @@
 
 .plugins-empty-state,
 .plugins-list-empty {
-    padding: 1rem;
     color: var(--text-secondary);
 }
 
+.plugins-empty-state {
+    min-height: 220px;
+}
+
 .plugins-list-empty {
+    padding: 1rem;
     font-size: 0.82rem;
 }
 
@@ -420,11 +393,6 @@
     .plugin-config-summary,
     .plugins-form-grid {
         grid-template-columns: 1fr;
-    }
-
-    .plugins-toolbar {
-        align-items: stretch;
-        flex-direction: column;
     }
 
     .plugins-input-row {

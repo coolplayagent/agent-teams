@@ -74,6 +74,11 @@ console.log(JSON.stringify({
     assert 'id="settings-shell-safety-policy-toggle"' in modal_html
     assert "general-setting-card" in modal_html
     assert "general-setting-card-copy" in modal_html
+    assert 'data-i18n="settings.appearance.colors"' in modal_html
+    assert modal_html.count("general-setting-card") >= 6
+    assert modal_html.index(
+        'data-i18n="settings.appearance.colors"'
+    ) < modal_html.index('data-i18n="settings.general.shell_policy_title"')
     assert 'id="web-provider-site-link"' in modal_html
     assert 'class="web-provider-link-card"' in modal_html
     assert payload["modalDisplay"] == "flex"

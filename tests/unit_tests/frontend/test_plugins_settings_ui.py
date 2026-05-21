@@ -360,7 +360,12 @@ def test_plugins_settings_git_install_supports_source_ref() -> None:
     assert "source_ref: ''" in source
     assert 'name="source_ref"' in source
     assert "payload.source_ref = installDraft.source_ref;" in source
-    assert "settings.plugins.git_ref_help" in source
+    assert "settings.plugins.git_ref_help" not in source
+    assert "plugins-field-label-with-hint" not in source
+    assert "plugins-inline-hint" not in source
+    assert (
+        "<small>${escapeHtml(t('settings.plugins.git_ref_help'))}</small>" not in source
+    )
 
 
 def test_plugins_settings_does_not_render_search_box() -> None:

@@ -629,7 +629,7 @@ function renderMcpServerList(serverViews) {
         <div class="mcp-status-shell">
             ${mcpEditorVisible ? renderMcpEditor() : ''}
             ${renderMcpStatusToolbar(serverViews.length, collapsibleNames.length, allCollapsed, loadingCount)}
-            <div class="mcp-status-list">
+            <div class="settings-record-list mcp-status-list">
                 ${serverViews.map(serverView => renderMcpServerCard(serverView)).join('')}
             </div>
         </div>
@@ -672,11 +672,11 @@ function renderMcpServerCard(serverView) {
         </button>
     ` : '';
     return `
-        <section class="mcp-status-card">
-            <div class="mcp-status-card-header">
+        <section class="settings-record mcp-status-card">
+            <div class="settings-form-section-header mcp-status-card-header">
                 <div class="mcp-status-card-heading">
-                    <div class="mcp-status-card-name">${escapeHtml(serverView.name)}</div>
-                    ${meta ? `<div class="mcp-status-card-meta">${escapeHtml(meta)}</div>` : ''}
+                    <div class="settings-record-title mcp-status-card-name">${escapeHtml(serverView.name)}</div>
+                    ${meta ? `<div class="settings-record-meta mcp-status-card-meta">${escapeHtml(meta)}</div>` : ''}
                 </div>
                 <div class="mcp-status-card-controls">
                     <div class="mcp-status-card-actions">
@@ -749,20 +749,20 @@ function renderMcpEditor() {
     const extra = isRemote ? formatKeyValueLines(config.headers) : formatKeyValueLines(config.env);
     const jsonPreview = serializeMcpServerPayload(name, config);
     return `
-        <section class="mcp-editor-panel">
-            <div class="mcp-editor-grid">
-                <div class="form-group form-group-span-2">
+        <section class="settings-form-section mcp-editor-panel">
+            <div class="settings-field-grid mcp-editor-grid">
+                <div class="settings-field-row form-group form-group-span-2">
                     <div class="mcp-editor-label-row">
                         <label for="mcp-server-json-input">${escapeHtml(t('settings.mcp.json_config'))}</label>
                         <button id="copy-mcp-server-json-btn" class="mcp-status-toolbar-btn mcp-editor-copy-btn" type="button">${escapeHtml(t('settings.mcp.copy_json'))}</button>
                     </div>
                     <textarea id="mcp-server-json-input" class="config-textarea mcp-editor-textarea mcp-editor-json-textarea" placeholder="${escapeHtml(t('settings.mcp.json_placeholder'))}" spellcheck="false">${escapeHtml(jsonPreview)}</textarea>
                 </div>
-                <div class="form-group">
+                <div class="settings-field-row form-group">
                     <label for="mcp-server-name-input">${escapeHtml(t('settings.mcp.name'))}</label>
                     <input type="text" id="mcp-server-name-input" placeholder="${escapeHtml(t('settings.mcp.name_placeholder'))}" autocomplete="off" value="${escapeHtml(name)}" ${mcpEditorMode === 'edit' ? 'disabled' : ''}>
                 </div>
-                <div class="form-group">
+                <div class="settings-field-row form-group">
                     <label for="mcp-server-transport-input">${escapeHtml(t('settings.mcp.transport'))}</label>
                     <select id="mcp-server-transport-input">
                         <option value="stdio" ${transport === 'stdio' ? 'selected' : ''}>${escapeHtml(t('settings.mcp.transport_stdio'))}</option>
@@ -771,19 +771,19 @@ function renderMcpEditor() {
                         <option value="streamable-http" ${transport === 'streamable-http' ? 'selected' : ''}>${escapeHtml(t('settings.mcp.transport_streamable_http'))}</option>
                     </select>
                 </div>
-                <div class="form-group form-group-span-2 mcp-stdio-field">
+                <div class="settings-field-row form-group form-group-span-2 mcp-stdio-field">
                     <label for="mcp-server-command-input">${escapeHtml(t('settings.mcp.command'))}</label>
                     <input type="text" id="mcp-server-command-input" placeholder="${escapeHtml(t('settings.mcp.command_placeholder'))}" autocomplete="off" value="${escapeHtml(config.command || '')}">
                 </div>
-                <div class="form-group form-group-span-2 mcp-stdio-field">
+                <div class="settings-field-row form-group form-group-span-2 mcp-stdio-field">
                     <label for="mcp-server-args-input">${escapeHtml(t('settings.mcp.args'))}</label>
                     <textarea id="mcp-server-args-input" class="config-textarea mcp-editor-textarea" placeholder="${escapeHtml(t('settings.mcp.args_placeholder'))}" spellcheck="false">${escapeHtml(formatLineList(config.args))}</textarea>
                 </div>
-                <div class="form-group form-group-span-2 mcp-remote-field" style="${isRemote ? '' : 'display:none;'}">
+                <div class="settings-field-row form-group form-group-span-2 mcp-remote-field" style="${isRemote ? '' : 'display:none;'}">
                     <label for="mcp-server-url-input">${escapeHtml(t('settings.mcp.url'))}</label>
                     <input type="text" id="mcp-server-url-input" placeholder="${escapeHtml(t('settings.mcp.url_placeholder'))}" autocomplete="off" value="${escapeHtml(config.url || '')}">
                 </div>
-                <div class="form-group form-group-span-2">
+                <div class="settings-field-row form-group form-group-span-2">
                     <label for="mcp-server-extra-input">${escapeHtml(t('settings.mcp.extra'))}</label>
                     <textarea id="mcp-server-extra-input" class="config-textarea mcp-editor-textarea" placeholder="${escapeHtml(t('settings.mcp.extra_placeholder'))}" spellcheck="false">${escapeHtml(extra)}</textarea>
                 </div>
@@ -1169,31 +1169,31 @@ function parseKeyValueLines(raw, label) {
 function renderMcpServerTools(serverView, collapsed) {
     if (serverView.enabled === false) {
         return `
-            <div class="mcp-tools-empty">${t('settings.mcp.disabled_state')}</div>
+            <div class="settings-empty-state settings-empty-state-compact mcp-tools-empty"><p>${t('settings.mcp.disabled_state')}</p></div>
         `;
     }
 
     if (serverView.loading) {
         return `
-            <div class="mcp-tools-empty panel-loading">${t('settings.system.loading_tools')}</div>
+            <div class="settings-empty-state settings-empty-state-compact mcp-tools-empty panel-loading"><p>${t('settings.system.loading_tools')}</p></div>
         `;
     }
 
     if (serverView.errorMessage) {
         return `
-            <div class="mcp-tools-empty mcp-tools-error">${escapeHtml(serverView.errorMessage)}</div>
+            <div class="settings-empty-state settings-empty-state-compact mcp-tools-empty mcp-tools-error"><p>${escapeHtml(serverView.errorMessage)}</p></div>
         `;
     }
 
     if (serverView.discoveryStatus === 'pending') {
         return `
-            <div class="mcp-tools-empty">${t('settings.system.discovery_pending')}</div>
+            <div class="settings-empty-state settings-empty-state-compact mcp-tools-empty"><p>${t('settings.system.discovery_pending')}</p></div>
         `;
     }
 
     if (serverView.tools.length === 0) {
         return `
-            <div class="mcp-tools-empty">${t('settings.system.no_tools_exposed')}</div>
+            <div class="settings-empty-state settings-empty-state-compact mcp-tools-empty"><p>${t('settings.system.no_tools_exposed')}</p></div>
         `;
     }
 
@@ -1206,7 +1206,7 @@ function renderMcpServerTools(serverView, collapsed) {
     }
 
     return `
-        <div class="mcp-tools-list">
+        <div class="settings-record-list mcp-tools-list">
             ${serverView.tools.map(tool => renderMcpToolRow(tool)).join('')}
         </div>
     `;
@@ -1215,9 +1215,9 @@ function renderMcpServerTools(serverView, collapsed) {
 function renderMcpToolRow(tool) {
     const description = typeof tool?.description === 'string' ? tool.description.trim() : '';
     return `
-        <div class="mcp-tool-row">
-            <div class="mcp-tool-name">${escapeHtml(tool?.name || 'Unnamed tool')}</div>
-            <div class="mcp-tool-description${description ? '' : ' mcp-tool-description-empty'}">${escapeHtml(description || t('settings.system.no_description'))}</div>
+        <div class="settings-record mcp-tool-row">
+            <div class="settings-record-title mcp-tool-name">${escapeHtml(tool?.name || 'Unnamed tool')}</div>
+            <div class="settings-record-meta mcp-tool-description${description ? '' : ' mcp-tool-description-empty'}">${escapeHtml(description || t('settings.system.no_description'))}</div>
         </div>
     `;
 }
@@ -1228,12 +1228,12 @@ function renderStatusList(items, stateLabel) {
         : [];
     const nameCounts = buildStatusNameCounts(normalizedItems);
     return `
-        <div class="status-list">
+        <div class="settings-record-list status-list">
             ${normalizedItems.map(item => `
-                <div class="status-list-row">
+                <div class="settings-record status-list-row">
                     <div class="status-list-copy">
-                        <div class="status-list-name">${escapeHtml(formatStatusItemLabel(item, nameCounts))}</div>
-                        <div class="status-list-description${item.description ? '' : ' status-list-description-empty'}">${escapeHtml(item.description || t('settings.system.no_description'))}</div>
+                        <div class="settings-record-title status-list-name">${escapeHtml(formatStatusItemLabel(item, nameCounts))}</div>
+                        <div class="settings-record-meta status-list-description${item.description ? '' : ' status-list-description-empty'}">${escapeHtml(item.description || t('settings.system.no_description'))}</div>
                     </div>
                     <div class="status-list-state">${escapeHtml(stateLabel)}</div>
                 </div>

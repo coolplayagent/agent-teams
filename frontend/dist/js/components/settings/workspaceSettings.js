@@ -79,7 +79,7 @@ function renderSshProfiles() {
         return;
     }
     listEl.innerHTML = `
-        <div class="profile-records">
+        <div class="settings-record-list profile-records">
             ${profileEntries.map((profile, index) => renderSshProfileCard(profile, index)).join('')}
         </div>
     `;
@@ -118,29 +118,29 @@ function renderSshProfileCard(profile, index) {
         summaryParts.push(`:${port}`);
     }
     return `
-        <div class="profile-record profile-card" data-ssh-profile-id="${escapeHtml(sshProfileId)}" style="--profile-index:${index};">
+        <div class="profile-record settings-record profile-card" data-ssh-profile-id="${escapeHtml(sshProfileId)}" style="--profile-index:${index};">
             <div class="profile-record-main">
                 <div class="profile-record-heading">
                     <div class="profile-card-heading">
                         <div class="profile-card-title-row">
-                            <h4>${escapeHtml(sshProfileId)}</h4>
+                            <h4 class="settings-record-title">${escapeHtml(sshProfileId)}</h4>
                             <div class="profile-card-chips">
                                 <span class="profile-card-chip">${escapeHtml(t('settings.workspace.profile_chip'))}</span>
                             </div>
                         </div>
-                        <div class="profile-record-summary" title="${escapeHtml(host)}">
+                        <div class="settings-record-meta profile-record-summary" title="${escapeHtml(host)}">
                             <span class="profile-record-summary-primary">${escapeHtml(host)}</span>
                             ${summaryParts.length > 0
                                 ? `<span class="profile-record-summary-separator">/</span><span class="profile-record-summary-secondary">${escapeHtml(summaryParts.join(' '))}</span>`
                                 : ''
                             }
                         </div>
-                        <div class="profile-record-summary" title="${escapeHtml(remoteShell || t('settings.workspace.shell_default'))}">
+                        <div class="settings-record-meta profile-record-summary" title="${escapeHtml(remoteShell || t('settings.workspace.shell_default'))}">
                             <span class="profile-record-summary-primary">${escapeHtml(remoteShell || t('settings.workspace.shell_default'))}</span>
                             <span class="profile-record-summary-separator">/</span>
                             <span class="profile-record-summary-secondary">${escapeHtml(timeout ? formatMessage('settings.workspace.timeout_value', { value: timeout }) : t('settings.workspace.timeout_default'))}</span>
                         </div>
-                        <div class="profile-record-summary" title="${escapeHtml(authSummary)}">
+                        <div class="settings-record-meta profile-record-summary" title="${escapeHtml(authSummary)}">
                             <span class="profile-record-summary-primary">${escapeHtml(authSummary)}</span>
                         </div>
                     </div>
@@ -148,7 +148,7 @@ function renderSshProfileCard(profile, index) {
                 <div class="profile-card-actions">
                     <button class="settings-inline-action settings-list-action profile-card-action-btn workspace-profile-card-test-btn" type="button" data-workspace-ssh-profile-test="${escapeHtml(sshProfileId)}" title="${escapeHtml(t('settings.action.test'))}" ${probeState?.status === 'probing' ? 'disabled' : ''}>${escapeHtml(testButtonLabel)}</button>
                     <button class="settings-inline-action settings-list-action profile-card-action-btn" type="button" data-workspace-ssh-profile-edit="${escapeHtml(sshProfileId)}">${escapeHtml(t('settings.action.edit'))}</button>
-                    <button class="settings-inline-action settings-list-action settings-list-action-danger profile-card-action-btn" type="button" data-workspace-ssh-profile-delete="${escapeHtml(sshProfileId)}">${escapeHtml(t('settings.action.delete'))}</button>
+                    <button class="settings-inline-action settings-list-action settings-list-action-danger settings-danger-action profile-card-action-btn" type="button" data-workspace-ssh-profile-delete="${escapeHtml(sshProfileId)}">${escapeHtml(t('settings.action.delete'))}</button>
                 </div>
             </div>
             <div class="profile-card-inline-status" data-workspace-ssh-profile-probe-container="${escapeHtml(sshProfileId)}">

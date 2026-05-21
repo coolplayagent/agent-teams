@@ -3857,6 +3857,11 @@ console.log(JSON.stringify({
     )
 
     rendered_html = cast(str, payload["renderedHtml"])
+    assert "settings-record-list" in rendered_html
+    assert "settings-record" in rendered_html
+    assert "settings-record-title" in rendered_html
+    assert "settings-record-meta" in rendered_html
+    assert "settings-danger-action" in rendered_html
     assert "profile-records" in rendered_html
     assert "profile-card-inline-status" in rendered_html
     assert "profile-cards" not in rendered_html

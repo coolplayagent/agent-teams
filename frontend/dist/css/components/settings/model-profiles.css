@@ -19,8 +19,10 @@
     grid-template-columns: minmax(260px, 1fr) minmax(180px, auto);
     align-items: end;
     gap: 1rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--settings-divider);
+    padding: 0.95rem 1rem 1rem;
+    border: 1px solid var(--settings-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--settings-surface-bg);
 }
 
 .model-profile-name-field {
@@ -47,10 +49,9 @@
 }
 
 .model-profile-step {
-    border: none;
-    border-bottom: 1px solid var(--settings-divider);
-    border-radius: 0;
-    background: transparent;
+    border: 1px solid var(--settings-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--settings-surface-bg);
     overflow: hidden;
 }
 
@@ -69,7 +70,7 @@
     align-items: center;
     gap: 0.75rem;
     min-height: 48px;
-    padding: 0.65rem 0;
+    padding: 0.75rem 1rem;
     border: none;
     background: transparent;
     color: var(--text-primary);
@@ -87,16 +88,17 @@
     justify-content: center;
     width: 24px;
     height: 24px;
-    border-radius: 50%;
-    background: var(--settings-chip-bg);
+    border: 1px solid var(--settings-border-soft);
+    border-radius: 4px;
+    background: transparent;
     color: var(--text-secondary);
     font-size: 0.78rem;
     font-weight: 700;
 }
 
 .model-profile-step.is-open .model-profile-step-index {
-    background: color-mix(in srgb, var(--primary) 14%, var(--settings-chip-bg));
-    color: var(--primary-hover);
+    background: transparent;
+    color: var(--text-primary);
 }
 
 .model-profile-step-title {
@@ -117,7 +119,7 @@
 
 .model-profile-step-body {
     display: none;
-    padding: 1rem 0 1.15rem 2.7rem;
+    padding: 1rem;
     border-top: 1px solid var(--settings-divider);
 }
 
@@ -142,13 +144,13 @@
 
 .model-provider-choice {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 0.75rem;
-    min-height: 60px;
-    padding: 0.7rem 0.75rem;
-    border: 1px solid var(--settings-border-strong);
-    border-radius: 6px;
+    min-height: 48px;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--settings-border-soft);
+    border-radius: var(--radius-md);
     background: var(--settings-input-bg);
     color: var(--text-primary);
     text-align: left;
@@ -157,12 +159,12 @@
 
 .model-provider-choice:hover,
 .model-provider-choice.is-active {
-    border-color: color-mix(in srgb, var(--primary) 44%, var(--settings-border-strong));
-    background: color-mix(in srgb, var(--primary) 8%, var(--settings-input-bg));
+    border-color: var(--settings-border-default);
+    background: var(--settings-row-hover-bg);
 }
 
 .model-provider-choice-icon {
-    display: inline-flex;
+    display: none;
     align-items: center;
     justify-content: center;
     width: 32px;
@@ -181,7 +183,7 @@
 
 .model-provider-choice strong {
     font-size: 0.9rem;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 .model-provider-choice span span {

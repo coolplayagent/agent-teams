@@ -110,7 +110,7 @@ function renderOrchestrationList() {
     }
 
     host.innerHTML = `
-        <div class="role-records">
+        <div class="settings-record-list role-records">
             ${orchestrations.map(orchestration => renderOrchestrationRecord(orchestration)).join('')}
         </div>
     `;
@@ -149,14 +149,14 @@ function renderOrchestrationRecord(orchestration) {
         ? `<span class="profile-card-chip profile-card-chip-accent">${escapeHtml(t('settings.orchestration.default_badge'))}</span>`
         : '';
     return `
-        <div class="role-record" data-orchestration-id="${escapeHtml(orchestrationId)}">
+        <div class="role-record settings-record" data-orchestration-id="${escapeHtml(orchestrationId)}">
             <div class="role-record-main">
                 <div class="role-record-title-row">
-                    <div class="role-record-title">${escapeHtml(orchestrationName)}</div>
+                    <div class="settings-record-title role-record-title">${escapeHtml(orchestrationName)}</div>
                     <div class="role-record-id">${escapeHtml(orchestrationId)}</div>
                     <div class="profile-card-chips role-record-chips">${defaultChip}</div>
                 </div>
-                <div class="role-record-meta">
+                <div class="settings-record-meta role-record-meta">
                     <span>${escapeHtml(formatMessage('settings.orchestration.role_count', { count: roleCount }))}</span>
                     <span>${escapeHtml(String(orchestration?.description || '').trim() || t('settings.orchestration.no_description'))}</span>
                 </div>

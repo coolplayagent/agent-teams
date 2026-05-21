@@ -190,8 +190,8 @@ function renderGeneralSettingsPanelMarkup() {
         <div class="settings-panel" id="general-panel" style="display:none;">
             <div class="settings-section">
                 <div class="settings-content-stack general-settings-stack">
-                    <section class="proxy-form-section general-setting-card">
-                        <div class="proxy-form-section-header general-setting-card-head">
+                    <section class="proxy-form-section settings-form-section general-setting-card">
+                        <div class="proxy-form-section-header settings-form-section-header general-setting-card-head">
                             <div class="general-setting-card-copy-block">
                                 <h5 data-i18n="settings.general.shell_policy_title">Shell Policy</h5>
                             </div>
@@ -201,8 +201,8 @@ function renderGeneralSettingsPanelMarkup() {
                                 <span class="notification-toggle-label" data-i18n="settings.field.enabled">Enabled</span>
                             </label>
                         </div>
-                        <div class="appearance-grid general-setting-card-body">
-                            <div class="appearance-row">
+                        <div class="appearance-grid settings-field-grid general-setting-card-body">
+                            <div class="appearance-row settings-field-row">
                                 <label for="settings-shell-safety-policy-toggle" data-i18n="settings.general.shell_policy">Enable shell safety policy</label>
                                 <span class="general-setting-inline-note" data-i18n="settings.general.shell_policy_state">Applies to future runs after you save.</span>
                             </div>
@@ -405,24 +405,28 @@ function createModal() {
                     <div class="settings-panel" id="appearance-panel">
                         <div class="settings-section">
                             <div class="settings-content-stack">
-                                <section class="proxy-form-section">
-                                    <div class="proxy-form-section-header"><h5 data-i18n="settings.appearance.colors">Colors</h5></div>
-                                    <div class="appearance-grid">
-                                        <div class="appearance-row">
+                                <section class="proxy-form-section settings-form-section general-setting-card">
+                                    <div class="proxy-form-section-header settings-form-section-header general-setting-card-head general-setting-card-head-compact">
+                                        <div class="general-setting-card-copy-block">
+                                            <h5 class="settings-form-section-title" data-i18n="settings.appearance.colors">Colors</h5>
+                                        </div>
+                                    </div>
+                                    <div class="appearance-grid settings-field-grid general-setting-card-body">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.accent">Accent</label>
                                             <div class="appearance-color-field" id="appearance-accent">
                                                 <input type="color" value="#91a698">
                                                 <input type="text" placeholder="#91a698" spellcheck="false">
                                             </div>
                                         </div>
-                                        <div class="appearance-row">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.background">Background</label>
                                             <div class="appearance-color-field" id="appearance-background">
                                                 <input type="color" value="#161718">
                                                 <input type="text" placeholder="#161718" spellcheck="false">
                                             </div>
                                         </div>
-                                        <div class="appearance-row">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.foreground">Foreground</label>
                                             <div class="appearance-color-field" id="appearance-foreground">
                                                 <input type="color" value="#f0eee8">
@@ -431,44 +435,52 @@ function createModal() {
                                         </div>
                                     </div>
                                 </section>
-                                <section class="proxy-form-section">
-                                    <div class="proxy-form-section-header"><h5 data-i18n="settings.appearance.fonts">Fonts</h5></div>
-                                    <div class="appearance-grid">
-                                        <div class="appearance-row">
+                                <section class="proxy-form-section settings-form-section general-setting-card">
+                                    <div class="proxy-form-section-header settings-form-section-header general-setting-card-head general-setting-card-head-compact">
+                                        <div class="general-setting-card-copy-block">
+                                            <h5 class="settings-form-section-title" data-i18n="settings.appearance.fonts">Fonts</h5>
+                                        </div>
+                                    </div>
+                                    <div class="appearance-grid settings-field-grid general-setting-card-body">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.ui_font">UI Font</label>
                                             <input type="text" id="appearance-ui-font" class="appearance-text-input" placeholder="IBM Plex Sans, sans-serif" spellcheck="false">
                                         </div>
-                                        <div class="appearance-row">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.code_font">Code Font</label>
                                             <input type="text" id="appearance-code-font" class="appearance-text-input" placeholder="IBM Plex Mono, monospace" spellcheck="false">
                                         </div>
                                     </div>
                                 </section>
-                                <section class="proxy-form-section">
-                                    <div class="proxy-form-section-header"><h5 data-i18n="settings.appearance.sizing">Sizing</h5></div>
-                                    <div class="appearance-grid">
-                                        <div class="appearance-row">
+                                <section class="proxy-form-section settings-form-section general-setting-card">
+                                    <div class="proxy-form-section-header settings-form-section-header general-setting-card-head general-setting-card-head-compact">
+                                        <div class="general-setting-card-copy-block">
+                                            <h5 class="settings-form-section-title" data-i18n="settings.appearance.sizing">Sizing</h5>
+                                        </div>
+                                    </div>
+                                    <div class="appearance-grid settings-field-grid general-setting-card-body">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.ui_font_size">UI Font Size</label>
                                             <div class="appearance-range-field">
                                                 <input type="range" id="appearance-ui-font-size" min="11" max="20" value="15" step="1">
                                                 <span class="appearance-range-value">15px</span>
                                             </div>
                                         </div>
-                                        <div class="appearance-row">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.code_font_size">Code Font Size</label>
                                             <div class="appearance-range-field">
                                                 <input type="range" id="appearance-code-font-size" min="10" max="18" value="13" step="1">
                                                 <span class="appearance-range-value">13px</span>
                                             </div>
                                         </div>
-                                        <div class="appearance-row">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.line_height">Line Height</label>
                                             <div class="appearance-range-field">
                                                 <input type="range" id="appearance-line-height" min="120" max="200" value="148" step="2">
                                                 <span class="appearance-range-value">1.48</span>
                                             </div>
                                         </div>
-                                        <div class="appearance-row">
+                                        <div class="appearance-row settings-field-row">
                                             <label data-i18n="settings.appearance.msg_density">Message Spacing</label>
                                             <div class="appearance-range-field">
                                                 <input type="range" id="appearance-msg-density" min="30" max="150" value="85" step="5">
@@ -758,28 +770,28 @@ function createModal() {
                         <div class="settings-section">
                             <div class="settings-content-stack proxy-panel-body">
                                 <div class="proxy-editor-form">
-                                    <section class="proxy-form-section">
-                                        <div class="proxy-form-section-header">
-                                            <h5 data-i18n="settings.proxy.section">Proxy Settings</h5>
+                                    <section class="proxy-form-section settings-form-section">
+                                        <div class="proxy-form-section-header settings-form-section-header">
+                                            <h5 class="settings-form-section-title" data-i18n="settings.proxy.section">Proxy Settings</h5>
                                         </div>
-                                        <div class="proxy-form-grid">
-                                            <div class="form-group proxy-inline-field">
+                                        <div class="proxy-form-grid settings-field-grid">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="proxy-http-proxy" data-i18n="settings.proxy.http">HTTP Proxy</label>
                                                 <input type="text" id="proxy-http-proxy" placeholder="http://127.0.0.1:7890" autocomplete="off">
                                             </div>
-                                            <div class="form-group proxy-inline-field">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="proxy-https-proxy" data-i18n="settings.proxy.https">HTTPS Proxy</label>
                                                 <input type="text" id="proxy-https-proxy" placeholder="http://127.0.0.1:7890" autocomplete="off">
                                             </div>
-                                            <div class="form-group proxy-inline-field">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="proxy-all-proxy" data-i18n="settings.proxy.all">ALL Proxy</label>
                                                 <input type="text" id="proxy-all-proxy" placeholder="socks5://127.0.0.1:7890" autocomplete="off">
                                             </div>
-                                            <div class="form-group proxy-inline-field">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="proxy-username" data-i18n="settings.proxy.username">Username</label>
                                                 <input type="text" id="proxy-username" placeholder="Optional proxy username" data-i18n-placeholder="settings.proxy.username_placeholder" autocomplete="username">
                                             </div>
-                                            <div class="form-group proxy-inline-field">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="proxy-password" data-i18n="settings.proxy.password">Password</label>
                                                 <div class="secure-input-row">
                                                     <input type="password" id="proxy-password" placeholder="Optional proxy password" data-i18n-placeholder="settings.proxy.password_placeholder" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -791,11 +803,11 @@ function createModal() {
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div class="form-group proxy-inline-field">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="proxy-no-proxy" data-i18n="settings.proxy.no_proxy">NO_PROXY</label>
                                                 <input type="text" id="proxy-no-proxy" placeholder="localhost;127.*;192.168.*;<local>" autocomplete="off">
                                             </div>
-                                            <div class="form-group proxy-inline-field proxy-inline-field-compact">
+                                            <div class="form-group proxy-inline-field proxy-inline-field-compact settings-field-row">
                                                 <label for="proxy-ssl-verify" data-i18n="settings.proxy.default_ssl">Default SSL Verification</label>
                                                 <select id="proxy-ssl-verify">
                                                     <option value="" data-i18n="settings.proxy.inherit_default">Inherit Default</option>
@@ -805,17 +817,17 @@ function createModal() {
                                             </div>
                                         </div>
                                     </section>
-                                    <section class="proxy-form-section proxy-form-section-test">
-                                        <div class="proxy-form-section-header">
-                                            <h5 data-i18n="settings.proxy.connectivity">Connectivity Test</h5>
+                                    <section class="proxy-form-section settings-form-section proxy-form-section-test">
+                                        <div class="proxy-form-section-header settings-form-section-header">
+                                            <h5 class="settings-form-section-title" data-i18n="settings.proxy.connectivity">Connectivity Test</h5>
                                         </div>
-                                        <div class="proxy-probe-grid">
-                                            <div class="form-group proxy-inline-field proxy-inline-field-test">
+                                        <div class="proxy-probe-grid settings-field-grid">
+                                            <div class="form-group proxy-inline-field proxy-inline-field-test settings-field-row">
                                                 <label for="proxy-probe-url" data-i18n="settings.proxy.target_url">Target URL</label>
                                                 <input type="text" id="proxy-probe-url" placeholder="https://example.com" data-i18n-placeholder="settings.proxy.target_url_placeholder" autocomplete="url">
                                                 <button class="secondary-btn section-action-btn proxy-inline-test-btn" id="test-proxy-web-btn" type="button" data-i18n="settings.proxy.test_url">Test URL</button>
                                             </div>
-                                            <div class="form-group proxy-inline-field proxy-inline-field-compact">
+                                            <div class="form-group proxy-inline-field proxy-inline-field-compact settings-field-row">
                                                 <label for="proxy-probe-timeout" data-i18n="settings.proxy.timeout">Timeout (ms)</label>
                                                 <input type="number" id="proxy-probe-timeout" value="5000" min="1000" max="300000" step="500" autocomplete="off">
                                             </div>
@@ -903,18 +915,18 @@ function createModal() {
                         <div class="settings-section">
                             <div class="settings-content-stack proxy-panel-body">
                                 <div class="proxy-editor-form">
-                                    <section class="proxy-form-section">
-                                        <div class="proxy-form-section-header">
-                                            <h5 data-i18n="settings.web.section">网页搜索</h5>
+                                    <section class="proxy-form-section settings-form-section">
+                                        <div class="proxy-form-section-header settings-form-section-header">
+                                            <h5 class="settings-form-section-title" data-i18n="settings.web.section">网页搜索</h5>
                                         </div>
-                                        <div class="proxy-form-grid">
-                                            <div class="form-group proxy-inline-field">
+                                        <div class="proxy-form-grid settings-field-grid">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="web-provider" data-i18n="settings.web.provider">提供商</label>
                                                 <select id="web-provider">
                                                     <option value="exa">Exa</option>
                                                 </select>
                                             </div>
-                                            <div class="form-group proxy-inline-field">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="web-api-key" id="web-api-key-label" data-i18n="settings.web.exa_api_key">Exa API Key</label>
                                                 <div class="secure-input-row">
                                                     <input type="password" id="web-api-key" placeholder="可选，用于更高频率限制" data-i18n-placeholder="settings.web.api_key_placeholder" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -926,24 +938,24 @@ function createModal() {
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div class="form-group proxy-inline-field">
+                                            <div class="form-group proxy-inline-field settings-field-row">
                                                 <label for="web-fallback-provider" data-i18n="settings.web.fallback_provider">回退提供商</label>
                                                 <select id="web-fallback-provider">
                                                     <option value="searxng">SearXNG</option>
                                                     <option value="disabled">Disabled</option>
                                                 </select>
                                             </div>
-                                            <div class="form-group proxy-inline-field" id="web-searxng-instance-url-field" style="display:none;">
+                                            <div class="form-group proxy-inline-field settings-field-row" id="web-searxng-instance-url-field" style="display:none;">
                                                 <label for="web-searxng-instance-url" data-i18n="settings.web.searxng_instance_url">SearXNG 实例 URL</label>
                                                 <input type="text" id="web-searxng-instance-url" placeholder="默认值：{default}" data-i18n-placeholder="settings.web.searxng_instance_url_placeholder" autocomplete="off">
                                             </div>
-                                            <div class="form-group proxy-inline-field" id="web-searxng-builtins-field" style="display:none;">
-                                                <span class="web-searxng-builtins-label" data-i18n="settings.web.searxng_builtin_instances">内置实例</span>
+                                            <div class="form-group proxy-inline-field settings-field-row" id="web-searxng-builtins-field" style="display:none;">
+                                                <span class="web-searxng-builtins-label settings-field-label" data-i18n="settings.web.searxng_builtin_instances">内置实例</span>
                                                 <div class="web-searxng-builtins-list" id="web-searxng-builtins-list"></div>
                                             </div>
                                         </div>
-                                        <div class="form-group proxy-inline-field web-provider-inline-field">
-                                            <span class="web-provider-inline-label" data-i18n="settings.web.provider_site">提供商网站：</span>
+                                        <div class="form-group proxy-inline-field settings-field-row web-provider-inline-field">
+                                            <span class="web-provider-inline-label settings-field-label" data-i18n="settings.web.provider_site">提供商网站：</span>
                                             <a class="web-provider-link-card" id="web-provider-site-link" href="https://exa.ai" target="_blank" rel="noreferrer" title="https://exa.ai" aria-label="https://exa.ai">
                                                 <span class="web-provider-link-copy">
                                                     <span class="web-provider-link-badge" id="web-provider-site-badge">Exa</span>

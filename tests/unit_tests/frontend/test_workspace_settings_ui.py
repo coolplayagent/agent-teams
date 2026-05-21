@@ -63,6 +63,11 @@ console.log(JSON.stringify({
     }
     assert "prod" in str(payload["listHtml"])
     assert "prod-alias" in str(payload["listHtml"])
+    assert "settings-record-list" in str(payload["listHtml"])
+    assert "settings-record" in str(payload["listHtml"])
+    assert "settings-record-title" in str(payload["listHtml"])
+    assert "settings-record-meta" in str(payload["listHtml"])
+    assert "settings-danger-action" in str(payload["listHtml"])
     assert payload["addDisplay"] == "inline-flex"
     assert payload["editorDisplay"] == "none"
     assert payload["notifications"] == [

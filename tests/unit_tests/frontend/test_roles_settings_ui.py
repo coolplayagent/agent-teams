@@ -48,6 +48,11 @@ console.log(JSON.stringify({
     )
 
     fetch_calls = cast(list[JsonValue], payload["fetchCalls"])
+    initial_list_html = cast(str, payload["initialListHtml"])
+    assert "settings-record-list" in initial_list_html
+    assert "settings-record" in initial_list_html
+    assert "settings-record-title" in initial_list_html
+    assert "settings-record-meta" in initial_list_html
     assert "Writer" in cast(str, payload["initialListHtml"])
     assert "Reviewer" in cast(str, payload["initialListHtml"])
     assert payload["selectedRoleId"] == "reviewer"

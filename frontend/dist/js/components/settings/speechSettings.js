@@ -85,24 +85,24 @@ export function renderSpeechSettingsPanelMarkup() {
 
 export function renderSpeechSettingsSectionMarkup() {
     return `
-        <section class="proxy-form-section general-setting-card">
-            <div class="proxy-form-section-header general-setting-card-head general-setting-card-head-compact">
+        <section class="proxy-form-section settings-form-section general-setting-card">
+            <div class="proxy-form-section-header settings-form-section-header general-setting-card-head general-setting-card-head-compact">
                 <div class="general-setting-card-copy-block">
                     <h5 data-i18n="settings.speech.stt">Speech to Text</h5>
                 </div>
             </div>
-            <div class="appearance-grid general-setting-card-body">
-                <div class="appearance-row">
+            <div class="appearance-grid settings-field-grid general-setting-card-body">
+                <div class="appearance-row settings-field-row">
                     <label for="speech-stt-profile" data-i18n="settings.speech.stt_profile">STT Profile</label>
                     <select id="speech-stt-profile" class="appearance-text-input">
                         <option value="" data-i18n="settings.speech.no_profile">No profile selected</option>
                     </select>
                 </div>
-                <div class="appearance-row">
+                <div class="appearance-row settings-field-row">
                     <label for="speech-language" data-i18n="settings.speech.language">Language</label>
                     <select id="speech-language" class="appearance-text-input"></select>
                 </div>
-                <div class="appearance-row">
+                <div class="appearance-row settings-field-row">
                     <label for="speech-prompt" data-i18n="settings.speech.prompt">Prompt</label>
                     <textarea id="speech-prompt" class="appearance-text-input" rows="3"></textarea>
                 </div>

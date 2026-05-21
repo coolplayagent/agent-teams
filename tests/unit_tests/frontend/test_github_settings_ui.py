@@ -531,7 +531,13 @@ def test_github_settings_markup_includes_token_link_card() -> None:
     assert "proxy-inline-field-actions" in github_source
     assert "settings-inline-action-row" in github_source
     assert "proxy-form-section-test" not in github_source
-    assert github_source.count('<section class="proxy-form-section">') == 2
+    assert (
+        github_source.count(
+            '<section class="proxy-form-section settings-form-section">'
+        )
+        == 2
+    )
+    assert github_source.count("settings-form-section-header") == 2
 
 
 def _run_github_settings_script(

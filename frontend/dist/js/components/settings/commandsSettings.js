@@ -377,10 +377,7 @@ function renderCommandCatalog(catalog) {
     }
     return `
         <div class="commands-shell">
-            ${renderCatalogToolbar({
-                total,
-                workspaceCount: groups.filter(group => group.kind === 'workspace').length,
-            })}
+            ${renderCatalogActions()}
             ${renderCommandSearch()}
             <div class="commands-catalog">
                 ${
@@ -393,14 +390,9 @@ function renderCommandCatalog(catalog) {
     `;
 }
 
-function renderCatalogToolbar({ total, workspaceCount }) {
+function renderCatalogActions() {
     return `
         <div class="commands-panel-toolbar">
-            <strong class="commands-total">
-                ${escapeHtml(formatCount(total))}
-                <span aria-hidden="true">&middot;</span>
-                ${escapeHtml(formatWorkspaceCount(workspaceCount))}
-            </strong>
             <button class="secondary-btn section-action-btn commands-refresh-btn" id="refresh-command-catalog-btn" type="button">
                 ${escapeHtml(t('settings.commands.refresh'))}
             </button>
@@ -426,9 +418,8 @@ function renderCommandSearch() {
 function renderCatalogEmptyState(total) {
     return `
         <div class="commands-shell">
-            ${renderCatalogToolbar({ total, workspaceCount: 0 })}
-            <div class="commands-empty-card">
-                <div class="commands-empty-icon" aria-hidden="true">/_</div>
+            ${renderCatalogActions()}
+            <div class="settings-empty-state commands-empty-card">
                 <h4>${escapeHtml(t('settings.commands.empty'))}</h4>
                 <p>${escapeHtml(t('settings.commands.empty_copy'))}</p>
                 <p>${escapeHtml(t('settings.commands.empty_hint'))}</p>
@@ -479,8 +470,8 @@ function renderCollapsedSummary(rows, group) {
 
 function renderSearchEmpty() {
     return `
-        <div class="commands-search-empty">
-            ${escapeHtml(t('settings.commands.no_matches'))}
+        <div class="settings-empty-state settings-empty-state-compact commands-search-empty">
+            <p>${escapeHtml(t('settings.commands.no_matches'))}</p>
         </div>
     `;
 }
@@ -490,31 +481,14 @@ function renderExpandedGroupRows(rows, group) {
         return renderCommandGroupEmpty(group.emptyCopy);
     }
     return `
-        <div class="commands-table">
-            ${renderCommandTableHead()}
-            <div class="commands-list">${rows.map(ref => renderCommandRow(ref)).join('')}</div>
-        </div>
-    `;
-}
-
-function renderCommandTableHead() {
-    return `
-        <div class="commands-table-head" role="row">
-            <span>${escapeHtml(t('settings.commands.table_command'))}</span>
-            <span>${escapeHtml(t('settings.commands.table_description'))}</span>
-            <span>${escapeHtml(t('settings.commands.table_argument'))}</span>
-            <span>${escapeHtml(t('settings.commands.table_scope'))}</span>
-            <span>${escapeHtml(t('settings.commands.table_source_path'))}</span>
-            <span>${escapeHtml(t('settings.commands.table_actions'))}</span>
-        </div>
+        <div class="settings-record-list commands-list">${rows.map(ref => renderCommandRow(ref)).join('')}</div>
     `;
 }
 
 function renderCommandGroupEmpty(copy) {
     return `
-        <div class="commands-group-empty">
-            <span aria-hidden="true">[]</span>
-            ${escapeHtml(copy)}
+        <div class="settings-empty-state settings-empty-state-compact commands-group-empty">
+            <p>${escapeHtml(copy)}</p>
         </div>
     `;
 }
@@ -527,18 +501,23 @@ function renderCommandRow(ref) {
     const hint = String(command?.argument_hint || '').trim();
     const sourcePath = String(command?.source_path || '').trim();
     const scope = String(command?.scope || '').trim();
+    const metaParts = [
+        aliases.length > 0
+            ? `${t('settings.commands.alias_label')} ${formatAliasList(aliases)}`
+            : t('settings.commands.no_aliases'),
+        hint || '-',
+        scope,
+    ].filter(Boolean);
     return `
-        <article class="command-row" role="row">
-            <div class="command-row-name">
-                <strong>${escapeHtml(formatCommandName(name))}</strong>
-                <span>${escapeHtml(aliases.length > 0
-                    ? `${t('settings.commands.alias_label')} ${formatAliasList(aliases)}`
-                    : t('settings.commands.no_aliases'))}</span>
+        <article class="settings-record command-row">
+            <div class="command-row-copy">
+                <div class="command-row-name">
+                    <strong class="settings-record-title">${escapeHtml(formatCommandName(name))}</strong>
+                    <span class="settings-record-meta">${escapeHtml(description || t('settings.commands.no_description'))}</span>
+                </div>
+                <div class="settings-record-meta command-row-meta">${escapeHtml(metaParts.join(' / '))}</div>
+                <div class="settings-record-meta command-row-path" title="${escapeHtml(sourcePath)}">${escapeHtml(compactPath(sourcePath))}</div>
             </div>
-            <div class="command-row-description">${escapeHtml(description || t('settings.commands.no_description'))}</div>
-            <div class="command-row-hint">${hint ? `<span>${escapeHtml(hint)}</span>` : '<span>-</span>'}</div>
-            <div class="command-row-scope"><span>${escapeHtml(scope)}</span></div>
-            <div class="command-row-path" title="${escapeHtml(sourcePath)}">${escapeHtml(compactPath(sourcePath))}</div>
             <div class="command-row-actions">
                 <button class="command-copy-btn" id="copy-command-${escapeHtml(ref.key)}" type="button" title="${escapeHtml(t('settings.commands.copy_path'))}" aria-label="${escapeHtml(t('settings.commands.copy_path'))}">
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -725,7 +704,7 @@ async function copyCommandPath(command) {
 function renderLoadFailedState(error) {
     return `
         <div class="commands-shell">
-            <div class="commands-empty-card commands-empty-card-compact">
+            <div class="settings-empty-state settings-empty-state-compact commands-empty-card commands-empty-card-compact">
                 <h4>${escapeHtml(t('settings.commands.load_failed'))}</h4>
                 <p>${escapeHtml(error.message || t('settings.commands.load_failed_copy'))}</p>
                 <button class="secondary-btn section-action-btn" id="refresh-commands-btn" type="button">
@@ -889,12 +868,6 @@ function formatCount(count) {
     return count === 1
         ? t('settings.commands.count_one')
         : t('settings.commands.count_many').replace('{count}', String(count));
-}
-
-function formatWorkspaceCount(count) {
-    return count === 1
-        ? t('settings.commands.workspace_count_one')
-        : t('settings.commands.workspace_count_many').replace('{count}', String(count));
 }
 
 function compactPath(path) {

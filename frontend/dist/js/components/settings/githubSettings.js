@@ -156,8 +156,8 @@ export function renderGitHubAccessPanelMarkup(
     const ids = resolveGitHubFieldIds(fieldIds);
     return `
         <div class="proxy-editor-form">
-            <section class="proxy-form-section">
-                <div class="proxy-form-section-header">
+            <section class="proxy-form-section settings-form-section">
+                <div class="proxy-form-section-header settings-form-section-header">
                     <h5 data-i18n="settings.github.section">GitHub CLI</h5>
                 </div>
                 <div class="proxy-form-grid">
@@ -199,8 +199,8 @@ export function renderGitHubAccessPanelMarkup(
                 </div>
                 <div class="proxy-probe-status" id="${escapeHtml(ids.statusId)}" style="display:none;"></div>
             </section>
-            <section class="proxy-form-section">
-                <div class="proxy-form-section-header">
+            <section class="proxy-form-section settings-form-section">
+                <div class="proxy-form-section-header settings-form-section-header">
                     <h5 data-i18n="settings.github.webhook_section">GitHub Webhook</h5>
                 </div>
                 <div class="proxy-form-grid">

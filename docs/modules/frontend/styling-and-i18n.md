@@ -58,7 +58,9 @@
   - `retry.css`
   - `todo.css`
 - `components/settings/`
+  - `foundation.css`
   - `model-profiles.css`
+  - `plugins.css`
 
 新增样式时应优先放入对应功能文件，避免继续把大量不相关样式塞入同一个大文件。
 

@@ -29,6 +29,7 @@ await document.getElementById("test-agent-btn").onclick();
 
 console.log(JSON.stringify({
     selectedAgentId: document.getElementById("agent-id-input").value,
+    listHtml: document.getElementById("agents-list").innerHTML,
     transportValue: document.getElementById("agent-transport-input").value,
     commandValue: document.getElementById("agent-stdio-command-input").value,
     saveCalls: globalThis.__saveCalls,
@@ -42,6 +43,11 @@ console.log(JSON.stringify({
     save_calls = cast(list[dict[str, JsonValue]], payload["saveCalls"])
     test_calls = cast(list[str], payload["testCalls"])
     toasts = cast(list[dict[str, JsonValue]], payload["toasts"])
+    list_html = cast(str, payload["listHtml"])
+    assert "settings-record-list" in list_html
+    assert "settings-record" in list_html
+    assert "settings-record-title" in list_html
+    assert "settings-record-meta" in list_html
     assert payload["selectedAgentId"] == "codex_local"
     assert payload["transportValue"] == "stdio"
     assert payload["commandValue"] == "codex --serve"

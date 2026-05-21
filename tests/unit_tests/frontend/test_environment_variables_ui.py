@@ -102,7 +102,12 @@ console.log(JSON.stringify({
 
     notifications = cast(list[dict[str, JsonValue]], payload["notifications"])
     groups_html_with_editor = cast(str, payload["groupsHtmlWithEditor"])
-    assert 'class="env-record env-record-editor"' in groups_html_with_editor
+    assert (
+        'class="settings-record env-record env-record-editor"'
+        in groups_html_with_editor
+    )
+    assert 'class="settings-form-section env-scope-section"' in groups_html_with_editor
+    assert 'class="settings-record-list env-records"' in groups_html_with_editor
     assert 'id="env-key-input"' in groups_html_with_editor
     assert 'id="env-value-input"' in groups_html_with_editor
     assert groups_html_with_editor.index(

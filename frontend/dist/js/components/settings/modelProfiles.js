@@ -968,7 +968,7 @@ function renderProfiles() {
         return leftProfile?.is_default === true ? -1 : 1;
     });
 
-    let html = '<div class="profile-records">';
+    let html = '<div class="settings-record-list profile-records">';
     profileEntries.forEach(([name, profile], index) => {
         html += renderProfileCard(name, profile, index);
     });
@@ -3927,24 +3927,24 @@ function renderProfileCard(name, profile, index) {
     });
 
     return `
-        <div class="profile-record profile-card" data-profile-name="${escapeHtml(name)}" style="--profile-index:${index};">
+        <div class="profile-record settings-record profile-card" data-profile-name="${escapeHtml(name)}" style="--profile-index:${index};">
             <div class="profile-record-main">
                 <div class="profile-record-heading">
                     <div class="profile-card-heading">
                         <div class="profile-card-title-row">
-                            <h4>${escapeHtml(name)}</h4>
+                            <h4 class="settings-record-title">${escapeHtml(name)}</h4>
                             <div class="profile-card-chips">
                                 <span class="profile-card-chip">${escapeHtml(providerLabel)}</span>
                                 ${capabilityChip}
                                 ${defaultChip}
                             </div>
                         </div>
-                        <div class="profile-record-summary" title="${escapeHtml(`${modelLabel} ${baseUrlLabel}`)}">
+                        <div class="settings-record-meta profile-record-summary" title="${escapeHtml(`${modelLabel} ${baseUrlLabel}`)}">
                             <span class="profile-record-summary-primary">${escapeHtml(modelLabel)}</span>
                             <span class="profile-record-summary-separator">/</span>
                             <span class="profile-record-summary-secondary">${escapeHtml(baseUrlLabel)}</span>
                         </div>
-                        <div class="profile-record-summary" title="${escapeHtml(fallbackLabel)}">
+                        <div class="settings-record-meta profile-record-summary" title="${escapeHtml(fallbackLabel)}">
                             <span class="profile-record-summary-primary">${escapeHtml(fallbackLabel)}</span>
                             <span class="profile-record-summary-separator">/</span>
                             <span class="profile-record-summary-secondary">${escapeHtml(fallbackPriorityLabel)}</span>
@@ -3955,7 +3955,7 @@ function renderProfileCard(name, profile, index) {
                     <button class="settings-inline-action settings-list-action profile-card-action-btn set-default-profile-btn" data-name="${escapeHtml(name)}" title="${escapeHtml(t('settings.model.default_model_action'))}" ${profile.is_default === true ? 'disabled' : ''}>${escapeHtml(t('settings.model.default_model_action_short'))}</button>
                     <button class="settings-inline-action settings-list-action profile-card-action-btn profile-card-test-btn" data-name="${escapeHtml(name)}" title="${escapeHtml(t('settings.action.test'))}" ${probeState?.status === 'probing' ? 'disabled' : ''}>${escapeHtml(testButtonLabel)}</button>
                     <button class="settings-inline-action settings-list-action profile-card-action-btn edit-profile-btn" data-name="${escapeHtml(name)}" title="${escapeHtml(t('settings.action.edit'))}">${escapeHtml(t('settings.action.edit'))}</button>
-                    <button class="settings-inline-action settings-list-action settings-list-action-danger profile-card-action-btn delete-profile-btn" data-name="${escapeHtml(name)}" title="${escapeHtml(t('settings.action.delete'))}">${escapeHtml(t('settings.action.delete'))}</button>
+                    <button class="settings-inline-action settings-list-action settings-list-action-danger settings-danger-action profile-card-action-btn delete-profile-btn" data-name="${escapeHtml(name)}" title="${escapeHtml(t('settings.action.delete'))}">${escapeHtml(t('settings.action.delete'))}</button>
                 </div>
             </div>
             <div class="profile-card-inline-status" data-profile-probe-container="${escapeHtml(name)}">

@@ -280,12 +280,13 @@ console.log(JSON.stringify({
     assert "Global commands" in catalog_html
     assert "/global" in catalog_html
     assert "Search command or workspace" in catalog_html
-    assert "Command" in catalog_html
-    assert "Description" in catalog_html
-    assert "Argument" in catalog_html
-    assert "Scope" in catalog_html
-    assert "Source path" in catalog_html
-    assert "Actions" in catalog_html
+    assert "commands-table" not in catalog_html
+    assert "commands-table-head" not in catalog_html
+    assert "commands-total" not in catalog_html
+    toolbar_html = catalog_html.split("Search command or workspace", 1)[0]
+    assert "1 command" not in toolbar_html
+    assert "workspace" not in toolbar_html
+    assert 'class="settings-record-list commands-list"' in catalog_html
     assert "workspace-1" in catalog_html
     assert "workspace-2" in catalog_html
     assert "read-only" in catalog_html

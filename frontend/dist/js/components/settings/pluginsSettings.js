@@ -148,8 +148,8 @@ export async function loadPluginsSettingsPanel(options = {}) {
     } catch (error) {
         logError('frontend.settings.plugins.load_failed', 'Failed to load plugins settings panel', errorToPayload(error));
         root.innerHTML = `
-            <div class="plugins-empty-state">
-                <h5>${escapeHtml(t('settings.plugins.load_failed'))}</h5>
+            <div class="settings-empty-state plugins-empty-state">
+                <h4>${escapeHtml(t('settings.plugins.load_failed'))}</h4>
                 <p>${escapeHtml(String(error?.message || t('settings.plugins.load_failed_copy')))}</p>
             </div>
         `;
@@ -186,7 +186,6 @@ function renderPluginsPanel() {
     ensureSelectedPlugin();
     root.innerHTML = `
         <div class="plugins-shell">
-            ${renderToolbar()}
             ${pluginPanelMode === 'install' ? renderInstallForm() : ''}
             ${pluginPanelMode === 'validate' ? renderValidateForm() : ''}
             ${pluginPanelMode === 'configure' ? renderConfigureForm(findPluginByKey(selectedPluginKey)) : ''}
@@ -196,26 +195,11 @@ function renderPluginsPanel() {
     translateDocument(root);
 }
 
-function renderToolbar() {
-    const plugins = pluginsRegistry.plugins;
-    const enabledCount = plugins.filter(plugin => plugin.enabled === true).length;
-    const diagnosticsCount = pluginsRegistry.diagnostics.length;
-    return `
-        <div class="plugins-toolbar">
-            <div class="plugins-toolbar-stats">
-                <span>${escapeHtml(formatMessage('settings.plugins.total_loaded', { count: plugins.length }))}</span>
-                <span>${escapeHtml(formatMessage('settings.plugins.enabled_count', { count: enabledCount }))}</span>
-                <span>${escapeHtml(formatMessage('settings.plugins.diagnostics_count', { count: diagnosticsCount }))}</span>
-            </div>
-        </div>
-    `;
-}
-
 function renderLayout(plugins) {
     if (!pluginsRegistry.plugins.length) {
         return `
-            <div class="plugins-empty-state">
-                <h5>${escapeHtml(t('settings.plugins.empty'))}</h5>
+            <div class="settings-empty-state plugins-empty-state">
+                <h4>${escapeHtml(t('settings.plugins.empty'))}</h4>
                 <p>${escapeHtml(t('settings.plugins.empty_copy'))}</p>
             </div>
         `;
@@ -223,7 +207,7 @@ function renderLayout(plugins) {
     const selected = findPluginByKey(selectedPluginKey) || plugins[0] || pluginsRegistry.plugins[0];
     return `
         <div class="plugins-layout">
-            <div class="plugins-list" role="list">
+            <div class="settings-record-list plugins-list" role="list">
                 ${plugins.map(renderPluginRow).join('') || renderNoMatches()}
             </div>
             <div class="plugins-detail-panel">
@@ -238,10 +222,10 @@ function renderPluginRow(plugin) {
     const selectedClass = key === selectedPluginKey ? ' is-selected' : '';
     const diagnosticsCount = diagnosticsForPlugin(plugin).length;
     return `
-        <button type="button" class="plugin-row${selectedClass}" data-plugin-action="select" data-plugin-key="${escapeHtml(key)}" role="listitem">
+        <button type="button" class="settings-record plugin-row${selectedClass}" data-plugin-action="select" data-plugin-key="${escapeHtml(key)}" role="listitem">
             <span class="plugin-row-main">
-                <span class="plugin-row-title">${escapeHtml(plugin.name || t('settings.plugins.unknown'))}</span>
-                <span class="plugin-row-meta">
+                <span class="settings-record-title plugin-row-title">${escapeHtml(plugin.name || t('settings.plugins.unknown'))}</span>
+                <span class="settings-record-meta plugin-row-meta">
                     ${escapeHtml(plugin.version || t('settings.plugins.no_version'))}
                     <span aria-hidden="true">/</span>
                     ${escapeHtml(scopeLabel(plugin.scope))}
@@ -251,7 +235,7 @@ function renderPluginRow(plugin) {
                 <span class="plugin-status-pill ${plugin.enabled ? 'is-enabled' : 'is-disabled'}">${escapeHtml(plugin.enabled ? t('settings.plugins.enabled') : t('settings.plugins.disabled'))}</span>
                 ${diagnosticsCount ? `<span class="plugin-diagnostics-pill">${escapeHtml(String(diagnosticsCount))}</span>` : ''}
             </span>
-            <span class="plugin-row-components">${escapeHtml(componentSummary(plugin))}</span>
+            <span class="settings-record-meta plugin-row-components">${escapeHtml(componentSummary(plugin))}</span>
         </button>
     `;
 }
@@ -263,20 +247,20 @@ function renderPluginDetail(plugin) {
     const mutable = MUTABLE_SCOPES.has(String(plugin.scope || ''));
     const userConfigFields = Object.entries(manifest.user_config || {});
     return `
-        <div class="plugin-detail-head">
+        <section class="settings-form-section plugin-detail-head">
             <div class="plugin-detail-title">
-                <h5>${escapeHtml(plugin.name || t('settings.plugins.unknown'))}</h5>
-                <p>${escapeHtml(manifest.description || t('settings.plugins.no_description'))}</p>
+                <h5 class="settings-form-section-title">${escapeHtml(plugin.name || t('settings.plugins.unknown'))}</h5>
+                <p class="settings-form-section-copy">${escapeHtml(manifest.description || t('settings.plugins.no_description'))}</p>
             </div>
             <span class="plugin-status-pill ${plugin.enabled ? 'is-enabled' : 'is-disabled'}">${escapeHtml(plugin.enabled ? t('settings.plugins.enabled') : t('settings.plugins.disabled'))}</span>
-        </div>
+        </section>
         <div class="plugin-detail-actions">
             ${userConfigFields.length ? `<button class="secondary-btn section-action-btn" type="button" data-plugin-action="configure" data-plugin-key="${escapeHtml(pluginKey(plugin))}">${escapeHtml(t('settings.plugins.configure'))}</button>` : ''}
             <button class="secondary-btn section-action-btn" type="button" data-plugin-action="toggle" data-plugin-key="${escapeHtml(pluginKey(plugin))}" ${mutable ? '' : 'disabled'}>${escapeHtml(plugin.enabled ? t('settings.plugins.disable') : t('settings.plugins.enable'))}</button>
             <button class="secondary-btn section-action-btn" type="button" data-plugin-action="update" data-plugin-key="${escapeHtml(pluginKey(plugin))}" ${mutable ? '' : 'disabled'}>${escapeHtml(t('settings.plugins.update'))}</button>
             <button class="secondary-btn section-action-btn" type="button" data-plugin-action="remove" data-plugin-key="${escapeHtml(pluginKey(plugin))}" ${mutable ? '' : 'disabled'}>${escapeHtml(t('settings.plugins.remove'))}</button>
         </div>
-        <div class="plugin-detail-grid">
+        <div class="settings-record-list plugin-detail-grid">
             ${renderDetailItem(t('settings.plugins.scope'), scopeLabel(plugin.scope))}
             ${renderDetailItem(t('settings.plugins.version'), plugin.version || t('settings.plugins.no_version'))}
             ${renderDetailItem(t('settings.plugins.root_dir'), plugin.root_dir || t('settings.plugins.no_path'))}
@@ -301,14 +285,14 @@ function renderInstallForm() {
     const selectedUnsupported = Boolean(marketplaceMode && versionUnsupportedReason(selectedVersion));
     const saveDisabled = selectedUnsupported || installSubmitting;
     return `
-        <form class="plugins-editor-panel" id="plugin-install-form">
-            <div class="proxy-form-section-header"><h5>${escapeHtml(t('settings.plugins.install_title'))}</h5></div>
-            <div class="plugins-form-grid">
-                <label class="plugins-form-field plugins-form-field-wide">
+        <form class="settings-form-section plugins-editor-panel" id="plugin-install-form">
+            <div class="proxy-form-section-header settings-form-section-header"><h5 class="settings-form-section-title">${escapeHtml(t('settings.plugins.install_title'))}</h5></div>
+            <div class="settings-field-grid plugins-form-grid">
+                <label class="settings-field-row plugins-form-field plugins-form-field-wide">
                     <span>${escapeHtml(t('settings.plugins.source_path'))}</span>
                     <input type="text" name="source" value="${escapeHtml(installDraft.source)}" placeholder="${escapeHtml(t(marketplaceMode ? 'settings.plugins.marketplace_plugin_placeholder' : 'settings.plugins.source_placeholder'))}" required spellcheck="false" />
                 </label>
-                <label class="plugins-form-field">
+                <label class="settings-field-row plugins-form-field">
                     <span>${escapeHtml(t('settings.plugins.source_type'))}</span>
                     <select name="source_kind">
                         <option value="local" ${installDraft.source_kind === 'local' ? 'selected' : ''}>${escapeHtml(t('settings.plugins.source_type_local'))}</option>
@@ -316,7 +300,7 @@ function renderInstallForm() {
                         <option value="marketplace" ${installDraft.source_kind === 'marketplace' ? 'selected' : ''}>${escapeHtml(t('settings.plugins.source_type_marketplace'))}</option>
                     </select>
                 </label>
-                <label class="plugins-form-field">
+                <label class="settings-field-row plugins-form-field">
                     <span>${escapeHtml(t('settings.plugins.scope'))}</span>
                     <select name="scope">
                         <option value="user" ${installDraft.scope === 'user' ? 'selected' : ''}>${escapeHtml(scopeLabel('user'))}</option>
@@ -325,7 +309,7 @@ function renderInstallForm() {
                     </select>
                 </label>
                 ${marketplaceMode ? `
-                    <label class="plugins-form-field">
+                    <label class="settings-field-row plugins-form-field">
                         <span>${escapeHtml(t('settings.plugins.marketplace_provider'))}</span>
                         <select name="marketplace_provider">
                             <option value="relay" ${installDraft.marketplace_provider === 'relay' ? 'selected' : ''}>${escapeHtml(t('settings.plugins.marketplace_provider_relay'))}</option>
@@ -333,7 +317,7 @@ function renderInstallForm() {
                             <option value="clawhub" ${clawhubMarketplaceMode ? 'selected' : ''}>${escapeHtml(t('settings.plugins.marketplace_provider_clawhub'))}</option>
                         </select>
                     </label>
-                    <label class="plugins-form-field plugins-form-field-with-action">
+                    <label class="settings-field-row plugins-form-field plugins-form-field-with-action">
                         <span>${escapeHtml(t(claudeMarketplaceMode || clawhubMarketplaceMode ? 'settings.plugins.marketplace_name' : 'settings.plugins.marketplace_path'))}</span>
                         <span class="plugins-input-row">
                             <input type="text" name="marketplace" value="${escapeHtml(installDraft.marketplace)}" placeholder="${escapeHtml(t(marketplacePlaceholderKey()))}" spellcheck="false" />
@@ -341,12 +325,12 @@ function renderInstallForm() {
                         </span>
                     </label>
                     ${claudeMarketplaceMode || clawhubMarketplaceMode ? `
-                        <label class="plugins-form-field plugins-form-field-wide">
+                        <label class="settings-field-row plugins-form-field plugins-form-field-wide">
                             <span>${escapeHtml(t('settings.plugins.marketplace_source'))}</span>
                             <input type="text" name="marketplace_source" value="${escapeHtml(installDraft.marketplace_source)}" placeholder="${escapeHtml(t(claudeMarketplaceMode ? 'settings.plugins.claude_marketplace_source_placeholder' : 'settings.plugins.clawhub_marketplace_source_placeholder'))}" spellcheck="false" />
                         </label>
                     ` : ''}
-                    <label class="plugins-form-field">
+                    <label class="settings-field-row plugins-form-field">
                         <span>${escapeHtml(t('settings.plugins.version'))}</span>
                         ${versions.length
                             ? renderMarketplaceVersionSelect(versions)
@@ -355,10 +339,9 @@ function renderInstallForm() {
                     ${renderMarketplacePluginSelect(marketplacePlugins)}
                 ` : ''}
                 ${gitMode ? `
-                    <label class="plugins-form-field">
+                    <label class="settings-field-row plugins-form-field">
                         <span>${escapeHtml(t('settings.plugins.git_ref'))}</span>
                         <input type="text" name="source_ref" value="${escapeHtml(installDraft.source_ref)}" placeholder="${escapeHtml(t('settings.plugins.git_ref_placeholder'))}" spellcheck="false" />
-                        <small>${escapeHtml(t('settings.plugins.git_ref_help'))}</small>
                     </label>
                 ` : ''}
             </div>
@@ -385,7 +368,7 @@ function renderMarketplacePluginSelect(plugins) {
         return '';
     }
     return `
-        <label class="plugins-form-field plugins-form-field-wide">
+        <label class="settings-field-row plugins-form-field plugins-form-field-wide">
             <span>${escapeHtml(t('settings.plugins.marketplace_plugin'))}</span>
             <select name="marketplace_plugin">
                 ${plugins.map(plugin => {
@@ -407,8 +390,8 @@ function renderSelectedMarketplacePluginDescription(plugin) {
         return '';
     }
     return `
-        <section class="plugin-detail-section">
-            <h6>${escapeHtml(t('settings.plugins.plugin_description'))}</h6>
+        <section class="settings-form-section plugin-detail-section">
+            <h6 class="settings-form-section-title">${escapeHtml(t('settings.plugins.plugin_description'))}</h6>
             <p class="plugins-muted">${escapeHtml(description)}</p>
         </section>
     `;
@@ -456,9 +439,9 @@ function renderMarketplaceVersionDetails(version) {
     const warnings = versionWarnings(version);
     const unsupportedReason = versionUnsupportedReason(version);
     return `
-        <section class="plugin-detail-section">
-            <h6>${escapeHtml(t('settings.plugins.marketplace_version_details'))}</h6>
-            <div class="plugin-detail-grid">
+        <section class="settings-form-section plugin-detail-section">
+            <h6 class="settings-form-section-title">${escapeHtml(t('settings.plugins.marketplace_version_details'))}</h6>
+            <div class="settings-record-list plugin-detail-grid">
                 ${renderDetailItem(t('settings.plugins.source_type'), source.kind || t('settings.plugins.unknown'))}
                 ${renderDetailItem(t('settings.plugins.source_path'), source.value || t('settings.plugins.no_path'))}
                 ${source.ref ? renderDetailItem(t('settings.plugins.git_ref'), source.ref) : ''}
@@ -477,9 +460,9 @@ function renderMarketplaceVersionDetails(version) {
 
 function renderValidateForm() {
     return `
-        <form class="plugins-editor-panel" id="plugin-validate-form">
-            <div class="proxy-form-section-header"><h5>${escapeHtml(t('settings.plugins.validate_title'))}</h5></div>
-            <label class="plugins-form-field">
+        <form class="settings-form-section plugins-editor-panel" id="plugin-validate-form">
+            <div class="proxy-form-section-header settings-form-section-header"><h5 class="settings-form-section-title">${escapeHtml(t('settings.plugins.validate_title'))}</h5></div>
+            <label class="settings-field-row plugins-form-field">
                 <span>${escapeHtml(t('settings.plugins.source_path'))}</span>
                 <input type="text" name="path" placeholder="${escapeHtml(t('settings.plugins.source_placeholder'))}" required spellcheck="false" />
             </label>
@@ -498,9 +481,9 @@ function renderConfigureForm(plugin) {
     }
     const fields = Object.entries(plugin.manifest?.user_config || {});
     return `
-        <form class="plugins-editor-panel" id="plugin-config-form" data-plugin-key="${escapeHtml(pluginKey(plugin))}">
-            <div class="proxy-form-section-header"><h5>${escapeHtml(formatMessage('settings.plugins.configure_title', { name: plugin.name }))}</h5></div>
-            <div class="plugins-form-grid">
+        <form class="settings-form-section plugins-editor-panel" id="plugin-config-form" data-plugin-key="${escapeHtml(pluginKey(plugin))}">
+            <div class="proxy-form-section-header settings-form-section-header"><h5 class="settings-form-section-title">${escapeHtml(formatMessage('settings.plugins.configure_title', { name: plugin.name }))}</h5></div>
+            <div class="settings-field-grid plugins-form-grid">
                 ${fields.map(([name, field]) => renderConfigField(plugin, name, field)).join('')}
             </div>
             <div class="plugins-editor-actions">
@@ -527,7 +510,7 @@ function renderConfigField(plugin, name, field) {
         : '';
     if (booleanField) {
         return `
-            <label class="plugins-checkbox-field">
+            <label class="settings-field-row plugins-checkbox-field">
                 <input
                     type="checkbox"
                     name="${escapeHtml(name)}"
@@ -549,7 +532,7 @@ function renderConfigField(plugin, name, field) {
     }
     if (jsonField) {
         return `
-            <label class="plugins-form-field plugins-form-field-wide">
+            <label class="settings-field-row plugins-form-field plugins-form-field-wide">
                 <span>
                     ${escapeHtml(title)}
                     ${required ? `<em>${escapeHtml(t('settings.plugins.required'))}</em>` : ''}
@@ -570,7 +553,7 @@ function renderConfigField(plugin, name, field) {
         `;
     }
     return `
-        <label class="plugins-form-field">
+        <label class="settings-field-row plugins-form-field">
             <span>
                 ${escapeHtml(title)}
                 ${required ? `<em>${escapeHtml(t('settings.plugins.required'))}</em>` : ''}
@@ -599,9 +582,9 @@ function renderComponents(plugin) {
         return `<div class="plugin-component-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(count))}</strong></div>`;
     }).join('');
     return `
-        <section class="plugin-detail-section">
-            <h6>${escapeHtml(t('settings.plugins.components'))}</h6>
-            <div class="plugin-component-grid">${rows}</div>
+        <section class="settings-form-section plugin-detail-section">
+            <h6 class="settings-form-section-title">${escapeHtml(t('settings.plugins.components'))}</h6>
+            <div class="settings-record-list plugin-component-grid">${rows}</div>
         </section>
     `;
 }
@@ -609,16 +592,16 @@ function renderComponents(plugin) {
 function renderUserConfigSummary(plugin, fields) {
     if (!fields.length) {
         return `
-            <section class="plugin-detail-section">
-                <h6>${escapeHtml(t('settings.plugins.user_config'))}</h6>
+            <section class="settings-form-section plugin-detail-section">
+                <h6 class="settings-form-section-title">${escapeHtml(t('settings.plugins.user_config'))}</h6>
                 <p class="plugins-muted">${escapeHtml(t('settings.plugins.no_user_config'))}</p>
             </section>
         `;
     }
     return `
-        <section class="plugin-detail-section">
-            <h6>${escapeHtml(t('settings.plugins.user_config'))}</h6>
-            <div class="plugin-config-summary">
+        <section class="settings-form-section plugin-detail-section">
+            <h6 class="settings-form-section-title">${escapeHtml(t('settings.plugins.user_config'))}</h6>
+            <div class="settings-record-list plugin-config-summary">
                 ${fields.map(([name, field]) => {
                     const value = plugin.user_config?.[name];
                     const configured = value === CONFIGURED_SECRET_VALUE || value !== undefined;
@@ -639,8 +622,8 @@ function renderDependencySummary(dependencies) {
         return '';
     }
     return `
-        <section class="plugin-detail-section">
-            <h6>${escapeHtml(t('settings.plugins.dependencies'))}</h6>
+        <section class="settings-form-section plugin-detail-section">
+            <h6 class="settings-form-section-title">${escapeHtml(t('settings.plugins.dependencies'))}</h6>
             <div class="plugin-chip-row">
                 ${dependencies.map(dependency => `<span class="plugin-chip">${escapeHtml(dependencyLabel(dependency))}</span>`).join('')}
             </div>
@@ -650,8 +633,8 @@ function renderDependencySummary(dependencies) {
 
 function renderDiagnostics(diagnostics) {
     return `
-        <section class="plugin-detail-section">
-            <h6>${escapeHtml(t('settings.plugins.diagnostics'))}</h6>
+        <section class="settings-form-section plugin-detail-section">
+            <h6 class="settings-form-section-title">${escapeHtml(t('settings.plugins.diagnostics'))}</h6>
             ${diagnostics.length
                 ? `<div class="plugin-diagnostics-list">${diagnostics.map(renderDiagnostic).join('')}</div>`
                 : `<p class="plugins-muted">${escapeHtml(t('settings.plugins.no_diagnostics'))}</p>`}
@@ -1461,9 +1444,9 @@ function scopeLabel(scope) {
 
 function renderDetailItem(label, value) {
     return `
-        <div class="plugin-detail-item">
-            <span>${escapeHtml(label)}</span>
-            <strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong>
+        <div class="settings-record plugin-detail-item">
+            <span class="settings-record-meta">${escapeHtml(label)}</span>
+            <strong class="settings-record-title" title="${escapeHtml(value)}">${escapeHtml(value)}</strong>
         </div>
     `;
 }
@@ -1473,11 +1456,11 @@ function renderNoMatches() {
 }
 
 function renderSelectedEmpty() {
-    return `<div class="plugins-empty-state"><h5>${escapeHtml(t('settings.plugins.selected_empty'))}</h5></div>`;
+    return `<div class="settings-empty-state settings-empty-state-compact plugins-empty-state"><h4>${escapeHtml(t('settings.plugins.selected_empty'))}</h4></div>`;
 }
 
 function renderLoading() {
-    return `<div class="plugins-empty-state"><h5>${escapeHtml(t('settings.plugins.loading'))}</h5></div>`;
+    return `<div class="settings-empty-state settings-empty-state-compact plugins-empty-state"><h4>${escapeHtml(t('settings.plugins.loading'))}</h4></div>`;
 }
 
 function readFormValue(form, fieldName) {

@@ -59,7 +59,10 @@ def test_hooks_settings_panel_renders_loaded_hooks(tmp_path: Path) -> None:
 
     html = cast(str, payload["html"])
     assert "lint changed files" not in html
-    assert '<div class="mcp-status-card-name">Python write guard</div>' in html
+    assert (
+        '<div class="settings-record-title mcp-status-card-name">Python write guard</div>'
+        in html
+    )
     assert "Edit" in html
     assert "Delete Hook" in html
     assert "python policy.py" in html
@@ -77,7 +80,10 @@ def test_hooks_settings_panel_renders_loaded_hooks(tmp_path: Path) -> None:
     assert "coordinator" in html
     assert ">normal</div>" in html
     assert "foreground" in html
-    assert "mcp-status-card hooks-runtime-card" in html
+    assert (
+        "settings-record general-setting-card mcp-status-card hooks-runtime-card"
+        in html
+    )
     assert "hooks-runtime-detail-list status-list" in html
     assert "hooks-runtime-detail-row status-list-row" in html
     assert "hooks-runtime-detail-item status-list-copy" in html
@@ -123,7 +129,12 @@ def test_hooks_settings_panel_groups_multiple_matchers_under_one_event(
     )
 
     html = cast(str, payload["html"])
-    assert html.count("<h5>PreToolUse</h5>") == 1
+    assert html.count('<h5 class="settings-form-section-title">PreToolUse</h5>') == 1
+    assert (
+        "settings-record general-setting-card mcp-status-card hooks-runtime-card"
+        in html
+    )
+    assert "settings-record-title mcp-status-card-name" in html
     assert "Write guard" in html
     assert "Edit formatter" in html
     assert "lint changed files" not in html
@@ -136,7 +147,10 @@ def test_hooks_settings_panel_renders_empty_and_error_states(tmp_path: Path) -> 
         hooks_config={"hooks": {}},
         runtime_view={"sources": [], "loaded_hooks": []},
     )
-    assert "No hooks configured" in str(empty_payload["html"])
+    empty_html = str(empty_payload["html"])
+    assert "No hooks configured" in empty_html
+    assert '<div class="settings-content-stack hooks-config-editor">' in empty_html
+    assert "proxy-form-section settings-form-section" not in empty_html
 
     error_payload = _run_hooks_settings_script(
         tmp_path=tmp_path / "error",

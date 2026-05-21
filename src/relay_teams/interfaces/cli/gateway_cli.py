@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 import json
+from pathlib import Path
 import sys
+from typing import NamedTuple, Protocol, cast
 
 from pydantic import JsonValue
 import typer
@@ -13,11 +15,10 @@ from relay_teams.builtin import ensure_app_config_bootstrap
 from relay_teams.env.runtime_env import sync_app_env_to_process_env
 from relay_teams.gateway.acp_mcp_relay import AcpMcpRelay, GatewayAwareMcpRegistry
 from relay_teams.gateway.acp_stdio import AcpGatewayServer, AcpStdioRuntime
-from relay_teams.gateway.gateway_models import GatewaySessionRecord
-from relay_teams.gateway.gateway_session_repository import GatewaySessionRepository
 from relay_teams.gateway.gateway_session_model_profile_store import (
     GatewaySessionModelProfileStore,
 )
+from relay_teams.gateway.gateway_session_repository import GatewaySessionRepository
 from relay_teams.gateway.gateway_session_service import GatewaySessionService
 from relay_teams.interfaces.server.container import ServerContainer
 from relay_teams.logger import configure_logging
@@ -28,6 +29,97 @@ RequestJsonCallable = Callable[
     dict[str, object] | list[object],
 ]
 AutoStartCallable = Callable[[str, bool, bool, bool], None]
+
+
+class _RoleSummary(Protocol):
+    role_id: str
+
+
+class _RoleRegistry(Protocol):
+    def resolve_normal_mode_role_id(self, role_id: str) -> str:
+        raise NotImplementedError
+
+    def list_normal_mode_roles(self) -> Sequence[_RoleSummary]:
+        raise NotImplementedError
+
+
+class _GatewayContainer(Protocol):
+    @property
+    def role_registry(self) -> _RoleRegistry:
+        raise NotImplementedError
+
+
+class _AcpRuntime(Protocol):
+    send_message: object
+
+    async def serve_forever(self) -> None:
+        raise NotImplementedError
+
+
+class _RuntimePaths(Protocol):
+    db_path: Path
+
+
+class _RuntimeState(Protocol):
+    paths: _RuntimePaths
+
+
+class _GeneralConfig(Protocol):
+    shell_safety_policy_enabled: bool
+
+
+class _GeneralConfigService(Protocol):
+    def get_config(self) -> _GeneralConfig:
+        raise NotImplementedError
+
+
+class _ServerContainer(Protocol):
+    metric_recorder: object | None
+    runtime: _RuntimeState
+    mcp_registry: object
+    session_service: object
+    workspace_service: object
+    run_service: object
+    media_asset_service: object
+    session_ingress_service: object
+    general_config_service: _GeneralConfigService
+
+    @property
+    def role_registry(self) -> _RoleRegistry:
+        raise NotImplementedError
+
+    def replace_mcp_registry(self, registry: object) -> None:
+        raise NotImplementedError
+
+
+class _SessionModelProfileStore(Protocol):
+    def get(self, internal_session_id: str) -> object | None:
+        raise NotImplementedError
+
+
+class _GatewaySessionService(Protocol):
+    def get_session(self, gateway_session_id: str) -> object:
+        raise NotImplementedError
+
+
+class _AcpGatewayServer(Protocol):
+    def set_notify(self, notify: object) -> None:
+        raise NotImplementedError
+
+
+class _AcpStdioRuntimeDependencies(NamedTuple):
+    get_app_config_dir: Callable[[], Path]
+    ensure_app_config_bootstrap: Callable[[Path], None]
+    sync_app_env_to_process_env: Callable[[Path], object]
+    configure_logging: Callable[..., object]
+    gateway_session_model_profile_store: Callable[..., object]
+    server_container: Callable[..., object]
+    gateway_session_repository: Callable[..., object]
+    gateway_session_service: Callable[..., object]
+    acp_mcp_relay: Callable[..., object]
+    gateway_aware_mcp_registry: Callable[..., object]
+    acp_gateway_server: Callable[..., object]
+    acp_stdio_runtime: Callable[..., object]
 
 
 def build_gateway_app(
@@ -463,74 +555,106 @@ def build_gateway_app(
     return root_gateway_app
 
 
-def _build_acp_stdio_runtime(*, role_id: str | None = None) -> AcpStdioRuntime:
-    config_dir = get_app_config_dir()
-    ensure_app_config_bootstrap(config_dir)
-    sync_app_env_to_process_env(config_dir / ".env")
-    configure_logging(config_dir=config_dir, console_enabled_override=False)
-    session_model_profile_store = GatewaySessionModelProfileStore()
-    container = ServerContainer(
-        config_dir=config_dir,
-        session_model_profile_lookup=session_model_profile_store.get,
+def _build_acp_stdio_runtime(*, role_id: str | None = None) -> _AcpRuntime:
+    deps = _load_acp_stdio_runtime_dependencies()
+    config_dir = deps.get_app_config_dir()
+    deps.ensure_app_config_bootstrap(config_dir)
+    deps.sync_app_env_to_process_env(config_dir / ".env")
+    deps.configure_logging(config_dir=config_dir, console_enabled_override=False)
+    session_model_profile_store = cast(
+        _SessionModelProfileStore,
+        deps.gateway_session_model_profile_store(),
+    )
+    container = cast(
+        _ServerContainer,
+        deps.server_container(
+            config_dir=config_dir,
+            session_model_profile_lookup=session_model_profile_store.get,
+        ),
     )
     default_normal_root_role_id = _resolve_acp_stdio_role_id(
         container=container,
         role_id=role_id,
     )
-    metric_recorder = getattr(container, "metric_recorder", None)
-    gateway_session_repository = GatewaySessionRepository(
+    gateway_session_repository = deps.gateway_session_repository(
         container.runtime.paths.db_path
     )
-    gateway_session_service = GatewaySessionService(
-        repository=gateway_session_repository,
-        session_service=container.session_service,
-        workspace_service=container.workspace_service,
-        session_model_profile_store=session_model_profile_store,
-        default_normal_root_role_id=default_normal_root_role_id,
+    gateway_session_service = cast(
+        _GatewaySessionService,
+        deps.gateway_session_service(
+            repository=gateway_session_repository,
+            session_service=container.session_service,
+            workspace_service=container.workspace_service,
+            session_model_profile_store=session_model_profile_store,
+            default_normal_root_role_id=default_normal_root_role_id,
+        ),
     )
 
     def lookup_gateway_session(
         gateway_session_id: str,
-    ) -> GatewaySessionRecord | None:
+    ) -> object | None:
         try:
             return gateway_session_service.get_session(gateway_session_id)
         except KeyError:
             return None
 
-    mcp_relay = AcpMcpRelay(
-        metric_recorder=metric_recorder,
+    mcp_relay = deps.acp_mcp_relay(
+        metric_recorder=container.metric_recorder,
         gateway_session_lookup=lookup_gateway_session,
     )
-    gateway_mcp_registry = GatewayAwareMcpRegistry(
+    gateway_mcp_registry = deps.gateway_aware_mcp_registry(
         base_registry=container.mcp_registry,
         relay=mcp_relay,
     )
     container.replace_mcp_registry(gateway_mcp_registry)
-    server = AcpGatewayServer(
-        gateway_session_service=gateway_session_service,
-        session_service=container.session_service,
-        run_service=container.run_service,
-        media_asset_service=container.media_asset_service,
-        notify=_noop_notify,
-        mcp_relay=mcp_relay,
-        session_ingress_service=container.session_ingress_service,
-        metric_recorder=metric_recorder,
-        get_shell_safety_policy_enabled=lambda: (
-            container.general_config_service.get_config().shell_safety_policy_enabled
+    server = cast(
+        _AcpGatewayServer,
+        deps.acp_gateway_server(
+            gateway_session_service=gateway_session_service,
+            session_service=container.session_service,
+            run_service=container.run_service,
+            media_asset_service=container.media_asset_service,
+            notify=_noop_notify,
+            mcp_relay=mcp_relay,
+            session_ingress_service=container.session_ingress_service,
+            metric_recorder=container.metric_recorder,
+            get_shell_safety_policy_enabled=lambda: (
+                container.general_config_service.get_config().shell_safety_policy_enabled
+            ),
         ),
     )
-    runtime = AcpStdioRuntime(
-        server=server,
-        input_stream=sys.stdin.buffer,
-        output_stream=sys.stdout.buffer,
+    runtime = cast(
+        _AcpRuntime,
+        deps.acp_stdio_runtime(
+            server=server,
+            input_stream=sys.stdin.buffer,
+            output_stream=sys.stdout.buffer,
+        ),
     )
     server.set_notify(runtime.send_message)
     return runtime
 
 
+def _load_acp_stdio_runtime_dependencies() -> _AcpStdioRuntimeDependencies:
+    return _AcpStdioRuntimeDependencies(
+        get_app_config_dir=get_app_config_dir,
+        ensure_app_config_bootstrap=ensure_app_config_bootstrap,
+        sync_app_env_to_process_env=sync_app_env_to_process_env,
+        configure_logging=configure_logging,
+        gateway_session_model_profile_store=GatewaySessionModelProfileStore,
+        server_container=ServerContainer,
+        gateway_session_repository=GatewaySessionRepository,
+        gateway_session_service=GatewaySessionService,
+        acp_mcp_relay=AcpMcpRelay,
+        gateway_aware_mcp_registry=GatewayAwareMcpRegistry,
+        acp_gateway_server=AcpGatewayServer,
+        acp_stdio_runtime=AcpStdioRuntime,
+    )
+
+
 def _resolve_acp_stdio_role_id(
     *,
-    container: ServerContainer,
+    container: _GatewayContainer | _ServerContainer,
     role_id: str | None,
 ) -> str | None:
     normalized_role_id = str(role_id or "").strip() or None

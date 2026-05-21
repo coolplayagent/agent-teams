@@ -56,6 +56,9 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     bootstrap_script = (
         repo_root / "frontend" / "dist" / "js" / "app" / "bootstrap.js"
     ).read_text(encoding="utf-8")
+    session_script = (
+        repo_root / "frontend" / "dist" / "js" / "app" / "session.js"
+    ).read_text(encoding="utf-8")
     state_script = (
         repo_root / "frontend" / "dist" / "js" / "core" / "state.js"
     ).read_text(encoding="utf-8")
@@ -102,6 +105,22 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     assert "No session selected" not in index_html
     assert "Start a session from the left sidebar" not in index_html
     assert 'class="app-shell"' in index_html
+    assert 'body data-bootstrap-state="loading" data-projects-ready="false"' in (
+        index_html
+    )
+    assert 'id="initial-runtime-loader"' in index_html
+    assert "initial-runtime-spinner" in index_html
+    assert ".initial-runtime-loader {" in index_html
+    assert "pointer-events: none;" in index_html
+    assert 'body[data-projects-ready="false"] #projects-list' in index_html
+    assert "页面加载中..." in index_html
+    assert "加载中</span>" not in index_html
+    assert "运行时启动中..." not in index_html
+    assert '<link rel="stylesheet" href="/css/components/projects.css" />' in (
+        index_html
+    )
+    assert "onload=\"this.onload=null;this.rel='stylesheet'\"" not in index_html
+    assert 'src="/vendor/chart.js" defer' in index_html
     assert 'id="projects-list"' in index_html
     assert "<h2>agent-teams</h2>" not in index_html
     assert '<div class="workspace-title">agent-teams</div>' in index_html
@@ -147,6 +166,13 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     assert "confirm(" not in model_profiles_script
     assert "alert(" not in system_status_script
     assert "confirm(" not in sidebar_script
+    assert (
+        "const shouldForceRefreshSessions = forceRefresh === true || !hasSidebarDataSnapshot();"
+        in sidebar_script
+    )
+    assert "forceRefresh: shouldForceRefreshSessions," in sidebar_script
+    assert "function markProjectsReady() {" in sidebar_script
+    assert "document.body.dataset.projectsReady = 'true';" in sidebar_script
     assert "showToast" in feedback_script
     assert "showConfirmDialog" in feedback_script
     assert "requestAnimationFrame" in navbar_script
@@ -160,6 +186,25 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     assert "getVisibleSidebarWidth" not in navbar_script
     assert navbar_script.count("flushWidth();") >= 1
     assert "initBackendStatusMonitor" in bootstrap_script
+    assert 'document.body.dataset.bootstrapState = "loading";' in bootstrap_script
+    assert "selectSession(sessionId, { markTerminalViewed: false });" in (
+        bootstrap_script
+    )
+    assert "try {" in bootstrap_script
+    assert "} finally {" in bootstrap_script
+    assert "dismissInitialRuntimeLoader();" in bootstrap_script
+    assert bootstrap_script.index("try {") < bootstrap_script.index(
+        "await initializeLanguage();"
+    )
+    assert bootstrap_script.index("} finally {") > bootstrap_script.index(
+        "await loadProjects();"
+    )
+    assert 'document.body.dataset.bootstrapState = "ready";' in bootstrap_script
+    assert (
+        "const forceMarkTerminalViewed = options.forceMarkTerminalViewed === true;"
+        in (session_script)
+    )
+    assert "|| forceMarkTerminalViewed" in session_script
     assert "initializeSessionTokenUsage" in bootstrap_script
     assert "initializeSessionTopologyControls" in bootstrap_script
     assert "is-resizing-rails" in navbar_script

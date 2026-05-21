@@ -17,8 +17,8 @@
 }
 
 .status-indicator > span:first-child {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     flex: 0 0 auto;
     background-color: var(--text-secondary);
@@ -46,16 +46,88 @@
     opacity: 1;
 }
 
-.status-indicator.checking > span:first-child {
+.status-indicator.checking > span:first-child,
+.status-indicator.initializing > span:first-child {
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid color-mix(in srgb, var(--warning) 24%, transparent);
+    border-top-color: var(--warning);
     background-color: var(--warning);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--warning) 70%, transparent);
+    background-clip: content-box;
+    padding: 2px;
+    box-shadow: none;
     opacity: 1;
+    animation: backendStatusSpinner 0.72s linear infinite;
 }
 
 .status-indicator.busy > span:first-child {
     background-color: var(--warning);
     box-shadow: 0 0 8px color-mix(in srgb, var(--warning) 70%, transparent);
     opacity: 1;
+}
+
+.runtime-loading-banner {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    z-index: 70;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2rem;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: 0.38rem 0.66rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(17, 19, 18, 0.08);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.runtime-loading-banner.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.runtime-loading-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.runtime-loading-spinner {
+    flex: 0 0 auto;
+    width: 0.78rem;
+    height: 0.78rem;
+    border: 1.5px solid color-mix(in srgb, var(--text-secondary) 26%, transparent);
+    border-top-color: color-mix(in srgb, var(--primary) 84%, var(--text-primary));
+    border-radius: 50%;
+    animation: backendStatusSpinner 0.72s linear infinite;
+}
+
+@keyframes backendStatusSpinner {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-indicator.checking > span:first-child,
+    .status-indicator.initializing > span:first-child,
+    .runtime-loading-spinner {
+        animation: none;
+    }
+
+    .runtime-loading-banner {
+        transition: none;
+    }
 }
 
 @keyframes roundSectionEmphasis {

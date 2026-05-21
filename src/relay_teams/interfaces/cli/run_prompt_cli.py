@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 import typer
 
-from relay_teams.env import load_proxy_env_config
+from relay_teams.env.proxy_env import load_proxy_env_config
 from relay_teams.net.clients import create_async_http_client
 from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.session_models import SessionMode

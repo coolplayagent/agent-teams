@@ -1,26 +1,19 @@
 from __future__ import annotations
 
 import threading
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from relay_teams.env import w3_auth_token_env as w3_auth_token_env_module
-from relay_teams.env import (
-    env_declares_w3_x_auth_token as package_env_declares_w3_x_auth_token,
-)
-from relay_teams.env import (
-    is_w3_x_auth_token_env_name as package_is_w3_x_auth_token_env_name,
-)
-from relay_teams.env import (
-    overlay_w3_x_auth_token_env as package_overlay_w3_x_auth_token_env,
-)
-from relay_teams.env import resolve_w3_x_auth_token as package_resolve_w3_x_auth_token
 from relay_teams.env.w3_auth_token_env import (
+    env_declares_w3_x_auth_token,
     is_w3_x_auth_token_env_name,
     overlay_w3_x_auth_token_env,
     resolve_w3_x_auth_token,
 )
+from relay_teams.env import w3_auth_token_env as w3_auth_token_env_module
 from relay_teams.providers.maas_auth import MaaSAuthContext, MaaSLoginError
 from relay_teams.providers.model_config import MaaSAuthConfig
 from relay_teams.providers.w3_auth_source import (
@@ -65,6 +58,26 @@ class _TokenService:
         return MaaSAuthContext(token=self._token)
 
 
+def test_package_env_import_does_not_load_maas_provider_runtime_boundary() -> None:
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import sys; import relay_teams.env; "
+            "print('relay_teams.providers.maas_auth' in sys.modules)"
+        ),
+    ]
+
+    result = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "False"
+
+
 @pytest.mark.parametrize(
     "name",
     ("X_AUTH_TOKEN", "x-auth-token", "X-Auth-Token", "xAuthToken"),
@@ -78,27 +91,27 @@ def test_is_w3_x_auth_token_env_name_rejects_other_tokens(name: str) -> None:
     assert is_w3_x_auth_token_env_name(name) is False
 
 
-def test_w3_auth_token_env_helpers_are_exposed_from_env_package() -> None:
-    assert package_env_declares_w3_x_auth_token({"X_AUTH_TOKEN": "x"}) is True
-    assert package_is_w3_x_auth_token_env_name("xAuthToken") is True
-    assert callable(package_overlay_w3_x_auth_token_env)
-    assert callable(package_resolve_w3_x_auth_token)
+def test_w3_auth_token_env_helpers_are_exposed_from_submodule() -> None:
+    assert env_declares_w3_x_auth_token({"X_AUTH_TOKEN": "x"}) is True
+    assert is_w3_x_auth_token_env_name("xAuthToken") is True
+    assert callable(overlay_w3_x_auth_token_env)
+    assert callable(resolve_w3_x_auth_token)
 
 
 @pytest.mark.asyncio
-async def test_w3_auth_token_env_async_helpers_are_exposed_from_env_package(
+async def test_w3_auth_token_env_async_helpers_are_exposed_from_submodule(
     tmp_path: Path,
 ) -> None:
     secret_store = _FileSecretStore()
     token_service = _TokenService(token="runtime-token")
     _write_w3_credentials(tmp_path, secret_store=secret_store)
 
-    token = await package_resolve_w3_x_auth_token(
+    token = await resolve_w3_x_auth_token(
         config_dir=tmp_path,
         secret_store=secret_store,
         token_service=token_service,
     )
-    env = await package_overlay_w3_x_auth_token_env(
+    env = await overlay_w3_x_auth_token_env(
         {"X_AUTH_TOKEN": "placeholder"},
         declared_env={"X_AUTH_TOKEN": "placeholder"},
         config_dir=tmp_path,

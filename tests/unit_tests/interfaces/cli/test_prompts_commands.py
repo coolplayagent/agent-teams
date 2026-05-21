@@ -10,7 +10,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from relay_teams.interfaces.cli import app as cli_app
+from relay_teams.interfaces.cli import app_full as cli_app
 from relay_teams.interfaces.cli import run_prompt_cli as prompt_cli
 
 runner = CliRunner()

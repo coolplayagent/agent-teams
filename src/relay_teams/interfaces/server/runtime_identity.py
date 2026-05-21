@@ -74,6 +74,10 @@ class ServerHealthPayload(BaseModel):
     role_registry_sanity: RoleRegistrySanity | None = None
     skill_registry_sanity: SkillRegistrySanity | None = None
     tool_registry_sanity: ToolRegistrySanity | None = None
+    startup_phase: str = "ready"
+    hydrated: bool = True
+    components: dict[str, str] = Field(default_factory=dict)
+    error: str | None = None
 
 
 def build_server_runtime_identity(

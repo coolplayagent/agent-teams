@@ -56,12 +56,22 @@ function isLatestSessionSelection(token, sessionId) {
     return token === sessionSelectionToken && state.currentSessionId === sessionId;
 }
 
-export async function selectSession(sessionId) {
+export async function selectSession(sessionId, options = {}) {
     bindSessionSelectionCancellation();
     const safeSessionId = String(sessionId || '').trim();
     if (!safeSessionId) {
         return;
     }
+    const markTerminalViewed = options.markTerminalViewed !== false;
+    const forceMarkTerminalViewed = options.forceMarkTerminalViewed === true;
+    const selectedSessionEl = document.querySelector(
+        `.session-item[data-session-id="${safeSessionId}"]`,
+    );
+    const selectedSessionNeedsTerminalView = (
+        selectedSessionEl?.classList?.contains?.('has-run-indicator-unread') === true
+        || selectedSessionEl?.classList?.contains?.('has-run-indicator-failed') === true
+        || selectedSessionEl?.classList?.contains?.('has-run-indicator-stopped') === true
+    );
     if (
         state.currentSessionId === safeSessionId
         && state.activeView === 'subagent-agent'
@@ -80,6 +90,12 @@ export async function selectSession(sessionId) {
         );
         scheduleCoordinatorContextPreview({ immediate: true });
         scheduleSessionTokenUsageRefresh({ immediate: true });
+        if (
+            markTerminalViewed
+            && (selectedSessionNeedsTerminalView || forceMarkTerminalViewed)
+        ) {
+            void markSelectedSessionTerminalViewed(safeSessionId);
+        }
         sysLog(formatMessage('session.switched', { session_id: safeSessionId }));
         return;
     }
@@ -90,14 +106,6 @@ export async function selectSession(sessionId) {
     const hadActiveSubagentSession = !!state.activeSubagentSession;
     const isSameSession = state.currentSessionId === safeSessionId && !hadActiveSubagentSession;
     const previousSessionId = state.currentSessionId;
-    const selectedSessionEl = document.querySelector(
-        `.session-item[data-session-id="${safeSessionId}"]`,
-    );
-    const selectedSessionNeedsTerminalView = (
-        selectedSessionEl?.classList?.contains?.('has-run-indicator-unread') === true
-        || selectedSessionEl?.classList?.contains?.('has-run-indicator-failed') === true
-        || selectedSessionEl?.classList?.contains?.('has-run-indicator-stopped') === true
-    );
     const selectedWorkspaceId = String(
         selectedSessionEl?.getAttribute('data-workspace-id') || '',
     ).trim();
@@ -123,7 +131,10 @@ export async function selectSession(sessionId) {
         if (!isLatestSessionSelection(selectionToken, safeSessionId)) {
             return;
         }
-        if (selectedSessionNeedsTerminalView) {
+        if (
+            markTerminalViewed
+            && (selectedSessionNeedsTerminalView || forceMarkTerminalViewed)
+        ) {
             void markSelectedSessionTerminalViewed(safeSessionId, selectionSignal);
         }
         scheduleSessionTokenUsageRefresh({ immediate: true });
@@ -190,6 +201,7 @@ export async function selectSession(sessionId) {
             return;
         }
         const sessionNeedsTerminalView = selectedSessionNeedsTerminalView
+            || forceMarkTerminalViewed
             || sessionRecordNeedsTerminalView(sessionRecord);
         applyCurrentSessionRecord(sessionRecord);
         refreshSessionTopologyControls();
@@ -210,7 +222,7 @@ export async function selectSession(sessionId) {
         if (!isLatestSessionSelection(selectionToken, safeSessionId)) {
             return;
         }
-        if (sessionNeedsTerminalView) {
+        if (markTerminalViewed && sessionNeedsTerminalView) {
             void markSelectedSessionTerminalViewed(safeSessionId, selectionSignal);
         }
     } catch (error) {

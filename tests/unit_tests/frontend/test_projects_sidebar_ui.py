@@ -876,9 +876,8 @@ console.log(JSON.stringify({
         "optimisticActivateSession(sessionId, { animate: true, item: button, updateState: false });"
         in sidebar_script
     )
-    assert "await selectSessionById(sessionId, selectionToken);" in sidebar_script
     assert (
-        "void selectSessionById(sessionId, selectionToken).catch(error => {"
+        "void selectSessionById(sessionId, selectionToken, { forceMarkTerminalViewed }).catch(error => {"
         in sidebar_script
     )
     assert (
@@ -892,7 +891,7 @@ console.log(JSON.stringify({
     ).read_text(encoding="utf-8")
     assert "selectedSessionNeedsTerminalView" in session_script
     assert "sessionRecordNeedsTerminalView(sessionRecord)" in session_script
-    assert "if (sessionNeedsTerminalView)" in session_script
+    assert "if (markTerminalViewed && sessionNeedsTerminalView)" in session_script
     assert (
         "void markSelectedSessionTerminalViewed(safeSessionId, selectionSignal);"
         in session_script
@@ -3686,7 +3685,7 @@ export async function runAutomationProject() {
         "sessions": 2,
         "automationProjects": 1,
     }
-    assert payload["sessionForceRefreshes"] == [False, True]
+    assert payload["sessionForceRefreshes"] == [True, True]
 
 
 def test_projects_sidebar_preserves_forced_refresh_across_debounce(
@@ -3813,7 +3812,7 @@ export async function runAutomationProject() {
         "sessions": 2,
         "automationProjects": 1,
     }
-    assert payload["sessionForceRefreshes"] == [False, True]
+    assert payload["sessionForceRefreshes"] == [True, True]
 
 
 def test_projects_sidebar_coalesces_session_refresh_while_request_is_in_flight(
@@ -3960,7 +3959,7 @@ export async function runAutomationProject() {
         "sessions": 2,
         "automationProjects": 1,
     }
-    assert payload["forceRefreshesWhileInFlight"] == [False, False]
+    assert payload["forceRefreshesWhileInFlight"] == [True, False]
     assert payload["countsBeforeTrailingResolve"] == {
         "workspaces": 1,
         "sessions": 3,
@@ -3971,7 +3970,7 @@ export async function runAutomationProject() {
         "sessions": 3,
         "automationProjects": 1,
     }
-    assert payload["sessionForceRefreshes"] == [False, False, True]
+    assert payload["sessionForceRefreshes"] == [True, False, True]
 
 
 def test_projects_sidebar_defers_subagent_events_without_force_refresh_while_hovering(

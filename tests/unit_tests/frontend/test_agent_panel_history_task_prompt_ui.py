@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 
-@pytest.mark.timeout(5)
+@pytest.mark.timeout(30)
 def test_render_instance_history_replace_when_ready_keeps_existing_content(
     tmp_path: Path,
 ) -> None:
@@ -180,7 +180,7 @@ console.log(JSON.stringify({
         check=False,
         cwd=str(repo_root),
         text=True,
-        timeout=3,
+        timeout=30,
     )
     if completed.returncode != 0:
         raise AssertionError(

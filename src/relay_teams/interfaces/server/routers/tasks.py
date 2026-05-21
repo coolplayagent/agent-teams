@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from relay_teams.agents.orchestration.llm_evaluator import LLMEvaluator
 from relay_teams.agents.orchestration.llm_evaluator_models import (
@@ -35,6 +35,7 @@ from relay_teams.agents.tasks.spec_artifact_diff_service import (
 )
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
+_JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 
 
 class CreateTasksRequest(BaseModel):
@@ -54,6 +55,10 @@ class UpdateTaskRequest(BaseModel):
     verification: VerificationPlan | None = None
     lifecycle: TaskLifecyclePolicy | None = None
     handoff: TaskHandoff | None = None
+
+
+def _to_json_value(value: object) -> JsonValue:
+    return _JSON_VALUE_ADAPTER.validate_python(value)
 
 
 @router.get("", response_model=list[TaskRecord])
@@ -105,6 +110,15 @@ async def get_task(
         return await service.get_task_async(task_id=task_id)
     except KeyError as exc:
         raise http_exception_for(exc, key_error_detail="Task not found") from exc
+
+
+@router.post("/{task_id}/dispatch")
+async def reject_manual_task_dispatch(task_id: RequiredIdentifierStr) -> None:
+    _ = task_id
+    raise HTTPException(
+        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        detail="Manual task dispatch is not exposed.",
+    )
 
 
 @router.patch("/{task_id}")
@@ -214,22 +228,27 @@ async def list_spec_artifacts(
     if response_format == "full":
         return {
             "task_id": task_id,
-            "versions": [artifact.model_dump(mode="json") for artifact in artifacts],  # type: ignore[dict-item]
+            "versions": [
+                _to_json_value(artifact.model_dump(mode="json"))
+                for artifact in artifacts
+            ],
         }
     summaries = [
-        SpecArtifactVersionSummary(
-            artifact_id=a.artifact_id,
-            task_id=a.task_id,
-            session_id=a.session_id,
-            trace_id=a.trace_id,
-            source_task_id=a.source_task_id,
-            version=a.version,
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-        ).model_dump(mode="json")
+        _to_json_value(
+            SpecArtifactVersionSummary(
+                artifact_id=a.artifact_id,
+                task_id=a.task_id,
+                session_id=a.session_id,
+                trace_id=a.trace_id,
+                source_task_id=a.source_task_id,
+                version=a.version,
+                created_at=a.created_at,
+                updated_at=a.updated_at,
+            ).model_dump(mode="json")
+        )
         for a in artifacts
     ]
-    return {"task_id": task_id, "versions": summaries}  # type: ignore[dict-item]
+    return {"task_id": task_id, "versions": summaries}
 
 
 @router.get("/{task_id}/spec-artifacts/{version}/diff")
@@ -283,5 +302,5 @@ async def list_spec_checkpoint_evaluations(
         raise http_exception_for(exc, key_error_detail="Task not found") from exc
     return {
         "task_id": task_id,
-        "evaluations": [e.model_dump(mode="json") for e in evaluations],  # type: ignore[dict-item]
+        "evaluations": [_to_json_value(e.model_dump(mode="json")) for e in evaluations],
     }

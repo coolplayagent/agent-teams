@@ -10,11 +10,7 @@ from typing import Protocol
 from relay_teams.env.w3_auth_source import get_w3_credentials
 from relay_teams.logger import get_logger
 from relay_teams.paths import get_app_config_dir
-from relay_teams.providers.maas_auth import (
-    MaaSAuthContext,
-    MaaSLoginError,
-    get_maas_token_service,
-)
+from relay_teams.providers.maas_auth import MaaSLoginError, get_maas_token_service
 from relay_teams.providers.model_config import (
     DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
     MaaSAuthConfig,
@@ -42,8 +38,12 @@ class W3MaaSTokenService(Protocol):
         ssl_verify: bool | None,
         connect_timeout_seconds: float,
         force_refresh: bool = False,
-    ) -> MaaSAuthContext:
+    ) -> "W3MaaSAuthContext":
         raise NotImplementedError  # pragma: no cover
+
+
+class W3MaaSAuthContext(Protocol):
+    token: str
 
 
 def is_w3_x_auth_token_env_name(name: str) -> bool:
@@ -118,9 +118,10 @@ async def resolve_w3_x_auth_token(
         )
         return None
     try:
-        auth_context = await (
+        resolved_token_service = (
             get_maas_token_service() if token_service is None else token_service
-        ).get_auth_context(
+        )
+        auth_context = await resolved_token_service.get_auth_context(
             auth_config=MaaSAuthConfig(
                 username=credentials.username,
                 password=credentials.password,

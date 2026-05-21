@@ -17,6 +17,7 @@ import {
     fetchSessions,
     fetchWorkspaces,
     forkWorkspace,
+    markSessionTerminalRunViewed,
     pickWorkspace,
     updateSession,
 } from '../core/api.js';
@@ -68,6 +69,7 @@ import {
     getSidebarDataSnapshot,
     hasSidebarDataSnapshot,
     mergeOptimisticSessions,
+    markSidebarSessionTerminalViewed,
     rememberSidebarDataSnapshot,
     removeSidebarSession,
     updateOptimisticSessionTitle,
@@ -101,6 +103,7 @@ let projectSortMode = 'recent';
 let openProjectMenuId = null;
 let projectMenuDismissBound = false;
 let languageRefreshBound = false;
+let terminalSessionClickBound = false;
 let sessionSearchConfigured = false;
 let pendingSessionAnimation = null;
 let pendingSessionVisibilityAnimation = null;
@@ -153,6 +156,37 @@ function isProjectsListInteracting() {
         return true;
     }
     return false;
+}
+
+function ensureTerminalSessionClickBinding() {
+    if (terminalSessionClickBound || typeof document?.addEventListener !== 'function') {
+        return;
+    }
+    document.addEventListener('click', event => {
+        const target = event?.target;
+        const item = typeof target?.closest === 'function'
+            ? target.closest('.session-item')
+            : null;
+        if (
+            !item
+            || item.classList?.contains?.('session-subagent-item')
+            || typeof target?.closest !== 'function'
+            || target.closest('.session-delete-btn, .session-rename-btn, .session-subagents-toggle')
+        ) {
+            return;
+        }
+        const sessionId = String(item.getAttribute('data-session-id') || '').trim();
+        if (sessionId && hasSessionTerminalIndicator(item)) {
+            void markClickedSessionTerminalViewed(sessionId);
+        }
+    }, true);
+    terminalSessionClickBound = true;
+}
+
+function markProjectsReady() {
+    if (document?.body?.dataset) {
+        document.body.dataset.projectsReady = 'true';
+    }
 }
 
 function suppressSessionsRefreshAfterLocalDelete() {
@@ -1420,11 +1454,11 @@ async function requestAutomationProjectInput() {
     return requestAutomationProjectEditorInput({});
 }
 
-async function selectSessionById(sessionId, selectionToken = null) {
+async function selectSessionById(sessionId, selectionToken = null, options = {}) {
     if (!selectSessionHandler) throw new Error('selectSession handler is not configured');
     const workspaceId = sessionWorkspaceMap.get(sessionId);
     if (workspaceId) state.currentWorkspaceId = workspaceId;
-    await selectSessionHandler(sessionId);
+    await selectSessionHandler(sessionId, options);
     if (selectionToken === null || isLatestSidebarSelection(selectionToken)) {
         state.currentSessionId = sessionId;
     }
@@ -1937,9 +1971,10 @@ function bindProjectCard(card, group) {
             const targetWorkspaceId = String(button.getAttribute('data-workspace-id') || '').trim();
             if (!sessionId) return;
             const selectionToken = nextSidebarSelectionToken();
+            const forceMarkTerminalViewed = hasSessionTerminalIndicator(button);
             state.currentWorkspaceId = targetWorkspaceId || projectId;
             optimisticActivateSession(sessionId, { animate: true, item: button, updateState: false });
-            void selectSessionById(sessionId, selectionToken).catch(error => {
+            void selectSessionById(sessionId, selectionToken, { forceMarkTerminalViewed }).catch(error => {
                 if (!isLatestSidebarSelection(selectionToken)) {
                     return;
                 }
@@ -2105,6 +2140,17 @@ function bindProjectCard(card, group) {
             scheduleSessionsRefresh(900, { forceRefresh: true });
         });
     });
+}
+
+async function markClickedSessionTerminalViewed(sessionId) {
+    try {
+        await markSessionTerminalRunViewed(sessionId);
+        markSidebarSessionTerminalViewed(sessionId);
+    } catch (error) {
+        sysLog(formatMessage('session.terminal_view_mark_failed', {
+            error: error?.message || String(error),
+        }), 'log-error');
+    }
 }
 
 function toggleProjectExpandedState(card, groupKeyValue) {
@@ -2493,8 +2539,10 @@ function handleSessionTitlePreviewed(event) {
 
 export async function loadProjects({ forceRefresh = false } = {}) {
     if (!els.projectsList) return;
+    ensureTerminalSessionClickBinding();
     if (isSessionsRefreshSuppressed() && hasSidebarDataSnapshot()) {
         renderProjectsFromSnapshot({ syncStreams: false });
+        markProjectsReady();
         return;
     }
     ensureSessionSearchConfigured();
@@ -2576,10 +2624,11 @@ export async function loadProjects({ forceRefresh = false } = {}) {
     loadProjectsController = controller;
     try {
         ensureProjectMenuDismissBinding();
+        const shouldForceRefreshSessions = forceRefresh === true || !hasSidebarDataSnapshot();
         const [workspaces, sessions, automationProjects] = await Promise.all([
             fetchWorkspaces({ signal: controller?.signal }),
             fetchSessions({
-                forceRefresh: forceRefresh === true,
+                forceRefresh: shouldForceRefreshSessions,
                 signal: controller?.signal,
             }),
             fetchAutomationProjects({ signal: controller?.signal }),
@@ -2598,6 +2647,7 @@ export async function loadProjects({ forceRefresh = false } = {}) {
             snapshotData.sessions,
             snapshotData.automationProjects,
         );
+        markProjectsReady();
     } catch (error) {
         if (requestId !== loadProjectsRequestId) {
             return;
@@ -2606,6 +2656,7 @@ export async function loadProjects({ forceRefresh = false } = {}) {
             return;
         }
         sysLog(formatMessage('sidebar.error.loading_projects', { error: error.message }), 'log-error');
+        markProjectsReady();
     } finally {
         if (loadProjectsController === controller) {
             loadProjectsController = null;

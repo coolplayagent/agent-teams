@@ -106,3 +106,12 @@ def test_evaluate_task_spec_null_spec_uses_default() -> None:
     call_args = mock_evaluator.evaluate_spec_quality.call_args[0][0]
     assert isinstance(call_args, LLMEvaluationRequest)
     assert call_args.spec_summary == ""
+
+
+def test_manual_task_dispatch_is_not_exposed() -> None:
+    app, _mock_service, _mock_evaluator = _create_app()
+
+    response = TestClient(app).post("/api/tasks/t1/dispatch")
+
+    assert response.status_code == 405
+    assert response.json() == {"detail": "Manual task dispatch is not exposed."}

@@ -24,6 +24,9 @@ const REQUEST_QUEUES = {
     normal: [],
     heavy: [],
 };
+const SERVICE_INITIALIZING_DETAIL = 'service_initializing';
+const SERVICE_INITIALIZING_RETRY_MS = 300;
+const SERVICE_INITIALIZING_MAX_ATTEMPTS = 40;
 let lastBackendStatusHint = '';
 let lastBackendStatusHintAt = 0;
 
@@ -34,7 +37,11 @@ export async function requestJson(url, options, errorMessage) {
         ? { ...jsonOptions, cache: 'no-store' }
         : jsonOptions;
     try {
-        const res = await fetch(url, requestOptions);
+        const res = await fetchWithInitializingRetry(
+            url,
+            requestOptions,
+            method,
+        );
         emitBackendStatusHint('online');
         if (!res.ok) {
             let detail = errorMessage;
@@ -80,6 +87,41 @@ export async function requestJson(url, options, errorMessage) {
         );
         throw error;
     }
+}
+
+async function fetchWithInitializingRetry(url, requestOptions, method) {
+    const canRetry = method === 'GET' || method === 'HEAD';
+    let attempt = 0;
+    while (true) {
+        const res = await fetch(url, requestOptions);
+        if (!canRetry || res.status !== 503) {
+            return res;
+        }
+        const payload = await readJsonResponseClone(res);
+        if (payload?.detail !== SERVICE_INITIALIZING_DETAIL) {
+            return res;
+        }
+        emitBackendStatusHint('initializing');
+        attempt += 1;
+        if (attempt >= SERVICE_INITIALIZING_MAX_ATTEMPTS) {
+            return res;
+        }
+        await delay(SERVICE_INITIALIZING_RETRY_MS);
+    }
+}
+
+async function readJsonResponseClone(res) {
+    try {
+        return await res.clone().json();
+    } catch (_) {
+        return null;
+    }
+}
+
+function delay(ms) {
+    return new Promise(resolve => {
+        setTimeout(resolve, ms);
+    });
 }
 
 function applyJsonContentType(options, method) {

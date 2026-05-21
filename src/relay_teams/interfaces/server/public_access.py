@@ -4,7 +4,7 @@ from __future__ import annotations
 import ipaddress
 import os
 
-from fastapi import Request
+from starlette.requests import Request
 
 _UNSAFE_ALLOW_PUBLIC_ACCESS_ENV_KEY = "AGENT_TEAMS_UNSAFE_ALLOW_PUBLIC_ACCESS"
 _LOCAL_HOSTNAMES = frozenset(

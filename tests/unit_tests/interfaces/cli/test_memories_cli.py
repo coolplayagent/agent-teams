@@ -7,7 +7,7 @@ import pytest
 from typer import Typer
 from typer.testing import CliRunner
 
-from relay_teams.interfaces.cli import app as cli_app
+from relay_teams.interfaces.cli import app_full as cli_app
 from relay_teams.interfaces.cli.memories_cli import (
     MemoriesOutputFormat,
     _render_entry_detail,

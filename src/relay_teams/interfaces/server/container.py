@@ -1282,6 +1282,7 @@ class ServerContainer:
             self.wechat_account_repository,
             self.wechat_inbound_queue_repo,
         )
+        self._startup_background_tasks: set[asyncio.Task[None]] = set()
 
     def _build_runtime_services(self) -> None:
         def get_task_execution_service() -> TaskExecutionService:
@@ -1521,13 +1522,7 @@ class ServerContainer:
         )
 
     async def start(self) -> None:
-        try:
-            await self.memory_bank_service.reindex_active_entries_async()
-        except (ValueError, OSError, RuntimeError, sqlite3.Error):
-            LOGGER.warning(
-                "Failed to reindex active Memory Bank entries during startup",
-                exc_info=True,
-            )
+        self._start_memory_reindex_background()
         self.mcp_discovery_service.start_warmup(self.mcp_registry)
         self.app_env_file_watcher.start()
         self.mcp_config_file_watcher.start()
@@ -1546,6 +1541,8 @@ class ServerContainer:
         return None
 
     async def stop(self) -> None:
+        self._cancel_startup_background_tasks()
+        await self._drain_startup_background_tasks()
         await self.app_env_file_watcher.stop()
         await self.automation_scheduler_service.stop()
         await self.board_todo_service.stop()
@@ -1575,6 +1572,40 @@ class ServerContainer:
         await self._close_async_repositories()
         await clear_llm_http_client_cache_async()
         return None
+
+    def _start_memory_reindex_background(self) -> None:
+        task = asyncio.create_task(self._reindex_memory_bank_on_startup())
+        self._startup_background_tasks.add(task)
+
+    async def _reindex_memory_bank_on_startup(self) -> None:
+        try:
+            await self.memory_bank_service.reindex_active_entries_async()
+        except asyncio.CancelledError:
+            raise
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.warning(
+                "Failed to reindex active Memory Bank entries during startup",
+                exc_info=True,
+            )
+
+    def _cancel_startup_background_tasks(self) -> None:
+        for task in tuple(self._startup_background_tasks):
+            task.cancel()
+
+    async def _drain_startup_background_tasks(self) -> None:
+        tasks = tuple(self._startup_background_tasks)
+        if not tasks:
+            return
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, asyncio.CancelledError):
+                continue
+            if isinstance(result, BaseException):
+                LOGGER.warning(
+                    "Startup background task failed",
+                    exc_info=(type(result), result, result.__traceback__),
+                )
+        self._startup_background_tasks.difference_update(tasks)
 
     async def _close_async_repositories(self) -> None:
         for repository in reversed(self._async_closeables):

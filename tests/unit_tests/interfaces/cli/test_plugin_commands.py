@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
-from relay_teams.interfaces.cli import app as cli_app
+from relay_teams.interfaces.cli import app_full as cli_app
 from relay_teams.plugins.marketplace_models import PluginMarketplaceProviderKind
 from relay_teams.plugins.marketplace_policy import PluginMarketplaceInstallPolicy
 from relay_teams.plugins.plugin_models import PluginScope

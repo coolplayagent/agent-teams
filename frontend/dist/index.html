@@ -5,6 +5,174 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Teams</title>
     <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #f7f7f5;
+        color: #1f2328;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      .initial-runtime-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: grid;
+        place-items: center;
+        background: #f7f7f5;
+        pointer-events: none;
+        transition:
+          opacity 160ms ease,
+          visibility 160ms ease;
+      }
+
+      .initial-runtime-loader-inner {
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+        color: #4b5563;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .initial-runtime-spinner {
+        width: 28px;
+        height: 28px;
+        border: 2px solid rgba(31, 35, 40, 0.14);
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: initialRuntimeSpin 720ms linear infinite;
+      }
+
+      .initial-runtime-shell {
+        position: fixed;
+        inset: 0;
+        z-index: 2147482999;
+        display: grid;
+        grid-template-rows: 52px minmax(0, 1fr);
+        background: #f7f7f5;
+        pointer-events: none;
+      }
+
+      .initial-runtime-topbar {
+        border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .initial-runtime-body {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      }
+
+      .initial-runtime-sidebar {
+        padding: 18px 16px;
+        border-right: 1px solid rgba(31, 35, 40, 0.08);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .initial-runtime-main {
+        padding: 22px;
+      }
+
+      .initial-runtime-line {
+        height: 12px;
+        margin-bottom: 12px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #eceff3 25%, #f7f8fa 37%, #eceff3 63%);
+        background-size: 400% 100%;
+        animation: initialRuntimeShimmer 1.2s ease-in-out infinite;
+      }
+
+      .initial-runtime-line.is-short {
+        width: 42%;
+      }
+
+      .initial-runtime-line.is-medium {
+        width: 68%;
+      }
+
+      .initial-runtime-line.is-wide {
+        width: min(720px, 82%);
+      }
+
+      body[data-bootstrap-state="ready"] .initial-runtime-loader,
+      body[data-bootstrap-state="ready"] .initial-runtime-shell {
+        visibility: hidden;
+        opacity: 0;
+      }
+
+      body[data-projects-ready="false"] #projects-list {
+        visibility: hidden;
+      }
+
+      @keyframes initialRuntimeSpin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes initialRuntimeShimmer {
+        0% {
+          background-position: 100% 50%;
+        }
+        100% {
+          background-position: 0 50%;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body,
+        .initial-runtime-loader,
+        .initial-runtime-shell {
+          background: #101214;
+          color: #f3f4f6;
+        }
+
+        .initial-runtime-topbar,
+        .initial-runtime-sidebar {
+          background: rgba(17, 19, 23, 0.88);
+          border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .initial-runtime-loader-inner {
+          color: #c9d1d9;
+        }
+
+        .initial-runtime-spinner {
+          border-color: rgba(255, 255, 255, 0.16);
+          border-top-color: #60a5fa;
+        }
+
+        .initial-runtime-line {
+          background: linear-gradient(90deg, #23272f 25%, #2f3541 37%, #23272f 63%);
+          background-size: 400% 100%;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .initial-runtime-body {
+          grid-template-columns: 1fr;
+        }
+
+        .initial-runtime-sidebar {
+          display: none;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .initial-runtime-spinner,
+        .initial-runtime-line {
+          animation: none;
+        }
+      }
+    </style>
     <link rel="stylesheet" href="/css/base.css" />
     <link rel="stylesheet" href="/css/layout.css" />
     <link rel="stylesheet" href="/css/components/base.css" />
@@ -39,7 +207,28 @@
     <link rel="stylesheet" href="/css/components/spec-lineage.css" />
   </head>
 
-  <body>
+  <body data-bootstrap-state="loading" data-projects-ready="false">
+    <div class="initial-runtime-shell" aria-hidden="true">
+      <div class="initial-runtime-topbar"></div>
+      <div class="initial-runtime-body">
+        <div class="initial-runtime-sidebar">
+          <div class="initial-runtime-line is-medium"></div>
+          <div class="initial-runtime-line"></div>
+          <div class="initial-runtime-line is-short"></div>
+        </div>
+        <div class="initial-runtime-main">
+          <div class="initial-runtime-line is-wide"></div>
+          <div class="initial-runtime-line is-medium"></div>
+          <div class="initial-runtime-line is-short"></div>
+        </div>
+      </div>
+    </div>
+    <div id="initial-runtime-loader" class="initial-runtime-loader" role="status" aria-live="polite">
+      <div class="initial-runtime-loader-inner">
+        <span class="initial-runtime-spinner" aria-hidden="true"></span>
+        <span>页面加载中...</span>
+      </div>
+    </div>
     <div class="app-shell">
       <header class="topbar">
         <div class="topbar-section topbar-section-left">
@@ -630,9 +819,9 @@
       </div>
     </div>
 
-    <script src="/vendor/chart.js"></script>
-    <script src="/js/vendor/marked.min.js"></script>
-    <script src="/js/vendor/highlight.min.js"></script>
+    <script src="/vendor/chart.js" defer></script>
+    <script src="/js/vendor/marked.min.js" defer></script>
+    <script src="/js/vendor/highlight.min.js" defer></script>
     <script type="module" src="/js/app.js"></script>
   </body>
 </html>

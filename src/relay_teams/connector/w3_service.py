@@ -7,7 +7,8 @@ from pathlib import Path
 import re
 from typing import Protocol
 
-from pydantic import JsonValue, TypeAdapter, ValidationError
+import httpx
+from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
 from relay_teams.connector.models import (
     ConnectorAuthType,
@@ -67,6 +68,17 @@ from relay_teams.secrets import AppSecretStore, get_secret_store
 LOGGER = get_logger(__name__)
 _MODEL_PROFILE_SECRET_NAMESPACE = "model_profile"
 _JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
+_W3_ERROR_INVALID_CREDENTIALS = "invalid_credentials"
+_W3_ERROR_LOGIN_HTTP_ERROR = "login_http_error"
+_W3_ERROR_LOGIN_TIMEOUT = "login_timeout"
+_W3_ERROR_NETWORK = "network_error"
+_W3_ERROR_TOKEN_MISSING = "auth_token_missing"
+_W3_ERROR_UNEXPECTED = "login_failed"
+
+
+class _W3LoginErrorDetails(BaseModel):
+    code: str
+    message: str
 
 
 class MaaSTokenServiceLike(Protocol):
@@ -129,6 +141,9 @@ class W3ConnectorService:
             has_password=self._get_password() is not None,
             status=self._resolve_status(config),
             updated_at=config.updated_at,
+            last_verified_at=config.last_verified_at,
+            last_login_failed_at=config.last_login_failed_at,
+            last_login_error_code=config.last_login_error_code,
             last_sync=config.last_sync,
             last_error=config.last_error,
         )
@@ -165,6 +180,7 @@ class W3ConnectorService:
                 message="W3 password is required.",
                 username=request.username,
                 has_password=False,
+                error_code="missing_credentials",
                 sync=None,
             )
         test_result = await self.test_connection(
@@ -172,9 +188,12 @@ class W3ConnectorService:
             force_refresh=True,
         )
         if not test_result.ok:
+            now = datetime.now(UTC)
             config = existing_config.model_copy(
                 update={
-                    "updated_at": datetime.now(UTC),
+                    "updated_at": now,
+                    "last_login_failed_at": now,
+                    "last_login_error_code": test_result.error_code,
                     "last_error": test_result.message,
                 }
             )
@@ -185,19 +204,24 @@ class W3ConnectorService:
                 message=test_result.message,
                 username=request.username,
                 has_password=existing_password is not None,
+                error_code=test_result.error_code,
                 sync=None,
             )
 
+        now = datetime.now(UTC)
         self._set_password(password)
         config = existing_config.model_copy(
             update={
                 "username": request.username,
-                "updated_at": datetime.now(UTC),
+                "updated_at": now,
+                "last_verified_at": now,
+                "last_login_failed_at": None,
+                "last_login_error_code": None,
                 "last_error": None,
             }
         )
         self._save_config(config)
-        self._sync_w3_profile_credentials(username=request.username, password=password)
+        self._migrate_w3_profile_auth_sources()
         self._model_config_service.reload_model_config()
         return W3ConnectorSaveResponse(
             ok=True,
@@ -205,6 +229,7 @@ class W3ConnectorService:
             message="W3 connector credentials are valid.",
             username=request.username,
             has_password=True,
+            error_code=None,
             sync=None,
         )
 
@@ -221,7 +246,8 @@ class W3ConnectorService:
         force_refresh: bool = False,
     ) -> W3ConnectorTestResponse:
         resolved_request = request or W3ConnectorTestRequest()
-        username = resolved_request.username or self._load_config().username
+        config = self._load_config()
+        username = resolved_request.username or config.username
         password = resolved_request.password or self._get_password()
         if username is None or password is None:
             return W3ConnectorTestResponse(
@@ -230,7 +256,13 @@ class W3ConnectorService:
                 message="W3 username and password are required.",
                 username=username,
                 has_token=False,
+                error_code="missing_credentials",
             )
+        persist_observation = self._should_persist_test_observation(
+            request=request,
+            config=config,
+            username=username,
+        )
         try:
             auth_context = await self._token_service.get_auth_context(
                 auth_config=MaaSAuthConfig(username=username, password=password),
@@ -239,35 +271,62 @@ class W3ConnectorService:
                 force_refresh=force_refresh,
             )
         except MaaSLoginError as exc:
+            error = _normalize_w3_login_error(exc)
+            if persist_observation:
+                self._record_login_failure(error=error)
             return W3ConnectorTestResponse(
                 ok=False,
                 status="error",
-                message=str(exc) or "W3 login failed.",
+                message=error.message,
                 username=username,
                 has_token=False,
+                error_code=error.code,
             )
         except Exception as exc:
+            error = _normalize_w3_login_error(exc)
             LOGGER.warning(
                 "W3 credential validation failed.",
-                extra={"event": "connector.w3.validation_failed"},
+                extra={
+                    "event": "connector.w3.validation_failed",
+                    "error_code": error.code,
+                },
                 exc_info=True,
             )
+            if persist_observation:
+                self._record_login_failure(error=error)
             return W3ConnectorTestResponse(
                 ok=False,
                 status="error",
-                message=str(exc) or "W3 login failed.",
+                message=error.message,
                 username=username,
                 has_token=False,
+                error_code=error.code,
             )
         token = auth_context.token.strip()
+        if not token:
+            error = _W3LoginErrorDetails(
+                code=_W3_ERROR_TOKEN_MISSING,
+                message="W3 login succeeded but did not return X-Auth-Token.",
+            )
+            if persist_observation:
+                self._record_login_failure(error=error)
+            return W3ConnectorTestResponse(
+                ok=False,
+                status="error",
+                message=error.message,
+                username=username,
+                has_token=False,
+                error_code=error.code,
+            )
+        if persist_observation:
+            self._record_login_success()
         return W3ConnectorTestResponse(
-            ok=bool(token),
-            status="valid" if token else "error",
-            message="W3 login returned X-Auth-Token."
-            if token
-            else "W3 login did not return X-Auth-Token.",
+            ok=True,
+            status="valid",
+            message="W3 login returned X-Auth-Token.",
             username=username,
-            has_token=bool(token),
+            has_token=True,
+            error_code=None,
         )
 
     async def test_connector_result(self) -> ConnectorTestResult:
@@ -342,7 +401,7 @@ class W3ConnectorService:
                 }
             )
         )
-        if self._sync_w3_profile_credentials(username=username, password=password):
+        if self._migrate_w3_profile_auth_sources():
             self._model_config_service.reload_model_config()
         return W3ConnectorSyncResponse(
             ok=sync.failed_count == 0,
@@ -406,8 +465,6 @@ class W3ConnectorService:
             profile = self._build_profile(
                 provider=provider,
                 entry=entry,
-                username=username,
-                password=password,
             )
             try:
                 self._model_config_service.save_model_profile(profile_name, profile)
@@ -500,8 +557,6 @@ class W3ConnectorService:
         *,
         provider: ProviderType,
         entry: ModelDiscoveryEntry,
-        username: str,
-        password: str,
     ) -> dict[str, JsonValue]:
         capabilities_payload: JsonValue = (
             entry.capabilities.model_dump(mode="json")
@@ -524,110 +579,81 @@ class W3ConnectorService:
         if entry.output_limit is not None:
             profile["max_tokens"] = entry.output_limit
         if provider == ProviderType.MAAS:
-            profile["maas_auth"] = {"username": username, "password": password}
+            profile["maas_auth"] = {"auth_source": ModelAuthSource.W3.value}
             return profile
         profile["codeagent_auth"] = {
             "auth_method": CodeAgentAuthMethod.PASSWORD.value,
-            "username": username,
-            "password": password,
+            "auth_source": ModelAuthSource.W3.value,
         }
         return profile
 
-    def _sync_w3_profile_credentials(
-        self,
-        *,
-        username: str,
-        password: str,
-    ) -> bool:
-        synced = False
+    def _migrate_w3_profile_auth_sources(self) -> bool:
+        migrated = False
         raw_profiles = self._load_raw_model_profiles()
         for name, profile in self._model_config_service.get_model_profiles().items():
             if profile.get("catalog_provider_id") != W3_CONNECTOR_ID:
                 continue
             provider = profile.get("provider")
             if provider == ProviderType.MAAS.value:
-                if not self._should_sync_w3_profile_auth(
+                auth_migrated = self._migrate_raw_w3_profile_auth_source(
                     raw_profiles=raw_profiles,
                     profile_name=name,
                     auth_field_name="maas_auth",
-                ):
-                    continue
-                self._sync_raw_model_profile_username(
-                    raw_profiles=raw_profiles,
-                    profile_name=name,
-                    auth_field_name="maas_auth",
-                    username=username,
+                    auth_payload={"auth_source": ModelAuthSource.W3.value},
                 )
-                self._set_model_profile_secret(
+                if auth_migrated is None:
+                    continue
+                self._delete_model_profile_secret(
                     profile_name=name,
                     field_name=maas_password_secret_field_name(),
-                    value=password,
                 )
-                synced = True
+                migrated = migrated or auth_migrated
             elif provider == ProviderType.CODEAGENT.value:
-                if not self._should_sync_w3_profile_auth(
+                auth_migrated = self._migrate_raw_w3_profile_auth_source(
                     raw_profiles=raw_profiles,
                     profile_name=name,
                     auth_field_name="codeagent_auth",
-                ):
-                    continue
-                self._sync_raw_model_profile_username(
-                    raw_profiles=raw_profiles,
-                    profile_name=name,
-                    auth_field_name="codeagent_auth",
-                    username=username,
+                    auth_payload={
+                        "auth_method": CodeAgentAuthMethod.PASSWORD.value,
+                        "auth_source": ModelAuthSource.W3.value,
+                    },
                 )
-                self._set_model_profile_secret(
+                if auth_migrated is None:
+                    continue
+                self._delete_model_profile_secret(
                     profile_name=name,
                     field_name=codeagent_password_secret_field_name(),
-                    value=password,
                 )
-                synced = True
-        if raw_profiles is not None:
+                migrated = migrated or auth_migrated
+        if raw_profiles is not None and migrated:
             self._save_raw_model_profiles(raw_profiles)
-        return synced
+        return migrated
 
     @staticmethod
-    def _should_sync_w3_profile_auth(
+    def _migrate_raw_w3_profile_auth_source(
         *,
         raw_profiles: dict[str, JsonValue] | None,
         profile_name: str,
         auth_field_name: str,
-    ) -> bool:
+        auth_payload: dict[str, JsonValue],
+    ) -> bool | None:
         if raw_profiles is None:
-            return True
+            return None
         profile = raw_profiles.get(profile_name)
         if not isinstance(profile, dict):
-            return True
+            return None
         raw_auth = profile.get(auth_field_name)
-        if not isinstance(raw_auth, dict):
-            return True
-        auth_source = raw_auth.get("auth_source")
-        if not isinstance(auth_source, str) or not auth_source.strip():
-            return True
-        return auth_source.strip() != ModelAuthSource.PROFILE.value
-
-    @staticmethod
-    def _sync_raw_model_profile_username(
-        *,
-        raw_profiles: dict[str, JsonValue] | None,
-        profile_name: str,
-        auth_field_name: str,
-        username: str,
-    ) -> None:
-        if raw_profiles is None:
-            return
-        profile = raw_profiles.get(profile_name)
-        if not isinstance(profile, dict):
-            return
-        raw_auth = profile.get(auth_field_name)
-        auth: dict[str, JsonValue] = (
-            dict(raw_auth) if isinstance(raw_auth, dict) else {}
-        )
-        auth["username"] = username
-        if auth_field_name == "codeagent_auth":
-            auth["auth_method"] = CodeAgentAuthMethod.PASSWORD.value
-        profile[auth_field_name] = auth
+        if isinstance(raw_auth, dict):
+            auth_source = raw_auth.get("auth_source")
+            if (
+                isinstance(auth_source, str)
+                and auth_source.strip() == ModelAuthSource.PROFILE.value
+            ):
+                return None
+            if raw_auth == auth_payload:
+                return False
+        profile[auth_field_name] = auth_payload
+        return True
 
     def _load_raw_model_profiles(self) -> dict[str, JsonValue] | None:
         model_file = self._config_dir / "model.json"
@@ -647,19 +673,17 @@ class W3ConnectorService:
             encoding="utf-8",
         )
 
-    def _set_model_profile_secret(
+    def _delete_model_profile_secret(
         self,
         *,
         profile_name: str,
         field_name: str,
-        value: str,
     ) -> None:
-        self._secret_store.set_secret(
+        self._secret_store.delete_secret(
             self._config_dir,
             namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
             owner_id=profile_name,
             field_name=field_name,
-            value=value,
         )
 
     def _resolve_status(self, config: W3ConnectorConfig) -> ConnectorStatus:
@@ -668,6 +692,48 @@ class W3ConnectorService:
         if config.username is None or self._get_password() is None:
             return ConnectorStatus.NEEDS_CONFIG
         return ConnectorStatus.CONNECTED
+
+    @staticmethod
+    def _should_persist_test_observation(
+        *,
+        request: W3ConnectorTestRequest | None,
+        config: W3ConnectorConfig,
+        username: str,
+    ) -> bool:
+        if config.username != username:
+            return False
+        if request is None:
+            return True
+        return request.password is None
+
+    def _record_login_success(self) -> None:
+        config = self._load_config()
+        now = datetime.now(UTC)
+        self._save_config(
+            config.model_copy(
+                update={
+                    "updated_at": now,
+                    "last_verified_at": now,
+                    "last_login_failed_at": None,
+                    "last_login_error_code": None,
+                    "last_error": None,
+                }
+            )
+        )
+
+    def _record_login_failure(self, *, error: _W3LoginErrorDetails) -> None:
+        config = self._load_config()
+        now = datetime.now(UTC)
+        self._save_config(
+            config.model_copy(
+                update={
+                    "updated_at": now,
+                    "last_login_failed_at": now,
+                    "last_login_error_code": error.code,
+                    "last_error": error.message,
+                }
+            )
+        )
 
     def _get_password(self) -> str | None:
         return self._secret_store.get_secret(
@@ -717,6 +783,50 @@ def _discovery_entries(result: ModelDiscoveryResult) -> tuple[ModelDiscoveryEntr
     if result.model_entries:
         return result.model_entries
     return tuple(ModelDiscoveryEntry(model=model) for model in result.models)
+
+
+def _normalize_w3_login_error(exc: Exception) -> _W3LoginErrorDetails:
+    if isinstance(exc, MaaSLoginError):
+        status_code = exc.status_code
+        message = str(exc).strip()
+        if "authToken" in message:
+            return _W3LoginErrorDetails(
+                code=_W3_ERROR_TOKEN_MISSING,
+                message="W3 login succeeded but did not return X-Auth-Token.",
+            )
+        if status_code in {401, 403}:
+            return _W3LoginErrorDetails(
+                code=_W3_ERROR_INVALID_CREDENTIALS,
+                message=(
+                    "W3 username or password was rejected. "
+                    "Check the saved W3 credentials."
+                ),
+            )
+        if status_code is not None:
+            return _W3LoginErrorDetails(
+                code=_W3_ERROR_LOGIN_HTTP_ERROR,
+                message=f"W3 login service returned HTTP {status_code}.",
+            )
+        return _W3LoginErrorDetails(
+            code=_W3_ERROR_UNEXPECTED,
+            message="W3 login failed. Check backend logs for details.",
+        )
+    if isinstance(exc, httpx.TimeoutException):
+        return _W3LoginErrorDetails(
+            code=_W3_ERROR_LOGIN_TIMEOUT,
+            message="W3 login timed out. Check network or proxy settings.",
+        )
+    if isinstance(exc, httpx.TransportError):
+        return _W3LoginErrorDetails(
+            code=_W3_ERROR_NETWORK,
+            message=(
+                "W3 login service is unreachable. Check network or proxy settings."
+            ),
+        )
+    return _W3LoginErrorDetails(
+        code=_W3_ERROR_UNEXPECTED,
+        message="W3 login failed. Check backend logs for details.",
+    )
 
 
 def _slugify(value: str) -> str:

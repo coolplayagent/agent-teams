@@ -3122,6 +3122,29 @@ def test_project_view_github_rule_edit_dialog_preserves_event_selection_controls
     assert "review_requested" in i18n_source
 
 
+def test_project_view_w3_messages_use_localized_error_codes() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (
+        repo_root / "frontend" / "dist" / "js" / "components" / "projectView.js"
+    ).read_text(encoding="utf-8")
+    i18n_source = (
+        repo_root / "frontend" / "dist" / "js" / "utils" / "i18n.js"
+    ).read_text(encoding="utf-8")
+
+    assert "function formatW3ConnectorResultMessage(result" in source
+    assert "function formatW3ConnectorStatusMessage(status" in source
+    assert "result?.error_code" in source
+    assert "last_login_error_code" in source
+    assert "validateW3CredentialPayload(payload)" in source
+    assert "w3StatusMessage: message" in source
+    assert "'feature.connectors.w3.message.saved':" in i18n_source
+    assert "'feature.connectors.w3.message.invalid_credentials':" in i18n_source
+    assert "'feature.connectors.w3.message.login_timeout':" in i18n_source
+    assert "'feature.connectors.w3.message.network_error':" in i18n_source
+    assert "'feature.connectors.w3.message.auth_token_missing':" in i18n_source
+    assert "'feature.connectors.w3.message.login_failed':" in i18n_source
+
+
 def test_project_view_github_rule_payload_clears_pr_only_filters_for_issue_rules() -> (
     None
 ):

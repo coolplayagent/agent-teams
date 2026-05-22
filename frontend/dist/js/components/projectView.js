@@ -140,6 +140,7 @@ const FEATURE_VIEW_IDS = Object.freeze({
     gateway: 'connectors',
     boards: 'boards',
 });
+const W3_MESSAGE_KEY_PREFIX = 'feature.connectors.w3.message.';
 const FEATURE_LOADING_DELAY_MS = 120;
 const FEATURE_CLAWHUB_FIELD_IDS = Object.freeze({
     saveButtonId: 'feature-save-clawhub-token-btn',
@@ -5952,10 +5953,20 @@ function renderConnectorConfigModal() {
     if (!item) {
         return '';
     }
+    const provider = String(item.provider || item.connector_id || '').trim();
+    const modalItem = provider === W3_PLATFORM
+        ? {
+            ...item,
+            last_error: formatW3ConnectorStatusMessage(
+                currentGatewayFeatureState.w3Connector,
+                item.last_error,
+            ) || item.last_error,
+        }
+        : item;
     return renderConnectorConfigModalMarkup({
-        item,
-        accountManagementMarkup: renderConnectorAccountManagement(item),
-        showConfigureAction: String(item.provider || item.connector_id || '').trim() !== W3_PLATFORM,
+        item: modalItem,
+        accountManagementMarkup: renderConnectorAccountManagement(modalItem),
+        showConfigureAction: provider !== W3_PLATFORM,
     });
 }
 
@@ -6864,6 +6875,54 @@ function buildW3CredentialPayload() {
     return payload;
 }
 
+function formatW3ConnectorResultMessage(result, fallbackMessage = '') {
+    if (result?.ok === true) {
+        return t(`${W3_MESSAGE_KEY_PREFIX}saved`);
+    }
+    const errorCode = String(result?.error_code || '').trim();
+    if (errorCode) {
+        const key = `${W3_MESSAGE_KEY_PREFIX}${errorCode}`;
+        const localized = t(key);
+        if (localized !== key) {
+            return localized;
+        }
+    }
+    return String(result?.message || fallbackMessage || '').trim();
+}
+
+function formatW3ConnectorStatusMessage(status, fallbackMessage = '') {
+    const errorCode = String(status?.last_login_error_code || status?.error_code || '').trim();
+    if (!errorCode) {
+        return String(fallbackMessage || '').trim();
+    }
+    return formatW3ConnectorResultMessage(
+        {
+            ok: false,
+            error_code: errorCode,
+            message: status?.last_error,
+        },
+        fallbackMessage,
+    );
+}
+
+function validateW3CredentialPayload(payload) {
+    const status = currentGatewayFeatureState.w3Connector || {};
+    const hasSavedPassword = status.has_password === true;
+    if (!String(payload?.username || '').trim()) {
+        return {
+            ok: false,
+            error_code: 'missing_credentials',
+        };
+    }
+    if (!String(payload?.password || '').trim() && !hasSavedPassword) {
+        return {
+            ok: false,
+            error_code: 'missing_credentials',
+        };
+    }
+    return { ok: true };
+}
+
 async function handleSaveW3Connector() {
     currentGatewayFeatureState = {
         ...currentGatewayFeatureState,
@@ -6873,7 +6932,21 @@ async function handleSaveW3Connector() {
     };
     renderGatewayFeatureModal();
     try {
-        const result = await saveW3Connector(buildW3CredentialPayload());
+        const payload = buildW3CredentialPayload();
+        const validation = validateW3CredentialPayload(payload);
+        if (validation.ok !== true) {
+            const message = formatW3ConnectorResultMessage(validation);
+            currentGatewayFeatureState = {
+                ...currentGatewayFeatureState,
+                w3Saving: false,
+                w3StatusMessage: message,
+                w3StatusTone: 'danger',
+            };
+            renderGatewayFeatureModal();
+            return;
+        }
+        const result = await saveW3Connector(payload);
+        const message = formatW3ConnectorResultMessage(result);
         const status = await fetchW3Connector();
         currentGatewayFeatureState = {
             ...currentGatewayFeatureState,
@@ -6884,14 +6957,14 @@ async function handleSaveW3Connector() {
             },
             w3Saving: false,
             w3PasswordRevealed: false,
-            w3StatusMessage: String(result?.message || ''),
+            w3StatusMessage: message,
             w3StatusTone: result?.ok === true ? 'success' : 'danger',
         };
         await refreshConnectorsAfterW3Change();
         renderGatewayFeatureView();
         showToast({
             title: t('feature.connectors.w3.saved_title'),
-            message: String(result?.message || ''),
+            message,
             tone: result?.ok === true ? 'success' : 'danger',
         });
     } catch (error) {

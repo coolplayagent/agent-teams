@@ -35,6 +35,9 @@ class W3ConnectorConfig(BaseModel):
 
     username: str | None = Field(default=None, min_length=1)
     updated_at: datetime | None = None
+    last_verified_at: datetime | None = None
+    last_login_failed_at: datetime | None = None
+    last_login_error_code: str | None = Field(default=None, min_length=1)
     last_sync: W3ModelSyncSummary | None = None
     last_error: str | None = Field(default=None, min_length=1)
 
@@ -46,6 +49,9 @@ class W3ConnectorStatusResponse(BaseModel):
     has_password: bool
     status: ConnectorStatus
     updated_at: datetime | None = None
+    last_verified_at: datetime | None = None
+    last_login_failed_at: datetime | None = None
+    last_login_error_code: str | None = None
     last_sync: W3ModelSyncSummary | None = None
     last_error: str | None = None
 
@@ -88,6 +94,7 @@ class W3ConnectorSaveResponse(BaseModel):
     message: str = Field(min_length=1)
     username: str | None = None
     has_password: bool
+    error_code: str | None = None
     sync: W3ModelSyncSummary | None = None
 
 
@@ -99,6 +106,7 @@ class W3ConnectorTestResponse(BaseModel):
     message: str = Field(min_length=1)
     username: str | None = None
     has_token: bool = False
+    error_code: str | None = None
 
 
 class W3ConnectorSyncResponse(BaseModel):

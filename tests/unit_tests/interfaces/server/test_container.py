@@ -408,7 +408,16 @@ def test_container_stop_requests_active_runs_before_background_tasks(
         fake_clear_llm_cache,
     )
 
-    asyncio.run(container.stop())
+    async def never_finishes() -> None:
+        await asyncio.sleep(60)
+
+    async def stop_with_background_task() -> None:
+        task = asyncio.create_task(never_finishes())
+        container._startup_background_tasks.add(task)
+        await container.stop()
+        assert task.cancelled()
+
+    asyncio.run(stop_with_background_task())
 
     assert calls == ["runs", "external", "background", "repositories", "llm_cache"]
 
@@ -424,6 +433,34 @@ def test_container_registers_discord_repositories_for_shutdown_close(
 
     assert container.discord_account_repository in container._async_closeables
     assert container.discord_inbound_queue_repo in container._async_closeables
+
+
+def test_container_logs_finished_startup_background_task_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    _write_model_config(config_dir, api_key="initial-secret")
+    container = ServerContainer(config_dir=config_dir)
+
+    async def fail_reindex() -> None:
+        raise TypeError("unexpected reindex failure")
+
+    async def drain_failed_task() -> None:
+        task = asyncio.create_task(fail_reindex())
+        await asyncio.sleep(0)
+        assert task.done()
+        container._startup_background_tasks.add(task)
+        with caplog.at_level(logging.WARNING):
+            await container._drain_startup_background_tasks()
+
+    asyncio.run(drain_failed_task())
+
+    assert container._startup_background_tasks == set()
+    assert "Startup background task failed" in caplog.text
+    assert "unexpected reindex failure" in caplog.text
 
 
 def test_container_registers_all_shared_sqlite_repositories_for_shutdown_close(
@@ -726,6 +763,15 @@ async def test_container_binds_background_completion_sink_during_start(
         container.background_task_service.bind_completion_sink
     )
 
+    async def _fake_reindex() -> int:
+        return 0
+
+    async def _fake_discord_start() -> None:
+        return None
+
+    async def _fake_board_start() -> None:
+        return None
+
     def _record_bind_event_loop(loop) -> None:
         lifecycle_calls.append("bind_event_loop")
         original_bind_event_loop(loop)
@@ -742,6 +788,29 @@ async def test_container_binds_background_completion_sink_during_start(
         "bind_completion_sink",
         _record_bind_completion_sink,
     )
+    monkeypatch.setattr(
+        container.memory_bank_service,
+        "reindex_active_entries_async",
+        _fake_reindex,
+    )
+    monkeypatch.setattr(
+        container.mcp_discovery_service,
+        "start_warmup",
+        lambda _registry: None,
+    )
+    monkeypatch.setattr(container.app_env_file_watcher, "start", lambda: None)
+    monkeypatch.setattr(container.mcp_config_file_watcher, "start", lambda: None)
+    monkeypatch.setattr(
+        container.discord_gateway_service,
+        "start_async",
+        _fake_discord_start,
+    )
+    monkeypatch.setattr(
+        container.xiaoluban_im_listener_service,
+        "start",
+        lambda: None,
+    )
+    monkeypatch.setattr(container.board_todo_service, "start", _fake_board_start)
 
     def _fake_wechat_start() -> None:
         start_calls.append("wechat")
@@ -804,19 +873,25 @@ async def test_container_binds_background_completion_sink_during_start(
 
     assert container.background_task_service._completion_sink is None
 
-    await container.start()
+    try:
+        await container.start()
+        await asyncio.sleep(0)
 
-    assert lifecycle_calls == ["bind_event_loop", "bind_completion_sink"]
-    assert container.background_task_service._completion_sink is container.run_service
-    assert start_calls == [
-        "wechat",
-        "feishu-subscription",
-        "feishu-message-pool",
-        "automation-delivery",
-        "automation-bound-session",
-        "github-trigger-action",
-        "scheduler",
-    ]
+        assert lifecycle_calls == ["bind_event_loop", "bind_completion_sink"]
+        assert (
+            container.background_task_service._completion_sink is container.run_service
+        )
+        assert start_calls == [
+            "wechat",
+            "feishu-subscription",
+            "feishu-message-pool",
+            "automation-delivery",
+            "automation-bound-session",
+            "github-trigger-action",
+            "scheduler",
+        ]
+    finally:
+        await container.stop()
 
 
 @pytest.mark.asyncio
@@ -851,6 +926,11 @@ async def test_container_start_continues_when_memory_reindex_fails(
         container.memory_bank_service,
         "reindex_active_entries_async",
         _fail_reindex,
+    )
+    monkeypatch.setattr(
+        container.discord_gateway_service,
+        "start_async",
+        lambda: _fake_async_start("discord"),
     )
     monkeypatch.setattr(
         container.mcp_discovery_service,
@@ -903,6 +983,11 @@ async def test_container_start_continues_when_memory_reindex_fails(
         lambda: _fake_async_start("github-trigger-action"),
     )
     monkeypatch.setattr(
+        container.board_todo_service,
+        "start",
+        lambda: _fake_async_start("board"),
+    )
+    monkeypatch.setattr(
         container.automation_scheduler_service,
         "start",
         lambda: _fake_async_start("scheduler"),
@@ -910,22 +995,30 @@ async def test_container_start_continues_when_memory_reindex_fails(
 
     caplog.set_level(logging.WARNING)
 
-    await container.start()
+    try:
+        await container.start()
+        await asyncio.sleep(0)
 
-    assert "Failed to reindex active Memory Bank entries during startup" in caplog.text
-    assert start_calls == [
-        "mcp-warmup",
-        "app-env-watcher",
-        "mcp-config-watcher",
-        "wechat",
-        "xiaoluban",
-        "feishu-subscription",
-        "feishu-message-pool",
-        "automation-delivery",
-        "automation-bound-session",
-        "github-trigger-action",
-        "scheduler",
-    ]
+        assert (
+            "Failed to reindex active Memory Bank entries during startup" in caplog.text
+        )
+        assert start_calls == [
+            "mcp-warmup",
+            "app-env-watcher",
+            "mcp-config-watcher",
+            "discord",
+            "wechat",
+            "xiaoluban",
+            "feishu-subscription",
+            "feishu-message-pool",
+            "automation-delivery",
+            "automation-bound-session",
+            "github-trigger-action",
+            "board",
+            "scheduler",
+        ]
+    finally:
+        await container.stop()
 
 
 def test_container_wires_automation_bound_session_queue_runtime(

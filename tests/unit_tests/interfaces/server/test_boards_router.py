@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from relay_teams.interfaces.server.app import app
+from relay_teams.interfaces.server.routers.boards import router
 
 
 @pytest.fixture
 def client() -> TestClient:
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
     return TestClient(app)
 
 

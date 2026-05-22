@@ -169,6 +169,46 @@ console.log(JSON.stringify({
     assert payload["ensureSubagentCalls"] == []
 
 
+def test_select_session_marks_terminal_view_when_leaving_subagent_view(
+    tmp_path: Path,
+) -> None:
+    payload = _run_session_script(
+        tmp_path=tmp_path,
+        runner_source="""
+globalThis.CustomEvent = class CustomEvent {
+    constructor(type, options = {}) {
+        this.type = type;
+        this.detail = options.detail || {};
+    }
+};
+
+const { state } = await import("./mockState.mjs");
+const { selectSession } = await import("./session.mjs");
+state.currentSessionId = "session-a";
+state.activeView = "subagent-agent";
+
+await selectSession("session-a", { forceMarkTerminalViewed: true });
+await Promise.resolve();
+
+console.log(JSON.stringify({
+    closeAgentPanelCalls: globalThis.__closeAgentPanelCalls,
+    viewedTerminalRuns: globalThis.__viewedTerminalRuns,
+    sidebarViewedTerminalRuns: globalThis.__sidebarViewedTerminalRuns,
+    fetchCalls: globalThis.__fetchCalls,
+    selectedEvents: globalThis.__documentDispatches
+        .filter(event => event.type === "agent-teams-session-selected")
+        .map(event => event.detail.sessionId),
+}));
+""".strip(),
+    )
+
+    assert payload["closeAgentPanelCalls"] == 1
+    assert payload["viewedTerminalRuns"] == ["session-a"]
+    assert payload["sidebarViewedTerminalRuns"] == ["session-a"]
+    assert payload["fetchCalls"] == []
+    assert payload["selectedEvents"] == ["session-a"]
+
+
 def test_select_session_terminal_view_mark_does_not_survive_cancelled_hydration(
     tmp_path: Path,
 ) -> None:

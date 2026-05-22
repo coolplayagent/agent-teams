@@ -10,7 +10,7 @@ from typing import Optional
 import httpx
 from typer.testing import CliRunner
 
-from relay_teams.interfaces.cli import app as cli_app
+from relay_teams.interfaces.cli import app_full
 from relay_teams.interfaces.server import cli as server_cli
 from relay_teams.interfaces.server.runtime_identity import (
     ServerHealthPayload,
@@ -107,6 +107,7 @@ def _runtime_identity(
 
 def _health_payload(
     *,
+    status: str = "ok",
     python_executable: str = "D:/workspace/agent_teams/.venv/Scripts/python.exe",
     package_root: str = "D:/workspace/agent_teams/src/relay_teams",
     config_dir: str = "C:/Users/test/.relay-teams",
@@ -114,7 +115,7 @@ def _health_payload(
     builtin_skills_dir: str = "D:/workspace/agent_teams/src/relay_teams/builtin/skills",
 ) -> ServerHealthPayload:
     return ServerHealthPayload(
-        status="ok",
+        status=status,
         version="0.1.0",
         python_executable=python_executable,
         package_root=package_root,
@@ -135,7 +136,7 @@ def _health_payload(
 
 
 def test_server_help_lists_stop_and_restart_commands() -> None:
-    result = runner.invoke(cli_app.app, ["server", "--help"])
+    result = runner.invoke(app_full.app, ["server", "--help"])
 
     assert result.exit_code == 0
     assert "start" in result.output
@@ -482,13 +483,13 @@ def test_cli_request_json_async_applies_timeout_to_connect_phase(monkeypatch) ->
         return fake_client
 
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "create_async_http_client",
         fake_create_async_http_client,
     )
 
     payload = asyncio.run(
-        cli_app._request_json_async(
+        app_full._request_json_async(
             base_url="http://127.0.0.1:8000",
             method="GET",
             path="/api/system/health",
@@ -626,7 +627,7 @@ def test_root_cli_autostart_rejects_mismatched_local_runtime(monkeypatch) -> Non
     started: list[tuple[str, int]] = []
 
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "_get_server_health",
         lambda base_url: _health_payload(
             python_executable="C:/Python312/python.exe",
@@ -634,18 +635,18 @@ def test_root_cli_autostart_rejects_mismatched_local_runtime(monkeypatch) -> Non
         ),
     )
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "build_server_runtime_identity",
         lambda *, config_dir=None: _runtime_identity(),
     )
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "_start_server_daemon",
         lambda host, port: started.append((host, port)),
     )
 
     try:
-        cli_app._auto_start_if_needed(
+        app_full._auto_start_if_needed(
             "http://127.0.0.1:8000", autostart=True, daemon=False, force=False
         )
     except RuntimeError as exc:
@@ -661,25 +662,25 @@ def test_root_cli_autostart_rejects_mismatched_builtin_roles_dir(monkeypatch) ->
     started: list[tuple[str, int]] = []
 
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "_get_server_health",
         lambda base_url: _health_payload(
             builtin_roles_dir="D:/workspace/other/src/relay_teams/builtin/roles"
         ),
     )
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "build_server_runtime_identity",
         lambda *, config_dir=None: _runtime_identity(),
     )
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "_start_server_daemon",
         lambda host, port: started.append((host, port)),
     )
 
     try:
-        cli_app._auto_start_if_needed(
+        app_full._auto_start_if_needed(
             "http://127.0.0.1:8000", autostart=True, daemon=False, force=False
         )
     except RuntimeError as exc:
@@ -692,6 +693,62 @@ def test_root_cli_autostart_rejects_mismatched_builtin_roles_dir(monkeypatch) ->
     assert started == []
 
 
+def test_root_cli_no_autostart_waits_for_bootstrap_starting_health(monkeypatch) -> None:
+    started: list[tuple[str, int]] = []
+    waited: list[str] = []
+    health_responses = iter(
+        [
+            _health_payload(status="starting"),
+            _health_payload(status="ok"),
+        ]
+    )
+
+    def fake_get_server_health(base_url: str) -> ServerHealthPayload:
+        _ = base_url
+        return next(health_responses)
+
+    def fake_wait_until_healthy(base_url: str) -> bool:
+        waited.append(base_url)
+        return True
+
+    def fake_build_server_runtime_identity(
+        *, config_dir: Path | None = None
+    ) -> ServerRuntimeIdentity:
+        _ = config_dir
+        return _runtime_identity()
+
+    def fake_start_server_daemon(host: str, port: int) -> None:
+        started.append((host, port))
+
+    monkeypatch.setattr(
+        app_full,
+        "_get_server_health",
+        fake_get_server_health,
+    )
+    monkeypatch.setattr(
+        app_full,
+        "_wait_until_healthy",
+        fake_wait_until_healthy,
+    )
+    monkeypatch.setattr(
+        app_full,
+        "build_server_runtime_identity",
+        fake_build_server_runtime_identity,
+    )
+    monkeypatch.setattr(
+        app_full,
+        "_start_server_daemon",
+        fake_start_server_daemon,
+    )
+
+    app_full._auto_start_if_needed(
+        "http://127.0.0.1:8000", autostart=False, daemon=False, force=False
+    )
+
+    assert started == []
+    assert waited == ["http://127.0.0.1:8000"]
+
+
 def test_root_cli_wait_until_healthy_async_uses_async_health(monkeypatch) -> None:
     calls: list[str] = []
 
@@ -702,13 +759,13 @@ def test_root_cli_wait_until_healthy_async_uses_async_health(monkeypatch) -> Non
         return _health_payload()
 
     monkeypatch.setattr(
-        cli_app,
+        app_full,
         "_get_server_health_async",
         fake_get_server_health_async,
     )
 
     result = asyncio.run(
-        cli_app._wait_until_healthy_async(
+        app_full._wait_until_healthy_async(
             "http://127.0.0.1:8000",
             timeout_seconds=0.1,
         )

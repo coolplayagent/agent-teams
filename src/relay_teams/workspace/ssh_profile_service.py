@@ -15,7 +15,7 @@ import time
 
 from pydantic import BaseModel, ConfigDict
 
-from relay_teams.env import build_subprocess_env
+from relay_teams.env.proxy_env import build_subprocess_env
 from relay_teams.workspace.ssh_profile_models import (
     SshProfileCommandResult,
     SshProfileConfig,

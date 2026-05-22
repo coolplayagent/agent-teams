@@ -4,10 +4,11 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+import pytest
 from typer.testing import CliRunner
 
 from relay_teams.commands import command_cli
-from relay_teams.interfaces.cli import app as cli_app
+from relay_teams.interfaces.cli import app_full as cli_app
 
 runner = CliRunner()
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -966,6 +967,21 @@ def test_run_module_removed() -> None:
     result = runner.invoke(cli_app.app, ["run", "prompt", "-m", "hello"])
     assert result.exit_code != 0
     assert "No such command 'run'" in result.output
+
+
+def test_full_cli_main_uses_relay_teams_program_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_app(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli_app, "app", fake_app)
+
+    cli_app.main()
+
+    assert captured == {"prog_name": "relay-teams"}
 
 
 def test_runs_module_todo_command(monkeypatch) -> None:

@@ -109,82 +109,105 @@ function setupSettingsButton() {
 }
 
 export async function initApp(selectSession, selectSubagentSession, handleSend) {
+  document.body.dataset.bootstrapState = "loading";
   installGlobalErrorLogging();
-  logInfo("frontend.bootstrap.started", "Frontend bootstrap started");
-  await initializeLanguage();
-  sysLog(t("app.system_initialized"));
-  initUiFeedback();
-  initBackendStatusMonitor();
-  setupNavbarBindings();
-  initializeYoloToggle();
-  initializeThinkingControls();
-  await initializeSessionTopologyControls();
-  initializePromptMentionAutocomplete();
-  initializeContextIndicators();
-  initializeSessionTokenUsage();
-  initializeSessionDebugBadge();
-  initializeSubagentRail();
-  initializeObservability();
-  initializeImagePreview();
-  initializeVoiceInput();
-  initializeProjectView();
-  initializeSpecLineage();
-  setupEventBindings(handleSend);
-  initAppearanceOnStartup();
-  initSettings();
-  setupSettingsButton();
-  await loadProjects();
+  try {
+    logInfo("frontend.bootstrap.started", "Frontend bootstrap started");
+    await initializeLanguage();
+    sysLog(t("app.system_initialized"));
+    initUiFeedback();
+    initBackendStatusMonitor();
+    setupNavbarBindings();
+    initializeYoloToggle();
+    initializeThinkingControls();
+    const sessionTopologyControlsReady = initializeSessionTopologyControls().catch((error) => {
+      logError(
+        "frontend.bootstrap.session_topology_failed",
+        "Session topology controls failed during startup.",
+        errorToPayload(error),
+      );
+    });
+    initializePromptMentionAutocomplete();
+    initializeContextIndicators();
+    initializeSessionTokenUsage();
+    initializeSessionDebugBadge();
+    initializeSubagentRail();
+    initializeObservability();
+    initializeImagePreview();
+    initializeVoiceInput();
+    initializeProjectView();
+    initializeSpecLineage();
+    setupEventBindings(handleSend);
+    initAppearanceOnStartup();
+    initSettings();
+    setupSettingsButton();
+    await loadProjects();
 
-  document.addEventListener("agent-teams-select-session", (event) => {
-    const sessionId = String(event?.detail?.sessionId || "").trim();
-    if (!sessionId) {
-      return;
-    }
-    void selectSession(sessionId);
-  });
+    document.addEventListener("agent-teams-select-session", (event) => {
+      const sessionId = String(event?.detail?.sessionId || "").trim();
+      if (!sessionId) {
+        return;
+      }
+      void selectSession(sessionId);
+    });
 
-  document.addEventListener("agent-teams-select-subagent-session", (event) => {
-    const sessionId = String(event?.detail?.sessionId || "").trim();
-    const subagent = event?.detail?.subagent || null;
-    if (!sessionId || !subagent) {
-      return;
-    }
-    void selectSubagentSession(sessionId, subagent);
-  });
+    document.addEventListener("agent-teams-select-subagent-session", (event) => {
+      const sessionId = String(event?.detail?.sessionId || "").trim();
+      const subagent = event?.detail?.subagent || null;
+      if (!sessionId || !subagent) {
+        return;
+      }
+      void selectSubagentSession(sessionId, subagent);
+    });
 
-  document.addEventListener("agent-teams-select-live-subagent", (event) => {
-    const sessionId = String(event?.detail?.sessionId || "").trim();
-    const subagent = event?.detail?.subagent || null;
-    const roleId = String(subagent?.roleId || "").trim();
-    if (!sessionId || !roleId) {
-      return;
-    }
-    if (state.currentSessionId !== sessionId) {
-      void selectSession(sessionId).then(() => {
-        if (state.currentSessionId === sessionId) {
-          void selectSubagentSession(sessionId, subagent);
-        }
-      });
-      return;
-    }
-    void selectSubagentSession(sessionId, subagent);
-  });
+    document.addEventListener("agent-teams-select-live-subagent", (event) => {
+      const sessionId = String(event?.detail?.sessionId || "").trim();
+      const subagent = event?.detail?.subagent || null;
+      const roleId = String(subagent?.roleId || "").trim();
+      if (!sessionId || !roleId) {
+        return;
+      }
+      if (state.currentSessionId !== sessionId) {
+        void selectSession(sessionId).then(() => {
+          if (state.currentSessionId === sessionId) {
+            void selectSubagentSession(sessionId, subagent);
+          }
+        });
+        return;
+      }
+      void selectSubagentSession(sessionId, subagent);
+    });
 
-  const firstSessionEl = document.querySelector(".session-item");
-  if (firstSessionEl) {
-    const sessionId = String(
-      firstSessionEl.getAttribute("data-session-id") || "",
-    ).trim();
-    if (sessionId) {
-      await selectSession(sessionId);
+    const firstSessionEl = document.querySelector(".session-item");
+    if (firstSessionEl) {
+      const sessionId = String(
+        firstSessionEl.getAttribute("data-session-id") || "",
+      ).trim();
+      if (sessionId) {
+        await selectSession(sessionId, { markTerminalViewed: false });
+      }
+    } else {
+      openNewSessionDraft("");
     }
-  } else {
-    openNewSessionDraft("");
+    void sessionTopologyControlsReady;
+
+    // Auto-open spec lineage if task_id is in the URL
+    const urlTaskId = getTaskIdFromUrl();
+    if (urlTaskId) {
+      openSpecLineage(urlTaskId);
+    }
+  } finally {
+    dismissInitialRuntimeLoader();
   }
+}
 
-  // Auto-open spec lineage if task_id is in the URL
-  const urlTaskId = getTaskIdFromUrl();
-  if (urlTaskId) {
-    openSpecLineage(urlTaskId);
+function dismissInitialRuntimeLoader() {
+  document.body.dataset.bootstrapState = "ready";
+  const initialLoader = document.getElementById("initial-runtime-loader");
+  if (!initialLoader) {
+    return;
   }
+  window.setTimeout(() => {
+    initialLoader.remove();
+  }, 220);
 }

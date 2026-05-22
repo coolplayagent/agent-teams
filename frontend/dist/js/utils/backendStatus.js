@@ -13,6 +13,7 @@ const CONTROL_PLANE_FALLBACK_PORT_RANGE = 50;
 const CONTROL_PLANE_CACHE_KEY = 'relayTeams.controlPlaneLiveUrl';
 const BACKEND_STATUS_HINT_EVENT = 'agent-teams-backend-status-hint';
 const LANGUAGE_CHANGED_EVENT = 'agent-teams-language-changed';
+const RUNTIME_LOADING_BANNER_ID = 'runtime-loading-banner';
 
 let healthPollTimer = null;
 let inFlightHealthCheck = null;
@@ -23,6 +24,7 @@ let controlPlaneLiveUrl = readCachedControlPlaneLiveUrl();
 let controlPlaneDiscoveryAttempted = false;
 let backendStatusHintBound = false;
 let languageChangedBound = false;
+let runtimeLoadingBanner = null;
 
 export function initBackendStatusMonitor() {
     bindBackendStatusHintListener();
@@ -48,6 +50,10 @@ export function markBackendOffline(label = null) {
 
 export function markBackendBusy(label = null) {
     applyBackendStatus('busy', label);
+}
+
+export function markBackendInitializing(label = null) {
+    applyBackendStatus('initializing', label);
 }
 
 export async function refreshBackendStatus({ force = false } = {}) {
@@ -181,7 +187,7 @@ function applyBackendStatus(nextStatus, label = null) {
 
 function renderBackendStatus() {
     if (!els.backendStatus) return;
-    els.backendStatus.classList.remove('online', 'offline', 'checking', 'busy');
+    els.backendStatus.classList.remove('online', 'offline', 'checking', 'busy', 'initializing');
     els.backendStatus.classList.add(backendStatus);
     els.backendStatus.dataset.status = backendStatus;
     const safeLabel = backendStatusUsesDefaultLabel
@@ -193,6 +199,13 @@ function renderBackendStatus() {
         els.backendStatus.textContent = safeLabel;
     }
     els.backendStatus.title = safeLabel;
+    if (typeof els.backendStatus.setAttribute === 'function') {
+        els.backendStatus.setAttribute(
+            'aria-busy',
+            backendStatus === 'checking' || backendStatus === 'initializing' ? 'true' : 'false',
+        );
+    }
+    renderRuntimeLoadingBanner(backendStatus, safeLabel);
 }
 
 function bindBackendStatusHintListener() {
@@ -227,6 +240,14 @@ function handleBackendStatusHint(event) {
     }
     if (status === 'offline') {
         markBackendOffline();
+        return;
+    }
+    if (status === 'initializing') {
+        markBackendInitializing();
+        return;
+    }
+    if (status === 'busy') {
+        markBackendBusy();
     }
 }
 
@@ -237,6 +258,7 @@ function handleLanguageChanged() {
 function defaultLabelForStatus(status) {
     if (status === 'online') return t('backend.status.connected');
     if (status === 'offline') return t('backend.status.offline');
+    if (status === 'initializing') return t('backend.status.initializing');
     if (status === 'busy') return t('backend.status.busy');
     return t('backend.status.checking');
 }
@@ -261,6 +283,51 @@ function isControlPlaneLivePayload(
     return Boolean(mainBaseUrl)
         && (baseUrlMatchesCurrentOrigin(mainBaseUrl)
             || (allowInternalMainBaseUrl && isInternalBaseUrl(mainBaseUrl)));
+}
+
+function renderRuntimeLoadingBanner(status, label) {
+    if (typeof document === 'undefined' || !document.body) {
+        return;
+    }
+    const shouldShow = status === 'checking' || status === 'initializing';
+    if (!shouldShow) {
+        if (runtimeLoadingBanner) {
+            runtimeLoadingBanner.classList.remove('is-visible');
+            runtimeLoadingBanner.setAttribute('aria-hidden', 'true');
+        }
+        return;
+    }
+    const banner = ensureRuntimeLoadingBanner();
+    const labelEl = banner.querySelector('[data-runtime-loading-label]');
+    if (labelEl) {
+        labelEl.textContent = label;
+    }
+    banner.classList.add('is-visible');
+    banner.removeAttribute('aria-hidden');
+}
+
+function ensureRuntimeLoadingBanner() {
+    if (runtimeLoadingBanner && document.body.contains(runtimeLoadingBanner)) {
+        return runtimeLoadingBanner;
+    }
+    const existing = document.getElementById(RUNTIME_LOADING_BANNER_ID);
+    if (existing) {
+        runtimeLoadingBanner = existing;
+        return runtimeLoadingBanner;
+    }
+    const banner = document.createElement('div');
+    banner.id = RUNTIME_LOADING_BANNER_ID;
+    banner.className = 'runtime-loading-banner';
+    banner.setAttribute('role', 'status');
+    banner.setAttribute('aria-live', 'polite');
+    banner.setAttribute('aria-hidden', 'true');
+    banner.innerHTML = [
+        '<span class="runtime-loading-spinner" aria-hidden="true"></span>',
+        '<span class="runtime-loading-label" data-runtime-loading-label></span>',
+    ].join('');
+    document.body.appendChild(banner);
+    runtimeLoadingBanner = banner;
+    return banner;
 }
 
 function normalizeControlPlaneLiveUrl(rawUrl) {

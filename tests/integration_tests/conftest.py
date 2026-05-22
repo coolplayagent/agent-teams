@@ -4,6 +4,7 @@ from collections.abc import Iterator
 import os
 from pathlib import Path
 import sys
+import time
 
 import httpx
 import pytest
@@ -16,6 +17,7 @@ from integration_tests.support.environment import IntegrationEnvironment
 from integration_tests.support.process_control import (
     ManagedProcess,
     find_free_ports,
+    read_log_tail,
     start_process,
     stop_process,
     wait_for_http_ready,
@@ -37,6 +39,7 @@ _PROXY_ENV_KEYS: tuple[str, ...] = (
     "no_proxy",
     "SSL_VERIFY",
 )
+_PYTHONPATH_SEPARATOR = ";" if os.name == "nt" else ":"
 
 
 def pytest_collection_modifyitems(
@@ -82,7 +85,8 @@ def _apply_home_env(runtime_root: Path) -> None:
     resolved_runtime_root = runtime_root.resolve()
     os.environ["HOME"] = str(resolved_runtime_root)
     os.environ["USERPROFILE"] = str(resolved_runtime_root)
-    drive, tail = os.path.splitdrive(str(resolved_runtime_root))
+    drive = resolved_runtime_root.drive
+    tail = str(resolved_runtime_root)[len(drive) :] if drive else ""
     if drive:
         os.environ["HOMEDRIVE"] = drive
         os.environ["HOMEPATH"] = tail or "\\"
@@ -132,7 +136,7 @@ def integration_env(
     existing_pythonpath = shared_env.get("PYTHONPATH", "")
     if existing_pythonpath:
         python_paths.append(existing_pythonpath)
-    shared_env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    shared_env["PYTHONPATH"] = _PYTHONPATH_SEPARATOR.join(python_paths)
     shared_env["AGENT_TEAMS_COMPUTER_RUNTIME"] = "fake"
     shared_env["RELAY_TEAMS_LLM_HTTP_MAX_CONCURRENCY"] = "4"
 
@@ -188,6 +192,11 @@ def integration_env(
             timeout_seconds=90.0,
             process=backend_process,
         )
+        _wait_for_backend_hydrated(
+            api_base_url=api_base_url,
+            timeout_seconds=90.0,
+            process=backend_process,
+        )
 
         yield IntegrationEnvironment(
             api_base_url=api_base_url,
@@ -222,3 +231,34 @@ def reset_fake_llm_state(integration_env: IntegrationEnvironment) -> None:
         trust_env=False,
     )
     response.raise_for_status()
+
+
+def _wait_for_backend_hydrated(
+    *,
+    api_base_url: str,
+    timeout_seconds: float,
+    process: ManagedProcess,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    health_url = f"{api_base_url}/api/system/health"
+    with httpx.Client(timeout=1.0, trust_env=False) as client:
+        while time.monotonic() < deadline:
+            if process.process.poll() is not None:
+                raise RuntimeError(
+                    "agent-teams-backend exited before runtime hydration.\n"
+                    f"{read_log_tail(process.log_file)}"
+                )
+            try:
+                response = client.get(health_url)
+                if response.status_code == 200:
+                    payload = response.json()
+                    if isinstance(payload, dict) and payload.get("hydrated") is True:
+                        return
+            except (httpx.HTTPError, ValueError):
+                continue
+            time.sleep(0.2)
+
+    raise RuntimeError(
+        "Timed out waiting for agent-teams-backend runtime hydration at "
+        f"{health_url}.\n{read_log_tail(process.log_file)}"
+    )

@@ -3459,10 +3459,14 @@ password auth. Unknown connector ids return `404`.
 ### `GET /connectors/w3`
 
 Returns W3 connector state for the unified authentication connector:
-`username`, `has_password`, `status`, `updated_at`, `last_sync`, and
-`last_error`. The password and raw `WEB_TOKEN` / `X-Auth-Token` are never
-returned. `last_sync` is retained only for hidden maintenance compatibility and
-is not part of the normal W3 setup flow.
+`username`, `has_password`, `status`, `updated_at`, `last_verified_at`,
+`last_login_failed_at`, `last_login_error_code`, `last_sync`, and `last_error`.
+The password and raw `WEB_TOKEN` / `X-Auth-Token` are never returned. Login
+errors are normalized to stable codes such as `invalid_credentials`,
+`login_http_error`, `login_timeout`, `network_error`, `auth_token_missing`, and
+`login_failed`; detailed exception context remains in backend logs. `last_sync`
+is retained only for hidden maintenance compatibility and is not part of the
+normal W3 setup flow.
 
 ### `PUT /connectors/w3`
 
@@ -3471,15 +3475,20 @@ password; later saves may omit it to keep the existing secret. The backend calls
 the existing MaaS secure-login path and treats a non-empty
 `cloudDragonTokens.authToken` as success. That token is the W3 `WEB_TOKEN` and
 the request-header `X-Auth-Token`. On success, it saves the connector
-credentials only. It does not discover models, create profiles, update existing
-profiles, or persist the raw token. MaaS and CodeAgent password profiles can
-reference W3 by saving `auth_source = "w3"` in their provider auth config.
+credentials and may migrate W3-imported MaaS and CodeAgent password profiles to
+`auth_source = "w3"` so they reuse the connector secret instead of keeping
+profile-level copies. It does not discover models, create profiles, or persist
+the raw token. MaaS and CodeAgent password profiles can reference W3 by saving
+`auth_source = "w3"` in their provider auth config. Failed saves return the
+normalized `error_code` alongside the user-facing message.
 
 ### `POST /connectors/w3:test`
 
 Validates request credentials or the saved W3 credentials. Success only means
 the backend can obtain a non-empty `X-Auth-Token`; it does not call an inference
-endpoint.
+endpoint. The response includes `error_code` for failed validations, and testing
+saved credentials updates the W3 connector's last verification or last login
+failure fields.
 
 Future MCP or gateway integrations that need a W3 token should resolve it from
 the saved W3 credentials on demand and map the resulting `WEB_TOKEN` to their

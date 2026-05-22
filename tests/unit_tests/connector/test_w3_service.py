@@ -116,26 +116,28 @@ class _ModelConfigService:
             raise ValueError("save failed")
         if provider == ProviderType.MAAS.value:
             auth = cast(dict[str, JsonValue], stored.get("maas_auth"))
-            password = auth.pop("password")
-            self._secret_store.set_secret(
-                self._config_dir,
-                namespace="model_profile",
-                owner_id=name,
-                field_name=maas_password_secret_field_name(),
-                value=cast(str, password),
-            )
-            auth["has_password"] = True
+            password = auth.pop("password", None)
+            if isinstance(password, str):
+                self._secret_store.set_secret(
+                    self._config_dir,
+                    namespace="model_profile",
+                    owner_id=name,
+                    field_name=maas_password_secret_field_name(),
+                    value=password,
+                )
+                auth["has_password"] = True
         if provider == ProviderType.CODEAGENT.value:
             auth = cast(dict[str, JsonValue], stored.get("codeagent_auth"))
-            password = auth.pop("password")
-            self._secret_store.set_secret(
-                self._config_dir,
-                namespace="model_profile",
-                owner_id=name,
-                field_name=codeagent_password_secret_field_name(),
-                value=cast(str, password),
-            )
-            auth["has_password"] = True
+            password = auth.pop("password", None)
+            if isinstance(password, str):
+                self._secret_store.set_secret(
+                    self._config_dir,
+                    namespace="model_profile",
+                    owner_id=name,
+                    field_name=codeagent_password_secret_field_name(),
+                    value=password,
+                )
+                auth["has_password"] = True
         self._profiles[name] = stored
 
     async def discover_models_async(
@@ -267,7 +269,11 @@ async def test_save_credentials_stores_password_in_secret_store_only(
 
     assert response.ok is True
     assert response.sync is None
-    assert service.get_status().has_password is True
+    status = service.get_status()
+    assert status.has_password is True
+    assert status.last_verified_at is not None
+    assert status.last_login_failed_at is None
+    assert status.last_login_error_code is None
     assert model_service.reloads == 1
     assert model_service.get_model_profiles() == {}
     config_text = (tmp_path / "connectors" / "w3.json").read_text(encoding="utf-8")
@@ -301,8 +307,11 @@ async def test_save_credentials_preserves_last_valid_username_when_validation_fa
     )
 
     assert response.ok is False
+    assert response.error_code == "invalid_credentials"
     assert service.get_status().username == "old-user"
     assert service.get_status().has_password is True
+    assert service.get_status().last_login_failed_at is not None
+    assert service.get_status().last_login_error_code == "invalid_credentials"
     assert (
         secret_store.get_secret(
             tmp_path,
@@ -316,7 +325,7 @@ async def test_save_credentials_preserves_last_valid_username_when_validation_fa
 
 
 @pytest.mark.asyncio
-async def test_save_credentials_syncs_imported_profile_secrets(
+async def test_save_credentials_migrates_imported_profiles_to_w3_auth_source(
     tmp_path: Path,
 ) -> None:
     secret_store = _FileSecretStore()
@@ -352,6 +361,20 @@ async def test_save_credentials_syncs_imported_profile_secrets(
         """,
         encoding="utf-8",
     )
+    secret_store.set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="w3-maas-pangu",
+        field_name=maas_password_secret_field_name(),
+        value="old-password",
+    )
+    secret_store.set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="w3-codeagent-claude",
+        field_name=codeagent_password_secret_field_name(),
+        value="old-password",
+    )
 
     response = await service.save_credentials(
         W3ConnectorSaveRequest(username="new-user", password="new-password")
@@ -359,7 +382,10 @@ async def test_save_credentials_syncs_imported_profile_secrets(
 
     assert response.ok is True
     saved_profiles = (tmp_path / "model.json").read_text(encoding="utf-8")
-    assert "new-user" in saved_profiles
+    assert '"maas_auth": {\n      "auth_source": "w3"\n    }' in saved_profiles
+    assert '"auth_method": "password"' in saved_profiles
+    assert '"auth_source": "w3"' in saved_profiles
+    assert "new-user" not in saved_profiles
     assert (
         secret_store.get_secret(
             tmp_path,
@@ -367,7 +393,7 @@ async def test_save_credentials_syncs_imported_profile_secrets(
             owner_id="w3-maas-pangu",
             field_name=maas_password_secret_field_name(),
         )
-        == "new-password"
+        is None
     )
     assert (
         secret_store.get_secret(
@@ -376,7 +402,7 @@ async def test_save_credentials_syncs_imported_profile_secrets(
             owner_id="w3-codeagent-claude",
             field_name=codeagent_password_secret_field_name(),
         )
-        == "new-password"
+        is None
     )
     assert model_service.reloads == 1
 
@@ -491,6 +517,10 @@ async def test_test_connection_reports_login_failure(tmp_path: Path) -> None:
     assert result.ok is False
     assert result.status == "error"
     assert result.has_token is False
+    assert result.error_code == "invalid_credentials"
+    assert result.message == (
+        "W3 username or password was rejected. Check the saved W3 credentials."
+    )
 
 
 @pytest.mark.asyncio
@@ -511,6 +541,7 @@ async def test_test_connection_reports_missing_credentials(tmp_path: Path) -> No
     assert result.ok is False
     assert result.status == "needs_config"
     assert result.message == "W3 username and password are required."
+    assert result.error_code == "missing_credentials"
 
 
 @pytest.mark.asyncio
@@ -531,7 +562,37 @@ async def test_test_connection_reports_empty_token(tmp_path: Path) -> None:
     )
 
     assert result.ok is False
-    assert result.message == "W3 login did not return X-Auth-Token."
+    assert result.message == "W3 login succeeded but did not return X-Auth-Token."
+    assert result.error_code == "auth_token_missing"
+
+
+@pytest.mark.asyncio
+async def test_test_connection_preserves_missing_token_code_from_login_error(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileSecretStore()
+    service = W3ConnectorService(
+        config_dir=tmp_path,
+        model_config_service=_ModelConfigService(
+            config_dir=tmp_path,
+            secret_store=secret_store,
+        ),
+        secret_store=secret_store,
+        token_service=_TokenService(
+            error=MaaSLoginError(
+                "MAAS login response did not include cloudDragonTokens.authToken.",
+                status_code=200,
+            )
+        ),
+    )
+
+    result = await service.test_connection(
+        W3ConnectorTestRequest(username="user", password="password")
+    )
+
+    assert result.ok is False
+    assert result.message == "W3 login succeeded but did not return X-Auth-Token."
+    assert result.error_code == "auth_token_missing"
 
 
 @pytest.mark.asyncio
@@ -554,7 +615,49 @@ async def test_test_connection_reports_unexpected_validation_error(
     )
 
     assert result.ok is False
-    assert result.message == "network down"
+    assert result.message == "W3 login failed. Check backend logs for details."
+    assert result.error_code == "login_failed"
+
+
+@pytest.mark.asyncio
+async def test_test_connection_records_saved_credential_observability(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileSecretStore()
+    token_service = _TokenService(token="x-auth-token")
+    service = W3ConnectorService(
+        config_dir=tmp_path,
+        model_config_service=_ModelConfigService(
+            config_dir=tmp_path,
+            secret_store=secret_store,
+        ),
+        secret_store=secret_store,
+        token_service=token_service,
+    )
+    await service.save_credentials(
+        W3ConnectorSaveRequest(username="user", password="password")
+    )
+    token_service.set_token(None)
+
+    failed = await service.test_connection()
+
+    assert failed.ok is False
+    status = service.get_status()
+    assert status.last_login_failed_at is not None
+    assert status.last_login_error_code == "invalid_credentials"
+    assert status.last_error == (
+        "W3 username or password was rejected. Check the saved W3 credentials."
+    )
+
+    token_service.set_token("new-token")
+    succeeded = await service.test_connection()
+
+    assert succeeded.ok is True
+    status = service.get_status()
+    assert status.last_verified_at is not None
+    assert status.last_login_failed_at is None
+    assert status.last_login_error_code is None
+    assert status.last_error is None
 
 
 @pytest.mark.asyncio
@@ -729,7 +832,7 @@ async def test_import_records_provider_result_errors(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_imported_maas_and_codeagent_profiles_use_w3_password_secret(
+async def test_imported_maas_and_codeagent_profiles_use_w3_auth_source(
     tmp_path: Path,
 ) -> None:
     secret_store = _FileSecretStore()
@@ -743,6 +846,17 @@ async def test_imported_maas_and_codeagent_profiles_use_w3_password_secret(
 
     await service.sync_models(username="user", password="secret-password")
 
+    profiles = model_service.get_model_profiles()
+    maas_auth = cast(dict[str, JsonValue], profiles["w3-maas-deepseek"]["maas_auth"])
+    codeagent_auth = cast(
+        dict[str, JsonValue],
+        profiles["w3-codeagent-claude-code"]["codeagent_auth"],
+    )
+    assert maas_auth == {"auth_source": "w3"}
+    assert codeagent_auth == {
+        "auth_method": "password",
+        "auth_source": "w3",
+    }
     assert (
         secret_store.get_secret(
             tmp_path,
@@ -750,7 +864,7 @@ async def test_imported_maas_and_codeagent_profiles_use_w3_password_secret(
             owner_id="w3-maas-deepseek",
             field_name=maas_password_secret_field_name(),
         )
-        == "secret-password"
+        is None
     )
     assert (
         secret_store.get_secret(
@@ -759,7 +873,7 @@ async def test_imported_maas_and_codeagent_profiles_use_w3_password_secret(
             owner_id="w3-codeagent-claude-code",
             field_name=codeagent_password_secret_field_name(),
         )
-        == "secret-password"
+        is None
     )
 
 
@@ -786,7 +900,7 @@ async def test_sync_models_with_saved_credentials_requires_config(
 
 
 @pytest.mark.asyncio
-async def test_sync_models_with_saved_credentials_updates_w3_imported_profiles(
+async def test_sync_models_with_saved_credentials_migrates_w3_imported_profiles(
     tmp_path: Path,
 ) -> None:
     secret_store = _FileSecretStore()
@@ -816,6 +930,9 @@ async def test_sync_models_with_saved_credentials_updates_w3_imported_profiles(
     await service.save_credentials(
         W3ConnectorSaveRequest(username="old-user", password="old-password")
     )
+    await service.save_credentials(
+        W3ConnectorSaveRequest(username="new-user", password="new-password")
+    )
     (tmp_path / "model.json").write_text(
         """
         {
@@ -825,15 +942,27 @@ async def test_sync_models_with_saved_credentials_updates_w3_imported_profiles(
         """,
         encoding="utf-8",
     )
-    await service.save_credentials(
-        W3ConnectorSaveRequest(username="new-user", password="new-password")
+    secret_store.set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="w3-maas-pangu",
+        field_name=maas_password_secret_field_name(),
+        value="old-password",
+    )
+    secret_store.set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="w3-codeagent-claude",
+        field_name=codeagent_password_secret_field_name(),
+        value="old-password",
     )
 
     response = await service.sync_models_with_saved_credentials()
 
     assert response.ok is True
     saved_profiles = (tmp_path / "model.json").read_text(encoding="utf-8")
-    assert "new-user" in saved_profiles
+    assert '"auth_source": "w3"' in saved_profiles
+    assert "new-user" not in saved_profiles
     assert (
         secret_store.get_secret(
             tmp_path,
@@ -841,7 +970,7 @@ async def test_sync_models_with_saved_credentials_updates_w3_imported_profiles(
             owner_id="w3-maas-pangu",
             field_name=maas_password_secret_field_name(),
         )
-        == "new-password"
+        is None
     )
     assert (
         secret_store.get_secret(
@@ -850,7 +979,7 @@ async def test_sync_models_with_saved_credentials_updates_w3_imported_profiles(
             owner_id="w3-codeagent-claude",
             field_name=codeagent_password_secret_field_name(),
         )
-        == "new-password"
+        is None
     )
     assert model_service.reloads == 3
 

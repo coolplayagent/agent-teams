@@ -1,0 +1,9 @@
+:root {
+  --color-bg: #f5f7f7;
+  --color-surface: #ffffff;
+  --color-text: #1c1f23;
+  --color-border: #d7dddd;
+  --color-accent: #2f6f5e;
+  --color-accent-text: #ffffff;
+  --font-ui: "IBM Plex Sans", "Segoe UI", sans-serif;
+}

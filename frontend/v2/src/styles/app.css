@@ -1,0 +1,136 @@
+@import "./tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.brand {
+  font-weight: 650;
+}
+
+.workspace {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+}
+
+.toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 18px;
+}
+
+.toolbar-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.composer {
+  align-self: center;
+  justify-self: center;
+  max-width: 760px;
+  width: min(760px, calc(100vw - 360px));
+}
+
+.composer h1 {
+  font-size: 24px;
+  letter-spacing: 0;
+  margin: 0 0 16px;
+}
+
+.composer textarea {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  min-height: 160px;
+  padding: 14px;
+  resize: vertical;
+  width: 100%;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.primary-button,
+.ghost-button,
+.icon-button,
+.version-switch {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.primary-button {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  padding: 9px 14px;
+}
+
+.ghost-button,
+.icon-button {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.ghost-button {
+  padding: 8px 12px;
+}
+
+.icon-button {
+  height: 32px;
+  width: 32px;
+}
+
+.version-switch {
+  align-items: center;
+  background: var(--color-surface);
+  color: var(--color-text);
+  display: inline-flex;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 12px;
+  text-decoration: none;
+}
+
+.version-switch svg {
+  height: 17px;
+  width: 17px;
+}

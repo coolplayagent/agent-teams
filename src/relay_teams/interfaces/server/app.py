@@ -20,7 +20,10 @@ from starlette.types import Scope
 
 from relay_teams.builtin import ensure_app_config_bootstrap
 from relay_teams.env.runtime_env import sync_app_env_to_process_env
-from relay_teams.interfaces.server.config_paths import get_frontend_dist_dir
+from relay_teams.interfaces.server.config_paths import (
+    get_frontend_dist_dir,
+    get_frontend_v2_source_dir,
+)
 from relay_teams.interfaces.server.container import ServerContainer
 from relay_teams.interfaces.server.async_call import (
     reset_default_route_work_class,
@@ -76,6 +79,7 @@ from relay_teams.trace import bind_trace_context, generate_request_id
 
 logger = get_logger(__name__)
 FRONTEND_DIST_DIR = get_frontend_dist_dir()
+FRONTEND_V2_SOURCE_DIR = get_frontend_v2_source_dir()
 RequestHandler = Callable[[Request], Awaitable[Response]]
 SignalHandler = Callable[[int, FrameType | None], None]
 SignalHandlerRef = int | SignalHandler | None
@@ -423,6 +427,14 @@ def _register_signal_handlers() -> None:
 
     for sig in registered_signals:
         _ = signal.signal(sig, _on_signal)
+
+
+if FRONTEND_V2_SOURCE_DIR.exists():
+    app.mount(
+        "/v2",
+        FrontendStaticFiles(directory=str(FRONTEND_V2_SOURCE_DIR), html=True),
+        name="frontend_v2",
+    )
 
 
 if FRONTEND_DIST_DIR.exists():

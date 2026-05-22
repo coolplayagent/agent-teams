@@ -7,6 +7,66 @@ from types import SimpleNamespace
 from relay_teams.interfaces.server import config_paths
 
 
+def test_get_frontend_dist_dir_uses_env_override_first(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    env_frontend_dir = tmp_path / "repo-root" / "frontend" / "v2" / "dist"
+    git_frontend_dist_dir = tmp_path / "repo-root" / "frontend" / "dist"
+    env_frontend_dir.mkdir(parents=True)
+    git_frontend_dist_dir.mkdir(parents=True)
+    monkeypatch.setenv(
+        config_paths.FRONTEND_DIST_DIR_ENV,
+        str(env_frontend_dir),
+    )
+    monkeypatch.setattr(
+        config_paths,
+        "_git_frontend_dist_dir",
+        lambda: git_frontend_dist_dir,
+    )
+    monkeypatch.setattr(
+        config_paths,
+        "_package_frontend_dist_dir",
+        lambda: tmp_path / "package-root" / "frontend" / "dist",
+    )
+    monkeypatch.setattr(
+        config_paths,
+        "_cwd_frontend_dist_dir",
+        lambda: tmp_path / "cwd-root" / "frontend" / "dist",
+    )
+
+    frontend_dist_dir = config_paths.get_frontend_dist_dir()
+
+    assert frontend_dist_dir == env_frontend_dir.resolve()
+
+
+def test_get_frontend_v2_source_dir_uses_git_root_when_available(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    frontend_v2_source_dir = tmp_path / "repo-root" / "frontend" / "v2" / "src"
+    frontend_v2_source_dir.mkdir(parents=True)
+    monkeypatch.setattr(
+        config_paths,
+        "_git_frontend_v2_source_dir",
+        lambda: frontend_v2_source_dir,
+    )
+    monkeypatch.setattr(
+        config_paths,
+        "_package_frontend_v2_source_dir",
+        lambda: tmp_path / "package-root" / "frontend" / "v2" / "src",
+    )
+    monkeypatch.setattr(
+        config_paths,
+        "_cwd_frontend_v2_source_dir",
+        lambda: tmp_path / "cwd-root" / "frontend" / "v2" / "src",
+    )
+
+    resolved_dir = config_paths.get_frontend_v2_source_dir()
+
+    assert resolved_dir == frontend_v2_source_dir
+
+
 def test_get_frontend_dist_dir_uses_git_root_when_available(
     monkeypatch,
     tmp_path: Path,

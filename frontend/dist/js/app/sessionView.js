@@ -19,14 +19,14 @@ export async function hydrateMainSessionForSwitch(
     {
         priority = 'high',
         quiet = true,
-        roundsScrollPolicy = '',
+        roundsScrollPolicy = 'session-load',
         signal = null,
     } = {},
 ) {
     return hydrateSessionSwitchView(sessionId, {
         priority,
         quiet,
-        roundsScrollPolicy,
+        roundsScrollPolicy: roundsScrollPolicy || 'session-load',
         signal,
     });
 }

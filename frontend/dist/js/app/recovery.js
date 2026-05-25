@@ -156,7 +156,7 @@ export async function hydrateSessionSwitchView(
     {
         priority = 'high',
         quiet = true,
-        roundsScrollPolicy = '',
+        roundsScrollPolicy = 'session-load',
         signal = null,
     } = {},
 ) {
@@ -172,7 +172,7 @@ export async function hydrateSessionSwitchView(
     await loadSessionRounds(safeSessionId, {
         priority,
         render: !shouldPreserveActiveSubagentView(safeSessionId),
-        scrollPolicy: roundsScrollPolicy || undefined,
+        scrollPolicy: roundsScrollPolicy || 'session-load',
         signal,
         timelineLoadMode: 'background',
     });

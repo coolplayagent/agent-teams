@@ -2426,6 +2426,51 @@ function renderProjectsFromSnapshot({ syncStreams = false } = {}) {
     return true;
 }
 
+function getProjectsWorkspaceScroller() {
+    return els.projectsList?.querySelector?.('.projects-workspace-scroll') || null;
+}
+
+function captureProjectSidebarScrollAnchor() {
+    if (!els.projectsList) {
+        return null;
+    }
+    const workspaceScroller = getProjectsWorkspaceScroller();
+    return {
+        scrollTop: Number(els.projectsList.scrollTop || 0),
+        workspaceScrollTop: Number(workspaceScroller?.scrollTop || 0),
+    };
+}
+
+function restoreElementScrollTop(element, scrollTop) {
+    if (!element) {
+        return;
+    }
+    const scrollHeight = Number(element.scrollHeight || 0);
+    const clientHeight = Number(element.clientHeight || 0);
+    const hasScrollableRange = Number.isFinite(scrollHeight)
+        && Number.isFinite(clientHeight)
+        && scrollHeight > clientHeight;
+    const maxScrollTop = hasScrollableRange
+        ? Math.max(0, scrollHeight - clientHeight)
+        : Number.POSITIVE_INFINITY;
+    element.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollTop));
+}
+
+function restoreProjectSidebarScrollAnchor(anchor) {
+    if (!els.projectsList || !anchor) {
+        return;
+    }
+    restoreElementScrollTop(els.projectsList, anchor.scrollTop);
+    restoreElementScrollTop(getProjectsWorkspaceScroller(), anchor.workspaceScrollTop);
+}
+
+function replaceProjectsListChildren(nodes) {
+    const scrollAnchor = captureProjectSidebarScrollAnchor();
+    els.projectsList.innerHTML = '';
+    nodes.forEach(node => els.projectsList.appendChild(node));
+    restoreProjectSidebarScrollAnchor(scrollAnchor);
+}
+
 function renderProjectSidebarData(
     workspaces,
     sessions,
@@ -2468,8 +2513,7 @@ function renderProjectSidebarData(
             renderProjectsWorkspaceShell(toolbarNode, workspaceContentNodes),
         ];
         lastProjectsRenderSignature = nextSignature;
-        els.projectsList.innerHTML = '';
-        nextNodes.forEach(node => els.projectsList.appendChild(node));
+        replaceProjectsListChildren(nextNodes);
         return;
     }
     if (!groups.some(group => group.key === openProjectMenuId)) {
@@ -2481,8 +2525,7 @@ function renderProjectSidebarData(
         renderProjectsWorkspaceShell(toolbarNode, workspaceContentNodes),
     ];
     lastProjectsRenderSignature = nextSignature;
-    els.projectsList.innerHTML = '';
-    nextNodes.forEach(node => els.projectsList.appendChild(node));
+    replaceProjectsListChildren(nextNodes);
     syncProjectSortButton();
     syncSubagentSessionListVisualState();
     playPendingSessionAnimation();

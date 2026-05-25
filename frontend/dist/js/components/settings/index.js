@@ -64,7 +64,6 @@ import { errorToPayload, logError, sysLog } from '../../utils/logger.js';
 let settingsModal = null;
 let currentTab = 'appearance';
 let initialized = false;
-let overlayPointerDown = false;
 let actionOwnershipObserver = null;
 let panelLoadRequestId = 0;
 let settingsWarmupPromise = null;
@@ -1055,18 +1054,6 @@ function setupEventListeners() {
         closeBtn.onclick = closeSettings;
     }
 
-    settingsModal.onmousedown = (e) => {
-        overlayPointerDown = e.target === settingsModal;
-    };
-
-    settingsModal.onclick = (e) => {
-        const shouldClose = overlayPointerDown && e.target === settingsModal;
-        overlayPointerDown = false;
-        if (shouldClose) {
-            closeSettings();
-        }
-    };
-
     document.querySelectorAll('.settings-tab').forEach(tab => {
         tab.onclick = () => {
             currentTab = tab.dataset.tab;
@@ -1364,7 +1351,6 @@ export function openSettings(tab = null) {
 
 export function closeSettings() {
     if (!settingsModal) return;
-    overlayPointerDown = false;
     settingsModal.classList.remove('settings-modal-visible');
     settingsModal.style.display = 'none';
 }

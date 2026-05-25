@@ -1659,7 +1659,7 @@ console.log(JSON.stringify({
     assert load_calls["workspace"] == 1
 
 
-def test_settings_modal_only_closes_for_direct_overlay_click(tmp_path: Path) -> None:
+def test_settings_modal_does_not_close_from_overlay_click(tmp_path: Path) -> None:
     payload = _run_settings_script(
         tmp_path=tmp_path,
         runner_source="""
@@ -1669,23 +1669,20 @@ initSettings();
 await openSettings();
 
 const settingsModal = document.getElementById("settings-modal");
-const modalContent = settingsModal.children[0];
 
-settingsModal.onmousedown({ target: modalContent });
-settingsModal.onclick({ target: settingsModal });
-const afterDraggedReleaseDisplay = settingsModal.style.display;
+settingsModal.onmousedown?.({ target: settingsModal });
+settingsModal.onclick?.({ target: settingsModal });
+const afterOverlayClickDisplay = settingsModal.style.display;
 
-await openSettings();
-settingsModal.onmousedown({ target: settingsModal });
-settingsModal.onclick({ target: settingsModal });
-const afterDirectOverlayClickDisplay = settingsModal.style.display;
+document.getElementById("settings-close").onclick();
+const afterCloseButtonDisplay = settingsModal.style.display;
 
 console.log(JSON.stringify({
-    afterDraggedReleaseDisplay,
-    afterDirectOverlayClickDisplay,
+    afterOverlayClickDisplay,
+    afterCloseButtonDisplay,
 }));
 """.strip(),
     )
 
-    assert payload["afterDraggedReleaseDisplay"] == "flex"
-    assert payload["afterDirectOverlayClickDisplay"] == "none"
+    assert payload["afterOverlayClickDisplay"] == "flex"
+    assert payload["afterCloseButtonDisplay"] == "none"

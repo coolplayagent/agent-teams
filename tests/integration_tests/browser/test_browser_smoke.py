@@ -639,7 +639,7 @@ def test_browser_model_profile_custom_provider_keeps_manual_base_url(
     )
 
 
-def test_browser_settings_modal_does_not_close_after_dragging_out_of_content(
+def test_browser_settings_modal_stays_open_on_outside_click(
     browser_page: Page,
     integration_env: IntegrationEnvironment,
 ) -> None:
@@ -669,6 +669,9 @@ def test_browser_settings_modal_does_not_close_after_dragging_out_of_content(
     expect(settings_modal).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
     page.mouse.click(end_x, end_y)
+    expect(settings_modal).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+    page.locator("#settings-close").click()
     expect(settings_modal).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
 
 

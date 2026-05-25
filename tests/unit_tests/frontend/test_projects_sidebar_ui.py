@@ -517,6 +517,121 @@ console.log(JSON.stringify({
     assert elapsed_ms < 300
 
 
+def test_projects_sidebar_preserves_scroll_after_session_list_rerender(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        updated_at: "2026-03-14T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = Array.from({ length: 24 }, (_, index) => ({
+    session_id: `session-${String(index).padStart(2, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: new Date(Date.UTC(2026, 2, 14, 10, 0, index % 60)).toISOString(),
+    metadata: { title: `Session title ${index}` },
+    pending_tool_approval_count: 0,
+}));
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchSessions() {
+    const suffix = globalThis.__sessionTitleSuffix || "";
+    return sessions.map(session => ({
+        ...session,
+        metadata: {
+            ...session.metadata,
+            title: `${session.metadata.title}${suffix}`,
+        },
+    }));
+}
+
+export async function fetchAutomationProjects() {
+    return [];
+}
+
+export async function fetchAutomationFeishuBindings() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function deleteSession() {
+    return { status: "ok" };
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function forkWorkspace() {
+    return {};
+}
+
+export async function pickWorkspace() {
+    return { workspace_id: "alpha-project" };
+}
+
+export async function createAutomationProject() {
+    return {};
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+""".strip(),
+        runner_source="""
+import { loadProjects } from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+await loadProjects();
+
+const projectsList = document.getElementById("projects-list");
+const scroller = projectsList.querySelector(".projects-workspace-scroll");
+scroller.scrollTop = 360;
+scroller.scrollHeight = 1600;
+scroller.clientHeight = 480;
+globalThis.__sessionTitleSuffix = " updated";
+
+await loadProjects({ forceRefresh: true });
+await flushTasks();
+
+const firstProject = projectsList.children.filter(child => child.className === "project-card")[0];
+const restoredScroller = projectsList.querySelector(".projects-workspace-scroll");
+console.log(JSON.stringify({
+    scrollTop: restoredScroller.scrollTop,
+    visibleSessionCount: firstProject.querySelectorAll(".session-item").length,
+}));
+""".strip(),
+    )
+
+    assert payload["scrollTop"] == 360
+    assert payload["visibleSessionCount"] == 10
+
+
 def test_projects_sidebar_clears_unread_indicator_immediately_on_session_click(
     tmp_path: Path,
 ) -> None:
@@ -4544,6 +4659,9 @@ function createContainerElement() {
         className: "",
         style: {},
         children: [],
+        scrollTop: 0,
+        scrollHeight: 0,
+        clientHeight: 0,
         matches(selector) {
             return selector === ":hover" ? !!globalThis.__projectsListHover : false;
         },
@@ -4554,6 +4672,7 @@ function createContainerElement() {
             html = String(value);
             if (!html) {
                 this.children = [];
+                this.scrollTop = 0;
             }
         },
         appendChild(child) {

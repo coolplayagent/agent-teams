@@ -758,10 +758,6 @@ function renderNavigatorForTimeline(options = {}) {
 
 function captureRoundRenderPlan(options = {}) {
     const explicitPolicy = String(options.scrollPolicy || '').trim();
-    const fallbackPolicy = options.preserveScroll === true
-        ? 'preserve-anchor'
-        : 'session-load';
-    const policy = explicitPolicy || fallbackPolicy;
     const container = els.chatMessages;
     const hasRenderedRounds = !!container?.querySelector?.('.session-round-section');
 
@@ -773,6 +769,11 @@ function captureRoundRenderPlan(options = {}) {
             preserveLoadedRounds: false,
         };
     }
+
+    const fallbackPolicy = options.preserveScroll === false
+        ? 'session-load'
+        : 'preserve-anchor';
+    const policy = explicitPolicy || fallbackPolicy;
 
     if (policy === 'completion-auto') {
         const latestRound = roundsState.currentRounds[roundsState.currentRounds.length - 1] || null;

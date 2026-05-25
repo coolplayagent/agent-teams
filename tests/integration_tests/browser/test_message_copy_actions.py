@@ -260,6 +260,32 @@ def test_round_intent_toggle_survives_streaming_patch_and_overlap(
     }
 
 
+def test_round_timeline_click_rerender_preserves_scroll_anchor(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    _open_round_intent_harness(browser_page, tmp_path)
+
+    payload = cast(
+        dict[str, object],
+        browser_page.evaluate(
+            """
+        async () => window.__runRoundScrollAnchorScenario()
+        """
+        ),
+    )
+
+    assert payload["beforeRunId"] == "run-scroll-middle"
+    assert payload["afterRunId"] == "run-scroll-middle"
+    before_top = cast(float, payload["beforeTop"])
+    after_top = cast(float, payload["afterTop"])
+    session_load_top = cast(float, payload["sessionLoadTop"])
+    assert before_top > 120
+    assert abs(after_top - before_top) <= 12
+    assert session_load_top > after_top
+    assert payload["sessionLoadNearBottom"] is True
+
+
 def _open_message_copy_harness(page: Page, tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[3]
     html_path = tmp_path / "message_copy_actions.html"
@@ -378,6 +404,9 @@ def _round_intent_harness_html(base_url: str) -> str:
       margin-top: -42px;
       background: rgba(239, 68, 68, 0.18);
     }}
+    .session-round-section {{
+      min-height: 520px;
+    }}
   </style>
 </head>
 <body class="light-theme">
@@ -396,10 +425,14 @@ def _round_intent_harness_html(base_url: str) -> str:
     import {{
       createLiveRound,
       overlayRoundRecoveryState,
+      renderCurrentSessionTimeline,
     }} from "{base_url}/frontend/dist/js/components/rounds/timeline.js";
 
     const waitForLayout = () => new Promise(resolve => {{
       requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }});
+    const waitForRoundScrollAnimation = () => new Promise(resolve => {{
+      window.setTimeout(resolve, 900);
     }});
 
     window.__runRoundIntentScenario = async () => {{
@@ -455,6 +488,75 @@ def _round_intent_harness_html(base_url: str) -> str:
         closedBeforePatch,
         closedAfterPatch,
         toggleHit: hit === toggle || toggle?.contains(hit) === true,
+      }};
+    }};
+
+    function firstVisibleRoundId() {{
+      const container = document.getElementById('chat-messages');
+      const containerRect = container.getBoundingClientRect();
+      const sections = Array.from(document.querySelectorAll('.session-round-section'));
+      let best = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      sections.forEach(section => {{
+        const rect = section.getBoundingClientRect();
+        if (rect.bottom < containerRect.top || rect.top > containerRect.bottom) {{
+          return;
+        }}
+        const distance = Math.abs(rect.top - containerRect.top);
+        if (distance < bestDistance) {{
+          bestDistance = distance;
+          best = section;
+        }}
+      }});
+      return best?.dataset?.runId || '';
+    }}
+
+    window.__runRoundScrollAnchorScenario = async () => {{
+      const container = document.getElementById('chat-messages');
+      const longIntent = [
+        'Analyze the frontend round timeline scroll behavior and keep the visible section stable.',
+        'This line gives the round enough height for meaningful anchor restoration.',
+        'Clicking a message should not make the transcript jump to the top.'
+      ].join('\\n\\n');
+
+      createLiveRound('run-scroll-oldest', longIntent);
+      createLiveRound('run-scroll-middle', longIntent);
+      createLiveRound('run-scroll-latest', longIntent);
+      await waitForLayout();
+      await waitForRoundScrollAnimation();
+
+      const middleSection = document.querySelector('[data-run-id="run-scroll-middle"]');
+      const middleTop = middleSection.getBoundingClientRect().top
+        - container.getBoundingClientRect().top
+        + container.scrollTop
+        - 32;
+      container.scrollTop = Math.max(0, middleTop);
+      await waitForLayout();
+
+      const message = middleSection.querySelector('.round-detail-header');
+      message?.dispatchEvent(new MouseEvent('click', {{ bubbles: true, cancelable: true }}));
+      const beforeTop = container.scrollTop;
+      const beforeRunId = firstVisibleRoundId();
+
+      renderCurrentSessionTimeline({{}});
+      await waitForLayout();
+      const afterTop = container.scrollTop;
+      const afterRunId = firstVisibleRoundId();
+
+      renderCurrentSessionTimeline({{ scrollPolicy: 'session-load' }});
+      await waitForLayout();
+      const sessionLoadTop = container.scrollTop;
+      const sessionLoadNearBottom = (
+        container.scrollHeight - container.scrollTop - container.clientHeight
+      ) <= 12;
+
+      return {{
+        beforeRunId,
+        afterRunId,
+        beforeTop,
+        afterTop,
+        sessionLoadTop,
+        sessionLoadNearBottom,
       }};
     }};
     window.__roundIntentReady = true;

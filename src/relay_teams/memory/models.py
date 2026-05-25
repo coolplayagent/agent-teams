@@ -279,7 +279,9 @@ class MemoryQuery(BaseModel):
     tier: MemoryTier | None = None
     scope: MemoryScope | None = None
     session_id: str | None = None
+    run_id: str | None = None
     role_id: str | None = None
+    role_id_is_null: bool = False
     kind: MemoryEntryKind | None = None
     status: MemoryEntryStatus | None = None
     tags: tuple[str, ...] = ()
@@ -353,6 +355,23 @@ class MemoryConsolidationResult(BaseModel):
     extraction_duration_ms: int = 0
 
 
+class MemoryIndexRebuildRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: str | None = Field(default=None, min_length=1)
+    limit: int = Field(default=100, ge=1, le=1000)
+    dry_run: bool = False
+
+
+class MemoryIndexRebuildResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scanned_count: int = Field(ge=0)
+    rebuilt_count: int = Field(ge=0)
+    skipped_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+
+
 # ---------------------------------------------------------------------------
 # Search models
 # ---------------------------------------------------------------------------
@@ -367,6 +386,7 @@ class MemorySearchRequest(BaseModel):
     scope: MemoryScope | None = None
     session_id: str | None = None
     role_id: str | None = None
+    role_id_is_null: bool = False
     kind: MemoryEntryKind | None = None
     status: MemoryEntryStatus | None = MemoryEntryStatus.ACTIVE
     tags: tuple[str, ...] = ()
@@ -385,6 +405,7 @@ class GlobalMemorySearchRequest(BaseModel):
     scope: MemoryScope | None = None
     session_id: str | None = None
     role_id: str | None = None
+    role_id_is_null: bool = False
     kind: MemoryEntryKind | None = None
     status: MemoryEntryStatus | None = MemoryEntryStatus.ACTIVE
     tags: tuple[str, ...] = ()

@@ -97,6 +97,7 @@ class TaskPromptHarness(BaseModel):
         role: RoleDefinition,
         role_id: str,
         workspace_id: str,
+        objective: str = "",
     ) -> RoleDefinition:
         return await build_role_with_memory_async(
             role_registry=self.role_registry,
@@ -104,6 +105,7 @@ class TaskPromptHarness(BaseModel):
             role=role,
             role_id=role_id,
             workspace_id=workspace_id,
+            objective=objective,
         )
 
     async def prepare_runtime_snapshot(

@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import override
 
+from pydantic import JsonValue
 import pytest
 
 from relay_teams.memory.models import (
@@ -14,6 +15,7 @@ from relay_teams.memory.models import (
     MemoryContent,
     MemoryEntryKind,
     MemoryEntryStatus,
+    MemoryQuery,
     MemoryScope,
     MemorySourceKind,
     MemoryTier,
@@ -644,9 +646,9 @@ class TestFallbackStructural:
 
 
 class MockMessageRepo:
-    """Minimal mock for _MessageRepoProtocol."""
+    """Minimal mock for SemanticMessageRepository."""
 
-    def __init__(self, messages: list[dict[str, object]]) -> None:
+    def __init__(self, messages: list[dict[str, JsonValue]]) -> None:
         self._messages = messages
 
     async def get_messages_by_session_run_ids_async(
@@ -656,7 +658,7 @@ class MockMessageRepo:
         *,
         include_cleared: bool = False,
         include_hidden_from_context: bool = False,
-    ) -> list[dict[str, object]]:
+    ) -> list[dict[str, JsonValue]]:
         return self._messages
 
 
@@ -705,6 +707,20 @@ VALID_MULTI_EXTRACTION_JSON = """{
     ]
 }"""
 
+MERGED_DUPLICATE_EXTRACTION_JSON = """{
+    "extractions": [
+        {
+            "kind": "decision",
+            "title": "Use Pydantic v2",
+            "body": "Decided to use Pydantic v2 for all models",
+            "context": "Confirmed during implementation",
+            "outcome": "Validation helpers were added",
+            "confidence_score": 0.95,
+            "tags": ["validation", "models"]
+        }
+    ]
+}"""
+
 
 def _make_consolidation_request(**overrides: object) -> MemoryConsolidationRequest:
     base: dict[str, object] = {
@@ -719,7 +735,7 @@ def _make_consolidation_request(**overrides: object) -> MemoryConsolidationReque
     return MemoryConsolidationRequest(**base)  # type: ignore[arg-type]
 
 
-_HIT_MESSAGES: list[dict[str, object]] = [
+_HIT_MESSAGES: list[dict[str, JsonValue]] = [
     {"role": "user", "message_json": '{"content": "Hello"}'},
     {"role": "assistant", "message_json": '{"content": "How can I help?"}'},
 ]
@@ -881,3 +897,127 @@ class TestSemanticConsolidateAsyncFullFlow:
             req, llm_provider=provider, message_repo=repo
         )
         assert result.consolidated_entry_count == 1
+
+    @pytest.mark.asyncio
+    async def test_service_persists_semantic_extractions(self, tmp_path: Path) -> None:
+        repo = MemoryBankRepository(tmp_path / "semantic_service.db")
+        message_repo = MockMessageRepo(_HIT_MESSAGES)
+        provider = MockLLMProvider(VALID_EXTRACTION_JSON)
+        service = MemoryBankService(
+            repository=repo,
+            llm_provider=provider,
+            message_repo=message_repo,
+        )
+        req = _make_consolidation_request(
+            workspace_id="ws-1",
+            session_id="sess-1",
+            source_run_id="run-1",
+            target_tier=MemoryTier.MEDIUM_TERM,
+            target_scope=MemoryScope.SESSION,
+        )
+
+        result = await service.consolidate_async(req)
+
+        assert result.consolidated_entry_count == 1
+        assert len(result.new_entry_ids) == 1
+        entry = await service.get_entry_async(result.new_entry_ids[0])
+        assert entry is not None
+        assert entry.tier == MemoryTier.MEDIUM_TERM
+        assert entry.scope == MemoryScope.SESSION
+        assert entry.session_id == "sess-1"
+        assert entry.kind == MemoryEntryKind.DECISION
+        assert entry.content.title == "Use Pydantic v2"
+        assert entry.source == MemorySourceKind.CONSOLIDATION
+        assert entry.source_ref == "semantic:run-1"
+        assert entry.metadata["semantic_consolidation"] == "true"
+        assert entry.metadata["semantic_key"].startswith("decision|use pydantic v2|")
+        assert await repo.list_entry_source_refs_async(
+            memory_id=entry.id,
+            source_kind="semantic_run",
+        ) == ("run-1",)
+
+    @pytest.mark.asyncio
+    async def test_service_skips_duplicate_semantic_extractions(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "semantic_duplicate_service.db")
+        message_repo = MockMessageRepo(_HIT_MESSAGES)
+        provider = MockLLMProvider(VALID_EXTRACTION_JSON)
+        service = MemoryBankService(
+            repository=repo,
+            llm_provider=provider,
+            message_repo=message_repo,
+        )
+        req = _make_consolidation_request(
+            workspace_id="ws-1",
+            session_id="sess-1",
+            source_run_id="run-1",
+            target_tier=MemoryTier.MEDIUM_TERM,
+            target_scope=MemoryScope.SESSION,
+        )
+        first = await service.consolidate_async(req)
+
+        second = await service.consolidate_async(req)
+
+        assert first.consolidated_entry_count == 1
+        assert second.consolidated_entry_count == 0
+        result = await service.list_entries_async(
+            MemoryQuery(
+                workspace_id="ws-1",
+                tier=MemoryTier.MEDIUM_TERM,
+                scope=MemoryScope.SESSION,
+                session_id="sess-1",
+                status=MemoryEntryStatus.ACTIVE,
+                limit=10,
+            )
+        )
+        assert result.total_count == 1
+
+    @pytest.mark.asyncio
+    async def test_service_merges_duplicate_semantic_extractions(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "semantic_duplicate_merge.db")
+        message_repo = MockMessageRepo(_HIT_MESSAGES)
+        provider = MockLLMProvider(VALID_EXTRACTION_JSON)
+        service = MemoryBankService(
+            repository=repo,
+            llm_provider=provider,
+            message_repo=message_repo,
+        )
+        first_req = _make_consolidation_request(
+            workspace_id="ws-1",
+            session_id="sess-1",
+            source_run_id="run-1",
+            target_tier=MemoryTier.MEDIUM_TERM,
+            target_scope=MemoryScope.SESSION,
+        )
+        first = await service.consolidate_async(first_req)
+        service = MemoryBankService(
+            repository=repo,
+            llm_provider=MockLLMProvider(MERGED_DUPLICATE_EXTRACTION_JSON),
+            message_repo=message_repo,
+        )
+        second_req = first_req.model_copy(update={"source_run_id": "run-2"})
+
+        second = await service.consolidate_async(second_req)
+
+        assert first.consolidated_entry_count == 1
+        assert second.consolidated_entry_count == 0
+        entry = await service.get_entry_async(first.new_entry_ids[0])
+        assert entry is not None
+        assert entry.version == 2
+        assert entry.tags == ("pydantic", "models", "validation")
+        assert "During model design phase" in entry.content.context
+        assert "Confirmed during implementation" in entry.content.context
+        assert "All models now use BaseModel" in entry.content.outcome
+        assert "Validation helpers were added" in entry.content.outcome
+        assert entry.confidence_score == 0.97
+        assert entry.metadata["semantic_source_run_ids"] == "run-1,run-2"
+        assert entry.metadata["semantic_observation_count"] == "2"
+        assert entry.metadata["semantic_latest_source_run_id"] == "run-2"
+        assert entry.metadata["semantic_key"].startswith("decision|use pydantic v2|")
+        assert await repo.list_entry_source_refs_async(
+            memory_id=entry.id,
+            source_kind="semantic_run",
+        ) == ("run-1", "run-2")

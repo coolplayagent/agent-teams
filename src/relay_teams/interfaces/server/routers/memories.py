@@ -23,6 +23,8 @@ from relay_teams.memory.models import (
     MemoryEvolutionDraftQueryResult,
     MemoryEvolutionStatus,
     MemoryEvolutionTarget,
+    MemoryIndexRebuildRequest,
+    MemoryIndexRebuildResult,
     MemoryQuery,
     MemoryQueryResult,
     MemoryScope,
@@ -99,6 +101,19 @@ async def search_all_memories(
     service: MemoryBankService = Depends(get_memory_bank_service),
 ) -> MemorySearchResult:
     return await service.search_global_async(body)
+
+
+@router.post(
+    "/memories/rebuild-index",
+    response_model=MemoryIndexRebuildResult,
+)
+async def rebuild_memory_index(
+    body: MemoryIndexRebuildRequest | None = Body(default=None),
+    service: MemoryBankService = Depends(get_memory_bank_service),
+) -> MemoryIndexRebuildResult:
+    return await service.rebuild_stale_index_entries_result_async(
+        body or MemoryIndexRebuildRequest()
+    )
 
 
 @router.post(
@@ -261,6 +276,7 @@ async def create_memory(
     "/workspaces/{workspace_id}/memories/evolutions",
     response_model=MemoryEvolutionDraft,
     status_code=201,
+    deprecated=True,
 )
 async def create_memory_evolution_draft(
     workspace_id: RequiredIdentifierStr = Path(),
@@ -277,6 +293,7 @@ async def create_memory_evolution_draft(
 @router.get(
     "/workspaces/{workspace_id}/memories/evolutions",
     response_model=MemoryEvolutionDraftQueryResult,
+    deprecated=True,
 )
 async def list_memory_evolution_drafts(
     workspace_id: RequiredIdentifierStr = Path(),
@@ -300,6 +317,7 @@ async def list_memory_evolution_drafts(
 @router.get(
     "/workspaces/{workspace_id}/memories/evolutions/{draft_id}",
     response_model=MemoryEvolutionDraft,
+    deprecated=True,
 )
 async def get_memory_evolution_draft(
     workspace_id: RequiredIdentifierStr = Path(),
@@ -315,6 +333,7 @@ async def get_memory_evolution_draft(
 @router.post(
     "/workspaces/{workspace_id}/memories/evolutions/{draft_id}:apply",
     response_model=MemoryEvolutionDraft,
+    deprecated=True,
 )
 async def apply_memory_evolution_draft(
     workspace_id: RequiredIdentifierStr = Path(),
@@ -337,6 +356,7 @@ async def apply_memory_evolution_draft(
 @router.post(
     "/workspaces/{workspace_id}/memories/evolutions/{draft_id}:reject",
     response_model=MemoryEvolutionDraft,
+    deprecated=True,
 )
 async def reject_memory_evolution_draft(
     workspace_id: RequiredIdentifierStr = Path(),
@@ -404,7 +424,15 @@ async def delete_memory(
     existing = await service.get_entry_async(memory_id)
     if existing is None or existing.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Memory entry not found")
-    await service.delete_entry_async(memory_id)
+    deleted = await service.delete_entry_async(memory_id)
+    if not deleted:
+        current = await service.get_entry_async(memory_id)
+        if current is None or current.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail="Memory entry not found")
+        raise HTTPException(
+            status_code=503,
+            detail="Memory entry delete could not complete",
+        )
     return Response(status_code=204)
 
 

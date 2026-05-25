@@ -14,6 +14,7 @@ from relay_teams.memory.models import (
     MemoryConsolidationRequest,
     MemoryEntryKind,
     MemoryEntryStatus,
+    MemoryIndexRebuildRequest,
     MemoryQuery,
     MemoryScope,
     MemorySearchRequest,
@@ -22,7 +23,7 @@ from relay_teams.memory.models import (
     UpdateMemoryEntryRequest,
 )
 from relay_teams.memory.repository import MemoryBankRepository
-from relay_teams.memory.service import MemoryBankService
+from relay_teams.memory.service import FTS_SEARCH_BATCH_SIZE, MemoryBankService
 
 pytestmark = pytest.mark.asyncio
 
@@ -226,6 +227,71 @@ class TestAsyncForgetExpired:
         count = await service.forget_expired_async()
         assert count >= 1
 
+    async def test_forget_expired_removes_retrieval_documents(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "forget_expired_index.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        past = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+        created = await service.create_entry_async(_create_request(expires_at=past))
+
+        count = await service.forget_expired_async()
+        second_count = await service.forget_expired_async()
+
+        assert count >= 1
+        mock_retrieval.delete_documents_async.assert_awaited_once()
+        assert mock_retrieval.delete_documents_async.await_args.kwargs[
+            "document_ids"
+        ] == (created.id,)
+        assert second_count == 0
+
+    async def test_forget_expired_retries_prior_index_cleanup(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "forget_expired_retry_index.db")
+        seed_service = MemoryBankService(repository=repo)
+        created = await seed_service.create_entry_async(_create_request())
+        await seed_service.update_entry_async(
+            created.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+        mock_retrieval = MagicMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+
+        count = await service.forget_expired_async()
+
+        assert count == 0
+        mock_retrieval.delete_documents_async.assert_awaited_once()
+        assert mock_retrieval.delete_documents_async.await_args.kwargs[
+            "document_ids"
+        ] == (created.id,)
+
+    async def test_forget_expired_retries_superseded_index_cleanup(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "forget_superseded_retry_index.db")
+        seed_service = MemoryBankService(repository=repo)
+        created = await seed_service.create_entry_async(_create_request())
+        await seed_service.update_entry_async(
+            created.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.SUPERSEDED),
+        )
+        mock_retrieval = MagicMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+
+        count = await service.forget_expired_async()
+
+        assert count == 0
+        mock_retrieval.delete_documents_async.assert_awaited_once()
+        assert mock_retrieval.delete_documents_async.await_args.kwargs[
+            "document_ids"
+        ] == (created.id,)
+
 
 # ---------------------------------------------------------------------------
 # Async search
@@ -401,10 +467,31 @@ class TestFTSIndexing:
         await service.create_entry_async(_create_request())
         mock_retrieval.upsert_documents_async.assert_awaited_once()
 
+    async def test_index_entry_handles_index_state_sqlite_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_state_locked.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        monkeypatch.setattr(
+            repo,
+            "mark_entry_index_present_async",
+            AsyncMock(side_effect=sqlite3.OperationalError("locked")),
+        )
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+
+        entry = await service.create_entry_async(_create_request())
+
+        assert entry.id.startswith("mem-")
+        mock_retrieval.upsert_documents_async.assert_awaited_once()
+
     async def test_index_entry_skips_non_active(self, tmp_path: Path) -> None:
         repo = MemoryBankRepository(tmp_path / "test_fts_skip.db")
         mock_retrieval = MagicMock()
         mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
         service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
         created = await service.create_entry_async(_create_request())
         # Update status to expired
@@ -413,6 +500,503 @@ class TestFTSIndexing:
         )
         # upsert_documents_async called only once (initial create)
         assert mock_retrieval.upsert_documents_async.await_count == 1
+        mock_retrieval.delete_documents_async.assert_awaited_once()
+
+    async def test_reindex_active_entry_resets_removed_index_marker(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_reindex_reset.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        created = await service.create_entry_async(_create_request())
+        await service.update_entry_async(
+            created.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+
+        reactivated = await service.update_entry_async(
+            created.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.ACTIVE),
+        )
+        loaded = await repo.get_by_id_async(created.id)
+
+        assert reactivated is not None
+        assert loaded is not None
+        assert "retrieval_index_removed" not in loaded.metadata
+        assert mock_retrieval.upsert_documents_async.await_count == 2
+
+    async def test_index_state_does_not_overwrite_user_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_metadata_preserve.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        metadata = {f"user_key_{index}": f"value-{index}" for index in range(20)}
+
+        created = await service.create_entry_async(_create_request(metadata=metadata))
+        await service.update_entry_async(
+            created.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+        await service.update_entry_async(
+            created.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.ACTIVE),
+        )
+        loaded = await repo.get_by_id_async(created.id)
+
+        assert loaded is not None
+        assert loaded.metadata == metadata
+
+    async def test_cleanup_stops_when_index_delete_makes_no_progress(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_cleanup_progress.db")
+        seed_service = MemoryBankService(repository=repo)
+        for index in range(100):
+            created = await seed_service.create_entry_async(
+                _create_request(
+                    content=MemoryContent(
+                        title=f"Expired {index}",
+                        body="cleanup failure should not loop forever",
+                    )
+                )
+            )
+            await seed_service.update_entry_async(
+                created.id,
+                UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+            )
+        mock_retrieval = MagicMock()
+        mock_retrieval.delete_documents_async = AsyncMock(
+            side_effect=sqlite3.OperationalError("locked")
+        )
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+
+        deleted_count = await service._delete_index_entries_by_status_async(
+            MemoryEntryStatus.EXPIRED
+        )
+
+        assert deleted_count == 0
+        assert mock_retrieval.delete_documents_async.await_count == 1
+
+    async def test_cleanup_returns_zero_when_no_entries_need_index_delete(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_cleanup_empty.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+
+        deleted_count = await service._delete_index_entries_by_status_async(
+            MemoryEntryStatus.EXPIRED
+        )
+
+        assert deleted_count == 0
+        mock_retrieval.delete_documents_async.assert_not_awaited()
+
+    async def test_cleanup_continues_after_one_workspace_delete_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_cleanup_continue.db")
+        seed_service = MemoryBankService(repository=repo)
+        fail_entry = await seed_service.create_entry_async(
+            _create_request(workspace_id="ws-fail")
+        )
+        ok_entry = await seed_service.create_entry_async(
+            _create_request(workspace_id="ws-ok")
+        )
+        await seed_service.update_entry_async(
+            fail_entry.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+        await seed_service.update_entry_async(
+            ok_entry.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+        mock_retrieval = MagicMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        failed_workspace_attempts = 0
+
+        async def delete_by_workspace(
+            *,
+            workspace_id: str,
+            memory_ids: tuple[str, ...],
+        ) -> bool:
+            nonlocal failed_workspace_attempts
+            if workspace_id == "ws-fail":
+                failed_workspace_attempts += 1
+                return False
+            for memory_id in memory_ids:
+                await repo.mark_entry_index_removed_async(
+                    memory_id=memory_id,
+                    index_kind="retrieval",
+                    removed_at=datetime.now(tz=timezone.utc),
+                )
+            return True
+
+        monkeypatch.setattr(
+            service,
+            "_delete_index_entry_ids_async",
+            delete_by_workspace,
+        )
+
+        deleted_count = await service._delete_index_entries_by_status_async(
+            MemoryEntryStatus.EXPIRED
+        )
+
+        assert deleted_count == 1
+        assert failed_workspace_attempts == 2
+
+    async def test_cleanup_skips_full_failed_batch_to_sweep_later_candidates(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_cleanup_skip_failed.db")
+        seed_service = MemoryBankService(repository=repo)
+        for index in range(FTS_SEARCH_BATCH_SIZE):
+            fail_entry = await seed_service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    workspace_id="ws-fail",
+                    run_id=None,
+                    content=MemoryContent(
+                        title=f"Failed cleanup {index}",
+                        body="failed cleanup batch",
+                    ),
+                )
+            )
+            await seed_service.update_entry_async(
+                fail_entry.id,
+                UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+            )
+        ok_entry = await seed_service.create_entry_async(
+            _create_request(
+                tier=MemoryTier.PERSISTENT,
+                scope=MemoryScope.WORKSPACE,
+                workspace_id="ws-ok",
+                run_id=None,
+            )
+        )
+        await seed_service.update_entry_async(
+            ok_entry.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+        service = MemoryBankService(repository=repo, retrieval_service=MagicMock())
+
+        async def delete_by_workspace(
+            *,
+            workspace_id: str,
+            memory_ids: tuple[str, ...],
+        ) -> bool:
+            if workspace_id == "ws-fail":
+                return False
+            for memory_id in memory_ids:
+                await repo.mark_entry_index_removed_async(
+                    memory_id=memory_id,
+                    index_kind="retrieval",
+                    removed_at=datetime.now(tz=timezone.utc),
+                )
+            return True
+
+        monkeypatch.setattr(
+            service,
+            "_delete_index_entry_ids_async",
+            delete_by_workspace,
+        )
+
+        deleted_count = await service._delete_index_entries_by_status_async(
+            MemoryEntryStatus.EXPIRED
+        )
+
+        assert deleted_count == 1
+        cleanup = await repo.query_entries_needing_index_cleanup_async(
+            status=MemoryEntryStatus.EXPIRED,
+            limit=FTS_SEARCH_BATCH_SIZE + 1,
+        )
+        assert ok_entry.id not in {summary.id for summary in cleanup}
+
+    async def test_rebuild_stale_index_entries_indexes_only_stale_active_entries(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_rebuild_stale.db")
+        seed_service = MemoryBankService(repository=repo)
+        missing_state = await seed_service.create_entry_async(
+            _create_request(content=MemoryContent(title="Missing", body="missing"))
+        )
+        removed_state = await seed_service.create_entry_async(
+            _create_request(content=MemoryContent(title="Removed", body="removed"))
+        )
+        present_state = await seed_service.create_entry_async(
+            _create_request(content=MemoryContent(title="Present", body="present"))
+        )
+        now = datetime.now(tz=timezone.utc)
+        await repo.mark_entry_index_removed_async(
+            memory_id=removed_state.id,
+            index_kind="retrieval",
+            removed_at=now,
+        )
+        await repo.mark_entry_index_present_async(
+            memory_id=present_state.id,
+            index_kind="retrieval",
+            updated_at=now,
+        )
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+
+        indexed_count = await service.rebuild_stale_index_entries_async()
+
+        assert indexed_count == 2
+        indexed_ids = {
+            documents[0].document_id
+            for _, kwargs in mock_retrieval.upsert_documents_async.await_args_list
+            for documents in (kwargs["documents"],)
+        }
+        assert indexed_ids == {missing_state.id, removed_state.id}
+
+    async def test_rebuild_stale_index_entries_ignores_present_legacy_flag(
+        self, tmp_path: Path
+    ) -> None:
+        db_file = tmp_path / "test_fts_rebuild_legacy_flag.db"
+        repo = MemoryBankRepository(db_file)
+        seed_service = MemoryBankService(repository=repo)
+        present_state = await seed_service.create_entry_async(
+            _create_request(
+                content=MemoryContent(title="Present", body="already rebuilt"),
+                metadata={"retrieval_index_removed": "true"},
+            )
+        )
+        await repo.mark_entry_index_present_async(
+            memory_id=present_state.id,
+            index_kind="retrieval",
+            updated_at=datetime.now(tz=timezone.utc),
+        )
+
+        reloaded_repo = MemoryBankRepository(db_file)
+        stale = await reloaded_repo.query_entries_needing_index_rebuild_async(limit=10)
+
+        assert present_state.id not in {entry.id for entry in stale}
+
+    async def test_index_cleanup_handles_malformed_metadata_json(
+        self, tmp_path: Path
+    ) -> None:
+        db_file = tmp_path / "test_fts_cleanup_malformed_metadata.db"
+        repo = MemoryBankRepository(db_file)
+        seed_service = MemoryBankService(repository=repo)
+        expired = await seed_service.create_entry_async(_create_request())
+        await seed_service.update_entry_async(
+            expired.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+        with sqlite3.connect(db_file) as conn:
+            conn.execute(
+                "UPDATE memory_entries SET metadata_json = ? WHERE memory_id = ?",
+                ("{", expired.id),
+            )
+            conn.commit()
+        reloaded_repo = MemoryBankRepository(db_file)
+
+        cleanup = await reloaded_repo.query_entries_needing_index_cleanup_async(
+            status=MemoryEntryStatus.EXPIRED,
+            limit=10,
+        )
+
+        assert expired.id in {entry.id for entry in cleanup}
+
+    async def test_index_cleanup_ignores_present_legacy_flag_after_expiry(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_cleanup_legacy_flag.db")
+        seed_service = MemoryBankService(repository=repo)
+        expired = await seed_service.create_entry_async(
+            _create_request(metadata={"retrieval_index_removed": "true"})
+        )
+        await repo.mark_entry_index_present_async(
+            memory_id=expired.id,
+            index_kind="retrieval",
+            updated_at=datetime.now(tz=timezone.utc),
+        )
+        await seed_service.update_entry_async(
+            expired.id,
+            UpdateMemoryEntryRequest(status=MemoryEntryStatus.EXPIRED),
+        )
+
+        cleanup = await repo.query_entries_needing_index_cleanup_async(
+            status=MemoryEntryStatus.EXPIRED,
+            limit=10,
+        )
+
+        assert expired.id in {entry.id for entry in cleanup}
+
+    async def test_rebuild_stale_index_entries_result_supports_dry_run(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_rebuild_dry_run.db")
+        seed_service = MemoryBankService(repository=repo)
+        stale = await seed_service.create_entry_async(
+            _create_request(content=MemoryContent(title="Stale", body="stale"))
+        )
+        other_workspace = await seed_service.create_entry_async(
+            _create_request(
+                workspace_id="ws-other",
+                content=MemoryContent(title="Other", body="other"),
+            )
+        )
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+
+        result = await service.rebuild_stale_index_entries_result_async(
+            MemoryIndexRebuildRequest(
+                workspace_id=stale.workspace_id,
+                limit=10,
+                dry_run=True,
+            )
+        )
+
+        assert result.scanned_count == 1
+        assert result.rebuilt_count == 0
+        assert result.skipped_count == 1
+        assert result.failed_count == 0
+        assert other_workspace.workspace_id == "ws-other"
+        mock_retrieval.upsert_documents_async.assert_not_awaited()
+
+    async def test_rebuild_stale_index_entries_result_skips_without_retrieval(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_rebuild_no_retrieval.db")
+        seed_service = MemoryBankService(repository=repo)
+        await seed_service.create_entry_async(
+            _create_request(content=MemoryContent(title="Missing", body="missing"))
+        )
+        service = MemoryBankService(repository=repo)
+
+        result = await service.rebuild_stale_index_entries_result_async(
+            MemoryIndexRebuildRequest(limit=10)
+        )
+
+        assert result.scanned_count == 1
+        assert result.rebuilt_count == 0
+        assert result.skipped_count == 1
+        assert result.failed_count == 0
+
+    async def test_rebuild_stale_index_entries_skips_full_failed_batch(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_rebuild_failed_batch.db")
+        seed_service = MemoryBankService(repository=repo)
+        for index in range(4):
+            await seed_service.create_entry_async(
+                _create_request(
+                    content=MemoryContent(
+                        title=f"Stale {index}",
+                        body=f"stale {index}",
+                    )
+                )
+            )
+        service = MemoryBankService(repository=repo, retrieval_service=MagicMock())
+        index_entry = AsyncMock(side_effect=(False, False, True, True))
+        monkeypatch.setattr(service, "_index_entry_async", index_entry)
+
+        result = await service.rebuild_stale_index_entries_result_async(
+            MemoryIndexRebuildRequest(limit=2)
+        )
+
+        assert result.scanned_count == 4
+        assert result.rebuilt_count == 2
+        assert result.skipped_count == 0
+        assert result.failed_count == 2
+        assert index_entry.await_count == 4
+
+    async def test_delete_entry_removes_retrieval_document(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_delete.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        created = await service.create_entry_async(_create_request())
+
+        deleted = await service.delete_entry_async(created.id)
+
+        assert deleted is True
+        mock_retrieval.delete_documents_async.assert_awaited_once()
+        assert mock_retrieval.delete_documents_async.await_args.kwargs[
+            "document_ids"
+        ] == (created.id,)
+
+    async def test_delete_entry_skips_index_state_after_row_delete(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_delete_skip_state.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        created = await service.create_entry_async(_create_request())
+        mark_removed = AsyncMock(return_value=True)
+        monkeypatch.setattr(repo, "mark_entry_index_removed_async", mark_removed)
+
+        deleted = await service.delete_entry_async(created.id)
+
+        assert deleted is True
+        mock_retrieval.delete_documents_async.assert_awaited_once()
+        mark_removed.assert_not_awaited()
+
+    async def test_delete_entry_deletes_row_when_retrieval_delete_fails(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_delete_fail.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock(
+            side_effect=sqlite3.OperationalError("locked")
+        )
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        created = await service.create_entry_async(_create_request())
+
+        deleted = await service.delete_entry_async(created.id)
+        loaded = await service.get_entry_async(created.id)
+
+        assert deleted is True
+        assert loaded is None
+        mock_retrieval.delete_documents_async.assert_awaited_once()
+
+    async def test_delete_entry_keeps_index_when_database_delete_fails(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "test_fts_delete_db_fail.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        mock_retrieval.delete_documents_async = AsyncMock()
+        service = MemoryBankService(repository=repo, retrieval_service=mock_retrieval)
+        created = await service.create_entry_async(_create_request())
+        monkeypatch.setattr(
+            repo,
+            "delete_entry_async",
+            AsyncMock(side_effect=sqlite3.OperationalError("locked")),
+        )
+
+        with pytest.raises(sqlite3.OperationalError):
+            await service.delete_entry_async(created.id)
+
+        loaded = await service.get_entry_async(created.id)
+        assert loaded is not None
+        mock_retrieval.delete_documents_async.assert_not_awaited()
 
     async def test_index_entry_handles_retrieval_failure(self, tmp_path: Path) -> None:
         repo = MemoryBankRepository(tmp_path / "test_fts_fail.db")
@@ -461,6 +1045,52 @@ class TestFTSIndexing:
         )
         result = await service.search_async(request)
         assert result.total_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Repository metadata decoding
+# ---------------------------------------------------------------------------
+
+
+class TestRepositoryMetadataDecoding:
+    async def test_malformed_metadata_json_loads_as_empty_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        db_file = tmp_path / "malformed_metadata.db"
+        repo = MemoryBankRepository(db_file)
+        service = MemoryBankService(repository=repo)
+        created = await service.create_entry_async(_create_request())
+        with sqlite3.connect(db_file) as conn:
+            conn.execute(
+                "UPDATE memory_entries SET metadata_json = ? WHERE memory_id = ?",
+                ("{", created.id),
+            )
+            conn.commit()
+
+        reloaded_repo = MemoryBankRepository(db_file)
+        loaded = await reloaded_repo.get_by_id_async(created.id)
+
+        assert loaded is not None
+        assert loaded.metadata == {}
+
+    async def test_empty_json_tags_are_not_backfilled_repeatedly(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "empty_tags_backfill.db")
+        service = MemoryBankService(repository=repo)
+        await service.create_entry_async(_create_request(tags=()))
+        sync_calls: list[tuple[str, tuple[str, ...]]] = []
+
+        def record_sync_tags(memory_id: str, tags: tuple[str, ...]) -> None:
+            sync_calls.append((memory_id, tags))
+
+        monkeypatch.setattr(repo, "_sync_tags", record_sync_tags)
+
+        repo._backfill_memory_entry_tags()
+
+        assert sync_calls == []
 
 
 # ---------------------------------------------------------------------------

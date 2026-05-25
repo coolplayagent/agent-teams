@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Coroutine
+import sqlite3
 from unittest.mock import MagicMock, create_autospec
 
 from relay_teams.hooks import HookService
@@ -94,9 +95,10 @@ class TestRunHookPipelineMemoryConsolidation:
         handler.on_run_completed_async.assert_awaited_once_with(
             workspace_id="ws-1",
             session_id="sess-1",
+            run_id="run-1",
         )
 
-    def test_on_session_completed_called(self) -> None:
+    def test_on_session_completed_not_called_for_terminal_run(self) -> None:
         handler = create_autospec(MemoryEventHandler, instance=True)
         pipeline, _ = _make_pipeline(memory_event_handler=handler)
 
@@ -109,6 +111,16 @@ class TestRunHookPipelineMemoryConsolidation:
                 output_text="ok",
             )
         )
+        handler.on_session_completed_async.assert_not_awaited()
+
+    def test_memory_session_completed_called_by_explicit_session_lifecycle(
+        self,
+    ) -> None:
+        handler = create_autospec(MemoryEventHandler, instance=True)
+        pipeline, _ = _make_pipeline(memory_event_handler=handler)
+
+        _run(pipeline.execute_memory_session_completed_async(session_id="sess-1"))
+
         handler.on_session_completed_async.assert_awaited_once_with(
             workspace_id="ws-1",
             session_id="sess-1",
@@ -147,12 +159,11 @@ class TestRunHookPipelineMemoryConsolidation:
                 output_text="ok",
             )
         )
-        # on_session_completed should still be called after failure
-        handler.on_session_completed_async.assert_awaited_once()
+        handler.on_session_completed_async.assert_not_awaited()
 
-    def test_session_completed_exception_suppressed(self) -> None:
+    def test_run_completed_sqlite_exception_suppressed(self) -> None:
         handler = create_autospec(MemoryEventHandler, instance=True)
-        handler.on_session_completed_async.side_effect = RuntimeError("db error")
+        handler.on_run_completed_async.side_effect = sqlite3.OperationalError("locked")
         pipeline, _ = _make_pipeline(memory_event_handler=handler)
 
         _run(
@@ -164,7 +175,28 @@ class TestRunHookPipelineMemoryConsolidation:
                 output_text="ok",
             )
         )
+
         handler.on_run_completed_async.assert_awaited_once()
+
+    def test_session_completed_exception_suppressed(self) -> None:
+        handler = create_autospec(MemoryEventHandler, instance=True)
+        handler.on_session_completed_async.side_effect = RuntimeError("db error")
+        pipeline, _ = _make_pipeline(memory_event_handler=handler)
+
+        _run(pipeline.execute_memory_session_completed_async(session_id="sess-1"))
+
+        handler.on_session_completed_async.assert_awaited_once()
+
+    def test_session_completed_sqlite_exception_suppressed(self) -> None:
+        handler = create_autospec(MemoryEventHandler, instance=True)
+        handler.on_session_completed_async.side_effect = sqlite3.OperationalError(
+            "locked"
+        )
+        pipeline, _ = _make_pipeline(memory_event_handler=handler)
+
+        _run(pipeline.execute_memory_session_completed_async(session_id="sess-1"))
+
+        handler.on_session_completed_async.assert_awaited_once()
 
 
 class TestRunHookPipelineTemporaryKnowledgeCapture:

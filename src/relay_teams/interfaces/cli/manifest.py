@@ -55,7 +55,9 @@ CLI_GROUP_DESCRIPTIONS: Final[dict[tuple[str, ...], str]] = {
     ("gateway", "feishu"): "Manage Feishu gateway accounts.",
     ("gateway", "wechat"): "Manage WeChat gateway accounts.",
     ("memories",): "Inspect and manage Memory Bank entries.",
-    ("memories", "evolve"): "Manage Memory Bank evolution drafts.",
+    ("memories", "evolve"): (
+        "Manage legacy Memory Bank evolution drafts; prefer skill-drafts."
+    ),
     ("memories", "skill-drafts"): "Manage skill drafts generated from memory.",
     ("plugin",): "Install, inspect, enable, and disable Relay Teams plugins.",
 }
@@ -580,6 +582,14 @@ CLI_COMMAND_SPECS: Final[dict[tuple[str, ...], CliCommandSpec]] = {
         _COMMON_SERVER_VALUE_OPTIONS
         | frozenset({"--workspace-id", "--query", "--target-tier"}),
         _COMMON_SERVER_FLAG_OPTIONS,
+        True,
+    ),
+    ("memories", "rebuild-index"): CliCommandSpec(
+        ("memories", "rebuild-index"),
+        0,
+        0,
+        _COMMON_SERVER_VALUE_OPTIONS | frozenset({"--workspace-id", "--limit"}),
+        _COMMON_SERVER_FLAG_OPTIONS | frozenset({"--dry-run"}),
         True,
     ),
     ("memories", "evolve", "create"): CliCommandSpec(

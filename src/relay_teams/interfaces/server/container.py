@@ -619,6 +619,9 @@ class ServerContainer:
         self.memory_bank_service: MemoryBankService = MemoryBankService(
             repository=self.memory_bank_repo,
             retrieval_service=self.retrieval_service,
+            llm_provider_resolver=self._resolve_memory_consolidation_provider,
+            message_repo=self.message_repo,
+            event_log=self.event_log,
         )
         self.memory_event_handler = MemoryEventHandler(
             memory_bank_service=self.memory_bank_service,
@@ -925,6 +928,7 @@ class ServerContainer:
             orchestration_settings_service=self.orchestration_settings_service,
             media_asset_service=self.media_asset_service,
             run_intent_repo=self.run_intent_repo,
+            memory_event_handler=self.memory_event_handler,
             get_runtime=lambda: self.runtime,
             projection_refresh_runner=(
                 call_maybe_async_in_session_projection_refresh_thread
@@ -1455,6 +1459,22 @@ class ServerContainer:
             None,
         )
 
+    def _resolve_memory_consolidation_provider(self) -> LLMProvider | None:
+        profile_name = self._resolve_auxiliary_model_profile_name()
+        if profile_name is None:
+            return None
+        return self.create_provider(
+            RoleDefinition(
+                role_id="memory-consolidation",
+                name="Memory Consolidation",
+                description="Extract structured Memory Bank entries from run history.",
+                version="1",
+                system_prompt="internal",
+                model_profile=profile_name,
+            ),
+            None,
+        )
+
     def _resolve_hook_model_config(
         self,
         model_profile: str | None,
@@ -1579,12 +1599,21 @@ class ServerContainer:
 
     async def _reindex_memory_bank_on_startup(self) -> None:
         try:
+            await self.memory_bank_service.forget_expired_async()
+        except asyncio.CancelledError:
+            raise
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.warning(
+                "Failed to expire Memory Bank entries during startup",
+                exc_info=True,
+            )
+        try:
             await self.memory_bank_service.reindex_active_entries_async()
         except asyncio.CancelledError:
             raise
         except (ValueError, OSError, RuntimeError, sqlite3.Error):
             LOGGER.warning(
-                "Failed to reindex active Memory Bank entries during startup",
+                "Failed to rebuild Memory Bank retrieval entries during startup",
                 exc_info=True,
             )
 

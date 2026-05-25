@@ -120,6 +120,13 @@ class _FakeRequestJson:
                 "superseded_entry_ids": ("mem-a", "mem-b"),
                 "new_entry_ids": ("mem-c", "mem-d"),
             }
+        if normalized_path.endswith("/rebuild-index"):
+            return {
+                "scanned_count": 3,
+                "rebuilt_count": 2,
+                "skipped_count": 1,
+                "failed_count": 0,
+            }
         if method == "POST" and normalized_path.endswith("/memories"):
             # Create endpoint returns a single entry
             return {
@@ -212,6 +219,7 @@ class TestCommandRegistration:
             "delete",
             "search",
             "consolidate",
+            "rebuild-index",
             "evolve",
             "skill-drafts",
         ):
@@ -746,6 +754,39 @@ class TestConsolidateCommand:
         assert "2 entries created" in r.output
         assert "3 source entries examined" in r.output
         assert fake_req.calls[0][1] == "POST"
+
+
+# ---------------------------------------------------------------------------
+# rebuild-index command
+# ---------------------------------------------------------------------------
+
+
+class TestRebuildIndexCommand:
+    def test_rebuild_index_output(self) -> None:
+        app_obj, fake_req, _ = _build_app()
+        from typer.testing import CliRunner as _CR
+
+        r = _CR().invoke(
+            app_obj,
+            [
+                "rebuild-index",
+                "--workspace-id",
+                "ws-1",
+                "--limit",
+                "3",
+                "--dry-run",
+            ],
+        )
+
+        assert r.exit_code == 0
+        assert "Memory index rebuild" in r.output
+        assert "2 rebuilt" in r.output
+        assert fake_req.calls[0] == (
+            "http://localhost:8765",
+            "POST",
+            "/api/memories/rebuild-index",
+            {"limit": 3, "dry_run": True, "workspace_id": "ws-1"},
+        )
 
 
 # ---------------------------------------------------------------------------

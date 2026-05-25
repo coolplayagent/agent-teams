@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import json
+import time
+from collections.abc import Mapping, Sequence
 from typing import Protocol
 
+from pydantic import JsonValue
 import pydantic
 
 from relay_teams.logger import get_logger
@@ -58,12 +62,24 @@ class SemanticExtractionOutput(pydantic.BaseModel):
     extractions: tuple[_ExtractedMemoryEntry, ...]
 
 
+class SemanticConsolidationExtraction(pydantic.BaseModel):
+    """Parsed semantic consolidation payload ready for persistence."""
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    source_entry_count: int = pydantic.Field(ge=0)
+    entries: tuple[_ExtractedMemoryEntry, ...] = ()
+    extraction_tokens_used: int = pydantic.Field(default=0, ge=0)
+    extraction_duration_ms: int = pydantic.Field(default=0, ge=0)
+    fallback_to_structural: bool = False
+
+
 # ---------------------------------------------------------------------------
 # Protocol for runtime dependencies
 # ---------------------------------------------------------------------------
 
 
-class _MessageRepoProtocol(Protocol):
+class SemanticMessageRepository(Protocol):
     """Protocol for the message repository dependency."""
 
     async def get_messages_by_session_run_ids_async(
@@ -73,17 +89,8 @@ class _MessageRepoProtocol(Protocol):
         *,
         include_cleared: bool = False,
         include_hidden_from_context: bool = False,
-    ) -> list[dict[str, object]]: ...
-
-
-class _EventLogProtocol(Protocol):
-    """Protocol for the event log dependency (optional)."""
-
-    async def write_event(
-        self,
-        event_type: str,
-        payload: dict[str, object],
-    ) -> None: ...
+    ) -> list[dict[str, JsonValue]]:
+        raise NotImplementedError
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +106,7 @@ _DEFAULT_MAX_CONVERSATION_TOKENS: int = 32000
 
 
 def _format_conversation_messages(
-    raw_messages: list[dict[str, object]],
+    raw_messages: Sequence[Mapping[str, object]],
     *,
     max_tokens: int = _DEFAULT_MAX_CONVERSATION_TOKENS,
 ) -> tuple[str, ...]:
@@ -186,8 +193,6 @@ def _build_user_prompt(
     output_schema: dict[str, object],
 ) -> str:
     """Assemble the user-side prompt for the LLM extraction call."""
-    import json
-
     schema_json = json.dumps(output_schema, indent=2)
 
     conversation_text = "\n".join(conversation_lines)
@@ -212,8 +217,8 @@ async def _semantic_consolidate_async(
     request: MemoryConsolidationRequest,
     *,
     llm_provider: LLMProvider,
-    message_repo: _MessageRepoProtocol,
-    event_log: _EventLogProtocol | None = None,  # reserved for future event emission
+    message_repo: SemanticMessageRepository,
+    event_log: object | None = None,
 ) -> MemoryConsolidationResult:
     """LLM-driven semantic memory extraction from a completed Run.
 
@@ -225,7 +230,34 @@ async def _semantic_consolidate_async(
     If JSON parsing fails, falls back to STRUCTURAL consolidation.
     Raises ``ValueError`` if ``source_run_id`` is missing or invalid.
     """
-    import time
+    extraction = await extract_semantic_memory_entries_async(
+        request=request,
+        llm_provider=llm_provider,
+        message_repo=message_repo,
+        event_log=event_log,
+    )
+    if extraction.fallback_to_structural:
+        return await _fallback_structural(request)
+
+    new_ids = tuple(generate_memory_id() for _ in extraction.entries)
+    return MemoryConsolidationResult(
+        source_entry_count=extraction.source_entry_count,
+        consolidated_entry_count=len(new_ids),
+        superseded_entry_ids=(),
+        new_entry_ids=new_ids,
+        extraction_tokens_used=extraction.extraction_tokens_used,
+        extraction_duration_ms=extraction.extraction_duration_ms,
+    )
+
+
+async def extract_semantic_memory_entries_async(
+    *,
+    request: MemoryConsolidationRequest,
+    llm_provider: LLMProvider,
+    message_repo: SemanticMessageRepository,
+    event_log: object | None = None,
+) -> SemanticConsolidationExtraction:
+    """Extract structured memory entries from a completed run conversation."""
 
     if request.source_run_id is None:
         raise ValueError("source_run_id is required for SEMANTIC consolidation mode")
@@ -251,7 +283,7 @@ async def _semantic_consolidate_async(
             " falling back to STRUCTURAL consolidation",
             request.source_run_id,
         )
-        return await _fallback_structural(request)
+        return _semantic_fallback_extraction()
 
     # ---- 2. Build prompts ----
     entry_kinds = request.extraction_kinds
@@ -284,7 +316,7 @@ async def _semantic_consolidate_async(
             " falling back to STRUCTURAL",
             exc,
         )
-        return await _fallback_structural(request)
+        return _semantic_fallback_extraction()
 
     tokens_used = _estimate_tokens(
         _SEMANTIC_CONSOLIDATION_SYSTEM_PROMPT + user_prompt
@@ -301,44 +333,36 @@ async def _semantic_consolidate_async(
             " falling back to STRUCTURAL",
             exc,
         )
-        return await _fallback_structural(request)
+        return _semantic_fallback_extraction()
 
     # ---- 5. Apply max_extracted_entries ----
-    entries = extraction_output.extractions
+    allowed_kinds = set(request.extraction_kinds)
+    entries = tuple(
+        entry
+        for entry in extraction_output.extractions
+        if not allowed_kinds or entry.kind in allowed_kinds
+    )
     max_count = request.max_extracted_entries
     if max_count is not None and max_count > 0:
         if len(entries) > max_count:
             entries = entries[:max_count]
 
-    # ---- 6. Build entry IDs ----
-    if not entries:
-        duration_ms = int((time.monotonic() - start_time) * 1000)
-        return MemoryConsolidationResult(
-            source_entry_count=len(conversation_lines),
-            consolidated_entry_count=0,
-            superseded_entry_ids=(),
-            new_entry_ids=(),
-            extraction_tokens_used=tokens_used,
-            extraction_duration_ms=duration_ms,
-        )
-
-    new_ids: list[str] = []
-
-    for _ in range(len(entries)):
-        memory_id = generate_memory_id()
-        new_ids.append(memory_id)
-        # Entry creation will be handled by the caller (MemoryBankService)
-        # We return the IDs and let the service handle persistence.
-
     duration_ms = int((time.monotonic() - start_time) * 1000)
-
-    return MemoryConsolidationResult(
+    return SemanticConsolidationExtraction(
         source_entry_count=len(conversation_lines),
-        consolidated_entry_count=len(new_ids),
-        superseded_entry_ids=(),
-        new_entry_ids=tuple(new_ids),
+        entries=entries,
         extraction_tokens_used=tokens_used,
         extraction_duration_ms=duration_ms,
+    )
+
+
+def _semantic_fallback_extraction() -> SemanticConsolidationExtraction:
+    return SemanticConsolidationExtraction(
+        source_entry_count=0,
+        entries=(),
+        extraction_tokens_used=0,
+        extraction_duration_ms=0,
+        fallback_to_structural=True,
     )
 
 

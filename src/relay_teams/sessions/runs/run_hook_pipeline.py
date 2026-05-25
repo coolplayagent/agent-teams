@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import logging
+import sqlite3
 from typing import Protocol
 
 from relay_teams.hooks import (
@@ -110,7 +111,9 @@ class RunHookPipeline:
         output_text: str,
         root_task_id: str | None = None,
     ) -> None:
-        # Memory bank lifecycle: trigger run and session consolidation.
+        # This hook is invoked for every terminal run. Keep Memory Bank work
+        # run-scoped here; session-to-persistent consolidation belongs to a
+        # true session close/delete path.
         if self._memory_event_handler is not None:
             handler = self._memory_event_handler
             workspace_id = await self._resolve_workspace_id_async(session_id)
@@ -119,26 +122,13 @@ class RunHookPipeline:
                     await handler.on_run_completed_async(
                         workspace_id=workspace_id,
                         session_id=session_id,
+                        run_id=run_id,
                     )
-                except (ValueError, OSError, RuntimeError):
+                except (ValueError, OSError, RuntimeError, sqlite3.Error):
                     # Best-effort: memory lifecycle failures must not
                     # block session-end processing.
                     LOGGER.exception(
                         "memory bank on_run_completed failed; "
-                        "workspace_id=%s session_id=%s",
-                        workspace_id,
-                        session_id,
-                    )
-                try:
-                    await handler.on_session_completed_async(
-                        workspace_id=workspace_id,
-                        session_id=session_id,
-                    )
-                except (ValueError, OSError, RuntimeError):
-                    # Best-effort: memory lifecycle failures must not
-                    # block session-end processing.
-                    LOGGER.exception(
-                        "memory bank on_session_completed failed; "
                         "workspace_id=%s session_id=%s",
                         workspace_id,
                         session_id,
@@ -177,6 +167,27 @@ class RunHookPipeline:
             ),
             run_event_hub=self._run_event_hub,
         )
+
+    async def execute_memory_session_completed_async(self, *, session_id: str) -> None:
+        """Consolidate session-scoped memory when a session truly closes."""
+        handler = self._memory_event_handler
+        if handler is None:
+            return
+        workspace_id = await self._resolve_workspace_id_async(session_id)
+        if workspace_id is None:
+            return
+        try:
+            await handler.on_session_completed_async(
+                workspace_id=workspace_id,
+                session_id=session_id,
+            )
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.exception(
+                "memory bank on_session_completed failed; "
+                "workspace_id=%s session_id=%s",
+                workspace_id,
+                session_id,
+            )
 
     async def _resolve_workspace_id_async(self, session_id: str) -> str | None:
         try:

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import override
@@ -51,6 +53,7 @@ from relay_teams.skills.clawhub_models import (
     ClawHubSkillWriteRequest,
 )
 from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
+from relay_teams.skills.skill_registry import SkillRegistry
 
 pytestmark = pytest.mark.asyncio
 
@@ -69,11 +72,16 @@ class _JsonProvider(LLMProvider):
 def _build_services(
     tmp_path: Path,
     provider: LLMProvider | None,
+    *,
+    on_skill_mutated: Callable[[], None] | None = None,
 ) -> tuple[MemoryBankService, MemorySkillDraftRepository, MemorySkillSynthesisService]:
     db_path = tmp_path / "memory.db"
     memory_service = MemoryBankService(repository=MemoryBankRepository(db_path))
     draft_repo = MemorySkillDraftRepository(db_path)
-    clawhub_service = ClawHubSkillService(config_dir=tmp_path / "config")
+    clawhub_service = ClawHubSkillService(
+        config_dir=tmp_path / "config",
+        on_skill_mutated=on_skill_mutated,
+    )
     synthesis_service = MemorySkillSynthesisService(
         draft_repository=draft_repo,
         memory_bank_service=memory_service,
@@ -349,14 +357,31 @@ async def test_cross_workspace_text_search_filters_each_workspace_before_limit(
 
 
 async def test_validate_and_apply_skill_draft(tmp_path: Path) -> None:
-    _, draft_repo, synthesis = _build_services(tmp_path, provider=None)
+    reloaded_registries: list[SkillRegistry] = []
+
+    def reload_skill_registry() -> None:
+        reloaded_registries.append(
+            SkillRegistry.from_config_dirs(app_config_dir=tmp_path / "config")
+        )
+
+    memory_service, draft_repo, synthesis = _build_services(
+        tmp_path,
+        provider=None,
+        on_skill_mutated=reload_skill_registry,
+    )
+    source_memory_id = await _create_memory(
+        memory_service,
+        workspace_id="ws-1",
+        title="Workspace SOP",
+        body="Follow the repeated workspace procedure.",
+    )
     draft = MemorySkillDraft(
         id="msd-test",
         status=MemorySkillDraftStatus.DRAFT,
         scope_kind=MemorySkillDraftScopeKind.WORKSPACE,
         workspace_id="ws-1",
         workspace_ids=("ws-1",),
-        source_memory_ids=("mem-1", "mem-2"),
+        source_memory_ids=(source_memory_id,),
         draft_kind=MemorySkillDraftKind.SOP_SKILL,
         runtime_name="workspace-sop",
         description="Use the workspace SOP.",
@@ -373,9 +398,99 @@ async def test_validate_and_apply_skill_draft(tmp_path: Path) -> None:
     result = await synthesis.apply_draft_async("msd-test")
     assert result.ref == "workspace-sop"
     assert (tmp_path / "config" / "skills" / "workspace-sop" / "SKILL.md").exists()
+    assert len(reloaded_registries) == 1
+    assert reloaded_registries[0].get_skill_definition("workspace-sop") is not None
+    source_memory = await memory_service.get_entry_async(source_memory_id)
+    assert source_memory is not None
+    assert source_memory.metadata["skill_draft_id"] == "msd-test"
+    assert source_memory.metadata["skill_draft_ref"] == "workspace-sop"
+    assert source_memory.metadata["skill_draft_kind"] == "sop_skill"
 
     with pytest.raises(ValueError, match="Only validated skill drafts can be applied"):
         await synthesis.apply_draft_async("msd-test")
+
+
+async def test_apply_skill_draft_preserves_full_source_metadata(
+    tmp_path: Path,
+) -> None:
+    memory_service, draft_repo, synthesis = _build_services(tmp_path, provider=None)
+    full_metadata = {f"user_key_{index}": f"value-{index}" for index in range(20)}
+    source_memory = await memory_service.create_entry_async(
+        CreateMemoryEntryRequest(
+            tier=MemoryTier.PERSISTENT,
+            scope=MemoryScope.WORKSPACE,
+            workspace_id="ws-1",
+            kind=MemoryEntryKind.FACT,
+            content=MemoryContent(
+                title="Workspace SOP",
+                body="Follow the repeated workspace procedure.",
+            ),
+            source=MemorySourceKind.MANUAL,
+            metadata=full_metadata,
+        )
+    )
+    draft = MemorySkillDraft(
+        id="msd-full-metadata",
+        status=MemorySkillDraftStatus.VALIDATED,
+        scope_kind=MemorySkillDraftScopeKind.WORKSPACE,
+        workspace_id="ws-1",
+        workspace_ids=("ws-1",),
+        source_memory_ids=(source_memory.id,),
+        draft_kind=MemorySkillDraftKind.SKILL,
+        runtime_name="workspace-memory",
+        description="Use workspace memory.",
+        instructions="Use the workspace memory.",
+        created_at=datetime.now(tz=timezone.utc),
+        updated_at=datetime.now(tz=timezone.utc),
+        validated_at=datetime.now(tz=timezone.utc),
+    )
+    await draft_repo.create_draft_async(draft)
+
+    result = await synthesis.apply_draft_async("msd-full-metadata")
+    loaded = await memory_service.get_entry_async(source_memory.id)
+
+    assert result.ref == "workspace-memory"
+    assert loaded is not None
+    assert loaded.metadata == full_metadata
+
+
+async def test_apply_skill_draft_returns_applied_when_source_tagging_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, draft_repo, synthesis = _build_services(tmp_path, provider=None)
+    draft = MemorySkillDraft(
+        id="msd-tagging-fails",
+        status=MemorySkillDraftStatus.VALIDATED,
+        scope_kind=MemorySkillDraftScopeKind.WORKSPACE,
+        workspace_id="ws-1",
+        workspace_ids=("ws-1",),
+        source_memory_ids=("mem-1",),
+        draft_kind=MemorySkillDraftKind.SKILL,
+        runtime_name="workspace-memory",
+        description="Use workspace memory.",
+        instructions="Use the workspace memory.",
+        created_at=datetime.now(tz=timezone.utc),
+        updated_at=datetime.now(tz=timezone.utc),
+        validated_at=datetime.now(tz=timezone.utc),
+    )
+    await draft_repo.create_draft_async(draft)
+
+    async def fail_source_tagging(_draft: MemorySkillDraft) -> None:
+        raise sqlite3.OperationalError("locked")
+
+    monkeypatch.setattr(
+        synthesis,
+        "_mark_source_memories_applied_async",
+        fail_source_tagging,
+    )
+
+    result = await synthesis.apply_draft_async("msd-tagging-fails")
+    stored = await synthesis.get_draft_async("msd-tagging-fails")
+
+    assert result.ref == "workspace-memory"
+    assert stored is not None
+    assert stored.status == MemorySkillDraftStatus.APPLIED
 
 
 async def test_apply_keeps_claim_when_skill_write_is_cancelled(

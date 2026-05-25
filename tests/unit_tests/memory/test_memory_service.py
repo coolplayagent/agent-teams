@@ -23,7 +23,15 @@ from relay_teams.memory.models import (
     UpdateMemoryEntryRequest,
 )
 from relay_teams.memory.repository import MemoryBankRepository
-from relay_teams.memory.service import MemoryBankService
+from relay_teams.memory.service import (
+    MemoryBankService,
+    _jaccard_similarity,
+    _merge_semantic_confidence,
+    _merge_semantic_source_run_ids,
+    _merge_semantic_text,
+    _sanitize_semantic_tags,
+    _trim_metadata,
+)
 from relay_teams.retrieval.retrieval_models import RetrievalHit, RetrievalQuery
 
 pytestmark = pytest.mark.asyncio
@@ -59,6 +67,61 @@ def _create_request(**overrides: object) -> CreateMemoryEntryRequest:
 # ---------------------------------------------------------------------------
 # AC-14: Service create
 # ---------------------------------------------------------------------------
+
+
+class TestSemanticHelpers:
+    async def test_sanitize_semantic_tags_skips_empty_and_duplicates(self) -> None:
+        assert _sanitize_semantic_tags((" API ", "", "api", "Memory")) == (
+            "API",
+            "Memory",
+        )
+
+    async def test_jaccard_similarity_handles_empty_sets(self) -> None:
+        assert _jaccard_similarity(frozenset(), frozenset()) == 1.0
+        assert _jaccard_similarity(frozenset({"a"}), frozenset()) == 0.0
+
+    async def test_merge_semantic_source_run_ids_preserves_order_and_trims(
+        self,
+    ) -> None:
+        metadata = {
+            "semantic_source_run_ids": "run-1, run-2",
+            "semantic_source_run_id": "run-3",
+        }
+
+        result = _merge_semantic_source_run_ids(
+            metadata=metadata,
+            source_run_id="run-4",
+            existing_source_refs=("run-0", "run-2"),
+        )
+
+        assert result == ("run-0", "run-2", "run-1", "run-3", "run-4")
+
+    async def test_merge_semantic_text_handles_empty_and_duplicate_incoming(
+        self,
+    ) -> None:
+        assert _merge_semantic_text("existing", "  ") == "existing"
+        assert _merge_semantic_text("  ", "incoming") == "incoming"
+        assert _merge_semantic_text("Existing text", "existing") == "Existing text"
+
+    async def test_merge_semantic_confidence_rewards_new_source(self) -> None:
+        assert (
+            _merge_semantic_confidence(
+                existing=0.6,
+                extracted=0.7,
+                source_run_id="run-2",
+                source_run_ids=("run-1", "run-2"),
+            )
+            == 0.72
+        )
+
+    async def test_trim_metadata_preserves_protected_keys_when_full(self) -> None:
+        metadata = {f"k{index}": "v" for index in range(30)}
+        metadata["semantic_key"] = "protected"
+
+        result = _trim_metadata(metadata)
+
+        assert len(result) == 20
+        assert result["semantic_key"] == "protected"
 
 
 class TestCreateEntry:
@@ -147,6 +210,36 @@ class TestConsolidation:
         assert result.consolidated_entry_count >= 1
         assert len(result.new_entry_ids) >= 1
         assert len(result.superseded_entry_ids) >= 1
+
+    async def test_consolidate_working_to_medium_term_filters_source_run(
+        self, service: MemoryBankService
+    ) -> None:
+        first = await service.create_entry_async(_create_request(run_id="run-1"))
+        second = await service.create_entry_async(
+            _create_request(
+                run_id="run-2",
+                content=MemoryContent(title="Second run", body="Keep separate"),
+            )
+        )
+
+        result = await service.consolidate_async(
+            MemoryConsolidationRequest(
+                workspace_id="ws-test",
+                session_id="sess-1",
+                source_run_id="run-1",
+                target_tier=MemoryTier.MEDIUM_TERM,
+                target_scope=MemoryScope.SESSION,
+            )
+        )
+        first_after = await service.get_entry_async(first.id)
+        second_after = await service.get_entry_async(second.id)
+
+        assert result.consolidated_entry_count == 1
+        assert result.superseded_entry_ids == (first.id,)
+        assert first_after is not None
+        assert first_after.status == MemoryEntryStatus.SUPERSEDED
+        assert second_after is not None
+        assert second_after.status == MemoryEntryStatus.ACTIVE
 
     async def test_consolidate_target_cannot_be_working(
         self, service: MemoryBankService
@@ -275,6 +368,79 @@ class TestSearch:
 
         assert result.total_count == 1
         assert result.items[0].entry.workspace_id == "ws-alpha"
+
+    async def test_global_search_preserves_workspace_global_filter(
+        self, service: MemoryBankService
+    ) -> None:
+        await service.create_entry_async(
+            _create_request(
+                workspace_id="ws-alpha",
+                role_id="role-specific",
+                content=MemoryContent(
+                    title="Role Pydantic note",
+                    body="Pydantic role-specific rule",
+                ),
+            )
+        )
+        global_entry = await service.create_entry_async(
+            _create_request(
+                workspace_id="ws-alpha",
+                role_id=None,
+                content=MemoryContent(
+                    title="Global Pydantic note",
+                    body="Pydantic workspace-global rule",
+                ),
+            )
+        )
+
+        result = await service.search_global_async(
+            GlobalMemorySearchRequest(
+                workspace_id="ws-alpha",
+                text_query="pydantic",
+                role_id_is_null=True,
+                limit=10,
+            )
+        )
+
+        assert result.total_count == 1
+        assert result.items[0].entry.id == global_entry.id
+
+    async def test_fallback_search_applies_workspace_global_filter(
+        self, service: MemoryBankService
+    ) -> None:
+        for index in range(3):
+            await service.create_entry_async(
+                _create_request(
+                    workspace_id="ws-alpha",
+                    role_id=f"role-{index}",
+                    content=MemoryContent(
+                        title=f"Role Pydantic note {index}",
+                        body="Pydantic role-specific rule",
+                    ),
+                )
+            )
+        global_entry = await service.create_entry_async(
+            _create_request(
+                workspace_id="ws-alpha",
+                role_id=None,
+                content=MemoryContent(
+                    title="Global Pydantic note",
+                    body="Pydantic workspace-global rule",
+                ),
+            )
+        )
+
+        result = await service.search_async(
+            MemorySearchRequest(
+                workspace_id="ws-alpha",
+                text_query="pydantic",
+                role_id_is_null=True,
+                limit=10,
+            )
+        )
+
+        assert result.total_count == 1
+        assert result.items[0].entry.id == global_entry.id
 
     async def test_global_search_scans_full_body_beyond_preview(
         self, service: MemoryBankService
@@ -808,6 +974,437 @@ class TestCapacityEnforcement:
             assert result.total_count <= 3
         finally:
             memory_defaults.MAX_PERSISTENT_PER_WORKSPACE = original_limit
+
+    async def test_persistent_capacity_counts_all_scopes(
+        self, service: MemoryBankService
+    ) -> None:
+        """Persistent capacity is workspace-wide, not scoped by role/workspace scope."""
+        from relay_teams.memory import memory_defaults
+
+        original_limit = memory_defaults.MAX_PERSISTENT_PER_WORKSPACE
+        try:
+            memory_defaults.MAX_PERSISTENT_PER_WORKSPACE = 1
+            workspace_entry = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    run_id=None,
+                    role_id=None,
+                )
+            )
+            role_entry = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.ROLE,
+                    run_id=None,
+                    role_id="role-1",
+                )
+            )
+
+            loaded_workspace = await service.get_entry_async(workspace_entry.id)
+            loaded_role = await service.get_entry_async(role_entry.id)
+            result = await service.list_entries_async(
+                MemoryQuery(
+                    workspace_id="ws-test",
+                    tier=MemoryTier.PERSISTENT,
+                    status=MemoryEntryStatus.ACTIVE,
+                    limit=10,
+                )
+            )
+
+            assert loaded_workspace is not None
+            assert loaded_workspace.status == MemoryEntryStatus.EXPIRED
+            assert loaded_role is not None
+            assert loaded_role.status == MemoryEntryStatus.ACTIVE
+            assert result.total_count == 1
+        finally:
+            memory_defaults.MAX_PERSISTENT_PER_WORKSPACE = original_limit
+
+    async def test_working_capacity_counts_all_scopes_for_run(
+        self, service: MemoryBankService
+    ) -> None:
+        from relay_teams.memory import memory_defaults
+
+        original_limit = memory_defaults.MAX_WORKING_PER_RUN
+        try:
+            memory_defaults.MAX_WORKING_PER_RUN = 1
+            workspace_entry = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.WORKING,
+                    scope=MemoryScope.WORKSPACE,
+                    run_id="run-cross-scope",
+                    role_id=None,
+                )
+            )
+            role_entry = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.WORKING,
+                    scope=MemoryScope.ROLE,
+                    run_id="run-cross-scope",
+                    role_id="role-1",
+                )
+            )
+
+            loaded_workspace = await service.get_entry_async(workspace_entry.id)
+            loaded_role = await service.get_entry_async(role_entry.id)
+
+            assert loaded_workspace is not None
+            assert loaded_workspace.status == MemoryEntryStatus.EXPIRED
+            assert loaded_role is not None
+            assert loaded_role.status == MemoryEntryStatus.ACTIVE
+        finally:
+            memory_defaults.MAX_WORKING_PER_RUN = original_limit
+
+    async def test_medium_term_capacity_counts_all_scopes_for_session_role(
+        self, service: MemoryBankService
+    ) -> None:
+        from relay_teams.memory import memory_defaults
+
+        original_limit = memory_defaults.MAX_MEDIUM_TERM_PER_SESSION_ROLE
+        try:
+            memory_defaults.MAX_MEDIUM_TERM_PER_SESSION_ROLE = 1
+            session_entry = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.MEDIUM_TERM,
+                    scope=MemoryScope.SESSION,
+                    session_id="sess-cross-scope",
+                    run_id=None,
+                    role_id="role-1",
+                )
+            )
+            role_entry = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.MEDIUM_TERM,
+                    scope=MemoryScope.ROLE,
+                    session_id="sess-cross-scope",
+                    run_id=None,
+                    role_id="role-1",
+                )
+            )
+
+            loaded_session = await service.get_entry_async(session_entry.id)
+            loaded_role = await service.get_entry_async(role_entry.id)
+
+            assert loaded_session is not None
+            assert loaded_session.status == MemoryEntryStatus.EXPIRED
+            assert loaded_role is not None
+            assert loaded_role.status == MemoryEntryStatus.ACTIVE
+        finally:
+            memory_defaults.MAX_MEDIUM_TERM_PER_SESSION_ROLE = original_limit
+
+    async def test_enforce_capacity_deletes_index_only_for_expired_ids(
+        self,
+        service: MemoryBankService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from relay_teams.memory import memory_defaults
+
+        for index in range(3):
+            await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    content=MemoryContent(
+                        title=f"Persistent {index}",
+                        body="capacity pruning",
+                    ),
+                )
+            )
+        deleted_ids: tuple[str, ...] = ()
+
+        async def expire_only_first(
+            *,
+            memory_ids: tuple[str, ...],
+        ) -> tuple[str, ...]:
+            return memory_ids[:1]
+
+        async def record_deleted_ids(
+            *,
+            workspace_id: str,
+            memory_ids: tuple[str, ...],
+        ) -> int:
+            nonlocal deleted_ids
+            assert workspace_id == "ws-test"
+            deleted_ids = memory_ids
+            return len(memory_ids)
+
+        monkeypatch.setattr(
+            service._repo,
+            "expire_entry_ids_returning_async",
+            expire_only_first,
+        )
+        monkeypatch.setattr(
+            service,
+            "_delete_index_entry_ids_async",
+            record_deleted_ids,
+        )
+        original_limit = memory_defaults.MAX_PERSISTENT_PER_WORKSPACE
+        try:
+            memory_defaults.MAX_PERSISTENT_PER_WORKSPACE = 1
+
+            pruned = await service.enforce_capacity_async(
+                workspace_id="ws-test",
+                tier=MemoryTier.PERSISTENT,
+                scope=MemoryScope.WORKSPACE,
+            )
+
+            assert pruned == 1
+            assert len(deleted_ids) == 1
+        finally:
+            memory_defaults.MAX_PERSISTENT_PER_WORKSPACE = original_limit
+
+    async def test_enforce_capacity_prunes_low_confidence_before_age(
+        self, service: MemoryBankService
+    ) -> None:
+        """Capacity pruning prefers lower-confidence entries before older entries."""
+        from relay_teams.memory import memory_defaults
+
+        original_limit = memory_defaults.MAX_PERSISTENT_PER_WORKSPACE
+        try:
+            memory_defaults.MAX_PERSISTENT_PER_WORKSPACE = 2
+            high_conf_old = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    confidence_score=0.95,
+                )
+            )
+            low_conf_old = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    confidence_score=0.4,
+                )
+            )
+            await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    confidence_score=0.9,
+                )
+            )
+
+            loaded_high = await service.get_entry_async(high_conf_old.id)
+            loaded_low = await service.get_entry_async(low_conf_old.id)
+
+            assert loaded_high is not None
+            assert loaded_high.status == MemoryEntryStatus.ACTIVE
+            assert loaded_low is not None
+            assert loaded_low.status == MemoryEntryStatus.EXPIRED
+        finally:
+            memory_defaults.MAX_PERSISTENT_PER_WORKSPACE = original_limit
+
+    async def test_medium_term_capacity_is_scoped_to_session(
+        self, service: MemoryBankService
+    ) -> None:
+        """Medium-term capacity should not prune other sessions in a workspace."""
+        from relay_teams.memory import memory_defaults
+
+        original_limit = memory_defaults.MAX_MEDIUM_TERM_PER_SESSION_ROLE
+        try:
+            memory_defaults.MAX_MEDIUM_TERM_PER_SESSION_ROLE = 2
+            other_session = await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.MEDIUM_TERM,
+                    scope=MemoryScope.SESSION,
+                    session_id="sess-other",
+                    run_id=None,
+                )
+            )
+            current_session_ids: list[str] = []
+            for index in range(3):
+                entry = await service.create_entry_async(
+                    _create_request(
+                        tier=MemoryTier.MEDIUM_TERM,
+                        scope=MemoryScope.SESSION,
+                        session_id="sess-current",
+                        run_id=None,
+                        content=MemoryContent(
+                            title=f"Current {index}",
+                            body="Session-scoped capacity",
+                        ),
+                    )
+                )
+                current_session_ids.append(entry.id)
+
+            other_loaded = await service.get_entry_async(other_session.id)
+            current_result = await service.list_entries_async(
+                MemoryQuery(
+                    workspace_id="ws-test",
+                    tier=MemoryTier.MEDIUM_TERM,
+                    scope=MemoryScope.SESSION,
+                    session_id="sess-current",
+                    status=MemoryEntryStatus.ACTIVE,
+                    limit=10,
+                )
+            )
+
+            assert other_loaded is not None
+            assert other_loaded.status == MemoryEntryStatus.ACTIVE
+            assert current_result.total_count == 2
+            assert current_session_ids[0] not in {
+                summary.id for summary in current_result.items
+            }
+        finally:
+            memory_defaults.MAX_MEDIUM_TERM_PER_SESSION_ROLE = original_limit
+
+
+class TestSemanticDuplicateScan:
+    async def test_merge_semantic_duplicate_preserves_full_existing_metadata(
+        self, service: MemoryBankService
+    ) -> None:
+        metadata = {f"user_key_{index:02d}": str(index) for index in range(20)}
+        duplicate = await service.create_entry_async(
+            _create_request(
+                tier=MemoryTier.PERSISTENT,
+                scope=MemoryScope.WORKSPACE,
+                run_id=None,
+                role_id=None,
+                metadata=metadata,
+            )
+        )
+
+        await service._merge_semantic_duplicate_async(
+            duplicate=duplicate,
+            source_run_id="run-1",
+            semantic_key="decision|test|body",
+            context="new context",
+            outcome="new outcome",
+            tags=("semantic",),
+            confidence_score=0.8,
+        )
+
+        loaded = await service.get_entry_async(duplicate.id)
+
+        assert loaded is not None
+        assert loaded.metadata == metadata
+        assert loaded.version == duplicate.version + 1
+
+    async def test_scans_beyond_first_page_for_duplicate(
+        self, service: MemoryBankService
+    ) -> None:
+        duplicate = await service.create_entry_async(
+            _create_request(
+                tier=MemoryTier.PERSISTENT,
+                scope=MemoryScope.WORKSPACE,
+                run_id=None,
+                role_id=None,
+                content=MemoryContent(
+                    title="Stable contract",
+                    body="Keep database and API docs updated together.",
+                ),
+            )
+        )
+        for index in range(101):
+            await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    run_id=None,
+                    role_id=None,
+                    content=MemoryContent(
+                        title=f"Later entry {index}",
+                        body=f"Unique memory body {index}",
+                    ),
+                )
+            )
+
+        found = await service._find_semantic_duplicate_async(
+            workspace_id="ws-test",
+            tier=MemoryTier.PERSISTENT,
+            scope=MemoryScope.WORKSPACE,
+            session_id="sess-1",
+            role_id=None,
+            kind=MemoryEntryKind.INSIGHT,
+            title="Stable contract",
+            body="Keep database and API docs updated together.",
+            semantic_key="different-key",
+        )
+
+        assert found is not None
+        assert found.id == duplicate.id
+
+    async def test_detects_duplicate_by_token_similarity(
+        self, service: MemoryBankService
+    ) -> None:
+        duplicate = await service.create_entry_async(
+            _create_request(
+                tier=MemoryTier.PERSISTENT,
+                scope=MemoryScope.WORKSPACE,
+                run_id=None,
+                role_id=None,
+                content=MemoryContent(
+                    title="Stable contract",
+                    body="database api docs updated together",
+                ),
+            )
+        )
+
+        found = await service._find_semantic_duplicate_async(
+            workspace_id="ws-test",
+            tier=MemoryTier.PERSISTENT,
+            scope=MemoryScope.WORKSPACE,
+            session_id="sess-1",
+            role_id=None,
+            kind=MemoryEntryKind.INSIGHT,
+            title="Stable contract",
+            body="database api docs updated together always",
+            semantic_key="different-key",
+        )
+
+        assert found is not None
+        assert found.id == duplicate.id
+
+    async def test_returns_none_when_duplicate_scan_exhausts_pages(
+        self, service: MemoryBankService
+    ) -> None:
+        for index in range(101):
+            await service.create_entry_async(
+                _create_request(
+                    tier=MemoryTier.PERSISTENT,
+                    scope=MemoryScope.WORKSPACE,
+                    run_id=None,
+                    role_id=None,
+                    content=MemoryContent(
+                        title=f"Unique entry {index}",
+                        body=f"Unique body {index}",
+                    ),
+                )
+            )
+
+        found = await service._find_semantic_duplicate_async(
+            workspace_id="ws-test",
+            tier=MemoryTier.PERSISTENT,
+            scope=MemoryScope.WORKSPACE,
+            session_id="sess-1",
+            role_id=None,
+            kind=MemoryEntryKind.INSIGHT,
+            title="No match",
+            body="No matching body",
+            semantic_key="no-match",
+        )
+
+        assert found is None
+
+    async def test_patch_entry_metadata_handles_empty_and_missing(
+        self, service: MemoryBankService
+    ) -> None:
+        created = await service.create_entry_async(_create_request())
+
+        unchanged = await service.patch_entry_metadata_async(
+            memory_id=created.id,
+            workspace_id=created.workspace_id,
+            metadata_patch={},
+        )
+        missing = await service.patch_entry_metadata_async(
+            memory_id="missing",
+            workspace_id=created.workspace_id,
+            metadata_patch={"k": "v"},
+        )
+
+        assert unchanged is not None
+        assert unchanged.id == created.id
+        assert missing is None
 
 
 # ---------------------------------------------------------------------------

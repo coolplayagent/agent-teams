@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, create_autospec
 
@@ -10,6 +11,7 @@ from relay_teams.memory.models import (
     CreateMemoryEntryRequest,
     MemoryContent,
     MemoryEntryKind,
+    MemoryQuery,
     MemoryScope,
     MemorySourceKind,
     MemoryTier,
@@ -17,7 +19,11 @@ from relay_teams.memory.models import (
 from relay_teams.memory.repository import MemoryBankRepository
 from relay_teams.memory.service import MemoryBankService
 from relay_teams.roles.memory_injection import (
+    _MEMORY_ENTRY_PREVIEW_CHARS,
+    _MEMORY_REFERENCE_NOTICE,
+    _MEMORY_SECTION_CHAR_BUDGET,
     _build_project_memory_section_async,
+    _format_memory_section,
     build_role_with_memory_async,
 )
 from relay_teams.roles.role_models import MemoryProfile, RoleDefinition
@@ -108,6 +114,149 @@ class TestBuildRoleWithMemory:
             workspace_id="ws-1",
         )
         assert "Project Memory" in result.system_prompt
+        assert _MEMORY_REFERENCE_NOTICE in result.system_prompt
+
+    async def test_prefers_task_relevant_memory(self, tmp_path: Path) -> None:
+        registry = create_autospec(RoleRegistry, instance=True)
+        registry.is_coordinator_role.return_value = False
+        role = _make_role()
+        repo = MemoryBankRepository(tmp_path / "relevant.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            content=MemoryContent(
+                title="Pydantic validation",
+                body="Use Pydantic validators for request contracts.",
+            ),
+        )
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            content=MemoryContent(
+                title="Frontend styling",
+                body="Keep settings panels compact.",
+            ),
+        )
+
+        result = await build_role_with_memory_async(
+            role_registry=registry,
+            memory_bank_service=service,
+            role=role,
+            role_id="crafter",
+            workspace_id="ws-1",
+            objective="pydantic validators",
+        )
+
+        assert "Pydantic validation" in result.system_prompt
+        assert "request contracts" in result.system_prompt
+        assert "Frontend styling" not in result.system_prompt
+        assert _MEMORY_REFERENCE_NOTICE in result.system_prompt
+
+    async def test_task_relevant_memory_includes_workspace_global_entries(
+        self, tmp_path: Path
+    ) -> None:
+        registry = create_autospec(RoleRegistry, instance=True)
+        registry.is_coordinator_role.return_value = False
+        role = _make_role()
+        repo = MemoryBankRepository(tmp_path / "global-relevant.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            content=MemoryContent(
+                title="Role-specific validator memory",
+                body="Use validators in role-specific code.",
+            ),
+        )
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            role_id=None,
+            content=MemoryContent(
+                title="Workspace validator policy",
+                body="All workspace request models use validators.",
+            ),
+        )
+
+        result = await build_role_with_memory_async(
+            role_registry=registry,
+            memory_bank_service=service,
+            role=role,
+            role_id="crafter",
+            workspace_id="ws-1",
+            objective="validators",
+        )
+
+        assert "Role-specific validator memory" in result.system_prompt
+        assert "Workspace validator policy" in result.system_prompt
+
+    async def test_workspace_global_fallback_filters_before_limit(
+        self, tmp_path: Path
+    ) -> None:
+        registry = create_autospec(RoleRegistry, instance=True)
+        registry.is_coordinator_role.return_value = False
+        role = _make_role()
+        repo = MemoryBankRepository(tmp_path / "global-limit.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            role_id=None,
+            content=MemoryContent(
+                title="Workspace global policy",
+                body="Global memory must survive role-heavy workspaces.",
+            ),
+        )
+        for index in range(120):
+            await _create_entry(
+                service,
+                MemoryTier.PERSISTENT,
+                role_id=f"other-role-{index}",
+                content=MemoryContent(
+                    title=f"Other role memory {index}",
+                    body="Role scoped entry",
+                ),
+            )
+
+        result = await build_role_with_memory_async(
+            role_registry=registry,
+            memory_bank_service=service,
+            role=role,
+            role_id="crafter",
+            workspace_id="ws-1",
+        )
+
+        assert "Workspace global policy" in result.system_prompt
+
+    async def test_task_relevant_memory_truncates_preview(self, tmp_path: Path) -> None:
+        registry = create_autospec(RoleRegistry, instance=True)
+        registry.is_coordinator_role.return_value = False
+        role = _make_role()
+        repo = MemoryBankRepository(tmp_path / "truncated.db")
+        service = MemoryBankService(repository=repo)
+        long_tail = "x" * (_MEMORY_ENTRY_PREVIEW_CHARS + 80)
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            content=MemoryContent(
+                title="Validation memory",
+                body=f"Use validators for contracts. {long_tail}",
+            ),
+        )
+
+        result = await build_role_with_memory_async(
+            role_registry=registry,
+            memory_bank_service=service,
+            role=role,
+            role_id="crafter",
+            workspace_id="ws-1",
+            objective="validators",
+        )
+
+        assert "Validation memory" in result.system_prompt
+        assert "..." in result.system_prompt
+        assert long_tail not in result.system_prompt
 
     async def test_no_append_when_empty_memory(self, tmp_path: Path) -> None:
         registry = create_autospec(RoleRegistry, instance=True)
@@ -156,6 +305,63 @@ class TestBuildProjectMemorySection:
         )
         assert result == ""
 
+    async def test_handles_list_sqlite_exception(self, tmp_path: Path) -> None:
+        service = create_autospec(MemoryBankService, instance=True)
+        service.list_entries_async = AsyncMock(
+            side_effect=sqlite3.OperationalError("locked")
+        )
+        result = await _build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+        )
+        assert result == ""
+
+    async def test_handles_search_exception(self, tmp_path: Path) -> None:
+        service = create_autospec(MemoryBankService, instance=True)
+        service.search_async = AsyncMock(side_effect=RuntimeError("db error"))
+        result = await _build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+            objective="validators",
+        )
+        assert result == ""
+
+    async def test_handles_search_sqlite_exception(self, tmp_path: Path) -> None:
+        service = create_autospec(MemoryBankService, instance=True)
+        service.search_async = AsyncMock(side_effect=sqlite3.OperationalError("locked"))
+        result = await _build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+            objective="validators",
+        )
+        assert result == ""
+
+    async def test_stops_when_tier_heading_exceeds_budget(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "budget.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(service, MemoryTier.PERSISTENT)
+        result = await service.list_entries_async(
+            MemoryQuery(workspace_id="ws-1", limit=1)
+        )
+        monkeypatch.setattr(
+            "relay_teams.roles.memory_injection._MEMORY_SECTION_CHAR_BUDGET",
+            1,
+        )
+
+        section = _format_memory_section(
+            by_tier={
+                MemoryTier.PERSISTENT: list(result.items),
+                MemoryTier.MEDIUM_TERM: [],
+            },
+            include_preview=False,
+        )
+
+        assert section == ""
+
     async def test_includes_medium_term_entries(self, tmp_path: Path) -> None:
         repo = MemoryBankRepository(tmp_path / "test.db")
         service = MemoryBankService(repository=repo)
@@ -171,3 +377,50 @@ class TestBuildProjectMemorySection:
             role_id="crafter",
         )
         assert "Medium Term" in result
+
+    async def test_fallback_includes_workspace_global_entries(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "fallback-global.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(service, MemoryTier.PERSISTENT)
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            role_id=None,
+            content=MemoryContent(
+                title="Workspace global memory",
+                body="Global workspace guidance.",
+            ),
+        )
+
+        result = await _build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+        )
+
+        assert "Test insight" in result
+        assert "Workspace global memory" in result
+
+    async def test_memory_section_respects_budget(self, tmp_path: Path) -> None:
+        repo = MemoryBankRepository(tmp_path / "budget.db")
+        service = MemoryBankService(repository=repo)
+        for index in range(40):
+            await _create_entry(
+                service,
+                MemoryTier.PERSISTENT,
+                content=MemoryContent(
+                    title=f"Budgeted memory {index} " + ("title " * 40),
+                    body="Some body text",
+                ),
+            )
+
+        result = await _build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+        )
+
+        assert len(result) <= _MEMORY_SECTION_CHAR_BUDGET
+        assert "Budgeted memory" in result

@@ -52,6 +52,15 @@ class RetrievalStore(Protocol):
     ) -> RetrievalStats:
         raise NotImplementedError  # pragma: no cover
 
+    async def delete_documents_async(
+        self,
+        *,
+        scope_kind: RetrievalScopeKind,
+        scope_id: str,
+        document_ids: tuple[str, ...],
+    ) -> RetrievalStats:
+        raise NotImplementedError  # pragma: no cover
+
     def search(
         self,
         *,

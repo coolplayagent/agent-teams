@@ -4,9 +4,10 @@ from __future__ import annotations
 import contextlib
 import json
 import shutil
+import sqlite3
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from relay_teams.agent_runtimes.instances.models import AgentRuntimeRecord
 from relay_teams.logger import get_logger
@@ -14,6 +15,7 @@ from relay_teams.media import ContentPart
 from relay_teams.media import content_parts_to_text
 from relay_teams.media import user_prompt_content_to_text
 from relay_teams.metrics import SqliteMetricAggregateStore
+from relay_teams.memory.event_handler import MemoryEventHandler
 from relay_teams.monitors.repository import MonitorRepository
 from relay_teams.persistence.scope_models import ScopeRef, ScopeType
 from relay_teams.validation import (
@@ -141,6 +143,15 @@ _LEGACY_COORDINATOR_IDENTIFIERS = (
 _MAIN_AGENT_IDENTIFIERS = ("mainagent", "main agent", "main_agent")
 _AUTO_SESSION_TITLE_MAX_CHARS = 120
 LOGGER = get_logger(__name__)
+
+
+class _SessionDeleteContext(NamedTuple):
+    session: SessionRecord
+    task_records: tuple[TaskRecord, ...]
+    agent_records: tuple[AgentRuntimeRecord, ...]
+    background_task_records: tuple[BackgroundTaskRecord, ...]
+
+
 _SNAPSHOT_DIRTY_EVENT_TYPES = frozenset(
     {
         *(RunEventType(event_type) for event_type in ROUND_PROJECTION_EVENT_TYPES),
@@ -273,6 +284,7 @@ class SessionService:
         orchestration_settings_service: OrchestrationSettingsService | None = None,
         media_asset_service: MediaAssetService | None = None,
         run_intent_repo: RunIntentRepository | None = None,
+        memory_event_handler: MemoryEventHandler | None = None,
         get_runtime: Callable[[], RuntimeConfig] | None = None,
         projection_refresh_runner: ProjectionRefreshRunner[object] | None = None,
     ) -> None:
@@ -303,6 +315,7 @@ class SessionService:
         self._orchestration_settings_service = orchestration_settings_service
         self._media_asset_service = media_asset_service
         self._run_intent_repo = run_intent_repo
+        self._memory_event_handler = memory_event_handler
         self._get_runtime = get_runtime
         self._board_todo_service: BoardTodoSessionLifecycleService | None = None
         self._session_list_cache = SessionListCache(
@@ -927,29 +940,19 @@ class SessionService:
         force: bool = False,
         cascade: bool = False,
     ) -> None:
-        session = self._session_repo.get(session_id)
-        if self._select_active_run(session_id) is not None:
-            require_force_delete(
-                force,
-                message="Cannot delete session while it has active or recoverable run",
-            )
-        task_records = self._task_repo.list_by_session(session_id)
-        agent_records = self._agent_repo.list_by_session(session_id)
-        background_task_records: tuple[BackgroundTaskRecord, ...] = ()
-        if self._background_task_repository is not None:
-            background_task_records = self._background_task_repository.list_by_session(
-                session_id
-            )
-        if self._has_dependent_session_data(
+        delete_context = self._prepare_session_delete(
             session_id,
-            task_records=task_records,
-            agent_records=agent_records,
-            background_task_records=background_task_records,
-        ):
-            require_cascade_delete(
-                cascade,
-                message="Cannot delete session without cascade while related session data exists",
-            )
+            force=force,
+            cascade=cascade,
+        )
+        self._delete_session_prepared(delete_context)
+
+    def _delete_session_prepared(self, delete_context: _SessionDeleteContext) -> None:
+        session = delete_context.session
+        session_id = session.session_id
+        task_records = delete_context.task_records
+        agent_records = delete_context.agent_records
+        background_task_records = delete_context.background_task_records
         task_ids = [record.envelope.task_id for record in task_records]
         instance_ids = [record.instance_id for record in agent_records]
         role_scope_ids = sorted(
@@ -1043,6 +1046,43 @@ class SessionService:
         self._remove_session_list_cache_record(session_id)
         self._clear_session_read_cache(session_id)
 
+    def _prepare_session_delete(
+        self,
+        session_id: str,
+        *,
+        force: bool = False,
+        cascade: bool = False,
+    ) -> _SessionDeleteContext:
+        session = self._session_repo.get(session_id)
+        if self._select_active_run(session_id) is not None:
+            require_force_delete(
+                force,
+                message="Cannot delete session while it has active or recoverable run",
+            )
+        task_records = self._task_repo.list_by_session(session_id)
+        agent_records = self._agent_repo.list_by_session(session_id)
+        background_task_records: tuple[BackgroundTaskRecord, ...] = ()
+        if self._background_task_repository is not None:
+            background_task_records = self._background_task_repository.list_by_session(
+                session_id
+            )
+        if self._has_dependent_session_data(
+            session_id,
+            task_records=task_records,
+            agent_records=agent_records,
+            background_task_records=background_task_records,
+        ):
+            require_cascade_delete(
+                cascade,
+                message="Cannot delete session without cascade while related session data exists",
+            )
+        return _SessionDeleteContext(
+            session=session,
+            task_records=task_records,
+            agent_records=agent_records,
+            background_task_records=background_task_records,
+        )
+
     async def delete_session_async(
         self,
         session_id: str,
@@ -1050,9 +1090,54 @@ class SessionService:
         force: bool = False,
         cascade: bool = False,
     ) -> None:
-        await asyncio.to_thread(
-            self.delete_session, session_id, force=force, cascade=cascade
+        delete_context = await asyncio.to_thread(
+            self._delete_session_with_prepared_context,
+            session_id,
+            force=force,
+            cascade=cascade,
         )
+        await self._consolidate_session_memory_after_delete_async(delete_context)
+
+    def _delete_session_with_prepared_context(
+        self,
+        session_id: str,
+        *,
+        force: bool = False,
+        cascade: bool = False,
+    ) -> _SessionDeleteContext:
+        delete_context = self._prepare_session_delete(
+            session_id,
+            force=force,
+            cascade=cascade,
+        )
+        self._delete_session_prepared(delete_context)
+        return delete_context
+
+    async def _consolidate_session_memory_after_delete_async(
+        self,
+        delete_context: _SessionDeleteContext,
+    ) -> None:
+        handler = self._memory_event_handler
+        if handler is None:
+            return
+        session = delete_context.session
+        session_id = session.session_id
+        try:
+            await handler.on_session_completed_async(
+                workspace_id=session.workspace_id,
+                session_id=session_id,
+            )
+            LOGGER.info(
+                "consolidated session memory before deleting session %s workspace=%s",
+                session_id,
+                session.workspace_id,
+            )
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.warning(
+                "failed to consolidate session memory before deleting session %s",
+                session_id,
+                exc_info=True,
+            )
 
     def _has_dependent_session_data(
         self,

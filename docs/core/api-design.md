@@ -4262,7 +4262,8 @@ Query fields:
 - `role_id`: optional exact-match filter.
 - `kind`: optional `insight`, `constraint`, `decision`, `failure_mode`, `preference`, `fact`, or `summary`.
 - `status`: optional `active`, `superseded`, or `expired`.
-- `tags`: comma-separated tag filter.
+- `tags`: comma-separated exact tag filter. Multiple tags require all listed
+  tags to be present.
 - `min_confidence`: minimum confidence score `0.0..1.0`, default `0.0`.
 - `limit`: page size `1..100`, default `20`.
 - `offset`: default `0`.
@@ -4279,16 +4280,37 @@ history.
 Request: `GlobalMemorySearchRequest`
 - `workspace_id`: optional exact-match filter.
 - `text_query`: search text.
-- `tier`, `scope`, `session_id`, `role_id`, `kind`, `status`, `tags`: optional filters.
+- `tier`, `scope`, `session_id`, `role_id`, `kind`, `status`, `tags`: optional
+  filters. Tag filters use exact tag matching.
 - `min_confidence`: minimum confidence score `0.0..1.0`.
 - `limit`: max results, default `20`.
 
 Response: `MemorySearchResult`.
 
+### `POST /memories/rebuild-index`
+
+Rebuilds stale Memory Bank retrieval documents. Stale entries are active memory
+rows whose retrieval index state is missing or marked removed.
+
+Request: `MemoryIndexRebuildRequest`
+- `workspace_id`: optional workspace filter.
+- `limit`: maximum stale entries to scan, default `100`, max `1000`.
+- `dry_run`: when `true`, returns the number of stale entries that would be
+  processed without writing to retrieval.
+
+Response: `MemoryIndexRebuildResult`
+- `scanned_count`: stale rows selected for this request.
+- `rebuilt_count`: rows successfully written to retrieval.
+- `skipped_count`: rows skipped because dry-run was enabled, retrieval is
+  unavailable, or the row disappeared before processing.
+- `failed_count`: rows that failed retrieval indexing.
+
 ### `POST /memories/skill-drafts:generate`
 
 Generates one or more memory-derived skill drafts. This endpoint creates
 reviewable drafts only; it does not write to the runtime skills directory.
+This is the canonical Memory Bank promotion workflow; the workspace-scoped
+`/memories/evolutions` endpoints are retained only for legacy clients.
 
 Request: `GenerateMemorySkillDraftsRequest`
 - `scope_kind`: `workspace` or `cross_workspace`.
@@ -4353,7 +4375,8 @@ without errors become `validated`.
 ### `POST /memories/skill-drafts/{draft_id}:apply`
 
 Applies a validated draft as an app-scoped skill through the existing ClawHub
-skill service, then reloads the skill registry.
+skill service, then reloads the skill registry and records the applied draft
+and skill ref in source memory metadata.
 
 Response: `MemorySkillDraftApplyResult`. Returns `400` when the draft is not
 validated or validation no longer passes.
@@ -4369,7 +4392,8 @@ Query fields:
 - `role_id`: optional exact-match filter.
 - `kind`: optional entry kind filter (`insight`, `constraint`, `decision`, `failure_mode`, `preference`, `fact`, `summary`).
 - `status`: optional `active`, `superseded`, or `expired`.
-- `tags`: comma-separated tag filter.
+- `tags`: comma-separated exact tag filter. Multiple tags require all listed
+  tags to be present.
 - `min_confidence`: minimum confidence score `0.0..1.0`, default `0.0`.
 - `limit`: page size `1..100`, default `20`.
 - `offset`: default `0`.
@@ -4390,7 +4414,8 @@ Request: `CreateMemoryEntryRequest`
 - `scope`: `workspace`, `session`, or `role`.
 - `kind`: `insight`, `constraint`, `decision`, `failure_mode`, `preference`, `fact`, or `summary`.
 - `content`: object with `title`, `body`, and optional `context`/`outcome`.
-- `tags`: optional list of tag strings.
+- `tags`: optional list of tag strings. Tags are stored as exact values; search
+  and list filters do not perform substring tag matching.
 - `source`: optional `consolidation`, `manual`, `condensation`, or `task_result`.
 - `confidence_score`: optional `0.0..1.0`.
 - `session_id`, `role_id`, `run_id`: optional scoping references.
@@ -4400,7 +4425,9 @@ Response: `MemoryEntry` (full entry with generated `id`, `version`, timestamps).
 
 ### `POST /workspaces/{workspace_id}/memories/evolutions`
 
-Creates a reviewable Memory Bank evolution draft. This does not mutate the
+Deprecated legacy endpoint. New clients should use
+`POST /memories/skill-drafts:generate` and then validate/apply the generated
+draft. Creates a reviewable Memory Bank evolution draft without mutating the
 runtime skill directory.
 
 Request: `CreateMemoryEvolutionDraftRequest`
@@ -4421,7 +4448,8 @@ cross-workspace source memory entries. Invalid request identifiers return
 
 ### `GET /workspaces/{workspace_id}/memories/evolutions`
 
-Lists Memory Bank evolution drafts for one workspace.
+Deprecated legacy endpoint. Lists Memory Bank evolution drafts for one
+workspace.
 
 Query fields:
 - `target`: optional `skill` or `sop_skill`.
@@ -4434,13 +4462,14 @@ Response: `MemoryEvolutionDraftQueryResult`.
 
 ### `GET /workspaces/{workspace_id}/memories/evolutions/{draft_id}`
 
-Returns one Memory Bank evolution draft. Returns `404` when the draft does not
-exist or belongs to another workspace.
+Deprecated legacy endpoint. Returns one Memory Bank evolution draft. Returns
+`404` when the draft does not exist or belongs to another workspace.
 
 ### `POST /workspaces/{workspace_id}/memories/evolutions/{draft_id}:apply`
 
-Applies a draft by writing the proposed skill through the app-scoped ClawHub
-skill service and reloading the runtime skill registry.
+Deprecated legacy endpoint. Applies a draft by writing the proposed skill
+through the app-scoped ClawHub skill service and reloading the runtime skill
+registry.
 
 Request: `ApplyMemoryEvolutionDraftRequest`
 - `skill_id`: optional final skill directory override.
@@ -4454,7 +4483,7 @@ in `draft` status or another apply request has already claimed it.
 
 ### `POST /workspaces/{workspace_id}/memories/evolutions/{draft_id}:reject`
 
-Rejects a draft without mutating skills.
+Deprecated legacy endpoint. Rejects a draft without mutating skills.
 
 Request: `RejectMemoryEvolutionDraftRequest`
 - `reason`: optional rejection reason.
@@ -4489,7 +4518,7 @@ Deletes a memory entry. Returns `204` on success. Returns `404` when the entry d
 
 ### `POST /workspaces/{workspace_id}/memories/consolidate`
 
-Triggers memory consolidation from working-tier entries into medium-term or persistent entries.
+Triggers memory consolidation from working-tier entries into medium-term or persistent entries. Semantic consolidation extracts durable entries from run messages, persists source lineage, merges duplicate observations when possible, and falls back to structural consolidation when the semantic extractor cannot run.
 
 Request: `MemoryConsolidationRequest`
 - `workspace_id`: path-derived.
@@ -4510,7 +4539,8 @@ Full-text search across memory entries.
 Request: `MemorySearchRequest`
 - `workspace_id`: path-derived.
 - `text_query`: search text.
-- `tier`, `scope`, `session_id`, `role_id`, `kind`, `status`, `tags`: optional filters.
+- `tier`, `scope`, `session_id`, `role_id`, `kind`, `status`, `tags`: optional
+  filters. Tag filters use exact tag matching.
 - `min_confidence`: minimum confidence score `0.0..1.0`.
 - `limit`: max results, default `20`.
 

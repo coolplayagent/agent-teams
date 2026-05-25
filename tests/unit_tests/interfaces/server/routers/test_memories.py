@@ -25,6 +25,7 @@ from relay_teams.memory.models import (
     MemoryEvolutionDraftQueryResult,
     MemoryEvolutionStatus,
     MemoryEvolutionTarget,
+    MemoryIndexRebuildResult,
     MemoryQueryResult,
     MemoryScope,
     MemorySearchResult,
@@ -108,15 +109,16 @@ def _make_draft(**overrides: object) -> MemoryEvolutionDraft:
 
 
 class TestRouteRegistration:
-    def test_router_has_twenty_routes(self) -> None:
+    def test_router_has_twenty_one_routes(self) -> None:
         routes = [r for r in router.routes if isinstance(r, APIRoute)]
-        assert len(routes) == 20
+        assert len(routes) == 21
 
     def test_router_paths_match_spec(self) -> None:
         paths = {r.path for r in router.routes if isinstance(r, APIRoute)}
         wid = "/workspaces/{workspace_id}"
         assert "/memories" in paths
         assert "/memories/search" in paths
+        assert "/memories/rebuild-index" in paths
         assert "/memories/skill-drafts:generate" in paths
         assert "/memories/skill-drafts" in paths
         assert "/memories/skill-drafts/{draft_id}" in paths
@@ -139,6 +141,7 @@ class TestRouteRegistration:
         wid = "/workspaces/{workspace_id}"
         assert "GET" in route_map.get("/memories", set())
         assert "POST" in route_map.get("/memories/search", set())
+        assert "POST" in route_map.get("/memories/rebuild-index", set())
         assert "POST" in route_map.get("/memories/skill-drafts:generate", set())
         assert "GET" in route_map.get("/memories/skill-drafts", set())
         assert "GET" in route_map.get("/memories/skill-drafts/{draft_id}", set())
@@ -194,6 +197,14 @@ class _FakeMemoryBankService:
         )
         self.search_global_async: AsyncMock = AsyncMock(
             return_value=MemorySearchResult(items=(), total_count=0)
+        )
+        self.rebuild_stale_index_entries_result_async: AsyncMock = AsyncMock(
+            return_value=MemoryIndexRebuildResult(
+                scanned_count=2,
+                rebuilt_count=1,
+                skipped_count=1,
+                failed_count=0,
+            )
         )
         self.generate_drafts_async: AsyncMock = AsyncMock(
             return_value=MemorySkillDraftGenerationResult(
@@ -328,6 +339,22 @@ class TestGlobalSearchMemories:
         call_req = svc.search_global_async.call_args[0][0]
         assert call_req.workspace_id == "ws-1"
         assert call_req.text_query == "pydantic"
+
+
+class TestMemoryIndexRebuild:
+    def test_rebuild_index_returns_stats(self) -> None:
+        client, svc = _client()
+        response = client.post(
+            "/api/memories/rebuild-index",
+            json={"workspace_id": "ws-1", "limit": 10, "dry_run": True},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["scanned_count"] == 2
+        call_req = svc.rebuild_stale_index_entries_result_async.call_args[0][0]
+        assert call_req.workspace_id == "ws-1"
+        assert call_req.limit == 10
+        assert call_req.dry_run is True
 
 
 class TestMemorySkillDraftEndpoints:
@@ -801,6 +828,27 @@ class TestDeleteMemory:
         response = client.delete("/api/workspaces/ws-1/memories/mem-test001")
         assert response.status_code == 204
         svc.delete_entry_async.assert_awaited_once()
+
+    def test_delete_failure_returns_503(self) -> None:
+        client, svc = _client()
+        svc.delete_entry_async = AsyncMock(return_value=False)
+        response = client.delete("/api/workspaces/ws-1/memories/mem-test001")
+        assert response.status_code == 503
+
+    def test_delete_concurrent_missing_returns_404(self) -> None:
+        client, svc = _client()
+        svc.get_entry_async = AsyncMock(
+            side_effect=(
+                _make_entry(),
+                None,
+            )
+        )
+        svc.delete_entry_async = AsyncMock(return_value=False)
+
+        response = client.delete("/api/workspaces/ws-1/memories/mem-test001")
+
+        assert response.status_code == 404
+        assert svc.get_entry_async.await_count == 2
 
     def test_delete_nonexistent_returns_404(self) -> None:
         client, svc = _client()

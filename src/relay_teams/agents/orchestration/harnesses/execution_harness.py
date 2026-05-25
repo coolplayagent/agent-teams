@@ -204,6 +204,7 @@ class ExecutionHarness(BaseModel):
             role=role,
             role_id=role_id,
             workspace_id=workspace.ref.workspace_id,
+            objective=task.objective,
         )
         session_mode = "normal"
         run_kind = RunKind.CONVERSATION
@@ -661,12 +662,22 @@ class ExecutionHarness(BaseModel):
         ).conversation_context_for_run_async(run_id)
 
     async def role_with_memory_async(
-        self, *, role: RoleDefinition, role_id: str, workspace_id: str
+        self,
+        *,
+        role: RoleDefinition,
+        role_id: str,
+        workspace_id: str,
+        objective: str = "",
     ) -> RoleDefinition:
         return await TaskPromptHarness.model_construct(
             role_registry=self.role_registry,
             memory_bank_service=self.memory_bank_service,
-        ).role_with_memory_async(role=role, role_id=role_id, workspace_id=workspace_id)
+        ).role_with_memory_async(
+            role=role,
+            role_id=role_id,
+            workspace_id=workspace_id,
+            objective=objective,
+        )
 
     async def prepare_runtime_snapshot(
         self,

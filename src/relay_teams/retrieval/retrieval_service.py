@@ -133,6 +133,33 @@ class RetrievalService:
         self._record_document_count(stats=stats, operation="delete")
         return stats
 
+    async def delete_documents_async(
+        self,
+        *,
+        scope_kind: RetrievalScopeKind,
+        scope_id: str,
+        document_ids: tuple[str, ...],
+    ) -> RetrievalStats:
+        normalized_document_ids = _deduplicate_ids(document_ids)
+        with trace_span(
+            LOGGER,
+            component="retrieval.service",
+            operation="delete_documents_async",
+            attributes={
+                "backend": self._store.backend_kind.value,
+                "scope_kind": scope_kind.value,
+                "scope_id": scope_id,
+                "document_count": len(normalized_document_ids),
+            },
+        ):
+            stats = await self._store.delete_documents_async(
+                scope_kind=scope_kind,
+                scope_id=scope_id,
+                document_ids=normalized_document_ids,
+            )
+        await self._record_document_count_async(stats=stats, operation="delete")
+        return stats
+
     def search(
         self,
         *,

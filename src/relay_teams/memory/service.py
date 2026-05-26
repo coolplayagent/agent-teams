@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import re
+import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from relay_teams.logger import get_logger
@@ -15,14 +18,19 @@ from relay_teams.memory.models import (
     GlobalMemorySearchRequest,
     MemoryConsolidationRequest,
     MemoryConsolidationResult,
+    MemoryContent,
     MemoryEntry,
+    MemoryEntryKind,
     MemoryEntryStatus,
+    MemoryIndexRebuildRequest,
+    MemoryIndexRebuildResult,
     MemoryQuery,
     MemoryQueryResult,
     MemoryScope,
     MemorySearchHit,
     MemorySearchRequest,
     MemorySearchResult,
+    MemorySourceKind,
     MemoryTier,
     UpdateMemoryEntryRequest,
     _UNSET,
@@ -30,6 +38,10 @@ from relay_teams.memory.models import (
     default_ttl_for_tier,
 )
 from relay_teams.memory.repository import MemoryBankRepository, generate_memory_id
+from relay_teams.memory.semantic_consolidation import (
+    SemanticMessageRepository,
+    extract_semantic_memory_entries_async,
+)
 from relay_teams.providers.provider_contracts import LLMProvider
 from relay_teams.retrieval.retrieval_models import (
     RetrievalDocument,
@@ -43,6 +55,164 @@ LOGGER = get_logger(__name__)
 GLOBAL_SEARCH_BATCH_SIZE = 100
 INDEX_BACKFILL_BATCH_SIZE = 100
 FTS_SEARCH_BATCH_SIZE = 100
+_MAX_MEMORY_METADATA_KEYS = 20
+_RETRIEVAL_INDEX_KIND = "retrieval"
+_SEMANTIC_SOURCE_KIND = "semantic_run"
+_SEMANTIC_SOURCE_RUN_IDS_METADATA_KEY = "semantic_source_run_ids"
+_SEMANTIC_OBSERVATION_COUNT_METADATA_KEY = "semantic_observation_count"
+_SEMANTIC_LATEST_SOURCE_RUN_ID_METADATA_KEY = "semantic_latest_source_run_id"
+_SEMANTIC_KEY_METADATA_KEY = "semantic_key"
+_MAX_SEMANTIC_SOURCE_RUN_IDS = 10
+_DEDUP_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+")
+
+
+def _sanitize_semantic_tags(tags: tuple[str, ...]) -> tuple[str, ...]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        normalized = tag.strip()
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(normalized)
+    return tuple(cleaned)
+
+
+def _normalize_dedup_text(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _dedup_tokens(value: str) -> frozenset[str]:
+    return frozenset(
+        match.group(0).casefold() for match in _DEDUP_TOKEN_PATTERN.finditer(value)
+    )
+
+
+def _semantic_key(*, kind: MemoryEntryKind, title: str, body: str) -> str:
+    return "|".join(
+        (
+            kind.value,
+            _normalize_dedup_text(title),
+            _normalize_dedup_text(body),
+        )
+    )
+
+
+def _jaccard_similarity(left: frozenset[str], right: frozenset[str]) -> float:
+    if not left and not right:
+        return 1.0
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _merge_semantic_source_run_ids(
+    *,
+    metadata: dict[str, str],
+    source_run_id: str | None,
+    existing_source_refs: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    ordered: list[str] = []
+    for source_ref in existing_source_refs:
+        cleaned_ref = source_ref.strip()
+        if cleaned_ref and cleaned_ref not in ordered:
+            ordered.append(cleaned_ref)
+    for candidate in (
+        metadata.get(_SEMANTIC_SOURCE_RUN_IDS_METADATA_KEY, ""),
+        metadata.get("semantic_source_run_id", ""),
+    ):
+        for run_id in candidate.split(","):
+            cleaned = run_id.strip()
+            if cleaned and cleaned not in ordered:
+                ordered.append(cleaned)
+    if source_run_id is not None:
+        cleaned_source = source_run_id.strip()
+        if cleaned_source and cleaned_source not in ordered:
+            ordered.append(cleaned_source)
+    return tuple(ordered[-_MAX_SEMANTIC_SOURCE_RUN_IDS:])
+
+
+def _merge_semantic_text(existing: str, incoming: str) -> str:
+    cleaned_existing = existing.strip()
+    cleaned_incoming = incoming.strip()
+    if not cleaned_incoming:
+        return existing
+    if not cleaned_existing:
+        return cleaned_incoming
+    if cleaned_incoming.casefold() in cleaned_existing.casefold():
+        return existing
+    return f"{cleaned_existing}\n\n{cleaned_incoming}"
+
+
+def _merge_semantic_tags(
+    existing: tuple[str, ...],
+    incoming: tuple[str, ...],
+) -> tuple[str, ...]:
+    return _sanitize_semantic_tags((*existing, *incoming))
+
+
+def _merge_semantic_confidence(
+    *,
+    existing: float,
+    extracted: float,
+    source_run_id: str | None,
+    source_run_ids: tuple[str, ...],
+) -> float:
+    baseline = max(existing, extracted)
+    if source_run_id is None or len(source_run_ids) <= 1:
+        return baseline
+    return min(1.0, baseline + 0.02)
+
+
+def _trim_metadata(metadata: dict[str, str]) -> dict[str, str]:
+    trimmed = metadata.copy()
+    protected = {
+        "semantic_source_run_id",
+        "semantic_consolidation",
+        _SEMANTIC_SOURCE_RUN_IDS_METADATA_KEY,
+        _SEMANTIC_OBSERVATION_COUNT_METADATA_KEY,
+        _SEMANTIC_LATEST_SOURCE_RUN_ID_METADATA_KEY,
+        _SEMANTIC_KEY_METADATA_KEY,
+    }
+    while len(trimmed) > _MAX_MEMORY_METADATA_KEYS:
+        removable = sorted(key for key in trimmed if key not in protected)
+        if not removable:
+            break
+        del trimmed[removable[0]]
+    return trimmed
+
+
+def _merge_semantic_metadata_preserving_existing(
+    *,
+    existing: dict[str, str],
+    source_run_id: str | None,
+    source_run_ids: tuple[str, ...],
+    semantic_key: str,
+) -> dict[str, str]:
+    merged = existing.copy()
+    semantic_updates: list[tuple[str, str]] = []
+    if source_run_id is not None:
+        semantic_updates.extend(
+            (
+                ("semantic_source_run_id", source_run_id),
+                (_SEMANTIC_LATEST_SOURCE_RUN_ID_METADATA_KEY, source_run_id),
+            )
+        )
+    semantic_updates.extend(
+        (
+            (_SEMANTIC_SOURCE_RUN_IDS_METADATA_KEY, ",".join(source_run_ids)),
+            (_SEMANTIC_OBSERVATION_COUNT_METADATA_KEY, str(len(source_run_ids))),
+            (_SEMANTIC_KEY_METADATA_KEY, semantic_key),
+            ("semantic_consolidation", "true"),
+        )
+    )
+    for key, value in semantic_updates:
+        if key in merged or len(merged) < _MAX_MEMORY_METADATA_KEYS:
+            merged[key] = value
+    return merged
 
 
 class MemoryBankService:
@@ -52,10 +222,15 @@ class MemoryBankService:
         repository: MemoryBankRepository,
         retrieval_service: RetrievalService | None = None,
         llm_provider: LLMProvider | None = None,
+        llm_provider_resolver: Callable[[], LLMProvider | None] | None = None,
+        message_repo: SemanticMessageRepository | None = None,
+        event_log: object | None = None,
     ) -> None:
         self._repo = repository
         self._retrieval_service = retrieval_service
-        self._llm_provider = llm_provider
+        self._llm_provider_resolver = llm_provider_resolver or (lambda: llm_provider)
+        self._message_repo = message_repo
+        self._event_log = event_log
 
     # ------------------------------------------------------------------
     # 1. Create
@@ -147,6 +322,123 @@ class MemoryBankService:
             )
         return indexed_count
 
+    async def rebuild_stale_index_entries_async(self) -> int:
+        """Rebuild retrieval documents for active entries with stale index state."""
+        if self._retrieval_service is None:
+            return 0
+
+        indexed_count = 0
+        while True:
+            items = await self._repo.query_entries_needing_index_rebuild_async(
+                workspace_id=None,
+                limit=INDEX_BACKFILL_BATCH_SIZE,
+            )
+            if not items:
+                break
+
+            batch_indexed = 0
+            for summary in items:
+                entry = await self._repo.get_by_id_async(summary.id)
+                if entry is None:
+                    continue
+                if await self._index_entry_async(entry):
+                    indexed_count += 1
+                    batch_indexed += 1
+
+            if batch_indexed == 0 or len(items) < INDEX_BACKFILL_BATCH_SIZE:
+                break
+
+        if indexed_count > 0:
+            LOGGER.info(
+                "Rebuilt retrieval index for %d stale Memory Bank entries",
+                indexed_count,
+            )
+        return indexed_count
+
+    async def rebuild_stale_index_entries_result_async(
+        self,
+        request: MemoryIndexRebuildRequest,
+    ) -> MemoryIndexRebuildResult:
+        items = await self._repo.query_entries_needing_index_rebuild_async(
+            workspace_id=request.workspace_id,
+            limit=request.limit,
+        )
+        if request.dry_run:
+            LOGGER.info(
+                "Dry-run Memory Bank index rebuild scanned=%d workspace=%s",
+                len(items),
+                request.workspace_id or "*",
+            )
+            return MemoryIndexRebuildResult(
+                scanned_count=len(items),
+                rebuilt_count=0,
+                skipped_count=len(items),
+                failed_count=0,
+            )
+        if self._retrieval_service is None:
+            LOGGER.info(
+                "Skipped Memory Bank index rebuild because retrieval is unavailable "
+                "scanned=%d workspace=%s",
+                len(items),
+                request.workspace_id or "*",
+            )
+            return MemoryIndexRebuildResult(
+                scanned_count=len(items),
+                rebuilt_count=0,
+                skipped_count=len(items),
+                failed_count=0,
+            )
+
+        scanned_count = 0
+        rebuilt_count = 0
+        skipped_count = 0
+        failed_count = 0
+        offset = 0
+        while True:
+            items = await self._repo.query_entries_needing_index_rebuild_async(
+                workspace_id=request.workspace_id,
+                limit=request.limit,
+                offset=offset,
+            )
+            if not items:
+                break
+            batch_rebuilt = 0
+            batch_skipped = 0
+            batch_failed = 0
+            for summary in items:
+                entry = await self._repo.get_by_id_async(summary.id)
+                if entry is None:
+                    batch_skipped += 1
+                    continue
+                if await self._index_entry_async(entry):
+                    batch_rebuilt += 1
+                else:
+                    batch_failed += 1
+            scanned_count += len(items)
+            rebuilt_count += batch_rebuilt
+            skipped_count += batch_skipped
+            failed_count += batch_failed
+            if batch_rebuilt > 0 or batch_skipped > 0 or len(items) < request.limit:
+                break
+            offset += request.limit
+
+        result = MemoryIndexRebuildResult(
+            scanned_count=scanned_count,
+            rebuilt_count=rebuilt_count,
+            skipped_count=skipped_count,
+            failed_count=failed_count,
+        )
+        LOGGER.info(
+            "Memory Bank index rebuild completed workspace=%s scanned=%d rebuilt=%d "
+            "skipped=%d failed=%d",
+            request.workspace_id or "*",
+            result.scanned_count,
+            result.rebuilt_count,
+            result.skipped_count,
+            result.failed_count,
+        )
+        return result
+
     # ------------------------------------------------------------------
     # 3. Update
     # ------------------------------------------------------------------
@@ -160,7 +452,7 @@ class MemoryBankService:
         updated = self._apply_update(entry, request)
         result = await self._repo.update_entry_async(memory_id, entry=updated)
         if result is not None:
-            await self._index_entry_async(result)
+            await self._sync_index_entry_async(result)
         return result
 
     @staticmethod
@@ -197,12 +489,38 @@ class MemoryBankService:
 
         return updated
 
+    async def patch_entry_metadata_async(
+        self,
+        *,
+        memory_id: str,
+        workspace_id: str,
+        metadata_patch: dict[str, str],
+    ) -> MemoryEntry | None:
+        if not metadata_patch:
+            return await self._repo.get_by_id_async(memory_id)
+        patched = await self._repo.patch_entry_metadata_async(
+            memory_id=memory_id,
+            workspace_id=workspace_id,
+            metadata_patch=metadata_patch,
+            metadata_limit=_MAX_MEMORY_METADATA_KEYS,
+            updated_at=datetime.now(tz=timezone.utc),
+        )
+        if not patched:
+            return None
+        return await self._repo.get_by_id_async(memory_id)
+
     # ------------------------------------------------------------------
     # 4. Delete
     # ------------------------------------------------------------------
 
     async def delete_entry_async(self, memory_id: str) -> bool:
-        return await self._repo.delete_entry_async(memory_id)
+        entry = await self._repo.get_by_id_async(memory_id)
+        if entry is None:
+            return False
+        deleted = await self._repo.delete_entry_async(memory_id)
+        if deleted and self._retrieval_service is not None:
+            await self._delete_index_entry_async(entry, mark_removed=False)
+        return deleted
 
     # ------------------------------------------------------------------
     # 4b. Capacity enforcement
@@ -223,13 +541,18 @@ class MemoryBankService:
         Returns the number of entries pruned.  Called automatically before
         ``create_entry`` so the capacity cap is never exceeded.
         """
-        _ = (session_id, role_id, scope)  # reserved for granular capacity counting
-
         limit: int
+        filter_scope: MemoryScope | None = None
+        count_run_id: str | None = None
+        count_session_id: str | None = None
+        count_role_id: str | None = None
         if tier == MemoryTier.WORKING and run_id is not None:
             limit = memory_defaults.MAX_WORKING_PER_RUN
+            count_run_id = run_id
         elif tier == MemoryTier.MEDIUM_TERM:
             limit = memory_defaults.MAX_MEDIUM_TERM_PER_SESSION_ROLE
+            count_session_id = session_id
+            count_role_id = role_id
         elif tier == MemoryTier.PERSISTENT:
             limit = memory_defaults.MAX_PERSISTENT_PER_WORKSPACE
         else:
@@ -238,28 +561,43 @@ class MemoryBankService:
         current_count = await self._repo.count_entries_async(
             workspace_id=workspace_id,
             tier=tier,
+            scope=filter_scope,
+            session_id=count_session_id,
+            role_id=count_role_id,
+            run_id=count_run_id,
             status=MemoryEntryStatus.ACTIVE,
         )
         if current_count < limit:
             return 0
 
         overflow = current_count - limit + 1
-        if tier == MemoryTier.WORKING and run_id is not None:
-            return await self._repo.expire_oldest_async(
-                workspace_id=workspace_id,
-                tier=tier,
-                run_id=run_id,
-                status=MemoryEntryStatus.ACTIVE,
-                count=overflow,
-            )
-
-        # For medium_term/persistent, prune by confidence then age
-        return await self._repo.expire_oldest_async(
+        expired_ids = await self._repo.oldest_entry_ids_async(
             workspace_id=workspace_id,
             tier=tier,
+            scope=filter_scope,
+            session_id=count_session_id,
+            role_id=count_role_id,
+            run_id=count_run_id,
             status=MemoryEntryStatus.ACTIVE,
             count=overflow,
         )
+        expired_entry_ids = await self._repo.expire_entry_ids_returning_async(
+            memory_ids=expired_ids
+        )
+        expired_count = len(expired_entry_ids)
+        if expired_entry_ids:
+            await self._delete_index_entry_ids_async(
+                workspace_id=workspace_id,
+                memory_ids=expired_entry_ids,
+            )
+            LOGGER.info(
+                "Pruned %d Memory Bank entries for capacity workspace=%s tier=%s scope=%s",
+                expired_count,
+                workspace_id,
+                tier.value,
+                scope.value,
+            )
+        return expired_count
 
     # ------------------------------------------------------------------
     # 5. Consolidation
@@ -285,6 +623,8 @@ class MemoryBankService:
         )
         if request.session_id is not None:
             query = query.model_copy(update={"session_id": request.session_id})
+        if source_tier == MemoryTier.WORKING and request.source_run_id is not None:
+            query = query.model_copy(update={"run_id": request.source_run_id})
         if request.role_id is not None:
             query = query.model_copy(update={"role_id": request.role_id})
         if request.filter_kind is not None:
@@ -324,6 +664,14 @@ class MemoryBankService:
                 expires_at=default_ttl_for_tier(request.target_tier),
                 metadata=src.metadata.copy(),
             )
+            await self.enforce_capacity_async(
+                workspace_id=new_entry.workspace_id,
+                tier=new_entry.tier,
+                scope=new_entry.scope,
+                session_id=new_entry.session_id,
+                role_id=new_entry.role_id,
+                run_id=new_entry.run_id,
+            )
             await self._repo.create_entry_async(entry=new_entry)
             new_ids.append(new_id)
 
@@ -335,6 +683,7 @@ class MemoryBankService:
                 }
             )
             await self._repo.update_entry_async(src.id, entry=updated_src)
+            await self._delete_index_entry_async(src)
             superseded_ids.append(src.id)
 
         return MemoryConsolidationResult(
@@ -353,20 +702,136 @@ class MemoryBankService:
         of the source run.  Falls back to structural consolidation when
         the LLM provider is not available or the extraction fails.
         """
-        if self._llm_provider is None:
+        llm_provider = self._llm_provider_resolver()
+        if llm_provider is None:
             LOGGER.warning(
                 "SEMANTIC consolidation requested but no llm_provider configured;"
                 " falling back to STRUCTURAL"
             )
             return await self._consolidate_structural_async(request)
+        if self._message_repo is None:
+            LOGGER.warning(
+                "SEMANTIC consolidation requires message_repo but none is"
+                " configured; falling back to STRUCTURAL"
+            )
+            return await self._consolidate_structural_async(request)
 
-        # Message repository is needed for SEMANTIC consolidation.
-        # If not available, fall back to STRUCTURAL.
-        LOGGER.warning(
-            "SEMANTIC consolidation requires message_repo but none is"
-            " configured; falling back to STRUCTURAL"
+        extraction = await extract_semantic_memory_entries_async(
+            request=request,
+            llm_provider=llm_provider,
+            message_repo=self._message_repo,
+            event_log=self._event_log,
         )
-        return await self._consolidate_structural_async(request)
+        if extraction.fallback_to_structural:
+            return await self._consolidate_structural_async(request)
+
+        now = datetime.now(tz=timezone.utc)
+        new_ids: list[str] = []
+        source_ref = f"semantic:{request.source_run_id}"
+        for extracted in extraction.entries:
+            semantic_key = _semantic_key(
+                kind=extracted.kind,
+                title=extracted.title,
+                body=extracted.body,
+            )
+            duplicate = await self._find_semantic_duplicate_async(
+                workspace_id=request.workspace_id,
+                tier=request.target_tier,
+                scope=request.target_scope,
+                session_id=request.session_id,
+                role_id=request.role_id,
+                kind=extracted.kind,
+                title=extracted.title,
+                body=extracted.body,
+                semantic_key=semantic_key,
+            )
+            if duplicate is not None:
+                await self._merge_semantic_duplicate_async(
+                    duplicate=duplicate,
+                    source_run_id=request.source_run_id,
+                    semantic_key=semantic_key,
+                    context=extracted.context,
+                    outcome=extracted.outcome,
+                    tags=extracted.tags,
+                    confidence_score=extracted.confidence_score,
+                )
+                LOGGER.info(
+                    "Merged duplicate semantic memory workspace=%s run=%s kind=%s",
+                    request.workspace_id,
+                    request.source_run_id,
+                    extracted.kind.value,
+                )
+                continue
+
+            memory_id = generate_memory_id()
+            entry = MemoryEntry(
+                id=memory_id,
+                tier=request.target_tier,
+                scope=request.target_scope,
+                workspace_id=request.workspace_id,
+                session_id=request.session_id,
+                run_id=None,
+                role_id=request.role_id,
+                kind=extracted.kind,
+                status=MemoryEntryStatus.ACTIVE,
+                content=MemoryContent(
+                    title=extracted.title,
+                    body=extracted.body,
+                    context=extracted.context,
+                    outcome=extracted.outcome,
+                ),
+                tags=_sanitize_semantic_tags(extracted.tags),
+                confidence_score=extracted.confidence_score,
+                source=MemorySourceKind.CONSOLIDATION,
+                source_ref=source_ref,
+                created_at=now,
+                updated_at=now,
+                expires_at=default_ttl_for_tier(request.target_tier),
+                metadata={
+                    "semantic_source_run_id": request.source_run_id or "",
+                    _SEMANTIC_SOURCE_RUN_IDS_METADATA_KEY: request.source_run_id or "",
+                    _SEMANTIC_OBSERVATION_COUNT_METADATA_KEY: "1",
+                    _SEMANTIC_LATEST_SOURCE_RUN_ID_METADATA_KEY: request.source_run_id
+                    or "",
+                    _SEMANTIC_KEY_METADATA_KEY: semantic_key,
+                    "semantic_consolidation": "true",
+                },
+            )
+            await self.enforce_capacity_async(
+                workspace_id=entry.workspace_id,
+                tier=entry.tier,
+                scope=entry.scope,
+                session_id=entry.session_id,
+                role_id=entry.role_id,
+                run_id=entry.run_id,
+            )
+            await self._repo.create_entry_async(entry=entry)
+            await self._record_semantic_source_async(
+                memory_id=entry.id,
+                source_run_id=request.source_run_id,
+                confidence_score=entry.confidence_score,
+            )
+            await self._index_entry_async(entry)
+            new_ids.append(memory_id)
+
+        LOGGER.info(
+            "Semantic memory consolidation completed workspace=%s run=%s "
+            "source_entries=%d created=%d tokens=%d duration_ms=%d",
+            request.workspace_id,
+            request.source_run_id,
+            extraction.source_entry_count,
+            len(new_ids),
+            extraction.extraction_tokens_used,
+            extraction.extraction_duration_ms,
+        )
+        return MemoryConsolidationResult(
+            source_entry_count=extraction.source_entry_count,
+            consolidated_entry_count=len(new_ids),
+            superseded_entry_ids=(),
+            new_entry_ids=tuple(new_ids),
+            extraction_tokens_used=extraction.extraction_tokens_used,
+            extraction_duration_ms=extraction.extraction_duration_ms,
+        )
 
     @staticmethod
     def _source_tier_for(target_tier: MemoryTier) -> MemoryTier:
@@ -383,7 +848,10 @@ class MemoryBankService:
         decay_expired = await self._repo.apply_confidence_decay_async(
             min_confidence=MIN_CONFIDENCE_ACTIVE, now=now
         )
-        return ttl_expired + decay_expired
+        total_expired = ttl_expired + decay_expired
+        await self._delete_index_entries_by_status_async(MemoryEntryStatus.EXPIRED)
+        await self._delete_index_entries_by_status_async(MemoryEntryStatus.SUPERSEDED)
+        return total_expired
 
     # ------------------------------------------------------------------
     # 7. Search (FTS5-backed)
@@ -409,6 +877,7 @@ class MemoryBankService:
                     scope=request.scope,
                     session_id=request.session_id,
                     role_id=request.role_id,
+                    role_id_is_null=request.role_id_is_null,
                     kind=request.kind,
                     status=request.status,
                     tags=request.tags,
@@ -428,6 +897,7 @@ class MemoryBankService:
                 scope=request.scope,
                 session_id=request.session_id,
                 role_id=request.role_id,
+                role_id_is_null=request.role_id_is_null,
                 kind=request.kind,
                 status=request.status,
                 tags=request.tags,
@@ -548,6 +1018,7 @@ class MemoryBankService:
                 scope=request.scope,
                 session_id=request.session_id,
                 role_id=request.role_id,
+                role_id_is_null=request.role_id_is_null,
                 kind=request.kind,
                 status=request.status,
                 tags=request.tags,
@@ -621,6 +1092,12 @@ class MemoryBankService:
             return False
         if request.role_id is not None and entry.role_id != request.role_id:
             return False
+        if (
+            request.role_id is None
+            and request.role_id_is_null
+            and entry.role_id is not None
+        ):
+            return False
         if request.kind is not None and entry.kind != request.kind:
             return False
         if request.status is not None and entry.status != request.status:
@@ -671,14 +1148,259 @@ class MemoryBankService:
                 config=config,
                 documents=(doc,),
             )
+            await self._mark_index_present_async(entry)
             return True
-        except (ValueError, OSError, RuntimeError):
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
             LOGGER.warning(
                 "failed to index memory entry %s in FTS5",
                 entry.id,
                 exc_info=True,
             )
             return False
+
+    async def _mark_index_present_async(self, entry: MemoryEntry) -> None:
+        now = datetime.now(tz=timezone.utc)
+        await self._repo.mark_entry_index_present_async(
+            memory_id=entry.id,
+            index_kind=_RETRIEVAL_INDEX_KIND,
+            updated_at=now,
+        )
+
+    async def _sync_index_entry_async(self, entry: MemoryEntry) -> bool:
+        if entry.status == MemoryEntryStatus.ACTIVE:
+            return await self._index_entry_async(entry)
+        return await self._delete_index_entry_async(entry)
+
+    async def _delete_index_entry_async(
+        self,
+        entry: MemoryEntry,
+        *,
+        mark_removed: bool = True,
+    ) -> bool:
+        return await self._delete_index_entry_ids_async(
+            workspace_id=entry.workspace_id,
+            memory_ids=(entry.id,),
+            mark_removed=mark_removed,
+        )
+
+    async def _delete_index_entry_ids_async(
+        self,
+        *,
+        workspace_id: str,
+        memory_ids: tuple[str, ...],
+        mark_removed: bool = True,
+    ) -> bool:
+        if self._retrieval_service is None or not memory_ids:
+            return False
+        try:
+            await self._retrieval_service.delete_documents_async(
+                scope_kind=RetrievalScopeKind.MEMORY,
+                scope_id=workspace_id,
+                document_ids=memory_ids,
+            )
+            if mark_removed:
+                await self._mark_index_removed_async(
+                    memory_ids=memory_ids,
+                )
+            return True
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.warning(
+                "failed to delete memory entries from FTS5 index",
+                exc_info=True,
+            )
+            return False
+
+    async def _mark_index_removed_async(
+        self,
+        *,
+        memory_ids: tuple[str, ...],
+    ) -> None:
+        now = datetime.now(tz=timezone.utc)
+        for memory_id in memory_ids:
+            await self._repo.mark_entry_index_removed_async(
+                memory_id=memory_id,
+                index_kind=_RETRIEVAL_INDEX_KIND,
+                removed_at=now,
+            )
+
+    async def _delete_index_entries_by_status_async(
+        self,
+        status: MemoryEntryStatus,
+    ) -> int:
+        if self._retrieval_service is None:
+            return 0
+
+        deleted_count = 0
+        offset = 0
+        while True:
+            items = await self._repo.query_entries_needing_index_cleanup_async(
+                status=status,
+                limit=FTS_SEARCH_BATCH_SIZE,
+                offset=offset,
+            )
+            if not items:
+                break
+
+            by_workspace: dict[str, list[str]] = {}
+            for summary in items:
+                by_workspace.setdefault(summary.workspace_id, []).append(summary.id)
+
+            batch_deleted_count = 0
+            for workspace_id, memory_ids in by_workspace.items():
+                if await self._delete_index_entry_ids_async(
+                    workspace_id=workspace_id,
+                    memory_ids=tuple(memory_ids),
+                ):
+                    deleted_count += len(memory_ids)
+                    batch_deleted_count += len(memory_ids)
+                    continue
+                LOGGER.warning(
+                    "memory index cleanup made no progress workspace=%s status=%s",
+                    workspace_id,
+                    status.value,
+                )
+            if batch_deleted_count == 0:
+                offset += len(items)
+                if len(items) == FTS_SEARCH_BATCH_SIZE:
+                    continue
+                break
+
+            if batch_deleted_count < len(items):
+                offset = 0
+                continue
+
+            offset = 0
+            if len(items) < FTS_SEARCH_BATCH_SIZE:
+                break
+
+        return deleted_count
+
+    async def _record_semantic_source_async(
+        self,
+        *,
+        memory_id: str,
+        source_run_id: str | None,
+        confidence_score: float,
+    ) -> None:
+        if source_run_id is None:
+            return
+        await self._repo.record_entry_source_async(
+            memory_id=memory_id,
+            source_kind=_SEMANTIC_SOURCE_KIND,
+            source_ref=source_run_id,
+            confidence_score=confidence_score,
+            observed_at=datetime.now(tz=timezone.utc),
+        )
+
+    async def _find_semantic_duplicate_async(
+        self,
+        *,
+        workspace_id: str,
+        tier: MemoryTier,
+        scope: MemoryScope,
+        session_id: str | None,
+        role_id: str | None,
+        kind: MemoryEntryKind,
+        title: str,
+        body: str,
+        semantic_key: str,
+    ) -> MemoryEntry | None:
+        title_key = _normalize_dedup_text(title)
+        body_key = _normalize_dedup_text(body)
+        body_tokens = _dedup_tokens(body)
+        offset = 0
+        while True:
+            result = await self._repo.query_entries_async(
+                MemoryQuery(
+                    workspace_id=workspace_id,
+                    tier=tier,
+                    scope=scope,
+                    session_id=session_id,
+                    role_id=role_id,
+                    kind=kind,
+                    status=MemoryEntryStatus.ACTIVE,
+                    limit=100,
+                    offset=offset,
+                )
+            )
+            for summary in result.items:
+                entry = await self._repo.get_by_id_async(summary.id)
+                if entry is None:
+                    continue
+                if entry.metadata.get(_SEMANTIC_KEY_METADATA_KEY) == semantic_key:
+                    return entry
+                if _normalize_dedup_text(entry.content.title) != title_key:
+                    continue
+                existing_body = _normalize_dedup_text(entry.content.body)
+                if existing_body == body_key:
+                    return entry
+                if (
+                    _jaccard_similarity(_dedup_tokens(entry.content.body), body_tokens)
+                    >= 0.8
+                ):
+                    return entry
+            if not result.items:
+                break
+            offset += len(result.items)
+            if offset >= result.total_count:
+                break
+        return None
+
+    async def _merge_semantic_duplicate_async(
+        self,
+        *,
+        duplicate: MemoryEntry,
+        source_run_id: str | None,
+        semantic_key: str,
+        context: str,
+        outcome: str,
+        tags: tuple[str, ...],
+        confidence_score: float,
+    ) -> None:
+        existing_source_refs = await self._repo.list_entry_source_refs_async(
+            memory_id=duplicate.id,
+            source_kind=_SEMANTIC_SOURCE_KIND,
+        )
+        source_run_ids = _merge_semantic_source_run_ids(
+            metadata=duplicate.metadata,
+            source_run_id=source_run_id,
+            existing_source_refs=existing_source_refs,
+        )
+        merged_metadata = _merge_semantic_metadata_preserving_existing(
+            existing=duplicate.metadata,
+            source_run_id=source_run_id,
+            source_run_ids=source_run_ids,
+            semantic_key=semantic_key,
+        )
+
+        now = datetime.now(tz=timezone.utc)
+        updated = duplicate.model_copy(
+            update={
+                "content": MemoryContent(
+                    title=duplicate.content.title,
+                    body=duplicate.content.body,
+                    context=_merge_semantic_text(duplicate.content.context, context),
+                    outcome=_merge_semantic_text(duplicate.content.outcome, outcome),
+                ),
+                "tags": _merge_semantic_tags(duplicate.tags, tags),
+                "confidence_score": _merge_semantic_confidence(
+                    existing=duplicate.confidence_score,
+                    extracted=confidence_score,
+                    source_run_id=source_run_id,
+                    source_run_ids=source_run_ids,
+                ),
+                "metadata": merged_metadata,
+                "version": duplicate.version + 1,
+                "updated_at": now,
+            }
+        )
+        result = await self._repo.update_entry_async(duplicate.id, entry=updated)
+        await self._record_semantic_source_async(
+            memory_id=duplicate.id,
+            source_run_id=source_run_id,
+            confidence_score=confidence_score,
+        )
+        await self._sync_index_entry_async(result)
 
     # ------------------------------------------------------------------
     # 8. Condensation (placeholder)

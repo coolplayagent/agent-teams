@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterable, Iterator
 import json
 import re
 import sys
@@ -1874,14 +1874,15 @@ def _extract_exact_facts(text: str) -> dict[str, object]:
     normalized = _normalize_fact_text(text)
     global_facts: dict[str, str] = {}
     for label in ("codename", "recovery phrase", "key file", "version tag"):
-        match = re.search(
+        matches = re.finditer(
             rf"{re.escape(label)}\s*[:=]\s*([^\n\r|]+)",
             normalized,
             flags=re.IGNORECASE,
         )
-        if match is None:
+        value = _select_exact_fact_value(match.group(1).strip() for match in matches)
+        if value is None:
             continue
-        global_facts[label] = match.group(1).strip()
+        global_facts[label] = value
     phase_anchors: dict[int, str] = {}
     for match in re.finditer(
         r"phase-(\d+)\s+anchor\s*[:=]\s*([^\n\r|]+)",
@@ -1901,6 +1902,19 @@ def _extract_exact_facts(text: str) -> dict[str, object]:
         "phase_anchors": phase_anchors,
         "phase_checksums": phase_checksums,
     }
+
+
+def _select_exact_fact_value(values: Iterable[str]) -> str | None:
+    fallback = ""
+    for value in values:
+        normalized = value.strip()
+        if not normalized:
+            continue
+        if not fallback:
+            fallback = normalized
+        if "..." not in normalized:
+            return normalized
+    return fallback or None
 
 
 def _render_rolling_summary_markdown(facts: dict[str, object]) -> str:

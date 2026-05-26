@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 from typing import Protocol
 
@@ -44,6 +45,7 @@ from relay_teams.skills.clawhub_models import ClawHubSkillFile, ClawHubSkillWrit
 from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
 
 LOGGER = get_logger(__name__)
+_MAX_MEMORY_METADATA_KEYS = 20
 
 
 class LLMProviderResolver(Protocol):
@@ -344,11 +346,58 @@ class MemorySkillSynthesisService:
         saved = await self._draft_repo.complete_draft_apply_async(draft=applied)
         if saved is None:
             raise RuntimeError("Failed to complete skill draft apply")
+        try:
+            await self._mark_source_memories_applied_async(saved)
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.warning(
+                "Failed to tag source memories after applying memory skill draft %s",
+                saved.id,
+                exc_info=True,
+            )
         return MemorySkillDraftApplyResult(
             draft=saved,
             skill_id=detail.skill_id,
             ref=detail.ref or detail.runtime_name or draft.runtime_name,
         )
+
+    async def _mark_source_memories_applied_async(
+        self, draft: MemorySkillDraft
+    ) -> None:
+        applied_ref = draft.applied_ref or draft.runtime_name
+        metadata_patch = {
+            "skill_draft_id": draft.id,
+            "skill_draft_ref": applied_ref,
+            "skill_draft_kind": draft.draft_kind.value,
+        }
+        for memory_id in draft.source_memory_ids:
+            entry = await self._memory_bank.get_entry_async(memory_id)
+            if entry is None:
+                LOGGER.warning(
+                    "Skipped missing source memory %s while tagging memory skill "
+                    "draft %s",
+                    memory_id,
+                    draft.id,
+                )
+                continue
+            if len(entry.metadata | metadata_patch) > _MAX_MEMORY_METADATA_KEYS:
+                LOGGER.warning(
+                    "Skipped source memory %s while tagging memory skill draft %s "
+                    "because metadata is full",
+                    memory_id,
+                    draft.id,
+                )
+                continue
+            patched = await self._memory_bank.patch_entry_metadata_async(
+                memory_id=memory_id,
+                workspace_id=entry.workspace_id,
+                metadata_patch=metadata_patch,
+            )
+            if patched is None:
+                LOGGER.warning(
+                    "Skipped source memory %s while tagging memory skill draft %s",
+                    memory_id,
+                    draft.id,
+                )
 
     async def _load_source_entries_async(
         self, request: GenerateMemorySkillDraftsRequest

@@ -39,7 +39,7 @@ keep memory lifecycle explicit.
 
 | Tier | Scope | Default TTL | Purpose |
 | --- | --- | --- | --- |
-| `working` | run/task | 4 hours | Immediate observations from active execution. |
+| `working` | workspace entry with run/task refs | 4 hours | Immediate observations from active execution. |
 | `medium_term` | session/role | 7 days | Useful context that should survive a single run. |
 | `persistent` | workspace | none | Long-lived facts, decisions, preferences, and role-performance insights. |
 
@@ -82,6 +82,10 @@ Scopes:
 - `workspace`
 - `session`
 - `role`
+
+Run and task affinity is represented by entry references such as `run_id`,
+`session_id`, `role_id`, and `source_ref`; `run` is not a separate `scope`
+value.
 
 Kinds:
 
@@ -128,26 +132,23 @@ Capability evolution is explicit and review-first:
 
 ```text
 select active Memory Bank entries
--> create memory_evolution_drafts row
+-> create memory_skill_drafts row
 -> inspect generated skill/SOP draft
+-> validate draft structure
 -> apply through ClawHubSkillService.save_skill(...)
 -> reload runtime skill registry
 ```
 
 No background path silently writes skills. Draft application is a user or API
 mutation, and source memory metadata records the applied draft and skill ref.
-Draft creation derives `workspace_id` from the API path and validates the target
-skill identifiers before persisting the draft, so invalid drafts do not fail
-later during skill application. Draft apply and reject mutations atomically
-claim a draft before persisting the transition or writing the skill, preventing
-concurrent requests from creating multiple skill outputs or reporting
-conflicting final states for one draft. Apply releases the claim on skill-write
-failure or cancellation, retries final applied-state persistence, and treats
-source-memory metadata tagging as a best-effort follow-up. Tagging patches only
-metadata keys, so concurrent content, tag, status, and scoring edits are not
-overwritten by draft application. Applied timestamps are recorded after the
-skill write completes, and source-memory tag patches use their own current
-patch time for recency ordering.
+The canonical flow uses the global `skill-drafts` endpoints and supports
+workspace or cross-workspace source memory selection. Draft generation can load
+explicit memory IDs, search by text, or consolidate eligible active memory
+entries. Draft validation checks the generated skill shape before apply. Draft
+apply claims the draft before writing the app-scoped skill, then the ClawHub
+skill service reloads the runtime skill registry through its mutation callback.
+The older workspace-scoped `evolutions` endpoints are retained only for legacy
+clients.
 
 ## API Surface
 
@@ -155,6 +156,7 @@ Global read/search:
 
 - `GET /api/memories`
 - `POST /api/memories/search`
+- `POST /api/memories/rebuild-index`
 - `POST /api/memories/skill-drafts:generate`
 - `GET /api/memories/skill-drafts`
 - `GET /api/memories/skill-drafts/{draft_id}`
@@ -171,6 +173,10 @@ Workspace-scoped operations:
 - `DELETE /api/workspaces/{workspace_id}/memories/{memory_id}`
 - `POST /api/workspaces/{workspace_id}/memories/search`
 - `POST /api/workspaces/{workspace_id}/memories/consolidate`
+
+Legacy workspace-scoped evolution endpoints remain available for compatibility
+but should not be used by new clients:
+
 - `POST /api/workspaces/{workspace_id}/memories/evolutions`
 - `GET /api/workspaces/{workspace_id}/memories/evolutions`
 - `GET /api/workspaces/{workspace_id}/memories/evolutions/{draft_id}`
@@ -187,8 +193,9 @@ The subagent memory tab uses the workspace list endpoint filtered by
 `scope=role`, `role_id`, and `status=active`.
 
 Task completion writes both a working task-summary entry and a persistent
-`role-performance` insight when verification data is available. Role
-self-assessment reads those Memory Bank insights directly.
+`role-performance` insight when verification data is available. Server startup
+expires TTL/low-confidence entries and rebuilds stale active retrieval index
+documents. Role self-assessment reads those Memory Bank insights directly.
 
 ## Frontend Surface
 
@@ -226,8 +233,8 @@ Startup migration is automatic:
    `source=consolidation`, `confidence_score=0.8`.
 5. Drop `role_memories`.
 6. Drop `role_daily_memories`.
-7. On server start, backfill active Memory Bank entries into the retrieval
-   index so migrated rows are searchable through FTS-backed search.
+7. On server start, expire TTL/low-confidence rows, then rebuild stale active
+   Memory Bank rows whose retrieval index state is missing or marked removed.
 
 Unsupported legacy table shapes are dropped with a warning because the current
 runtime has no legacy reader.
@@ -242,7 +249,10 @@ Required coverage:
 - role prompt injection reads Memory Bank entries
 - global memory list/search endpoints work
 - workspace memory CRUD/search/consolidation endpoints work
-- memory evolution draft APIs create, list, apply, and reject drafts
-- applying a memory evolution draft writes a valid skill and reloads skills
+- memory skill draft APIs generate, list, get, update, validate, and apply
+  drafts
+- applying a memory skill draft writes a valid skill, reloads skills, and
+  records the applied draft and skill ref in source memory metadata
+- legacy memory evolution draft APIs create, list, apply, and reject drafts
 - subagent UI no longer renders manual summary controls
 - sidebar renders Memory below IM Gateway

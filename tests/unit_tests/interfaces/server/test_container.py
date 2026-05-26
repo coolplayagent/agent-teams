@@ -766,6 +766,9 @@ async def test_container_binds_background_completion_sink_during_start(
     async def _fake_reindex() -> int:
         return 0
 
+    async def _fake_forget_expired() -> int:
+        return 0
+
     async def _fake_discord_start() -> None:
         return None
 
@@ -787,6 +790,11 @@ async def test_container_binds_background_completion_sink_during_start(
         container.background_task_service,
         "bind_completion_sink",
         _record_bind_completion_sink,
+    )
+    monkeypatch.setattr(
+        container.memory_bank_service,
+        "forget_expired_async",
+        _fake_forget_expired,
     )
     monkeypatch.setattr(
         container.memory_bank_service,
@@ -910,6 +918,9 @@ async def test_container_start_continues_when_memory_reindex_fails(
     async def _fail_reindex() -> int:
         raise RuntimeError("retrieval unavailable")
 
+    async def _fake_forget_expired() -> int:
+        return 0
+
     def _fake_start_warmup(_registry: object) -> None:
         start_calls.append("mcp-warmup")
 
@@ -922,6 +933,11 @@ async def test_container_start_continues_when_memory_reindex_fails(
     async def _fake_async_start(name: str) -> None:
         start_calls.append(name)
 
+    monkeypatch.setattr(
+        container.memory_bank_service,
+        "forget_expired_async",
+        _fake_forget_expired,
+    )
     monkeypatch.setattr(
         container.memory_bank_service,
         "reindex_active_entries_async",
@@ -1000,7 +1016,8 @@ async def test_container_start_continues_when_memory_reindex_fails(
         await asyncio.sleep(0)
 
         assert (
-            "Failed to reindex active Memory Bank entries during startup" in caplog.text
+            "Failed to rebuild Memory Bank retrieval entries during startup"
+            in caplog.text
         )
         assert start_calls == [
             "mcp-warmup",
@@ -1019,6 +1036,44 @@ async def test_container_start_continues_when_memory_reindex_fails(
         ]
     finally:
         await container.stop()
+
+
+@pytest.mark.asyncio
+async def test_container_memory_startup_continues_after_forget_failure(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    _write_model_config(config_dir, api_key="initial-secret")
+    container = ServerContainer(config_dir=config_dir)
+    calls: list[str] = []
+
+    async def _fail_forget() -> int:
+        calls.append("forget")
+        raise RuntimeError("forget failed")
+
+    async def _fake_reindex() -> int:
+        calls.append("reindex")
+        return 0
+
+    monkeypatch.setattr(
+        container.memory_bank_service,
+        "forget_expired_async",
+        _fail_forget,
+    )
+    monkeypatch.setattr(
+        container.memory_bank_service,
+        "reindex_active_entries_async",
+        _fake_reindex,
+    )
+    caplog.set_level(logging.WARNING)
+
+    await container._reindex_memory_bank_on_startup()
+
+    assert calls == ["forget", "reindex"]
+    assert "Failed to expire Memory Bank entries during startup" in caplog.text
 
 
 def test_container_wires_automation_bound_session_queue_runtime(

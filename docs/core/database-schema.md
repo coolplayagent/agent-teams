@@ -2016,17 +2016,85 @@ Notes:
 - `source` is one of: `consolidation`, `manual`, `condensation`, `task_result`.
   Already-persisted legacy `reflection` values are normalized to
   `consolidation` during repository initialization.
-- `tags` stores space-separated tag tokens for LIKE-based filtering.
+- `tags` stores a compact JSON array for current rows. Legacy space-separated
+  rows are still parsed during reads and backfilled into `memory_entry_tags`.
 - `confidence_score` decays over time for medium_term and persistent entries; entries below the minimum threshold are automatically expired.
 - `superseded_by_id` references the memory entry that replaced this entry during consolidation.
 - `parent_entry_id` references the source entry from which this entry was consolidated.
 - `expires_at` is set automatically based on tier TTL defaults (working=4h, medium_term=7d, persistent=null).
 - `metadata_json` stores up to 20 key-value string pairs.
+- Semantic consolidation stores `semantic_key` in metadata for stable duplicate
+  detection, alongside source run lineage fields.
 - Legacy `role_memories` rows are migrated into this table at startup, then
   the legacy table is removed.
-- Server startup reindexes active Memory Bank rows into retrieval so migrated
-  records are searchable through FTS-backed memory search.
+- Server startup rebuilds stale active Memory Bank rows whose retrieval index
+  state is missing or marked removed. Runtime index deletion and rebuild state
+  is tracked in `memory_entry_index_state`.
 - Repository: `src/relay_teams/memory/repository.py`
+
+### `memory_entry_tags`
+
+```sql
+CREATE TABLE IF NOT EXISTS memory_entry_tags (
+    memory_id TEXT NOT NULL,
+    tag       TEXT NOT NULL,
+    PRIMARY KEY(memory_id, tag),
+    FOREIGN KEY(memory_id) REFERENCES memory_entries(memory_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_entry_tags_tag
+    ON memory_entry_tags(tag, memory_id);
+```
+
+Purpose: normalized tag index for exact Memory Bank tag filtering. The
+repository keeps this table synchronized on create, update, delete, and startup
+backfill from both JSON-array and legacy space-separated `memory_entries.tags`
+values.
+
+### `memory_entry_sources`
+
+```sql
+CREATE TABLE IF NOT EXISTS memory_entry_sources (
+    memory_id        TEXT NOT NULL,
+    source_kind      TEXT NOT NULL,
+    source_ref       TEXT NOT NULL,
+    confidence_score REAL NOT NULL DEFAULT 1.0,
+    observed_at      TEXT NOT NULL,
+    PRIMARY KEY(memory_id, source_kind, source_ref),
+    FOREIGN KEY(memory_id) REFERENCES memory_entries(memory_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_entry_sources_ref
+    ON memory_entry_sources(source_kind, source_ref);
+```
+
+Purpose: structured lineage for memory observations. Semantic consolidation uses
+`source_kind='semantic_run'` and stores each contributing `run_id` as
+`source_ref`, allowing duplicate semantic memories to merge source history
+without relying only on metadata strings.
+
+### `memory_entry_index_state`
+
+```sql
+CREATE TABLE IF NOT EXISTS memory_entry_index_state (
+    memory_id  TEXT NOT NULL,
+    index_kind TEXT NOT NULL,
+    removed    INTEGER NOT NULL DEFAULT 0,
+    removed_at TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(memory_id, index_kind),
+    FOREIGN KEY(memory_id) REFERENCES memory_entries(memory_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_entry_index_state_cleanup
+    ON memory_entry_index_state(index_kind, removed, memory_id);
+```
+
+Purpose: tracks whether an external retrieval index document is known present or
+removed for each Memory Bank entry. `index_kind='retrieval'` is used for the
+FTS-backed retrieval store. The service marks entries removed after successful
+retrieval deletion and marks them present after successful indexing; stale
+active entries can be discovered and rebuilt from this state.
 
 ### `memory_evolution_drafts`
 
@@ -2050,14 +2118,16 @@ CREATE TABLE IF NOT EXISTS memory_evolution_drafts (
 );
 ```
 
-Purpose: reviewable Memory Bank evolution drafts. A draft captures selected
-active memory entries and renders a proposed `SKILL.md` payload before any
-runtime skill directory is mutated.
+Purpose: legacy reviewable Memory Bank evolution drafts. This table is retained
+for existing workspace-scoped clients. New Memory Bank promotion flows should
+use `memory_skill_drafts`, which supports generated skill/SOP-skill drafts,
+validation, and cross-workspace source memory selection.
 
 Notes:
 - `draft_id` is generated as `mem-evo-{uuid_hex}`.
 - `target` is one of: `skill`, `sop_skill`.
-- `status` is one of: `draft`, `applied`, `rejected`, `superseded`.
+- `status` is one of: `draft`, `applying`, `applied`, `rejected`,
+  `superseded`.
 - `source_memory_ids_json` stores the ordered source memory IDs used to render
   the proposal.
 - Applying a draft writes through the app-scoped ClawHub skill service, reloads
@@ -2099,7 +2169,9 @@ CREATE INDEX IF NOT EXISTS idx_memory_skill_drafts_kind_updated
 
 Purpose: stores reviewable skill drafts synthesized from workspace or
 cross-workspace Memory Bank entries. Drafts must be queried, edited, and
-validated before they can be applied as app-scoped skills.
+validated before they can be applied as app-scoped skills. This is the
+canonical persistence model for Memory Bank promotion into skills and SOP
+skills.
 
 Notes:
 - `draft_id` is generated as `msd-{uuid_hex}`.
@@ -2117,4 +2189,6 @@ Notes:
   and warnings.
 - `applied_skill_id` and `applied_ref` record the ClawHub-managed app skill
   created when a validated draft is applied.
+- Applying a draft patches source memory metadata with `skill_draft_id`,
+  `skill_draft_ref`, and `skill_draft_kind`.
 - Repository: `src/relay_teams/memory/skill_draft_repository.py`

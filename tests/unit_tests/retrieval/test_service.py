@@ -116,6 +116,19 @@ class _FakeRetrievalStore:
         self._scope_stats[(scope_kind, scope_id)] = stats
         return stats
 
+    async def delete_documents_async(
+        self,
+        *,
+        scope_kind: RetrievalScopeKind,
+        scope_id: str,
+        document_ids: tuple[str, ...],
+    ) -> RetrievalStats:
+        return self.delete_documents(
+            scope_kind=scope_kind,
+            scope_id=scope_id,
+            document_ids=document_ids,
+        )
+
     def search(
         self,
         *,
@@ -308,6 +321,11 @@ async def test_retrieval_service_records_async_metrics(tmp_path: Path) -> None:
                 title="Async",
             ),
         ),
+    )
+    await service.delete_documents_async(
+        scope_kind=RetrievalScopeKind.SKILL,
+        scope_id="skills",
+        document_ids=("async-doc",),
     )
     hits = await service.search_async(
         query=RetrievalQuery(

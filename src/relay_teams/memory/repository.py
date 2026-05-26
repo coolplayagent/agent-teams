@@ -100,6 +100,42 @@ CREATE INDEX IF NOT EXISTS idx_memory_entries_expires
 CREATE INDEX IF NOT EXISTS idx_memory_entries_source_ref
     ON memory_entries(source_ref)""",
     """\
+CREATE TABLE IF NOT EXISTS memory_entry_tags (
+    memory_id TEXT NOT NULL,
+    tag       TEXT NOT NULL,
+    PRIMARY KEY(memory_id, tag),
+    FOREIGN KEY(memory_id) REFERENCES memory_entries(memory_id) ON DELETE CASCADE
+)""",
+    """\
+CREATE INDEX IF NOT EXISTS idx_memory_entry_tags_tag
+    ON memory_entry_tags(tag, memory_id)""",
+    """\
+CREATE TABLE IF NOT EXISTS memory_entry_sources (
+    memory_id        TEXT NOT NULL,
+    source_kind      TEXT NOT NULL,
+    source_ref       TEXT NOT NULL,
+    confidence_score REAL NOT NULL DEFAULT 1.0,
+    observed_at      TEXT NOT NULL,
+    PRIMARY KEY(memory_id, source_kind, source_ref),
+    FOREIGN KEY(memory_id) REFERENCES memory_entries(memory_id) ON DELETE CASCADE
+)""",
+    """\
+CREATE INDEX IF NOT EXISTS idx_memory_entry_sources_ref
+    ON memory_entry_sources(source_kind, source_ref)""",
+    """\
+CREATE TABLE IF NOT EXISTS memory_entry_index_state (
+    memory_id  TEXT NOT NULL,
+    index_kind TEXT NOT NULL,
+    removed    INTEGER NOT NULL DEFAULT 0,
+    removed_at TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(memory_id, index_kind),
+    FOREIGN KEY(memory_id) REFERENCES memory_entries(memory_id) ON DELETE CASCADE
+)""",
+    """\
+CREATE INDEX IF NOT EXISTS idx_memory_entry_index_state_cleanup
+    ON memory_entry_index_state(index_kind, removed, memory_id)""",
+    """\
 CREATE TABLE IF NOT EXISTS memory_evolution_drafts (
     draft_id               TEXT PRIMARY KEY,
     workspace_id           TEXT NOT NULL,
@@ -128,9 +164,9 @@ CREATE INDEX IF NOT EXISTS idx_memory_evolution_drafts_workspace_target
 
 def _row_to_entry(row: sqlite3.Row) -> MemoryEntry:
     meta_raw = str(row["metadata_json"])
-    metadata: dict[str, str] = json.loads(meta_raw) if meta_raw else {}
+    metadata = _parse_metadata_json(meta_raw)
     tags_raw = str(row["tags"]).strip()
-    tags = tuple(tags_raw.split()) if tags_raw else ()
+    tags = _parse_tags(tags_raw)
 
     return MemoryEntry(
         id=str(row["memory_id"]),
@@ -162,6 +198,44 @@ def _row_to_entry(row: sqlite3.Row) -> MemoryEntry:
         access_count=int(row["access_count"]),
         metadata=metadata,
     )
+
+
+def _parse_tags(tags_raw: str) -> tuple[str, ...]:
+    if not tags_raw:
+        return ()
+    if tags_raw.startswith("["):
+        try:
+            parsed = json.loads(tags_raw)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return tuple(str(item) for item in parsed)
+    return tuple(tags_raw.split())
+
+
+def _parse_metadata_json(metadata_raw: str) -> dict[str, str]:
+    if not metadata_raw:
+        return {}
+    try:
+        parsed = json.loads(metadata_raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {str(key): str(value) for key, value in parsed.items()}
+
+
+def _metadata_source_refs(metadata: dict[str, str]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    for candidate in (
+        metadata.get("semantic_source_run_ids", ""),
+        metadata.get("semantic_source_run_id", ""),
+    ):
+        for source_ref in candidate.split(","):
+            cleaned = source_ref.strip()
+            if cleaned and cleaned not in ordered:
+                ordered.append(cleaned)
+    return tuple(ordered)
 
 
 def _nullable_str(value: object) -> str | None:
@@ -244,6 +318,9 @@ class MemoryBankRepository(SharedSqliteRepository):
             self._conn.execute(stmt)
         self._normalize_legacy_memory_sources()
         self._migrate_legacy_role_memories()
+        self._backfill_memory_entry_tags()
+        self._backfill_entry_sources()
+        self._backfill_index_state()
         self._conn.execute("DROP TABLE IF EXISTS role_daily_memories")
 
     def _normalize_legacy_memory_sources(self) -> None:
@@ -418,6 +495,135 @@ class MemoryBankRepository(SharedSqliteRepository):
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             self._entry_to_params(entry),
         )
+        self._sync_tags(entry.id, entry.tags)
+
+    def _backfill_memory_entry_tags(self) -> None:
+        rows = self._conn.execute(
+            """SELECT memory_id, tags FROM memory_entries
+            WHERE tags != ''
+              AND tags != '[]'
+              AND NOT EXISTS (
+                SELECT 1 FROM memory_entry_tags
+                WHERE memory_entry_tags.memory_id = memory_entries.memory_id
+              )"""
+        ).fetchall()
+        for row in rows:
+            self._sync_tags(
+                str(row["memory_id"]), _parse_tags(str(row["tags"]).strip())
+            )
+
+    def _sync_tags(self, memory_id: str, tags: tuple[str, ...]) -> None:
+        self._conn.execute(
+            "DELETE FROM memory_entry_tags WHERE memory_id=?",
+            (memory_id,),
+        )
+        self._conn.executemany(
+            "INSERT OR IGNORE INTO memory_entry_tags(memory_id, tag) VALUES (?, ?)",
+            [(memory_id, tag) for tag in tags],
+        )
+
+    def _backfill_entry_sources(self) -> None:
+        rows = self._conn.execute(
+            """SELECT memory_id, metadata_json FROM memory_entries
+            WHERE json_valid(metadata_json)
+              AND (
+                TRIM(COALESCE(json_extract(
+                  metadata_json, '$.semantic_source_run_ids'
+                ), '')) != ''
+                OR TRIM(COALESCE(json_extract(
+                  metadata_json, '$.semantic_source_run_id'
+                ), '')) != ''
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM memory_entry_sources
+                WHERE memory_entry_sources.memory_id = memory_entries.memory_id
+              )"""
+        ).fetchall()
+        now = datetime.now(tz=timezone.utc)
+        for row in rows:
+            metadata = _parse_metadata_json(str(row["metadata_json"]))
+            source_refs = _metadata_source_refs(metadata)
+            if not source_refs:
+                continue
+            self._sync_entry_sources(
+                memory_id=str(row["memory_id"]),
+                source_kind="semantic_run",
+                source_refs=source_refs,
+                confidence_score=1.0,
+                observed_at=now,
+            )
+
+    def _backfill_index_state(self) -> None:
+        rows = self._conn.execute(
+            """SELECT memory_id, metadata_json FROM memory_entries
+            WHERE json_valid(metadata_json)
+              AND json_extract(metadata_json, '$.retrieval_index_removed') = 'true'
+              AND NOT EXISTS (
+                SELECT 1 FROM memory_entry_index_state
+                WHERE memory_entry_index_state.memory_id = memory_entries.memory_id
+                  AND memory_entry_index_state.index_kind = 'retrieval'
+              )"""
+        ).fetchall()
+        now = datetime.now(tz=timezone.utc)
+        for row in rows:
+            self._mark_entry_index_removed(
+                memory_id=str(row["memory_id"]),
+                index_kind="retrieval",
+                removed_at=now,
+            )
+
+    def _sync_entry_sources(
+        self,
+        *,
+        memory_id: str,
+        source_kind: str,
+        source_refs: tuple[str, ...],
+        confidence_score: float,
+        observed_at: datetime,
+    ) -> None:
+        self._conn.executemany(
+            """INSERT OR REPLACE INTO memory_entry_sources(
+                memory_id, source_kind, source_ref, confidence_score, observed_at
+            ) VALUES (?, ?, ?, ?, ?)""",
+            [
+                (
+                    memory_id,
+                    source_kind,
+                    source_ref,
+                    confidence_score,
+                    observed_at.isoformat(),
+                )
+                for source_ref in source_refs
+            ],
+        )
+
+    def _mark_entry_index_removed(
+        self,
+        *,
+        memory_id: str,
+        index_kind: str,
+        removed_at: datetime,
+    ) -> None:
+        self._conn.execute(
+            """INSERT OR REPLACE INTO memory_entry_index_state(
+                memory_id, index_kind, removed, removed_at, updated_at
+            ) VALUES (?, ?, 1, ?, ?)""",
+            (memory_id, index_kind, removed_at.isoformat(), removed_at.isoformat()),
+        )
+
+    def _mark_entry_index_present(
+        self,
+        *,
+        memory_id: str,
+        index_kind: str,
+        updated_at: datetime,
+    ) -> None:
+        self._conn.execute(
+            """INSERT OR REPLACE INTO memory_entry_index_state(
+                memory_id, index_kind, removed, removed_at, updated_at
+            ) VALUES (?, ?, 0, NULL, ?)""",
+            (memory_id, index_kind, updated_at.isoformat()),
+        )
 
     # ------------------------------------------------------------------
     # Create
@@ -448,6 +654,23 @@ class MemoryBankRepository(SharedSqliteRepository):
             self._entry_to_params(entry),
         )
         await cursor.close()
+        await self._async_sync_tags(conn, entry.id, entry.tags)
+
+    @staticmethod
+    async def _async_sync_tags(
+        conn: aiosqlite.Connection,
+        memory_id: str,
+        tags: tuple[str, ...],
+    ) -> None:
+        cursor = await conn.execute(
+            "DELETE FROM memory_entry_tags WHERE memory_id=?",
+            (memory_id,),
+        )
+        await cursor.close()
+        await conn.executemany(
+            "INSERT OR IGNORE INTO memory_entry_tags(memory_id, tag) VALUES (?, ?)",
+            [(memory_id, tag) for tag in tags],
+        )
 
     # ------------------------------------------------------------------
     # Evolution drafts
@@ -725,7 +948,7 @@ class MemoryBankRepository(SharedSqliteRepository):
             if row is None:
                 return False
             meta_raw = str(row["metadata_json"])
-            metadata: dict[str, str] = json.loads(meta_raw) if meta_raw else {}
+            metadata = _parse_metadata_json(meta_raw)
             metadata.update(metadata_patch)
             while len(metadata) > metadata_limit:
                 removable = sorted(key for key in metadata if key not in metadata_patch)
@@ -750,6 +973,148 @@ class MemoryBankRepository(SharedSqliteRepository):
 
         return await self._run_async_write(
             operation_name="patch_memory_entry_metadata_async",
+            operation=op,
+        )
+
+    async def record_entry_source_async(
+        self,
+        *,
+        memory_id: str,
+        source_kind: str,
+        source_ref: str,
+        confidence_score: float,
+        observed_at: datetime,
+    ) -> bool:
+        cleaned_ref = source_ref.strip()
+        cleaned_kind = source_kind.strip()
+        if not cleaned_ref or not cleaned_kind:
+            return False
+
+        async def op(conn: aiosqlite.Connection) -> bool:
+            cursor = await conn.execute(
+                "SELECT 1 FROM memory_entries WHERE memory_id=?",
+                (memory_id,),
+            )
+            exists = await cursor.fetchone()
+            await cursor.close()
+            if exists is None:
+                return False
+            cursor = await conn.execute(
+                """INSERT OR REPLACE INTO memory_entry_sources(
+                    memory_id, source_kind, source_ref, confidence_score, observed_at
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (
+                    memory_id,
+                    cleaned_kind,
+                    cleaned_ref,
+                    confidence_score,
+                    observed_at.isoformat(),
+                ),
+            )
+            await cursor.close()
+            return True
+
+        return await self._run_async_write(
+            operation_name="record_memory_entry_source_async",
+            operation=op,
+        )
+
+    async def list_entry_source_refs_async(
+        self,
+        *,
+        memory_id: str,
+        source_kind: str,
+    ) -> tuple[str, ...]:
+        cleaned_kind = source_kind.strip()
+        if not cleaned_kind:
+            return ()
+
+        async def op(conn: aiosqlite.Connection) -> tuple[str, ...]:
+            rows = await async_fetchall(
+                conn,
+                """SELECT source_ref FROM memory_entry_sources
+                WHERE memory_id=? AND source_kind=?
+                ORDER BY observed_at ASC, source_ref ASC""",
+                (memory_id, cleaned_kind),
+            )
+            return tuple(str(row["source_ref"]) for row in rows)
+
+        return await self._run_async_read(op)
+
+    async def mark_entry_index_removed_async(
+        self,
+        *,
+        memory_id: str,
+        index_kind: str,
+        removed_at: datetime,
+    ) -> bool:
+        cleaned_kind = index_kind.strip()
+        if not cleaned_kind:
+            return False
+
+        async def op(conn: aiosqlite.Connection) -> bool:
+            cursor = await conn.execute(
+                "SELECT 1 FROM memory_entries WHERE memory_id=?",
+                (memory_id,),
+            )
+            exists = await cursor.fetchone()
+            await cursor.close()
+            if exists is None:
+                return False
+            cursor = await conn.execute(
+                """INSERT OR REPLACE INTO memory_entry_index_state(
+                    memory_id, index_kind, removed, removed_at, updated_at
+                ) VALUES (?, ?, 1, ?, ?)""",
+                (
+                    memory_id,
+                    cleaned_kind,
+                    removed_at.isoformat(),
+                    removed_at.isoformat(),
+                ),
+            )
+            await cursor.close()
+            return True
+
+        return await self._run_async_write(
+            operation_name="mark_memory_entry_index_removed_async",
+            operation=op,
+        )
+
+    async def mark_entry_index_present_async(
+        self,
+        *,
+        memory_id: str,
+        index_kind: str,
+        updated_at: datetime,
+    ) -> bool:
+        cleaned_kind = index_kind.strip()
+        if not cleaned_kind:
+            return False
+
+        async def op(conn: aiosqlite.Connection) -> bool:
+            cursor = await conn.execute(
+                "SELECT 1 FROM memory_entries WHERE memory_id=?",
+                (memory_id,),
+            )
+            exists = await cursor.fetchone()
+            await cursor.close()
+            if exists is None:
+                return False
+            cursor = await conn.execute(
+                """INSERT OR REPLACE INTO memory_entry_index_state(
+                    memory_id, index_kind, removed, removed_at, updated_at
+                ) VALUES (?, ?, 0, NULL, ?)""",
+                (
+                    memory_id,
+                    cleaned_kind,
+                    updated_at.isoformat(),
+                ),
+            )
+            await cursor.close()
+            return True
+
+        return await self._run_async_write(
+            operation_name="mark_memory_entry_index_present_async",
             operation=op,
         )
 
@@ -804,6 +1169,7 @@ class MemoryBankRepository(SharedSqliteRepository):
             (*self._entry_to_params(entry)[1:], memory_id),
         )
         await cursor.close()
+        await self._async_sync_tags(conn, memory_id, entry.tags)
 
     # ------------------------------------------------------------------
     # Delete
@@ -816,6 +1182,21 @@ class MemoryBankRepository(SharedSqliteRepository):
                 (memory_id,),
             )
             affected = cursor.rowcount
+            await cursor.close()
+            cursor = await conn.execute(
+                "DELETE FROM memory_entry_tags WHERE memory_id=?",
+                (memory_id,),
+            )
+            await cursor.close()
+            cursor = await conn.execute(
+                "DELETE FROM memory_entry_sources WHERE memory_id=?",
+                (memory_id,),
+            )
+            await cursor.close()
+            cursor = await conn.execute(
+                "DELETE FROM memory_entry_index_state WHERE memory_id=?",
+                (memory_id,),
+            )
             await cursor.close()
             return affected > 0
 
@@ -853,6 +1234,69 @@ class MemoryBankRepository(SharedSqliteRepository):
 
         return await self._run_async_read(op)
 
+    async def query_entries_needing_index_cleanup_async(
+        self,
+        *,
+        status: MemoryEntryStatus,
+        limit: int,
+        offset: int = 0,
+    ) -> tuple[MemoryEntrySummary, ...]:
+        """Return entries whose retrieval index deletion has not been marked."""
+
+        async def op(conn: aiosqlite.Connection) -> tuple[MemoryEntrySummary, ...]:
+            rows = await async_fetchall(
+                conn,
+                """SELECT memory_entries.* FROM memory_entries
+                LEFT JOIN memory_entry_index_state
+                  ON memory_entry_index_state.memory_id = memory_entries.memory_id
+                 AND memory_entry_index_state.index_kind = 'retrieval'
+                WHERE memory_entries.status=?
+                  AND COALESCE(memory_entry_index_state.removed, 0) != 1
+                ORDER BY memory_entries.updated_at ASC
+                LIMIT ? OFFSET ?""",
+                (status.value, limit, offset),
+            )
+            return tuple(_row_to_summary(row) for row in rows)
+
+        return await self._run_async_read(op)
+
+    async def query_entries_needing_index_rebuild_async(
+        self,
+        *,
+        workspace_id: str | None = None,
+        limit: int,
+        offset: int = 0,
+    ) -> tuple[MemoryEntrySummary, ...]:
+        """Return active entries whose retrieval index state is missing or removed."""
+        workspace_clause = ""
+        params: list[object] = [MemoryEntryStatus.ACTIVE.value]
+        if workspace_id is not None:
+            workspace_clause = "AND memory_entries.workspace_id=?"
+            params.append(workspace_id)
+        params.append(limit)
+        params.append(max(0, offset))
+
+        async def op(conn: aiosqlite.Connection) -> tuple[MemoryEntrySummary, ...]:
+            rows = await async_fetchall(
+                conn,
+                f"""SELECT memory_entries.* FROM memory_entries
+                LEFT JOIN memory_entry_index_state
+                  ON memory_entry_index_state.memory_id = memory_entries.memory_id
+                 AND memory_entry_index_state.index_kind = 'retrieval'
+                WHERE memory_entries.status=?
+                  {workspace_clause}
+                  AND (
+                        memory_entry_index_state.memory_id IS NULL
+                     OR COALESCE(memory_entry_index_state.removed, 0) = 1
+                )
+                ORDER BY memory_entries.updated_at ASC
+                LIMIT ? OFFSET ?""",
+                tuple(params),
+            )
+            return tuple(_row_to_summary(row) for row in rows)
+
+        return await self._run_async_read(op)
+
     @staticmethod
     def _build_where(query: MemoryQuery) -> tuple[str, list[object]]:
         clauses: list[str] = []
@@ -871,9 +1315,14 @@ class MemoryBankRepository(SharedSqliteRepository):
         if query.session_id is not None:
             clauses.append("session_id = ?")
             params.append(query.session_id)
+        if query.run_id is not None:
+            clauses.append("run_id = ?")
+            params.append(query.run_id)
         if query.role_id is not None:
             clauses.append("role_id = ?")
             params.append(query.role_id)
+        elif query.role_id_is_null:
+            clauses.append("role_id IS NULL")
         if query.kind is not None:
             clauses.append("kind = ?")
             params.append(query.kind.value)
@@ -891,8 +1340,17 @@ class MemoryBankRepository(SharedSqliteRepository):
             params.append(query.created_before.isoformat())
         if query.tags:
             for tag in query.tags:
-                clauses.append("tags LIKE ?")
-                params.append(f"%{tag}%")
+                clauses.append(
+                    "("
+                    "EXISTS ("
+                    "SELECT 1 FROM memory_entry_tags met "
+                    "WHERE met.memory_id = memory_entries.memory_id "
+                    "AND met.tag = ? COLLATE NOCASE"
+                    ") OR "
+                    "(NOT json_valid(tags) AND (' ' || tags || ' ') LIKE ?)"
+                    ")"
+                )
+                params.extend((tag, f"% {tag} %"))
 
         where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
         return where_sql, params
@@ -965,7 +1423,10 @@ class MemoryBankRepository(SharedSqliteRepository):
         *,
         workspace_id: str,
         tier: MemoryTier | None = None,
+        scope: MemoryScope | None = None,
+        session_id: str | None = None,
         run_id: str | None = None,
+        role_id: str | None = None,
         status: MemoryEntryStatus | None = None,
     ) -> int:
         clauses: list[str] = ["workspace_id = ?"]
@@ -973,9 +1434,18 @@ class MemoryBankRepository(SharedSqliteRepository):
         if tier is not None:
             clauses.append("tier = ?")
             params.append(tier.value)
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope.value)
+        if session_id is not None:
+            clauses.append("session_id = ?")
+            params.append(session_id)
         if run_id is not None:
             clauses.append("run_id = ?")
             params.append(run_id)
+        if role_id is not None:
+            clauses.append("role_id = ?")
+            params.append(role_id)
         if status is not None:
             clauses.append("status = ?")
             params.append(status.value)
@@ -996,7 +1466,10 @@ class MemoryBankRepository(SharedSqliteRepository):
         *,
         workspace_id: str,
         tier: MemoryTier | None = None,
+        scope: MemoryScope | None = None,
+        session_id: str | None = None,
         run_id: str | None = None,
+        role_id: str | None = None,
         status: MemoryEntryStatus = MemoryEntryStatus.ACTIVE,
         count: int = 1,
     ) -> int:
@@ -1006,9 +1479,18 @@ class MemoryBankRepository(SharedSqliteRepository):
         if tier is not None:
             clauses.append("tier = ?")
             params.append(tier.value)
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope.value)
+        if session_id is not None:
+            clauses.append("session_id = ?")
+            params.append(session_id)
         if run_id is not None:
             clauses.append("run_id = ?")
             params.append(run_id)
+        if role_id is not None:
+            clauses.append("role_id = ?")
+            params.append(role_id)
         clauses.append("status = ?")
         params.append(status.value)
         where_sql = "WHERE " + " AND ".join(clauses)
@@ -1019,7 +1501,7 @@ class MemoryBankRepository(SharedSqliteRepository):
             ids = await async_fetchall(
                 conn,
                 f"SELECT memory_id FROM memory_entries {where_sql} "
-                f"ORDER BY created_at ASC LIMIT ?",
+                "ORDER BY confidence_score ASC, created_at ASC, memory_id ASC LIMIT ?",
                 tuple(params) + (count,),
             )
             affected = 0
@@ -1038,13 +1520,95 @@ class MemoryBankRepository(SharedSqliteRepository):
             operation=op,
         )
 
+    async def expire_entry_ids_async(
+        self,
+        *,
+        memory_ids: tuple[str, ...],
+    ) -> int:
+        """Expire the exact entry IDs supplied by the caller."""
+        return len(await self.expire_entry_ids_returning_async(memory_ids=memory_ids))
+
+    async def expire_entry_ids_returning_async(
+        self,
+        *,
+        memory_ids: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Expire supplied active entry IDs and return the IDs actually changed."""
+        if not memory_ids:
+            return ()
+        now_iso = datetime.now(tz=timezone.utc).isoformat()
+
+        async def op(conn: aiosqlite.Connection) -> tuple[str, ...]:
+            expired_ids: list[str] = []
+            for memory_id in memory_ids:
+                cursor = await conn.execute(
+                    """UPDATE memory_entries
+                    SET status='expired', updated_at=?
+                    WHERE memory_id=? AND status='active'""",
+                    (now_iso, memory_id),
+                )
+                if cursor.rowcount > 0:
+                    expired_ids.append(memory_id)
+                await cursor.close()
+            return tuple(expired_ids)
+
+        return await self._run_async_write(
+            operation_name="expire_memory_entry_ids_async",
+            operation=op,
+        )
+
+    async def oldest_entry_ids_async(
+        self,
+        *,
+        workspace_id: str,
+        tier: MemoryTier | None = None,
+        scope: MemoryScope | None = None,
+        session_id: str | None = None,
+        run_id: str | None = None,
+        role_id: str | None = None,
+        status: MemoryEntryStatus = MemoryEntryStatus.ACTIVE,
+        count: int = 1,
+    ) -> tuple[str, ...]:
+        """Return oldest entry IDs matching the given filters."""
+        clauses: list[str] = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+        if tier is not None:
+            clauses.append("tier = ?")
+            params.append(tier.value)
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope.value)
+        if session_id is not None:
+            clauses.append("session_id = ?")
+            params.append(session_id)
+        if run_id is not None:
+            clauses.append("run_id = ?")
+            params.append(run_id)
+        if role_id is not None:
+            clauses.append("role_id = ?")
+            params.append(role_id)
+        clauses.append("status = ?")
+        params.append(status.value)
+        where_sql = "WHERE " + " AND ".join(clauses)
+
+        async def op(conn: aiosqlite.Connection) -> tuple[str, ...]:
+            rows = await async_fetchall(
+                conn,
+                f"SELECT memory_id FROM memory_entries {where_sql} "
+                "ORDER BY confidence_score ASC, created_at ASC, memory_id ASC LIMIT ?",
+                tuple(params) + (count,),
+            )
+            return tuple(str(row["memory_id"]) for row in rows)
+
+        return await self._run_async_read(op)
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
     @staticmethod
     def _entry_to_params(entry: MemoryEntry) -> tuple[object, ...]:
-        tags_str = " ".join(entry.tags)
+        tags_str = json.dumps(entry.tags, separators=(",", ":"))
         meta_json = json.dumps(entry.metadata, separators=(",", ":"))
         return (
             entry.id,

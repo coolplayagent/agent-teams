@@ -276,10 +276,62 @@ def build_memories_app(
             f"{response.get('source_entry_count', 0)} source entries examined"
         )
 
+    @memories_app.command("rebuild-index")
+    def rebuild_memory_index(
+        workspace_id: str | None = typer.Option(None, "--workspace-id"),
+        limit: int = typer.Option(100, "--limit", min=1, max=1000),
+        dry_run: bool = typer.Option(False, "--dry-run"),
+        output_format: MemoriesOutputFormat = typer.Option(
+            MemoriesOutputFormat.TABLE,
+            "--format",
+            case_sensitive=False,
+        ),
+        base_url: str = typer.Option(default_base_url, "--base-url"),
+        autostart: bool = typer.Option(True, "--autostart/--no-autostart"),
+        daemon: bool = typer.Option(
+            False,
+            "--daemon",
+            "-d",
+            help="Run the server as a background process when autostarting.",
+        ),
+        force: bool = typer.Option(
+            False,
+            "--force",
+            help="Force kill any existing server process before autostarting.",
+        ),
+    ) -> None:
+        auto_start_if_needed(base_url, autostart, daemon, force)
+        body: dict[str, object] = {
+            "limit": limit,
+            "dry_run": dry_run,
+        }
+        if workspace_id is not None:
+            body["workspace_id"] = workspace_id
+        payload = request_json(
+            base_url,
+            "POST",
+            "/api/memories/rebuild-index",
+            body,
+        )
+        response = _require_object_response(payload, "/api/memories/rebuild-index")
+        if output_format == MemoriesOutputFormat.JSON:
+            typer.echo(json.dumps(response, ensure_ascii=False))
+            return
+        typer.echo(
+            "Memory index rebuild: "
+            f"{response.get('rebuilt_count', 0)} rebuilt, "
+            f"{response.get('skipped_count', 0)} skipped, "
+            f"{response.get('failed_count', 0)} failed, "
+            f"{response.get('scanned_count', 0)} scanned"
+        )
+
     evolve_app = typer.Typer(
         no_args_is_help=True,
         pretty_exceptions_enable=False,
-        help="Promote Memory Bank entries into reviewable capability drafts.",
+        help=(
+            "Legacy Memory Bank evolution drafts. Prefer "
+            "`memories skill-drafts` for new skill promotion workflows."
+        ),
     )
 
     @evolve_app.command("create")

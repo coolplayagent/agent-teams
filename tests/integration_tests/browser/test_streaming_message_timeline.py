@@ -105,6 +105,48 @@ def test_main_history_overlay_dedupes_primary_alias_in_browser(
     assert payload["overlayAfterPersist"] is None
 
 
+def test_streaming_thinking_reading_position_is_not_stolen_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderThinkingReadingScroll()
+        """
+    )
+
+    assert payload["initialFitsOnePage"] is True
+    assert payload["readingTop"] == 12
+    assert payload["afterMoreTop"] == 12
+    assert payload["afterMoreBottomDistance"] > 96
+    assert payload["renderedFullThought"] is True
+    assert payload["maxFrameGap"] < 250
+
+
+def test_expanded_tool_reading_position_is_not_stolen_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderToolExpansionReadingScroll()
+        """
+    )
+
+    assert payload["toolOpen"] is True
+    assert payload["afterOpenTop"] == 12
+    assert payload["afterStreamTop"] == 12
+    assert payload["afterStreamBottomDistance"] > 96
+    assert payload["renderedFullToolOutput"] is True
+    assert payload["maxFrameGap"] < 250
+
+
 def test_repeated_session_switch_stress_does_not_duplicate_stream_blocks_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -660,6 +702,34 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
       return new Promise(resolve => {{
         window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
       }});
+    }}
+
+    async function waitForCondition(predicate, timeoutMs = 4000) {{
+      const deadline = performance.now() + timeoutMs;
+      while (performance.now() < deadline) {{
+        if (predicate()) return true;
+        await new Promise(resolve => window.requestAnimationFrame(resolve));
+      }}
+      return predicate();
+    }}
+
+    async function measureFramesDuring(work) {{
+      let running = true;
+      let maxFrameGap = 0;
+      let lastFrame = performance.now();
+      function frame(now) {{
+        maxFrameGap = Math.max(maxFrameGap, now - lastFrame);
+        lastFrame = now;
+        if (running) window.requestAnimationFrame(frame);
+      }}
+      window.requestAnimationFrame(frame);
+      const result = await work();
+      running = false;
+      await waitForAnimationFrame();
+      return {{
+        ...result,
+        maxFrameGap: Math.round(maxFrameGap),
+      }};
     }}
 
     window.__streamTimelineHarness = {{
@@ -2169,6 +2239,115 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
           cancelledFinalText: cancelledFinal.text,
           completedNoFinalText: completedNoFinal.text,
         }};
+      }},
+
+      async renderThinkingReadingScroll() {{
+        clearAllStreamState();
+        const scroll = document.createElement('section');
+        scroll.className = 'chat-scroll';
+        scroll.style.width = '560px';
+        scroll.style.height = '180px';
+        scroll.style.overflow = 'auto';
+        document.body.appendChild(scroll);
+        getOrCreateStreamBlock(scroll, 'primary', 'MainAgent', 'Main Agent', 'run-thinking-scroll');
+        const initialFitsOnePage = scroll.scrollHeight <= scroll.clientHeight;
+        startThinkingBlock(scroll, 'primary', 0, {{
+          runId: 'run-thinking-scroll',
+          roleId: 'MainAgent',
+          label: 'Main Agent',
+        }});
+        const thoughtLines = Array.from(
+          {{ length: 1800 }},
+          (_, index) => `thought line ${{index}} ${{'x'.repeat(96)}}`,
+        );
+        const thoughtText = thoughtLines.join('\\n');
+        return await measureFramesDuring(async () => {{
+          appendThinkingChunk('primary', 0, thoughtText, {{
+            runId: 'run-thinking-scroll',
+            roleId: 'MainAgent',
+            label: 'Main Agent',
+          }});
+          await waitForAnimationFrame();
+          scroll.dispatchEvent(new WheelEvent('wheel', {{ deltaY: -80, bubbles: true }}));
+          scroll.scrollTop = 12;
+          scroll.dispatchEvent(new Event('scroll', {{ bubbles: true }}));
+          const readingTop = Math.round(scroll.scrollTop);
+          const renderedFullThought = await waitForCondition(() => (
+            scroll.textContent.includes('thought line 1799')
+          ));
+          return {{
+            initialFitsOnePage,
+            readingTop,
+            renderedFullThought,
+            afterMoreTop: Math.round(scroll.scrollTop),
+            afterMoreBottomDistance: Math.round(scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight),
+          }};
+        }});
+      }},
+
+      async renderToolExpansionReadingScroll() {{
+        clearAllStreamState();
+        const scroll = document.createElement('section');
+        scroll.className = 'chat-scroll';
+        scroll.style.width = '560px';
+        scroll.style.height = '180px';
+        scroll.style.overflow = 'auto';
+        document.body.appendChild(scroll);
+        getOrCreateStreamBlock(scroll, 'primary', 'MainAgent', 'Main Agent', 'run-tool-scroll');
+        appendToolCallBlock(
+          scroll,
+          'primary',
+          'shell',
+          {{ command: 'printf long-output' }},
+          'call-long-tool',
+          {{
+            runId: 'run-tool-scroll',
+            roleId: 'MainAgent',
+            label: 'Main Agent',
+          }},
+        );
+        const output = Array.from(
+          {{ length: 1600 }},
+          (_, index) => `output line ${{index}} ${{'y'.repeat(96)}}`,
+        ).join('\\n');
+        return await measureFramesDuring(async () => {{
+          updateToolResult(
+            'primary',
+            'shell',
+            {{ ok: true, data: {{ output }} }},
+            false,
+            'call-long-tool',
+            {{
+              runId: 'run-tool-scroll',
+              roleId: 'MainAgent',
+              label: 'Main Agent',
+              container: scroll,
+            }},
+          );
+          await waitForAnimationFrame();
+          const tool = scroll.querySelector('.tool-block');
+          const summary = tool?.querySelector('.tool-summary');
+          summary?.dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true }}));
+          if (tool) {{
+            tool.open = true;
+            tool.dispatchEvent(new Event('toggle', {{ bubbles: true }}));
+          }}
+          await waitForAnimationFrame();
+          scroll.scrollTop = 12;
+          scroll.dispatchEvent(new Event('scroll', {{ bubbles: true }}));
+          const afterOpenTop = Math.round(scroll.scrollTop);
+          appendStreamChunk('primary', 'final answer text after tool expansion', 'run-tool-scroll', 'MainAgent', 'Main Agent');
+          const renderedFullToolOutput = await waitForCondition(() => (
+            scroll.textContent.includes('output line 1599')
+          ));
+          return {{
+            toolOpen: tool?.open === true,
+            afterOpenTop,
+            renderedFullToolOutput,
+            afterStreamTop: Math.round(scroll.scrollTop),
+            afterStreamBottomDistance: Math.round(scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight),
+          }};
+        }});
       }},
 
       measureSubagentSessionWidth() {{

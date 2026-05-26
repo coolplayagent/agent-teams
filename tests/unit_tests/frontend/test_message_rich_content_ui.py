@@ -325,6 +325,19 @@ def test_read_tool_return_renders_media_ref_preview(tmp_path: Path) -> None:
         ).read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    (tmp_path / "progressiveText.js").write_text(
+        (
+            repo_root
+            / "frontend"
+            / "dist"
+            / "js"
+            / "components"
+            / "messageRenderer"
+            / "helpers"
+            / "progressiveText.js"
+        ).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     (tmp_path / "mockApproval.mjs").write_text(
         """

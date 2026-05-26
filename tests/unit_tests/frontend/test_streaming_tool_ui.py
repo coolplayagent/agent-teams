@@ -474,6 +474,12 @@ def test_pending_tool_block_name_fallback_does_not_merge_parallel_calls(
         ).read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    (temp_dir / "progressiveText.js").write_text(
+        Path(
+            "frontend/dist/js/components/messageRenderer/helpers/progressiveText.js"
+        ).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     runner = """
 import {
@@ -598,6 +604,12 @@ def test_tool_blocks_parse_tagged_read_payloads_and_cap_large_diffs() -> None:
     assert (
         "function renderTaggedLineContent(text, fallbackStartLine = 1) {"
         in tool_blocks_script
+    )
+    assert "renderProgressivePlainText" in tool_blocks_script
+    assert "renderProgressiveHtmlBatches" in tool_blocks_script
+    assert "function renderToolOutputText(targetEl, text) {" in tool_blocks_script
+    assert "function renderReadLines(container, text, startLine = 1" in (
+        tool_blocks_script
     )
     assert "const MAX_DIFF_DP_CELLS = 50000;" in tool_blocks_script
     assert "const MAX_DIFF_TOTAL_LINES = 600;" in tool_blocks_script

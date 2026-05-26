@@ -4,6 +4,7 @@
  */
 
 export const BOTTOM_FOLLOW_THRESHOLD_PX = 96;
+const USER_SCROLL_LOCK_MS = 1800;
 
 const followState = new WeakMap();
 
@@ -41,8 +42,18 @@ export function captureBottomIntent(container) {
     }
     const state = ensureFollowState(container);
     const nearBottom = isNearBottom(container);
+    if (isUserScrollLocked(state)) {
+        return {
+            shouldFollow: false,
+            wasNearBottom: nearBottom,
+            scrollHeight: Number(container.scrollHeight || 0),
+            scrollTop: Number(container.scrollTop || 0),
+            clientHeight: Number(container.clientHeight || 0),
+        };
+    }
     if (nearBottom) {
         state.sticky = true;
+        state.userScrollLockUntil = 0;
     }
     return {
         shouldFollow: nearBottom || state.sticky === true,
@@ -57,10 +68,18 @@ export function scheduleFollowBottom(container, options = {}) {
     if (!container) return;
     const state = ensureFollowState(container);
     const follow = options.follow || null;
+    const nearBottom = isNearBottom(container);
+    if (isUserScrollLocked(state) && options.force !== true) {
+        return;
+    }
+    if (nearBottom) {
+        state.sticky = true;
+        state.userScrollLockUntil = 0;
+    }
     const shouldFollow = options.force === true
         || follow?.shouldFollow === true
         || state.sticky === true
-        || isNearBottom(container);
+        || nearBottom;
     if (!shouldFollow) return;
 
     state.sticky = true;
@@ -69,10 +88,12 @@ export function scheduleFollowBottom(container, options = {}) {
     const schedule = resolveAnimationFrameScheduler();
     state.frame = schedule(() => {
         state.frame = 0;
-        scrollToBottom(container);
+        if (shouldApplyScheduledFollow(container, state)) {
+            scrollToBottom(container);
+        }
         state.secondFrame = schedule(() => {
             state.secondFrame = 0;
-            if (state.sticky === true || isNearBottom(container)) {
+            if (shouldApplyScheduledFollow(container, state)) {
                 scrollToBottom(container);
             }
         });
@@ -118,6 +139,7 @@ function ensureFollowState(container) {
         frame: 0,
         secondFrame: 0,
         programmaticUntil: 0,
+        userScrollLockUntil: 0,
         resizeObserver: null,
         observedTargets: null,
     };
@@ -132,16 +154,48 @@ function bindUserScrollIntent(container, state) {
         container.dataset.bottomFollowBound = 'true';
     }
     container.addEventListener('wheel', event => {
-        if (Number(event?.deltaY || 0) < -1) {
-            state.sticky = false;
+        const deltaY = Number(event?.deltaY || 0);
+        if (Math.abs(deltaY) <= 1) {
+            return;
         }
+        if (deltaY > 0 && isNearBottom(container)) {
+            state.sticky = true;
+            state.userScrollLockUntil = 0;
+            return;
+        }
+        pauseAutoFollow(state);
     }, { passive: true });
     container.addEventListener('touchstart', () => {
-        state.sticky = isNearBottom(container);
+        if (isNearBottom(container)) {
+            state.sticky = true;
+            state.userScrollLockUntil = 0;
+            return;
+        }
+        pauseAutoFollow(state);
+    }, { passive: true });
+    container.addEventListener('pointerdown', event => {
+        if (isExpandableSummaryTarget(event?.target)) {
+            pauseAutoFollow(state);
+        }
+    }, { passive: true });
+    container.addEventListener('keydown', event => {
+        const key = String(event?.key || '');
+        if ((key === 'Enter' || key === ' ') && isExpandableSummaryTarget(event?.target)) {
+            pauseAutoFollow(state);
+        }
+    }, { passive: true });
+    container.addEventListener('relayTeamsReadingIntent', () => {
+        pauseAutoFollow(state);
     }, { passive: true });
     container.addEventListener('scroll', () => {
         if (isProgrammaticScroll(state)) return;
-        state.sticky = isNearBottom(container);
+        const nearBottom = isNearBottom(container);
+        state.sticky = nearBottom;
+        if (nearBottom) {
+            state.userScrollLockUntil = 0;
+        } else {
+            pauseAutoFollow(state);
+        }
     }, { passive: true });
 }
 
@@ -156,6 +210,26 @@ function scrollToBottom(container) {
 
 function isProgrammaticScroll(state) {
     return nowMs() < Number(state.programmaticUntil || 0);
+}
+
+function isUserScrollLocked(state) {
+    return nowMs() < Number(state?.userScrollLockUntil || 0);
+}
+
+function pauseAutoFollow(state) {
+    state.sticky = false;
+    state.userScrollLockUntil = nowMs() + USER_SCROLL_LOCK_MS;
+}
+
+function shouldApplyScheduledFollow(container, state) {
+    if (isUserScrollLocked(state)) {
+        return false;
+    }
+    return state.sticky === true || isNearBottom(container);
+}
+
+function isExpandableSummaryTarget(target) {
+    return !!target?.closest?.('summary, .thinking-summary, .tool-summary');
 }
 
 function nowMs() {

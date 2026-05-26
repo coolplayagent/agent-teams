@@ -813,14 +813,13 @@ export function appendThinkingChunk(instanceId, partIndex, text, options = {}) {
     const entry = resolveThinkingEntry(st, partIndex);
     const delta = String(text || '');
     entry.raw += delta;
-    updateThinkingText(entry.textEl, delta, {
+    scheduleRichTextUpdate(entry.textEl, entry.raw, {
         streaming: true,
         runId: st.runId || runId,
         instanceId: st.instanceId || instanceId,
         streamKey: st.streamKey,
         partIndex: entry.key,
-        appendDelta: true,
-    });
+    }, updateThinkingText);
     applyTimelineAction({
         type: 'thinking_delta',
         scope: streamScope(st, {
@@ -3016,18 +3015,18 @@ function captureStreamFollow(container) {
     }
     const state = ensureStreamFollowState(container);
     const nearBottom = isStreamNearBottom(container);
+    if (isStreamUserScrollLocked(state)) {
+        return {
+            shouldFollow: false,
+            wasNearBottom: nearBottom,
+        };
+    }
     if (nearBottom) {
         state.sticky = true;
         state.userScrollLockUntil = 0;
         return {
             shouldFollow: true,
             wasNearBottom: true,
-        };
-    }
-    if (isStreamUserScrollLocked(state)) {
-        return {
-            shouldFollow: false,
-            wasNearBottom: false,
         };
     }
     return {
@@ -3070,12 +3069,12 @@ function bindHeightObserver(container, target = container) {
     if (!state.resizeObserver) {
         state.resizeObserver = new ResizeObserver(() => {
             const nearBottom = isStreamNearBottom(container);
+            if (isStreamUserScrollLocked(state)) {
+                return;
+            }
             if (nearBottom) {
                 state.sticky = true;
                 state.userScrollLockUntil = 0;
-            }
-            if (isStreamUserScrollLocked(state)) {
-                return;
             }
             if (state.sticky === true || nearBottom) {
                 scheduleStreamScrollBottom(container, { shouldFollow: true });
@@ -3093,19 +3092,27 @@ function applyStreamFollowBottom(container, follow = null) {
     if (!container) return;
     const state = ensureStreamFollowState(container);
     const nearBottom = isStreamNearBottom(container);
+    if (isStreamUserScrollLocked(state)) {
+        return;
+    }
     if (nearBottom) {
         state.sticky = true;
         state.userScrollLockUntil = 0;
-    }
-    if (isStreamUserScrollLocked(state)) {
-        return;
     }
     const shouldFollow = follow?.shouldFollow === true
         || state.sticky === true
         || nearBottom;
     if (!shouldFollow) return;
     state.sticky = true;
-    const scroll = () => scrollStreamToBottom(container);
+    const scroll = () => {
+        const currentState = ensureStreamFollowState(container);
+        if (isStreamUserScrollLocked(currentState)) {
+            return;
+        }
+        if (currentState.sticky === true || isStreamNearBottom(container)) {
+            scrollStreamToBottom(container);
+        }
+    };
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
         window.requestAnimationFrame(() => {
             scroll();
@@ -3161,6 +3168,16 @@ function bindStreamUserScrollIntent(container, followState) {
         if (target?.closest?.('summary, .thinking-summary, .tool-summary')) {
             pauseStreamAutoFollow(container, followState);
         }
+    }, { passive: true });
+    container.addEventListener?.('keydown', event => {
+        const key = String(event?.key || '');
+        const target = event?.target;
+        if ((key === 'Enter' || key === ' ') && target?.closest?.('summary, .thinking-summary, .tool-summary')) {
+            pauseStreamAutoFollow(container, followState);
+        }
+    }, { passive: true });
+    container.addEventListener?.('relayTeamsReadingIntent', () => {
+        pauseStreamAutoFollow(container, followState);
     }, { passive: true });
     container.addEventListener?.('scroll', () => {
         if (nowMs() < Number(followState.programmaticUntil || 0)) return;

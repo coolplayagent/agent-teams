@@ -4,6 +4,10 @@
  */
 import { syncApprovalStateFromEnvelope } from './approval.js';
 import { appendStructuredContentPart, renderRichContent } from './content.js';
+import {
+    renderProgressiveHtmlBatches,
+    renderProgressivePlainText,
+} from './progressiveText.js';
 import { normalizeToolArgs } from './toolArgs.js';
 import { t, formatMessage } from '../../../utils/i18n.js';
 
@@ -133,8 +137,12 @@ function renderLinedContent(text, startLine = 1) {
     const lines = String(text).split('\n');
     const endLine = startLine + lines.length - 1;
     const padWidth = String(endLine).length;
-    return lines.map((line, i) => {
-        const no = String(startLine + i).padStart(padWidth, '\u00a0');
+    return renderLinedLinesBatch(lines, startLine, padWidth, 0, lines.length);
+}
+
+function renderLinedLinesBatch(lines, startLine, padWidth, start, end) {
+    return lines.slice(start, end).map((line, i) => {
+        const no = String(startLine + start + i).padStart(padWidth, '\u00a0');
         return `<div class="tool-line"><span class="tool-line-no">${no}</span><span class="tool-line-text">${escapeHtmlInline(line) || '\u00a0'}</span></div>`;
     }).join('');
 }
@@ -145,11 +153,20 @@ function renderTaggedLineContent(text, fallbackStartLine = 1) {
     if (numberedLines.length === 0) {
         return renderLinedContent(text, fallbackStartLine);
     }
-    const padWidth = Math.max(
+    const padWidth = taggedLinePadWidth(parsedLines, fallbackStartLine);
+    return renderTaggedLineBatch(parsedLines, padWidth, 0, parsedLines.length);
+}
+
+function taggedLinePadWidth(parsedLines, fallbackStartLine = 1) {
+    const numberedLines = parsedLines.filter(line => line.lineNo != null);
+    return Math.max(
         String(fallbackStartLine).length,
         ...numberedLines.map(line => String(line.lineNo).length),
     );
-    return parsedLines.map(line => {
+}
+
+function renderTaggedLineBatch(parsedLines, padWidth, start, end) {
+    return parsedLines.slice(start, end).map(line => {
         const lineNo = line.lineNo != null
             ? String(line.lineNo).padStart(padWidth, '\u00a0')
             : ''.padStart(padWidth, '\u00a0');
@@ -207,6 +224,7 @@ export function buildToolBlock(toolName, args, toolCallId = null) {
     if (copyBtn) {
         copyBtn.addEventListener('click', handleCopyClick);
     }
+    bindToolToggleAnchor(tb);
 
     tb.dataset.status = 'completed';
     return tb;
@@ -251,6 +269,7 @@ export function buildPendingToolBlock(toolName, args, toolCallId = null) {
     if (copyBtn) {
         copyBtn.addEventListener('click', handleCopyClick);
     }
+    bindToolToggleAnchor(tb);
 
     tb.dataset.status = 'running';
     return tb;
@@ -447,6 +466,7 @@ export function applyToolReturn(toolBlock, content, options = {}) {
     }
 
     if (outputEl) {
+        outputEl.__fullToolText = '';
         renderToolResultContent(outputEl, content, toolBlock.dataset.toolName);
     }
     syncApprovalStateFromEnvelope(toolBlock, content);
@@ -544,7 +564,7 @@ function renderToolResultContent(targetEl, content, toolName) {
         return;
     }
     const val = typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
-    targetEl.textContent = val;
+    renderToolOutputText(targetEl, val);
 }
 
 export function isToolResultError(result, options = {}) {
@@ -610,7 +630,7 @@ function renderEnvelopeResult(targetEl, envelope, toolName) {
             || data.stderr
             || '',
         );
-        targetEl.textContent = output || JSON.stringify(data, null, 2);
+        renderToolOutputText(targetEl, output || JSON.stringify(data, null, 2));
         return;
     }
 
@@ -628,11 +648,12 @@ function renderEnvelopeResult(targetEl, envelope, toolName) {
     const val = typeof data === 'object'
         ? JSON.stringify(data, null, 2)
         : String(data ?? '');
-    targetEl.textContent = val;
+    renderToolOutputText(targetEl, val);
 }
 
 function renderReadOutput(targetEl, data) {
     const text = getReadOutputText(data);
+    targetEl.__fullToolText = String(text);
     const toolBlock = targetEl.closest('.tool-block');
     const startLine = Math.max(1, Number(toolBlock?.dataset?.readOffset || 1));
     const container = document.createElement('div');
@@ -645,13 +666,52 @@ function renderReadOutput(targetEl, data) {
         targetEl.appendChild(instructionsEl);
     }
     if (parsed?.content) {
-        container.innerHTML = renderTaggedLineContent(parsed.content, startLine);
+        renderReadLines(container, parsed.content, startLine, { tagged: true });
     } else if (parsed?.entries) {
-        container.innerHTML = renderLinedContent(parsed.entries, startLine);
+        renderReadLines(container, parsed.entries, startLine);
     } else {
-        container.innerHTML = renderLinedContent(String(text), startLine);
+        renderReadLines(container, String(text), startLine);
     }
     targetEl.appendChild(container);
+}
+
+function renderToolOutputText(targetEl, text) {
+    const source = String(text ?? '');
+    targetEl.__fullToolText = source;
+    if (renderProgressivePlainText(targetEl, source)) {
+        return;
+    }
+    targetEl.textContent = source;
+}
+
+function renderReadLines(container, text, startLine = 1, options = {}) {
+    const lines = String(text).split('\n');
+    if (options.tagged === true) {
+        const parsedLines = lines.map(parseTaggedLine);
+        const numberedLines = parsedLines.filter(line => line.lineNo != null);
+        if (numberedLines.length > 0) {
+            const padWidth = taggedLinePadWidth(parsedLines, startLine);
+            if (renderProgressiveHtmlBatches(
+                container,
+                parsedLines.length,
+                (start, end) => renderTaggedLineBatch(parsedLines, padWidth, start, end),
+            )) {
+                return;
+            }
+            container.innerHTML = renderTaggedLineBatch(parsedLines, padWidth, 0, parsedLines.length);
+            return;
+        }
+    }
+    const endLine = startLine + lines.length - 1;
+    const padWidth = String(endLine).length;
+    if (renderProgressiveHtmlBatches(
+        container,
+        lines.length,
+        (start, end) => renderLinedLinesBatch(lines, startLine, padWidth, start, end),
+    )) {
+        return;
+    }
+    container.innerHTML = renderLinedLinesBatch(lines, startLine, padWidth, 0, lines.length);
 }
 
 function getReadOutputText(data) {
@@ -817,7 +877,7 @@ function handleCopyClick(event) {
         || toolBlock.querySelector('.tool-args');
     const parts = [];
     if (commandEl) parts.push(commandEl.textContent || '');
-    if (outputEl) parts.push(outputEl.textContent || '');
+    if (outputEl) parts.push(outputEl.__fullToolText || outputEl.textContent || '');
     const textToCopy = parts.filter(Boolean).join('\n\n');
 
     navigator.clipboard.writeText(textToCopy).then(() => {
@@ -829,6 +889,72 @@ function handleCopyClick(event) {
             btn.title = t('tool.action.copy');
         }, 1500);
     }).catch(() => {});
+}
+
+function bindToolToggleAnchor(toolBlock) {
+    if (!toolBlock || toolBlock.dataset?.toolToggleAnchorBound === 'true') {
+        return;
+    }
+    if (toolBlock.dataset) {
+        toolBlock.dataset.toolToggleAnchorBound = 'true';
+    }
+    const captureToggleAnchor = () => {
+        dispatchReadingIntent(toolBlock);
+        const container = findToolScrollContainer(toolBlock);
+        if (!container || !toolBlock.getBoundingClientRect) return;
+        toolBlock.__toolToggleAnchor = {
+            container,
+            top: toolBlock.getBoundingClientRect().top,
+        };
+    };
+    const summary = toolBlock.querySelector?.('.tool-summary') || null;
+    summary?.addEventListener?.('pointerdown', captureToggleAnchor, { passive: true });
+    summary?.addEventListener?.('keydown', event => {
+        const key = String(event?.key || '');
+        if (key === 'Enter' || key === ' ') {
+            captureToggleAnchor();
+        }
+    });
+    toolBlock.addEventListener?.('toggle', () => {
+        restoreToolToggleAnchor(toolBlock);
+    });
+}
+
+function findToolScrollContainer(toolBlock) {
+    return toolBlock?.closest?.('.chat-scroll, .subagent-session-body') || null;
+}
+
+function dispatchReadingIntent(toolBlock) {
+    if (!toolBlock || typeof CustomEvent !== 'function') {
+        return;
+    }
+    toolBlock.dispatchEvent(new CustomEvent('relayTeamsReadingIntent', { bubbles: true }));
+}
+
+function restoreToolToggleAnchor(toolBlock) {
+    const anchor = toolBlock?.__toolToggleAnchor || null;
+    delete toolBlock.__toolToggleAnchor;
+    if (!anchor?.container || typeof window === 'undefined') {
+        return;
+    }
+    const restore = () => {
+        if (!anchor.container?.isConnected || !toolBlock?.isConnected || !toolBlock.getBoundingClientRect) {
+            return;
+        }
+        const nextTop = toolBlock.getBoundingClientRect().top;
+        const delta = nextTop - Number(anchor.top || 0);
+        if (Math.abs(delta) > 0.5) {
+            anchor.container.scrollTop += delta;
+        }
+    };
+    if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+            restore();
+            window.requestAnimationFrame(restore);
+        });
+        return;
+    }
+    restore();
 }
 
 function pendingToolKey(toolName, toolCallId) {

@@ -17,6 +17,10 @@ import {
     normalizePromptContentPart,
     updatePromptContentBlock,
 } from './prompt.js';
+import {
+    clearProgressiveState,
+    renderProgressivePlainText,
+} from './progressiveText.js';
 
 const STREAMING_CURSOR_CLASS = 'streaming-cursor';
 const LARGE_STREAM_TEXT_THRESHOLD = 12000;
@@ -292,6 +296,18 @@ function shouldRenderPlainText(textEl, source, options = {}) {
 
 function renderPlainTextContent(textEl, source, options = {}) {
     const state = ensurePlainTextRenderState(textEl);
+    if (options.appendDelta === true && textEl.__progressiveTextState) {
+        const progressiveSource = String(textEl.__progressiveTextState.source || '') + source;
+        if (renderProgressivePlainText(textEl, progressiveSource)) {
+            state.renderedLength = progressiveSource.length;
+            return;
+        }
+    }
+    if (options.appendDelta !== true && renderProgressivePlainText(textEl, source)) {
+        state.renderedLength = source.length;
+        return;
+    }
+    clearProgressiveState(textEl);
     if (options.appendDelta === true) {
         appendPlainText(textEl, source, state);
         return;
@@ -504,7 +520,8 @@ function bindThinkingOpenState(block, options = {}) {
     }
     block.dataset.thinkingOpenBound = 'true';
     const captureToggleAnchor = () => {
-        const container = block.closest?.('.chat-scroll');
+        dispatchReadingIntent(block);
+        const container = block.closest?.('.chat-scroll, .subagent-session-body');
         if (!container || !block.getBoundingClientRect) return;
         block.__thinkingToggleAnchor = {
             container,
@@ -527,6 +544,13 @@ function bindThinkingOpenState(block, options = {}) {
         thinkingOpenState.set(stateKey, block.open === true);
         restoreThinkingToggleAnchor(block);
     });
+}
+
+function dispatchReadingIntent(block) {
+    if (!block || typeof CustomEvent !== 'function') {
+        return;
+    }
+    block.dispatchEvent(new CustomEvent('relayTeamsReadingIntent', { bubbles: true }));
 }
 
 function restoreThinkingToggleAnchor(block) {

@@ -1570,8 +1570,8 @@ class ServerContainer:
         await self.automation_scheduler_service.start()
         return None
 
+    @staticmethod
     async def _start_sync_service(
-        self,
         *,
         service_name: str,
         start: Callable[[], None],

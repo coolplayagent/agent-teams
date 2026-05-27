@@ -1123,6 +1123,43 @@ async def test_session_service_round_projection_event_marks_snapshot_dirty(
 
 
 @pytest.mark.asyncio
+async def test_session_service_text_chunk_event_dirties_only_detailed_rounds(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    service = _build_service(
+        tmp_path / "session-text-chunk-round-only-cache.db",
+        runner=runner,
+    )
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _ = await service.get_session_rounds_async("session-1")
+    _ = await service.get_session_rounds_async("session-1", timeline=True)
+    _ = await service.list_agents_in_session_async("session-1")
+
+    await asyncio.sleep(0.55)
+    runner.block_next = True
+    service.mark_run_event_dirty(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            instance_id="inst-1",
+            event_type=RunEventType.TEXT_DELTA,
+        )
+    )
+
+    _ = await service.list_agents_in_session_async("session-1")
+    _ = await service.get_session_rounds_async("session-1", timeline=True)
+    assert runner.started.is_set() is False
+
+    stale = await service.get_session_rounds_async("session-1")
+
+    assert stale["items"] == []
+    assert await _wait_for_event(runner.started)
+    runner.release.set()
+
+
+@pytest.mark.asyncio
 async def test_session_service_rounds_cold_miss_waits_for_projection(
     tmp_path: Path,
 ) -> None:

@@ -514,6 +514,8 @@ class SessionSnapshotCache:
         session_id: str,
         *,
         requires_fresh_read: bool = False,
+        section: SessionSnapshotSection | None = None,
+        cache_key_predicate: Callable[[str], bool] | None = None,
     ) -> None:
         safe_session_id = str(session_id or "").strip()
         if not safe_session_id:
@@ -522,7 +524,13 @@ class SessionSnapshotCache:
             matching_caches = [
                 cache
                 for key, cache in self._entries.items()
-                if key[0] == safe_session_id and isinstance(cache, StaleFirstCache)
+                if key[0] == safe_session_id
+                and (section is None or key[1] == section.value)
+                and (
+                    cache_key_predicate is None
+                    or cache_key_predicate(str(key[2] or ""))
+                )
+                and isinstance(cache, StaleFirstCache)
             ]
         for cache in matching_caches:
             cache.mark_dirty(requires_fresh_read=requires_fresh_read)

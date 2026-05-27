@@ -155,10 +155,7 @@ class _SessionDeleteContext(NamedTuple):
 
 _SNAPSHOT_DIRTY_EVENT_TYPES = frozenset(
     {
-        *(
-            RunEventType(event_type)
-            for event_type in DETAILED_ROUND_PROJECTION_EVENT_TYPES
-        ),
+        *(RunEventType(event_type) for event_type in ROUND_PROJECTION_EVENT_TYPES),
         RunEventType.RUN_STARTED,
         RunEventType.RUN_PAUSED,
         RunEventType.RUN_RESUMED,
@@ -180,6 +177,12 @@ _SNAPSHOT_DIRTY_EVENT_TYPES = frozenset(
         RunEventType.BACKGROUND_TASK_COMPLETED,
         RunEventType.BACKGROUND_TASK_STOPPED,
         RunEventType.TOKEN_USAGE,
+    }
+)
+_DETAILED_ROUND_DIRTY_EVENT_TYPES = frozenset(
+    {
+        RunEventType.TEXT_DELTA,
+        RunEventType.OUTPUT_DELTA,
     }
 )
 _LIST_DIRTY_EVENT_TYPES = frozenset(
@@ -382,6 +385,13 @@ class SessionService:
                 and not self._is_running_async_publish_listener()
             ):
                 self._merge_terminal_session_projection_into_list_cache(safe_session_id)
+        if event.event_type in _DETAILED_ROUND_DIRTY_EVENT_TYPES:
+            self._session_snapshot_cache.mark_session_dirty(
+                safe_session_id,
+                section=SessionSnapshotSection.ROUNDS,
+                cache_key_predicate=self._is_detailed_rounds_cache_key,
+            )
+            return
         if (
             event.event_type not in _SNAPSHOT_DIRTY_EVENT_TYPES
             and not spawn_subagent_dirty
@@ -404,6 +414,10 @@ class SessionService:
             return False
         tool_name = payload.get("tool_name")
         return isinstance(tool_name, str) and tool_name.strip() == "spawn_subagent"
+
+    @staticmethod
+    def _is_detailed_rounds_cache_key(cache_key: str) -> bool:
+        return "timeline=False" in cache_key and "summary=False" in cache_key
 
     def _merge_terminal_session_projection_into_list_cache(
         self,

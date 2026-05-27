@@ -783,6 +783,8 @@ def _project_text_messages_from_events(
                         active_segments,
                         projected_by_run=projected_by_run,
                         run_id=run_id,
+                        instance_id=instance_id or None,
+                        role_id=role_id or None,
                     )
                     continue
                 if text_chunk == "":
@@ -796,11 +798,18 @@ def _project_text_messages_from_events(
                         "task_id": str(event.get("task_id") or ""),
                         "occurred_at": str(event.get("occurred_at") or ""),
                         "chunks": [],
+                        "source_event_types": [],
                     }
                     active_segments[key] = segment
                 chunks = segment.get("chunks")
                 if isinstance(chunks, list):
                     chunks.append(text_chunk)
+                source_event_types = segment.get("source_event_types")
+                if (
+                    isinstance(source_event_types, list)
+                    and event_type not in source_event_types
+                ):
+                    source_event_types.append(event_type)
                 segment["occurred_at"] = str(event.get("occurred_at") or "")
             continue
         if event_type in {
@@ -810,6 +819,20 @@ def _project_text_messages_from_events(
             RunEventType.TOOL_RESULT.value,
             RunEventType.MODEL_STEP_STARTED.value,
             RunEventType.MODEL_STEP_FINISHED.value,
+        }:
+            role_id = str(payload.get("role_id") or event.get("role_id") or "")
+            instance_id = str(
+                payload.get("instance_id") or event.get("instance_id") or ""
+            )
+            _flush_event_text_segments(
+                active_segments,
+                projected_by_run=projected_by_run,
+                run_id=run_id,
+                instance_id=instance_id or None,
+                role_id=role_id or None,
+            )
+            continue
+        if event_type in {
             RunEventType.RUN_COMPLETED.value,
             RunEventType.RUN_FAILED.value,
             RunEventType.RUN_STOPPED.value,
@@ -858,8 +881,18 @@ def _flush_event_text_segments(
     *,
     projected_by_run: dict[str, list[dict[str, object]]],
     run_id: str,
+    instance_id: str | None = None,
+    role_id: str | None = None,
 ) -> None:
-    keys = [key for key in active_segments if key[0] == run_id]
+    safe_instance_id = None if instance_id is None else str(instance_id)
+    safe_role_id = None if role_id is None else str(role_id)
+    keys = [
+        key
+        for key in active_segments
+        if key[0] == run_id
+        and (safe_instance_id is None or key[1] == safe_instance_id)
+        and (safe_role_id is None or key[2] == safe_role_id)
+    ]
     for key in keys:
         segment = active_segments.pop(key)
         message = _event_text_message(segment)
@@ -877,6 +910,12 @@ def _event_text_message(segment: dict[str, object]) -> dict[str, object] | None:
     run_id = str(segment.get("run_id") or "")
     role_id = str(segment.get("role_id") or "")
     instance_id = str(segment.get("instance_id") or "")
+    source_event_types = segment.get("source_event_types")
+    source_events = (
+        [str(event_type) for event_type in source_event_types]
+        if isinstance(source_event_types, list)
+        else []
+    )
     return {
         "conversation_id": "",
         "agent_role_id": role_id,
@@ -887,6 +926,7 @@ def _event_text_message(segment: dict[str, object]) -> dict[str, object] | None:
         "role_id": role_id,
         "created_at": str(segment.get("occurred_at") or ""),
         "reconstructed": True,
+        "reconstructed_source_event_types": source_events,
         "message": {
             "parts": [
                 {
@@ -1131,9 +1171,18 @@ def _merge_event_text_messages(
             normalized = _normalize_projected_text(text)
             if not normalized:
                 continue
+            source_event_types = message.get("reconstructed_source_event_types")
+            earliest_created_at = (
+                ""
+                if (
+                    isinstance(source_event_types, list)
+                    and RunEventType.OUTPUT_DELTA.value in source_event_types
+                )
+                else event_time
+            )
             match_index = _matching_text_occurrence_index(
                 existing_text_occurrences,
-                earliest_created_at=event_time,
+                earliest_created_at=earliest_created_at,
                 normalized=normalized,
             )
             if match_index is None:

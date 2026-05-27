@@ -387,6 +387,80 @@ def test_project_text_messages_from_events_includes_output_delta_text() -> None:
     ]
 
 
+def test_project_text_messages_from_events_keeps_other_stream_open_at_boundary() -> (
+    None
+):
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps(
+                    {
+                        "text": "coordinator before ",
+                        "role_id": "Coordinator",
+                        "instance_id": "inst-coordinator",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.TOOL_CALL.value,
+                "trace_id": "run-1",
+                "task_id": "task-worker",
+                "role_id": "Worker",
+                "instance_id": "inst-worker",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps(
+                    {
+                        "tool_name": "shell",
+                        "tool_call_id": "call-worker",
+                        "role_id": "Worker",
+                        "instance_id": "inst-worker",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps(
+                    {
+                        "text": "coordinator after",
+                        "role_id": "Coordinator",
+                        "instance_id": "inst-coordinator",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.RUN_COMPLETED.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "occurred_at": "2026-04-29T10:00:03Z",
+                "payload_json": "{}",
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {
+            "parts": [
+                {
+                    "part_kind": "text",
+                    "content": "coordinator before coordinator after",
+                }
+            ]
+        }
+    ]
+
+
 def test_event_text_message_rejects_invalid_or_blank_segments() -> None:
     assert _event_text_message({"chunks": "not-a-list"}) is None
     assert _event_text_message({"chunks": [" ", "\n"]}) is None
@@ -433,6 +507,28 @@ def test_merge_event_text_messages_keeps_later_repeated_text() -> None:
         existing,
         later_event,
     ]
+
+
+def test_merge_event_text_messages_matches_persisted_output_before_delta() -> None:
+    existing_output = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:00Z",
+        parts=[{"part_kind": "text", "content": "generated caption"}],
+    )
+    output_delta_event = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:01Z",
+        parts=[{"part_kind": "text", "content": "generated caption"}],
+    )
+    output_delta_event["reconstructed_source_event_types"] = [
+        RunEventType.OUTPUT_DELTA.value
+    ]
+
+    merged = _merge_event_text_messages([existing_output], [output_delta_event])
+
+    assert merged == [existing_output]
 
 
 def test_build_session_rounds_maps_role_by_instance_across_runs(tmp_path: Path) -> None:

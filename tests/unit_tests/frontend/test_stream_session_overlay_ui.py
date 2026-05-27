@@ -721,6 +721,119 @@ console.log(JSON.stringify(container.children.map(child => {
     assert json.loads(result.stdout) == ["message:A", "marker:inj-1:改一下"]
 
 
+def test_live_tool_result_closes_text_segment_before_next_delta(
+    tmp_path: Path,
+) -> None:
+    source = Path("frontend/dist/js/components/messageRenderer/stream.js").read_text(
+        encoding="utf-8"
+    )
+    temp_dir = tmp_path / "live_tool_text_segments"
+    temp_dir.mkdir()
+    _write_live_injection_test_modules(temp_dir, source)
+
+    runner = """
+globalThis.document = {
+  createElement(tagName = "div") {
+    return {
+      tagName,
+      className: "",
+      dataset: {},
+      children: [],
+      textContent: "",
+      append(...items) { items.forEach(item => this.appendChild(item)); },
+      setAttribute(name, value) { this[name] = value; },
+      appendChild(child) { child.__parent = this; this.children.push(child); return child; },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      remove() {
+        const parent = this.__parent;
+        if (!parent?.children) return;
+        const index = parent.children.indexOf(this);
+        if (index !== -1) parent.children.splice(index, 1);
+      },
+    };
+  },
+};
+globalThis.__relayTeamsMessageTimelineApplyAction = () => {};
+
+import {
+  appendStreamChunk,
+  appendToolCallBlock,
+  getCoordinatorStreamOverlay,
+  getOrCreateStreamBlock,
+  updateToolResult,
+} from "./stream.js";
+
+const container = {
+  children: [],
+  appendChild(child) { child.__parent = this; this.children.push(child); return child; },
+  querySelectorAll(selector) {
+    if (selector !== ".message") return [];
+    return this.children.filter(child => child?.kind === "message");
+  },
+};
+
+getOrCreateStreamBlock(container, "primary", "main-role", "Main Agent", "run-primary");
+appendStreamChunk("primary", "before", "run-primary", "main-role", "Main Agent");
+appendToolCallBlock(
+  container,
+  "primary",
+  "shell",
+  { command: "date" },
+  "call-1",
+  { runId: "run-primary", roleId: "main-role", label: "Main Agent" },
+);
+appendStreamChunk("primary", "during", "run-primary", "main-role", "Main Agent");
+updateToolResult(
+  "primary",
+  "shell",
+  { ok: true, data: "done" },
+  false,
+  "call-1",
+  { runId: "run-primary", roleId: "main-role", label: "Main Agent", container },
+);
+appendStreamChunk("primary", "after", "run-primary", "main-role", "Main Agent");
+
+const contentChildren = container.children[0].contentEl.children.map(child => ({
+  className: child.className,
+  text: child.textContent || "",
+  status: child.dataset?.status || "",
+}));
+const overlayTextParts = getCoordinatorStreamOverlay("run-primary").parts
+  .filter(part => part.kind === "text")
+  .map(part => ({
+    content: part.content,
+    closed: part.closed === true,
+  }));
+
+console.log(JSON.stringify({ contentChildren, overlayTextParts }));
+""".strip()
+
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=3,
+    )
+
+    assert json.loads(result.stdout) == {
+        "contentChildren": [
+            {"className": "msg-text", "text": "before", "status": ""},
+            {"className": "tool-block", "text": "", "status": "completed"},
+            {"className": "msg-text", "text": "during", "status": ""},
+            {"className": "msg-text", "text": "after", "status": ""},
+        ],
+        "overlayTextParts": [
+            {"content": "before", "closed": True},
+            {"content": "during", "closed": True},
+            {"content": "after", "closed": False},
+        ],
+    }
+
+
 def test_live_injection_removes_superseded_tool_before_new_segment(
     tmp_path: Path,
 ) -> None:
@@ -1811,6 +1924,45 @@ renderHistoricalMessageList(tailContainer, [
   runStatus: "running",
 });
 
+const repeatedContainer = {
+  dataset: {},
+  messages: [],
+  appendChild() {},
+  querySelectorAll() {
+    return this.messages.map(item => item.wrapper);
+  },
+  querySelector() {
+    return null;
+  },
+};
+
+renderHistoricalMessageList(repeatedContainer, [
+  {
+    role: "assistant",
+    role_id: "Main Agent",
+    instance_id: "primary",
+    created_at: "2026-04-25T12:00:00",
+    message: {
+      parts: [{ part_kind: "text", content: "repeat" }],
+    },
+  },
+], {
+  runId: "run-1",
+  streamOverlayEntry: {
+    roleId: "Main Agent",
+    instanceId: "primary",
+    label: "Main Agent",
+    parts: [
+      { kind: "text", content: "repeat" },
+      { kind: "tool", tool_name: "shell", tool_call_id: "call-repeat", args: { command: "date" }, status: "pending" },
+      { kind: "text", content: "repeat" },
+    ],
+    textStreaming: true,
+  },
+  isLatestRound: true,
+  runStatus: "running",
+});
+
 const terminalContainer = {
   dataset: {},
   messages: [],
@@ -1854,6 +2006,7 @@ console.log(JSON.stringify({
   wrapperCount: container.messages.length,
   children: container.messages[0].contentEl.children,
   tailChildren: tailContainer.messages[1].contentEl.children,
+  repeatedChildren: repeatedContainer.messages[1].contentEl.children,
   terminalMessageCount: terminalContainer.messages.length,
   terminalChildren: terminalContainer.messages[terminalContainer.messages.length - 1].contentEl.children,
 }));
@@ -1899,6 +2052,16 @@ console.log(JSON.stringify({
             "parts": [{"part_kind": "text", "content": "different tail"}],
         },
         {"type": "text", "text": "done", "streaming": True},
+    ]
+    assert payload["repeatedChildren"] == [
+        {
+            "type": "tool",
+            "toolName": "shell",
+            "args": {"command": "date"},
+            "toolCallId": "call-repeat",
+            "dataset": {},
+        },
+        {"type": "text", "text": "repeat", "streaming": True},
     ]
     assert payload["terminalMessageCount"] == 2
     assert payload["terminalChildren"] == [

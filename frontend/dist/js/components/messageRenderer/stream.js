@@ -636,6 +636,9 @@ export function updateToolResult(
     const resolvedInstanceId = (st && st.instanceId) || instanceId;
     const resolvedRoleId = (st && st.roleId) || roleId;
     const resultIsError = isStreamToolResultError(result, { isError });
+    if (st) {
+        endActiveText(st);
+    }
     updateOverlayToolResult(
         resolvedRunId,
         resolvedInstanceId,
@@ -707,6 +710,9 @@ export function markToolInputValidationFailed(instanceId, payload, options = {})
     }
 
     const follow = captureStreamFollow((st && st.container) || container);
+    if (st) {
+        endActiveText(st);
+    }
     setToolValidationFailureState(toolBlock, payload);
     updateOverlayToolValidation(st.runId || runId, st.instanceId || instanceId, roleId || st.roleId, payload);
     applyTimelineAction({
@@ -924,6 +930,9 @@ export function attachToolApprovalControls(instanceId, toolName, payload, handle
     }
 
     const follow = captureStreamFollow((st && st.container) || container);
+    if (st) {
+        endActiveText(st);
+    }
     const approvalEl = ensureApprovalState(toolBlock);
 
     toolBlock.open = true;
@@ -982,6 +991,9 @@ export function markToolApprovalResolved(instanceId, payload, options = {}) {
     if (!toolCallId) return false;
 
     const follow = captureStreamFollow((st && st.container) || container);
+    if (st) {
+        endActiveText(st);
+    }
     const toolBlock = resolveToolBlockTarget(st, container, payload?.tool_name, toolCallId);
     if (!toolBlock) return false;
     toolBlock.dataset.toolCallId = toolCallId;
@@ -1806,6 +1818,7 @@ function endActiveText(st) {
     }
     setOverlayTextStreaming(st.runId, st.instanceId, st.roleId, st.label, false);
     setOverlayIdleCursor(st.runId, st.instanceId, st.roleId, st.label, false);
+    closeOverlayTextSegment(st.runId, st.instanceId, st.roleId, st.label);
     st.activeTextEl = null;
     st.activeRaw = '';
     st.activeTextIsIdle = false;
@@ -2156,11 +2169,27 @@ function updateOverlayText(runId, instanceId, roleId, label, text) {
     entry.idleCursor = false;
     if (!nextText) return;
     const lastPart = entry.parts[entry.parts.length - 1];
-    if (lastPart && lastPart.kind === 'text') {
+    if (lastPart && lastPart.kind === 'text' && lastPart.closed !== true) {
         lastPart.content = String(lastPart.content || '') + nextText;
         return;
     }
     entry.parts.push({ kind: 'text', content: nextText });
+}
+
+function closeOverlayTextSegment(runId, instanceId, roleId, label) {
+    const entry = resolveOverlayEntry(runId, instanceId, roleId, label);
+    closeOverlayTextSegmentEntry(entry);
+}
+
+function closeOverlayTextSegmentEntry(entry) {
+    if (!entry || !Array.isArray(entry.parts)) {
+        return;
+    }
+    const lastPart = entry.parts[entry.parts.length - 1];
+    if (lastPart && lastPart.kind === 'text') {
+        lastPart.closed = true;
+        lastPart.streaming = false;
+    }
 }
 
 function appendOverlayOutputParts(
@@ -2194,6 +2223,7 @@ function appendOverlayOutputParts(
             hasTextOutput = true;
             return;
         }
+        closeOverlayTextSegmentEntry(entry);
         entry.parts.push(normalizedPart);
     });
     return hasTextOutput;
@@ -2214,6 +2244,7 @@ function setOverlayIdleCursor(runId, instanceId, roleId, label, isIdle) {
 function startOverlayThinking(runId, instanceId, roleId, label, partIndex) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const safePartIndex = Number(partIndex);
     const activeKey = entry.thinkingActiveByPart?.get(String(safePartIndex));
     const activePart = activeKey ? findOverlayThinkingPartByKey(entry, activeKey) : null;
@@ -2266,6 +2297,7 @@ function finishOverlayThinking(runId, instanceId, roleId, partIndex) {
 function updateOverlayToolCall(runId, instanceId, roleId, label, toolPart) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(
         entry,
         toolPart.tool_name,
@@ -2286,6 +2318,7 @@ function updateOverlayToolCall(runId, instanceId, roleId, label, toolPart) {
 function updateOverlayToolResult(runId, instanceId, roleId, label, toolName, toolCallId, result, isError) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(entry, toolName, toolCallId);
     part.status = isError ? 'error' : 'completed';
     part.result = result;
@@ -2294,6 +2327,7 @@ function updateOverlayToolResult(runId, instanceId, roleId, label, toolName, too
 function updateOverlayToolValidation(runId, instanceId, roleId, payload) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, '');
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = findOverlayToolPart(
         entry,
         payload?.tool_name,
@@ -2311,6 +2345,7 @@ function updateOverlayToolValidation(runId, instanceId, roleId, payload) {
 function updateOverlayToolApproval(runId, instanceId, roleId, toolName, payload, approvalStatus) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, '');
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(
         entry,
         toolName,
@@ -2322,6 +2357,7 @@ function updateOverlayToolApproval(runId, instanceId, roleId, toolName, payload,
 function appendOverlayInjection(runId, instanceId, roleId, label, payload) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry || !payload || typeof payload !== 'object') return;
+    closeOverlayTextSegmentEntry(entry);
     const normalized = normalizeOverlayInjection(payload);
     if (!normalized.content) return;
     const existing = entry.parts.find(part => (

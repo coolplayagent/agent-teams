@@ -6,6 +6,7 @@ import {
     appendMessageText,
     appendStructuredContentPart,
     appendThinkingText,
+    updateMessageText,
     updateThinkingText,
     buildToolBlock,
     applyToolReturn,
@@ -102,8 +103,10 @@ function renderPart(part, scope = {}) {
 function updatePart(partEl, part, scope = {}) {
     if (part.kind === 'text') {
         const textEl = partEl.classList?.contains('msg-text') ? partEl : partEl.querySelector('.msg-text');
-        if (textEl && textEl.textContent !== String(part.content || '')) {
-            textEl.textContent = String(part.content || '');
+        if (textEl) {
+            updateMessageText(textEl, part.content || '', {
+                streaming: part.streaming === true,
+            });
         }
         return;
     }

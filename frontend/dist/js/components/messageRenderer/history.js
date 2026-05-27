@@ -379,6 +379,7 @@ function buildPersistedOverlayIndex(historyMessages, runId, options = {}) {
         thinkingTailByStreamPart: new Map(),
         mediaTailByStream: new Map(),
         textTailByStream: new Map(),
+        textByStream: new Map(),
     };
     (Array.isArray(historyMessages) ? historyMessages : []).forEach(msgItem => {
         if (String(msgItem?.entry_type || '') === 'injection') {
@@ -400,6 +401,7 @@ function buildPersistedOverlayIndex(historyMessages, runId, options = {}) {
         const messageThinkingTextByPart = new Map();
         const messageMedia = new Set();
         const messageText = new Set();
+        const messageTextList = [];
         parts.forEach(part => {
             if (!part || typeof part !== 'object') return;
             const kind = String(part.part_kind || part.kind || '').trim();
@@ -424,7 +426,10 @@ function buildPersistedOverlayIndex(historyMessages, runId, options = {}) {
             }
             if (kind === 'text') {
                 const text = normalizeOverlayTextSignature(part.content || part.text);
-                if (text) messageText.add(text);
+                if (text) {
+                    messageText.add(text);
+                    messageTextList.push(text);
+                }
             }
             if (kind === 'media_ref') {
                 const mediaSignature = normalizeOverlayMediaSignature(part);
@@ -450,6 +455,7 @@ function buildPersistedOverlayIndex(historyMessages, runId, options = {}) {
         }
         if (messageText.size > 0) {
             index.textTailByStream.set(streamKey, messageText);
+            replaceOverlayTextList(index.textByStream, streamKey, messageTextList);
         }
         index.mediaTailByStream.set(streamKey, new Set(messageMedia));
     });
@@ -477,6 +483,13 @@ function mergeOverlayTextSet(target, key, values) {
             existing.add(value);
         }
     });
+}
+
+function replaceOverlayTextList(target, key, values) {
+    if (!target || !key || !Array.isArray(values) || values.length === 0) {
+        return;
+    }
+    target.set(key, values.filter(Boolean));
 }
 
 function clearOverlayTextByStreamPart(target, streamKey) {
@@ -512,6 +525,10 @@ function filterPersistedOverlayParts(streamOverlayEntry, persistedIndex, runId, 
         persistedIndex.textTailByStream,
         streamKeys,
     ) || emptySet;
+    const persistedTextCursor = createPersistedOverlayTextCursor(
+        persistedIndex.textByStream,
+        streamKeys,
+    );
     const persistedMedia = collectPersistedOverlayText(
         persistedIndex.mediaTailByStream,
         streamKeys,
@@ -546,7 +563,11 @@ function filterPersistedOverlayParts(streamOverlayEntry, persistedIndex, runId, 
             if (!text) {
                 return false;
             }
-            return !(text && persistedText.has(text));
+            return !consumePersistedOverlayText(
+                text,
+                persistedTextCursor,
+                persistedText,
+            );
         }
         if (part.kind === 'media_ref') {
             const mediaSignature = normalizeOverlayMediaSignature(part);
@@ -574,6 +595,46 @@ function filterPersistedOverlayParts(streamOverlayEntry, persistedIndex, runId, 
         idleCursor: allowIdleCursor,
         textStreaming: allowTextStreaming,
     };
+}
+
+function createPersistedOverlayTextCursor(textByStream, streamKeys) {
+    const values = [];
+    (Array.isArray(streamKeys) ? streamKeys : []).forEach(streamKey => {
+        const streamValues = textByStream?.get?.(streamKey);
+        if (!Array.isArray(streamValues)) {
+            return;
+        }
+        streamValues.forEach(value => {
+            if (value) {
+                values.push(value);
+            }
+        });
+    });
+    return {
+        values,
+        index: 0,
+    };
+}
+
+function consumePersistedOverlayText(text, cursor, fallbackTextSet) {
+    const candidate = normalizeOverlayTextSignature(text);
+    if (!candidate) {
+        return false;
+    }
+    if (cursor && Array.isArray(cursor.values) && cursor.values.length > 0) {
+        for (let index = cursor.index; index < cursor.values.length; index += 1) {
+            const persisted = normalizeOverlayTextSignature(cursor.values[index]);
+            if (!persisted) {
+                continue;
+            }
+            if (persisted === candidate) {
+                cursor.index = index + 1;
+                return true;
+            }
+        }
+        return false;
+    }
+    return !!fallbackTextSet?.has?.(candidate);
 }
 
 function normalizeOverlayTextSignature(value) {

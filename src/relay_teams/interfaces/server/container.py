@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping
 import logging
 from pathlib import Path
 import sqlite3
@@ -1288,6 +1288,17 @@ class ServerContainer:
             self.wechat_inbound_queue_repo,
         )
         self._startup_background_tasks: set[asyncio.Task[None]] = set()
+        self._noncancelable_startup_background_tasks: set[asyncio.Task[None]] = set()
+        self._runtime_background_startup_failures: dict[str, str] = {}
+        self._runtime_background_startup_pending = False
+
+    @property
+    def runtime_background_startup_failures(self) -> Mapping[str, str]:
+        return self._runtime_background_startup_failures.copy()
+
+    @property
+    def runtime_background_startup_pending(self) -> bool:
+        return self._runtime_background_startup_pending
 
     def _build_runtime_services(self) -> None:
         def get_task_execution_service() -> TaskExecutionService:
@@ -1549,26 +1560,91 @@ class ServerContainer:
         self.mcp_config_file_watcher.start()
         self.run_service.bind_event_loop(asyncio.get_running_loop())
         self.background_task_service.bind_completion_sink(self.run_service)
-        await self.discord_gateway_service.start_async()
-        await self._start_sync_service(
-            service_name="wechat_gateway",
-            start=self.wechat_gateway_service.start,
+        self._runtime_background_startup_pending = True
+        task = asyncio.create_task(
+            self._start_runtime_background_services(),
+            name="server-runtime-background-services-startup",
         )
-        await self._start_sync_service(
-            service_name="xiaoluban_im_listener",
-            start=self.xiaoluban_im_listener_service.start,
-        )
-        self._start_sync_service_background(
-            service_name="feishu_subscription",
-            start=self.feishu_subscription_service.start,
-        )
-        await self.feishu_message_pool_service.start()
-        await self.automation_delivery_worker.start()
-        await self.automation_bound_session_queue_worker.start()
-        await self.github_trigger_action_worker.start()
-        await self.board_todo_service.start()
-        await self.automation_scheduler_service.start()
+        self._startup_background_tasks.add(task)
+        self._noncancelable_startup_background_tasks.add(task)
         return None
+
+    async def _start_runtime_background_services(self) -> None:
+        try:
+            await self._run_runtime_service_startup_step(
+                "discord_gateway_service",
+                self.discord_gateway_service.start_async,
+            )
+            await self._run_runtime_service_startup_step(
+                "wechat_gateway_service",
+                self._start_wechat_gateway_service,
+            )
+            await self._run_runtime_service_startup_step(
+                "xiaoluban_im_listener_service",
+                self._start_xiaoluban_im_listener_service,
+            )
+            await self._run_runtime_service_startup_step(
+                "feishu_subscription_service",
+                self._start_feishu_subscription_service,
+            )
+            await self._run_runtime_service_startup_step(
+                "feishu_message_pool_service",
+                self.feishu_message_pool_service.start,
+            )
+            await self._run_runtime_service_startup_step(
+                "automation_delivery_worker",
+                self.automation_delivery_worker.start,
+            )
+            await self._run_runtime_service_startup_step(
+                "automation_bound_session_queue_worker",
+                self.automation_bound_session_queue_worker.start,
+            )
+            await self._run_runtime_service_startup_step(
+                "github_trigger_action_worker",
+                self.github_trigger_action_worker.start,
+            )
+            await self._run_runtime_service_startup_step(
+                "board_todo_service",
+                self.board_todo_service.start,
+            )
+            await self._run_runtime_service_startup_step(
+                "automation_scheduler_service",
+                self.automation_scheduler_service.start,
+            )
+        finally:
+            self._runtime_background_startup_pending = False
+
+    async def _run_runtime_service_startup_step(
+        self,
+        service_name: str,
+        start_step: Callable[[], Awaitable[None]],
+    ) -> None:
+        try:
+            await start_step()
+        except asyncio.CancelledError:
+            raise
+        except (OSError, RuntimeError, ValueError, sqlite3.Error):
+            self._runtime_background_startup_failures[service_name] = "start_failed"
+            LOGGER.warning(
+                "Runtime background service failed to start: %s",
+                service_name,
+                exc_info=True,
+            )
+        except (ImportError, AttributeError):
+            self._runtime_background_startup_failures[service_name] = "start_failed"
+            LOGGER.exception(
+                "Runtime background service failed unexpectedly during startup: %s",
+                service_name,
+            )
+
+    async def _start_wechat_gateway_service(self) -> None:
+        await asyncio.to_thread(self.wechat_gateway_service.start)
+
+    async def _start_xiaoluban_im_listener_service(self) -> None:
+        await asyncio.to_thread(self.xiaoluban_im_listener_service.start)
+
+    async def _start_feishu_subscription_service(self) -> None:
+        await asyncio.to_thread(self.feishu_subscription_service.start)
 
     async def _start_sync_service(
         self,
@@ -1704,6 +1780,8 @@ class ServerContainer:
 
     def _cancel_startup_background_tasks(self) -> None:
         for task in tuple(self._startup_background_tasks):
+            if task in self._noncancelable_startup_background_tasks:
+                continue
             task.cancel()
 
     async def _drain_startup_background_tasks(self) -> None:
@@ -1720,6 +1798,7 @@ class ServerContainer:
                     exc_info=(type(result), result, result.__traceback__),
                 )
         self._startup_background_tasks.difference_update(tasks)
+        self._noncancelable_startup_background_tasks.difference_update(tasks)
 
     async def _close_async_repositories(self) -> None:
         for repository in reversed(self._async_closeables):

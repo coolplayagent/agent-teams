@@ -1082,7 +1082,15 @@ def _is_agent_teams_base_url_healthy(base_url: str) -> bool:
 
 
 def _health_payload_indicates_ready(payload: object) -> bool:
-    return isinstance(payload, dict) and payload.get("status") == "ok"
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("background_startup_pending") or payload.get(
+        "background_startup_failures"
+    ):
+        return False
+    if payload.get("status") == "ok":
+        return True
+    return payload.get("hydrated") is True and payload.get("startup_phase") == "ready"
 
 
 def _uses_plain_http_root_health(parsed: ParseResult) -> bool:

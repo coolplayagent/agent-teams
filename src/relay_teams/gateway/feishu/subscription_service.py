@@ -6,13 +6,10 @@ import logging
 import random
 from contextlib import suppress
 from threading import Event, Lock, Thread
-from typing import NoReturn, Protocol, runtime_checkable
+from typing import NoReturn, Protocol, TypeAlias, runtime_checkable
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-from lark_oapi.event.dispatcher_handler import P2ImMessageReceiveV1
-from lark_oapi.ws.const import DEVICE_ID, SERVICE_ID
-from lark_oapi.ws.model import ClientConfig
 from websockets.exceptions import ConnectionClosedOK, InvalidStatus
 
 from relay_teams.gateway.feishu.lark_ws_compat import (
@@ -32,6 +29,12 @@ from relay_teams.net.websocket import (
 
 logger = get_logger(__name__)
 
+P2ImMessageReceiveV1: TypeAlias = object
+ClientConfig: TypeAlias = object
+
+_DEVICE_ID_QUERY_KEY = "device_id"
+_SERVICE_ID_QUERY_KEY = "service_id"
+
 
 class FeishuRuntimeConfigLookup(Protocol):
     def list_enabled_runtime_configs(
@@ -44,7 +47,7 @@ class FeishuTriggerHandlerLike(Protocol):
         self,
         *,
         trigger_id: str,
-        event: P2ImMessageReceiveV1,
+        event: object,
         raw_body: str,
         headers: dict[str, str],
         remote_addr: str | None,
@@ -437,9 +440,7 @@ class _FeishuWsController:
         self._event_handler = event_handler
         self._client: WsClientLike | None = None
         self._task: asyncio.Task[None] | None = None
-        self._handler_queue: asyncio.Queue[tuple[P2ImMessageReceiveV1, str]] = (
-            asyncio.Queue()
-        )
+        self._handler_queue: asyncio.Queue[tuple[object, str]] = asyncio.Queue()
         self._handler_task: asyncio.Task[None] | None = None
         self._stop_requested = False
 
@@ -573,7 +574,7 @@ class _FeishuWsController:
     def _enqueue_sdk_event(
         self,
         *,
-        event: P2ImMessageReceiveV1,
+        event: object,
         raw_body: str,
     ) -> None:
         self._start_handler_worker()
@@ -605,7 +606,7 @@ class _FeishuWsController:
     def _handle_sdk_event_in_worker(
         self,
         *,
-        event: P2ImMessageReceiveV1,
+        event: object,
         raw_body: str,
     ) -> None:
         result = self._event_handler.handle_sdk_event(
@@ -621,8 +622,8 @@ class _FeishuWsController:
         ws_client_module = import_lark_ws_client_module()
         conn_url = await self._get_conn_url(client)
         conn_query = parse_qs(urlparse(conn_url).query)
-        conn_ids = conn_query.get(DEVICE_ID)
-        service_ids = conn_query.get(SERVICE_ID)
+        conn_ids = conn_query.get(_DEVICE_ID_QUERY_KEY)
+        service_ids = conn_query.get(_SERVICE_ID_QUERY_KEY)
         if not conn_ids or not service_ids:
             raise RuntimeError("Feishu websocket connection metadata is incomplete")
         connection: WsConnectionLike | None = None

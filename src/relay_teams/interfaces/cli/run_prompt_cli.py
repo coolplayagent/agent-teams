@@ -9,8 +9,8 @@ from pathlib import Path
 import httpx
 import typer
 
-from relay_teams.env.proxy_env import load_proxy_env_config
-from relay_teams.net.clients import create_async_http_client
+from relay_teams.interfaces.cli.http_client import create_cli_http_client
+from relay_teams.net.constants import DEFAULT_HTTP_CONNECT_TIMEOUT_SECONDS
 from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.session_models import SessionMode
 
@@ -223,9 +223,10 @@ def stream_events(base_url: str, run_id: str, debug: bool) -> None:
 
 async def stream_events_async(base_url: str, run_id: str, debug: bool) -> None:
     try:
-        async with create_async_http_client(
-            proxy_config=load_proxy_env_config(),
+        async with create_cli_http_client(
+            base_url=base_url,
             timeout_seconds=600.0,
+            connect_timeout_seconds=DEFAULT_HTTP_CONNECT_TIMEOUT_SECONDS,
         ) as client:
             async with client.stream(
                 "GET",
@@ -266,8 +267,8 @@ async def _request_run_stop_after_interrupt_async(
     run_id: str,
 ) -> bool:
     try:
-        async with create_async_http_client(
-            proxy_config=load_proxy_env_config(),
+        async with create_cli_http_client(
+            base_url=base_url,
             timeout_seconds=10.0,
             connect_timeout_seconds=5.0,
         ) as client:

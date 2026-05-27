@@ -31,8 +31,6 @@ if TYPE_CHECKING:
     from lark_oapi.event.context import EventHeader
     from lark_oapi.event.dispatcher_handler import P2ImMessageReceiveV1
 
-from lark_oapi.core.json import JSON
-
 _AT_TAG_PATTERN = re.compile(r"<at\b[^>]*>.*?</at>", re.IGNORECASE)
 _AT_TAG_LABEL_PATTERN = re.compile(r"<at\b[^>]*>(.*?)</at>", re.IGNORECASE)
 _LEADING_MENTION_TOKEN_PATTERN = re.compile(r"^(?:@\S+\s*)+")
@@ -123,7 +121,7 @@ class FeishuTriggerHandler:
         self,
         *,
         trigger_id: str,
-        event: P2ImMessageReceiveV1,
+        event: object,
         raw_body: str,
         headers: dict[str, str],
         remote_addr: str | None,
@@ -138,7 +136,11 @@ class FeishuTriggerHandler:
                 ignored=True,
                 reason="missing_credentials",
             )
-        normalized = _normalize_sdk_message(event)
+        payload = _parse_json_object(raw_body)
+        normalized = _normalize_sdk_message(
+            cast("P2ImMessageReceiveV1", event),
+            payload=payload,
+        )
         return self._handle_normalized_message(
             runtime_config=runtime_config,
             normalized=normalized,
@@ -371,7 +373,11 @@ def _parse_json_object(raw_body: str) -> dict[str, JsonValue]:
     return parsed
 
 
-def _normalize_sdk_message(event: P2ImMessageReceiveV1) -> FeishuNormalizedMessage:
+def _normalize_sdk_message(
+    event: P2ImMessageReceiveV1,
+    *,
+    payload: dict[str, JsonValue],
+) -> FeishuNormalizedMessage:
     header = event.header
     event_data = event.event
     if header is None:
@@ -386,7 +392,6 @@ def _normalize_sdk_message(event: P2ImMessageReceiveV1) -> FeishuNormalizedMessa
         raise ValueError("Feishu event is missing sender")
 
     message_type = str(message.message_type or "").strip()
-    payload = _sdk_event_payload(event)
     mention_names = _extract_mention_names(payload)
     if message_type != "text":
         return FeishuNormalizedMessage(
@@ -427,13 +432,6 @@ def _normalize_sdk_message(event: P2ImMessageReceiveV1) -> FeishuNormalizedMessa
         payload=payload,
         metadata=_sdk_message_metadata(header, message),
     )
-
-
-def _sdk_event_payload(event: P2ImMessageReceiveV1) -> dict[str, JsonValue]:
-    marshaled = JSON.marshal(event)
-    if marshaled is None:
-        raise ValueError("Feishu SDK event payload is empty")
-    return _parse_json_object(marshaled)
 
 
 def _sdk_event_id(header: EventHeader, message: EventMessage) -> str:

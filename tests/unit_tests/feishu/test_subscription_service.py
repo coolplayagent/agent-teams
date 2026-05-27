@@ -504,6 +504,66 @@ async def test_feishu_ws_controller_get_conn_url_uses_net_http_client(
     assert ws_client.configured_ping_interval == 45
 
 
+@pytest.mark.asyncio
+async def test_feishu_ws_controller_connect_client_sets_connection_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = _FeishuWsController(
+        runtime_config=_build_runtime(
+            trigger_id="trg_a",
+            name="bot_a",
+            app_id="cli_demo",
+            app_name="bot-a",
+            app_secret="secret-demo",
+        ),
+        event_handler=_FakeHandler(),
+    )
+    connection = _FakeWsConnection()
+    connected_urls: list[str] = []
+
+    async def _get_conn_url(_client: WsClientLike) -> str:
+        return "wss://open.feishu.cn/ws?device_id=device-1&service_id=7"
+
+    class _FakeWebsockets:
+        async def connect(
+            self,
+            url: str,
+            *,
+            proxy: str | None,
+            ssl: object,
+        ) -> _FakeWsConnection:
+            _ = (proxy, ssl)
+            connected_urls.append(url)
+            return connection
+
+    class _FakeLogger:
+        def info(self, message: str) -> None:
+            assert message == (
+                "connected to wss://open.feishu.cn/ws?device_id=device-1&service_id=7"
+            )
+
+    ws_client_module = SimpleNamespace(
+        websockets=_FakeWebsockets(),
+        logger=_FakeLogger(),
+    )
+    monkeypatch.setattr(controller, "_get_conn_url", _get_conn_url)
+    monkeypatch.setattr(
+        "relay_teams.gateway.feishu.subscription_service.import_lark_ws_client_module",
+        lambda: ws_client_module,
+    )
+    ws_client = _FakeWsClient()
+
+    await controller._connect_client(cast(WsClientLike, ws_client))
+
+    assert connected_urls == ["wss://open.feishu.cn/ws?device_id=device-1&service_id=7"]
+    assert ws_client._conn is connection
+    assert ws_client._conn_url == (
+        "wss://open.feishu.cn/ws?device_id=device-1&service_id=7"
+    )
+    assert ws_client._conn_id == "device-1"
+    assert ws_client._service_id == "7"
+
+
 def test_feishu_ws_controller_http_client_uses_runtime_net_proxy_loader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

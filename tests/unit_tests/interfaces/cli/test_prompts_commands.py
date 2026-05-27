@@ -338,14 +338,14 @@ async def test_run_prompt_stream_events_async_reads_sse_lines(
     )
     captured_kwargs: dict[str, object] = {}
 
-    def fake_create_async_http_client(**kwargs: object) -> _FakePromptHttpClient:
+    def fake_create_cli_http_client(**kwargs: object) -> _FakePromptHttpClient:
         captured_kwargs.update(kwargs)
         return fake_client
 
     monkeypatch.setattr(
         prompt_cli,
-        "create_async_http_client",
-        fake_create_async_http_client,
+        "create_cli_http_client",
+        fake_create_cli_http_client,
     )
 
     await prompt_cli.stream_events_async(
@@ -362,7 +362,11 @@ async def test_run_prompt_stream_events_async_reads_sse_lines(
             {"Accept": "text/event-stream"},
         )
     ]
-    assert captured_kwargs["timeout_seconds"] == 600.0
+    assert captured_kwargs == {
+        "base_url": "http://127.0.0.1:8000/",
+        "timeout_seconds": 600.0,
+        "connect_timeout_seconds": prompt_cli.DEFAULT_HTTP_CONNECT_TIMEOUT_SECONDS,
+    }
 
 
 @pytest.mark.asyncio
@@ -373,14 +377,14 @@ async def test_run_prompt_stream_events_async_reports_http_errors(monkeypatch) -
         stream=_FakeAsyncByteStream(b"failed"),
     )
 
-    def fake_create_async_http_client(**kwargs: object) -> _FakePromptHttpClient:
+    def fake_create_cli_http_client(**kwargs: object) -> _FakePromptHttpClient:
         _ = kwargs
         return _FakePromptHttpClient([], error_response=response)
 
     monkeypatch.setattr(
         prompt_cli,
-        "create_async_http_client",
-        fake_create_async_http_client,
+        "create_cli_http_client",
+        fake_create_cli_http_client,
     )
 
     with pytest.raises(
@@ -409,7 +413,7 @@ def test_run_prompt_stream_events_requests_stop_on_keyboard_interrupt(
         _ = (base_url, run_id, debug)
         raise KeyboardInterrupt
 
-    def fake_create_async_http_client(**kwargs: object) -> _FakePromptHttpClient:
+    def fake_create_cli_http_client(**kwargs: object) -> _FakePromptHttpClient:
         _ = kwargs
         return fake_client
 
@@ -420,8 +424,8 @@ def test_run_prompt_stream_events_requests_stop_on_keyboard_interrupt(
     )
     monkeypatch.setattr(
         prompt_cli,
-        "create_async_http_client",
-        fake_create_async_http_client,
+        "create_cli_http_client",
+        fake_create_cli_http_client,
     )
 
     with pytest.raises(typer.Exit) as exc_info:
@@ -470,14 +474,14 @@ async def test_request_run_stop_after_interrupt_async_returns_false_for_missing_
 ) -> None:
     fake_client = _FakePromptHttpClient([], post_status_code=404)
 
-    def fake_create_async_http_client(**kwargs: object) -> _FakePromptHttpClient:
+    def fake_create_cli_http_client(**kwargs: object) -> _FakePromptHttpClient:
         _ = kwargs
         return fake_client
 
     monkeypatch.setattr(
         prompt_cli,
-        "create_async_http_client",
-        fake_create_async_http_client,
+        "create_cli_http_client",
+        fake_create_cli_http_client,
     )
 
     requested = await prompt_cli._request_run_stop_after_interrupt_async(
@@ -505,14 +509,14 @@ async def test_request_run_stop_after_interrupt_async_returns_false_on_request_e
         post_error=httpx.ConnectError("offline", request=request),
     )
 
-    def fake_create_async_http_client(**kwargs: object) -> _FakePromptHttpClient:
+    def fake_create_cli_http_client(**kwargs: object) -> _FakePromptHttpClient:
         _ = kwargs
         return fake_client
 
     monkeypatch.setattr(
         prompt_cli,
-        "create_async_http_client",
-        fake_create_async_http_client,
+        "create_cli_http_client",
+        fake_create_cli_http_client,
     )
 
     requested = await prompt_cli._request_run_stop_after_interrupt_async(

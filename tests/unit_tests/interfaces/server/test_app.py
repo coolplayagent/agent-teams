@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import importlib
 import json
 import logging
 import signal
@@ -888,6 +889,66 @@ def test_build_hydration_bundle_wires_runtime_app_with_fake_modules(
         async def stop(self) -> None:
             return None
 
+    def _build_hydration_bundle(
+        *,
+        config_dir: Path,
+        version: str,
+    ) -> server_app.HydrationBundle:
+        api_app = FastAPI(version=version)
+        api_app.state.config_dir = config_dir
+        api_app.state.container = FakeServerContainer(config_dir=config_dir)
+        api_app.state.components = {"core": "ready", "runtime": "loading"}
+        return server_app.HydrationBundle(
+            container=cast(server_app.RuntimeContainer, api_app.state.container),
+            api_app=api_app,
+        )
+
+    fake_runtime_bundle_module = ModuleType(
+        "relay_teams.interfaces.server.runtime_bundle"
+    )
+    setattr(
+        fake_runtime_bundle_module, "build_hydration_bundle", _build_hydration_bundle
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "relay_teams.interfaces.server.runtime_bundle",
+        fake_runtime_bundle_module,
+    )
+
+    bundle = server_app._build_hydration_bundle(tmp_path)
+
+    assert isinstance(bundle.api_app, FastAPI)
+    assert bundle.api_app.state.config_dir == tmp_path
+    assert bundle.api_app.state.container.config_dir == tmp_path
+    assert bundle.api_app.state.components == {"core": "ready", "runtime": "loading"}
+
+    @bundle.api_app.get("/probe")
+    async def probe() -> dict[str, bool]:
+        return {"ok": True}
+
+    response = TestClient(bundle.api_app).get("/probe")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_runtime_bundle_wires_runtime_app_with_fake_modules(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeServerContainer:
+        role_registry = object()
+        skill_registry = object()
+        tool_registry = object()
+
+        def __init__(self, *, config_dir: Path) -> None:
+            self.config_dir = config_dir
+
+    class FakeHealthPayload:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {"status": "ok", "config_dir": "runtime"}
+
     fake_container_module = ModuleType("relay_teams.interfaces.server.container")
     setattr(fake_container_module, "ServerContainer", FakeServerContainer)
     monkeypatch.setitem(
@@ -896,19 +957,22 @@ def test_build_hydration_bundle_wires_runtime_app_with_fake_modules(
         fake_container_module,
     )
 
-    fake_logger_module = ModuleType("relay_teams.logger")
-    setattr(fake_logger_module, "configure_logging", lambda *, config_dir: None)
-    setattr(
-        fake_logger_module,
-        "get_logger",
-        lambda _name, **_kwargs: logging.getLogger("fake-router"),
+    fake_runtime_identity_module = ModuleType(
+        "relay_teams.interfaces.server.runtime_identity"
     )
-    setattr(fake_logger_module, "log_event", lambda *_args, **_kwargs: None)
-    monkeypatch.setitem(sys.modules, "relay_teams.logger", fake_logger_module)
+    setattr(
+        fake_runtime_identity_module,
+        "build_server_health_payload",
+        lambda **_kwargs: FakeHealthPayload(),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "relay_teams.interfaces.server.runtime_identity",
+        fake_runtime_identity_module,
+    )
 
-    from relay_teams.interfaces.server import routers as routers_package
-
-    router_names = (
+    fake_routers_package = ModuleType("relay_teams.interfaces.server.routers")
+    for name in (
         "a2a_internal",
         "artifacts_router",
         "audit",
@@ -934,29 +998,58 @@ def test_build_hydration_bundle_wires_runtime_app_with_fake_modules(
         "tasks",
         "triggers",
         "workspaces",
+    ):
+        setattr(fake_routers_package, name, SimpleNamespace(router=APIRouter()))
+    monkeypatch.setitem(
+        sys.modules,
+        "relay_teams.interfaces.server.routers",
+        fake_routers_package,
     )
-    for name in router_names:
-        monkeypatch.setattr(
-            routers_package,
-            name,
-            SimpleNamespace(router=APIRouter()),
-        )
+    monkeypatch.delitem(
+        sys.modules,
+        "relay_teams.interfaces.server.runtime_bundle",
+        raising=False,
+    )
 
-    bundle = server_app._build_hydration_bundle(tmp_path)
+    runtime_bundle = importlib.import_module(
+        "relay_teams.interfaces.server.runtime_bundle"
+    )
+
+    bundle = runtime_bundle.build_hydration_bundle(
+        config_dir=tmp_path,
+        version="test-version",
+    )
 
     assert isinstance(bundle.api_app, FastAPI)
-    assert bundle.api_app.state.config_dir == tmp_path
+    assert bundle.api_app.version == "test-version"
     assert bundle.api_app.state.container.config_dir == tmp_path
-    assert bundle.api_app.state.components == {"core": "ready", "runtime": "loading"}
+    assert bundle.health_payload_builder()["status"] == "ok"
 
     @bundle.api_app.get("/probe")
-    async def probe() -> dict[str, bool]:
+    async def probe_runtime_bundle() -> dict[str, bool]:
         return {"ok": True}
 
     response = TestClient(bundle.api_app).get("/probe")
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+    request = SimpleNamespace(method="POST", url=SimpleNamespace(path="/api/runs"))
+    rejected = asyncio.run(
+        runtime_bundle.route_work_rejected_handler(
+            cast(server_app.Request, request),
+            RuntimeError("shed"),
+        )
+    )
+    failed = asyncio.run(
+        runtime_bundle.global_exception_handler(
+            cast(server_app.Request, request),
+            RuntimeError("boom"),
+        )
+    )
+
+    assert rejected.status_code == 503
+    assert failed.status_code == 500
 
 
 def test_component_for_path_extracts_api_component() -> None:
@@ -1191,19 +1284,8 @@ def test_middleware_classes_delegate_to_shared_functions(
 
 
 def test_health_payload_uses_runtime_identity_after_hydration(
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    class FakeHealthPayload:
-        def model_dump(self, *, mode: str) -> dict[str, object]:
-            assert mode == "json"
-            return {"status": "ok", "config_dir": "runtime"}
-
-    class FakeContainer:
-        role_registry = object()
-        skill_registry = object()
-        tool_registry = object()
-
     app = server_app.Starlette()
     app.state.config_dir = tmp_path
     app.state.started_at = 1.0
@@ -1211,39 +1293,103 @@ def test_health_payload_uses_runtime_identity_after_hydration(
     app.state.hydrated = True
     app.state.components = {"core": "ready", "runtime": "ready"}
     app.state.hydration_error = None
-    app.state.container = FakeContainer()
-
-    calls: list[tuple[object, object, object]] = []
-
-    def fake_build_server_health_payload(
-        *,
-        config_dir: Path,
-        role_registry: object | None = None,
-        skill_registry: object | None = None,
-        tool_registry: object | None = None,
-    ) -> FakeHealthPayload:
-        assert config_dir == tmp_path
-        calls.append((role_registry, skill_registry, tool_registry))
-        return FakeHealthPayload()
-
-    monkeypatch.setattr(
-        server_app,
-        "build_server_health_payload",
-        fake_build_server_health_payload,
-    )
+    app.state.health_payload_builder = lambda: {
+        "status": "ok",
+        "config_dir": "runtime",
+    }
 
     payload = server_app._health_payload(app)
 
     assert payload["status"] == "ok"
     assert payload["startup_phase"] == "ready"
     assert payload["hydrated"] is True
-    assert calls == [
-        (
-            FakeContainer.role_registry,
-            FakeContainer.skill_registry,
-            FakeContainer.tool_registry,
-        )
-    ]
+    assert payload["config_dir"] == "runtime"
+
+
+def test_health_payload_marks_background_startup_pending_as_starting() -> None:
+    app = server_app.Starlette()
+    app.state.startup_phase = "ready"
+    app.state.hydrated = True
+    app.state.components = {"core": "ready", "runtime": "ready"}
+    app.state.hydration_error = None
+    app.state.health_payload_builder = lambda: {"status": "ok"}
+    app.state.container = SimpleNamespace(
+        runtime_background_startup_pending=True,
+        runtime_background_startup_failures={},
+    )
+
+    payload = server_app._health_payload(app)
+
+    assert payload["status"] == "starting"
+    assert payload["background_startup_pending"] is True
+
+
+def test_health_payload_marks_background_startup_failures_as_failed() -> None:
+    app = server_app.Starlette()
+    app.state.startup_phase = "ready"
+    app.state.hydrated = True
+    app.state.components = {"core": "ready", "runtime": "ready"}
+    app.state.hydration_error = None
+    app.state.health_payload_builder = lambda: {"status": "ok"}
+    app.state.container = SimpleNamespace(
+        runtime_background_startup_pending=False,
+        runtime_background_startup_failures={
+            "feishu_message_pool_service": "start_failed"
+        },
+    )
+
+    payload = server_app._health_payload(app)
+
+    assert payload["status"] == "failed"
+    assert payload["background_startup_failures"] == {
+        "feishu_message_pool_service": "start_failed"
+    }
+
+
+def test_startup_payload_surfaces_background_service_failures() -> None:
+    app = server_app.Starlette()
+    app.state.startup_phase = "ready"
+    app.state.hydrated = True
+    app.state.components = {"core": "ready", "runtime": "ready"}
+    app.state.hydration_error = None
+    app.state.container = SimpleNamespace(
+        runtime_background_startup_failures={
+            "feishu_message_pool_service": "start_failed"
+        }
+    )
+
+    payload = server_app._startup_payload(app)
+
+    assert payload["components"] == {
+        "core": "ready",
+        "runtime": "ready",
+        "background_services": "failed",
+    }
+    assert payload["background_startup_failures"] == {
+        "feishu_message_pool_service": "start_failed"
+    }
+
+
+def test_startup_payload_surfaces_pending_background_services() -> None:
+    app = server_app.Starlette()
+    app.state.startup_phase = "ready"
+    app.state.hydrated = True
+    app.state.components = {"core": "ready", "runtime": "ready"}
+    app.state.hydration_error = None
+    app.state.container = SimpleNamespace(
+        runtime_background_startup_pending=True,
+        runtime_background_startup_failures={},
+    )
+
+    payload = server_app._startup_payload(app)
+
+    assert payload["components"] == {
+        "core": "ready",
+        "runtime": "ready",
+        "background_services": "loading",
+    }
+    assert payload["background_startup_pending"] is True
+    assert payload["background_startup_failures"] == {}
 
 
 def test_hydration_failure_stops_partially_started_container(

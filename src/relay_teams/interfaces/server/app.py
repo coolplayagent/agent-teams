@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+import importlib
 import json
 import logging
 import os
@@ -13,10 +14,9 @@ import signal
 import sys
 import time
 from types import FrameType
-from typing import Protocol
+from typing import Protocol, cast
 import uuid
 
-from fastapi import FastAPI
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -26,49 +26,19 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from relay_teams.builtin.resources import ensure_app_config_bootstrap
-from relay_teams.interfaces.server.async_call import (
-    RouteWorkRejectedError,
-    reset_default_route_work_class,
-    route_work_class_for_http_method,
-    set_default_route_work_class,
-)
 from relay_teams.interfaces.server.config_paths import get_frontend_dist_dir
-from relay_teams.interfaces.server.container import ServerContainer
 from relay_teams.interfaces.server.public_access import (
     is_public_access_guard_enabled,
     is_public_host_allowed_request,
     public_access_denied_detail,
     request_uses_public_host,
 )
-from relay_teams.interfaces.server.routers import (
-    a2a_internal,
-    artifacts_router,
-    audit,
-    auto_harness,
-    automation,
-    boards,
-    commands,
-    connectors,
-    feishu_gateway,
-    gateway,
-    guardrails_router,
-    logs,
-    mcp,
-    memories,
-    observability,
-    prompts,
-    roles,
-    runs,
-    session_media,
-    sessions,
-    speech,
-    system,
-    tasks,
-    triggers,
-    workspaces,
+from relay_teams.interfaces.server.runtime_contracts import (
+    HydratedHealthPayloadBuilder,
+    HydrationBundle,
+    RuntimeContainer,
 )
-from relay_teams.interfaces.server.runtime_identity import build_server_health_payload
-from relay_teams.logger import configure_logging, shutdown_logging
+from relay_teams.logger import shutdown_logging
 from relay_teams.paths import get_app_config_dir
 from relay_teams.trace import bind_trace_context
 
@@ -76,6 +46,7 @@ SERVER_VERSION = "0.1.0"
 SERVICE_INITIALIZING = "service_initializing"
 HYDRATION_READ_WAIT_SECONDS = 0.0
 HYDRATION_MUTATION_WAIT_SECONDS = 0.0
+_RUNTIME_BUNDLE_MODULE = "relay_teams.interfaces.server.runtime_bundle"
 
 logger = logging.getLogger("relay_teams.bootstrap.server")
 FRONTEND_DIST_DIR = get_frontend_dist_dir()
@@ -117,20 +88,6 @@ _RUNTIME_SHADOW_BOOTSTRAP_PATHS = frozenset(
         "/api/roles:options",
     )
 )
-
-
-class RuntimeContainer(Protocol):
-    async def start(self) -> None:
-        pass
-
-    async def stop(self) -> None:
-        pass
-
-
-class HydrationBundle:
-    def __init__(self, *, container: RuntimeContainer, api_app: Starlette) -> None:
-        self.container = container
-        self.api_app = api_app
 
 
 class HydrationGateMiddleware(BaseHTTPMiddleware):
@@ -407,6 +364,17 @@ async def tracing_middleware(request: Request, call_next: RequestHandler) -> Res
         return response
 
 
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    _log_event(
+        logging.ERROR,
+        event="http.request.failed",
+        message="Unhandled server exception",
+        payload={"method": request.method, "path": request.url.path},
+        exc_info=exc,
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 async def route_work_rejected_handler(
     request: Request,
     exc: Exception,
@@ -419,17 +387,6 @@ async def route_work_rejected_handler(
         exc_info=exc,
     )
     return JSONResponse(status_code=503, content={"detail": str(exc)})
-
-
-async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    _log_event(
-        logging.ERROR,
-        event="http.request.failed",
-        message="Unhandled server exception",
-        payload={"method": request.method, "path": request.url.path},
-        exc_info=exc,
-    )
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 app.add_route("/api/system/health", bootstrap_health, methods=["GET"])
@@ -467,6 +424,7 @@ async def _hydrate_runtime(app: Starlette, config_dir: Path) -> None:
         bundle = await asyncio.to_thread(_build_hydration_bundle, config_dir)
         app.state.startup_phase = "starting_runtime"
         app.state.container = bundle.container
+        app.state.health_payload_builder = bundle.health_payload_builder
         await bundle.container.start()
         app.state.startup_phase = "mounting_routes"
         bundle.api_app.state.startup_phase = "ready"
@@ -492,6 +450,7 @@ async def _hydrate_runtime(app: Starlette, config_dir: Path) -> None:
         await _stop_failed_hydration_container(app)
         app.state.startup_phase = "failed"
         app.state.hydration_error = str(exc) or exc.__class__.__name__
+        app.state.health_payload_builder = None
         app.state.components = {"core": "ready", "runtime": "failed"}
         _log_event(
             logging.ERROR,
@@ -518,68 +477,28 @@ async def _stop_failed_hydration_container(starlette_app: Starlette) -> None:
         )
         return
     starlette_app.state.container = None
+    starlette_app.state.health_payload_builder = None
+
+
+class RuntimeBundleModule(Protocol):
+    def build_hydration_bundle(
+        self,
+        *,
+        config_dir: Path,
+        version: str,
+    ) -> HydrationBundle:
+        raise NotImplementedError
 
 
 def _build_hydration_bundle(config_dir: Path) -> HydrationBundle:
-    configure_logging(config_dir=config_dir)
-    container = ServerContainer(config_dir=config_dir)
-    api_app = FastAPI(
-        title="Agent Teams Server",
-        description="REST API for Agent Teams orchestration.",
+    module = cast(
+        RuntimeBundleModule,
+        cast(object, importlib.import_module(_RUNTIME_BUNDLE_MODULE)),
+    )
+    return module.build_hydration_bundle(
+        config_dir=config_dir,
         version=SERVER_VERSION,
     )
-    api_app.state.config_dir = config_dir
-    api_app.state.container = container
-    api_app.state.startup_phase = "starting_runtime"
-    api_app.state.hydrated = False
-    api_app.state.components = {"core": "ready", "runtime": "loading"}
-
-    @api_app.middleware("http")
-    async def route_work_class_middleware(
-        request: Request,
-        call_next: RequestHandler,
-    ) -> Response:
-        token = set_default_route_work_class(
-            route_work_class_for_http_method(request.method)
-        )
-        try:
-            return await call_next(request)
-        finally:
-            reset_default_route_work_class(token)
-
-    api_app.add_exception_handler(RouteWorkRejectedError, route_work_rejected_handler)
-    api_app.add_exception_handler(Exception, global_exception_handler)
-
-    routers = (
-        system.router,
-        audit.router,
-        commands.router,
-        connectors.router,
-        automation.router,
-        auto_harness.router,
-        feishu_gateway.router,
-        gateway.router,
-        mcp.router,
-        observability.router,
-        sessions.router,
-        session_media.router,
-        runs.router,
-        speech.router,
-        triggers.router,
-        artifacts_router.router,
-        tasks.router,
-        roles.router,
-        prompts.router,
-        logs.router,
-        workspaces.router,
-        guardrails_router.router,
-        memories.router,
-        boards.router,
-        a2a_internal.router,
-    )
-    for router in routers:
-        api_app.include_router(router)
-    return HydrationBundle(container=container, api_app=api_app)
 
 
 def _remove_frontend_mount(starlette_app: Starlette) -> list[BaseRoute]:
@@ -610,20 +529,14 @@ def _remove_runtime_shadow_bootstrap_routes(starlette_app: Starlette) -> None:
 def _health_payload(starlette_app: Starlette) -> dict[str, object]:
     config_dir = getattr(starlette_app.state, "config_dir", get_app_config_dir())
     if bool(getattr(starlette_app.state, "hydrated", False)):
-        container: ServerContainer | None = getattr(
-            starlette_app.state, "container", None
+        health_payload_builder: HydratedHealthPayloadBuilder | None = getattr(
+            starlette_app.state,
+            "health_payload_builder",
+            None,
         )
-        payload = (
-            build_server_health_payload(
-                config_dir=config_dir,
-                role_registry=container.role_registry,
-                skill_registry=container.skill_registry,
-                tool_registry=container.tool_registry,
-            )
-            if container is not None
-            else build_server_health_payload(config_dir=config_dir)
-        ).model_dump(mode="json")
+        payload = health_payload_builder() if health_payload_builder is not None else {}
         payload.update(_startup_payload(starlette_app))
+        _apply_background_startup_status(payload)
         return payload
     package_root = Path(__file__).resolve().parents[2]
     builtin_root = package_root / "builtin"
@@ -639,6 +552,13 @@ def _health_payload(starlette_app: Starlette) -> dict[str, object]:
     }
     payload.update(_startup_payload(starlette_app))
     return payload
+
+
+def _apply_background_startup_status(payload: dict[str, object]) -> None:
+    if payload.get("background_startup_failures"):
+        payload["status"] = "failed"
+    elif payload.get("background_startup_pending"):
+        payload["status"] = "starting"
 
 
 def _log_finished_hydration_task_error(task: asyncio.Task[None]) -> None:
@@ -657,12 +577,42 @@ def _log_finished_hydration_task_error(task: asyncio.Task[None]) -> None:
 
 
 def _startup_payload(starlette_app: Starlette) -> dict[str, object]:
+    components = dict(getattr(starlette_app.state, "components", {"core": "ready"}))
+    background_startup_failures = _background_startup_failures(starlette_app)
+    background_startup_pending = _background_startup_pending(starlette_app)
+    if background_startup_failures:
+        components["background_services"] = "failed"
+    elif background_startup_pending:
+        components["background_services"] = "loading"
     return {
         "startup_phase": getattr(starlette_app.state, "startup_phase", "bootstrap"),
         "hydrated": bool(getattr(starlette_app.state, "hydrated", False)),
-        "components": getattr(starlette_app.state, "components", {"core": "ready"}),
+        "components": components,
+        "background_startup_pending": background_startup_pending,
+        "background_startup_failures": background_startup_failures,
         "error": getattr(starlette_app.state, "hydration_error", None),
     }
+
+
+def _background_startup_failures(starlette_app: Starlette) -> dict[str, str]:
+    container: object | None = getattr(starlette_app.state, "container", None)
+    failures: object = getattr(
+        container,
+        "runtime_background_startup_failures",
+        {},
+    )
+    if not isinstance(failures, dict):
+        return {}
+    normalized: dict[str, str] = {}
+    for service_name, failure in failures.items():
+        if isinstance(service_name, str) and isinstance(failure, str):
+            normalized[service_name] = failure
+    return normalized
+
+
+def _background_startup_pending(starlette_app: Starlette) -> bool:
+    container: object | None = getattr(starlette_app.state, "container", None)
+    return bool(getattr(container, "runtime_background_startup_pending", False))
 
 
 def _component_for_path(path: str) -> str:

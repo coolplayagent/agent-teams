@@ -964,7 +964,7 @@ async def test_container_binds_background_completion_sink_during_start(
 
     try:
         await container.start()
-        await _wait_for_start_call(start_calls, "feishu-subscription")
+        await container._drain_startup_background_tasks()
 
         assert lifecycle_calls == ["bind_event_loop", "bind_completion_sink"]
         assert (
@@ -1094,7 +1094,7 @@ async def test_container_start_continues_when_memory_reindex_fails(
 
     try:
         await container.start()
-        await _wait_for_start_call(start_calls, "feishu-subscription")
+        await container._drain_startup_background_tasks()
 
         assert (
             "Failed to rebuild Memory Bank retrieval entries during startup"
@@ -1115,6 +1115,67 @@ async def test_container_start_continues_when_memory_reindex_fails(
             "board",
             "scheduler",
         ]
+    finally:
+        await container.stop()
+
+
+@pytest.mark.asyncio
+async def test_container_shutdown_drains_noncancelable_startup_tasks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    _write_model_config(config_dir, api_key="initial-secret")
+    container = container_module.ServerContainer(config_dir=config_dir)
+    release_startup = asyncio.Event()
+    completed: list[str] = []
+
+    async def _finish_after_stop_begins() -> None:
+        await release_startup.wait()
+        completed.append("runtime-startup")
+
+    task = asyncio.create_task(_finish_after_stop_begins())
+    container._startup_background_tasks.add(task)
+    container._noncancelable_startup_background_tasks.add(task)
+
+    try:
+        container._cancel_startup_background_tasks()
+
+        assert not task.cancelled()
+        release_startup.set()
+        await container._drain_startup_background_tasks()
+
+        assert completed == ["runtime-startup"]
+        assert container._startup_background_tasks == set()
+        assert container._noncancelable_startup_background_tasks == set()
+    finally:
+        release_startup.set()
+        await container.stop()
+
+
+@pytest.mark.asyncio
+async def test_container_records_unexpected_background_startup_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    _write_model_config(config_dir, api_key="initial-secret")
+    container = container_module.ServerContainer(config_dir=config_dir)
+
+    async def _fail_with_import_error() -> None:
+        raise ModuleNotFoundError("missing sdk")
+
+    try:
+        await container._run_runtime_service_startup_step(
+            "feishu_subscription_service",
+            _fail_with_import_error,
+        )
+
+        assert container.runtime_background_startup_failures == {
+            "feishu_subscription_service": "start_failed"
+        }
     finally:
         await container.stop()
 

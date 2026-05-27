@@ -21,6 +21,10 @@ from relay_teams.interfaces.cli.env_commands import build_env_app
 from relay_teams.interfaces.cli.gateway_cli import build_gateway_app
 from relay_teams.interfaces.cli.approvals_cli import build_approvals_app
 from relay_teams.interfaces.cli.hooks_cli import build_hooks_app
+from relay_teams.interfaces.cli.http_client import (
+    create_cli_http_client,
+    is_local_server_host,
+)
 from relay_teams.interfaces.cli.memories_cli import build_memories_app
 from relay_teams.interfaces.cli.questions_cli import build_questions_app
 from relay_teams.interfaces.cli.metrics_cli import build_metrics_app
@@ -40,7 +44,6 @@ from relay_teams.interfaces.server.runtime_identity import (
     build_server_runtime_identity,
     raise_if_runtime_mismatch,
 )
-from relay_teams.net.clients import create_async_http_client
 from relay_teams.mcp.mcp_cli import mcp_app
 from relay_teams.paths import get_project_config_dir
 from relay_teams.plugins.plugin_cli import plugin_app
@@ -52,7 +55,6 @@ from relay_teams.skills.skill_cli import skills_app
 app = typer.Typer(no_args_is_help=False, pretty_exceptions_enable=False)
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
-_LOCAL_SERVER_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0", "::"}  # nosec B104 - intentional bind to all interfaces for server
 
 
 def _request_json(
@@ -89,8 +91,8 @@ async def _request_json_async(
         headers.update(extra_headers)
 
     try:
-        async with create_async_http_client(
-            proxy_config=load_proxy_env_config(),
+        async with create_cli_http_client(
+            base_url=base_url,
             timeout_seconds=timeout_seconds,
             connect_timeout_seconds=timeout_seconds,
         ) as client:
@@ -120,12 +122,20 @@ async def _request_json_async(
 
 def _is_server_healthy(base_url: str) -> bool:
     health = _get_server_health(base_url)
-    return health is not None and health.status == "ok"
+    return health is not None and _health_payload_indicates_cli_ready(health)
 
 
 async def _is_server_healthy_async(base_url: str) -> bool:
     health = await _get_server_health_async(base_url)
-    return health is not None and health.status == "ok"
+    return health is not None and _health_payload_indicates_cli_ready(health)
+
+
+def _health_payload_indicates_cli_ready(health: ServerHealthPayload) -> bool:
+    if health.background_startup_pending or health.background_startup_failures:
+        return False
+    if health.status == "ok":
+        return True
+    return health.hydrated and health.startup_phase == "ready"
 
 
 def _get_server_health(base_url: str) -> ServerHealthPayload | None:
@@ -219,8 +229,8 @@ def _auto_start_if_needed(
             if not _wait_until_healthy(base_url):
                 raise RuntimeError("Agent Teams server is still starting")
             live_health = _get_server_health(base_url)
-        if live_health is not None and live_health.status == "ok":
-            if host not in _LOCAL_SERVER_HOSTS:
+        if live_health is not None and _health_payload_indicates_cli_ready(live_health):
+            if not is_local_server_host(host):
                 return
             raise_if_runtime_mismatch(
                 health=live_health,
@@ -230,6 +240,10 @@ def _auto_start_if_needed(
                 display_url=base_url,
             )
             return
+        if live_health is not None:
+            failure_names = ", ".join(sorted(live_health.background_startup_failures))
+            failure_detail = f": {failure_names}" if failure_names else ""
+            raise RuntimeError(f"Agent Teams server is unhealthy{failure_detail}")
 
     if not autostart:
         raise RuntimeError(

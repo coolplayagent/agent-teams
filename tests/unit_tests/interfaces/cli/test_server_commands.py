@@ -10,7 +10,9 @@ from typing import Optional
 import httpx
 from typer.testing import CliRunner
 
+from relay_teams.interfaces.cli import app as root_cli
 from relay_teams.interfaces.cli import app_full
+from relay_teams.interfaces.cli import http_client as cli_http_client
 from relay_teams.interfaces.server import cli as server_cli
 from relay_teams.interfaces.server.runtime_identity import (
     ServerHealthPayload,
@@ -469,28 +471,104 @@ def test_server_cli_get_server_health_async_uses_async_http_client(monkeypatch) 
     assert captured_kwargs["connect_timeout_seconds"] == 1.5
 
 
+def test_server_health_payload_accepts_background_startup_state() -> None:
+    payload = _health_payload().model_dump()
+    payload["components"] = {"background_services": "loading"}
+    payload["background_startup_pending"] = True
+    payload["background_startup_failures"] = {}
+
+    health = ServerHealthPayload.model_validate(payload)
+
+    assert health.status == "ok"
+    assert health.background_startup_pending is True
+    assert health.background_startup_failures == {}
+
+
+def test_root_cli_ready_rejects_hydrated_background_startup_pending() -> None:
+    health = _health_payload(status="starting")
+    health.hydrated = True
+    health.startup_phase = "ready"
+    health.background_startup_pending = True
+
+    assert not app_full._health_payload_indicates_cli_ready(health)
+
+
+def test_lightweight_root_cli_ready_rejects_background_startup_pending() -> None:
+    payload = _health_payload(status="starting").model_dump(mode="json")
+    payload["hydrated"] = True
+    payload["startup_phase"] = "ready"
+    payload["background_startup_pending"] = True
+
+    assert not root_cli._health_payload_indicates_ready(payload)
+
+
+def test_root_cli_ready_rejects_background_startup_failures() -> None:
+    health = _health_payload(status="failed")
+    health.hydrated = True
+    health.startup_phase = "ready"
+    health.background_startup_failures = {"feishu_message_pool_service": "start_failed"}
+
+    assert not app_full._health_payload_indicates_cli_ready(health)
+
+
+def test_root_cli_autostart_rejects_live_background_startup_failure(
+    monkeypatch,
+) -> None:
+    health = _health_payload(status="failed")
+    health.hydrated = True
+    health.startup_phase = "ready"
+    health.background_startup_failures = {"feishu_message_pool_service": "start_failed"}
+    started: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(app_full, "_get_server_health", lambda base_url: health)
+    monkeypatch.setattr(
+        app_full,
+        "_start_server_daemon",
+        lambda host, port, daemon=False: started.append((host, port)),
+    )
+
+    try:
+        app_full._auto_start_if_needed(
+            "http://127.0.0.1:8000", autostart=True, daemon=False, force=False
+        )
+    except RuntimeError as exc:
+        assert "Agent Teams server is unhealthy" in str(exc)
+        assert "feishu_message_pool_service" in str(exc)
+    else:
+        raise AssertionError("root CLI should reject unhealthy live local servers")
+
+    assert started == []
+
+
+def test_cli_http_client_treats_loopback_base_url_as_local() -> None:
+    assert cli_http_client.is_local_server_base_url("http://127.0.0.1:8000")
+    assert cli_http_client.is_local_server_base_url("http://localhost:8000")
+    assert cli_http_client.is_local_server_base_url("http://0.0.0.0:8000")
+    assert not cli_http_client.is_local_server_base_url("https://agent.example.test")
+
+
 def test_cli_request_json_async_applies_timeout_to_connect_phase(monkeypatch) -> None:
     response = httpx.Response(
         200,
         json={"status": "ok"},
-        request=httpx.Request("GET", "http://127.0.0.1:8000/api/system/health"),
+        request=httpx.Request("GET", "https://agent.example.test/api/system/health"),
     )
     fake_client = _FakeCliRequestJsonClient(response)
     captured_kwargs: dict[str, object] = {}
 
-    def fake_create_async_http_client(**kwargs: object) -> _FakeCliRequestJsonClient:
+    def fake_create_cli_http_client(**kwargs: object) -> _FakeCliRequestJsonClient:
         captured_kwargs.update(kwargs)
         return fake_client
 
     monkeypatch.setattr(
         app_full,
-        "create_async_http_client",
-        fake_create_async_http_client,
+        "create_cli_http_client",
+        fake_create_cli_http_client,
     )
 
     payload = asyncio.run(
         app_full._request_json_async(
-            base_url="http://127.0.0.1:8000",
+            base_url="https://agent.example.test",
             method="GET",
             path="/api/system/health",
             timeout_seconds=1.5,
@@ -498,8 +576,11 @@ def test_cli_request_json_async_applies_timeout_to_connect_phase(monkeypatch) ->
     )
 
     assert payload == {"status": "ok"}
-    assert captured_kwargs["timeout_seconds"] == 1.5
-    assert captured_kwargs["connect_timeout_seconds"] == 1.5
+    assert captured_kwargs == {
+        "base_url": "https://agent.example.test",
+        "timeout_seconds": 1.5,
+        "connect_timeout_seconds": 1.5,
+    }
 
 
 def test_server_cli_get_server_health_async_returns_none_on_http_error(

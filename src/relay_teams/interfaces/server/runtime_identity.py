@@ -77,6 +77,8 @@ class ServerHealthPayload(BaseModel):
     startup_phase: str = "ready"
     hydrated: bool = True
     components: dict[str, str] = Field(default_factory=dict)
+    background_startup_pending: bool = False
+    background_startup_failures: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
 
 

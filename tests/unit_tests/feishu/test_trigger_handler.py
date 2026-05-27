@@ -10,7 +10,6 @@ from typing import cast
 
 import pytest
 
-import relay_teams.gateway.feishu.trigger_handler as trigger_handler_module
 from relay_teams.gateway.feishu.models import (
     FeishuChatQueueClearResult,
     FeishuChatQueueItemPreview,
@@ -36,10 +35,6 @@ from relay_teams.sessions.session_service import SessionService
 from relay_teams.sessions.runs.run_service import SessionRunService
 from relay_teams.sessions.runs.run_models import IntentInput, RunThinkingConfig
 from relay_teams.sessions.session_models import SessionMode, SessionRecord
-
-trigger_handler_module._sdk_event_payload = lambda event: cast(
-    dict[str, object], getattr(event, "_payload")
-)
 
 if TYPE_CHECKING:
     from lark_oapi.event.dispatcher_handler import P2ImMessageReceiveV1
@@ -172,7 +167,6 @@ def _build_sdk_event(raw_body: str) -> P2ImMessageReceiveV1:
             ),
         ),
     )
-    setattr(event, "_payload", payload)
     return event
 
 

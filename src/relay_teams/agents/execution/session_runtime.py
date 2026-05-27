@@ -980,6 +980,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                         *buffered_messages,
                         *new_to_process,
                     ],
+                    pending_messages=new_to_process,
                 )
                 if boundary_missing_observed:
                     new_to_process.extend(boundary_missing_observed)
@@ -1337,6 +1338,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                                 *buffered_messages,
                                 *to_save,
                             ],
+                            pending_messages=to_save,
                         )
                         if missing_observed:
                             to_save.extend(missing_observed)
@@ -2034,6 +2036,7 @@ def _missing_stream_observed_messages(
     observed_messages: Sequence[ModelRequest | ModelResponse],
     *,
     existing_text_messages: Sequence[ModelRequest | ModelResponse] | None = None,
+    pending_messages: list[ModelRequest | ModelResponse] | None = None,
 ) -> list[ModelRequest | ModelResponse]:
     tool_call_ids = _tool_call_ids(existing_messages)
     tool_result_ids = _tool_result_ids(existing_messages)
@@ -2057,7 +2060,15 @@ def _missing_stream_observed_messages(
                 if not isinstance(part, ToolCallPart):
                     continue
                 tool_call_id = str(part.tool_call_id or "").strip()
-                if not tool_call_id or tool_call_id in tool_call_ids:
+                if not tool_call_id:
+                    continue
+                if tool_call_id in tool_call_ids:
+                    if missing_parts and _insert_missing_response_parts_before_tool_call(
+                        pending_messages,
+                        tool_call_id=tool_call_id,
+                        missing_parts=missing_parts,
+                    ):
+                        missing_parts = []
                     continue
                 missing_parts.append(part)
                 tool_call_ids.add(tool_call_id)
@@ -2076,6 +2087,36 @@ def _missing_stream_observed_messages(
         if missing_request_parts:
             missing.append(ModelRequest(parts=missing_request_parts))
     return missing
+
+
+def _insert_missing_response_parts_before_tool_call(
+    pending_messages: list[ModelRequest | ModelResponse] | None,
+    *,
+    tool_call_id: str,
+    missing_parts: list[ModelResponsePart],
+) -> bool:
+    if pending_messages is None or not missing_parts:
+        return False
+    for index, message in enumerate(pending_messages):
+        if not isinstance(message, ModelResponse):
+            continue
+        if not _response_has_tool_call_id(message, tool_call_id):
+            continue
+        pending_messages.insert(index, ModelResponse(parts=list(missing_parts)))
+        return True
+    return False
+
+
+def _response_has_tool_call_id(
+    message: ModelResponse,
+    tool_call_id: str,
+) -> bool:
+    for part in message.parts:
+        if not isinstance(part, ToolCallPart):
+            continue
+        if str(part.tool_call_id or "").strip() == tool_call_id:
+            return True
+    return False
 
 
 def _text_part_contents(

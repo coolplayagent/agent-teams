@@ -1576,9 +1576,15 @@ class ServerContainer:
         service_name: str,
         start: Callable[[], None],
     ) -> None:
+        start_task = asyncio.create_task(
+            asyncio.to_thread(start),
+            name=f"{service_name}-sync-start",
+        )
         try:
-            async with asyncio.timeout(SYNC_SERVICE_START_TIMEOUT_SECONDS):
-                await asyncio.to_thread(start)
+            await asyncio.wait_for(
+                asyncio.shield(start_task),
+                timeout=SYNC_SERVICE_START_TIMEOUT_SECONDS,
+            )
         except TimeoutError:
             log_event(
                 LOGGER,
@@ -1590,6 +1596,7 @@ class ServerContainer:
                     "timeout_seconds": SYNC_SERVICE_START_TIMEOUT_SECONDS,
                 },
             )
+            await start_task
 
     def _start_sync_service_background(
         self,
@@ -1602,6 +1609,34 @@ class ServerContainer:
             name=f"{service_name}-startup",
         )
         self._startup_background_tasks.add(task)
+        task.add_done_callback(
+            lambda completed: self._handle_startup_background_task_done(
+                completed,
+                service_name=service_name,
+            )
+        )
+
+    def _handle_startup_background_task_done(
+        self,
+        task: asyncio.Task[None],
+        *,
+        service_name: str,
+    ) -> None:
+        if task.cancelled():
+            return
+        exception = task.exception()
+        if exception is None:
+            self._startup_background_tasks.discard(task)
+            return
+        self._startup_background_tasks.discard(task)
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            event="app.startup.background_task_failed",
+            message="Startup background task failed",
+            payload={"service": service_name},
+            exc_info=exception,
+        )
 
     async def stop(self) -> None:
         self._cancel_startup_background_tasks()

@@ -756,23 +756,65 @@ async def _wait_for_start_call(start_calls: list[str], expected: str) -> None:
 
 @pytest.mark.asyncio
 async def test_start_sync_service_logs_timeout(monkeypatch, caplog) -> None:
+    started = threading.Event()
     release = threading.Event()
+    finished: list[str] = []
 
     def _blocked_start() -> None:
+        started.set()
         release.wait(timeout=1)
+        finished.append("done")
 
     monkeypatch.setattr(container_module, "SYNC_SERVICE_START_TIMEOUT_SECONDS", 0.001)
     caplog.set_level(logging.WARNING)
 
     try:
-        await container_module.ServerContainer._start_sync_service(
-            service_name="blocked-service",
-            start=_blocked_start,
+        start_task = asyncio.create_task(
+            container_module.ServerContainer._start_sync_service(
+                service_name="blocked-service",
+                start=_blocked_start,
+            )
         )
+        assert await asyncio.to_thread(started.wait, 1)
+        await asyncio.sleep(0.02)
+        assert start_task.done() is False
+        release.set()
+        await start_task
     finally:
         release.set()
 
     assert "Timed out while starting optional sync service" in caplog.text
+    assert finished == ["done"]
+
+
+@pytest.mark.asyncio
+async def test_start_sync_service_background_logs_failure_immediately(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    _write_model_config(config_dir, api_key="initial-secret")
+    container = container_module.ServerContainer(config_dir=config_dir)
+
+    def _fail_start() -> None:
+        raise RuntimeError("subscription failed")
+
+    caplog.set_level(logging.WARNING)
+
+    container._start_sync_service_background(
+        service_name="feishu_subscription",
+        start=_fail_start,
+    )
+    for _ in range(20):
+        if "subscription failed" in caplog.text:
+            break
+        await asyncio.sleep(0.01)
+
+    assert "Startup background task failed" in caplog.text
+    assert "subscription failed" in caplog.text
+    assert container._startup_background_tasks == set()
 
 
 @pytest.mark.asyncio

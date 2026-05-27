@@ -318,6 +318,75 @@ def test_project_text_messages_from_events_flushes_at_injection_boundary() -> No
     ]
 
 
+def test_project_text_messages_from_events_preserves_whitespace() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "\n  indented"}),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps({"text": " tail "}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert messages[0]["message"] == {
+        "parts": [{"part_kind": "text", "content": "\n  indented tail "}]
+    }
+
+
+def test_project_text_messages_from_events_includes_output_delta_text() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.OUTPUT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps(
+                    {
+                        "output": [
+                            {"kind": "text", "text": "media text"},
+                            {
+                                "kind": "media_ref",
+                                "asset_id": "asset-1",
+                                "session_id": "session-1",
+                                "modality": "image",
+                                "mime_type": "image/png",
+                                "url": "/api/media/asset-1",
+                            },
+                            {"kind": "text", "text": "after media"},
+                        ],
+                        "role_id": "Coordinator",
+                        "instance_id": "inst-coordinator",
+                    }
+                ),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {"parts": [{"part_kind": "text", "content": "media text"}]},
+        {"parts": [{"part_kind": "text", "content": "after media"}]},
+    ]
+
+
 def test_event_text_message_rejects_invalid_or_blank_segments() -> None:
     assert _event_text_message({"chunks": "not-a-list"}) is None
     assert _event_text_message({"chunks": [" ", "\n"]}) is None

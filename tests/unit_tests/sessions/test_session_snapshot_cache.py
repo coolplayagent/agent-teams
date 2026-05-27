@@ -1081,12 +1081,24 @@ async def test_session_service_pending_action_event_requires_fresh_session_list(
     assert sessions[0].pending_tool_approval_count == 1
 
 
+@pytest.mark.parametrize(
+    "event_type",
+    [
+        RunEventType.MODEL_STEP_STARTED,
+        RunEventType.TEXT_DELTA,
+        RunEventType.OUTPUT_DELTA,
+    ],
+)
 @pytest.mark.asyncio
 async def test_session_service_round_projection_event_marks_snapshot_dirty(
     tmp_path: Path,
+    event_type: RunEventType,
 ) -> None:
     runner = _CountingRunner()
-    service = _build_service(tmp_path / "session-round-event-cache.db", runner=runner)
+    service = _build_service(
+        tmp_path / f"session-round-{event_type.value}-cache.db",
+        runner=runner,
+    )
     _ = service.create_session(session_id="session-1", workspace_id="default")
     first = await service.get_session_rounds_async("session-1")
     assert first["items"] == []
@@ -1099,7 +1111,7 @@ async def test_session_service_round_projection_event_marks_snapshot_dirty(
             run_id="run-1",
             trace_id="run-1",
             instance_id="inst-1",
-            event_type=RunEventType.MODEL_STEP_STARTED,
+            event_type=event_type,
         )
     )
 

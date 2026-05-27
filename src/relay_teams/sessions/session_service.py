@@ -155,7 +155,7 @@ class _SessionDeleteContext(NamedTuple):
 
 _SNAPSHOT_DIRTY_EVENT_TYPES = frozenset(
     {
-        *(RunEventType(event_type) for event_type in ROUND_PROJECTION_EVENT_TYPES),
+        *(RunEventType(event_type) for event_type in DETAILED_ROUND_PROJECTION_EVENT_TYPES),
         RunEventType.RUN_STARTED,
         RunEventType.RUN_PAUSED,
         RunEventType.RUN_RESUMED,

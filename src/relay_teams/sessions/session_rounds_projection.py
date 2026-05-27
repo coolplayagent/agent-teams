@@ -12,6 +12,7 @@ from relay_teams.agent_runtimes.instances.instance_repository import (
 )
 from relay_teams.media import ContentPart
 from relay_teams.media import ContentPartAdapter
+from relay_teams.media import TextContentPart
 from relay_teams.media import content_parts_from_text
 from relay_teams.media import content_parts_to_text
 from relay_teams.media import normalize_user_prompt_content
@@ -47,6 +48,7 @@ ROUND_PROJECTION_EVENT_TYPES = (
 DETAILED_ROUND_PROJECTION_EVENT_TYPES = (
     *ROUND_PROJECTION_EVENT_TYPES,
     RunEventType.TEXT_DELTA.value,
+    RunEventType.OUTPUT_DELTA.value,
 )
 
 
@@ -764,30 +766,40 @@ def _project_text_messages_from_events(
         )
         if not run_id:
             continue
-        if event_type == RunEventType.TEXT_DELTA.value:
-            text = str(payload.get("text") or "")
-            if not text:
-                continue
+        if event_type in {
+            RunEventType.TEXT_DELTA.value,
+            RunEventType.OUTPUT_DELTA.value,
+        }:
             role_id = str(payload.get("role_id") or event.get("role_id") or "")
             instance_id = str(
                 payload.get("instance_id") or event.get("instance_id") or ""
             )
             key = (run_id, instance_id, role_id)
-            segment = active_segments.get(key)
-            if segment is None:
-                segment = {
-                    "run_id": run_id,
-                    "role_id": role_id,
-                    "instance_id": instance_id,
-                    "task_id": str(event.get("task_id") or ""),
-                    "occurred_at": str(event.get("occurred_at") or ""),
-                    "chunks": [],
-                }
-                active_segments[key] = segment
-            chunks = segment.get("chunks")
-            if isinstance(chunks, list):
-                chunks.append(text)
-            segment["occurred_at"] = str(event.get("occurred_at") or "")
+            for text_chunk in _event_text_chunks(event_type, payload):
+                if text_chunk is None:
+                    _flush_event_text_segments(
+                        active_segments,
+                        projected_by_run=projected_by_run,
+                        run_id=run_id,
+                    )
+                    continue
+                if text_chunk == "":
+                    continue
+                segment = active_segments.get(key)
+                if segment is None:
+                    segment = {
+                        "run_id": run_id,
+                        "role_id": role_id,
+                        "instance_id": instance_id,
+                        "task_id": str(event.get("task_id") or ""),
+                        "occurred_at": str(event.get("occurred_at") or ""),
+                        "chunks": [],
+                    }
+                    active_segments[key] = segment
+                chunks = segment.get("chunks")
+                if isinstance(chunks, list):
+                    chunks.append(text_chunk)
+                segment["occurred_at"] = str(event.get("occurred_at") or "")
             continue
         if event_type in {
             RunEventType.INJECTION_ENQUEUED.value,
@@ -814,6 +826,31 @@ def _project_text_messages_from_events(
     return dict(projected_by_run)
 
 
+def _event_text_chunks(
+    event_type: str,
+    payload: dict[str, object],
+) -> list[str | None]:
+    if event_type == RunEventType.TEXT_DELTA.value:
+        return [str(payload.get("text") or "")]
+    if event_type != RunEventType.OUTPUT_DELTA.value:
+        return []
+    output = payload.get("output")
+    if not isinstance(output, list):
+        return []
+    chunks: list[str | None] = []
+    for item in output:
+        try:
+            part = ContentPartAdapter.validate_python(item)
+        except Exception:
+            chunks.append(None)
+            continue
+        if isinstance(part, TextContentPart):
+            chunks.append(part.text)
+            continue
+        chunks.append(None)
+    return chunks
+
+
 def _flush_event_text_segments(
     active_segments: dict[tuple[str, str, str], dict[str, object]],
     *,
@@ -832,8 +869,8 @@ def _event_text_message(segment: dict[str, object]) -> dict[str, object] | None:
     chunks = segment.get("chunks")
     if not isinstance(chunks, list):
         return None
-    content = "".join(str(chunk) for chunk in chunks).strip()
-    if not content:
+    content = "".join(str(chunk) for chunk in chunks)
+    if not content.strip():
         return None
     run_id = str(segment.get("run_id") or "")
     role_id = str(segment.get("role_id") or "")

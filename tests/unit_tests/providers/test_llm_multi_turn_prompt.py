@@ -565,6 +565,51 @@ def test_missing_stream_observed_text_ignores_matching_old_history_text() -> Non
     ] == ["OK"]
 
 
+def test_missing_stream_observed_text_inserts_before_existing_tool_call() -> None:
+    pending_messages: list[ModelRequest | ModelResponse] = [
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="read",
+                    args={},
+                    tool_call_id="call-1",
+                )
+            ]
+        )
+    ]
+
+    missing = session_runtime_module._missing_stream_observed_messages(
+        list(pending_messages),
+        [
+            ModelResponse(
+                parts=[
+                    TextPart(content="before tool"),
+                    ToolCallPart(
+                        tool_name="read",
+                        args={},
+                        tool_call_id="call-1",
+                    ),
+                ]
+            )
+        ],
+        existing_text_messages=[],
+        pending_messages=pending_messages,
+    )
+
+    assert missing == []
+    assert len(pending_messages) == 2
+    inserted = pending_messages[0]
+    assert isinstance(inserted, ModelResponse)
+    assert [
+        part.content for part in inserted.parts if isinstance(part, TextPart)
+    ] == ["before tool"]
+    tool_message = pending_messages[1]
+    assert isinstance(tool_message, ModelResponse)
+    tool_part = tool_message.parts[0]
+    assert isinstance(tool_part, ToolCallPart)
+    assert tool_part.tool_call_id == "call-1"
+
+
 class _FakeNodeStream:
     def __init__(self, usage_snapshot: SimpleNamespace) -> None:
         self._usage_snapshot = usage_snapshot

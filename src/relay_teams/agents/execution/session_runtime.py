@@ -643,6 +643,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                     retry_number == 0 and not skip_initial_user_prompt_persist
                 ),
             )
+            run_output_history_start_index = len(history)
             seen_count = 0
             buffered_messages: list[ModelRequest | ModelResponse] = []
             result: AgentRunResult | None = None
@@ -974,7 +975,11 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 boundary_missing_observed = _missing_stream_observed_messages(
                     [*history, *buffered_messages, *new_to_process],
                     observed_stream_messages,
-                    existing_text_messages=[*buffered_messages, *new_to_process],
+                    existing_text_messages=[
+                        *history[run_output_history_start_index:],
+                        *buffered_messages,
+                        *new_to_process,
+                    ],
                 )
                 if boundary_missing_observed:
                     new_to_process.extend(boundary_missing_observed)
@@ -1327,7 +1332,11 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                         missing_observed = _missing_stream_observed_messages(
                             [*history, *buffered_messages, *to_save],
                             observed_stream_messages,
-                            existing_text_messages=[*buffered_messages, *to_save],
+                            existing_text_messages=[
+                                *history[run_output_history_start_index:],
+                                *buffered_messages,
+                                *to_save,
+                            ],
                         )
                         if missing_observed:
                             to_save.extend(missing_observed)

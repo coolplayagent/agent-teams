@@ -318,6 +318,51 @@ def test_project_text_messages_from_events_flushes_at_injection_boundary() -> No
     ]
 
 
+def test_project_text_messages_from_events_ignores_queued_injection_boundary() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "before queued "}),
+            },
+            {
+                "event_type": RunEventType.INJECTION_ENQUEUED.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps(
+                    {
+                        "injection_id": "inj-queued",
+                        "visibility": "public",
+                        "content": "queued only",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps({"text": "after queued"}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {"parts": [{"part_kind": "text", "content": "before queued after queued"}]},
+    ]
+
+
 def test_project_text_messages_from_events_preserves_whitespace() -> None:
     projected = _project_text_messages_from_events(
         [

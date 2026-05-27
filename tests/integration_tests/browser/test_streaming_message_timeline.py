@@ -92,6 +92,31 @@ def test_overlay_replay_text_around_tool_calls_stays_visible_in_browser(
     assert payload["cursorCount"] == 1
 
 
+def test_overlay_replay_text_around_model_step_boundary_stays_segmented_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderOverlayReplayTextAroundModelStepBoundary()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before retry", "after retry"]
+    assert payload["cursorCount"] == 1
+    assert [
+        [part["kind"], part["content"], part["closed"]]
+        for part in payload["overlayParts"]
+        if part["kind"] == "text"
+    ] == [
+        ["text", "before retry", True],
+        ["text", "after retry", False],
+    ]
+
+
 def test_output_delta_text_around_tool_calls_stays_segmented_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -928,6 +953,51 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
             .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
             .filter(Boolean),
           toolBlockCount: container.querySelectorAll('.tool-block').length,
+          cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderOverlayReplayTextAroundModelStepBoundary() {{
+        clearAllStreamState();
+        const container = makeContainer('overlay-text-around-model-step');
+        const runId = 'run-overlay-text-around-model-step';
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'before retry' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'model_step_finished',
+          {{ role_id: 'Coordinator', instance_id: 'primary' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-finished-1' }},
+        );
+        applyStreamOverlayEvent(
+          'model_step_started',
+          {{ role_id: 'Coordinator', instance_id: 'primary' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-started-1' }},
+        );
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'after retry' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-text-2' }},
+        );
+        renderHistory(container, [], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          textBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          overlayParts: (getCoordinatorStreamOverlay(runId)?.parts || [])
+            .map(part => ({{
+              kind: part.kind,
+              content: part.content || '',
+              closed: part.closed === true,
+            }})),
           cursorCount: container.querySelectorAll('.streaming-cursor').length,
         }};
       }},

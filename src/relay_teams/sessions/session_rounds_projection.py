@@ -813,7 +813,6 @@ def _project_text_messages_from_events(
                 segment["occurred_at"] = str(event.get("occurred_at") or "")
             continue
         if event_type in {
-            RunEventType.INJECTION_ENQUEUED.value,
             RunEventType.INJECTION_APPLIED.value,
             RunEventType.TOOL_CALL.value,
             RunEventType.TOOL_RESULT.value,

@@ -1154,7 +1154,8 @@ export function applyStreamOverlayEvent(evType, payload, options = {}) {
         appendOverlayInjection(runId, streamKey, roleId, label, payload || {});
         return;
     }
-    if (evType === 'model_step_finished') {
+    if (evType === 'model_step_started' || evType === 'model_step_finished') {
+        closeOverlayTextSegment(runId, streamKey, roleId, label);
         setOverlayTextStreaming(runId, streamKey, roleId, label, false);
         setOverlayIdleCursor(runId, streamKey, roleId, label, false);
         return;

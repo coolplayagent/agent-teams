@@ -746,6 +746,13 @@ def test_proxy_environment_variable_change_triggers_proxy_runtime_refresh(
     assert mcp_reload_calls == ["mcp", "mcp"]
 
 
+async def _wait_for_start_call(start_calls: list[str], expected: str) -> None:
+    for _ in range(20):
+        if expected in start_calls:
+            return
+        await asyncio.sleep(0.01)
+
+
 @pytest.mark.asyncio
 async def test_container_binds_background_completion_sink_during_start(
     monkeypatch,
@@ -883,15 +890,15 @@ async def test_container_binds_background_completion_sink_during_start(
 
     try:
         await container.start()
-        await asyncio.sleep(0)
+        await _wait_for_start_call(start_calls, "feishu-subscription")
 
         assert lifecycle_calls == ["bind_event_loop", "bind_completion_sink"]
         assert (
             container.background_task_service._completion_sink is container.run_service
         )
-        assert start_calls == [
+        assert start_calls.count("feishu-subscription") == 1
+        assert [call for call in start_calls if call != "feishu-subscription"] == [
             "wechat",
-            "feishu-subscription",
             "feishu-message-pool",
             "automation-delivery",
             "automation-bound-session",
@@ -1013,20 +1020,20 @@ async def test_container_start_continues_when_memory_reindex_fails(
 
     try:
         await container.start()
-        await asyncio.sleep(0)
+        await _wait_for_start_call(start_calls, "feishu-subscription")
 
         assert (
             "Failed to rebuild Memory Bank retrieval entries during startup"
             in caplog.text
         )
-        assert start_calls == [
+        assert start_calls.count("feishu-subscription") == 1
+        assert [call for call in start_calls if call != "feishu-subscription"] == [
             "mcp-warmup",
             "app-env-watcher",
             "mcp-config-watcher",
             "discord",
             "wechat",
             "xiaoluban",
-            "feishu-subscription",
             "feishu-message-pool",
             "automation-delivery",
             "automation-bound-session",

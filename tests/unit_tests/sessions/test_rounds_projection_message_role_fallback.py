@@ -22,8 +22,11 @@ from relay_teams.sessions.session_rounds_projection import build_session_rounds
 from relay_teams.sessions.session_rounds_projection import build_session_timeline_rounds
 from relay_teams.sessions.session_rounds_projection import (
     _coordinator_event_tool_messages,
+    _event_text_message,
     _has_assistant_text_message,
     _merge_event_tool_messages,
+    _merge_event_text_messages,
+    _project_text_messages_from_events,
 )
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
@@ -241,6 +244,68 @@ def test_merge_event_tool_messages_preserves_repeated_tool_call_occurrences() ->
         second_event_call,
         second_event_result,
     ]
+
+
+def test_project_text_messages_from_events_skips_empty_run_and_text_events() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "missing run"}),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps({"text": ""}),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps({"text": "visible"}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert len(messages) == 1
+    assert messages[0]["created_at"] == "2026-04-29T10:00:02Z"
+    assert messages[0]["message"] == {
+        "parts": [{"part_kind": "text", "content": "visible"}]
+    }
+
+
+def test_event_text_message_rejects_invalid_or_blank_segments() -> None:
+    assert _event_text_message({"chunks": "not-a-list"}) is None
+    assert _event_text_message({"chunks": [" ", "\n"]}) is None
+
+
+def test_merge_event_text_messages_skips_duplicates_and_blank_text() -> None:
+    existing = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:00Z",
+        parts=[{"part_kind": "text", "content": "already persisted"}],
+    )
+    duplicate = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:01Z",
+        parts=[{"part_kind": "text", "content": "already persisted"}],
+    )
+    blank = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:02Z",
+        parts=[{"part_kind": "text", "content": "   "}],
+    )
+
+    assert _merge_event_text_messages([existing], [duplicate, blank]) == [existing]
 
 
 def test_build_session_rounds_maps_role_by_instance_across_runs(tmp_path: Path) -> None:

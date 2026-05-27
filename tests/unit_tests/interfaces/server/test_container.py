@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 
 import pytest
 from pathlib import Path
@@ -14,6 +15,7 @@ from relay_teams.env.environment_variable_models import (
     EnvironmentVariableScope,
 )
 from relay_teams.interfaces.server.container import ServerContainer
+import relay_teams.interfaces.server.container as container_module
 from relay_teams.persistence.sqlite_repository import SharedSqliteRepository
 from relay_teams.plugins.config_manager import PluginConfigManager
 from relay_teams.roles import RoleLoader
@@ -751,6 +753,27 @@ async def _wait_for_start_call(start_calls: list[str], expected: str) -> None:
         if expected in start_calls:
             return
         await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_start_sync_service_logs_timeout(monkeypatch, caplog) -> None:
+    release = threading.Event()
+
+    def _blocked_start() -> None:
+        release.wait(timeout=1)
+
+    monkeypatch.setattr(container_module, "SYNC_SERVICE_START_TIMEOUT_SECONDS", 0.001)
+    caplog.set_level(logging.WARNING)
+
+    try:
+        await ServerContainer._start_sync_service(
+            service_name="blocked-service",
+            start=_blocked_start,
+        )
+    finally:
+        release.set()
+
+    assert "Timed out while starting optional sync service" in caplog.text
 
 
 @pytest.mark.asyncio

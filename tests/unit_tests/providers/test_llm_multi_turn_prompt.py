@@ -525,6 +525,32 @@ def _index_of_user_prompt(messages: Sequence[object], content: str) -> int:
     raise AssertionError(f"missing user prompt {content}")
 
 
+def test_stream_observed_text_helpers_ignore_empty_and_consume_duplicates() -> None:
+    contents = session_runtime_module._text_part_contents(
+        [
+            ModelRequest(parts=[UserPromptPart(content="hello")]),
+            ModelResponse(
+                parts=[
+                    TextPart(content=""),
+                    ToolCallPart(tool_name="read", args={}, tool_call_id="call-1"),
+                    TextPart(content="repeat"),
+                    TextPart(content="repeat"),
+                ]
+            ),
+        ]
+    )
+
+    assert contents == {"repeat": 2}
+    assert not session_runtime_module._consume_existing_text_content(
+        contents,
+        "missing",
+    )
+    assert session_runtime_module._consume_existing_text_content(contents, "repeat")
+    assert contents == {"repeat": 1}
+    assert session_runtime_module._consume_existing_text_content(contents, "repeat")
+    assert contents == {}
+
+
 class _FakeNodeStream:
     def __init__(self, usage_snapshot: SimpleNamespace) -> None:
         self._usage_snapshot = usage_snapshot

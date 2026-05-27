@@ -280,6 +280,44 @@ def test_project_text_messages_from_events_skips_empty_run_and_text_events() -> 
     }
 
 
+def test_project_text_messages_from_events_flushes_at_injection_boundary() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "before injection"}),
+            },
+            {
+                "event_type": RunEventType.INJECTION_APPLIED.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": "{}",
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps({"text": "after injection"}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {"parts": [{"part_kind": "text", "content": "before injection"}]},
+        {"parts": [{"part_kind": "text", "content": "after injection"}]},
+    ]
+
+
 def test_event_text_message_rejects_invalid_or_blank_segments() -> None:
     assert _event_text_message({"chunks": "not-a-list"}) is None
     assert _event_text_message({"chunks": [" ", "\n"]}) is None
@@ -295,7 +333,7 @@ def test_merge_event_text_messages_skips_duplicates_and_blank_text() -> None:
     duplicate = _assistant_history_message(
         run_id="run-1",
         task_id="task-1",
-        created_at="2026-04-29T10:00:01Z",
+        created_at="2026-04-29T10:00:00Z",
         parts=[{"part_kind": "text", "content": "already persisted"}],
     )
     blank = _assistant_history_message(
@@ -306,6 +344,26 @@ def test_merge_event_text_messages_skips_duplicates_and_blank_text() -> None:
     )
 
     assert _merge_event_text_messages([existing], [duplicate, blank]) == [existing]
+
+
+def test_merge_event_text_messages_keeps_later_repeated_text() -> None:
+    existing = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:00Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+    later_event = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:10Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+
+    assert _merge_event_text_messages([existing], [later_event]) == [
+        existing,
+        later_event,
+    ]
 
 
 def test_build_session_rounds_maps_role_by_instance_across_runs(tmp_path: Path) -> None:

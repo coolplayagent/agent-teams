@@ -790,6 +790,8 @@ def _project_text_messages_from_events(
             segment["occurred_at"] = str(event.get("occurred_at") or "")
             continue
         if event_type in {
+            RunEventType.INJECTION_ENQUEUED.value,
+            RunEventType.INJECTION_APPLIED.value,
             RunEventType.TOOL_CALL.value,
             RunEventType.TOOL_RESULT.value,
             RunEventType.MODEL_STEP_STARTED.value,
@@ -1078,18 +1080,27 @@ def _merge_event_text_messages(
 ) -> list[dict[str, object]]:
     if not event_text_messages:
         return coordinator_messages
-    existing_text_counts = _message_text_part_counts(coordinator_messages)
-    event_text_counts: Counter[str] = Counter()
+    existing_text_occurrences = _ordered_message_text_occurrences(coordinator_messages)
     missing: list[dict[str, object]] = []
-    for message in event_text_messages:
+    for message in sorted(
+        event_text_messages,
+        key=lambda item: str(item.get("created_at") or ""),
+    ):
+        event_time = str(message.get("created_at") or "")
         include_message = False
         for text in _message_text_parts(message):
             normalized = _normalize_projected_text(text)
             if not normalized:
                 continue
-            event_text_counts[normalized] += 1
-            if event_text_counts[normalized] > existing_text_counts[normalized]:
+            match_index = _matching_text_occurrence_index(
+                existing_text_occurrences,
+                earliest_created_at=event_time,
+                normalized=normalized,
+            )
+            if match_index is None:
                 include_message = True
+            else:
+                existing_text_occurrences.pop(match_index)
         if include_message:
             missing.append(message)
     if not missing:
@@ -1101,6 +1112,36 @@ def _merge_event_text_messages(
             1 if str(item.get("role") or "") == "user" else 0,
         ),
     )
+
+
+def _ordered_message_text_occurrences(
+    messages: list[dict[str, object]],
+) -> list[tuple[str, str]]:
+    occurrences: list[tuple[str, str]] = []
+    for message in sorted(
+        messages,
+        key=lambda item: str(item.get("created_at") or ""),
+    ):
+        created_at = str(message.get("created_at") or "")
+        for text in _message_text_parts(message):
+            normalized = _normalize_projected_text(text)
+            if normalized:
+                occurrences.append((created_at, normalized))
+    return occurrences
+
+
+def _matching_text_occurrence_index(
+    occurrences: list[tuple[str, str]],
+    *,
+    earliest_created_at: str,
+    normalized: str,
+) -> int | None:
+    for index, (created_at, text) in enumerate(occurrences):
+        if created_at < earliest_created_at:
+            continue
+        if text == normalized:
+            return index
+    return None
 
 
 def _merge_event_tool_messages(

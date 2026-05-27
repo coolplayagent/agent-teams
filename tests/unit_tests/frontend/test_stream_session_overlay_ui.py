@@ -4477,11 +4477,90 @@ bindStreamOverlayToContainer(container, {
 });
 appendStreamChunk("inst-2", " world", "run-2", "Writer", "Writer");
 
-console.log(JSON.stringify(contentEl.children.map(child => ({
+const closedContentEl = {
+  children: [
+    globalThis.__createTextNode("before", false),
+  ],
+  appendChild(child) {
+    child.__parent = this;
+    this.children.push(child);
+  },
+  querySelector() { return null; },
+  querySelectorAll(selector) {
+    if (selector === ".msg-text") {
+      return this.children.filter(child => child?.className === "msg-text");
+    }
+    return [];
+  },
+};
+closedContentEl.children.forEach(child => {
+  child.__parent = closedContentEl;
+});
+
+const closedWrapper = {
+  dataset: {
+    runId: "run-3",
+    roleId: "Writer",
+    instanceId: "inst-3",
+    streamKey: "inst-3",
+  },
+  querySelector(selector) {
+    if (selector === ".msg-role") {
+      return { textContent: "WRITER" };
+    }
+    if (selector === ".msg-content") {
+      return closedContentEl;
+    }
+    return null;
+  },
+  closest() { return null; },
+};
+
+const closedContainer = {
+  __messages: [{ wrapper: closedWrapper, contentEl: closedContentEl }],
+  querySelectorAll() {
+    return this.__messages.map(item => item.wrapper);
+  },
+};
+
+applyStreamOverlayEvent(
+  "text_delta",
+  { text: "before" },
+  {
+    runId: "run-3",
+    instanceId: "inst-3",
+    roleId: "Writer",
+    label: "Writer",
+  },
+);
+applyStreamOverlayEvent(
+  "tool_call",
+  { tool_call_id: "call-1", tool_name: "shell", args: {} },
+  {
+    runId: "run-3",
+    instanceId: "inst-3",
+    roleId: "Writer",
+    label: "Writer",
+  },
+);
+bindStreamOverlayToContainer(closedContainer, {
+  instanceId: "inst-3",
+  roleId: "Writer",
+  label: "Writer",
+  runId: "run-3",
+});
+appendStreamChunk("inst-3", " after", "run-3", "Writer", "Writer");
+
+const serialize = child => ({
   text: String(child.__text || ""),
   idleCursor: String(child?.dataset?.idleCursor || ""),
   idleFlag: child.__idleCursor === true,
-}))));
+});
+
+console.log(JSON.stringify({
+  idleRebind: contentEl.children.map(serialize),
+  closedRebind: closedContentEl.children.map(serialize),
+}));
 """.strip()
 
     result = subprocess.run(
@@ -4495,7 +4574,7 @@ console.log(JSON.stringify(contentEl.children.map(child => ({
     )
 
     payload = json.loads(result.stdout)
-    assert payload == [
+    assert payload["idleRebind"] == [
         {
             "text": "hello",
             "idleCursor": "",
@@ -4503,6 +4582,18 @@ console.log(JSON.stringify(contentEl.children.map(child => ({
         },
         {
             "text": " world",
+            "idleCursor": "",
+            "idleFlag": False,
+        },
+    ]
+    assert payload["closedRebind"] == [
+        {
+            "text": "before",
+            "idleCursor": "",
+            "idleFlag": False,
+        },
+        {
+            "text": " after",
             "idleCursor": "",
             "idleFlag": False,
         },

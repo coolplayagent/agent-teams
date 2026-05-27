@@ -1564,11 +1564,13 @@ function findReusableStreamState({
     if (!wrapper) return null;
     const contentEl = wrapper.querySelector('.msg-content');
     if (!contentEl) return null;
+    const reusableTextPart = resolveReusableTextPart(overlayEntry);
+    const canReuseText = overlayEntry?.textStreaming === true && !!reusableTextPart;
     const idleRebind = overlayEntry?.idleCursor === true && overlayEntry?.textStreaming !== true;
     const activeTextEl = idleRebind
         ? findReusableIdleCursorElement(contentEl)
-        : findLastReusableTextElement(contentEl);
-    const activeRaw = idleRebind ? '' : resolveReusableRawText(overlayEntry);
+        : (canReuseText ? findLastReusableTextElement(contentEl) : null);
+    const activeRaw = canReuseText ? String(reusableTextPart?.content || '') : '';
     if (activeTextEl) {
         syncStreamingCursor(activeTextEl, overlayEntry?.textStreaming === true);
         if (overlayEntry?.idleCursor === true && overlayEntry?.textStreaming !== true) {
@@ -1690,18 +1692,21 @@ function findReusableIdleCursorElement(contentEl) {
     return null;
 }
 
-function resolveReusableRawText(overlayEntry) {
+function resolveReusableTextPart(overlayEntry) {
     if (!overlayEntry || !Array.isArray(overlayEntry.parts)) {
-        return '';
+        return null;
     }
     for (let index = overlayEntry.parts.length - 1; index >= 0; index -= 1) {
         const part = overlayEntry.parts[index];
         if (!part || part.kind !== 'text') {
             continue;
         }
-        return String(part.content || '');
+        if (part.closed === true || part.streaming === false) {
+            return null;
+        }
+        return part;
     }
-    return '';
+    return null;
 }
 
 function bindReusableThinkingState(contentEl, overlayEntry) {

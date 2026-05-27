@@ -117,6 +117,30 @@ def test_overlay_replay_text_around_model_step_boundary_stays_segmented_in_brows
     ]
 
 
+def test_overlay_replay_text_around_model_step_boundary_preserves_whitespace_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderOverlayReplayTextAroundModelStepBoundaryWhitespace()
+        """
+    )
+
+    assert payload["rawTextBlocks"] == ["before retry ", "\n after retry"]
+    assert [
+        [part["content"], part["closed"]]
+        for part in payload["overlayParts"]
+        if part["kind"] == "text"
+    ] == [
+        ["before retry ", True],
+        ["\n after retry", False],
+    ]
+
+
 def test_output_delta_text_around_tool_calls_stays_segmented_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -999,6 +1023,44 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
               closed: part.closed === true,
             }})),
           cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderOverlayReplayTextAroundModelStepBoundaryWhitespace() {{
+        clearAllStreamState();
+        const container = makeContainer('overlay-text-around-model-step-whitespace');
+        const runId = 'run-overlay-text-around-model-step-whitespace';
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'before retry ' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-whitespace-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'model_step_finished',
+          {{ role_id: 'Coordinator', instance_id: 'primary' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-whitespace-finished-1' }},
+        );
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: '\\n after retry' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-whitespace-text-2' }},
+        );
+        renderHistory(container, [], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          rawTextBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent),
+          overlayParts: (getCoordinatorStreamOverlay(runId)?.parts || [])
+            .map(part => ({{
+              kind: part.kind,
+              content: part.content || '',
+              closed: part.closed === true,
+            }})),
         }};
       }},
 

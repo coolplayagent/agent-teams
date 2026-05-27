@@ -857,7 +857,10 @@ function renderStreamOverlayEntry(
         const safeText = String(combinedText || '');
         if (!safeText && !streaming) return;
         if (!safeText.trim() && !streaming) return;
-        appendMessageText(ensureContentEl(), streaming ? safeText : safeText.trim(), { streaming });
+        appendMessageText(ensureContentEl(), safeText, {
+            streaming,
+            preserveBoundaryWhitespace: true,
+        });
         if (streaming) {
             renderedLiveTextTail = true;
         }

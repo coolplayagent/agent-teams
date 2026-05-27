@@ -246,6 +246,7 @@ export function updateMessageText(textEl, text, options = {}) {
     clearPlainTextRenderState(textEl);
     renderRichContent(textEl, String(text || ''), {
         enableWorkspaceImagePreview: options.enableWorkspaceImagePreview !== false,
+        preserveBoundaryWhitespace: options.preserveBoundaryWhitespace === true,
     });
     syncStreamingCursor(textEl, options.streaming === true);
     return textEl;

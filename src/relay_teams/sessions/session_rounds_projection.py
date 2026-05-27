@@ -7,6 +7,8 @@ from datetime import datetime
 import json
 from typing import cast
 
+from pydantic import ValidationError
+
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
 )
@@ -841,7 +843,7 @@ def _event_text_chunks(
     for item in output:
         try:
             part = ContentPartAdapter.validate_python(item)
-        except Exception:
+        except ValidationError:
             chunks.append(None)
             continue
         if isinstance(part, TextContentPart):
@@ -1571,7 +1573,7 @@ def _coerce_user_prompt_content_projection_item(
             return _binary_prompt_payload_projection(raw_item)
     try:
         validated = ContentPartAdapter.validate_python(item)
-    except Exception:
+    except ValidationError:
         pass
     else:
         return cast(dict[str, object], validated.model_dump(mode="json"))
@@ -1642,7 +1644,7 @@ def _intent_parts_to_text(intent_parts: list[dict[str, object]]) -> str | None:
     for item in intent_parts:
         try:
             part = ContentPartAdapter.validate_python(item)
-        except Exception:
+        except ValidationError:
             fragment = user_prompt_content_to_text(item)
         else:
             fragment = content_parts_to_text((part,))

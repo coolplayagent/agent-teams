@@ -110,6 +110,23 @@ def test_output_delta_text_around_tool_calls_stays_segmented_in_browser(
     assert payload["cursorCount"] == 1
 
 
+def test_persisted_history_text_around_tool_calls_stays_segmented_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderPersistedHistoryTextAroundToolCalls()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before tool", "during tool", "after result"]
+    assert payload["toolBlockCount"] == 1
+
+
 def test_partial_persisted_repeated_text_after_tool_is_preserved_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -912,6 +929,48 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
             .filter(Boolean),
           toolBlockCount: container.querySelectorAll('.tool-block').length,
           cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderPersistedHistoryTextAroundToolCalls() {{
+        clearAllStreamState();
+        const container = makeContainer('persisted-history-text-around-tools');
+        const runId = 'run-persisted-history-text-around-tools';
+        renderHistory(container, [{{
+          role: 'assistant',
+          role_id: 'Coordinator',
+          instance_id: 'primary',
+          message: {{
+            parts: [
+              {{ part_kind: 'text', content: 'before tool' }},
+              {{
+                part_kind: 'tool-call',
+                tool_name: 'shell',
+                tool_call_id: 'call-history-text',
+                args: {{ command: 'date' }},
+              }},
+              {{ part_kind: 'text', content: 'during tool' }},
+              {{
+                part_kind: 'tool-return',
+                tool_name: 'shell',
+                tool_call_id: 'call-history-text',
+                content: {{ ok: true, output: 'tool done' }},
+              }},
+              {{ part_kind: 'text', content: 'after result' }},
+            ],
+          }},
+        }}], {{
+          runId,
+          runStatus: 'completed',
+          streamOverlayEntry: null,
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          textBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
         }};
       }},
 

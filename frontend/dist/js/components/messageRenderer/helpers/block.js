@@ -113,6 +113,7 @@ export function renderParts(contentEl, parts, pendingToolBlocks, options = {}) {
             contentEl.appendChild(tb);
             indexPendingToolBlock(pendingToolBlocks, tb, part.tool_name, part.tool_call_id);
         } else if (kind === 'tool-return') {
+            flushText();
             const toolBlock = resolvePendingToolBlock(
                 pendingToolBlocks,
                 part.tool_name,
@@ -120,6 +121,7 @@ export function renderParts(contentEl, parts, pendingToolBlocks, options = {}) {
             );
             if (toolBlock) applyToolReturn(toolBlock, part.content);
         } else if (kind === 'retry-prompt' && part.tool_name) {
+            flushText();
             let toolBlock = resolvePendingToolBlock(
                 pendingToolBlocks,
                 part.tool_name,

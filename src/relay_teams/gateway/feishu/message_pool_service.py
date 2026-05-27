@@ -144,9 +144,11 @@ class FeishuMessagePoolService:
         self._pause_notice_keys: set[str] = set()
 
     async def start(self) -> None:
-        self._message_pool_repo.recover_stale_claims(
-            claimed_before=datetime.now(tz=timezone.utc)
-            - timedelta(seconds=_STALE_CLAIM_SECONDS)
+        await asyncio.to_thread(
+            self._message_pool_repo.recover_stale_claims,
+            claimed_before=(
+                datetime.now(tz=timezone.utc) - timedelta(seconds=_STALE_CLAIM_SECONDS)
+            ),
         )
         if self._task is not None and not self._task.done():
             return

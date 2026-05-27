@@ -1145,6 +1145,16 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                                                 if isinstance(
                                                     stream_event, PartEndEvent
                                                 ) and isinstance(
+                                                    stream_event.part, TextPart
+                                                ):
+                                                    observed_stream_messages.append(
+                                                        ModelResponse(
+                                                            parts=[stream_event.part]
+                                                        )
+                                                    )
+                                                if isinstance(
+                                                    stream_event, PartEndEvent
+                                                ) and isinstance(
                                                     stream_event.part, ToolCallPart
                                                 ):
                                                     observed_stream_messages.append(
@@ -2014,11 +2024,21 @@ def _missing_stream_observed_messages(
 ) -> list[ModelRequest | ModelResponse]:
     tool_call_ids = _tool_call_ids(existing_messages)
     tool_result_ids = _tool_result_ids(existing_messages)
+    text_contents = _text_part_contents(existing_messages)
     missing: list[ModelRequest | ModelResponse] = []
     for message in observed_messages:
         if isinstance(message, ModelResponse):
             missing_parts: list[ModelResponsePart] = []
             for part in message.parts:
+                if isinstance(part, TextPart):
+                    content = str(part.content or "")
+                    if not content or _consume_existing_text_content(
+                        text_contents,
+                        content,
+                    ):
+                        continue
+                    missing_parts.append(part)
+                    continue
                 if not isinstance(part, ToolCallPart):
                     continue
                 tool_call_id = str(part.tool_call_id or "").strip()
@@ -2041,6 +2061,37 @@ def _missing_stream_observed_messages(
         if missing_request_parts:
             missing.append(ModelRequest(parts=missing_request_parts))
     return missing
+
+
+def _text_part_contents(
+    messages: Sequence[ModelRequest | ModelResponse],
+) -> dict[str, int]:
+    contents: dict[str, int] = {}
+    for message in messages:
+        if not isinstance(message, ModelResponse):
+            continue
+        for part in message.parts:
+            if not isinstance(part, TextPart):
+                continue
+            content = str(part.content or "")
+            if not content:
+                continue
+            contents[content] = contents.get(content, 0) + 1
+    return contents
+
+
+def _consume_existing_text_content(
+    contents: dict[str, int],
+    content: str,
+) -> bool:
+    count = contents.get(content, 0)
+    if count <= 0:
+        return False
+    if count == 1:
+        contents.pop(content, None)
+        return True
+    contents[content] = count - 1
+    return True
 
 
 def _tool_call_ids(

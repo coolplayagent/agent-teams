@@ -455,7 +455,7 @@ function buildPersistedOverlayIndex(historyMessages, runId, options = {}) {
         }
         if (messageText.size > 0) {
             index.textTailByStream.set(streamKey, messageText);
-            replaceOverlayTextList(index.textByStream, streamKey, messageTextList);
+            mergeOverlayTextList(index.textByStream, streamKey, messageTextList);
         }
         index.mediaTailByStream.set(streamKey, new Set(messageMedia));
     });
@@ -485,11 +485,20 @@ function mergeOverlayTextSet(target, key, values) {
     });
 }
 
-function replaceOverlayTextList(target, key, values) {
+function mergeOverlayTextList(target, key, values) {
     if (!target || !key || !Array.isArray(values) || values.length === 0) {
         return;
     }
-    target.set(key, values.filter(Boolean));
+    const existing = target.get(key);
+    const merged = Array.isArray(existing) ? existing.slice() : [];
+    values.forEach(value => {
+        if (value) {
+            merged.push(value);
+        }
+    });
+    if (merged.length > 0) {
+        target.set(key, merged);
+    }
 }
 
 function clearOverlayTextByStreamPart(target, streamKey) {

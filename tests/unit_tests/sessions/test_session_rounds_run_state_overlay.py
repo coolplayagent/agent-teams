@@ -11,8 +11,10 @@ from relay_teams.media import MediaModality
 from relay_teams.media import TextContentPart
 from relay_teams.media import content_parts_from_text
 from relay_teams.sessions.runs.event_stream import RunEventHub
+from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.runs.run_intent_repo import RunIntentRepository
 from relay_teams.sessions.runs.run_models import IntentInput
+from relay_teams.sessions.runs.run_models import RunEvent
 from relay_teams.sessions import session_service as session_service_module
 from relay_teams.sessions.runs.todo_models import TodoItem
 from relay_teams.sessions.runs.todo_models import TodoStatus
@@ -452,6 +454,60 @@ def test_round_projection_events_return_empty_without_event_log(tmp_path: Path) 
 
     assert service._get_round_projection_events("session-1") == []
     assert service._get_round_projection_events_for_runs("session-1", ("run-1",)) == []
+    assert service._get_detailed_round_projection_events("session-1") == []
+    assert (
+        service._get_detailed_round_projection_events_for_runs("session-1", ("run-1",))
+        == []
+    )
+
+
+def test_timeline_round_projection_events_skip_text_delta(tmp_path: Path) -> None:
+    service = _build_service(tmp_path / "round_events_text_delta.db")
+    assert service._event_log is not None
+    _ = service._event_log.emit_run_event(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.TEXT_DELTA,
+            payload_json='{"text":"streamed"}',
+        )
+    )
+    _ = service._event_log.emit_run_event(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.TOOL_CALL,
+            payload_json='{"tool_call_id":"call-1"}',
+        )
+    )
+
+    timeline_events = service._get_round_projection_events("session-1")
+    detailed_events = service._get_detailed_round_projection_events("session-1")
+    timeline_run_events = service._get_round_projection_events_for_runs(
+        "session-1",
+        ("run-1",),
+    )
+    detailed_run_events = service._get_detailed_round_projection_events_for_runs(
+        "session-1",
+        ("run-1",),
+    )
+
+    assert [event["event_type"] for event in timeline_events] == [
+        RunEventType.TOOL_CALL.value
+    ]
+    assert [event["event_type"] for event in detailed_events] == [
+        RunEventType.TEXT_DELTA.value,
+        RunEventType.TOOL_CALL.value,
+    ]
+    assert [event["event_type"] for event in timeline_run_events] == [
+        RunEventType.TOOL_CALL.value
+    ]
+    assert [event["event_type"] for event in detailed_run_events] == [
+        RunEventType.TEXT_DELTA.value,
+        RunEventType.TOOL_CALL.value,
+    ]
 
 
 def test_get_session_rounds_returns_empty_page_without_timeline_items(

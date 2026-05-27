@@ -974,6 +974,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 boundary_missing_observed = _missing_stream_observed_messages(
                     [*history, *buffered_messages, *new_to_process],
                     observed_stream_messages,
+                    existing_text_messages=[*buffered_messages, *new_to_process],
                 )
                 if boundary_missing_observed:
                     new_to_process.extend(boundary_missing_observed)
@@ -1326,6 +1327,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                         missing_observed = _missing_stream_observed_messages(
                             [*history, *buffered_messages, *to_save],
                             observed_stream_messages,
+                            existing_text_messages=[*buffered_messages, *to_save],
                         )
                         if missing_observed:
                             to_save.extend(missing_observed)
@@ -2021,10 +2023,14 @@ def _llm_stream_event_timeout_seconds(connect_timeout_seconds: float) -> float:
 def _missing_stream_observed_messages(
     existing_messages: Sequence[ModelRequest | ModelResponse],
     observed_messages: Sequence[ModelRequest | ModelResponse],
+    *,
+    existing_text_messages: Sequence[ModelRequest | ModelResponse] | None = None,
 ) -> list[ModelRequest | ModelResponse]:
     tool_call_ids = _tool_call_ids(existing_messages)
     tool_result_ids = _tool_result_ids(existing_messages)
-    text_contents = _text_part_contents(existing_messages)
+    text_contents = _text_part_contents(
+        existing_messages if existing_text_messages is None else existing_text_messages
+    )
     missing: list[ModelRequest | ModelResponse] = []
     for message in observed_messages:
         if isinstance(message, ModelResponse):

@@ -38,6 +38,7 @@ from relay_teams.sessions.runs.active_run_registry import ActiveSessionRunRegist
 from relay_teams.sessions.runs.event_stream import RunEventHub
 from relay_teams.sessions.runs.runtime_config import RuntimeConfig
 from relay_teams.sessions.session_rounds_projection import (
+    DETAILED_ROUND_PROJECTION_EVENT_TYPES,
     ROUND_PROJECTION_EVENT_TYPES,
     approvals_to_projection,
     build_session_rounds,
@@ -1744,6 +1745,31 @@ class SessionService:
         )
         return cast(list[dict[str, object]], list(events))
 
+    def _get_detailed_round_projection_events(
+        self, session_id: str
+    ) -> list[dict[str, object]]:
+        if self._event_log is None:
+            return []
+        events = self._event_log.list_by_session_event_types(
+            session_id,
+            DETAILED_ROUND_PROJECTION_EVENT_TYPES,
+        )
+        return cast(list[dict[str, object]], list(events))
+
+    def _get_detailed_round_projection_events_for_runs(
+        self,
+        session_id: str,
+        run_ids: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        if self._event_log is None:
+            return []
+        events = self._event_log.list_by_session_run_ids_event_types(
+            session_id,
+            run_ids,
+            DETAILED_ROUND_PROJECTION_EVENT_TYPES,
+        )
+        return cast(list[dict[str, object]], list(events))
+
     def get_session_messages(self, session_id: str) -> list[dict[str, object]]:
         return cast(
             list[dict[str, object]],
@@ -1875,10 +1901,10 @@ class SessionService:
                 self._get_session_history_markers if include_history_markers else None
             ),
             get_session_events=(
-                self._get_round_projection_events
+                self._get_detailed_round_projection_events
                 if selected_run_ids is None
                 else lambda current_session_id: (
-                    self._get_round_projection_events_for_runs(
+                    self._get_detailed_round_projection_events_for_runs(
                         current_session_id,
                         selected_run_ids,
                     )

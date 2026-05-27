@@ -551,6 +551,20 @@ def test_stream_observed_text_helpers_ignore_empty_and_consume_duplicates() -> N
     assert contents == {}
 
 
+def test_missing_stream_observed_text_ignores_matching_old_history_text() -> None:
+    missing = session_runtime_module._missing_stream_observed_messages(
+        [ModelResponse(parts=[TextPart(content="OK")])],
+        [ModelResponse(parts=[TextPart(content="OK")])],
+        existing_text_messages=[],
+    )
+
+    assert len(missing) == 1
+    assert isinstance(missing[0], ModelResponse)
+    assert [
+        part.content for part in missing[0].parts if isinstance(part, TextPart)
+    ] == ["OK"]
+
+
 class _FakeNodeStream:
     def __init__(self, usage_snapshot: SimpleNamespace) -> None:
         self._usage_snapshot = usage_snapshot

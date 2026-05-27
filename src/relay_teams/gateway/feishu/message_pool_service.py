@@ -144,8 +144,7 @@ class FeishuMessagePoolService:
         self._pause_notice_keys: set[str] = set()
 
     async def start(self) -> None:
-        await asyncio.to_thread(
-            self._message_pool_repo.recover_stale_claims,
+        await self._message_pool_repo.recover_stale_claims_async(
             claimed_before=(
                 datetime.now(tz=timezone.utc) - timedelta(seconds=_STALE_CLAIM_SECONDS)
             ),

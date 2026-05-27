@@ -14,7 +14,6 @@ from relay_teams.env.environment_variable_models import (
     EnvironmentVariableSaveRequest,
     EnvironmentVariableScope,
 )
-from relay_teams.interfaces.server.container import ServerContainer
 import relay_teams.interfaces.server.container as container_module
 from relay_teams.persistence.sqlite_repository import SharedSqliteRepository
 from relay_teams.plugins.config_manager import PluginConfigManager
@@ -143,7 +142,7 @@ def test_runtime_reload_updates_run_service_provider_factory(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     previous_provider_factory = container.run_service._provider_factory
 
@@ -168,7 +167,7 @@ def test_container_loads_plugin_dirs_from_app_env_before_plugin_registry(
         encoding="utf-8",
     )
 
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     assert [plugin.name for plugin in container.plugin_registry.plugins] == ["quality"]
 
@@ -200,7 +199,7 @@ def test_app_env_plugin_dirs_change_reloads_plugin_runtime(
         '{"mcpServers": {"docs": {"command": "docs-server"}}}',
         encoding="utf-8",
     )
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     assert container.plugin_registry.plugins == ()
 
@@ -234,7 +233,7 @@ def test_container_app_env_file_watcher_refreshes_runtime_after_external_change(
     monkeypatch.delenv(key, raising=False)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     calls: list[str] = []
 
     def reload_model_config() -> None:
@@ -280,7 +279,7 @@ def test_app_env_change_callback_does_not_advance_watcher_snapshot(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     monkeypatch.setattr(
         container.model_config_service,
@@ -321,7 +320,7 @@ def test_app_env_api_save_does_not_duplicate_watcher_reload(
     monkeypatch.delenv(key, raising=False)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     calls: list[str] = []
 
     def reload_model_config() -> None:
@@ -373,7 +372,7 @@ def test_container_stop_requests_active_runs_before_background_tasks(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     calls: list[str] = []
 
     async def fake_stop_active_runs_for_shutdown_async() -> int:
@@ -431,7 +430,7 @@ def test_container_registers_discord_repositories_for_shutdown_close(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     assert container.discord_account_repository in container._async_closeables
     assert container.discord_inbound_queue_repo in container._async_closeables
@@ -445,7 +444,7 @@ def test_container_logs_finished_startup_background_task_failure(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     async def fail_reindex() -> None:
         raise TypeError("unexpected reindex failure")
@@ -472,7 +471,7 @@ def test_container_registers_all_shared_sqlite_repositories_for_shutdown_close(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     closeables = set(container._async_closeables)
     missing = [
@@ -491,7 +490,7 @@ def test_roles_reload_updates_long_lived_role_registry_references(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     container.skill_registry = SkillRegistry(
         directory=SkillsDirectory(
             sources=((SkillSource.USER_RELAY_TEAMS, tmp_path / "missing-skills"),)
@@ -539,7 +538,7 @@ def test_container_tolerates_missing_builtin_roles_on_startup(
         lambda: missing_builtin_roles_dir,
     )
 
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     assert container.role_registry.list_roles() == ()
 
@@ -566,7 +565,7 @@ def test_container_skill_registry_uses_explicit_project_start_dir_snapshot(
         classmethod(_fake_from_config_dirs),
     )
 
-    _ = ServerContainer(config_dir=config_dir)
+    _ = container_module.ServerContainer(config_dir=config_dir)
 
     assert captured_kwargs == [
         {
@@ -586,7 +585,7 @@ def test_saving_environment_variable_reloads_model_runtime(
     monkeypatch.delenv(env_key, raising=False)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key=f"${{{env_key}}}")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     monkeypatch.setattr(
         container.skills_config_reload_service,
         "reload_skills_config",
@@ -614,7 +613,7 @@ def test_saving_app_environment_variable_reloads_mcp_and_skills_runtime(
     monkeypatch.delenv(env_key, raising=False)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     plugin_reload_calls: list[str] = []
     mcp_reload_calls: list[str] = []
     skill_reload_calls: list[str] = []
@@ -685,7 +684,7 @@ def test_saving_app_environment_variable_reloads_plugin_manager_with_start_dir(
         "relay_teams.interfaces.server.container.PluginConfigManager.from_environment",
         classmethod(_fake_from_environment),
     )
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     captured_kwargs.clear()
     monkeypatch.setattr(
         container.skills_config_reload_service,
@@ -712,7 +711,7 @@ def test_proxy_environment_variable_change_triggers_proxy_runtime_refresh(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     feishu_reload_calls: list[str] = []
     wechat_reload_calls: list[str] = []
     mcp_reload_calls: list[str] = []
@@ -766,7 +765,7 @@ async def test_start_sync_service_logs_timeout(monkeypatch, caplog) -> None:
     caplog.set_level(logging.WARNING)
 
     try:
-        await ServerContainer._start_sync_service(
+        await container_module.ServerContainer._start_sync_service(
             service_name="blocked-service",
             start=_blocked_start,
         )
@@ -784,7 +783,7 @@ async def test_container_binds_background_completion_sink_during_start(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     start_calls: list[str] = []
     lifecycle_calls: list[str] = []
@@ -941,7 +940,7 @@ async def test_container_start_continues_when_memory_reindex_fails(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     start_calls: list[str] = []
 
@@ -1077,7 +1076,7 @@ async def test_container_memory_startup_continues_after_forget_failure(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
     calls: list[str] = []
 
     async def _fail_forget() -> int:
@@ -1113,7 +1112,7 @@ def test_container_wires_automation_bound_session_queue_runtime(
     _clear_proxy_env(monkeypatch)
     config_dir = tmp_path / ".agent-teams"
     _write_model_config(config_dir, api_key="initial-secret")
-    container = ServerContainer(config_dir=config_dir)
+    container = container_module.ServerContainer(config_dir=config_dir)
 
     assert container.automation_service._bound_session_queue_service is (
         container.automation_bound_session_queue_service
@@ -1175,7 +1174,7 @@ def test_container_interrupts_persisted_background_processes_before_marking_stop
         ),
     )
 
-    _ = ServerContainer(config_dir=config_dir)
+    _ = container_module.ServerContainer(config_dir=config_dir)
 
     assert lifecycle == [
         "kill:3210",
@@ -1235,7 +1234,7 @@ def test_container_preserves_background_task_rows_when_startup_kill_fails(
         ),
     )
 
-    _ = ServerContainer(config_dir=config_dir)
+    _ = container_module.ServerContainer(config_dir=config_dir)
 
     assert lifecycle == [
         "kill:3210",
@@ -1304,7 +1303,7 @@ def test_container_preserves_recoverable_foreground_subagent_records_on_startup(
         ),
     )
 
-    _ = ServerContainer(config_dir=config_dir)
+    _ = container_module.ServerContainer(config_dir=config_dir)
 
     assert lifecycle == [
         "kill:3210",

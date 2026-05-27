@@ -36,7 +36,6 @@ ROUND_PROJECTION_EVENT_TYPES = (
     RunEventType.LLM_FALLBACK_EXHAUSTED.value,
     RunEventType.INJECTION_ENQUEUED.value,
     RunEventType.INJECTION_APPLIED.value,
-    RunEventType.TEXT_DELTA.value,
     RunEventType.TOOL_CALL.value,
     RunEventType.TOOL_RESULT.value,
     RunEventType.MODEL_STEP_STARTED.value,
@@ -44,6 +43,10 @@ ROUND_PROJECTION_EVENT_TYPES = (
     RunEventType.RUN_COMPLETED.value,
     RunEventType.RUN_FAILED.value,
     RunEventType.RUN_STOPPED.value,
+)
+DETAILED_ROUND_PROJECTION_EVENT_TYPES = (
+    *ROUND_PROJECTION_EVENT_TYPES,
+    RunEventType.TEXT_DELTA.value,
 )
 
 

@@ -2051,7 +2051,7 @@ console.log(JSON.stringify({
             "type": "history-parts",
             "parts": [{"part_kind": "text", "content": "different tail"}],
         },
-        {"type": "text", "text": "done", "streaming": True},
+        {"type": "text", "text": "", "streaming": True},
     ]
     assert payload["repeatedChildren"] == [
         {

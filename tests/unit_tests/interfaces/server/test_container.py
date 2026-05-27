@@ -755,7 +755,15 @@ async def _wait_for_start_call(start_calls: list[str], expected: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_start_sync_service_logs_timeout(monkeypatch, caplog) -> None:
+async def test_start_sync_service_logs_timeout(
+    monkeypatch,
+    tmp_path: Path,
+    caplog,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    _write_model_config(config_dir, api_key="initial-secret")
+    container = container_module.ServerContainer(config_dir=config_dir)
     started = threading.Event()
     release = threading.Event()
     finished: list[str] = []
@@ -769,22 +777,24 @@ async def test_start_sync_service_logs_timeout(monkeypatch, caplog) -> None:
     caplog.set_level(logging.WARNING)
 
     try:
-        start_task = asyncio.create_task(
-            container_module.ServerContainer._start_sync_service(
-                service_name="blocked-service",
-                start=_blocked_start,
-            )
+        await container._start_sync_service(
+            service_name="blocked-service",
+            start=_blocked_start,
         )
         assert await asyncio.to_thread(started.wait, 1)
-        await asyncio.sleep(0.02)
-        assert start_task.done() is False
+        assert finished == []
+        assert len(container._startup_background_tasks) == 1
         release.set()
-        await start_task
+        for _ in range(20):
+            if finished == ["done"] and not container._startup_background_tasks:
+                break
+            await asyncio.sleep(0.01)
     finally:
         release.set()
 
     assert "Timed out while starting optional sync service" in caplog.text
     assert finished == ["done"]
+    assert container._startup_background_tasks == set()
 
 
 @pytest.mark.asyncio

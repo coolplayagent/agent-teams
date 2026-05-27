@@ -1570,8 +1570,8 @@ class ServerContainer:
         await self.automation_scheduler_service.start()
         return None
 
-    @staticmethod
     async def _start_sync_service(
+        self,
         *,
         service_name: str,
         start: Callable[[], None],
@@ -1596,7 +1596,14 @@ class ServerContainer:
                     "timeout_seconds": SYNC_SERVICE_START_TIMEOUT_SECONDS,
                 },
             )
-            await start_task
+            self._startup_background_tasks.add(start_task)
+            start_task.add_done_callback(
+                lambda completed: self._handle_startup_background_task_done(
+                    completed,
+                    service_name=service_name,
+                )
+            )
+            return
 
     def _start_sync_service_background(
         self,

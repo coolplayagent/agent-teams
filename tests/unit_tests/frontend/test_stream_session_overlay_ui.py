@@ -333,6 +333,7 @@ console.log(JSON.stringify(getRunStreamOverlaySnapshot("run-primary")));
     assert payload["coordinator"]["parts"][1] == {
         "kind": "text",
         "content": "still not persisted",
+        "closed": True,
         "streaming": False,
     }
     assert payload["coordinator"]["textStreaming"] is False

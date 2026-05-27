@@ -47,6 +47,170 @@ def browser_page() -> Iterator[Page]:
             os.environ["PLAYWRIGHT_BROWSERS_PATH"] = previous_browser_root
 
 
+def test_live_text_around_tool_calls_stays_visible_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderLiveTextAroundToolCalls()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before tool", "during tool", "after result"]
+    assert payload["toolBlockCount"] == 1
+    assert payload["cursorCount"] == 1
+    assert [
+        [part["kind"], part["content"], part["closed"]]
+        for part in payload["overlayParts"]
+        if part["kind"] == "text"
+    ] == [
+        ["text", "before tool", True],
+        ["text", "during tool", True],
+        ["text", "after result", False],
+    ]
+
+
+def test_overlay_replay_text_around_tool_calls_stays_visible_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderOverlayReplayTextAroundToolCalls()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before tool", "during tool", "after result"]
+    assert payload["toolBlockCount"] == 1
+    assert payload["cursorCount"] == 1
+
+
+def test_overlay_replay_text_around_model_step_boundary_stays_segmented_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderOverlayReplayTextAroundModelStepBoundary()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before retry", "after retry"]
+    assert payload["cursorCount"] == 1
+    assert [
+        [part["kind"], part["content"], part["closed"]]
+        for part in payload["overlayParts"]
+        if part["kind"] == "text"
+    ] == [
+        ["text", "before retry", True],
+        ["text", "after retry", False],
+    ]
+
+
+def test_overlay_replay_text_around_model_step_boundary_preserves_whitespace_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderOverlayReplayTextAroundModelStepBoundaryWhitespace()
+        """
+    )
+
+    assert payload["rawTextBlocks"] == ["before retry ", "\n after retry"]
+    assert [
+        [part["content"], part["closed"]]
+        for part in payload["overlayParts"]
+        if part["kind"] == "text"
+    ] == [
+        ["before retry ", True],
+        ["\n after retry", False],
+    ]
+
+
+def test_output_delta_text_around_tool_calls_stays_segmented_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderOutputDeltaTextAroundToolCalls()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before tool", "during tool", "after result"]
+    assert payload["toolBlockCount"] == 1
+    assert payload["cursorCount"] == 1
+
+
+def test_persisted_history_text_around_tool_calls_stays_segmented_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderPersistedHistoryTextAroundToolCalls()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before tool", "during tool", "after result"]
+    assert payload["toolBlockCount"] == 1
+
+
+def test_partial_persisted_repeated_text_after_tool_is_preserved_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderPartialPersistedRepeatedTextAroundTool()
+        """
+    )
+
+    assert payload["occurrences"] == 2
+    assert payload["toolBlockCount"] == 1
+
+
+def test_timeline_text_update_keeps_rich_content_and_cursor_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderTimelineTextUpdateKeepsRichContent()
+        """
+    )
+
+    assert "hello bold" in payload["text"]
+    assert payload["strongText"] == "bold"
+    assert payload["cursorCount"] == 1
+
+
 def test_streamed_tool_args_match_persisted_history_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -588,6 +752,12 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
         history_module = (
             f"{base_url}/frontend/dist/js/components/messageRenderer/history.js"
         )
+        timeline_renderer_module = (
+            f"{base_url}/frontend/dist/js/components/messageTimeline/renderer.js"
+        )
+        timeline_store_module = (
+            f"{base_url}/frontend/dist/js/components/messageTimeline/store.js"
+        )
         event_router_module = f"{base_url}/frontend/dist/js/core/eventRouter/index.js"
         html_path.write_text(
             f"""
@@ -620,6 +790,13 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
     import {{
       renderHistoricalMessageList,
     }} from {json.dumps(history_module)};
+    import {{
+      renderTimelineStream,
+    }} from {json.dumps(timeline_renderer_module)};
+    import {{
+      applyTimelineAction,
+      clearTimelineState,
+    }} from {json.dumps(timeline_store_module)};
     import {{
       routeEvent,
     }} from {json.dumps(event_router_module)};
@@ -663,6 +840,342 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
     }}
 
     window.__streamTimelineHarness = {{
+      renderLiveTextAroundToolCalls() {{
+        clearAllStreamState();
+        const container = makeContainer('live-text-around-tools');
+        const runId = 'run-live-text-around-tools';
+        getOrCreateStreamBlock(container, 'primary', 'Coordinator', 'Main Agent', runId);
+        appendStreamChunk('primary', 'before tool', runId, 'Coordinator', 'Main Agent');
+        appendToolCallBlock(
+          container,
+          'primary',
+          'shell',
+          {{ command: 'date' }},
+          'call-live-text',
+          {{ runId, roleId: 'Coordinator', label: 'Main Agent' }},
+        );
+        appendStreamChunk('primary', 'during tool', runId, 'Coordinator', 'Main Agent');
+        updateToolResult(
+          'primary',
+          'shell',
+          {{ ok: true, output: 'tool done' }},
+          false,
+          'call-live-text',
+          {{ runId, roleId: 'Coordinator', label: 'Main Agent', container }},
+        );
+        appendStreamChunk('primary', 'after result', runId, 'Coordinator', 'Main Agent');
+        const textBlocks = Array.from(container.querySelectorAll('.msg-text'))
+          .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+          .filter(Boolean);
+        const overlayParts = (getCoordinatorStreamOverlay(runId)?.parts || [])
+          .map(part => ({{
+            kind: part.kind,
+            content: part.content || '',
+            closed: part.closed === true,
+            toolCallId: part.tool_call_id || '',
+            status: part.status || '',
+          }}));
+        return {{
+          textBlocks,
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
+          overlayParts,
+          cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderOverlayReplayTextAroundToolCalls() {{
+        clearAllStreamState();
+        const container = makeContainer('overlay-text-around-tools');
+        const runId = 'run-overlay-text-around-tools';
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'before tool' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'tool_call',
+          {{ tool_name: 'shell', tool_call_id: 'call-overlay-text', args: {{ command: 'date' }} }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-tool-1' }},
+        );
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'during tool' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-text-2' }},
+        );
+        applyStreamOverlayEvent(
+          'tool_result',
+          {{ tool_name: 'shell', tool_call_id: 'call-overlay-text', result: {{ ok: true, output: 'tool done' }} }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-tool-2' }},
+        );
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'after result' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-text-3' }},
+        );
+        renderHistory(container, [], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          textBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
+          overlayParts: (getCoordinatorStreamOverlay(runId)?.parts || [])
+            .map(part => ({{
+              kind: part.kind,
+              content: part.content || '',
+              closed: part.closed === true,
+              toolCallId: part.tool_call_id || '',
+              status: part.status || '',
+            }})),
+          cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderOutputDeltaTextAroundToolCalls() {{
+        clearAllStreamState();
+        const container = makeContainer('output-delta-text-around-tools');
+        const runId = 'run-output-delta-text-around-tools';
+        applyStreamOverlayEvent(
+          'output_delta',
+          {{ output: [{{ kind: 'text', text: 'before tool' }}] }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'tool_call',
+          {{ tool_name: 'shell', tool_call_id: 'call-output-text', args: {{ command: 'date' }} }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-tool-1' }},
+        );
+        applyStreamOverlayEvent(
+          'output_delta',
+          {{ output: [{{ kind: 'text', text: 'during tool' }}] }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-text-2' }},
+        );
+        applyStreamOverlayEvent(
+          'tool_result',
+          {{ tool_name: 'shell', tool_call_id: 'call-output-text', result: {{ ok: true, output: 'tool done' }} }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-tool-2' }},
+        );
+        applyStreamOverlayEvent(
+          'output_delta',
+          {{ output: [{{ kind: 'text', text: 'after result' }}] }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-text-3' }},
+        );
+        renderHistory(container, [], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          textBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
+          cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderOverlayReplayTextAroundModelStepBoundary() {{
+        clearAllStreamState();
+        const container = makeContainer('overlay-text-around-model-step');
+        const runId = 'run-overlay-text-around-model-step';
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'before retry' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'model_step_finished',
+          {{ role_id: 'Coordinator', instance_id: 'primary' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-finished-1' }},
+        );
+        applyStreamOverlayEvent(
+          'model_step_started',
+          {{ role_id: 'Coordinator', instance_id: 'primary' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-started-1' }},
+        );
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'after retry' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-text-2' }},
+        );
+        renderHistory(container, [], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          textBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          overlayParts: (getCoordinatorStreamOverlay(runId)?.parts || [])
+            .map(part => ({{
+              kind: part.kind,
+              content: part.content || '',
+              closed: part.closed === true,
+            }})),
+          cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderOverlayReplayTextAroundModelStepBoundaryWhitespace() {{
+        clearAllStreamState();
+        const container = makeContainer('overlay-text-around-model-step-whitespace');
+        const runId = 'run-overlay-text-around-model-step-whitespace';
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'before retry ' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-whitespace-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'model_step_finished',
+          {{ role_id: 'Coordinator', instance_id: 'primary' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-whitespace-finished-1' }},
+        );
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: '\\n after retry' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'overlay-step-whitespace-text-2' }},
+        );
+        renderHistory(container, [], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          rawTextBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent),
+          overlayParts: (getCoordinatorStreamOverlay(runId)?.parts || [])
+            .map(part => ({{
+              kind: part.kind,
+              content: part.content || '',
+              closed: part.closed === true,
+            }})),
+        }};
+      }},
+
+      renderPersistedHistoryTextAroundToolCalls() {{
+        clearAllStreamState();
+        const container = makeContainer('persisted-history-text-around-tools');
+        const runId = 'run-persisted-history-text-around-tools';
+        renderHistory(container, [{{
+          role: 'assistant',
+          role_id: 'Coordinator',
+          instance_id: 'primary',
+          message: {{
+            parts: [
+              {{ part_kind: 'text', content: 'before tool' }},
+              {{
+                part_kind: 'tool-call',
+                tool_name: 'shell',
+                tool_call_id: 'call-history-text',
+                args: {{ command: 'date' }},
+              }},
+              {{ part_kind: 'text', content: 'during tool' }},
+              {{
+                part_kind: 'tool-return',
+                tool_name: 'shell',
+                tool_call_id: 'call-history-text',
+                content: {{ ok: true, output: 'tool done' }},
+              }},
+              {{ part_kind: 'text', content: 'after result' }},
+            ],
+          }},
+        }}], {{
+          runId,
+          runStatus: 'completed',
+          streamOverlayEntry: null,
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          textBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
+        }};
+      }},
+
+      renderPartialPersistedRepeatedTextAroundTool() {{
+        clearAllStreamState();
+        const container = makeContainer('partial-persisted-repeated-text');
+        const runId = 'run-partial-persisted-repeated-text';
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'same process text' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'partial-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'tool_call',
+          {{ tool_name: 'shell', tool_call_id: 'call-partial-text', args: {{ command: 'date' }} }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'partial-tool-1' }},
+        );
+        applyStreamOverlayEvent(
+          'text_delta',
+          {{ text: 'same process text' }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'partial-text-2' }},
+        );
+        renderHistory(container, [{{
+          role: 'assistant',
+          role_id: 'Coordinator',
+          instance_id: 'primary',
+          created_at: '2026-04-25T12:00:01Z',
+          message: {{
+            parts: [{{ part_kind: 'text', content: 'same process text' }}],
+          }},
+        }}], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          text: container.textContent || '',
+          occurrences: countSubstring(container.textContent || '', 'same process text'),
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
+        }};
+      }},
+
+      renderTimelineTextUpdateKeepsRichContent() {{
+        clearTimelineState();
+        const container = makeContainer('timeline-rich-text-update');
+        const scope = {{
+          runId: 'run-timeline-rich-text-update',
+          instanceId: 'primary',
+          roleId: 'Coordinator',
+          streamKey: 'primary',
+          view: 'main',
+        }};
+        let stream = applyTimelineAction({{
+          type: 'text_delta',
+          scope,
+          text: 'hello **bo',
+        }});
+        renderTimelineStream(container, stream, {{ label: 'Main Agent' }});
+        stream = applyTimelineAction({{
+          type: 'text_delta',
+          scope,
+          text: 'ld**',
+        }});
+        renderTimelineStream(container, stream, {{ label: 'Main Agent' }});
+        return {{
+          text: container.textContent || '',
+          strongText: container.querySelector('strong')?.textContent || '',
+          cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
       renderToolArgsParity() {{
         clearAllStreamState();
         const container = makeContainer('tool-args');

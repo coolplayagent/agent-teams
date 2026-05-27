@@ -281,6 +281,7 @@ from relay_teams.workspace import (
 
 
 LOGGER = get_logger(__name__)
+SYNC_SERVICE_START_TIMEOUT_SECONDS = 5.0
 
 
 class AsyncCloseableRepository(Protocol):
@@ -1549,9 +1550,18 @@ class ServerContainer:
         self.run_service.bind_event_loop(asyncio.get_running_loop())
         self.background_task_service.bind_completion_sink(self.run_service)
         await self.discord_gateway_service.start_async()
-        self.wechat_gateway_service.start()
-        self.xiaoluban_im_listener_service.start()
-        self.feishu_subscription_service.start()
+        await self._start_sync_service(
+            service_name="wechat_gateway",
+            start=self.wechat_gateway_service.start,
+        )
+        await self._start_sync_service(
+            service_name="xiaoluban_im_listener",
+            start=self.xiaoluban_im_listener_service.start,
+        )
+        self._start_sync_service_background(
+            service_name="feishu_subscription",
+            start=self.feishu_subscription_service.start,
+        )
         await self.feishu_message_pool_service.start()
         await self.automation_delivery_worker.start()
         await self.automation_bound_session_queue_worker.start()
@@ -1559,6 +1569,81 @@ class ServerContainer:
         await self.board_todo_service.start()
         await self.automation_scheduler_service.start()
         return None
+
+    async def _start_sync_service(
+        self,
+        *,
+        service_name: str,
+        start: Callable[[], None],
+    ) -> None:
+        start_task = asyncio.create_task(
+            asyncio.to_thread(start),
+            name=f"{service_name}-sync-start",
+        )
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(start_task),
+                timeout=SYNC_SERVICE_START_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                event="app.startup.sync_service_timeout",
+                message="Timed out while starting optional sync service",
+                payload={
+                    "service": service_name,
+                    "timeout_seconds": SYNC_SERVICE_START_TIMEOUT_SECONDS,
+                },
+            )
+            self._startup_background_tasks.add(start_task)
+            start_task.add_done_callback(
+                lambda completed: self._handle_startup_background_task_done(
+                    completed,
+                    service_name=service_name,
+                )
+            )
+            return
+
+    def _start_sync_service_background(
+        self,
+        *,
+        service_name: str,
+        start: Callable[[], None],
+    ) -> None:
+        task = asyncio.create_task(
+            self._start_sync_service(service_name=service_name, start=start),
+            name=f"{service_name}-startup",
+        )
+        self._startup_background_tasks.add(task)
+        task.add_done_callback(
+            lambda completed: self._handle_startup_background_task_done(
+                completed,
+                service_name=service_name,
+            )
+        )
+
+    def _handle_startup_background_task_done(
+        self,
+        task: asyncio.Task[None],
+        *,
+        service_name: str,
+    ) -> None:
+        if task.cancelled():
+            return
+        exception = task.exception()
+        if exception is None:
+            self._startup_background_tasks.discard(task)
+            return
+        self._startup_background_tasks.discard(task)
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            event="app.startup.background_task_failed",
+            message="Startup background task failed",
+            payload={"service": service_name},
+            exc_info=exception,
+        )
 
     async def stop(self) -> None:
         self._cancel_startup_background_tasks()

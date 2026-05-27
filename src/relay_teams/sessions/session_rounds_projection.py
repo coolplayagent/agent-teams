@@ -7,11 +7,14 @@ from datetime import datetime
 import json
 from typing import cast
 
+from pydantic import ValidationError
+
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
 )
 from relay_teams.media import ContentPart
 from relay_teams.media import ContentPartAdapter
+from relay_teams.media import TextContentPart
 from relay_teams.media import content_parts_from_text
 from relay_teams.media import content_parts_to_text
 from relay_teams.media import normalize_user_prompt_content
@@ -43,6 +46,11 @@ ROUND_PROJECTION_EVENT_TYPES = (
     RunEventType.RUN_COMPLETED.value,
     RunEventType.RUN_FAILED.value,
     RunEventType.RUN_STOPPED.value,
+)
+DETAILED_ROUND_PROJECTION_EVENT_TYPES = (
+    *ROUND_PROJECTION_EVENT_TYPES,
+    RunEventType.TEXT_DELTA.value,
+    RunEventType.OUTPUT_DELTA.value,
 )
 
 
@@ -142,6 +150,7 @@ def build_session_rounds(
     retry_events_by_run: dict[str, list[dict[str, object]]] = defaultdict(list)
     fallback_events_by_run: dict[str, list[dict[str, object]]] = defaultdict(list)
     injection_messages_by_run = _project_injection_messages(session_events)
+    text_messages_by_run = _project_text_messages_from_events(session_events)
     tool_messages_by_run = _project_tool_messages_from_events(session_events)
     final_output_by_run = _project_terminal_final_outputs(session_events)
     microcompact_by_run: dict[str, dict[str, object]] = {}
@@ -272,6 +281,7 @@ def build_session_rounds(
     run_ids.update(messages_by_run.keys())
     run_ids.update(retry_events_by_run.keys())
     run_ids.update(injection_messages_by_run.keys())
+    run_ids.update(text_messages_by_run.keys())
     run_ids.update(tool_messages_by_run.keys())
     run_ids.update(final_output_by_run.keys())
     run_ids.update(delegated_tasks_by_run.keys())
@@ -315,9 +325,17 @@ def build_session_rounds(
             )
             is not None
         ]
+        coordinator_messages = _merge_event_text_messages(
+            coordinator_messages,
+            _coordinator_event_messages(
+                text_messages_by_run.get(run_id, []),
+                coordinator_role_id=coordinator_role_id,
+                coordinator_instance_id=coordinator_instance_id,
+            ),
+        )
         coordinator_messages = _merge_event_tool_messages(
             coordinator_messages,
-            _coordinator_event_tool_messages(
+            _coordinator_event_messages(
                 tool_messages_by_run.get(run_id, []),
                 coordinator_role_id=coordinator_role_id,
                 coordinator_instance_id=coordinator_instance_id,
@@ -733,6 +751,192 @@ def _is_public_injection_payload(payload: dict[str, object]) -> bool:
     return source in {"user", "subagent"}
 
 
+def _project_text_messages_from_events(
+    session_events: list[dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    active_segments: dict[tuple[str, str, str], dict[str, object]] = {}
+    projected_by_run: dict[str, list[dict[str, object]]] = defaultdict(list)
+    sorted_session_events = sorted(
+        session_events,
+        key=lambda item: str(item.get("occurred_at") or ""),
+    )
+    for event in sorted_session_events:
+        event_type = str(event.get("event_type") or "")
+        payload = _parse_event_payload(event.get("payload_json"))
+        run_id = str(
+            event.get("trace_id") or payload.get("run_id") or event.get("run_id") or ""
+        )
+        if not run_id:
+            continue
+        if event_type in {
+            RunEventType.TEXT_DELTA.value,
+            RunEventType.OUTPUT_DELTA.value,
+        }:
+            role_id = str(payload.get("role_id") or event.get("role_id") or "")
+            instance_id = str(
+                payload.get("instance_id") or event.get("instance_id") or ""
+            )
+            key = (run_id, instance_id, role_id)
+            for text_chunk in _event_text_chunks(event_type, payload):
+                if text_chunk is None:
+                    _flush_event_text_segments(
+                        active_segments,
+                        projected_by_run=projected_by_run,
+                        run_id=run_id,
+                        instance_id=instance_id or None,
+                        role_id=role_id or None,
+                    )
+                    continue
+                if text_chunk == "":
+                    continue
+                segment = active_segments.get(key)
+                if segment is None:
+                    segment = {
+                        "run_id": run_id,
+                        "role_id": role_id,
+                        "instance_id": instance_id,
+                        "task_id": str(event.get("task_id") or ""),
+                        "occurred_at": str(event.get("occurred_at") or ""),
+                        "chunks": [],
+                        "source_event_types": [],
+                    }
+                    active_segments[key] = segment
+                chunks = segment.get("chunks")
+                if isinstance(chunks, list):
+                    chunks.append(text_chunk)
+                source_event_types = segment.get("source_event_types")
+                if (
+                    isinstance(source_event_types, list)
+                    and event_type not in source_event_types
+                ):
+                    source_event_types.append(event_type)
+                segment["occurred_at"] = str(event.get("occurred_at") or "")
+            continue
+        if event_type in {
+            RunEventType.INJECTION_APPLIED.value,
+            RunEventType.TOOL_CALL.value,
+            RunEventType.TOOL_RESULT.value,
+            RunEventType.MODEL_STEP_STARTED.value,
+            RunEventType.MODEL_STEP_FINISHED.value,
+        }:
+            role_id = str(payload.get("role_id") or event.get("role_id") or "")
+            instance_id = str(
+                payload.get("instance_id") or event.get("instance_id") or ""
+            )
+            _flush_event_text_segments(
+                active_segments,
+                projected_by_run=projected_by_run,
+                run_id=run_id,
+                instance_id=instance_id or None,
+                role_id=role_id or None,
+            )
+            continue
+        if event_type in {
+            RunEventType.RUN_COMPLETED.value,
+            RunEventType.RUN_FAILED.value,
+            RunEventType.RUN_STOPPED.value,
+        }:
+            _flush_event_text_segments(
+                active_segments,
+                projected_by_run=projected_by_run,
+                run_id=run_id,
+            )
+    for run_id in tuple({key[0] for key in active_segments}):
+        _flush_event_text_segments(
+            active_segments,
+            projected_by_run=projected_by_run,
+            run_id=run_id,
+        )
+    return dict(projected_by_run)
+
+
+def _event_text_chunks(
+    event_type: str,
+    payload: dict[str, object],
+) -> list[str | None]:
+    if event_type == RunEventType.TEXT_DELTA.value:
+        return [str(payload.get("text") or "")]
+    if event_type != RunEventType.OUTPUT_DELTA.value:
+        return []
+    output = payload.get("output")
+    if not isinstance(output, list):
+        return []
+    chunks: list[str | None] = []
+    for item in output:
+        try:
+            part = ContentPartAdapter.validate_python(item)
+        except ValidationError:
+            chunks.append(None)
+            continue
+        if isinstance(part, TextContentPart):
+            chunks.append(part.text)
+            continue
+        chunks.append(None)
+    return chunks
+
+
+def _flush_event_text_segments(
+    active_segments: dict[tuple[str, str, str], dict[str, object]],
+    *,
+    projected_by_run: dict[str, list[dict[str, object]]],
+    run_id: str,
+    instance_id: str | None = None,
+    role_id: str | None = None,
+) -> None:
+    safe_instance_id = None if instance_id is None else str(instance_id)
+    safe_role_id = None if role_id is None else str(role_id)
+    keys = [
+        key
+        for key in active_segments
+        if key[0] == run_id
+        and (safe_instance_id is None or key[1] == safe_instance_id)
+        and (safe_role_id is None or key[2] == safe_role_id)
+    ]
+    for key in keys:
+        segment = active_segments.pop(key)
+        message = _event_text_message(segment)
+        if message is not None:
+            projected_by_run[run_id].append(message)
+
+
+def _event_text_message(segment: dict[str, object]) -> dict[str, object] | None:
+    chunks = segment.get("chunks")
+    if not isinstance(chunks, list):
+        return None
+    content = "".join(str(chunk) for chunk in chunks)
+    if not content.strip():
+        return None
+    run_id = str(segment.get("run_id") or "")
+    role_id = str(segment.get("role_id") or "")
+    instance_id = str(segment.get("instance_id") or "")
+    source_event_types = segment.get("source_event_types")
+    source_events = (
+        [str(event_type) for event_type in source_event_types]
+        if isinstance(source_event_types, list)
+        else []
+    )
+    return {
+        "conversation_id": "",
+        "agent_role_id": role_id,
+        "instance_id": instance_id,
+        "task_id": str(segment.get("task_id") or ""),
+        "trace_id": run_id,
+        "role": "assistant",
+        "role_id": role_id,
+        "created_at": str(segment.get("occurred_at") or ""),
+        "reconstructed": True,
+        "reconstructed_source_event_types": source_events,
+        "message": {
+            "parts": [
+                {
+                    "part_kind": "text",
+                    "content": content,
+                }
+            ]
+        },
+    }
+
+
 def _project_tool_messages_from_events(
     session_events: list[dict[str, object]],
 ) -> dict[str, list[dict[str, object]]]:
@@ -908,7 +1112,7 @@ def _event_tool_result_message(record: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _coordinator_event_tool_messages(
+def _coordinator_event_messages(
     messages: list[dict[str, object]],
     *,
     coordinator_role_id: str | None,
@@ -933,6 +1137,120 @@ def _coordinator_event_tool_messages(
         if coordinator_role_id is not None and role_id == coordinator_role_id:
             filtered.append(message)
     return filtered
+
+
+def _coordinator_event_tool_messages(
+    messages: list[dict[str, object]],
+    *,
+    coordinator_role_id: str | None,
+    coordinator_instance_id: str | None,
+) -> list[dict[str, object]]:
+    return _coordinator_event_messages(
+        messages,
+        coordinator_role_id=coordinator_role_id,
+        coordinator_instance_id=coordinator_instance_id,
+    )
+
+
+def _merge_event_text_messages(
+    coordinator_messages: list[dict[str, object]],
+    event_text_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    if not event_text_messages:
+        return coordinator_messages
+    existing_text_occurrences = _ordered_message_text_occurrences(coordinator_messages)
+    missing: list[dict[str, object]] = []
+    ordered_event_messages = sorted(
+        event_text_messages,
+        key=lambda item: str(item.get("created_at") or ""),
+    )
+    for index, message in enumerate(ordered_event_messages):
+        event_time = str(message.get("created_at") or "")
+        latest_created_at = _next_later_event_text_created_at(
+            ordered_event_messages,
+            index,
+            event_time,
+        )
+        include_message = False
+        for text in _message_text_parts(message):
+            normalized = _normalize_projected_text(text)
+            if not normalized:
+                continue
+            source_event_types = message.get("reconstructed_source_event_types")
+            earliest_created_at = (
+                ""
+                if (
+                    isinstance(source_event_types, list)
+                    and RunEventType.OUTPUT_DELTA.value in source_event_types
+                )
+                else event_time
+            )
+            match_index = _matching_text_occurrence_index(
+                existing_text_occurrences,
+                earliest_created_at=earliest_created_at,
+                latest_created_at=latest_created_at,
+                normalized=normalized,
+            )
+            if match_index is None:
+                include_message = True
+            else:
+                existing_text_occurrences.pop(match_index)
+        if include_message:
+            missing.append(message)
+    if not missing:
+        return coordinator_messages
+    return sorted(
+        [*coordinator_messages, *missing],
+        key=lambda item: (
+            str(item.get("created_at") or ""),
+            1 if str(item.get("role") or "") == "user" else 0,
+        ),
+    )
+
+
+def _next_later_event_text_created_at(
+    messages: list[dict[str, object]],
+    start_index: int,
+    event_time: str,
+) -> str | None:
+    for message in messages[start_index + 1 :]:
+        created_at = str(message.get("created_at") or "")
+        if created_at > event_time:
+            return created_at
+    return None
+
+
+def _ordered_message_text_occurrences(
+    messages: list[dict[str, object]],
+) -> list[tuple[str, str]]:
+    occurrences: list[tuple[str, str]] = []
+    for message in sorted(
+        messages,
+        key=lambda item: str(item.get("created_at") or ""),
+    ):
+        created_at = str(message.get("created_at") or "")
+        for text in _message_text_parts(message):
+            normalized = _normalize_projected_text(text)
+            if normalized:
+                occurrences.append((created_at, normalized))
+    return occurrences
+
+
+def _matching_text_occurrence_index(
+    occurrences: list[tuple[str, str]],
+    *,
+    earliest_created_at: str,
+    latest_created_at: str | None,
+    normalized: str,
+) -> int | None:
+    for index, (created_at, text) in enumerate(occurrences):
+        if created_at < earliest_created_at:
+            continue
+        if latest_created_at is not None and created_at >= latest_created_at:
+            continue
+        if text == normalized:
+            return index
+    return None
 
 
 def _merge_event_tool_messages(
@@ -980,6 +1298,18 @@ def _message_tool_part_keys(message: dict[str, object]) -> list[tuple[str, str]]
         if part_kind and tool_call_id:
             tool_part_keys.append((part_kind, tool_call_id))
     return tool_part_keys
+
+
+def _message_text_part_counts(
+    messages: list[dict[str, object]],
+) -> Counter[str]:
+    text_part_counts: Counter[str] = Counter()
+    for message in messages:
+        for text in _message_text_parts(message):
+            normalized = _normalize_projected_text(text)
+            if normalized:
+                text_part_counts[normalized] += 1
+    return text_part_counts
 
 
 def _message_parts(message: dict[str, object]) -> list[dict[str, object]]:
@@ -1313,7 +1643,7 @@ def _coerce_user_prompt_content_projection_item(
             return _binary_prompt_payload_projection(raw_item)
     try:
         validated = ContentPartAdapter.validate_python(item)
-    except Exception:
+    except ValidationError:
         pass
     else:
         return cast(dict[str, object], validated.model_dump(mode="json"))
@@ -1384,7 +1714,7 @@ def _intent_parts_to_text(intent_parts: list[dict[str, object]]) -> str | None:
     for item in intent_parts:
         try:
             part = ContentPartAdapter.validate_python(item)
-        except Exception:
+        except ValidationError:
             fragment = user_prompt_content_to_text(item)
         else:
             fragment = content_parts_to_text((part,))

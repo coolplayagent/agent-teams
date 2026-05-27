@@ -38,6 +38,7 @@ from relay_teams.sessions.runs.active_run_registry import ActiveSessionRunRegist
 from relay_teams.sessions.runs.event_stream import RunEventHub
 from relay_teams.sessions.runs.runtime_config import RuntimeConfig
 from relay_teams.sessions.session_rounds_projection import (
+    DETAILED_ROUND_PROJECTION_EVENT_TYPES,
     ROUND_PROJECTION_EVENT_TYPES,
     approvals_to_projection,
     build_session_rounds,
@@ -176,6 +177,12 @@ _SNAPSHOT_DIRTY_EVENT_TYPES = frozenset(
         RunEventType.BACKGROUND_TASK_COMPLETED,
         RunEventType.BACKGROUND_TASK_STOPPED,
         RunEventType.TOKEN_USAGE,
+    }
+)
+_DETAILED_ROUND_DIRTY_EVENT_TYPES = frozenset(
+    {
+        RunEventType.TEXT_DELTA,
+        RunEventType.OUTPUT_DELTA,
     }
 )
 _LIST_DIRTY_EVENT_TYPES = frozenset(
@@ -378,6 +385,13 @@ class SessionService:
                 and not self._is_running_async_publish_listener()
             ):
                 self._merge_terminal_session_projection_into_list_cache(safe_session_id)
+        if event.event_type in _DETAILED_ROUND_DIRTY_EVENT_TYPES:
+            self._session_snapshot_cache.mark_session_dirty(
+                safe_session_id,
+                section=SessionSnapshotSection.ROUNDS,
+                cache_key_predicate=self._is_detailed_rounds_cache_key,
+            )
+            return
         if (
             event.event_type not in _SNAPSHOT_DIRTY_EVENT_TYPES
             and not spawn_subagent_dirty
@@ -400,6 +414,10 @@ class SessionService:
             return False
         tool_name = payload.get("tool_name")
         return isinstance(tool_name, str) and tool_name.strip() == "spawn_subagent"
+
+    @staticmethod
+    def _is_detailed_rounds_cache_key(cache_key: str) -> bool:
+        return "timeline=False" in cache_key and "summary=False" in cache_key
 
     def _merge_terminal_session_projection_into_list_cache(
         self,
@@ -1744,6 +1762,31 @@ class SessionService:
         )
         return cast(list[dict[str, object]], list(events))
 
+    def _get_detailed_round_projection_events(
+        self, session_id: str
+    ) -> list[dict[str, object]]:
+        if self._event_log is None:
+            return []
+        events = self._event_log.list_by_session_event_types(
+            session_id,
+            DETAILED_ROUND_PROJECTION_EVENT_TYPES,
+        )
+        return cast(list[dict[str, object]], list(events))
+
+    def _get_detailed_round_projection_events_for_runs(
+        self,
+        session_id: str,
+        run_ids: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        if self._event_log is None:
+            return []
+        events = self._event_log.list_by_session_run_ids_event_types(
+            session_id,
+            run_ids,
+            DETAILED_ROUND_PROJECTION_EVENT_TYPES,
+        )
+        return cast(list[dict[str, object]], list(events))
+
     def get_session_messages(self, session_id: str) -> list[dict[str, object]]:
         return cast(
             list[dict[str, object]],
@@ -1875,10 +1918,10 @@ class SessionService:
                 self._get_session_history_markers if include_history_markers else None
             ),
             get_session_events=(
-                self._get_round_projection_events
+                self._get_detailed_round_projection_events
                 if selected_run_ids is None
                 else lambda current_session_id: (
-                    self._get_round_projection_events_for_runs(
+                    self._get_detailed_round_projection_events_for_runs(
                         current_session_id,
                         selected_run_ids,
                     )

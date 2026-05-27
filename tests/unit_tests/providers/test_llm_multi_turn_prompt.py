@@ -501,6 +501,18 @@ def _index_of_tool_return(messages: Sequence[object], tool_call_id: str) -> int:
     raise AssertionError(f"missing tool return {tool_call_id}")
 
 
+def _index_of_text_response(messages: Sequence[object], content: str) -> int:
+    for index, message in enumerate(messages):
+        if not isinstance(message, ModelResponse):
+            continue
+        if any(
+            isinstance(part, TextPart) and part.content == content
+            for part in message.parts
+        ):
+            return index
+    raise AssertionError(f"missing text response {content}")
+
+
 def _index_of_user_prompt(messages: Sequence[object], content: str) -> int:
     for index, message in enumerate(messages):
         if not isinstance(message, ModelRequest):
@@ -511,6 +523,91 @@ def _index_of_user_prompt(messages: Sequence[object], content: str) -> int:
         ):
             return index
     raise AssertionError(f"missing user prompt {content}")
+
+
+def test_stream_observed_text_helpers_ignore_empty_and_consume_duplicates() -> None:
+    contents = session_runtime_module._text_part_contents(
+        [
+            ModelRequest(parts=[UserPromptPart(content="hello")]),
+            ModelResponse(
+                parts=[
+                    TextPart(content=""),
+                    ToolCallPart(tool_name="read", args={}, tool_call_id="call-1"),
+                    TextPart(content="repeat"),
+                    TextPart(content="repeat"),
+                ]
+            ),
+        ]
+    )
+
+    assert contents == {"repeat": 2}
+    assert not session_runtime_module._consume_existing_text_content(
+        contents,
+        "missing",
+    )
+    assert session_runtime_module._consume_existing_text_content(contents, "repeat")
+    assert contents == {"repeat": 1}
+    assert session_runtime_module._consume_existing_text_content(contents, "repeat")
+    assert contents == {}
+
+
+def test_missing_stream_observed_text_ignores_matching_old_history_text() -> None:
+    missing = session_runtime_module._missing_stream_observed_messages(
+        [ModelResponse(parts=[TextPart(content="OK")])],
+        [ModelResponse(parts=[TextPart(content="OK")])],
+        existing_text_messages=[],
+    )
+
+    assert len(missing) == 1
+    assert isinstance(missing[0], ModelResponse)
+    assert [
+        part.content for part in missing[0].parts if isinstance(part, TextPart)
+    ] == ["OK"]
+
+
+def test_missing_stream_observed_text_inserts_before_existing_tool_call() -> None:
+    pending_messages: list[ModelRequest | ModelResponse] = [
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="read",
+                    args={},
+                    tool_call_id="call-1",
+                )
+            ]
+        )
+    ]
+
+    missing = session_runtime_module._missing_stream_observed_messages(
+        list(pending_messages),
+        [
+            ModelResponse(
+                parts=[
+                    TextPart(content="before tool"),
+                    ToolCallPart(
+                        tool_name="read",
+                        args={},
+                        tool_call_id="call-1",
+                    ),
+                ]
+            )
+        ],
+        existing_text_messages=[],
+        pending_messages=pending_messages,
+    )
+
+    assert missing == []
+    assert len(pending_messages) == 2
+    inserted = pending_messages[0]
+    assert isinstance(inserted, ModelResponse)
+    assert [part.content for part in inserted.parts if isinstance(part, TextPart)] == [
+        "before tool"
+    ]
+    tool_message = pending_messages[1]
+    assert isinstance(tool_message, ModelResponse)
+    tool_part = tool_message.parts[0]
+    assert isinstance(tool_part, ToolCallPart)
+    assert tool_part.tool_call_id == "call-1"
 
 
 class _FakeNodeStream:
@@ -1755,6 +1852,107 @@ async def test_generate_persists_stream_observed_tool_pair_before_injection_rest
     assert event_types.index(RunEventType.TOOL_RESULT) < event_types.index(
         RunEventType.INJECTION_APPLIED
     )
+
+
+@pytest.mark.asyncio
+async def test_generate_persists_stream_observed_text_before_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_hub = _FakeRunEventHub()
+    provider, message_repo = _build_provider(
+        tmp_path / "stream_observed_text_before_tool_call.db",
+        fake_hub,
+    )
+
+    streamed_text = (
+        "Let me also look at an actual SKILL.md example and the builtin skills."
+    )
+    text_part = TextPart(content=streamed_text)
+    tool_call = ToolCallPart(
+        tool_name="shell",
+        args={"command": "type C:\\Users\\yex\\.codex\\skills\\SKILL.md"},
+        tool_call_id="call-stream-skill",
+    )
+    tool_return = ToolReturnPart(
+        tool_name="shell",
+        tool_call_id="call-stream-skill",
+        content="skill body",
+    )
+    final_text = TextPart(content="done")
+    scripted_agent = _SequentialAgent(
+        [
+            _ScriptedAgentRun(
+                nodes=[
+                    _ScriptedStreamingModelRequestNode(
+                        [
+                            PartStartEvent(index=0, part=text_part),
+                            PartEndEvent(index=0, part=text_part),
+                            PartEndEvent(index=1, part=tool_call),
+                        ]
+                    ),
+                    _ScriptedStreamingToolCallNode(
+                        [FunctionToolResultEvent(result=tool_return)]
+                    ),
+                ],
+                messages_by_step=[[], []],
+                result=_ScriptedResult(
+                    response=ModelResponse(parts=[final_text]),
+                    messages=[ModelResponse(parts=[final_text])],
+                ),
+            )
+        ]
+    )
+
+    monkeypatch.setattr(
+        session_runtime_module,
+        "ModelRequestNode",
+        _ScriptedStreamingModelRequestNode,
+    )
+    monkeypatch.setattr(
+        session_runtime_module,
+        "CallToolsNode",
+        _ScriptedStreamingToolCallNode,
+    )
+    monkeypatch.setattr(
+        llm_module,
+        "build_coordination_agent",
+        lambda **kwargs: scripted_agent,
+    )
+
+    request = LLMRequest(
+        run_id="run-stream-observed-text-before-tool",
+        trace_id="run-stream-observed-text-before-tool",
+        task_id="task-stream-observed-text-before-tool",
+        session_id="session-stream-observed-text-before-tool",
+        workspace_id="default",
+        conversation_id=build_conversation_id(
+            "session-stream-observed-text-before-tool",
+            "Coordinator",
+        ),
+        instance_id="inst-stream-observed-text-before-tool",
+        role_id="Coordinator",
+        system_prompt="system",
+        user_prompt="inspect skills",
+    )
+
+    response = await provider.generate(request)
+
+    assert response == "done"
+    stored_history = message_repo.get_history_for_conversation(
+        request.conversation_id or ""
+    )
+    text_index = _index_of_text_response(stored_history, streamed_text)
+    call_index = _index_of_tool_call(stored_history, "call-stream-skill")
+    return_index = _index_of_tool_return(stored_history, "call-stream-skill")
+    assert text_index < call_index < return_index
+
+    text_payloads = [
+        json.loads(event.payload_json)
+        for event in fake_hub.events
+        if event.event_type == RunEventType.TEXT_DELTA
+    ]
+    assert "".join(str(payload["text"]) for payload in text_payloads) == streamed_text
 
 
 @pytest.mark.asyncio

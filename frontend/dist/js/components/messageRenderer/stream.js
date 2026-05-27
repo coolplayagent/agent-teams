@@ -93,6 +93,7 @@ export function appendStreamChunk(instanceId, text, runId = '', roleId = '', lab
         st.activeRaw = '';
     }
 
+    const wasIdleTextPlaceholder = isIdleCursorPlaceholder(st.activeTextEl);
     st.raw += text;
     st.activeRaw += text;
     st.activeTextIsIdle = false;
@@ -102,7 +103,7 @@ export function appendStreamChunk(instanceId, text, runId = '', roleId = '', lab
             streaming: true,
             appendDelta: true,
         });
-    } else if (st.activeRaw.length >= LARGE_STREAM_TEXT_THRESHOLD) {
+    } else if (wasIdleTextPlaceholder || st.activeRaw.length >= LARGE_STREAM_TEXT_THRESHOLD) {
         pendingTextUpdates.delete(st.activeTextEl);
         updateMessageText(st.activeTextEl, st.activeRaw, { streaming: true });
     } else {
@@ -636,6 +637,9 @@ export function updateToolResult(
     const resolvedInstanceId = (st && st.instanceId) || instanceId;
     const resolvedRoleId = (st && st.roleId) || roleId;
     const resultIsError = isStreamToolResultError(result, { isError });
+    if (st) {
+        endActiveText(st);
+    }
     updateOverlayToolResult(
         resolvedRunId,
         resolvedInstanceId,
@@ -707,6 +711,9 @@ export function markToolInputValidationFailed(instanceId, payload, options = {})
     }
 
     const follow = captureStreamFollow((st && st.container) || container);
+    if (st) {
+        endActiveText(st);
+    }
     setToolValidationFailureState(toolBlock, payload);
     updateOverlayToolValidation(st.runId || runId, st.instanceId || instanceId, roleId || st.roleId, payload);
     applyTimelineAction({
@@ -924,6 +931,9 @@ export function attachToolApprovalControls(instanceId, toolName, payload, handle
     }
 
     const follow = captureStreamFollow((st && st.container) || container);
+    if (st) {
+        endActiveText(st);
+    }
     const approvalEl = ensureApprovalState(toolBlock);
 
     toolBlock.open = true;
@@ -982,6 +992,9 @@ export function markToolApprovalResolved(instanceId, payload, options = {}) {
     if (!toolCallId) return false;
 
     const follow = captureStreamFollow((st && st.container) || container);
+    if (st) {
+        endActiveText(st);
+    }
     const toolBlock = resolveToolBlockTarget(st, container, payload?.tool_name, toolCallId);
     if (!toolBlock) return false;
     toolBlock.dataset.toolCallId = toolCallId;
@@ -1141,7 +1154,8 @@ export function applyStreamOverlayEvent(evType, payload, options = {}) {
         appendOverlayInjection(runId, streamKey, roleId, label, payload || {});
         return;
     }
-    if (evType === 'model_step_finished') {
+    if (evType === 'model_step_started' || evType === 'model_step_finished') {
+        closeOverlayTextSegment(runId, streamKey, roleId, label);
         setOverlayTextStreaming(runId, streamKey, roleId, label, false);
         setOverlayIdleCursor(runId, streamKey, roleId, label, false);
         return;
@@ -1410,19 +1424,25 @@ function materializeOverlayEntryIntoState(st, overlayEntry) {
     if (!st || !overlayEntry || !Array.isArray(overlayEntry.parts)) {
         return;
     }
+    const liveTextPart = overlayEntry.textStreaming === true
+        ? [...overlayEntry.parts]
+            .reverse()
+            .find(part => part?.kind === 'text' && part.closed !== true)
+        : null;
     overlayEntry.parts.forEach(part => {
         if (!part || typeof part !== 'object') {
             return;
         }
         if (part.kind === 'text') {
+            const textStreaming = part === liveTextPart;
             const textEl = document.createElement('div');
             textEl.className = 'msg-text';
             updateMessageText(textEl, String(part.content || ''), {
-                streaming: overlayEntry.textStreaming === true,
+                streaming: textStreaming,
             });
             st.contentEl.appendChild(textEl);
-            st.activeTextEl = overlayEntry.textStreaming === true ? textEl : st.activeTextEl;
-            st.activeRaw = overlayEntry.textStreaming === true
+            st.activeTextEl = textStreaming ? textEl : st.activeTextEl;
+            st.activeRaw = textStreaming
                 ? String(part.content || '')
                 : st.activeRaw;
             st.raw += String(part.content || '');
@@ -1545,11 +1565,13 @@ function findReusableStreamState({
     if (!wrapper) return null;
     const contentEl = wrapper.querySelector('.msg-content');
     if (!contentEl) return null;
+    const reusableTextPart = resolveReusableTextPart(overlayEntry);
+    const canReuseText = overlayEntry?.textStreaming === true && !!reusableTextPart;
     const idleRebind = overlayEntry?.idleCursor === true && overlayEntry?.textStreaming !== true;
     const activeTextEl = idleRebind
         ? findReusableIdleCursorElement(contentEl)
-        : findLastReusableTextElement(contentEl);
-    const activeRaw = idleRebind ? '' : resolveReusableRawText(overlayEntry);
+        : (canReuseText ? findLastReusableTextElement(contentEl) : null);
+    const activeRaw = canReuseText ? String(reusableTextPart?.content || '') : '';
     if (activeTextEl) {
         syncStreamingCursor(activeTextEl, overlayEntry?.textStreaming === true);
         if (overlayEntry?.idleCursor === true && overlayEntry?.textStreaming !== true) {
@@ -1671,18 +1693,21 @@ function findReusableIdleCursorElement(contentEl) {
     return null;
 }
 
-function resolveReusableRawText(overlayEntry) {
+function resolveReusableTextPart(overlayEntry) {
     if (!overlayEntry || !Array.isArray(overlayEntry.parts)) {
-        return '';
+        return null;
     }
     for (let index = overlayEntry.parts.length - 1; index >= 0; index -= 1) {
         const part = overlayEntry.parts[index];
         if (!part || part.kind !== 'text') {
             continue;
         }
-        return String(part.content || '');
+        if (part.closed === true || part.streaming === false) {
+            return null;
+        }
+        return part;
     }
-    return '';
+    return null;
 }
 
 function bindReusableThinkingState(contentEl, overlayEntry) {
@@ -1806,6 +1831,7 @@ function endActiveText(st) {
     }
     setOverlayTextStreaming(st.runId, st.instanceId, st.roleId, st.label, false);
     setOverlayIdleCursor(st.runId, st.instanceId, st.roleId, st.label, false);
+    closeOverlayTextSegment(st.runId, st.instanceId, st.roleId, st.label);
     st.activeTextEl = null;
     st.activeRaw = '';
     st.activeTextIsIdle = false;
@@ -2156,11 +2182,28 @@ function updateOverlayText(runId, instanceId, roleId, label, text) {
     entry.idleCursor = false;
     if (!nextText) return;
     const lastPart = entry.parts[entry.parts.length - 1];
-    if (lastPart && lastPart.kind === 'text') {
+    if (lastPart && lastPart.kind === 'text' && lastPart.closed !== true) {
         lastPart.content = String(lastPart.content || '') + nextText;
         return;
     }
     entry.parts.push({ kind: 'text', content: nextText });
+}
+
+function closeOverlayTextSegment(runId, instanceId, roleId, label) {
+    const entry = resolveOverlayEntry(runId, instanceId, roleId, label);
+    closeOverlayTextSegmentEntry(entry);
+}
+
+function closeOverlayTextSegmentEntry(entry) {
+    if (!entry || !Array.isArray(entry.parts)) {
+        return;
+    }
+    const lastPart = entry.parts[entry.parts.length - 1];
+    if (lastPart && lastPart.kind === 'text') {
+        lastPart.closed = true;
+        lastPart.streaming = false;
+        entry.textStreaming = false;
+    }
 }
 
 function appendOverlayOutputParts(
@@ -2186,7 +2229,7 @@ function appendOverlayOutputParts(
                 return;
             }
             const lastPart = entry.parts[entry.parts.length - 1];
-            if (lastPart && lastPart.kind === 'text') {
+            if (lastPart && lastPart.kind === 'text' && lastPart.closed !== true) {
                 lastPart.content = String(lastPart.content || '') + normalizedPart.content;
             } else {
                 entry.parts.push(normalizedPart);
@@ -2194,6 +2237,7 @@ function appendOverlayOutputParts(
             hasTextOutput = true;
             return;
         }
+        closeOverlayTextSegmentEntry(entry);
         entry.parts.push(normalizedPart);
     });
     return hasTextOutput;
@@ -2214,6 +2258,7 @@ function setOverlayIdleCursor(runId, instanceId, roleId, label, isIdle) {
 function startOverlayThinking(runId, instanceId, roleId, label, partIndex) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const safePartIndex = Number(partIndex);
     const activeKey = entry.thinkingActiveByPart?.get(String(safePartIndex));
     const activePart = activeKey ? findOverlayThinkingPartByKey(entry, activeKey) : null;
@@ -2266,6 +2311,7 @@ function finishOverlayThinking(runId, instanceId, roleId, partIndex) {
 function updateOverlayToolCall(runId, instanceId, roleId, label, toolPart) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(
         entry,
         toolPart.tool_name,
@@ -2286,6 +2332,7 @@ function updateOverlayToolCall(runId, instanceId, roleId, label, toolPart) {
 function updateOverlayToolResult(runId, instanceId, roleId, label, toolName, toolCallId, result, isError) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(entry, toolName, toolCallId);
     part.status = isError ? 'error' : 'completed';
     part.result = result;
@@ -2294,6 +2341,7 @@ function updateOverlayToolResult(runId, instanceId, roleId, label, toolName, too
 function updateOverlayToolValidation(runId, instanceId, roleId, payload) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, '');
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = findOverlayToolPart(
         entry,
         payload?.tool_name,
@@ -2311,6 +2359,7 @@ function updateOverlayToolValidation(runId, instanceId, roleId, payload) {
 function updateOverlayToolApproval(runId, instanceId, roleId, toolName, payload, approvalStatus) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, '');
     if (!entry) return;
+    closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(
         entry,
         toolName,
@@ -2322,6 +2371,7 @@ function updateOverlayToolApproval(runId, instanceId, roleId, toolName, payload,
 function appendOverlayInjection(runId, instanceId, roleId, label, payload) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry || !payload || typeof payload !== 'object') return;
+    closeOverlayTextSegmentEntry(entry);
     const normalized = normalizeOverlayInjection(payload);
     if (!normalized.content) return;
     const existing = entry.parts.find(part => (

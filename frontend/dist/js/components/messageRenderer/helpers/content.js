@@ -18,6 +18,13 @@ const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）�
 export function renderRichContent(targetEl, source, options = {}) {
     const text = String(source || '');
     const enableWorkspaceImagePreview = options.enableWorkspaceImagePreview !== false;
+    const preserveBoundaryWhitespace = options.preserveBoundaryWhitespace === true;
+    const leadingWhitespace = preserveBoundaryWhitespace
+        ? (text.match(/^\s+/u)?.[0] || '')
+        : '';
+    const trailingWhitespace = preserveBoundaryWhitespace
+        ? (text.match(/\s+$/u)?.[0] || '')
+        : '';
     const standaloneImageUrl = resolveStandaloneImageDataUrl(text);
     if (standaloneImageUrl) {
         targetEl.replaceChildren(buildImageFigure(standaloneImageUrl));
@@ -25,6 +32,20 @@ export function renderRichContent(targetEl, source, options = {}) {
     }
 
     targetEl.innerHTML = parseMarkdown(text);
+    if (
+        leadingWhitespace
+        && typeof document !== 'undefined'
+        && typeof document.createTextNode === 'function'
+    ) {
+        targetEl.prepend(document.createTextNode(leadingWhitespace));
+    }
+    if (
+        trailingWhitespace
+        && typeof document !== 'undefined'
+        && typeof document.createTextNode === 'function'
+    ) {
+        targetEl.appendChild(document.createTextNode(trailingWhitespace));
+    }
     if (enableWorkspaceImagePreview) {
         const previewUrls = resolveWorkspaceImagePreviewUrls(
             text,

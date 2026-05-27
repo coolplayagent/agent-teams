@@ -22,8 +22,11 @@ from relay_teams.sessions.session_rounds_projection import build_session_rounds
 from relay_teams.sessions.session_rounds_projection import build_session_timeline_rounds
 from relay_teams.sessions.session_rounds_projection import (
     _coordinator_event_tool_messages,
+    _event_text_message,
     _has_assistant_text_message,
     _merge_event_tool_messages,
+    _merge_event_text_messages,
+    _project_text_messages_from_events,
 )
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
@@ -241,6 +244,367 @@ def test_merge_event_tool_messages_preserves_repeated_tool_call_occurrences() ->
         second_event_call,
         second_event_result,
     ]
+
+
+def test_project_text_messages_from_events_skips_empty_run_and_text_events() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "missing run"}),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps({"text": ""}),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps({"text": "visible"}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert len(messages) == 1
+    assert messages[0]["created_at"] == "2026-04-29T10:00:02Z"
+    assert messages[0]["message"] == {
+        "parts": [{"part_kind": "text", "content": "visible"}]
+    }
+
+
+def test_project_text_messages_from_events_flushes_at_injection_boundary() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "before injection"}),
+            },
+            {
+                "event_type": RunEventType.INJECTION_APPLIED.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": "{}",
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps({"text": "after injection"}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {"parts": [{"part_kind": "text", "content": "before injection"}]},
+        {"parts": [{"part_kind": "text", "content": "after injection"}]},
+    ]
+
+
+def test_project_text_messages_from_events_ignores_queued_injection_boundary() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "before queued "}),
+            },
+            {
+                "event_type": RunEventType.INJECTION_ENQUEUED.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps(
+                    {
+                        "injection_id": "inj-queued",
+                        "visibility": "public",
+                        "content": "queued only",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps({"text": "after queued"}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {"parts": [{"part_kind": "text", "content": "before queued after queued"}]},
+    ]
+
+
+def test_project_text_messages_from_events_preserves_whitespace() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps({"text": "\n  indented"}),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps({"text": " tail "}),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert messages[0]["message"] == {
+        "parts": [{"part_kind": "text", "content": "\n  indented tail "}]
+    }
+
+
+def test_project_text_messages_from_events_includes_output_delta_text() -> None:
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.OUTPUT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps(
+                    {
+                        "output": [
+                            {"kind": "text", "text": "media text"},
+                            {
+                                "kind": "media_ref",
+                                "asset_id": "asset-1",
+                                "session_id": "session-1",
+                                "modality": "image",
+                                "mime_type": "image/png",
+                                "url": "/api/media/asset-1",
+                            },
+                            {"kind": "text", "text": "after media"},
+                        ],
+                        "role_id": "Coordinator",
+                        "instance_id": "inst-coordinator",
+                    }
+                ),
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {"parts": [{"part_kind": "text", "content": "media text"}]},
+        {"parts": [{"part_kind": "text", "content": "after media"}]},
+    ]
+
+
+def test_project_text_messages_from_events_keeps_other_stream_open_at_boundary() -> (
+    None
+):
+    projected = _project_text_messages_from_events(
+        [
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:00Z",
+                "payload_json": json.dumps(
+                    {
+                        "text": "coordinator before ",
+                        "role_id": "Coordinator",
+                        "instance_id": "inst-coordinator",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.TOOL_CALL.value,
+                "trace_id": "run-1",
+                "task_id": "task-worker",
+                "role_id": "Worker",
+                "instance_id": "inst-worker",
+                "occurred_at": "2026-04-29T10:00:01Z",
+                "payload_json": json.dumps(
+                    {
+                        "tool_name": "shell",
+                        "tool_call_id": "call-worker",
+                        "role_id": "Worker",
+                        "instance_id": "inst-worker",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.TEXT_DELTA.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "role_id": "Coordinator",
+                "instance_id": "inst-coordinator",
+                "occurred_at": "2026-04-29T10:00:02Z",
+                "payload_json": json.dumps(
+                    {
+                        "text": "coordinator after",
+                        "role_id": "Coordinator",
+                        "instance_id": "inst-coordinator",
+                    }
+                ),
+            },
+            {
+                "event_type": RunEventType.RUN_COMPLETED.value,
+                "trace_id": "run-1",
+                "task_id": "task-1",
+                "occurred_at": "2026-04-29T10:00:03Z",
+                "payload_json": "{}",
+            },
+        ]
+    )
+
+    messages = projected["run-1"]
+    assert [message["message"] for message in messages] == [
+        {
+            "parts": [
+                {
+                    "part_kind": "text",
+                    "content": "coordinator before coordinator after",
+                }
+            ]
+        }
+    ]
+
+
+def test_event_text_message_rejects_invalid_or_blank_segments() -> None:
+    assert _event_text_message({"chunks": "not-a-list"}) is None
+    assert _event_text_message({"chunks": [" ", "\n"]}) is None
+
+
+def test_merge_event_text_messages_skips_duplicates_and_blank_text() -> None:
+    existing = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:00Z",
+        parts=[{"part_kind": "text", "content": "already persisted"}],
+    )
+    duplicate = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:00Z",
+        parts=[{"part_kind": "text", "content": "already persisted"}],
+    )
+    blank = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:02Z",
+        parts=[{"part_kind": "text", "content": "   "}],
+    )
+
+    assert _merge_event_text_messages([existing], [duplicate, blank]) == [existing]
+
+
+def test_merge_event_text_messages_keeps_later_repeated_text() -> None:
+    existing = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:00Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+    later_event = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:10Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+
+    assert _merge_event_text_messages([existing], [later_event]) == [
+        existing,
+        later_event,
+    ]
+
+
+def test_merge_event_text_messages_does_not_consume_later_match_for_earlier_gap() -> (
+    None
+):
+    later_existing = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:10Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+    missing_before_boundary = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:05Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+    later_event = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:10Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+
+    assert _merge_event_text_messages(
+        [later_existing],
+        [missing_before_boundary, later_event],
+    ) == [
+        missing_before_boundary,
+        later_existing,
+    ]
+
+
+def test_merge_event_text_messages_matches_persisted_output_before_delta() -> None:
+    existing_output = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:00Z",
+        parts=[{"part_kind": "text", "content": "generated caption"}],
+    )
+    output_delta_event = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:01Z",
+        parts=[{"part_kind": "text", "content": "generated caption"}],
+    )
+    output_delta_event["reconstructed_source_event_types"] = [
+        RunEventType.OUTPUT_DELTA.value
+    ]
+
+    merged = _merge_event_text_messages([existing_output], [output_delta_event])
+
+    assert merged == [existing_output]
 
 
 def test_build_session_rounds_maps_role_by_instance_across_runs(tmp_path: Path) -> None:
@@ -707,6 +1071,148 @@ def test_build_session_rounds_projects_missing_tool_pairs_from_events(
         "call-2",
     ]
     assert parts[3]["is_error"] is True
+
+
+def test_build_session_rounds_projects_missing_text_before_tool_from_events(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "rounds_projection_event_text_before_tool.db"
+    session_id = "session-1"
+    run_id = "run-1"
+    coordinator_instance_id = "inst-coordinator-1"
+    streamed_text = (
+        "Let me also look at an actual SKILL.md example and the builtin skills."
+    )
+
+    task_repo = TaskRepository(db_path)
+    agent_repo = AgentInstanceRepository(db_path)
+    run_runtime_repo = RunRuntimeRepository(db_path)
+
+    _ = task_repo.create(
+        TaskEnvelope(
+            task_id="task-root",
+            session_id=session_id,
+            parent_task_id=None,
+            trace_id=run_id,
+            role_id="Coordinator",
+            objective="recover event text before tool",
+            verification=VerificationPlan(checklist=("non_empty_response",)),
+        )
+    )
+    agent_repo.upsert_instance(
+        run_id=run_id,
+        trace_id=run_id,
+        session_id=session_id,
+        instance_id=coordinator_instance_id,
+        role_id="Coordinator",
+        workspace_id="default",
+        status=InstanceStatus.COMPLETED,
+    )
+    run_runtime_repo.ensure(
+        run_id=run_id,
+        session_id=session_id,
+        root_task_id="task-root",
+    )
+
+    events: list[dict[str, object]] = [
+        {
+            "trace_id": run_id,
+            "run_id": run_id,
+            "task_id": "task-root",
+            "event_type": RunEventType.TEXT_DELTA.value,
+            "occurred_at": "2026-04-29T10:00:00+00:00",
+            "payload_json": json.dumps(
+                {
+                    "run_id": run_id,
+                    "text": streamed_text[:24],
+                    "role_id": "Coordinator",
+                    "instance_id": coordinator_instance_id,
+                }
+            ),
+        },
+        {
+            "trace_id": run_id,
+            "run_id": run_id,
+            "task_id": "task-root",
+            "event_type": RunEventType.TEXT_DELTA.value,
+            "occurred_at": "2026-04-29T10:00:01+00:00",
+            "payload_json": json.dumps(
+                {
+                    "run_id": run_id,
+                    "text": streamed_text[24:],
+                    "role_id": "Coordinator",
+                    "instance_id": coordinator_instance_id,
+                }
+            ),
+        },
+        {
+            "trace_id": run_id,
+            "run_id": run_id,
+            "task_id": "task-root",
+            "event_type": RunEventType.TOOL_CALL.value,
+            "occurred_at": "2026-04-29T10:00:02+00:00",
+            "payload_json": json.dumps(
+                {
+                    "run_id": run_id,
+                    "tool_name": "shell",
+                    "tool_call_id": "call-1",
+                    "args": {"command": "type SKILL.md"},
+                    "role_id": "Coordinator",
+                    "instance_id": coordinator_instance_id,
+                }
+            ),
+        },
+        {
+            "trace_id": run_id,
+            "run_id": run_id,
+            "task_id": "task-root",
+            "event_type": RunEventType.TOOL_RESULT.value,
+            "occurred_at": "2026-04-29T10:00:03+00:00",
+            "payload_json": json.dumps(
+                {
+                    "run_id": run_id,
+                    "tool_name": "shell",
+                    "tool_call_id": "call-1",
+                    "result": {"ok": True, "data": "skill body"},
+                    "error": False,
+                    "role_id": "Coordinator",
+                    "instance_id": coordinator_instance_id,
+                }
+            ),
+        },
+    ]
+
+    rounds = build_session_rounds(
+        session_id=session_id,
+        agent_repo=agent_repo,
+        task_repo=task_repo,
+        approval_tickets_by_run={},
+        run_runtime_repo=run_runtime_repo,
+        get_session_messages=lambda _session_id: [],
+        get_session_events=lambda _session_id: events,
+    )
+
+    round_item = next(item for item in rounds if item["run_id"] == run_id)
+    coordinator_messages = cast(
+        list[dict[str, object]], round_item["coordinator_messages"]
+    )
+    parts = [
+        cast(
+            dict[str, object],
+            cast(
+                list[dict[str, object]],
+                cast(dict[str, object], message["message"])["parts"],
+            )[0],
+        )
+        for message in coordinator_messages
+    ]
+
+    assert [part["part_kind"] for part in parts] == [
+        "text",
+        "tool-call",
+        "tool-return",
+    ]
+    assert parts[0]["content"] == streamed_text
 
 
 def test_build_session_rounds_projects_stopped_spawn_subagent_call_without_result(

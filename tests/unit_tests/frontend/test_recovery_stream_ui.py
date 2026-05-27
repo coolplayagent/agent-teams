@@ -258,7 +258,19 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
         in renderer_stream_script
     )
     assert "function findLastReusableTextElement(contentEl) {" in renderer_stream_script
-    assert "function resolveReusableRawText(overlayEntry) {" in renderer_stream_script
+    assert "function resolveReusableTextPart(overlayEntry) {" in renderer_stream_script
+    assert (
+        "const reusableTextPart = resolveReusableTextPart(overlayEntry);"
+        in renderer_stream_script
+    )
+    assert (
+        "const canReuseText = overlayEntry?.textStreaming === true && !!reusableTextPart;"
+        in renderer_stream_script
+    )
+    assert (
+        "if (part.closed === true || part.streaming === false) {"
+        in renderer_stream_script
+    )
     assert "let lastRenderedMessage = null;" in history_script
     assert "renderStreamOverlayEntry(" in history_script
     assert "pendingToolBlocks," in history_script

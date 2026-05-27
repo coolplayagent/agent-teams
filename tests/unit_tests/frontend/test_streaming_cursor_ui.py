@@ -142,8 +142,10 @@ def test_streaming_messages_render_a_terminal_cursor_until_finalize() -> None:
     )
     assert "const flushText = (streaming = false) => {" in history_script
     assert (
-        "appendMessageText(ensureContentEl(), streaming ? safeText : safeText.trim(), { streaming });"
-        in history_script
+        "appendMessageText(ensureContentEl(), safeText, {\n"
+        "            streaming,\n"
+        "            preserveBoundaryWhitespace: true,\n"
+        "        });" in history_script
     )
     assert "flushText(false);" in history_script
     assert "flushText(hasLiveTextTail && !!trailingTextPart);" in history_script

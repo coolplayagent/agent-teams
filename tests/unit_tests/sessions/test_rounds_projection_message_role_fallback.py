@@ -554,6 +554,37 @@ def test_merge_event_text_messages_keeps_later_repeated_text() -> None:
     ]
 
 
+def test_merge_event_text_messages_does_not_consume_later_match_for_earlier_gap() -> (
+    None
+):
+    later_existing = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:10Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+    missing_before_boundary = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:05Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+    later_event = _assistant_history_message(
+        run_id="run-1",
+        task_id="task-1",
+        created_at="2026-04-29T10:00:10Z",
+        parts=[{"part_kind": "text", "content": "OK"}],
+    )
+
+    assert _merge_event_text_messages(
+        [later_existing],
+        [missing_before_boundary, later_event],
+    ) == [
+        missing_before_boundary,
+        later_existing,
+    ]
+
+
 def test_merge_event_text_messages_matches_persisted_output_before_delta() -> None:
     existing_output = _assistant_history_message(
         run_id="run-1",

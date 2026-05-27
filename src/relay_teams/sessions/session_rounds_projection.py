@@ -1160,11 +1160,17 @@ def _merge_event_text_messages(
         return coordinator_messages
     existing_text_occurrences = _ordered_message_text_occurrences(coordinator_messages)
     missing: list[dict[str, object]] = []
-    for message in sorted(
+    ordered_event_messages = sorted(
         event_text_messages,
         key=lambda item: str(item.get("created_at") or ""),
-    ):
+    )
+    for index, message in enumerate(ordered_event_messages):
         event_time = str(message.get("created_at") or "")
+        latest_created_at = _next_later_event_text_created_at(
+            ordered_event_messages,
+            index,
+            event_time,
+        )
         include_message = False
         for text in _message_text_parts(message):
             normalized = _normalize_projected_text(text)
@@ -1182,6 +1188,7 @@ def _merge_event_text_messages(
             match_index = _matching_text_occurrence_index(
                 existing_text_occurrences,
                 earliest_created_at=earliest_created_at,
+                latest_created_at=latest_created_at,
                 normalized=normalized,
             )
             if match_index is None:
@@ -1199,6 +1206,18 @@ def _merge_event_text_messages(
             1 if str(item.get("role") or "") == "user" else 0,
         ),
     )
+
+
+def _next_later_event_text_created_at(
+    messages: list[dict[str, object]],
+    start_index: int,
+    event_time: str,
+) -> str | None:
+    for message in messages[start_index + 1 :]:
+        created_at = str(message.get("created_at") or "")
+        if created_at > event_time:
+            return created_at
+    return None
 
 
 def _ordered_message_text_occurrences(
@@ -1221,10 +1240,13 @@ def _matching_text_occurrence_index(
     occurrences: list[tuple[str, str]],
     *,
     earliest_created_at: str,
+    latest_created_at: str | None,
     normalized: str,
 ) -> int | None:
     for index, (created_at, text) in enumerate(occurrences):
         if created_at < earliest_created_at:
+            continue
+        if latest_created_at is not None and created_at >= latest_created_at:
             continue
         if text == normalized:
             return index

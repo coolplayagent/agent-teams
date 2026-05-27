@@ -22,8 +22,8 @@ from relay_teams.roles.memory_injection import (
     _MEMORY_ENTRY_PREVIEW_CHARS,
     _MEMORY_REFERENCE_NOTICE,
     _MEMORY_SECTION_CHAR_BUDGET,
-    _build_project_memory_section_async,
     _format_memory_section,
+    build_project_memory_section_async,
     build_role_with_memory_async,
 )
 from relay_teams.roles.role_models import MemoryProfile, RoleDefinition
@@ -50,7 +50,7 @@ async def _create_entry(
 ) -> None:
     base: dict[str, object] = {
         "tier": tier,
-        "scope": MemoryScope.WORKSPACE,
+        "scope": MemoryScope.ROLE,
         "workspace_id": "ws-1",
         "role_id": "crafter",
         "kind": MemoryEntryKind.INSIGHT,
@@ -173,6 +173,7 @@ class TestBuildRoleWithMemory:
             service,
             MemoryTier.PERSISTENT,
             role_id=None,
+            scope=MemoryScope.WORKSPACE,
             content=MemoryContent(
                 title="Workspace validator policy",
                 body="All workspace request models use validators.",
@@ -203,6 +204,7 @@ class TestBuildRoleWithMemory:
             service,
             MemoryTier.PERSISTENT,
             role_id=None,
+            scope=MemoryScope.WORKSPACE,
             content=MemoryContent(
                 title="Workspace global policy",
                 body="Global memory must survive role-heavy workspaces.",
@@ -279,7 +281,7 @@ class TestBuildProjectMemorySection:
         repo = MemoryBankRepository(tmp_path / "test.db")
         service = MemoryBankService(repository=repo)
         await _create_entry(service, MemoryTier.PERSISTENT)
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
             role_id="crafter",
@@ -290,7 +292,7 @@ class TestBuildProjectMemorySection:
     async def test_returns_empty_when_no_entries(self, tmp_path: Path) -> None:
         repo = MemoryBankRepository(tmp_path / "test.db")
         service = MemoryBankService(repository=repo)
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
         )
@@ -299,7 +301,7 @@ class TestBuildProjectMemorySection:
     async def test_handles_service_exception(self, tmp_path: Path) -> None:
         service = create_autospec(MemoryBankService, instance=True)
         service.list_entries_async = AsyncMock(side_effect=RuntimeError("db error"))
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
         )
@@ -310,7 +312,7 @@ class TestBuildProjectMemorySection:
         service.list_entries_async = AsyncMock(
             side_effect=sqlite3.OperationalError("locked")
         )
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
         )
@@ -319,7 +321,7 @@ class TestBuildProjectMemorySection:
     async def test_handles_search_exception(self, tmp_path: Path) -> None:
         service = create_autospec(MemoryBankService, instance=True)
         service.search_async = AsyncMock(side_effect=RuntimeError("db error"))
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
             role_id="crafter",
@@ -330,7 +332,7 @@ class TestBuildProjectMemorySection:
     async def test_handles_search_sqlite_exception(self, tmp_path: Path) -> None:
         service = create_autospec(MemoryBankService, instance=True)
         service.search_async = AsyncMock(side_effect=sqlite3.OperationalError("locked"))
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
             role_id="crafter",
@@ -371,12 +373,91 @@ class TestBuildProjectMemorySection:
             scope=MemoryScope.SESSION,
             session_id="s1",
         )
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
             role_id="crafter",
+            session_id="s1",
         )
         assert "Medium Term" in result
+
+    async def test_includes_roleless_session_entries_for_role(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "roleless-session.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(
+            service,
+            MemoryTier.MEDIUM_TERM,
+            scope=MemoryScope.SESSION,
+            role_id=None,
+            session_id="s1",
+            content=MemoryContent(
+                title="Session-wide insight",
+                body="All roles need this context.",
+            ),
+        )
+
+        result = await build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+            session_id="s1",
+        )
+
+        assert "Session-wide insight" in result
+
+    async def test_task_relevant_memory_includes_roleless_session_entries(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "roleless-session-search.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(
+            service,
+            MemoryTier.MEDIUM_TERM,
+            scope=MemoryScope.SESSION,
+            role_id=None,
+            session_id="s1",
+            content=MemoryContent(
+                title="Validator summary",
+                body="All roles should check validator output.",
+            ),
+        )
+
+        result = await build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+            session_id="s1",
+            objective="validator",
+        )
+
+        assert "Validator summary" in result
+
+    async def test_excludes_other_session_medium_term_entries(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "session-filter.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(
+            service,
+            MemoryTier.MEDIUM_TERM,
+            scope=MemoryScope.SESSION,
+            session_id="other-session",
+            content=MemoryContent(
+                title="Other session memory",
+                body="Do not inject across session boundaries.",
+            ),
+        )
+
+        result = await build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+            session_id="current-session",
+        )
+
+        assert result == ""
 
     async def test_fallback_includes_workspace_global_entries(
         self, tmp_path: Path
@@ -388,13 +469,14 @@ class TestBuildProjectMemorySection:
             service,
             MemoryTier.PERSISTENT,
             role_id=None,
+            scope=MemoryScope.WORKSPACE,
             content=MemoryContent(
                 title="Workspace global memory",
                 body="Global workspace guidance.",
             ),
         )
 
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
             role_id="crafter",
@@ -402,6 +484,30 @@ class TestBuildProjectMemorySection:
 
         assert "Test insight" in result
         assert "Workspace global memory" in result
+
+    async def test_fallback_includes_role_workspace_entries(
+        self, tmp_path: Path
+    ) -> None:
+        repo = MemoryBankRepository(tmp_path / "fallback-role-workspace.db")
+        service = MemoryBankService(repository=repo)
+        await _create_entry(
+            service,
+            MemoryTier.PERSISTENT,
+            scope=MemoryScope.WORKSPACE,
+            role_id="crafter",
+            content=MemoryContent(
+                title="Role workspace memory",
+                body="Role-specific workspace guidance.",
+            ),
+        )
+
+        result = await build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+        )
+
+        assert "Role workspace memory" in result
 
     async def test_memory_section_respects_budget(self, tmp_path: Path) -> None:
         repo = MemoryBankRepository(tmp_path / "budget.db")
@@ -416,7 +522,7 @@ class TestBuildProjectMemorySection:
                 ),
             )
 
-        result = await _build_project_memory_section_async(
+        result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",
             role_id="crafter",

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import JsonValue
 
 from relay_teams.memory.models import (
     CreateMemoryEntryRequest,
@@ -62,6 +63,22 @@ def _create_request(**overrides: object) -> CreateMemoryEntryRequest:
     }
     base.update(overrides)
     return CreateMemoryEntryRequest(**base)  # type: ignore[arg-type]
+
+
+class _MessageRoleRepo:
+    def __init__(self, messages: tuple[dict[str, JsonValue], ...]) -> None:
+        self._messages = messages
+
+    async def get_messages_by_session_run_ids_async(
+        self,
+        session_id: str,
+        run_ids: tuple[str, ...],
+        *,
+        include_cleared: bool = False,
+        include_hidden_from_context: bool = False,
+    ) -> list[dict[str, JsonValue]]:
+        _ = (session_id, run_ids, include_cleared, include_hidden_from_context)
+        return list(self._messages)
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +139,121 @@ class TestSemanticHelpers:
 
         assert len(result) == 20
         assert result["semantic_key"] == "protected"
+
+
+class TestRunRoleInference:
+    async def test_infers_role_from_working_memory(
+        self, service: MemoryBankService
+    ) -> None:
+        await service.create_entry_async(_create_request(role_id="role-1"))
+
+        role_id = await service.infer_single_run_role_id_async(
+            workspace_id="ws-test",
+            session_id="sess-1",
+            run_id="run-1",
+        )
+
+        assert role_id == "role-1"
+
+    async def test_infers_role_from_all_working_memory_pages(
+        self, service: MemoryBankService
+    ) -> None:
+        await service.create_entry_async(_create_request(role_id="role-2"))
+        for index in range(100):
+            await service.create_entry_async(
+                _create_request(
+                    role_id="role-1",
+                    content=MemoryContent(
+                        title=f"Discovery {index}",
+                        body="Found a useful pattern",
+                    ),
+                )
+            )
+
+        role_id = await service.infer_single_run_role_id_async(
+            workspace_id="ws-test",
+            session_id="sess-1",
+            run_id="run-1",
+        )
+
+        assert role_id is None
+
+    async def test_infers_role_from_messages_when_working_memory_missing(
+        self, tmp_path: Path
+    ) -> None:
+        service = MemoryBankService(
+            repository=MemoryBankRepository(tmp_path / "messages.db"),
+            message_repo=_MessageRoleRepo(
+                ({"agent_role_id": "role-from-message"},),
+            ),
+        )
+
+        role_id = await service.infer_single_run_role_id_async(
+            workspace_id="ws-test",
+            session_id="sess-1",
+            run_id="run-1",
+        )
+
+        assert role_id == "role-from-message"
+
+    async def test_infers_role_from_nested_message_when_working_memory_missing(
+        self, tmp_path: Path
+    ) -> None:
+        service = MemoryBankService(
+            repository=MemoryBankRepository(tmp_path / "nested-messages.db"),
+            message_repo=_MessageRoleRepo(
+                ({"message": {"sender_role_id": " nested-role "}},),
+            ),
+        )
+
+        role_id = await service.infer_single_run_role_id_async(
+            workspace_id="ws-test",
+            session_id="sess-1",
+            run_id="run-1",
+        )
+
+        assert role_id == "nested-role"
+
+    async def test_ignores_blank_message_roles(self, tmp_path: Path) -> None:
+        service = MemoryBankService(
+            repository=MemoryBankRepository(tmp_path / "blank-messages.db"),
+            message_repo=_MessageRoleRepo(
+                (
+                    {"agent_role_id": "   "},
+                    {"message": {"role_id": "   "}},
+                    {"content": "no role id"},
+                ),
+            ),
+        )
+
+        role_id = await service.infer_single_run_role_id_async(
+            workspace_id="ws-test",
+            session_id="sess-1",
+            run_id="run-1",
+        )
+
+        assert role_id is None
+
+    async def test_returns_none_for_ambiguous_message_roles(
+        self, tmp_path: Path
+    ) -> None:
+        service = MemoryBankService(
+            repository=MemoryBankRepository(tmp_path / "ambiguous.db"),
+            message_repo=_MessageRoleRepo(
+                (
+                    {"agent_role_id": "role-1"},
+                    {"agent_role_id": "role-2"},
+                ),
+            ),
+        )
+
+        role_id = await service.infer_single_run_role_id_async(
+            workspace_id="ws-test",
+            session_id="sess-1",
+            run_id="run-1",
+        )
+
+        assert role_id is None
 
 
 class TestCreateEntry:
@@ -240,6 +372,103 @@ class TestConsolidation:
         assert first_after.status == MemoryEntryStatus.SUPERSEDED
         assert second_after is not None
         assert second_after.status == MemoryEntryStatus.ACTIVE
+
+    async def test_structural_consolidation_preserves_session_role_id(
+        self, service: MemoryBankService
+    ) -> None:
+        await service.create_entry_async(
+            _create_request(role_id="role-1", source_ref="task-ref")
+        )
+
+        result = await service.consolidate_async(
+            MemoryConsolidationRequest(
+                workspace_id="ws-test",
+                session_id="sess-1",
+                target_tier=MemoryTier.MEDIUM_TERM,
+                target_scope=MemoryScope.SESSION,
+            )
+        )
+        promoted = await service.get_entry_async(result.new_entry_ids[0])
+
+        assert promoted is not None
+        assert promoted.role_id == "role-1"
+        assert promoted.source == MemorySourceKind.CONSOLIDATION
+        assert (
+            promoted.metadata["original_source"] == MemorySourceKind.TASK_RESULT.value
+        )
+        assert promoted.metadata["original_source_ref"] == "task-ref"
+        assert promoted.metadata["consolidated_from_memory_id"]
+
+    async def test_structural_consolidation_preserves_root_source_metadata(
+        self, service: MemoryBankService
+    ) -> None:
+        await service.create_entry_async(
+            _create_request(role_id="role-1", source_ref="task-ref")
+        )
+        medium_result = await service.consolidate_async(
+            MemoryConsolidationRequest(
+                workspace_id="ws-test",
+                session_id="sess-1",
+                target_tier=MemoryTier.MEDIUM_TERM,
+                target_scope=MemoryScope.SESSION,
+            )
+        )
+
+        persistent_result = await service.consolidate_async(
+            MemoryConsolidationRequest(
+                workspace_id="ws-test",
+                session_id="sess-1",
+                target_tier=MemoryTier.PERSISTENT,
+                target_scope=MemoryScope.SESSION,
+            )
+        )
+        medium_entry = await service.get_entry_async(medium_result.new_entry_ids[0])
+        persistent_entry = await service.get_entry_async(
+            persistent_result.new_entry_ids[0]
+        )
+
+        assert medium_entry is not None
+        assert persistent_entry is not None
+        assert (
+            persistent_entry.metadata["original_source"]
+            == MemorySourceKind.TASK_RESULT.value
+        )
+        assert persistent_entry.metadata["original_source_ref"] == "task-ref"
+        assert (
+            persistent_entry.metadata["consolidated_from_memory_id"] == medium_entry.id
+        )
+
+    async def test_structural_consolidation_filters_tags(
+        self, service: MemoryBankService
+    ) -> None:
+        tagged = await service.create_entry_async(
+            _create_request(
+                tags=("keep",), content=MemoryContent(title="Keep", body="A")
+            )
+        )
+        other = await service.create_entry_async(
+            _create_request(
+                tags=("skip",), content=MemoryContent(title="Skip", body="B")
+            )
+        )
+
+        result = await service.consolidate_async(
+            MemoryConsolidationRequest(
+                workspace_id="ws-test",
+                session_id="sess-1",
+                target_tier=MemoryTier.MEDIUM_TERM,
+                target_scope=MemoryScope.SESSION,
+                filter_tags=("keep",),
+            )
+        )
+        tagged_after = await service.get_entry_async(tagged.id)
+        other_after = await service.get_entry_async(other.id)
+
+        assert result.superseded_entry_ids == (tagged.id,)
+        assert tagged_after is not None
+        assert tagged_after.status == MemoryEntryStatus.SUPERSEDED
+        assert other_after is not None
+        assert other_after.status == MemoryEntryStatus.ACTIVE
 
     async def test_consolidate_target_cannot_be_working(
         self, service: MemoryBankService
@@ -667,6 +896,28 @@ class TestSearchFTS5:
         assert hit.score == 1.0
         assert hit.rank >= 1
         assert "pydantic" in hit.entry.content_title.lower()
+
+    async def test_index_entry_uses_tags_as_keywords(self, tmp_path: Path) -> None:
+        repo = MemoryBankRepository(tmp_path / "indexed.db")
+        mock_retrieval = MagicMock()
+        mock_retrieval.upsert_documents_async = AsyncMock()
+        service = MemoryBankService(
+            repository=repo,
+            retrieval_service=mock_retrieval,
+        )
+
+        await service.create_entry_async(
+            _create_request(
+                tags=("api",),
+                source=MemorySourceKind.MANUAL,
+                content=MemoryContent(title="Indexed memory", body="Body"),
+            )
+        )
+        document = mock_retrieval.upsert_documents_async.call_args.kwargs["documents"][
+            0
+        ]
+
+        assert document.keywords == ("api",)
 
     async def test_search_with_retrieval_service_uses_fts(
         self, service: MemoryBankService

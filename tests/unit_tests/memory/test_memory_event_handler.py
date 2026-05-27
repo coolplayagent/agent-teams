@@ -374,6 +374,103 @@ class TestOnSessionCompleted:
             memory_bank_service, "ws-1", MemoryTier.PERSISTENT
         )
         assert len(persistent) >= 1
+        assert all(entry.scope == MemoryScope.ROLE for entry in persistent)
+        assert all(entry.role_id == "role-1" for entry in persistent)
+
+    async def test_consolidates_all_session_roles_to_role_persistent(
+        self,
+        handler: MemoryEventHandler,
+        memory_bank_service: MemoryBankService,
+    ) -> None:
+        for role_id in ("role-1", "role-2"):
+            await handler.on_task_completed_async(
+                workspace_id="ws-1",
+                role_id=role_id,
+                session_id="sess-1",
+                run_id=f"run-{role_id}",
+                task_id=f"task-{role_id}",
+                objective=f"Obj {role_id}",
+                result=f"Res {role_id}",
+            )
+            await handler.on_run_completed_async(
+                workspace_id="ws-1",
+                session_id="sess-1",
+                role_id=role_id,
+                run_id=f"run-{role_id}",
+            )
+
+        await handler.on_session_completed_async(
+            workspace_id="ws-1",
+            session_id="sess-1",
+        )
+
+        persistent = await _list_entries(
+            memory_bank_service, "ws-1", MemoryTier.PERSISTENT
+        )
+        assert {entry.role_id for entry in persistent} == {"role-1", "role-2"}
+        assert all(entry.scope == MemoryScope.ROLE for entry in persistent)
+
+    async def test_consolidates_workspace_session_memory_separately(
+        self,
+        handler: MemoryEventHandler,
+        memory_bank_service: MemoryBankService,
+    ) -> None:
+        await memory_bank_service.create_entry_async(
+            CreateMemoryEntryRequest(
+                tier=MemoryTier.MEDIUM_TERM,
+                scope=MemoryScope.WORKSPACE,
+                workspace_id="ws-1",
+                session_id="sess-1",
+                kind=MemoryEntryKind.INSIGHT,
+                content=MemoryContent(
+                    title="Workspace-level decision",
+                    body="The whole workspace should retain this decision.",
+                ),
+                tags=("workspace",),
+                source=MemorySourceKind.MANUAL,
+            )
+        )
+        await memory_bank_service.create_entry_async(
+            CreateMemoryEntryRequest(
+                tier=MemoryTier.MEDIUM_TERM,
+                scope=MemoryScope.SESSION,
+                workspace_id="ws-1",
+                session_id="sess-1",
+                kind=MemoryEntryKind.INSIGHT,
+                content=MemoryContent(
+                    title="Session-local scratch",
+                    body="This role-less session memory should not become workspace memory.",
+                ),
+                tags=("session",),
+                source=MemorySourceKind.MANUAL,
+            )
+        )
+
+        await handler.on_session_completed_async(
+            workspace_id="ws-1",
+            session_id="sess-1",
+        )
+
+        persistent = await _list_entries(
+            memory_bank_service, "ws-1", MemoryTier.PERSISTENT
+        )
+        assert len(persistent) == 1
+        assert persistent[0].scope == MemoryScope.WORKSPACE
+        assert persistent[0].role_id is None
+        assert persistent[0].content_title == "Workspace-level decision"
+
+        active_medium_result = await memory_bank_service.list_entries_async(
+            MemoryQuery(
+                workspace_id="ws-1",
+                tier=MemoryTier.MEDIUM_TERM,
+                status=MemoryEntryStatus.ACTIVE,
+                limit=100,
+            )
+        )
+        active_medium = list(active_medium_result.items)
+        assert len(active_medium) == 1
+        assert active_medium[0].scope == MemoryScope.SESSION
+        assert active_medium[0].content_title == "Session-local scratch"
 
 
 class TestGetInjectableMemoryText:

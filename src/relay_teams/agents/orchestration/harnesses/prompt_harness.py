@@ -97,6 +97,7 @@ class TaskPromptHarness(BaseModel):
         role: RoleDefinition,
         role_id: str,
         workspace_id: str,
+        session_id: str | None = None,
         objective: str = "",
     ) -> RoleDefinition:
         return await build_role_with_memory_async(
@@ -105,6 +106,7 @@ class TaskPromptHarness(BaseModel):
             role=role,
             role_id=role_id,
             workspace_id=workspace_id,
+            session_id=session_id,
             objective=objective,
         )
 

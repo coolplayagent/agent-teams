@@ -1423,19 +1423,25 @@ function materializeOverlayEntryIntoState(st, overlayEntry) {
     if (!st || !overlayEntry || !Array.isArray(overlayEntry.parts)) {
         return;
     }
+    const liveTextPart = overlayEntry.textStreaming === true
+        ? [...overlayEntry.parts]
+            .reverse()
+            .find(part => part?.kind === 'text' && part.closed !== true)
+        : null;
     overlayEntry.parts.forEach(part => {
         if (!part || typeof part !== 'object') {
             return;
         }
         if (part.kind === 'text') {
+            const textStreaming = part === liveTextPart;
             const textEl = document.createElement('div');
             textEl.className = 'msg-text';
             updateMessageText(textEl, String(part.content || ''), {
-                streaming: overlayEntry.textStreaming === true,
+                streaming: textStreaming,
             });
             st.contentEl.appendChild(textEl);
-            st.activeTextEl = overlayEntry.textStreaming === true ? textEl : st.activeTextEl;
-            st.activeRaw = overlayEntry.textStreaming === true
+            st.activeTextEl = textStreaming ? textEl : st.activeTextEl;
+            st.activeRaw = textStreaming
                 ? String(part.content || '')
                 : st.activeRaw;
             st.raw += String(part.content || '');
@@ -2190,6 +2196,7 @@ function closeOverlayTextSegmentEntry(entry) {
     if (lastPart && lastPart.kind === 'text') {
         lastPart.closed = true;
         lastPart.streaming = false;
+        entry.textStreaming = false;
     }
 }
 
@@ -2216,7 +2223,7 @@ function appendOverlayOutputParts(
                 return;
             }
             const lastPart = entry.parts[entry.parts.length - 1];
-            if (lastPart && lastPart.kind === 'text') {
+            if (lastPart && lastPart.kind === 'text' && lastPart.closed !== true) {
                 lastPart.content = String(lastPart.content || '') + normalizedPart.content;
             } else {
                 entry.parts.push(normalizedPart);

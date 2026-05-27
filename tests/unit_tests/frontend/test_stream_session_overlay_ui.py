@@ -4735,5 +4735,5 @@ console.log(JSON.stringify({
                 "idleCursor": "",
             }
         ],
-        "cursorStates": [True],
+        "cursorStates": [],
     }

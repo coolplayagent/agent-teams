@@ -92,6 +92,24 @@ def test_overlay_replay_text_around_tool_calls_stays_visible_in_browser(
     assert payload["cursorCount"] == 1
 
 
+def test_output_delta_text_around_tool_calls_stays_segmented_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderOutputDeltaTextAroundToolCalls()
+        """
+    )
+
+    assert payload["textBlocks"] == ["before tool", "during tool", "after result"]
+    assert payload["toolBlockCount"] == 1
+    assert payload["cursorCount"] == 1
+
+
 def test_partial_persisted_repeated_text_after_tool_is_preserved_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -848,6 +866,51 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
               toolCallId: part.tool_call_id || '',
               status: part.status || '',
             }})),
+          cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderOutputDeltaTextAroundToolCalls() {{
+        clearAllStreamState();
+        const container = makeContainer('output-delta-text-around-tools');
+        const runId = 'run-output-delta-text-around-tools';
+        applyStreamOverlayEvent(
+          'output_delta',
+          {{ output: [{{ kind: 'text', text: 'before tool' }}] }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-text-1' }},
+        );
+        applyStreamOverlayEvent(
+          'tool_call',
+          {{ tool_name: 'shell', tool_call_id: 'call-output-text', args: {{ command: 'date' }} }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-tool-1' }},
+        );
+        applyStreamOverlayEvent(
+          'output_delta',
+          {{ output: [{{ kind: 'text', text: 'during tool' }}] }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-text-2' }},
+        );
+        applyStreamOverlayEvent(
+          'tool_result',
+          {{ tool_name: 'shell', tool_call_id: 'call-output-text', result: {{ ok: true, output: 'tool done' }} }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-tool-2' }},
+        );
+        applyStreamOverlayEvent(
+          'output_delta',
+          {{ output: [{{ kind: 'text', text: 'after result' }}] }},
+          {{ runId, instanceId: 'primary', roleId: 'Coordinator', label: 'Main Agent', eventId: 'output-text-3' }},
+        );
+        renderHistory(container, [], {{
+          runId,
+          runStatus: 'running',
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+        }});
+        return {{
+          textBlocks: Array.from(container.querySelectorAll('.msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
           cursorCount: container.querySelectorAll('.streaming-cursor').length,
         }};
       }},

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
+
+from pydantic import JsonValue
 
 from relay_teams.logger import get_logger
 from relay_teams.memory import memory_defaults
@@ -172,6 +174,9 @@ def _trim_metadata(metadata: dict[str, str]) -> dict[str, str]:
     protected = {
         "semantic_source_run_id",
         "semantic_consolidation",
+        "consolidated_from_memory_id",
+        "original_source",
+        "original_source_ref",
         _SEMANTIC_SOURCE_RUN_IDS_METADATA_KEY,
         _SEMANTIC_OBSERVATION_COUNT_METADATA_KEY,
         _SEMANTIC_LATEST_SOURCE_RUN_ID_METADATA_KEY,
@@ -183,6 +188,59 @@ def _trim_metadata(metadata: dict[str, str]) -> dict[str, str]:
             break
         del trimmed[removable[0]]
     return trimmed
+
+
+def _structural_consolidation_metadata(entry: MemoryEntry) -> dict[str, str]:
+    metadata = entry.metadata.copy()
+    metadata["consolidated_from_memory_id"] = entry.id
+    if "original_source" not in metadata:
+        metadata["original_source"] = entry.source.value
+    if entry.source_ref and "original_source_ref" not in metadata:
+        metadata["original_source_ref"] = entry.source_ref
+    return _trim_metadata(metadata)
+
+
+def _structural_consolidation_role_id(
+    *,
+    request: MemoryConsolidationRequest,
+    source_entry: MemoryEntry,
+) -> str | None:
+    if request.role_id is not None:
+        return request.role_id
+    if request.target_scope == MemoryScope.WORKSPACE:
+        return None
+    return source_entry.role_id
+
+
+def _retrieval_keywords(entry: MemoryEntry) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(entry.tags))
+
+
+def _single_role_id(values: Iterable[object]) -> str | None:
+    role_ids = tuple(
+        dict.fromkeys(
+            value.strip()
+            for value in values
+            if isinstance(value, str) and value.strip()
+        )
+    )
+    if len(role_ids) == 1:
+        return role_ids[0]
+    return None
+
+
+def _message_role_id(message: dict[str, JsonValue]) -> str:
+    for key in ("agent_role_id", "role_id", "sender_role_id"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    nested = message.get("message")
+    if isinstance(nested, dict):
+        for key in ("role_id", "agent_role_id", "sender_role_id"):
+            value = nested.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
 
 
 def _merge_semantic_metadata_preserving_existing(
@@ -286,6 +344,69 @@ class MemoryBankService:
 
     async def list_entries_async(self, query: MemoryQuery) -> MemoryQueryResult:
         return await self._repo.query_entries_async(query)
+
+    async def infer_single_run_role_id_async(
+        self,
+        *,
+        workspace_id: str,
+        session_id: str,
+        run_id: str,
+    ) -> str | None:
+        role_id = await self._infer_single_run_role_id_from_memory_async(
+            workspace_id=workspace_id,
+            session_id=session_id,
+            run_id=run_id,
+        )
+        if role_id is not None:
+            return role_id
+        return await self._infer_single_run_role_id_from_messages_async(
+            session_id=session_id,
+            run_id=run_id,
+        )
+
+    async def _infer_single_run_role_id_from_memory_async(
+        self,
+        *,
+        workspace_id: str,
+        session_id: str,
+        run_id: str,
+    ) -> str | None:
+        page_size = 100
+        offset = 0
+        role_ids: list[str | None] = []
+        while True:
+            result = await self._repo.query_entries_async(
+                MemoryQuery(
+                    workspace_id=workspace_id,
+                    session_id=session_id,
+                    run_id=run_id,
+                    tier=MemoryTier.WORKING,
+                    status=MemoryEntryStatus.ACTIVE,
+                    limit=page_size,
+                    offset=offset,
+                )
+            )
+            role_ids.extend(entry.role_id for entry in result.items)
+            offset += len(result.items)
+            if offset >= result.total_count or not result.items:
+                break
+        return _single_role_id(role_ids)
+
+    async def _infer_single_run_role_id_from_messages_async(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+    ) -> str | None:
+        if self._message_repo is None:
+            return None
+        messages = await self._message_repo.get_messages_by_session_run_ids_async(
+            session_id,
+            (run_id,),
+            include_cleared=False,
+            include_hidden_from_context=True,
+        )
+        return _single_role_id(_message_role_id(message) for message in messages)
 
     async def reindex_active_entries_async(self) -> int:
         if self._retrieval_service is None:
@@ -621,6 +742,17 @@ class MemoryBankService:
             status=MemoryEntryStatus.ACTIVE,
             min_confidence=MIN_CONFIDENCE_CONSOLIDATION,
         )
+        if (
+            source_tier == MemoryTier.MEDIUM_TERM
+            and request.target_scope == MemoryScope.WORKSPACE
+            and request.role_id is None
+        ):
+            query = query.model_copy(
+                update={
+                    "scope": MemoryScope.WORKSPACE,
+                    "role_id_is_null": True,
+                }
+            )
         if request.session_id is not None:
             query = query.model_copy(update={"session_id": request.session_id})
         if source_tier == MemoryTier.WORKING and request.source_run_id is not None:
@@ -629,6 +761,8 @@ class MemoryBankService:
             query = query.model_copy(update={"role_id": request.role_id})
         if request.filter_kind is not None:
             query = query.model_copy(update={"kind": request.filter_kind})
+        if request.filter_tags:
+            query = query.model_copy(update={"tags": request.filter_tags})
 
         result = await self._repo.query_entries_async(query)
         source_entries: list[MemoryEntry] = []
@@ -650,19 +784,22 @@ class MemoryBankService:
                 workspace_id=request.workspace_id,
                 session_id=request.session_id,
                 run_id=None,
-                role_id=request.role_id,
+                role_id=_structural_consolidation_role_id(
+                    request=request,
+                    source_entry=src,
+                ),
                 kind=src.kind,
                 status=MemoryEntryStatus.ACTIVE,
                 content=src.content.model_copy(),
                 tags=src.tags,
                 confidence_score=src.confidence_score,
-                source=src.source,
+                source=MemorySourceKind.CONSOLIDATION,
                 source_ref=src.source_ref,
                 parent_entry_id=src.id,
                 created_at=now,
                 updated_at=now,
                 expires_at=default_ttl_for_tier(request.target_tier),
-                metadata=src.metadata.copy(),
+                metadata=_structural_consolidation_metadata(src),
             )
             await self.enforce_capacity_async(
                 workspace_id=new_entry.workspace_id,
@@ -1141,7 +1278,7 @@ class MemoryBankService:
             document_id=entry.id,
             title=entry.content.title,
             body=body,
-            keywords=entry.tags,
+            keywords=_retrieval_keywords(entry),
         )
         try:
             await self._retrieval_service.upsert_documents_async(

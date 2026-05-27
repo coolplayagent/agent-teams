@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from relay_teams.agents.tasks.models import VerificationReport
 from relay_teams.logger import get_logger
+from relay_teams.memory.injection_formatter import build_project_memory_section_async
 from relay_teams.memory.models import (
     ConsolidationMode,
     CreateMemoryEntryRequest,
@@ -203,11 +204,18 @@ class MemoryEventHandler:
         triggers SEMANTIC mode consolidation for high-signal extraction.
         SEMANTIC failures do not affect the structural path.
         """
+        resolved_role_id = role_id
+        if resolved_role_id is None and run_id is not None:
+            resolved_role_id = await self._infer_single_run_role_id_async(
+                workspace_id=workspace_id,
+                session_id=session_id,
+                run_id=run_id,
+            )
         # 1. Structural consolidation.
         structural_request = MemoryConsolidationRequest(
             workspace_id=workspace_id,
             session_id=session_id,
-            role_id=role_id,
+            role_id=resolved_role_id,
             source_run_id=run_id,
             target_tier=MemoryTier.MEDIUM_TERM,
             target_scope=MemoryScope.SESSION if session_id else MemoryScope.ROLE,
@@ -236,7 +244,7 @@ class MemoryEventHandler:
             semantic_request = MemoryConsolidationRequest(
                 workspace_id=workspace_id,
                 session_id=session_id,
-                role_id=role_id,
+                role_id=resolved_role_id,
                 source_run_id=run_id,
                 target_tier=MemoryTier.MEDIUM_TERM,
                 target_scope=MemoryScope.SESSION if session_id else MemoryScope.ROLE,
@@ -277,12 +285,38 @@ class MemoryEventHandler:
         role_id: str | None = None,
     ) -> None:
         """Consolidate MEDIUM_TERM entries -> PERSISTENT on session end."""
+        role_ids = (
+            (role_id,)
+            if role_id is not None
+            else await self._list_session_memory_role_ids_async(
+                workspace_id=workspace_id,
+                session_id=session_id,
+            )
+        )
+        for source_role_id in role_ids:
+            await self._consolidate_session_role_memory_async(
+                workspace_id=workspace_id,
+                session_id=session_id,
+                role_id=source_role_id,
+            )
+        await self._consolidate_session_workspace_memory_async(
+            workspace_id=workspace_id,
+            session_id=session_id,
+        )
+
+    async def _consolidate_session_role_memory_async(
+        self,
+        *,
+        workspace_id: str,
+        session_id: str,
+        role_id: str,
+    ) -> None:
         request = MemoryConsolidationRequest(
             workspace_id=workspace_id,
             session_id=session_id,
             role_id=role_id,
             target_tier=MemoryTier.PERSISTENT,
-            target_scope=MemoryScope.WORKSPACE,
+            target_scope=MemoryScope.ROLE,
         )
         try:
             result = await self._memory_bank.consolidate_async(request)
@@ -303,42 +337,122 @@ class MemoryEventHandler:
                 exc_info=True,
             )
 
+    async def _consolidate_session_workspace_memory_async(
+        self,
+        *,
+        workspace_id: str,
+        session_id: str,
+    ) -> None:
+        request = MemoryConsolidationRequest(
+            workspace_id=workspace_id,
+            session_id=session_id,
+            role_id=None,
+            target_tier=MemoryTier.PERSISTENT,
+            target_scope=MemoryScope.WORKSPACE,
+        )
+        try:
+            result = await self._memory_bank.consolidate_async(request)
+            if result.source_entry_count > 0:
+                LOGGER.info(
+                    "session workspace consolidation: %d MEDIUM_TERM -> %d "
+                    "PERSISTENT workspace=%s session=%s",
+                    result.source_entry_count,
+                    result.consolidated_entry_count,
+                    workspace_id,
+                    session_id,
+                )
+        except (ValueError, OSError, RuntimeError):
+            LOGGER.warning(
+                "failed to consolidate workspace MEDIUM_TERM->PERSISTENT "
+                "workspace=%s session=%s",
+                workspace_id,
+                session_id,
+                exc_info=True,
+            )
+
     async def get_injectable_memory_text_async(
         self,
         *,
         workspace_id: str,
         role_id: str | None = None,
+        session_id: str | None = None,
     ) -> str:
         """Build injectable memory text from PERSISTENT and MEDIUM_TERM entries.
 
         Used by prompt assembly to include Memory Bank content.
         """
-        lines: list[str] = []
-        for tier in (MemoryTier.PERSISTENT, MemoryTier.MEDIUM_TERM):
-            query = MemoryQuery(
+        try:
+            return await build_project_memory_section_async(
+                memory_bank_service=self._memory_bank,
                 workspace_id=workspace_id,
-                tier=tier,
                 role_id=role_id,
-                status=MemoryEntryStatus.ACTIVE,
-                limit=20,
+                session_id=session_id,
             )
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.warning(
+                "failed to query memory for injection workspace=%s role=%s",
+                workspace_id,
+                role_id,
+                exc_info=True,
+            )
+            return ""
+
+    async def _infer_single_run_role_id_async(
+        self,
+        *,
+        workspace_id: str,
+        session_id: str,
+        run_id: str,
+    ) -> str | None:
+        try:
+            return await self._memory_bank.infer_single_run_role_id_async(
+                workspace_id=workspace_id,
+                session_id=session_id,
+                run_id=run_id,
+            )
+        except (ValueError, OSError, RuntimeError, sqlite3.Error):
+            LOGGER.warning(
+                "failed to infer memory role for run workspace=%s session=%s run=%s",
+                workspace_id,
+                session_id,
+                run_id,
+                exc_info=True,
+            )
+            return None
+
+    async def _list_session_memory_role_ids_async(
+        self,
+        *,
+        workspace_id: str,
+        session_id: str,
+    ) -> tuple[str, ...]:
+        role_ids: list[str] = []
+        offset = 0
+        while True:
             try:
-                result = await self._memory_bank.list_entries_async(query)
-            except (ValueError, OSError, RuntimeError):
+                result = await self._memory_bank.list_entries_async(
+                    MemoryQuery(
+                        workspace_id=workspace_id,
+                        session_id=session_id,
+                        tier=MemoryTier.MEDIUM_TERM,
+                        status=MemoryEntryStatus.ACTIVE,
+                        limit=100,
+                        offset=offset,
+                    )
+                )
+            except (ValueError, OSError, RuntimeError, sqlite3.Error):
                 LOGGER.warning(
-                    "failed to query %s memory for injection workspace=%s",
-                    tier.value,
+                    "failed to list session memory roles workspace=%s session=%s",
                     workspace_id,
+                    session_id,
                     exc_info=True,
                 )
-                continue
-            if not result.items:
-                continue
-            tier_label = tier.value.replace("_", " ").title()
-            lines.append(f"### {tier_label}")
-            for entry in result.items:
-                lines.append(f"- [{entry.kind.value}] {entry.content_title}")
-        return "\n".join(lines)
+                return tuple(dict.fromkeys(role_ids))
+            role_ids.extend(entry.role_id for entry in result.items if entry.role_id)
+            offset += len(result.items)
+            if offset >= result.total_count or not result.items:
+                break
+        return tuple(dict.fromkeys(role_ids))
 
 
 def _apply_verification_report(

@@ -67,6 +67,7 @@ from relay_teams.memory.skill_draft_repository import (
     generate_memory_skill_draft_id,
 )
 from relay_teams.memory.skill_synthesis_service import MemorySkillSynthesisService
+from relay_teams.memory.injection_formatter import build_project_memory_section_async
 from relay_teams.memory.event_handler import MemoryEventHandler
 from relay_teams.memory.evolution_service import MemoryEvolutionService
 from relay_teams.memory.repository import (
@@ -138,6 +139,7 @@ __all__ = [
     "UpdateMemorySkillDraftRequest",
     "WORKING_DECAY_FACTOR",
     "WORKING_TTL",
+    "build_project_memory_section_async",
     "generate_memory_evolution_draft_id",
     "generate_memory_id",
     "generate_memory_skill_draft_id",

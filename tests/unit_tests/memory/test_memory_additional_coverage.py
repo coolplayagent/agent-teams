@@ -194,7 +194,7 @@ class TestAsyncConsolidation:
     ) -> None:
         req = _create_request(
             tier=MemoryTier.MEDIUM_TERM,
-            scope=MemoryScope.SESSION,
+            scope=MemoryScope.WORKSPACE,
             confidence_score=0.95,
         )
         await service.create_entry_async(req)

@@ -204,6 +204,7 @@ class ExecutionHarness(BaseModel):
             role=role,
             role_id=role_id,
             workspace_id=workspace.ref.workspace_id,
+            session_id=task.session_id,
             objective=task.objective,
         )
         session_mode = "normal"
@@ -667,6 +668,7 @@ class ExecutionHarness(BaseModel):
         role: RoleDefinition,
         role_id: str,
         workspace_id: str,
+        session_id: str | None = None,
         objective: str = "",
     ) -> RoleDefinition:
         return await TaskPromptHarness.model_construct(
@@ -676,6 +678,7 @@ class ExecutionHarness(BaseModel):
             role=role,
             role_id=role_id,
             workspace_id=workspace_id,
+            session_id=session_id,
             objective=objective,
         )
 

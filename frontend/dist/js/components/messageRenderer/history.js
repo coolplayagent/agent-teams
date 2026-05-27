@@ -859,6 +859,9 @@ function renderStreamOverlayEntry(
         if (!part || typeof part !== 'object') return;
         if (part.kind === 'text') {
             combinedText += String(part.content || '');
+            if (part.closed === true) {
+                flushText(false);
+            }
             return;
         }
         if (part.kind === 'media_ref') {

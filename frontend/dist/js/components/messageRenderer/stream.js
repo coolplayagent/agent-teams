@@ -93,6 +93,7 @@ export function appendStreamChunk(instanceId, text, runId = '', roleId = '', lab
         st.activeRaw = '';
     }
 
+    const wasIdleTextPlaceholder = isIdleCursorPlaceholder(st.activeTextEl);
     st.raw += text;
     st.activeRaw += text;
     st.activeTextIsIdle = false;
@@ -102,7 +103,7 @@ export function appendStreamChunk(instanceId, text, runId = '', roleId = '', lab
             streaming: true,
             appendDelta: true,
         });
-    } else if (st.activeRaw.length >= LARGE_STREAM_TEXT_THRESHOLD) {
+    } else if (wasIdleTextPlaceholder || st.activeRaw.length >= LARGE_STREAM_TEXT_THRESHOLD) {
         pendingTextUpdates.delete(st.activeTextEl);
         updateMessageText(st.activeTextEl, st.activeRaw, { streaming: true });
     } else {

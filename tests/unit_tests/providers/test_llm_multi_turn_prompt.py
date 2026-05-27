@@ -600,9 +600,9 @@ def test_missing_stream_observed_text_inserts_before_existing_tool_call() -> Non
     assert len(pending_messages) == 2
     inserted = pending_messages[0]
     assert isinstance(inserted, ModelResponse)
-    assert [
-        part.content for part in inserted.parts if isinstance(part, TextPart)
-    ] == ["before tool"]
+    assert [part.content for part in inserted.parts if isinstance(part, TextPart)] == [
+        "before tool"
+    ]
     tool_message = pending_messages[1]
     assert isinstance(tool_message, ModelResponse)
     tool_part = tool_message.parts[0]

@@ -2063,10 +2063,13 @@ def _missing_stream_observed_messages(
                 if not tool_call_id:
                     continue
                 if tool_call_id in tool_call_ids:
-                    if missing_parts and _insert_missing_response_parts_before_tool_call(
-                        pending_messages,
-                        tool_call_id=tool_call_id,
-                        missing_parts=missing_parts,
+                    if (
+                        missing_parts
+                        and _insert_missing_response_parts_before_tool_call(
+                            pending_messages,
+                            tool_call_id=tool_call_id,
+                            missing_parts=missing_parts,
+                        )
                     ):
                         missing_parts = []
                     continue

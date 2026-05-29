@@ -218,4 +218,29 @@ def test_settings_uncodixfy_high_risk_visual_patterns_are_restrained() -> None:
     assert "border-radius: 999px" not in plugins_css
     assert "plugins-toolbar" not in plugins_css
     assert "plugins-toolbar-stats" not in plugins_css
-    assert ".settings-option-list,\n.role-option-picker {" in settings_css
+    assert ".settings-option-list {" in settings_css
+    assert ".settings-option-list,\n.role-option-picker {" not in settings_css
+
+
+def test_role_option_picker_keeps_vertical_scrolling() -> None:
+    settings_css = (FRONTEND / "css" / "components" / "settings.css").read_text(
+        encoding="utf-8"
+    )
+
+    picker_block = settings_css[
+        settings_css.index(".role-option-picker {") : settings_css.index(
+            ".settings-option-list {"
+        )
+    ]
+    settings_list_block = settings_css[
+        settings_css.index(".settings-option-list {") : settings_css.index(
+            ".role-option-picker::-webkit-scrollbar"
+        )
+    ]
+
+    assert settings_css.count(".role-option-picker {") == 1
+    assert "max-height: 260px;" in picker_block
+    assert "overflow-x: hidden;" in picker_block
+    assert "overflow-y: auto;" in picker_block
+    assert "overflow: hidden;" not in picker_block
+    assert "overflow-x: hidden;" in settings_list_block

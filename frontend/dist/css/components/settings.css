@@ -1005,16 +1005,16 @@
     border-radius: var(--radius-md);
     background: var(--settings-surface-bg);
     max-height: 260px;
+    overflow-x: hidden;
     overflow-y: auto;
     scrollbar-width: none;
 }
 
-.settings-option-list,
-.role-option-picker {
+.settings-option-list {
     border: 1px solid var(--settings-border-soft);
     border-radius: var(--radius-md);
     background: var(--settings-surface-bg);
-    overflow: hidden;
+    overflow-x: hidden;
 }
 
 .role-option-picker::-webkit-scrollbar {

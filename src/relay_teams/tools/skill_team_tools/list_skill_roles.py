@@ -30,7 +30,11 @@ def register(agent: Agent[ToolDeps, str]) -> None:
             )
             roles = list_skill_team_roles(skill)
             role_payloads: list[JsonValue] = [
-                skill_team_role_summary_to_json(entry.summary) for entry in roles
+                skill_team_role_summary_to_json(
+                    entry.summary,
+                    include_effective_role_id=False,
+                )
+                for entry in roles
             ]
             return {
                 "skill": {

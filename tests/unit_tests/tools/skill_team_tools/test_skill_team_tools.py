@@ -147,9 +147,7 @@ async def test_list_skill_roles_returns_lightweight_role_summaries(
     }
     roles = cast(list[dict[str, object]], result["roles"])
     assert roles[0]["role_id"] == "analyst"
-    assert cast(str, roles[0]["effective_role_id"]).startswith(
-        "skill_team_team_review_analyst_"
-    )
+    assert "effective_role_id" not in roles[0]
     assert roles[0]["source_path"] == "agents/analyst.md"
     assert "system_prompt" not in roles[0]
 

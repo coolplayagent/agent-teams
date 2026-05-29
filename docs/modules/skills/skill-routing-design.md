@@ -166,7 +166,8 @@ The `skill-teams` group contains:
 - `list_skill_roles(skill_name)`: scans skill-local markdown files that expose role
   front matter and returns role summaries only. `agents/*.md` is the preferred
   convention for skill-local subagents, and the full document contract is defined
-  in [Skill-local agent roles](skill-local-agent-roles-spec.md).
+  in [Skill-local agent roles](skill-local-agent-roles-spec.md). The list output
+  does not include run-scoped effective role ids.
 - `activate_skill_roles(skill_name, role_ids)`: materializes selected skill-local
   roles as run-scoped effective roles. Returned `effective_role_id` values may be
   passed to existing `spawn_subagent` or `orch_dispatch_task`.

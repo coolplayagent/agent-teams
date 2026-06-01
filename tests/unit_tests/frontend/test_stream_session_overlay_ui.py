@@ -6,6 +6,16 @@ from pathlib import Path
 import subprocess
 
 
+def _write_transcript_grouping_module(temp_dir: Path) -> None:
+    source = Path(
+        "frontend/dist/js/components/messageRenderer/transcriptGrouping.js"
+    ).read_text(encoding="utf-8")
+    (temp_dir / "transcriptGrouping.js").write_text(
+        source.replace("../../utils/i18n.js", "./mockI18n.mjs"),
+        encoding="utf-8",
+    )
+
+
 def _write_stream_overlay_test_modules(temp_dir: Path, source: str) -> None:
     (temp_dir / "stream.js").write_text(
         source.replace("../../core/state.js", "./mockState.mjs")
@@ -71,6 +81,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "injectionMarker.js").write_text(
         """
 export function injectionContentText(rawMessage) {
@@ -124,6 +135,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 function makeElement(tagName = "div") {
@@ -1241,6 +1253,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
 
     runner = """
 import {
@@ -1347,6 +1360,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
 
     runner = """
 globalThis.__relayTeamsMessageTimelineGetRunSnapshot = runId => ({
@@ -1409,6 +1423,7 @@ def test_history_overlay_renders_live_cursor_placeholder_for_stream_tail(
         .replace("./messageActions.js", "./mockMessageActions.mjs"),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     _write_mock_message_actions(temp_dir)
     (temp_dir / "mockState.mjs").write_text(
         """
@@ -1602,6 +1617,7 @@ def test_history_overlay_renders_live_cursor_placeholder_for_idle_gap(
         .replace("./messageActions.js", "./mockMessageActions.mjs"),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     _write_mock_message_actions(temp_dir)
     (temp_dir / "mockState.mjs").write_text(
         """
@@ -1759,6 +1775,7 @@ def test_history_overlay_does_not_replay_parts_already_persisted_in_history(
         .replace("./messageActions.js", "./mockMessageActions.mjs"),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     _write_mock_message_actions(temp_dir)
     (temp_dir / "mockState.mjs").write_text(
         """
@@ -2087,6 +2104,7 @@ def test_history_overlay_renders_media_refs_from_stream_overlay(
         .replace("./messageActions.js", "./mockMessageActions.mjs"),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     _write_mock_message_actions(temp_dir)
     (temp_dir / "mockState.mjs").write_text(
         """
@@ -2268,6 +2286,7 @@ def test_history_overlay_can_render_as_separate_live_message(
         .replace("./messageActions.js", "./mockMessageActions.mjs"),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     _write_mock_message_actions(temp_dir)
     (temp_dir / "mockState.mjs").write_text(
         """
@@ -2517,6 +2536,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
 
     runner = """
 import {
@@ -2659,6 +2679,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
 
     runner = """
 globalThis.__textUpdates = [];
@@ -2766,6 +2787,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 function toolMatches(block, toolName, toolCallId) {
@@ -3036,6 +3058,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 export function applyToolReturn() {}
@@ -3175,6 +3198,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 export function applyToolReturn() {}
@@ -3295,6 +3319,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 export function applyToolReturn() {}
@@ -3475,6 +3500,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 export function appendStructuredContentPart() {}
@@ -3657,6 +3683,7 @@ def test_historical_injection_and_failed_tool_collapse_into_processed_group(
         .replace("./helpers.js", "./mockHelpers.mjs"),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     _write_mock_message_actions(temp_dir)
     (temp_dir / "toolResultStatus.mjs").write_text(
         """
@@ -3742,7 +3769,15 @@ function makeElement(tagName = 'div') {
     setAttribute(name, value) {
       this[name] = value;
     },
-    remove() {},
+    remove() {
+      if (this.parentElement?.children) {
+        this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+      }
+      if (this.parentElement?.childNodes) {
+        this.parentElement.childNodes = this.parentElement.childNodes.filter(child => child !== this);
+      }
+      this.parentElement = null;
+    },
   };
   return el;
 }
@@ -3845,13 +3880,16 @@ globalThis.document = {
         const index = siblings.indexOf(this);
         return index >= 0 ? siblings[index + 1] || null : null;
       },
-      appendChild(child) {
-        if (child.parentElement?.children) {
-          child.parentElement.children = child.parentElement.children.filter(item => item !== child);
-        }
-        child.parentElement = this;
-        this.children.push(child);
-        this.childNodes.push(child);
+    appendChild(child) {
+      if (child.parentElement?.children) {
+        child.parentElement.children = child.parentElement.children.filter(item => item !== child);
+      }
+      if (child.parentElement?.childNodes) {
+        child.parentElement.childNodes = child.parentElement.childNodes.filter(item => item !== child);
+      }
+      child.parentElement = this;
+      this.children.push(child);
+      this.childNodes.push(child);
         return child;
       },
       append(...nodes) {
@@ -3951,6 +3989,38 @@ renderHistoricalMessageList(container, [
     role_id: 'Main Agent',
     instance_id: 'primary',
     created_at: '2026-04-29T10:00:02',
+    message: { parts: [{ part_kind: 'text', content: 'Now let me read more files.' }] },
+  },
+  {
+    role: 'assistant',
+    role_id: 'Main Agent',
+    instance_id: 'primary',
+    created_at: '2026-04-29T10:00:02.500',
+    message: {
+      parts: [
+        { part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-2', args: { path: 'plugin_cli.py' } },
+      ],
+    },
+  },
+  {
+    role: 'user',
+    created_at: '2026-04-29T10:00:02.750',
+    message: {
+      parts: [
+        {
+          part_kind: 'tool-return',
+          tool_name: 'read_file',
+          tool_call_id: 'call-2',
+          content: 'file content',
+        },
+      ],
+    },
+  },
+  {
+    role: 'assistant',
+    role_id: 'Main Agent',
+    instance_id: 'primary',
+    created_at: '2026-04-29T10:00:03',
     message: { parts: [{ part_kind: 'text', content: 'done' }] },
   },
 ], {
@@ -3963,6 +4033,17 @@ renderHistoricalMessageList(container, [
 console.log(JSON.stringify({
   childClasses: container.children.map(child => child.className),
   failedStatus: container.querySelector(':scope .tool-block[data-status="error"]')?.dataset?.status || '',
+  groupBodyChildClasses: container.children
+    .find(child => child.className === 'tool-group')
+    ?.children
+    ?.find(child => String(child.className || '').includes('tool-group-body'))
+    ?.children
+    ?.map(child => child.className) || [],
+  groupBodyClass: container.children
+    .find(child => child.className === 'tool-group')
+    ?.children
+    ?.find(child => String(child.className || '').includes('tool-group-body'))
+    ?.className || '',
   groupCount: container.children.filter(child => child.className === 'tool-group').length,
 }));
 """.strip()
@@ -3981,6 +4062,14 @@ console.log(JSON.stringify({
     assert payload["failedStatus"] == "error"
     assert payload["groupCount"] == 1
     assert payload["childClasses"] == ["tool-group", "message"]
+    assert payload["groupBodyClass"] == "tool-group-body msg-content"
+    assert payload["groupBodyChildClasses"] == [
+        "tool-block",
+        "message-inject-marker",
+        "msg-text",
+        "tool-block",
+        "tool-group-final-divider",
+    ]
 
 
 def test_rebind_then_tool_result_keeps_existing_text_and_appends_idle_placeholder(
@@ -4022,6 +4111,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 function removeFromParent(node) {
@@ -4311,6 +4401,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 function createTextNode(text = "", idle = false) {
@@ -4640,6 +4731,7 @@ export function t(key) {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(temp_dir)
     (temp_dir / "mockHelpers.mjs").write_text(
         """
 function createTextNode(text = "") {

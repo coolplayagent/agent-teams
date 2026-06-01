@@ -24,3 +24,25 @@ def test_agent_panel_history_has_no_right_panel_auxiliary_tabs() -> None:
     assert "agent-panel-runtime" not in history_source
     assert "agent-panel-memory" not in history_source
     assert "agent-panel-summary" not in history_source
+
+
+def test_agent_panel_history_supports_render_bind_overlay_mode() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    history_source = (
+        repo_root
+        / "frontend"
+        / "dist"
+        / "js"
+        / "components"
+        / "agentPanel"
+        / "history.js"
+    ).read_text(encoding="utf-8")
+
+    assert "overlayMode === 'render-bind'" in history_source
+    assert "const shouldBindRenderedOverlay = overlayMode === 'bind'" in history_source
+    assert (
+        "overlayMode === 'separate' || shouldRenderOverlayBeforeBind" in history_source
+    )
+    assert "status: options.status || ''," in history_source
+    assert "runStatus: options.runStatus || options.status || ''," in history_source
+    assert "if (shouldBindRenderedOverlay && streamOverlayEntry)" in history_source

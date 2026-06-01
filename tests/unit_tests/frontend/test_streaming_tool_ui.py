@@ -103,6 +103,11 @@ def test_live_streaming_tool_overlay_skips_processed_group_summary() -> None:
     assert "!hasVisibleFailedToolBlock(container)" not in history_script
     assert "const filteredOverlayEntry = filterPersistedOverlayParts(" in history_script
     assert (
+        "function classifyOverlayPartPersistence(part, context = {})" in history_script
+    )
+    assert "const lastPersistedPartIndex = classifiedParts.reduce" in history_script
+    assert "index > lastPersistedPartIndex && item.keep === true" in history_script
+    assert (
         "function normalizeCanonicalHistoryStreamKey(options = {}) {" in history_script
     )
     assert "options.canonicalStreamKey" in history_script
@@ -115,22 +120,129 @@ def test_live_streaming_tool_overlay_skips_processed_group_summary() -> None:
         in history_script
     )
     assert (
+        "const lifecycleStatus = String(options.status || '').trim().toLowerCase();"
+        in history_script
+    )
+    assert (
         "const runStatus = String(options.runStatus || '').trim().toLowerCase();"
         in history_script
     )
     assert "const isLatestRound = options.isLatestRound === true;" in history_script
-    assert "const isTerminalStatus = isTerminalRunStatus(runStatus);" in history_script
+    assert (
+        "const runPhase = String(options.runPhase || '').trim().toLowerCase();"
+        in history_script
+    )
+    assert (
+        "const isTerminalStatus = isTerminalRunStatus(lifecycleStatus)"
+        in history_script
+    )
+    assert "|| isTerminalRunStatus(runStatus)" in history_script
     assert "const hasFinalOutput = options.hasFinalOutput === true;" in history_script
+    assert (
+        "const timelineView = String(options.timelineView || '').trim();"
+        in history_script
+    )
+    assert "const shouldCollapseTerminalWork = isTerminalStatus" in history_script
     assert "if (isLatestRound && !isTerminalStatus) {" in history_script
-    assert "if (!hasFinalOutput) {" in history_script
+    assert "if (!hasFinalOutput && !shouldCollapseTerminalWork) {" in history_script
     assert "hasFinalVisibleMessage" not in history_script
     assert "if (streamOverlayEntry.textStreaming === true) {" in history_script
     assert "function isTerminalRunStatus(runStatus)" in history_script
+    assert "'terminal'," in history_script
+    assert "'idle'," in history_script
     assert "status === 'pending'" in history_script
     assert "status === 'running'" in history_script
     assert "approvalStatus === 'requested'" in history_script
     assert "function isApprovedApprovalStatus(value)" in history_script
     assert "approvalStatus === 'approve_exact'" in history_script
+
+
+def test_processed_transcript_grouping_is_shared_and_not_history_scoped() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    history_script = (
+        repo_root
+        / "frontend"
+        / "dist"
+        / "js"
+        / "components"
+        / "messageRenderer"
+        / "history.js"
+    ).read_text(encoding="utf-8")
+    stream_script = (
+        repo_root
+        / "frontend"
+        / "dist"
+        / "js"
+        / "components"
+        / "messageRenderer"
+        / "stream.js"
+    ).read_text(encoding="utf-8")
+    grouping_script = (
+        repo_root
+        / "frontend"
+        / "dist"
+        / "js"
+        / "components"
+        / "messageRenderer"
+        / "transcriptGrouping.js"
+    ).read_text(encoding="utf-8")
+    tools_css = (
+        repo_root / "frontend" / "dist" / "css" / "components" / "tools.css"
+    ).read_text(encoding="utf-8")
+
+    assert "normalizeProcessedTranscript(container);" in history_script
+    assert (
+        "flattenTranscriptMessages(container, { requireWorkOrText: true });"
+        in history_script
+    )
+    assert "normalizeRenderedRunTranscripts(safeRunId, containers);" in stream_script
+    assert ".subagent-session-body[data-run-id=" in stream_script
+    assert "export function normalizeProcessedTranscript(container" in grouping_script
+    assert "export function flattenTranscriptMessages(container" in grouping_script
+    assert "body.className = 'tool-group-body msg-content';" in grouping_script
+    assert "appendFinalDivider(body);" in grouping_script
+    assert "divider.className = 'tool-group-final-divider';" in grouping_script
+    assert "function findLastWorkLocation(transcriptNodes)" in grouping_script
+    assert (
+        "function findFinalStartAfterWork(transcriptNodes, lastWork)" in grouping_script
+    )
+    assert "function appendIntermediateNodeToToolGroup" not in history_script
+    assert "message-history-flow" not in history_script
+    assert "message-history-flow" not in grouping_script
+    assert "message-history-work-only" not in history_script
+    assert "unwrapNestedMessagesInToolGroups(container);" in grouping_script
+    assert "function firstGroupableTranscriptIndex(transcriptNodes)" in grouping_script
+    assert "function isLeadingUserPromptMessage(node)" in grouping_script
+    assert "'.tool-group-body > .message'" in grouping_script
+    assert ".tool-block {\n    margin: 0.12rem 0;" in tools_css
+    assert "padding: 0.12rem 0.5rem;" in tools_css
+    assert "line-height: 1.35;" in tools_css
+    assert ".tool-group-body .tool-block" not in tools_css
+    assert ".tool-group-body .tool-summary" not in tools_css
+    assert ".tool-group-body > .message-history-flow" not in tools_css
+    assert ".tool-group-body > .message {" not in tools_css
+    assert ".tool-group-final-divider" in tools_css
+
+
+def test_stream_rebind_prefers_identity_before_label() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    stream_script = repo_root.joinpath(
+        "frontend",
+        "dist",
+        "js",
+        "components",
+        "messageRenderer",
+        "stream.js",
+    ).read_text(encoding="utf-8")
+
+    assert "const labelFallbacks = [];" in stream_script
+    assert "if (!isReusableStreamMessageWrapper(wrapper)) continue;" in stream_script
+    assert "if (wrapperMatchesStreamKey(wrapper, streamKey, roleId))" in stream_script
+    assert "return wrapper;" in stream_script
+    assert "labelFallbacks.push(wrapper);" in stream_script
+    assert "return labelFallbacks[0] || null;" in stream_script
+    assert "function isReusableStreamMessageWrapper(wrapper)" in stream_script
+    assert "return role !== 'user';" in stream_script
 
 
 def test_main_agent_tool_event_routes_to_coordinator_before_role_options_load(

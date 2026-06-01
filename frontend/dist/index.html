@@ -290,6 +290,50 @@
               />
             </svg>
           </button>
+          <div class="message-export-control" id="message-export-control">
+            <button
+              id="message-export-btn"
+              class="icon-btn message-export-trigger"
+              type="button"
+              title="导出消息"
+              aria-label="导出消息"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              data-i18n-title="message_export.label"
+              data-i18n-aria-label="message_export.label"
+              disabled
+            >
+              <svg viewBox="0 0 20 20" fill="none" class="icon" aria-hidden="true">
+                <path d="M10 3.5v8m0 0 3.25-3.25M10 11.5 6.75 8.25" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M4.5 12.75v2.75h11v-2.75" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <div
+              id="message-export-menu"
+              class="message-export-menu"
+              role="menu"
+              aria-label="导出消息"
+              data-i18n-aria-label="message_export.label"
+              hidden
+            >
+              <button
+                id="message-export-html"
+                type="button"
+                role="menuitem"
+                class="message-export-menu-item"
+                data-export-format="html"
+                data-i18n="message_export.html"
+              >导出 HTML</button>
+              <button
+                id="message-export-png"
+                type="button"
+                role="menuitem"
+                class="message-export-menu-item"
+                data-export-format="png"
+                data-i18n="message_export.png"
+              >导出图片</button>
+            </div>
+          </div>
           <button
             id="settings-btn"
             class="icon-btn"

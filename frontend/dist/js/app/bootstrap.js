@@ -12,6 +12,7 @@ import { initializeSessionDebugBadge } from "../components/sessionDebugBadge.js"
 import { initializeSubagentRail } from "../components/subagentRail.js";
 import { initializeObservability } from "../components/observability.js";
 import { initializeImagePreview } from "../components/imagePreview.js";
+import { initializeMessageExport } from "../components/messageExport.js";
 import { initializeVoiceInput } from "../components/voiceInput.js";
 import {
   handleNewProjectClick,
@@ -134,6 +135,7 @@ export async function initApp(selectSession, selectSubagentSession, handleSend) 
     initializeSubagentRail();
     initializeObservability();
     initializeImagePreview();
+    initializeMessageExport();
     initializeVoiceInput();
     initializeProjectView();
     initializeSpecLineage();

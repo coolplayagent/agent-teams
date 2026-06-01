@@ -3,8 +3,12 @@
  * Historical message rendering and approval state hydration.
  */
 import { isRunPrimaryRoleId } from '../../core/state.js';
-import { formatMessage } from '../../utils/i18n.js';
 import { syncLastAnswerCopyButton } from './messageActions.js';
+import {
+    flattenTranscriptMessages,
+    formatElapsed,
+    normalizeProcessedTranscript,
+} from './transcriptGrouping.js';
 import {
     applyToolReturn,
     appendMessageText,
@@ -23,6 +27,8 @@ import {
     setToolStatus,
     setToolValidationFailureState,
 } from './helpers.js';
+
+export { formatElapsed };
 
 export function renderHistoricalMessageList(container, messages, options = {}) {
     if (container?.dataset) {
@@ -185,8 +191,11 @@ export function renderHistoricalMessageList(container, messages, options = {}) {
     }
 
     applyPendingApprovalsToHistory(container, pendingToolApprovals, runId);
+    if (shouldFlattenHistoricalTranscript(options)) {
+        flattenTranscriptMessages(container, { requireWorkOrText: true });
+    }
     if (shouldCollapseIntermediateMessages(filteredOverlayEntry, options)) {
-        collapseIntermediateMessages(container);
+        normalizeProcessedTranscript(container);
     }
     syncLastAnswerCopyButton(container);
     forceScrollBottom(container);
@@ -542,49 +551,26 @@ function filterPersistedOverlayParts(streamOverlayEntry, persistedIndex, runId, 
         persistedIndex.mediaTailByStream,
         streamKeys,
     ) || emptySet;
-    const filteredParts = parts.filter(part => {
-        if (!part || typeof part !== 'object') return false;
-        if (part.kind === 'injection') {
-            const injectionId = String(part.injection_id || part.message_id || '').trim();
-            return !(injectionId && persistedIndex.injectionIds.has(injectionId));
-        }
-        if (part.kind === 'tool') {
-            const toolCallId = String(part.tool_call_id || '').trim();
-            return !(toolCallId && persistedIndex.toolCallIds.has(toolCallId));
-        }
-        if (part.kind === 'thinking') {
-            const text = normalizeOverlayTextSignature(part.content);
-            if (!text) {
-                return part.finished !== true;
-            }
-            return !isPersistedThinkingOverlayPart(
-                text,
-                part,
-                persistedThinkingTailText,
-                persistedIndex.thinkingTailByStreamPart,
-                persistedThinkingAllText,
-                persistedIndex.thinkingAllByStreamPart,
-                streamKeys,
-            );
-        }
-        if (part.kind === 'text') {
-            const text = normalizeOverlayTextSignature(part.content || part.text);
-            if (!text) {
-                return false;
-            }
-            return !consumePersistedOverlayText(
-                text,
-                persistedTextCursor,
-                persistedText,
-            );
-        }
-        if (part.kind === 'media_ref') {
-            const mediaSignature = normalizeOverlayMediaSignature(part);
-            return !(mediaSignature && persistedMedia.has(mediaSignature));
-        }
-        return true;
-    });
-    const isTerminalStatus = isTerminalRunStatus(options.runStatus);
+    const classifiedParts = parts.map(part => classifyOverlayPartPersistence(part, {
+        persistedIndex,
+        persistedThinkingTailText,
+        persistedThinkingTailTextByPart: persistedIndex.thinkingTailByStreamPart,
+        persistedThinkingAllText,
+        persistedThinkingAllTextByPart: persistedIndex.thinkingAllByStreamPart,
+        persistedText,
+        persistedTextCursor,
+        persistedMedia,
+        streamKeys,
+        streamOverlayEntry,
+        options,
+    }));
+    const lastPersistedPartIndex = classifiedParts.reduce((latestIndex, item, index) => (
+        item.persisted === true ? index : latestIndex
+    ), -1);
+    const filteredParts = classifiedParts
+        .filter((item, index) => index > lastPersistedPartIndex && item.keep === true)
+        .map(item => item.part);
+    const isTerminalStatus = isTerminalRenderOptions(options);
     const allowIdleCursor = streamOverlayEntry.idleCursor === true
         && (
             filteredParts.length > 0
@@ -604,6 +590,62 @@ function filterPersistedOverlayParts(streamOverlayEntry, persistedIndex, runId, 
         idleCursor: allowIdleCursor,
         textStreaming: allowTextStreaming,
     };
+}
+
+function classifyOverlayPartPersistence(part, context = {}) {
+    if (!part || typeof part !== 'object') {
+        return { part, keep: false, persisted: false };
+    }
+    if (part.kind === 'injection') {
+        const injectionId = String(part.injection_id || part.message_id || '').trim();
+        const persisted = !!(injectionId && context.persistedIndex?.injectionIds?.has?.(injectionId));
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'tool') {
+        const toolCallId = String(part.tool_call_id || '').trim();
+        const persisted = !!(toolCallId && context.persistedIndex?.toolCallIds?.has?.(toolCallId));
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'thinking') {
+        const text = normalizeOverlayTextSignature(part.content);
+        const isActiveThinking = isOverlayThinkingPartActive(context.streamOverlayEntry, part);
+        if (!text) {
+            return {
+                part,
+                keep: isActiveThinking && !isTerminalRenderOptions(context.options),
+                persisted: false,
+            };
+        }
+        const persisted = isPersistedThinkingOverlayPart(
+            text,
+            part,
+            isActiveThinking,
+            context.persistedThinkingTailText,
+            context.persistedThinkingTailTextByPart,
+            context.persistedThinkingAllText,
+            context.persistedThinkingAllTextByPart,
+            context.streamKeys,
+        );
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'text') {
+        const text = normalizeOverlayTextSignature(part.content || part.text);
+        if (!text) {
+            return { part, keep: false, persisted: false };
+        }
+        const persisted = consumePersistedOverlayText(
+            text,
+            context.persistedTextCursor,
+            context.persistedText,
+        );
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'media_ref') {
+        const mediaSignature = normalizeOverlayMediaSignature(part);
+        const persisted = !!(mediaSignature && context.persistedMedia?.has?.(mediaSignature));
+        return { part, keep: !persisted, persisted };
+    }
+    return { part, keep: true, persisted: false };
 }
 
 function createPersistedOverlayTextCursor(textByStream, streamKeys) {
@@ -669,6 +711,32 @@ function normalizeOverlayPartIndex(value) {
     return safeValue;
 }
 
+function isOverlayThinkingPartActive(streamOverlayEntry, part) {
+    if (!streamOverlayEntry || !part || part.kind !== 'thinking') {
+        return false;
+    }
+    const activeByPart = streamOverlayEntry.thinkingActiveByPart;
+    if (activeByPart instanceof Map) {
+        const partIndex = normalizeOverlayPartIndex(part.part_index ?? part.part_id ?? '');
+        const activeKey = activeByPart.get(partIndex);
+        if (!activeKey) {
+            return false;
+        }
+        const partKey = String(part._key || '').trim();
+        return !partKey || partKey === String(activeKey || '').trim();
+    }
+    if (activeByPart && typeof activeByPart === 'object' && !Array.isArray(activeByPart)) {
+        const partIndex = normalizeOverlayPartIndex(part.part_index ?? part.part_id ?? '');
+        const activeKey = activeByPart[partIndex];
+        if (!activeKey) {
+            return false;
+        }
+        const partKey = String(part._key || '').trim();
+        return !partKey || partKey === String(activeKey || '').trim();
+    }
+    return part.finished !== true;
+}
+
 function overlayStreamPartKey(streamKey, partIndex) {
     return `${String(streamKey || '').trim()}::${normalizeOverlayPartIndex(partIndex)}`;
 }
@@ -676,6 +744,7 @@ function overlayStreamPartKey(streamKey, partIndex) {
 function isPersistedThinkingOverlayPart(
     text,
     part,
+    isActiveThinking,
     persistedThinkingTailText,
     persistedThinkingTailTextByPart,
     persistedThinkingAllText,
@@ -685,12 +754,13 @@ function isPersistedThinkingOverlayPart(
     if (!text) {
         return false;
     }
-    const persistedThinkingText = part.finished === true
-        ? persistedThinkingAllText
-        : persistedThinkingTailText;
-    const persistedThinkingTextByPart = part.finished === true
-        ? persistedThinkingAllTextByPart
-        : persistedThinkingTailTextByPart;
+    const useTailMatchOnly = isActiveThinking === true && part.finished !== true;
+    const persistedThinkingText = useTailMatchOnly
+        ? persistedThinkingTailText
+        : persistedThinkingAllText;
+    const persistedThinkingTextByPart = useTailMatchOnly
+        ? persistedThinkingTailTextByPart
+        : persistedThinkingAllTextByPart;
     if (persistedThinkingText?.has?.(text)) {
         return true;
     }
@@ -702,14 +772,14 @@ function isPersistedThinkingOverlayPart(
             partIndex,
         );
         if (
-            part.finished === true
-                ? hasPersistedThinkingOverlap(text, persistedForPart)
-                : hasExactPersistedOverlayText(text, persistedForPart)
+            useTailMatchOnly
+                ? hasExactPersistedOverlayText(text, persistedForPart)
+                : hasPersistedThinkingOverlap(text, persistedForPart)
         ) {
             return true;
         }
     }
-    if (part.finished === true && hasPersistedThinkingOverlap(text, persistedThinkingText)) {
+    if (!useTailMatchOnly && hasPersistedThinkingOverlap(text, persistedThinkingText)) {
         return true;
     }
     return false;
@@ -809,7 +879,7 @@ function renderStreamOverlayEntry(
     runId = '',
     options = {},
 ) {
-    const isTerminalStatus = isTerminalRunStatus(options.runStatus);
+    const isTerminalStatus = isTerminalRenderOptions(options);
     const label = streamOverlayEntry.label
         || labelFromRole('assistant', streamOverlayEntry.roleId, streamOverlayEntry.instanceId);
     let contentEl = null;
@@ -890,9 +960,10 @@ function renderStreamOverlayEntry(
         }
         if (part.kind === 'thinking') {
             flushText(false);
+            const isActiveThinking = isOverlayThinkingPartActive(streamOverlayEntry, part);
             appendThinkingText(ensureContentEl(), String(part.content || ''), {
                 partIndex: part._key ?? part.part_index ?? '',
-                streaming: part.finished !== true && !isTerminalStatus,
+                streaming: isActiveThinking && !isTerminalStatus,
                 runId: overlayRunId,
                 instanceId: String(streamOverlayEntry?.instanceId || '').trim(),
                 streamKey: overlayStreamKey,
@@ -1019,7 +1090,9 @@ function findLastCompatibleMessageContent(container, label, options = {}) {
         const message = messages[index];
         const roleEl = message.querySelector('.msg-role');
         const contentEl = message.querySelector('.msg-content');
-        const renderedLabel = String(roleEl?.textContent || '').trim();
+        const renderedLabel = String(message.dataset.roleLabel || roleEl?.textContent || '')
+            .trim()
+            .toUpperCase();
         if (!contentEl || !renderedLabel) continue;
         if (renderedLabel !== expectedLabel) continue;
         if (!wrapperMatchesOverlay(message, options)) continue;
@@ -1135,128 +1208,6 @@ function normalizeCanonicalHistoryStreamKey(options = {}) {
     return streamKey === 'coordinator' ? 'primary' : streamKey;
 }
 
-function collapseIntermediateMessages(container) {
-    if (!container) return;
-    if (container.querySelector(':scope > .tool-group')) return;
-    const messages = Array.from(container.querySelectorAll(':scope > .message'));
-    if (messages.length === 0) return;
-
-    const last = messages[messages.length - 1];
-
-    // Everything before the last message is intermediate (coordinator_messages
-    // do not contain the user prompt; that lives in the round header intent).
-    const children = Array.from(container.children || []);
-    const lastChildIndex = children.indexOf(last);
-    const beforeLast = lastChildIndex >= 0
-        ? children
-            .slice(0, lastChildIndex)
-            .filter(isCollapsibleIntermediateNode)
-        : messages.slice(0, -1);
-
-    // Also lift thinking and tool blocks out of the final message so only
-    // the plain text reply remains visible.
-    const lastContent = last.querySelector('.msg-content');
-    const liftedFromLast = [];
-    if (lastContent) {
-        Array.from(lastContent.children).forEach(child => {
-            if (child.classList.contains('thinking-block') || child.classList.contains('tool-block')) {
-                liftedFromLast.push(child);
-            }
-        });
-    }
-
-    if (beforeLast.length === 0 && liftedFromLast.length === 0) return;
-
-    // Compute elapsed duration from round start (user sent message) to last
-    // coordinator message. Round start comes from the section's dataset
-    // (set by renderRoundSection); last message time from raw data stored
-    // by renderHistoricalMessageList (covers non-rendered tool-return messages).
-    const firstTime = Date.parse(
-        container.dataset.roundStartedAt
-        || container.dataset.roundCreatedAt
-        || container.dataset.roundFirstMessageAt
-        || messages[0].dataset.createdAt
-        || '',
-    );
-    const lastTime = Date.parse(
-        container.dataset.roundUpdatedAt
-        || container.dataset.roundLastMessageAt
-        || last.dataset.createdAt
-        || '',
-    );
-    const durationText = Number.isFinite(firstTime) && Number.isFinite(lastTime) && lastTime > firstTime
-        ? formatElapsed(lastTime - firstTime)
-        : '';
-    const durationSuffix = durationText ? ` (${durationText})` : '';
-    const label = formatMessage('tool.group.processed', { duration: durationSuffix }).trim();
-
-    const group = document.createElement('details');
-    group.className = 'tool-group';
-    group.innerHTML = `
-        <summary class="tool-group-summary">
-            <span class="tool-group-line" aria-hidden="true"></span>
-            <span class="tool-group-label">${label}</span>
-            <span class="tool-group-toggle" aria-hidden="true">></span>
-            <span class="tool-group-line" aria-hidden="true"></span>
-        </summary>
-    `;
-    const body = document.createElement('div');
-    body.className = 'tool-group-body';
-    group.appendChild(body);
-
-    // Collect all sibling nodes from the first message up to (but not
-    // including) the last message, preserving markers and dividers.
-    container.insertBefore(group, beforeLast[0] || last);
-    let node = group.nextElementSibling;
-    while (node && node !== last) {
-        const next = node.nextElementSibling;
-        body.appendChild(node);
-        node = next;
-    }
-    liftedFromLast.forEach(el => body.appendChild(el));
-
-    // If the last message has no remaining visible content after lifting,
-    // hide it so only the collapsed group is shown.
-    if (lastContent && lastContent.childNodes.length === 0) {
-        last.hidden = true;
-    }
-
-    // Animate open / close via Web Animations API.
-    group.addEventListener('click', (e) => {
-        if (!e.target.closest('.tool-group-summary')) return;
-        e.preventDefault();
-        if (group.open) {
-            body.animate(
-                [
-                    { opacity: 1, maxHeight: body.scrollHeight + 'px' },
-                    { opacity: 0, maxHeight: '0px' },
-                ],
-                { duration: 180, easing: 'ease' },
-            ).onfinish = () => { group.open = false; };
-        } else {
-            group.open = true;
-            body.animate(
-                [
-                    { opacity: 0, maxHeight: '0px' },
-                    { opacity: 1, maxHeight: body.scrollHeight + 'px' },
-                ],
-                { duration: 200, easing: 'ease' },
-            );
-        }
-    });
-}
-
-function isCollapsibleIntermediateNode(node) {
-    if (!node?.classList) {
-        return false;
-    }
-    return (
-        node.classList.contains('message')
-        || node.classList.contains('message-inject-marker')
-        || node.classList.contains('message-history-divider')
-    );
-}
-
 function toolReturnContent(part) {
     if (!part || typeof part !== 'object') {
         return undefined;
@@ -1315,14 +1266,21 @@ function normalizedHistoryExitCode(value) {
 }
 
 function shouldCollapseIntermediateMessages(streamOverlayEntry, options = {}) {
+    const lifecycleStatus = String(options.status || '').trim().toLowerCase();
     const runStatus = String(options.runStatus || '').trim().toLowerCase();
+    const runPhase = String(options.runPhase || '').trim().toLowerCase();
+    const timelineView = String(options.timelineView || '').trim();
     const isLatestRound = options.isLatestRound === true;
-    const isTerminalStatus = isTerminalRunStatus(runStatus);
+    const isTerminalStatus = isTerminalRunStatus(lifecycleStatus)
+        || isTerminalRunStatus(runStatus)
+        || isTerminalRunStatus(runPhase);
     const hasFinalOutput = options.hasFinalOutput === true;
+    const shouldCollapseTerminalWork = isTerminalStatus
+        && timelineView === 'normal-child-session';
     if (isLatestRound && !isTerminalStatus) {
         return false;
     }
-    if (!hasFinalOutput) {
+    if (!hasFinalOutput && !shouldCollapseTerminalWork) {
         return false;
     }
     if (!streamOverlayEntry || typeof streamOverlayEntry !== 'object') {
@@ -1356,6 +1314,17 @@ function shouldCollapseIntermediateMessages(streamOverlayEntry, options = {}) {
     return !hasActiveOverlayPart;
 }
 
+function shouldFlattenHistoricalTranscript(options = {}) {
+    const timelineView = String(options.timelineView || '').trim();
+    return timelineView === 'normal-child-session';
+}
+
+function isTerminalRenderOptions(options = {}) {
+    return isTerminalRunStatus(options.status)
+        || isTerminalRunStatus(options.runStatus)
+        || isTerminalRunStatus(options.runPhase);
+}
+
 function firstHistoryTimestamp(historyMessages) {
     for (let i = 0; i < historyMessages.length; i += 1) {
         const ts = String(historyMessages[i]?.created_at || '').trim();
@@ -1373,6 +1342,8 @@ function isTerminalRunStatus(runStatus) {
         'failed',
         'cancelled',
         'canceled',
+        'terminal',
+        'idle',
     ].includes(String(runStatus || '').trim().toLowerCase());
 }
 
@@ -1385,17 +1356,6 @@ function isApprovedApprovalStatus(value) {
         || approvalStatus === 'approve_prefix'
     );
 }
-export function formatElapsed(ms) {
-    const totalSeconds = Math.round(ms / 1000);
-    if (totalSeconds < 60) return `${totalSeconds}s`;
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const remainMinutes = minutes % 60;
-    return remainMinutes > 0 ? `${hours}h ${remainMinutes}m` : `${hours}h`;
-}
-
 function wrapperMatchesOverlay(wrapper, options = {}) {
     if (!wrapper) return false;
     const expectedRunId = String(options.runId || '').trim();

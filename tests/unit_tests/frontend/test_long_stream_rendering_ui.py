@@ -82,6 +82,19 @@ export function t(key) { return key; }
 """.strip(),
         encoding="utf-8",
     )
+    transcript_grouping = (
+        repo_root
+        / "frontend"
+        / "dist"
+        / "js"
+        / "components"
+        / "messageRenderer"
+        / "transcriptGrouping.js"
+    ).read_text(encoding="utf-8")
+    (tmp_path / "transcriptGrouping.js").write_text(
+        transcript_grouping.replace("../../utils/i18n.js", "./mockI18n.mjs"),
+        encoding="utf-8",
+    )
     (tmp_path / "mockHelpers.mjs").write_text(
         """
 export function applyToolReturn() {}

@@ -5,6 +5,8 @@
     border: none;
     background: transparent;
     overflow: visible;
+    --tool-summary-rest-color: color-mix(in srgb, var(--text-secondary) 80%, transparent);
+    --tool-summary-preview-rest-color: color-mix(in srgb, var(--text-secondary) 68%, transparent);
 }
 
 /* --- Summary / collapsed state --- */
@@ -42,6 +44,80 @@
     flex: 0 0 auto;
 }
 
+.tool-block:not([open]) > .tool-summary {
+    color: var(--tool-summary-rest-color);
+}
+
+.tool-block:not([open]) > .tool-summary::before {
+    color: color-mix(in srgb, var(--text-secondary) 58%, transparent);
+}
+
+.tool-block:not([open]) .tool-summary-label {
+    font-weight: 400;
+    opacity: 0.76;
+}
+
+.tool-block:not([open]) .tool-summary-preview {
+    color: var(--tool-summary-preview-rest-color);
+    opacity: 0.72;
+}
+
+.tool-block:not([open]) .tool-status {
+    opacity: 0.42;
+}
+
+.tool-block:not([open]) > .tool-summary:hover {
+    color: color-mix(in srgb, var(--text-primary) 88%, var(--text-secondary));
+}
+
+.tool-block:not([open]) > .tool-summary:hover::before {
+    color: color-mix(in srgb, var(--text-primary) 72%, var(--text-secondary));
+}
+
+.tool-block:not([open]) > .tool-summary:hover .tool-summary-label {
+    opacity: 1;
+}
+
+.tool-block:not([open]) > .tool-summary:hover .tool-summary-preview {
+    color: color-mix(in srgb, var(--text-primary) 68%, var(--text-secondary));
+    opacity: 0.92;
+}
+
+.tool-block:not([open]) > .tool-summary:hover .tool-status {
+    opacity: 0.8;
+}
+
+.tool-block:not([open])[data-status="running"] > .tool-summary,
+.tool-block:not([open])[data-status="error"] > .tool-summary,
+.tool-block:not([open])[data-status="warning"] > .tool-summary {
+    color: var(--text-secondary);
+}
+
+.tool-block:not([open])[data-status="running"] > .tool-summary::before,
+.tool-block:not([open])[data-status="error"] > .tool-summary::before,
+.tool-block:not([open])[data-status="warning"] > .tool-summary::before {
+    color: var(--text-secondary);
+}
+
+.tool-block:not([open])[data-status="running"] .tool-summary-label,
+.tool-block:not([open])[data-status="error"] .tool-summary-label,
+.tool-block:not([open])[data-status="warning"] .tool-summary-label {
+    opacity: 1;
+}
+
+.tool-block:not([open])[data-status="running"] .tool-summary-preview,
+.tool-block:not([open])[data-status="error"] .tool-summary-preview,
+.tool-block:not([open])[data-status="warning"] .tool-summary-preview {
+    color: var(--text-muted, var(--text-secondary));
+    opacity: 1;
+}
+
+.tool-block:not([open])[data-status="running"] .tool-status,
+.tool-block:not([open])[data-status="error"] .tool-status,
+.tool-block:not([open])[data-status="warning"] .tool-status {
+    opacity: 1;
+}
+
 .tool-block[open] > .tool-summary::before {
     transform: rotate(90deg);
 }
@@ -50,6 +126,7 @@
     font-weight: 500;
     white-space: nowrap;
     flex: 0 0 auto;
+    transition: opacity 0.15s ease;
 }
 
 .tool-summary-preview {
@@ -77,6 +154,7 @@
     align-items: center;
     flex: 0 0 auto;
     margin-left: auto;
+    transition: opacity 0.15s ease;
 }
 
 /* --- Detail / expanded state --- */
@@ -489,7 +567,7 @@
     gap: 0.6rem;
     cursor: pointer;
     list-style: none;
-    color: var(--text-secondary);
+    color: color-mix(in srgb, var(--text-secondary) 78%, transparent);
     font-size: 0.8125rem;
     font-family: var(--font-ui);
     user-select: none;
@@ -508,7 +586,7 @@
 .tool-group-line {
     flex: 1 1 auto;
     height: 1px;
-    background: color-mix(in srgb, var(--border-color) 82%, transparent);
+    background: color-mix(in srgb, var(--border-color) 62%, transparent);
 }
 
 .tool-group-label {

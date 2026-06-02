@@ -230,6 +230,13 @@ globalThis.document = {
     createElement() {
         return createSectionElement();
     },
+    dispatchEvent(event) {
+        globalThis.__documentDispatches.push({
+            type: event.type,
+            detail: event.detail,
+        });
+        return true;
+    },
 };
 """.strip(),
         encoding="utf-8",
@@ -264,6 +271,7 @@ globalThis.__renderCalls = [];
 globalThis.__clearAllPanelsCalls = 0;
 globalThis.__hideRoundNavigatorCalls = 0;
 globalThis.__syncNormalModeSubagentStreamsCalls = 0;
+globalThis.__documentDispatches = [];
 
 const { els } = await import("./mockDom.mjs");
 const { state } = await import("./mockState.mjs");
@@ -303,6 +311,8 @@ console.log(JSON.stringify({
     renderCalls: globalThis.__renderCalls,
     clearAllPanelsCalls: globalThis.__clearAllPanelsCalls,
     hideRoundNavigatorCalls: globalThis.__hideRoundNavigatorCalls,
+    selectionCancelledEvents: globalThis.__documentDispatches
+        .filter(event => event.type === "agent-teams-session-selection-cancelled"),
 }));
 """.strip(),
         encoding="utf-8",
@@ -349,6 +359,16 @@ console.log(JSON.stringify({
     ]
     assert payload["clearAllPanelsCalls"] == 1
     assert payload["hideRoundNavigatorCalls"] == 2
+    assert payload["selectionCancelledEvents"] == [
+        {
+            "type": "agent-teams-session-selection-cancelled",
+            "detail": {
+                "reason": "subagent-session-opened",
+                "sessionId": "session-1",
+                "instanceId": "inst-sub-1",
+            },
+        }
+    ]
 
 
 def test_subagent_gate_resolved_during_open_does_not_render_stale_card(

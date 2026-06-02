@@ -427,6 +427,9 @@ def _round_intent_harness_html(base_url: str) -> str:
       overlayRoundRecoveryState,
       renderCurrentSessionTimeline,
     }} from "{base_url}/frontend/dist/js/components/rounds/timeline.js";
+    import {{ state }} from "{base_url}/frontend/dist/js/core/state.js";
+
+    state.currentSessionId = 'round-intent-harness';
 
     const waitForLayout = () => new Promise(resolve => {{
       requestAnimationFrame(() => requestAnimationFrame(resolve));

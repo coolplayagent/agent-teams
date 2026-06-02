@@ -100,6 +100,7 @@ def _run_session_view_script(tmp_path: Path, runner_source: str) -> dict[str, ob
         source_path.read_text(encoding="utf-8")
         .replace("./recovery.js", "./mockRecovery.mjs")
         .replace("../core/state.js", "./mockState.mjs")
+        .replace("../core/viewGuards.js", "./mockViewGuards.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
         .replace("../utils/i18n.js", "./mockI18n.mjs")
         .replace("../utils/logger.js", "./mockLogger.mjs")
@@ -137,6 +138,33 @@ export const state = {
     currentSessionId: "session-1",
     activeSubagentSession: null,
 };
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockViewGuards.mjs").write_text(
+        """
+import { state } from "./mockState.mjs";
+
+export function hasActiveSubagentSessionFor(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const active = state.activeSubagentSession;
+    return !!(
+        safeSessionId
+        && active
+        && typeof active === "object"
+        && String(active.sessionId || "").trim() === safeSessionId
+    );
+}
+
+export function canRenderMainSessionView(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const currentSessionId = String(state.currentSessionId || "").trim();
+    return !!(
+        safeSessionId
+        && currentSessionId === safeSessionId
+        && !hasActiveSubagentSessionFor(safeSessionId)
+    );
+}
 """.strip(),
         encoding="utf-8",
     )

@@ -33,6 +33,7 @@ import {
     prepareStreamsForForegroundNavigation,
 } from '../core/stream.js';
 import { detachForegroundSubmission } from '../core/submission.js';
+import { canRenderMainSessionView } from '../core/viewGuards.js';
 import { els } from '../utils/dom.js';
 import { formatMessage, t } from '../utils/i18n.js';
 import { sysLog } from '../utils/logger.js';
@@ -53,7 +54,11 @@ const TERMINAL_VIEW_MAX_ATTEMPTS = 3;
 bindSessionSelectionCancellation();
 
 function isLatestSessionSelection(token, sessionId) {
-    return token === sessionSelectionToken && state.currentSessionId === sessionId;
+    return !!(
+        token === sessionSelectionToken
+        && state.currentSessionId === sessionId
+        && canRenderMainSessionView(sessionId)
+    );
 }
 
 export async function selectSession(sessionId, options = {}) {
@@ -513,6 +518,7 @@ export async function selectSubagentSession(sessionId, subagent) {
     const resolved = cachedRecords.find(item => item.instanceId === safeInstanceId) || fallback;
     hideProjectView();
     setRoundsMode();
+    cancelActiveSessionSelection();
     void openSubagentSession(safeSessionId, resolved);
     void ensureSessionSubagents(safeSessionId, { force: false }).catch(error => {
         if (error?.name === 'AbortError') {

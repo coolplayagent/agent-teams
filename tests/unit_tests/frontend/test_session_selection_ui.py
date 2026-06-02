@@ -712,6 +712,7 @@ def _run_session_script(tmp_path: Path, runner_source: str) -> dict[str, object]
     mock_stream_path = tmp_path / "mockStream.mjs"
     mock_submission_path = tmp_path / "mockSubmission.mjs"
     mock_dom_path = tmp_path / "mockDom.mjs"
+    mock_view_guards_path = tmp_path / "mockViewGuards.mjs"
     mock_i18n_path = tmp_path / "mockI18n.mjs"
     mock_logger_path = tmp_path / "mockLogger.mjs"
     mock_prompt_path = tmp_path / "mockPrompt.mjs"
@@ -816,6 +817,7 @@ import { state } from "./mockState.mjs";
 
 export function clearActiveSubagentSession() {
     globalThis.__clearActiveSubagentSessionCalls += 1;
+    state.activeSubagentSession = null;
 }
 
 export function getSessionSubagentSessions() {
@@ -1132,6 +1134,33 @@ export function refreshSessionTopologyControls() {
 """.strip(),
         encoding="utf-8",
     )
+    mock_view_guards_path.write_text(
+        """
+import { state } from "./mockState.mjs";
+
+export function hasActiveSubagentSessionFor(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const active = state.activeSubagentSession;
+    return !!(
+        safeSessionId
+        && active
+        && typeof active === "object"
+        && String(active.sessionId || "").trim() === safeSessionId
+    );
+}
+
+export function canRenderMainSessionView(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const currentSessionId = String(state.currentSessionId || "").trim();
+    return !!(
+        safeSessionId
+        && currentSessionId === safeSessionId
+        && !hasActiveSubagentSessionFor(safeSessionId)
+    );
+}
+""".strip(),
+        encoding="utf-8",
+    )
 
     source_text = (
         source_path.read_text(encoding="utf-8")
@@ -1154,6 +1183,7 @@ export function refreshSessionTopologyControls() {
         .replace("../core/state.js", "./mockState.mjs")
         .replace("../core/stream.js", "./mockStream.mjs")
         .replace("../core/submission.js", "./mockSubmission.mjs")
+        .replace("../core/viewGuards.js", "./mockViewGuards.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
         .replace("../utils/i18n.js", "./mockI18n.mjs")
         .replace("../utils/logger.js", "./mockLogger.mjs")

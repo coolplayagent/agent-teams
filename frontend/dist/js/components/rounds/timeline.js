@@ -28,6 +28,7 @@ import {
 import { renderPromptTokenizedText } from '../../utils/promptTokens.js';
 import {
     clearRoundNavigator,
+    hideRoundNavigator,
     patchRoundNavigatorTodo,
     renderRoundNavigator,
     setActiveRoundNav,
@@ -57,6 +58,10 @@ import {
 } from './utils.js';
 import { errorToPayload, logError } from '../../utils/logger.js';
 import { formatMessage, t } from '../../utils/i18n.js';
+import {
+    canRenderMainSessionView,
+    hasActiveSubagentSessionFor,
+} from '../../core/viewGuards.js';
 
 export let currentRounds = [];
 export let currentRound = null;
@@ -674,6 +679,7 @@ export function showPendingRunStartPlaceholder(sessionId, intentText, intentPart
         && (
             !safeSessionId
             || safeSessionId !== String(state.currentSessionId || '').trim()
+            || !canRenderMainSessionView(safeSessionId)
         )
     ) {
         return;
@@ -720,13 +726,7 @@ export function clearPendingRunStartPlaceholder() {
 }
 
 function shouldPreserveSubagentView(sessionId) {
-    const active = state.activeSubagentSession;
-    const safeSessionId = String(sessionId || state.currentSessionId || '').trim();
-    return !!(
-        active
-        && typeof active === 'object'
-        && String(active.sessionId || '').trim() === safeSessionId
-    );
+    return hasActiveSubagentSessionFor(sessionId || state.currentSessionId);
 }
 
 function roundsForNavigator() {
@@ -750,6 +750,12 @@ function roundsForNavigator() {
 }
 
 function renderNavigatorForTimeline(options = {}) {
+    if (!canRenderMainSessionView(state.currentSessionId)) {
+        if (hasActiveSubagentSessionFor(state.currentSessionId)) {
+            hideRoundNavigator();
+        }
+        return;
+    }
     renderRoundNavigator(roundsForNavigator(), selectRound, {
         activeRunId: roundsState.activeRunId,
         layoutReason: options.layoutReason || 'structure',
@@ -1579,6 +1585,9 @@ export function goBackToSessions() {
 function renderSessionTimeline(rounds, opts = { preserveScroll: true }) {
     const container = els.chatMessages;
     if (!container) return;
+    if (!canRenderMainSessionView(state.currentSessionId)) {
+        return;
+    }
 
     const renderPlan = opts.scrollPlan || captureRoundRenderPlan(opts);
 
@@ -1686,6 +1695,9 @@ function renderSessionTimeline(rounds, opts = { preserveScroll: true }) {
 
 export function renderCurrentSessionTimeline(opts = {}) {
     if (!Array.isArray(roundsState.currentRounds) || roundsState.currentRounds.length === 0) {
+        return false;
+    }
+    if (!canRenderMainSessionView(state.currentSessionId)) {
         return false;
     }
     renderSessionTimeline(roundsState.currentRounds, opts);

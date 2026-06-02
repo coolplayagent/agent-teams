@@ -119,6 +119,7 @@ def test_background_task_event_renders_control_strip_immediately(
         .replace("../components/sidebar.js", "./mockSidebar.mjs")
         .replace("../core/api.js", "./mockApi.mjs")
         .replace("../core/state.js", "./mockState.mjs")
+        .replace("../core/viewGuards.js", "./mockViewGuards.mjs")
         .replace("../core/stream.js", "./mockStream.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
         .replace("../utils/i18n.js", "./mockI18n.mjs")
@@ -177,6 +178,33 @@ export function humanizeRoleId(roleId) { return String(roleId || ""); }
 export function isPrimaryRoleId() { return false; }
 export function isReservedSystemRoleId() { return false; }
 export function setRunPrimaryRole() { return undefined; }
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockViewGuards.mjs").write_text(
+        """
+import { state } from "./mockState.mjs";
+
+export function hasActiveSubagentSessionFor(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const active = state.activeSubagentSession;
+    return !!(
+        safeSessionId
+        && active
+        && typeof active === "object"
+        && String(active.sessionId || "").trim() === safeSessionId
+    );
+}
+
+export function canRenderMainSessionView(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const currentSessionId = String(state.currentSessionId || "").trim();
+    return !!(
+        safeSessionId
+        && currentSessionId === safeSessionId
+        && !hasActiveSubagentSessionFor(safeSessionId)
+    );
+}
 """.strip(),
         encoding="utf-8",
     )
@@ -293,6 +321,7 @@ def test_foreground_command_task_event_does_not_open_background_strip(
         .replace("../components/sidebar.js", "./mockSidebar.mjs")
         .replace("../core/api.js", "./mockApi.mjs")
         .replace("../core/state.js", "./mockState.mjs")
+        .replace("../core/viewGuards.js", "./mockViewGuards.mjs")
         .replace("../core/stream.js", "./mockStream.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
         .replace("../utils/i18n.js", "./mockI18n.mjs")
@@ -351,6 +380,33 @@ export function humanizeRoleId(roleId) { return String(roleId || ""); }
 export function isPrimaryRoleId() { return false; }
 export function isReservedSystemRoleId() { return false; }
 export function setRunPrimaryRole() { return undefined; }
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockViewGuards.mjs").write_text(
+        """
+import { state } from "./mockState.mjs";
+
+export function hasActiveSubagentSessionFor(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const active = state.activeSubagentSession;
+    return !!(
+        safeSessionId
+        && active
+        && typeof active === "object"
+        && String(active.sessionId || "").trim() === safeSessionId
+    );
+}
+
+export function canRenderMainSessionView(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const currentSessionId = String(state.currentSessionId || "").trim();
+    return !!(
+        safeSessionId
+        && currentSessionId === safeSessionId
+        && !hasActiveSubagentSessionFor(safeSessionId)
+    );
+}
 """.strip(),
         encoding="utf-8",
     )
@@ -448,6 +504,7 @@ def test_terminal_run_state_patches_round_without_recovery_snapshot(
         .replace("../components/sidebar.js", "./mockSidebar.mjs")
         .replace("../core/api.js", "./mockApi.mjs")
         .replace("../core/state.js", "./mockState.mjs")
+        .replace("../core/viewGuards.js", "./mockViewGuards.mjs")
         .replace("../core/stream.js", "./mockStream.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
         .replace("../utils/i18n.js", "./mockI18n.mjs")
@@ -514,6 +571,33 @@ export function humanizeRoleId(roleId) { return String(roleId || ""); }
 export function isPrimaryRoleId() { return false; }
 export function isReservedSystemRoleId() { return false; }
 export function setRunPrimaryRole() { return undefined; }
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockViewGuards.mjs").write_text(
+        """
+import { state } from "./mockState.mjs";
+
+export function hasActiveSubagentSessionFor(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const active = state.activeSubagentSession;
+    return !!(
+        safeSessionId
+        && active
+        && typeof active === "object"
+        && String(active.sessionId || "").trim() === safeSessionId
+    );
+}
+
+export function canRenderMainSessionView(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const currentSessionId = String(state.currentSessionId || "").trim();
+    return !!(
+        safeSessionId
+        && currentSessionId === safeSessionId
+        && !hasActiveSubagentSessionFor(safeSessionId)
+    );
+}
 """.strip(),
         encoding="utf-8",
     )

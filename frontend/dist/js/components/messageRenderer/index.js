@@ -5,6 +5,10 @@
 export { renderMessageBlock } from './helpers.js';
 export { renderHistoricalMessageList } from './history.js';
 export {
+    formatElapsed,
+    normalizeProcessedTranscript,
+} from './transcriptGrouping.js';
+export {
     applyTimelineAction,
     clearTimelineRun,
     clearTimelineState,

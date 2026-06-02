@@ -244,8 +244,10 @@ def test_runtime_inject_messages_render_in_round_timeline() -> None:
     assert "entry_type: 'injection'" in timeline_script
     assert "renderInjectionMarker(container, msgItem)" in history_script
     assert "message-inject-marker" in history_script
-    assert "isCollapsibleIntermediateNode" in history_script
-    assert "message-inject-marker')" in history_script
+    assert "normalizeProcessedTranscript(container)" in history_script
+    assert "message-inject-marker" in (
+        FRONTEND / "js" / "components" / "messageRenderer" / "transcriptGrouping.js"
+    ).read_text(encoding="utf-8")
     assert "function injectionSortAt" in timeline_script
     assert "function injectionQueuedAt" in timeline_script
     assert "message?.applied_at" in timeline_script

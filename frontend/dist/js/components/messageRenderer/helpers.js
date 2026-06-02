@@ -4,6 +4,7 @@
  */
 export {
     renderMessageBlock,
+    shouldRenderMessageRoleLabel,
     renderParts,
     labelFromRole,
     scrollBottom,

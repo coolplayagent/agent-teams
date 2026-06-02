@@ -65,14 +65,21 @@ export async function renderInstanceHistoryInto(container, options = {}) {
                 streamOverlayEntry,
             };
         }
+        const shouldBindRenderedOverlay = overlayMode === 'bind'
+            || overlayMode === 'render-bind';
+        const shouldRenderOverlayBeforeBind = overlayMode === 'render-bind';
         const renderOptions = {
             pendingToolApprovals,
             runId,
+            status: options.status || '',
+            runStatus: options.runStatus || options.status || '',
+            runPhase: options.runPhase || '',
             streamOverlayEntry:
                 overlayMode === 'bind' && messages.length > 0
                     ? null
                     : streamOverlayEntry,
-            separateOverlayMessage: overlayMode === 'separate',
+            separateOverlayMessage:
+                overlayMode === 'separate' || shouldRenderOverlayBeforeBind,
             userRoleLabel,
         };
         if (runId) {
@@ -83,7 +90,7 @@ export async function renderInstanceHistoryInto(container, options = {}) {
         clearHistoryRenderTarget(renderTarget);
         renderHistoricalMessageList(renderTarget, messages, renderOptions);
         replaceHistoryContainerWhenReady(container, renderTarget);
-        if (overlayMode === 'bind' && messages.length > 0 && streamOverlayEntry) {
+        if (shouldBindRenderedOverlay && streamOverlayEntry) {
             bindStreamOverlayToContainer(container, {
                 instanceId,
                 runId,

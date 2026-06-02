@@ -6,6 +6,22 @@ from pathlib import Path
 import subprocess
 
 
+def _write_transcript_grouping_module(tmp_path: Path, repo_root: Path) -> None:
+    source = (
+        repo_root
+        / "frontend"
+        / "dist"
+        / "js"
+        / "components"
+        / "messageRenderer"
+        / "transcriptGrouping.js"
+    ).read_text(encoding="utf-8")
+    (tmp_path / "transcriptGrouping.js").write_text(
+        source.replace("../../utils/i18n.js", "./mockI18n.mjs"),
+        encoding="utf-8",
+    )
+
+
 def test_message_history_uses_task_prompt_override_for_user_messages(
     tmp_path: Path,
 ) -> None:
@@ -136,6 +152,7 @@ export function syncLastAnswerCopyButton() {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(tmp_path, repo_root)
     runner_path.write_text(
         """
 globalThis.__renderCalls = [];
@@ -273,6 +290,7 @@ export function syncLastAnswerCopyButton() {
 """.strip(),
         encoding="utf-8",
     )
+    _write_transcript_grouping_module(tmp_path, repo_root)
     runner_path.write_text(
         """
 const { formatElapsed } = await import('./history.mjs');

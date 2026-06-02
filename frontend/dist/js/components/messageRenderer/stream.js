@@ -24,6 +24,7 @@ import {
 } from './helpers.js';
 import * as rendererHelpers from './helpers.js';
 import { formatMessage, t } from '../../utils/i18n.js';
+import { normalizeProcessedTranscript } from './transcriptGrouping.js';
 
 const streamState = new Map();
 const overlayState = new Map();
@@ -85,6 +86,7 @@ export function appendStreamChunk(instanceId, text, runId = '', roleId = '', lab
         label,
     });
     const follow = captureStreamFollow(st.container);
+    finishActiveThinkingEntries(st);
 
     if (!st.activeTextEl) {
         st.activeTextEl = document.createElement('div');
@@ -201,6 +203,7 @@ export function appendStreamOutputParts(
             );
             return;
         }
+        finishActiveThinkingEntries(st);
         endActiveText(st);
         appendStructuredContentPart(st.contentEl, part);
     });
@@ -251,6 +254,7 @@ export function appendStreamInjectionMarker(
     }
     const follow = captureStreamFollow(markerHost);
     if (st) {
+        finishActiveThinkingEntries(st);
         endActiveText(st);
     }
     if (payload?.supersedes_pending_tool_calls === true) {
@@ -579,6 +583,7 @@ export function appendToolCallBlock(
         label,
     });
     const follow = captureStreamFollow(st.container || container);
+    finishActiveThinkingEntries(st);
     endActiveText(st);
     updateOverlayToolCall(st.runId || runId, st.instanceId || instanceId, roleId || st.roleId, st.label, {
         tool_call_id: toolCallId || '',
@@ -638,6 +643,7 @@ export function updateToolResult(
     const resolvedRoleId = (st && st.roleId) || roleId;
     const resultIsError = isStreamToolResultError(result, { isError });
     if (st) {
+        finishActiveThinkingEntries(st);
         endActiveText(st);
     }
     updateOverlayToolResult(
@@ -768,6 +774,7 @@ export function startThinkingBlock(instanceId, partIndex, options = {}) {
         label,
     });
     const follow = captureStreamFollow(st.container || container);
+    finishActiveThinkingEntries(st);
     endActiveText(st);
     ensureThinkingEntry(st, partIndex, { forceNew: true });
     startOverlayThinking(st.runId || runId, st.instanceId || instanceId, roleId || st.roleId, st.label || label, partIndex);
@@ -1181,6 +1188,8 @@ function clearDetachedRenderedRunStreamingArtifacts(runId) {
     roots.forEach(root => {
         root.querySelectorAll?.('.streaming-cursor').forEach(cursor => cursor.remove());
         root.querySelectorAll?.('.thinking-live').forEach(liveEl => {
+            liveEl.hidden = true;
+            liveEl.textContent = '';
             liveEl.style.display = 'none';
         });
         root.querySelectorAll?.('.thinking-block[data-streaming="true"]').forEach(block => {
@@ -1204,9 +1213,13 @@ function finalizeRunStreamState(runId) {
         return;
     }
     clearRunThinkingOpenState(safeRunId);
+    const containers = new Set();
     Array.from(streamState.entries()).forEach(([key, entry]) => {
         if (String(entry?.runId || '').trim() !== safeRunId) {
             return;
+        }
+        if (entry?.container) {
+            containers.add(entry.container);
         }
         finalizeStreamEntry(entry);
         streamState.delete(key);
@@ -1216,6 +1229,27 @@ function finalizeRunStreamState(runId) {
         finalizeOverlayEntry(entry);
     });
     clearDetachedRenderedRunStreamingArtifacts(safeRunId);
+    normalizeRenderedRunTranscripts(safeRunId, containers);
+}
+
+function normalizeRenderedRunTranscripts(runId, knownContainers = []) {
+    const safeRunId = String(runId || '').trim();
+    if (!safeRunId || typeof document === 'undefined') {
+        return;
+    }
+    const containers = new Set(Array.from(knownContainers || []).filter(Boolean));
+    if (typeof document.querySelectorAll === 'function') {
+        document
+            .querySelectorAll(`.session-round-section[data-run-id="${escapeSelectorValue(safeRunId)}"]`)
+            .forEach(section => containers.add(section));
+        document
+            .querySelectorAll(`.subagent-session-body[data-run-id="${escapeSelectorValue(safeRunId)}"]`)
+            .forEach(section => containers.add(section));
+    }
+    containers.forEach(container => {
+        normalizeProcessedTranscript(container);
+        syncMessageCopyButton(container);
+    });
 }
 
 function finalizeOverlayEntry(entry) {
@@ -1461,8 +1495,9 @@ function materializeOverlayEntryIntoState(st, overlayEntry) {
         if (part.kind === 'thinking') {
             const safePartIndex = String(part.part_index ?? '');
             const key = String(part._key || `${safePartIndex}:${st.thinkingSequence}`);
+            const isActiveThinking = isOverlayThinkingPartActive(overlayEntry, part);
             const textEl = appendThinkingText(st.contentEl, String(part.content || ''), {
-                streaming: part.finished !== true,
+                streaming: isActiveThinking,
                 runId: st.runId,
                 instanceId: st.instanceId,
                 streamKey: st.streamKey,
@@ -1475,7 +1510,7 @@ function materializeOverlayEntryIntoState(st, overlayEntry) {
                 partIndex: safePartIndex,
                 key,
             });
-            if (part.finished !== true && safePartIndex) {
+            if (isActiveThinking && safePartIndex) {
                 st.thinkingActiveByPart.set(safePartIndex, key);
             }
             st.thinkingSequence = Math.max(
@@ -1630,17 +1665,26 @@ function findReusableMessageWrapper({
     const safeLabel = String(label || '').trim().toUpperCase();
     const safeRunId = String(runId || '').trim();
     const wrappers = Array.from(container.querySelectorAll('.message'));
+    const labelFallbacks = [];
     for (let index = wrappers.length - 1; index >= 0; index -= 1) {
         const wrapper = wrappers[index];
-        const roleEl = wrapper.querySelector('.msg-role');
-        if (!roleEl) continue;
-        const renderedLabel = String(roleEl.textContent || '').trim();
-        if (!renderedLabel || renderedLabel !== safeLabel) continue;
-        if (!wrapperMatchesStreamKey(wrapper, streamKey, roleId)) continue;
+        if (!isReusableStreamMessageWrapper(wrapper)) continue;
         if (safeRunId && !wrapperBelongsToRun(wrapper, safeRunId)) continue;
-        return wrapper;
+        if (wrapperMatchesStreamKey(wrapper, streamKey, roleId)) {
+            return wrapper;
+        }
+        const roleEl = wrapper.querySelector('.msg-role');
+        const renderedLabel = String(wrapper.dataset.roleLabel || roleEl?.textContent || '').trim().toUpperCase();
+        if (safeLabel && renderedLabel && renderedLabel === safeLabel) {
+            labelFallbacks.push(wrapper);
+        }
     }
-    return null;
+    return labelFallbacks[0] || null;
+}
+
+function isReusableStreamMessageWrapper(wrapper) {
+    const role = String(wrapper?.dataset?.role || '').trim().toLowerCase();
+    return role !== 'user';
 }
 
 function wrapperMatchesStreamKey(wrapper, streamKey, roleId) {
@@ -1735,7 +1779,7 @@ function bindReusableThinkingState(contentEl, overlayEntry) {
             partIndex: safePartIndex,
             key,
         });
-        if (part.finished !== true && safePartIndex) {
+        if (isOverlayThinkingPartActive(overlayEntry, part) && safePartIndex) {
             activeByPart.set(safePartIndex, key);
         }
         const sequenceValue = parseThinkingSequenceValue(key, safePartIndex);
@@ -2178,6 +2222,7 @@ function updateOverlayText(runId, instanceId, roleId, label, text) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
     const nextText = String(text || '');
+    finishOverlayActiveThinkingEntries(entry);
     entry.textStreaming = true;
     entry.idleCursor = false;
     if (!nextText) return;
@@ -2228,6 +2273,7 @@ function appendOverlayOutputParts(
             if (!includeText) {
                 return;
             }
+            finishOverlayActiveThinkingEntries(entry);
             const lastPart = entry.parts[entry.parts.length - 1];
             if (lastPart && lastPart.kind === 'text' && lastPart.closed !== true) {
                 lastPart.content = String(lastPart.content || '') + normalizedPart.content;
@@ -2237,6 +2283,7 @@ function appendOverlayOutputParts(
             hasTextOutput = true;
             return;
         }
+        finishOverlayActiveThinkingEntries(entry);
         closeOverlayTextSegmentEntry(entry);
         entry.parts.push(normalizedPart);
     });
@@ -2266,6 +2313,7 @@ function startOverlayThinking(runId, instanceId, roleId, label, partIndex) {
         activePart.finished = false;
         return;
     }
+    finishOverlayActiveThinkingEntries(entry);
     const nextKey = `${safePartIndex}:${entry.thinkingSequence++}`;
     entry.thinkingActiveByPart?.set(String(safePartIndex), nextKey);
     entry.parts.push({
@@ -2281,7 +2329,8 @@ function updateOverlayThinkingText(runId, instanceId, roleId, label, partIndex, 
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
     const safePartIndex = Number(partIndex);
-    let part = resolveOverlayThinkingPart(entry, safePartIndex);
+    const activeKey = entry.thinkingActiveByPart?.get(String(safePartIndex));
+    let part = activeKey ? findOverlayThinkingPartByKey(entry, activeKey) : null;
     if (!part) {
         startOverlayThinking(runId, instanceId, roleId, label, safePartIndex);
         part = resolveOverlayThinkingPart(entry, safePartIndex);
@@ -2311,6 +2360,7 @@ function finishOverlayThinking(runId, instanceId, roleId, partIndex) {
 function updateOverlayToolCall(runId, instanceId, roleId, label, toolPart) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    finishOverlayActiveThinkingEntries(entry);
     closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(
         entry,
@@ -2332,6 +2382,7 @@ function updateOverlayToolCall(runId, instanceId, roleId, label, toolPart) {
 function updateOverlayToolResult(runId, instanceId, roleId, label, toolName, toolCallId, result, isError) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry) return;
+    finishOverlayActiveThinkingEntries(entry);
     closeOverlayTextSegmentEntry(entry);
     const part = upsertOverlayToolPart(entry, toolName, toolCallId);
     part.status = isError ? 'error' : 'completed';
@@ -2371,6 +2422,7 @@ function updateOverlayToolApproval(runId, instanceId, roleId, toolName, payload,
 function appendOverlayInjection(runId, instanceId, roleId, label, payload) {
     const entry = ensureOverlayEntry(runId, instanceId, roleId, label);
     if (!entry || !payload || typeof payload !== 'object') return;
+    finishOverlayActiveThinkingEntries(entry);
     closeOverlayTextSegmentEntry(entry);
     const normalized = normalizeOverlayInjection(payload);
     if (!normalized.content) return;
@@ -2781,6 +2833,59 @@ function findOverlayThinkingPart(entry, partIndex, options = {}) {
     return fallback;
 }
 
+function finishActiveThinkingEntries(st) {
+    if (!st?.thinkingActiveByPart || !(st.thinkingActiveByPart instanceof Map)) {
+        return;
+    }
+    const activeEntries = Array.from(st.thinkingActiveByPart.entries());
+    activeEntries.forEach(([partIndex, key]) => {
+        const entry = st.thinkingParts?.get?.(key);
+        if (entry && entry.finished !== true) {
+            flushRichTextUpdate(entry.textEl);
+            updateThinkingText(entry.textEl, entry.raw, {
+                streaming: false,
+                runId: st.runId,
+                instanceId: st.instanceId,
+                streamKey: st.streamKey,
+                partIndex: entry.key,
+            });
+            entry.finished = true;
+        }
+        st.thinkingActiveByPart.delete(String(partIndex));
+    });
+}
+
+function finishOverlayActiveThinkingEntries(entry) {
+    if (!entry?.thinkingActiveByPart || !(entry.thinkingActiveByPart instanceof Map)) {
+        return;
+    }
+    Array.from(entry.thinkingActiveByPart.entries()).forEach(([partIndex, key]) => {
+        const part = findOverlayThinkingPartByKey(entry, key)
+            || findOverlayThinkingPart(entry, partIndex, { preferUnfinished: true });
+        if (part && part.kind === 'thinking') {
+            part.finished = true;
+        }
+        entry.thinkingActiveByPart.delete(String(partIndex));
+    });
+}
+
+function isOverlayThinkingPartActive(entry, part) {
+    if (!entry || !part || part.kind !== 'thinking') {
+        return false;
+    }
+    const activeByPart = entry.thinkingActiveByPart;
+    if (!(activeByPart instanceof Map)) {
+        return part.finished !== true;
+    }
+    const safePartIndex = String(part.part_index ?? '');
+    const activeKey = activeByPart.get(safePartIndex);
+    if (!activeKey) {
+        return false;
+    }
+    const partKey = String(part._key || '');
+    return !partKey || partKey === activeKey;
+}
+
 function findOverlayToolPart(entry, toolName, toolCallId, options = {}) {
     const safeToolCallId = String(toolCallId || '').trim();
     const safeToolName = String(toolName || '').trim();
@@ -2975,7 +3080,7 @@ function normalizedStreamExitCode(value) {
 
 function cloneOverlayEntry(entry) {
     if (!entry) return null;
-    return {
+    const cloned = {
         instanceId: entry.instanceId,
         roleId: entry.roleId,
         streamKey: entry.streamKey || '',
@@ -2984,6 +3089,19 @@ function cloneOverlayEntry(entry) {
         textStreaming: entry.textStreaming === true,
         idleCursor: entry.idleCursor === true,
     };
+    Object.defineProperty(cloned, 'thinkingActiveByPart', {
+        value: cloneThinkingActiveByPart(entry.thinkingActiveByPart),
+        enumerable: false,
+        configurable: true,
+    });
+    return cloned;
+}
+
+function cloneThinkingActiveByPart(activeByPart) {
+    if (activeByPart instanceof Map) {
+        return new Map(activeByPart);
+    }
+    return new Map();
 }
 
 function cloneOverlayPart(part) {

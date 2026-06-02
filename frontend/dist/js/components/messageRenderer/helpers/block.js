@@ -34,13 +34,17 @@ export function renderMessageBlock(container, role, label, parts = [], options =
     const wrapper = document.createElement('div');
     wrapper.className = 'message';
     wrapper.dataset.role = role;
+    wrapper.dataset.roleLabel = safeLabel;
     applyMessageMetadata(wrapper, options);
 
-    const roleClass = roleClassName(role, safeLabel);
-    wrapper.innerHTML = `
+    const headerMarkup = shouldRenderMessageRoleLabel(role, safeLabel, options)
+        ? `
         <div class="msg-header">
-            <span class="msg-role ${roleClass}">${safeLabel.toUpperCase()}</span>
-        </div>
+            <span class="msg-role ${roleClassName(role, safeLabel)}">${safeLabel.toUpperCase()}</span>
+        </div>`
+        : '';
+    wrapper.innerHTML = `
+        ${headerMarkup}
         <div class="msg-content"></div>
     `;
     container.appendChild(wrapper);
@@ -202,6 +206,27 @@ export function labelFromRole(role, roleId, instanceId) {
     return instanceId ? instanceId.slice(0, 8) : 'Agent';
 }
 
+export function shouldRenderMessageRoleLabel(role, label, options = {}) {
+    if (!String(label || '').trim()) {
+        return false;
+    }
+    if (String(role || '').trim() === 'user') {
+        return true;
+    }
+    return !isMainAgentVisibleLabel(label, options.roleId);
+}
+
+function isMainAgentVisibleLabel(label, roleId) {
+    if (isMainAgentRoleId(roleId)) {
+        return true;
+    }
+    const normalized = String(label || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '');
+    return normalized === 'mainagent';
+}
+
 export function scrollBottom(container) {
     if (!container) return;
     const threshold = 80;
@@ -269,7 +294,10 @@ export function updateThinkingText(textEl, text, options = {}) {
         bindThinkingOpenState(thinkingBlock, options);
         const liveEl = thinkingBlock.querySelector('.thinking-live');
         if (liveEl) {
-            liveEl.style.display = options.streaming === true ? 'inline-flex' : 'none';
+            const isStreaming = options.streaming === true;
+            liveEl.hidden = !isStreaming;
+            liveEl.textContent = isStreaming ? 'Live' : '';
+            liveEl.style.display = isStreaming ? 'inline-flex' : 'none';
         }
         thinkingBlock.dataset.streaming = options.streaming === true ? 'true' : 'false';
         syncThinkingOpenFromState(thinkingBlock, options.streaming === true);
@@ -484,7 +512,7 @@ function ensureThinkingBlock(contentEl, options = {}) {
     detailsEl.innerHTML = `
         <summary class="thinking-summary">
             <span class="thinking-label">Thinking</span>
-            <span class="thinking-live" style="display:${options.streaming === true ? 'inline-flex' : 'none'};">Live</span>
+            <span class="thinking-live" style="display:${options.streaming === true ? 'inline-flex' : 'none'};"${options.streaming === true ? '' : ' hidden'}>${options.streaming === true ? 'Live' : ''}</span>
         </summary>
         <div class="thinking-body">
             <div class="msg-text thinking-text"></div>

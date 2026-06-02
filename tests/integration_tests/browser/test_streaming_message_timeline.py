@@ -629,6 +629,128 @@ def test_visible_subagent_live_overlay_survives_switch_back_in_browser(
     assert payload["ordered"] is True
 
 
+def test_subagent_render_bind_continues_stream_after_switch_back_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderSubagentRenderBindSwitchBack()
+        """
+    )
+
+    assert payload["messageCount"] == 1
+    assert payload["thinkingBlockCount"] == 1
+    assert payload["toolBlockCount"] == 1
+    assert payload["textBlocks"] == ["VISIBLE_TEXT_AFTER_SWITCH"]
+    assert payload["completedToolCount"] == 1
+    assert payload["roleLabels"] == ["Explorer - 4de494db"]
+
+
+def test_stream_rebind_does_not_append_agent_delta_to_user_prompt_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderStreamRebindSkipsUserPrompt()
+        """
+    )
+
+    assert payload["messageCount"] == 2
+    assert payload["userText"] == "TASK_PROMPT"
+    assert payload["modelText"] == "AGENT_DELTA"
+
+
+def test_subagent_switch_back_keeps_thinking_order_and_text_separate_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderSubagentSwitchBackThinkingOrder()
+        """
+    )
+
+    assert payload["beforeThinkingFinished"] == [True, True, False]
+    assert payload["beforeActiveThinkingParts"] == ["2"]
+    assert payload["parts"] == [
+        "thinking:THINK_A",
+        "tool:call-a",
+        "text:TEXT_A",
+        "thinking:THINK_B",
+        "tool:call-b",
+        "text:TEXT_B",
+        "thinking:THINK_LIVE",
+        "text:_TAIL",
+    ]
+    assert payload["thinkingTexts"] == ["THINK_A", "THINK_B", "THINK_LIVE"]
+    assert payload["textInsideThinking"] == []
+    assert payload["afterActiveThinkingParts"] == []
+
+
+def test_subagent_switch_back_drops_stale_overlay_thinking_gaps_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderSubagentSwitchBackWithoutPersistedThinking()
+        """
+    )
+
+    assert payload["beforeThinkingFinished"] == [True, True, False]
+    assert payload["beforeActiveThinkingParts"] == ["2"]
+    assert payload["parts"] == [
+        "tool:call-a",
+        "text:TEXT_A",
+        "tool:call-b",
+        "text:TEXT_B",
+        "thinking:THINK_LIVE",
+        "text:_TAIL",
+    ]
+    assert payload["thinkingTexts"] == ["THINK_LIVE"]
+    assert payload["textInsideThinking"] == []
+    assert payload["afterActiveThinkingParts"] == []
+
+
+def test_running_subagent_history_uses_stream_like_compact_dom_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderRunningSubagentHistoryCompaction()
+        """
+    )
+
+    assert payload["messageCount"] == 1
+    assert payload["groupCount"] == 0
+    assert payload["parts"] == [
+        "text:I'll systematically explore the plugin system.",
+        "tool:read_file",
+        "text:Excellent. Now let me read all the core plugin source files.",
+        "tool:read_file",
+        "text:Let me read the remaining files.",
+        "tool:read_file",
+    ]
+
+
 def test_terminal_completed_overlay_does_not_block_processed_group_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -698,8 +820,99 @@ def test_terminal_history_with_tool_history_and_final_output_renders_once_in_bro
 
     assert payload["occurrences"] == 1
     assert payload["groupCount"] == 1
-    assert payload["messageCount"] == 2
+    assert payload["messageCount"] == 1
+    assert payload["flowCount"] == 0
+    assert payload["groupBodyClass"] == "tool-group-body msg-content"
+    assert payload["toolBlockCount"] == 1
     assert "terminal projected final answer" in payload["text"]
+
+
+def test_live_terminal_finalize_matches_history_processed_transcript_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderLiveTerminalAndHistoryParity()
+        """
+    )
+
+    assert payload["live"] == payload["history"]
+    assert payload["live"]["groupCount"] == 1
+    assert payload["live"]["messageCount"] == 1
+    assert payload["live"]["nestedMessageCount"] == 0
+    assert payload["live"]["groupBodyClass"] == "tool-group-body msg-content"
+    assert payload["live"]["groupParts"] == [
+        "tool:search",
+        "tool:read_file",
+        "text:Now let me read the remaining key files for the full picture.",
+        "tool:read_file",
+        "tool-group-final-divider",
+    ]
+    assert payload["live"]["finalTexts"] == ["final answer"]
+
+
+def test_subagent_live_terminal_matches_history_processed_transcript_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderSubagentTerminalParity()
+        """
+    )
+
+    assert payload["live"] == payload["history"]
+    assert payload["live"]["groupCount"] == 1
+    assert payload["live"]["messageCount"] == 1
+    assert payload["live"]["nestedMessageCount"] == 0
+    assert payload["live"]["groupBodyClass"] == "tool-group-body msg-content"
+    assert payload["live"]["groupParts"] == [
+        "tool:read_file",
+        "text:Let me read the remaining key files.",
+        "tool:read_file",
+        "tool-group-final-divider",
+    ]
+    assert payload["live"]["finalTexts"] == ["subagent final answer"]
+
+
+def test_completed_subagent_status_only_history_uses_processed_transcript_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderCompletedSubagentStatusOnlyTranscript()
+        """
+    )
+
+    assert payload["groupCount"] == 1
+    assert payload["messageCount"] == 2
+    assert payload["nestedMessageCount"] == 0
+    assert payload["childClasses"] == [
+        "message",
+        "tool-group",
+        "message",
+    ]
+    assert payload["groupParts"] == [
+        "thinking-block",
+        "text:Let me inspect first.",
+        "tool:read_file",
+        "text:Next file.",
+        "tool:read_file",
+        "tool-group-final-divider",
+    ]
+    assert payload["finalTexts"] == ["final response"]
+    assert payload["containsLiveLabel"] is False
 
 
 def test_terminal_rounds_collapse_only_when_final_output_is_projected_in_browser(
@@ -777,6 +990,7 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
       appendThinkingChunk,
       appendToolCallBlock,
       applyStreamOverlayEvent,
+      bindStreamOverlayToContainer,
       clearAllStreamState,
       clearRunStreamState,
       finalizeStream,
@@ -784,6 +998,7 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
       getCoordinatorStreamOverlay,
       getInstanceStreamOverlay,
       getOrCreateStreamBlock,
+      reconcileTerminalRunStreamState,
       startThinkingBlock,
       updateToolResult,
     }} from {json.dumps(stream_module)};
@@ -831,6 +1046,35 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
         counts.set(key, (counts.get(key) || 0) + 1);
       }});
       return Math.max(0, ...Array.from(counts.values()));
+    }}
+
+    function serializeProcessedTranscript(container) {{
+      const groupBody = container.querySelector('.tool-group-body');
+      const groupParts = Array.from(groupBody?.children || []).map(child => {{
+        if (child.classList.contains('tool-block')) {{
+          return `tool:${{child.dataset.toolName || ''}}`;
+        }}
+        if (child.classList.contains('msg-text')) {{
+          return `text:${{child.textContent.replace(/\\s+/g, ' ').trim()}}`;
+        }}
+        return child.className || child.tagName.toLowerCase();
+      }});
+      const finalTexts = Array.from(container.querySelectorAll(':scope > .message'))
+        .filter(message => String(message.dataset.role || '').trim() !== 'user')
+        .flatMap(message => Array.from(message.querySelectorAll('.msg-text')))
+        .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+        .filter(Boolean);
+      return {{
+        childClasses: Array.from(container.children)
+          .filter(child => child.classList.contains('tool-group') || child.classList.contains('message'))
+          .map(child => child.className),
+        groupBodyClass: groupBody?.className || '',
+        groupCount: container.querySelectorAll('.tool-group').length,
+        messageCount: container.querySelectorAll(':scope > .message').length,
+        nestedMessageCount: container.querySelectorAll('.tool-group-body > .message').length,
+        groupParts,
+        finalTexts,
+      }};
     }}
 
     function waitForAnimationFrame() {{
@@ -2405,6 +2649,491 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
         }};
       }},
 
+      renderSubagentRenderBindSwitchBack() {{
+        clearAllStreamState();
+        const firstContainer = makeContainer('subagent-render-bind-first');
+        const runId = 'subagent_run_render_bind_switch';
+        const instanceId = 'inst-render-bind';
+        const roleId = 'Explorer';
+        const overlayLabel = 'Explorer - 4de494db';
+        const rebindLabel = 'Explorer';
+        getOrCreateStreamBlock(firstContainer, instanceId, roleId, overlayLabel, runId);
+        startThinkingBlock(instanceId, 0, {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: overlayLabel,
+        }});
+        appendThinkingChunk(instanceId, 0, 'VISIBLE_THINK', {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: overlayLabel,
+        }});
+        appendToolCallBlock(
+          firstContainer,
+          instanceId,
+          'read_file',
+          {{ path: 'src/a.py' }},
+          'call-render-bind',
+          {{ runId, roleId, label: overlayLabel }},
+        );
+        appendStreamChunk(instanceId, 'VISIBLE_TEXT', runId, roleId, overlayLabel);
+
+        const rebound = makeContainer('subagent-render-bind-rebound');
+        rebound.className = 'subagent-session-body';
+        rebound.dataset.runId = runId;
+        rebound.dataset.instanceId = instanceId;
+        renderHistory(rebound, [], {{
+          runId,
+          runStatus: 'running',
+          timelineView: 'normal-child-session',
+          streamOverlayEntry: getInstanceStreamOverlay(runId, instanceId),
+          canonicalStreamKey: instanceId,
+          separateOverlayMessage: true,
+        }});
+        bindStreamOverlayToContainer(rebound, {{
+          instanceId,
+          roleId,
+          label: rebindLabel,
+          runId,
+        }});
+        appendStreamChunk(instanceId, '_AFTER_SWITCH', runId, roleId, rebindLabel);
+        updateToolResult(instanceId, 'read_file', {{ ok: true }}, false, 'call-render-bind', {{
+          runId,
+          roleId,
+          label: rebindLabel,
+          container: rebound,
+        }});
+
+        return {{
+          messageCount: rebound.querySelectorAll(':scope > .message').length,
+          thinkingBlockCount: rebound.querySelectorAll('.thinking-block').length,
+          toolBlockCount: rebound.querySelectorAll('.tool-block').length,
+          completedToolCount: rebound.querySelectorAll('.tool-block[data-status="completed"]').length,
+          roleLabels: Array.from(rebound.querySelectorAll(':scope > .message'))
+            .map(item => item.dataset.roleLabel || ''),
+          textBlocks: Array.from(rebound.querySelectorAll('.msg-text'))
+            .filter(item => !item.closest('.thinking-block'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+        }};
+      }},
+
+      async renderStreamRebindSkipsUserPrompt() {{
+        clearAllStreamState();
+        const container = makeContainer('stream-rebind-user-prompt');
+        const runId = 'run_rebind_user_prompt';
+        renderHistory(container, [
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'text', content: 'TASK_PROMPT' }}] }},
+          }},
+        ], {{
+          runId,
+          runStatus: 'running',
+          timelineView: 'normal-child-session',
+        }});
+        const userMessage = container.querySelector(':scope > .message[data-role="user"]');
+        userMessage.dataset.runId = runId;
+        userMessage.dataset.streamKey = 'primary';
+        getOrCreateStreamBlock(container, '', '', 'Explorer', runId);
+        appendStreamChunk('', 'AGENT_DELTA', runId, '', 'Explorer');
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const modelMessage = container.querySelector(':scope > .message[data-role="model"]');
+        return {{
+          messageCount: container.querySelectorAll(':scope > .message').length,
+          userText: userMessage?.querySelector('.msg-content')?.textContent.replace(/\\s+/g, ' ').trim(),
+          modelText: modelMessage?.querySelector('.msg-content')?.textContent.replace(/\\s+/g, ' ').trim(),
+        }};
+      }},
+
+      async renderSubagentSwitchBackThinkingOrder() {{
+        clearAllStreamState();
+        const firstContainer = makeContainer('subagent-thinking-order-first');
+        const runId = 'subagent_run_thinking_order_switch';
+        const instanceId = 'inst-thinking-order';
+        const roleId = 'Explorer';
+        getOrCreateStreamBlock(firstContainer, instanceId, roleId, 'Explorer', runId);
+        startThinkingBlock(instanceId, 0, {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendThinkingChunk(instanceId, 0, 'THINK_A', {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendToolCallBlock(
+          firstContainer,
+          instanceId,
+          'read_file',
+          {{ path: 'a.py' }},
+          'call-a',
+          {{ runId, roleId, label: 'Explorer' }},
+        );
+        appendStreamChunk(instanceId, 'TEXT_A', runId, roleId, 'Explorer');
+        startThinkingBlock(instanceId, 1, {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendThinkingChunk(instanceId, 1, 'THINK_B', {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendToolCallBlock(
+          firstContainer,
+          instanceId,
+          'read_file',
+          {{ path: 'b.py' }},
+          'call-b',
+          {{ runId, roleId, label: 'Explorer' }},
+        );
+        appendStreamChunk(instanceId, 'TEXT_B', runId, roleId, 'Explorer');
+        startThinkingBlock(instanceId, 2, {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendThinkingChunk(instanceId, 2, 'THINK_LIVE', {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+
+        const beforeOverlay = getInstanceStreamOverlay(runId, instanceId);
+        const rebound = makeContainer('subagent-thinking-order-rebound');
+        rebound.className = 'subagent-session-body';
+        rebound.dataset.runId = runId;
+        rebound.dataset.instanceId = instanceId;
+        renderHistory(rebound, [
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'thinking', content: 'THINK_A', part_index: 0 }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-a', args: {{ path: 'a.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-a', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'text', content: 'TEXT_A' }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'thinking', content: 'THINK_B', part_index: 1 }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-b', args: {{ path: 'b.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-b', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'text', content: 'TEXT_B' }}] }},
+          }},
+        ], {{
+          runId,
+          runStatus: 'running',
+          timelineView: 'normal-child-session',
+          streamOverlayEntry: beforeOverlay,
+          canonicalStreamKey: instanceId,
+          separateOverlayMessage: true,
+        }});
+        bindStreamOverlayToContainer(rebound, {{
+          instanceId,
+          roleId,
+          label: 'Explorer',
+          runId,
+        }});
+        appendStreamChunk(instanceId, '_TAIL', runId, roleId, 'Explorer');
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const content = rebound.querySelector(':scope > .message .msg-content');
+        const parts = Array.from(content?.children || []).map(child => {{
+          if (child.classList.contains('thinking-block')) {{
+            return `thinking:${{child.querySelector('.thinking-text')?.textContent.replace(/\\s+/g, ' ').trim() || ''}}`;
+          }}
+          if (child.classList.contains('tool-block')) {{
+            return `tool:${{child.dataset.toolCallId || ''}}`;
+          }}
+          if (child.classList.contains('msg-text')) {{
+            return `text:${{child.textContent.replace(/\\s+/g, ' ').trim()}}`;
+          }}
+          return child.className || child.tagName.toLowerCase();
+        }}).filter(Boolean);
+        const afterOverlay = getInstanceStreamOverlay(runId, instanceId);
+        return {{
+          beforeThinkingFinished: (beforeOverlay?.parts || [])
+            .filter(part => part.kind === 'thinking')
+            .map(part => part.finished === true),
+          beforeActiveThinkingParts: Array.from(beforeOverlay?.thinkingActiveByPart?.keys?.() || []),
+          afterActiveThinkingParts: Array.from(afterOverlay?.thinkingActiveByPart?.keys?.() || []),
+          parts,
+          thinkingTexts: Array.from(rebound.querySelectorAll('.thinking-block .thinking-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          textInsideThinking: Array.from(rebound.querySelectorAll('.thinking-block .msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(text => text.includes('TEXT') || text.includes('_TAIL')),
+        }};
+      }},
+
+      async renderSubagentSwitchBackWithoutPersistedThinking() {{
+        clearAllStreamState();
+        const firstContainer = makeContainer('subagent-stale-thinking-first');
+        const runId = 'subagent_run_stale_thinking_switch';
+        const instanceId = 'inst-stale-thinking';
+        const roleId = 'Explorer';
+        getOrCreateStreamBlock(firstContainer, instanceId, roleId, 'Explorer', runId);
+        startThinkingBlock(instanceId, 0, {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendThinkingChunk(instanceId, 0, 'THINK_A', {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendToolCallBlock(
+          firstContainer,
+          instanceId,
+          'read_file',
+          {{ path: 'a.py' }},
+          'call-a',
+          {{ runId, roleId, label: 'Explorer' }},
+        );
+        appendStreamChunk(instanceId, 'TEXT_A', runId, roleId, 'Explorer');
+        startThinkingBlock(instanceId, 1, {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendThinkingChunk(instanceId, 1, 'THINK_B', {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendToolCallBlock(
+          firstContainer,
+          instanceId,
+          'read_file',
+          {{ path: 'b.py' }},
+          'call-b',
+          {{ runId, roleId, label: 'Explorer' }},
+        );
+        appendStreamChunk(instanceId, 'TEXT_B', runId, roleId, 'Explorer');
+        startThinkingBlock(instanceId, 2, {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+        appendThinkingChunk(instanceId, 2, 'THINK_LIVE', {{
+          container: firstContainer,
+          runId,
+          roleId,
+          label: 'Explorer',
+        }});
+
+        const beforeOverlay = getInstanceStreamOverlay(runId, instanceId);
+        const rebound = makeContainer('subagent-stale-thinking-rebound');
+        rebound.className = 'subagent-session-body';
+        rebound.dataset.runId = runId;
+        rebound.dataset.instanceId = instanceId;
+        renderHistory(rebound, [
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-a', args: {{ path: 'a.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-a', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'text', content: 'TEXT_A' }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-b', args: {{ path: 'b.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-b', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'text', content: 'TEXT_B' }}] }},
+          }},
+        ], {{
+          runId,
+          runStatus: 'running',
+          timelineView: 'normal-child-session',
+          streamOverlayEntry: beforeOverlay,
+          canonicalStreamKey: instanceId,
+          separateOverlayMessage: true,
+        }});
+        bindStreamOverlayToContainer(rebound, {{
+          instanceId,
+          roleId,
+          label: 'Explorer',
+          runId,
+        }});
+        appendStreamChunk(instanceId, '_TAIL', runId, roleId, 'Explorer');
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const content = rebound.querySelector(':scope > .message .msg-content');
+        const parts = Array.from(content?.children || []).map(child => {{
+          if (child.classList.contains('thinking-block')) {{
+            return `thinking:${{child.querySelector('.thinking-text')?.textContent.replace(/\\s+/g, ' ').trim() || ''}}`;
+          }}
+          if (child.classList.contains('tool-block')) {{
+            return `tool:${{child.dataset.toolCallId || ''}}`;
+          }}
+          if (child.classList.contains('msg-text')) {{
+            return `text:${{child.textContent.replace(/\\s+/g, ' ').trim()}}`;
+          }}
+          return child.className || child.tagName.toLowerCase();
+        }}).filter(Boolean);
+        const afterOverlay = getInstanceStreamOverlay(runId, instanceId);
+        return {{
+          beforeThinkingFinished: (beforeOverlay?.parts || [])
+            .filter(part => part.kind === 'thinking')
+            .map(part => part.finished === true),
+          beforeActiveThinkingParts: Array.from(beforeOverlay?.thinkingActiveByPart?.keys?.() || []),
+          afterActiveThinkingParts: Array.from(afterOverlay?.thinkingActiveByPart?.keys?.() || []),
+          parts,
+          thinkingTexts: Array.from(rebound.querySelectorAll('.thinking-block .thinking-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(Boolean),
+          textInsideThinking: Array.from(rebound.querySelectorAll('.thinking-block .msg-text'))
+            .map(item => item.textContent.replace(/\\s+/g, ' ').trim())
+            .filter(text => text.includes('TEXT') || text.includes('_TAIL')),
+        }};
+      }},
+
+      renderRunningSubagentHistoryCompaction() {{
+        clearAllStreamState();
+        const runId = 'subagent_run_running_history_compaction';
+        const instanceId = 'inst-running-history';
+        const roleId = 'Writer';
+        const container = makeContainer('subagent-running-history-compaction');
+        container.className = 'subagent-session-body';
+        container.dataset.runId = runId;
+        container.dataset.instanceId = instanceId;
+        renderHistory(container, [
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'text', content: "I'll systematically explore the plugin system." }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-run-1', args: {{ path: 'src/relay_teams/plugins' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-run-1', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'text', content: 'Excellent. Now let me read all the core plugin source files.' }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-run-2', args: {{ path: 'src/relay_teams/plugins/__init__.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-run-2', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'text', content: 'Let me read the remaining files.' }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-run-3', args: {{ path: 'src/relay_teams/plugins/config_manager.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-run-3', content: {{ ok: true }} }}] }},
+          }},
+        ], {{
+          runId,
+          runStatus: 'running',
+          timelineView: 'normal-child-session',
+          canonicalStreamKey: instanceId,
+          streamOverlayEntry: null,
+        }});
+        const content = container.querySelector(':scope > .message .msg-content');
+        const parts = Array.from(content?.children || []).map(child => {{
+          if (child.classList.contains('tool-block')) {{
+            return `tool:${{child.dataset.toolName || ''}}`;
+          }}
+          if (child.classList.contains('msg-text')) {{
+            return `text:${{child.textContent.replace(/\\s+/g, ' ').trim()}}`;
+          }}
+          return child.className || child.tagName.toLowerCase();
+        }});
+        return {{
+          groupCount: container.querySelectorAll('.tool-group').length,
+          messageCount: container.querySelectorAll(':scope > .message').length,
+          parts,
+        }};
+      }},
+
       renderTerminalCollapseWithCompletedOverlay() {{
         clearAllStreamState();
         const container = makeContainer('terminal-collapse');
@@ -2441,6 +3170,287 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
         return {{
           groupCount: container.querySelectorAll('.tool-group').length,
           groupToolCount: container.querySelectorAll('.tool-group .tool-block').length,
+        }};
+      }},
+
+      renderLiveTerminalAndHistoryParity() {{
+        clearAllStreamState();
+        const runId = 'run-live-history-parity';
+        const roleId = 'main-role';
+        const live = makeContainer('live-history-parity-live');
+        live.className = 'session-round-section';
+        live.dataset.runId = runId;
+        live.dataset.roundCreatedAt = '2026-04-25T12:00:00Z';
+        getOrCreateStreamBlock(live, 'primary', roleId, 'Main Agent', runId);
+        appendToolCallBlock(live, 'primary', 'search', {{ q: 'plugin' }}, 'call-1', {{
+          runId,
+          roleId,
+          label: 'Main Agent',
+        }});
+        updateToolResult('primary', 'search', {{ ok: true }}, false, 'call-1', {{
+          runId,
+          roleId,
+          label: 'Main Agent',
+          container: live,
+        }});
+        appendToolCallBlock(live, 'primary', 'read_file', {{ path: 'src/a.py' }}, 'call-2', {{
+          runId,
+          roleId,
+          label: 'Main Agent',
+        }});
+        updateToolResult('primary', 'read_file', {{ ok: true }}, false, 'call-2', {{
+          runId,
+          roleId,
+          label: 'Main Agent',
+          container: live,
+        }});
+        appendStreamChunk(
+          'primary',
+          'Now let me read the remaining key files for the full picture.',
+          runId,
+          roleId,
+          'Main Agent',
+        );
+        appendToolCallBlock(live, 'primary', 'read_file', {{ path: 'src/b.py' }}, 'call-3', {{
+          runId,
+          roleId,
+          label: 'Main Agent',
+        }});
+        updateToolResult('primary', 'read_file', {{ ok: true }}, false, 'call-3', {{
+          runId,
+          roleId,
+          label: 'Main Agent',
+          container: live,
+        }});
+        appendStreamChunk('primary', 'final answer', runId, roleId, 'Main Agent');
+        reconcileTerminalRunStreamState(runId);
+
+        const history = makeContainer('live-history-parity-history');
+        history.className = 'session-round-section';
+        history.dataset.runId = runId;
+        history.dataset.roundCreatedAt = '2026-04-25T12:00:00Z';
+        renderHistory(history, [
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: 'primary',
+            created_at: '2026-04-25T12:00:01Z',
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'search', tool_call_id: 'call-1', args: {{ q: 'plugin' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            created_at: '2026-04-25T12:00:02Z',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'search', tool_call_id: 'call-1', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: 'primary',
+            created_at: '2026-04-25T12:00:03Z',
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-2', args: {{ path: 'src/a.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            created_at: '2026-04-25T12:00:04Z',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-2', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: 'primary',
+            created_at: '2026-04-25T12:00:05Z',
+            message: {{ parts: [{{ part_kind: 'text', content: 'Now let me read the remaining key files for the full picture.' }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: 'primary',
+            created_at: '2026-04-25T12:00:06Z',
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-3', args: {{ path: 'src/b.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            created_at: '2026-04-25T12:00:07Z',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-3', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: 'primary',
+            created_at: '2026-04-25T12:00:08Z',
+            message: {{ parts: [{{ part_kind: 'text', content: 'final answer' }}] }},
+          }},
+        ], {{
+          runId,
+          runStatus: 'completed',
+          hasFinalOutput: true,
+          timelineView: 'main',
+          canonicalStreamKey: 'primary',
+          streamOverlayEntry: null,
+        }});
+
+        return {{
+          live: serializeProcessedTranscript(live),
+          history: serializeProcessedTranscript(history),
+        }};
+      }},
+
+      renderSubagentTerminalParity() {{
+        clearAllStreamState();
+        const runId = 'subagent_run_terminal_parity';
+        const instanceId = 'inst-terminal-parity';
+        const roleId = 'Writer';
+        const live = makeContainer('subagent-terminal-parity-live');
+        live.className = 'subagent-session-body';
+        live.dataset.runId = runId;
+        live.dataset.instanceId = instanceId;
+        live.dataset.roundCreatedAt = '2026-04-25T12:00:00Z';
+        getOrCreateStreamBlock(live, instanceId, roleId, 'Writer', runId);
+        appendToolCallBlock(live, instanceId, 'read_file', {{ path: 'src/a.py' }}, 'call-sub-1', {{
+          runId,
+          roleId,
+          label: 'Writer',
+        }});
+        updateToolResult(instanceId, 'read_file', {{ ok: true }}, false, 'call-sub-1', {{
+          runId,
+          roleId,
+          label: 'Writer',
+          container: live,
+        }});
+        appendStreamChunk(
+          instanceId,
+          'Let me read the remaining key files.',
+          runId,
+          roleId,
+          'Writer',
+        );
+        appendToolCallBlock(live, instanceId, 'read_file', {{ path: 'src/b.py' }}, 'call-sub-2', {{
+          runId,
+          roleId,
+          label: 'Writer',
+        }});
+        updateToolResult(instanceId, 'read_file', {{ ok: true }}, false, 'call-sub-2', {{
+          runId,
+          roleId,
+          label: 'Writer',
+          container: live,
+        }});
+        appendStreamChunk(instanceId, 'subagent final answer', runId, roleId, 'Writer');
+        reconcileTerminalRunStreamState(runId);
+
+        const history = makeContainer('subagent-terminal-parity-history');
+        history.className = 'subagent-session-body';
+        history.dataset.runId = runId;
+        history.dataset.instanceId = instanceId;
+        history.dataset.roundCreatedAt = '2026-04-25T12:00:00Z';
+        renderHistory(history, [
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: '2026-04-25T12:00:01Z',
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-sub-1', args: {{ path: 'src/a.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            created_at: '2026-04-25T12:00:02Z',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-sub-1', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: '2026-04-25T12:00:03Z',
+            message: {{ parts: [{{ part_kind: 'text', content: 'Let me read the remaining key files.' }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: '2026-04-25T12:00:04Z',
+            message: {{ parts: [{{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-sub-2', args: {{ path: 'src/b.py' }} }}] }},
+          }},
+          {{
+            role: 'user',
+            created_at: '2026-04-25T12:00:05Z',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-sub-2', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: '2026-04-25T12:00:06Z',
+            message: {{ parts: [{{ part_kind: 'text', content: 'subagent final answer' }}] }},
+          }},
+        ], {{
+          runId,
+          runStatus: 'idle',
+          runPhase: 'terminal',
+          timelineView: 'normal-child-session',
+          canonicalStreamKey: instanceId,
+          streamOverlayEntry: null,
+        }});
+
+        return {{
+          live: serializeProcessedTranscript(live),
+          history: serializeProcessedTranscript(history),
+        }};
+      }},
+
+      renderCompletedSubagentStatusOnlyTranscript() {{
+        clearAllStreamState();
+        const runId = 'subagent_run_status_only';
+        const instanceId = 'inst-status-only';
+        const roleId = 'Explorer';
+        const container = makeContainer('subagent-status-only');
+        container.className = 'subagent-session-body';
+        container.dataset.runId = runId;
+        container.dataset.instanceId = instanceId;
+        container.dataset.roundCreatedAt = '2026-04-25T12:00:00Z';
+        renderHistory(container, [
+          {{
+            role: 'user',
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: '2026-04-25T12:00:00Z',
+            message: {{ parts: [{{ part_kind: 'user-prompt', content: 'Explore this area.' }}] }},
+          }},
+          {{
+            role: 'assistant',
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: '2026-04-25T12:00:01Z',
+            message: {{
+              parts: [
+                {{ part_kind: 'thinking', content: 'hidden thought' }},
+                {{ part_kind: 'text', content: 'Let me inspect first.' }},
+                {{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-status-1', args: {{ path: 'src/a.py' }} }},
+                {{ part_kind: 'text', content: 'Next file.' }},
+                {{ part_kind: 'tool-call', tool_name: 'read_file', tool_call_id: 'call-status-2', args: {{ path: 'src/b.py' }} }},
+                {{ part_kind: 'text', content: 'final response' }},
+              ],
+            }},
+          }},
+          {{
+            role: 'user',
+            created_at: '2026-04-25T12:00:02Z',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-status-1', content: {{ ok: true }} }}] }},
+          }},
+          {{
+            role: 'user',
+            created_at: '2026-04-25T12:00:03Z',
+            message: {{ parts: [{{ part_kind: 'tool-return', tool_name: 'read_file', tool_call_id: 'call-status-2', content: {{ ok: true }} }}] }},
+          }},
+        ], {{
+          runId,
+          status: 'completed',
+          timelineView: 'normal-child-session',
+          canonicalStreamKey: instanceId,
+          streamOverlayEntry: null,
+        }});
+        return {{
+          ...serializeProcessedTranscript(container),
+          containsLiveLabel: (container.textContent || '').includes('Live'),
         }};
       }},
 
@@ -2614,6 +3624,9 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
           text: container.textContent || '',
           occurrences: countSubstring(container.textContent || '', 'terminal projected final answer'),
           groupCount: container.querySelectorAll('.tool-group').length,
+          flowCount: container.querySelectorAll('.message-history-flow').length,
+          groupBodyClass: container.querySelector('.tool-group-body')?.className || '',
+          toolBlockCount: container.querySelectorAll('.tool-block').length,
           messageCount: container.querySelectorAll('.message').length,
         }};
       }},

@@ -12,6 +12,7 @@ import {
     applyToolReturn,
     setToolStatus,
     setToolValidationFailureState,
+    shouldRenderMessageRoleLabel,
 } from '../messageRenderer/helpers.js';
 import { syncLastAnswerCopyButton } from '../messageRenderer/messageActions.js';
 import { renderInjectionMarker } from '../messageRenderer/injectionMarker.js';
@@ -28,20 +29,38 @@ export function renderTimelineStream(container, stream, options = {}) {
         wrapper.dataset.streamKey = stream.scope?.streamKey || '';
         wrapper.dataset.runId = stream.scope?.runId || '';
         wrapper.innerHTML = `
-            <div class="msg-header">
-                <span class="msg-role role-agent"></span>
-            </div>
             <div class="msg-content"></div>
         `;
         container.appendChild(wrapper);
     }
-    const roleEl = wrapper.querySelector('.msg-role');
-    if (roleEl) roleEl.textContent = label.toUpperCase();
+    wrapper.dataset.roleLabel = label;
+    syncTimelineRoleHeader(wrapper, label, stream.scope || {});
     const contentEl = wrapper.querySelector('.msg-content');
     if (!contentEl) return wrapper;
     syncParts(contentEl, stream.parts || [], stream.scope || {});
     syncLastAnswerCopyButton(container);
     return wrapper;
+}
+
+function syncTimelineRoleHeader(wrapper, label, scope = {}) {
+    const contentEl = wrapper.querySelector('.msg-content');
+    let header = wrapper.querySelector('.msg-header');
+    if (!shouldRenderMessageRoleLabel('model', label, {
+        roleId: scope.roleId,
+    })) {
+        header?.remove();
+        return;
+    }
+    if (!header) {
+        header = document.createElement('div');
+        header.className = 'msg-header';
+        const roleEl = document.createElement('span');
+        roleEl.className = 'msg-role role-agent';
+        header.appendChild(roleEl);
+        wrapper.insertBefore(header, contentEl || null);
+    }
+    const roleEl = header.querySelector('.msg-role');
+    if (roleEl) roleEl.textContent = label.toUpperCase();
 }
 
 function syncParts(contentEl, parts, scope = {}) {

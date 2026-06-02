@@ -1900,11 +1900,13 @@ function activateRoundSection(section, visibleScore) {
     applyActiveRoundState(nextRound, visibleScore);
 }
 
-function renderRoundSection(round, index) {
+export function renderRoundSection(round, index, options = {}) {
     const section = document.createElement('section');
     section.className = 'session-round-section';
     section.dataset.runId = round.run_id;
-    section.id = roundSectionId(round.run_id);
+    if (options.includeDomId !== false) {
+        section.id = roundSectionId(round.run_id);
+    }
     if (round.created_at) section.dataset.roundCreatedAt = round.created_at;
     if (round.run_started_at) section.dataset.roundStartedAt = round.run_started_at;
     if (round.run_updated_at) section.dataset.roundUpdatedAt = round.run_updated_at;
@@ -1938,7 +1940,9 @@ function renderRoundSection(round, index) {
     });
     const coordinatorOverlay = getCoordinatorStreamOverlay(round.run_id);
     const primaryRoleLabel = getRunPrimaryRoleLabel(round.run_id);
-    const isLatestRound = index === roundsState.currentRounds.length - 1;
+    const isLatestRound = Object.prototype.hasOwnProperty.call(options, 'isLatestRound')
+        ? options.isLatestRound === true
+        : index === roundsState.currentRounds.length - 1;
 
     const mainMessages = mergeRoundMessagesAndInjectionMessages(
         round.coordinator_messages || [],

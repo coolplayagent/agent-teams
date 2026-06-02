@@ -5,6 +5,8 @@
 export {
     renderMessageBlock,
     renderHistoricalMessageList,
+    formatElapsed,
+    normalizeProcessedTranscript,
     applyTimelineAction,
     applyRunEventToTimeline,
     clearTimelineRun,

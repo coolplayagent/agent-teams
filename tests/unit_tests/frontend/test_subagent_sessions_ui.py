@@ -16,6 +16,8 @@ def test_subagent_session_streaming_layout_is_stable() -> None:
     assert "scrollbar-gutter: stable;" in css_text
     assert ".subagent-session-body .message" in css_text
     assert "animation: none;" in css_text
+    body_rule = css_text.split(".subagent-session-body {", 1)[1].split("}", 1)[0]
+    assert "gap:" not in body_rule
 
 
 def test_live_subagent_open_is_guarded_after_session_switch_race() -> None:
@@ -338,7 +340,7 @@ console.log(JSON.stringify({
             "sessionId": "session-1",
             "instanceId": "inst-sub-1",
             "runId": "subagent_run_1",
-            "overlayMode": "separate",
+            "overlayMode": "render-bind",
             "status": "running",
             "runStatus": "running",
             "runPhase": None,

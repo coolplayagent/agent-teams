@@ -5,6 +5,7 @@
 }
 
 #input-container.is-new-session-draft-composer {
+    --new-session-action-rail-space: 312px;
     position: relative;
     z-index: 4;
     width: 100%;
@@ -19,6 +20,8 @@
 
 #input-container.is-new-session-draft-composer .input-wrapper {
     position: relative;
+    width: 100%;
+    box-sizing: border-box;
     min-height: clamp(148px, 20vh, 230px);
     border-color: #d9e0e5;
     border-radius: 10px;
@@ -26,8 +29,12 @@
 }
 
 #input-container.is-new-session-draft-composer #prompt-input {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    max-width: 100%;
     min-height: clamp(148px, 20vh, 230px);
-    padding: 22px 420px 64px 22px;
+    padding: 22px var(--new-session-action-rail-space) 76px 22px;
     font-size: clamp(15px, 0.9vw, 18px);
     line-height: 1.55;
 }
@@ -67,6 +74,19 @@
     width: auto;
     min-width: 126px;
     height: 46px;
+}
+
+#input-container.is-new-session-draft-composer #stop-btn,
+#input-container.is-new-session-draft-composer #resume-run-btn {
+    width: 46px;
+    min-width: 46px;
+    min-height: 46px;
+    padding: 0;
+}
+
+#input-container.is-new-session-draft-composer #stop-btn span,
+#input-container.is-new-session-draft-composer #resume-run-btn span {
+    display: none;
 }
 
 #input-container.is-new-session-draft-composer .input-controls {
@@ -130,9 +150,7 @@
     }
 
     #input-container.is-new-session-draft-composer #prompt-input {
-        padding-top: 18px;
-        padding-right: 420px;
-        padding-bottom: 58px;
+        padding: 18px var(--new-session-action-rail-space) 70px 18px;
     }
 
     #input-container.is-new-session-draft-composer .input-controls {
@@ -158,6 +176,7 @@
 
 @media (max-width: 720px) {
     #input-container.is-new-session-draft-composer {
+        --new-session-action-rail-space: 204px;
         padding: 14px 16px;
     }
 
@@ -167,7 +186,7 @@
     }
 
     #input-container.is-new-session-draft-composer #prompt-input {
-        padding: 18px 320px 58px 18px;
+        padding: 18px var(--new-session-action-rail-space) 66px 18px;
         font-size: 15px;
     }
 
@@ -190,6 +209,13 @@
         height: 40px;
     }
 
+    #input-container.is-new-session-draft-composer #stop-btn,
+    #input-container.is-new-session-draft-composer #resume-run-btn {
+        width: 40px;
+        min-width: 40px;
+        min-height: 40px;
+    }
+
     #input-container.is-new-session-draft-composer #send-btn .send-btn-label {
         display: none;
     }
@@ -206,11 +232,5 @@
 
     #input-container.is-new-session-draft-composer .composer-mode-toggle[for="yolo-toggle"] {
         margin-left: 0;
-    }
-}
-
-@media (max-width: 640px) {
-    #input-container.is-new-session-draft-composer #prompt-input {
-        padding-right: 204px;
     }
 }

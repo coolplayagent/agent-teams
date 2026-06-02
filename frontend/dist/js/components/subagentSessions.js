@@ -672,7 +672,7 @@ export async function renderActiveSubagentSession(options = {}) {
             userRoleLabel: t('subagent.task_prompt'),
             emptyLabel: t('subagent_session.empty'),
             loadFailedLabel: t('subagent_session.load_failed'),
-            overlayMode: 'separate',
+            overlayMode: 'render-bind',
             requireToolBoundary: options.requireToolBoundary === true,
             replaceWhenReady: true,
             signal: renderController.signal,

@@ -150,9 +150,26 @@ def test_voice_input_button_and_assets_are_linked() -> None:
     assert "bottom: auto;" in interface_css
     assert "padding: 18px 312px 16px 18px;" in interface_css
     assert "padding: 18px 204px 18px 16px;" in interface_css
-    assert "padding: 22px 420px 64px 22px;" in new_session_css
-    assert "padding: 18px 320px 58px 18px;" in new_session_css
-    assert "padding: 22px 22px 64px;" not in new_session_css
+    assert "box-sizing: border-box;" in new_session_css
+    assert "max-width: 100%;" in new_session_css
+    assert "--new-session-action-rail-space: 312px;" in new_session_css
+    assert (
+        "padding: 22px var(--new-session-action-rail-space) 76px 22px;"
+        in new_session_css
+    )
+    assert "--new-session-action-rail-space: 204px;" in new_session_css
+    assert (
+        "padding: 18px var(--new-session-action-rail-space) 66px 18px;"
+        in new_session_css
+    )
+    assert (
+        "#input-container.is-new-session-draft-composer #stop-btn span"
+        in new_session_css
+    )
+    assert "padding: 22px 420px 64px 22px;" not in new_session_css
+    assert "padding: 18px 320px 58px 18px;" not in new_session_css
+    assert "padding-right: 420px;" not in new_session_css
+    assert "padding-right: 204px;" not in new_session_css
     assert "padding: 18px 204px 58px 18px;" not in new_session_css
     assert (
         "#input-container:not(.is-new-session-draft-composer) #prompt-input"

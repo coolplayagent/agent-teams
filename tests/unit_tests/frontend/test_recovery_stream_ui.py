@@ -278,9 +278,10 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
     assert "runId," in history_script
     assert "options," in history_script
     assert (
-        "const isLatestRound = index === roundsState.currentRounds.length - 1;"
+        "Object.prototype.hasOwnProperty.call(options, 'isLatestRound')"
         in timeline_script
     )
+    assert ": index === roundsState.currentRounds.length - 1;" in timeline_script
     assert (
         "export async function loadSessionRounds(sessionId, options = {}) {"
         in timeline_script

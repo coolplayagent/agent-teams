@@ -6,7 +6,7 @@ import {
     hydrateSessionSwitchView,
     hydrateSessionView,
 } from './recovery.js';
-import { state } from '../core/state.js';
+import { canRenderMainSessionView } from '../core/viewGuards.js';
 import { els } from '../utils/dom.js';
 import { t } from '../utils/i18n.js';
 import { sysLog } from '../utils/logger.js';
@@ -42,6 +42,10 @@ export async function restoreMainSessionView(sessionId, { quiet = true } = {}) {
     const restoreController = restoreRequest.controller;
     const restoreToken = restoreRequest.token;
     const restoreSignal = restoreController.signal;
+    if (!canRenderMainSessionView(safeSessionId)) {
+        clearMainSessionRestoreController(restoreController);
+        return null;
+    }
     showMainSessionLoadingPlaceholder(safeSessionId);
     document.dispatchEvent(new CustomEvent('agent-teams-subagent-session-cleared', {
         detail: { sessionId: safeSessionId },
@@ -55,8 +59,7 @@ export async function restoreMainSessionView(sessionId, { quiet = true } = {}) {
         if (
             restoreSignal.aborted
             || !isLatestMainSessionRestore(restoreToken, restoreController, safeSessionId)
-            || String(state.currentSessionId || '').trim() !== safeSessionId
-            || state.activeSubagentSession
+            || !canRenderMainSessionView(safeSessionId)
         ) {
             return null;
         }
@@ -69,6 +72,9 @@ export async function restoreMainSessionView(sessionId, { quiet = true } = {}) {
         return snapshot;
     } catch (error) {
         if (error?.name === 'AbortError') {
+            return null;
+        }
+        if (!canRenderMainSessionView(safeSessionId)) {
             return null;
         }
         showMainSessionLoadFailed(safeSessionId);
@@ -109,12 +115,15 @@ function isLatestMainSessionRestore(token, controller, sessionId) {
         mainSessionRestoreController === controller
         && mainSessionRestoreToken === token
         && !controller.signal.aborted
-        && String(state.currentSessionId || '').trim() === String(sessionId || '').trim()
+        && canRenderMainSessionView(sessionId)
     );
 }
 
 function showMainSessionLoadingPlaceholder(sessionId) {
     if (!els.chatMessages) {
+        return;
+    }
+    if (!canRenderMainSessionView(sessionId)) {
         return;
     }
     els.chatMessages.innerHTML = `
@@ -127,6 +136,9 @@ function showMainSessionLoadingPlaceholder(sessionId) {
 
 function showMainSessionLoadFailed(sessionId) {
     if (!els.chatMessages) {
+        return;
+    }
+    if (!canRenderMainSessionView(sessionId)) {
         return;
     }
     els.chatMessages.innerHTML = `

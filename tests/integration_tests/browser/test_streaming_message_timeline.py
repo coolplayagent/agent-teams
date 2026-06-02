@@ -230,6 +230,59 @@ def test_streamed_tool_args_match_persisted_history_in_browser(
     assert payload["overlayAfterPersist"] is None
 
 
+def test_completed_tool_summaries_render_muted_by_default_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderToolSummaryVisualWeight()
+        """
+    )
+    page.wait_for_timeout(200)
+    payload = page.evaluate(
+        """
+        () => ({
+          completed: window.__streamTimelineHarness.readToolSummaryVisualWeight(
+            'call-muted-tool'
+          ),
+          error: window.__streamTimelineHarness.readToolSummaryVisualWeight(
+            'call-error-tool'
+          ),
+        })
+        """
+    )
+    page.locator(
+        "#tool-summary-visual-weight "
+        '[data-tool-call-id="call-muted-tool"] > .tool-summary'
+    ).hover()
+    page.wait_for_timeout(200)
+    hover_payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.readToolSummaryVisualWeight(
+          'call-muted-tool'
+        )
+        """
+    )
+
+    payload_message = json.dumps(payload, sort_keys=True)
+    hover_payload_message = json.dumps(hover_payload, sort_keys=True)
+
+    assert payload["completed"]["labelOpacity"] < 0.8, payload_message
+    assert payload["completed"]["previewOpacity"] < 0.8, payload_message
+    assert payload["completed"]["statusOpacity"] < 0.5, payload_message
+    assert hover_payload["summaryAlpha"] == 1, hover_payload_message
+    assert hover_payload["labelOpacity"] == 1, hover_payload_message
+    assert hover_payload["previewOpacity"] > 0.9, hover_payload_message
+    assert hover_payload["statusOpacity"] >= 0.8, hover_payload_message
+    assert payload["error"]["labelOpacity"] == 1, payload_message
+    assert payload["error"]["previewOpacity"] == 1, payload_message
+    assert payload["error"]["statusOpacity"] == 1, payload_message
+
+
 def test_session_switching_keeps_stream_overlays_isolated_in_browser(
     browser_page: Page,
     tmp_path: Path,
@@ -955,6 +1008,30 @@ def test_subagent_session_width_stays_stable_in_browser(
     assert payload["afterWithinScroll"] is True
 
 
+def test_subagent_session_suppresses_round_navigator_in_browser(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    _open_harness(page, tmp_path)
+
+    payload = page.evaluate(
+        """
+        () => window.__streamTimelineHarness.renderSubagentRoundNavigatorSuppression()
+        """
+    )
+
+    assert payload["subagentNavVisible"] is False, payload
+    assert payload["subagentHasTimelineClass"] is False, payload
+    assert payload["subagentDensity"] == "", payload
+    assert payload["staleNavVisible"] is False, payload
+    assert payload["baselineWidth"] == payload["staleWidth"], payload
+    assert payload["staleWithinScroll"] is True, payload
+    assert payload["mainNavVisible"] is True, payload
+    assert payload["mainHasTimelineClass"] is True, payload
+    assert payload["mainNodeCount"] == 2, payload
+
+
 def _open_harness(page: Page, tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[3]
     html_path = tmp_path / "stream_timeline_harness.html"
@@ -972,6 +1049,9 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
             f"{base_url}/frontend/dist/js/components/messageTimeline/store.js"
         )
         event_router_module = f"{base_url}/frontend/dist/js/core/eventRouter/index.js"
+        round_navigator_module = (
+            f"{base_url}/frontend/dist/js/components/rounds/navigator.js"
+        )
         html_path.write_text(
             f"""
 <!doctype html>
@@ -979,7 +1059,10 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
 <head>
   <meta charset="utf-8">
   <title>stream timeline harness</title>
+  <link rel="stylesheet" href="{base_url}/frontend/dist/css/base.css">
   <link rel="stylesheet" href="{base_url}/frontend/dist/css/layout.css">
+  <link rel="stylesheet" href="{base_url}/frontend/dist/css/components/tools.css">
+  <link rel="stylesheet" href="{base_url}/frontend/dist/css/components/rounds/navigator.css">
   <link rel="stylesheet" href="{base_url}/frontend/dist/css/components/subagent.css">
 </head>
 <body>
@@ -1015,6 +1098,9 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
     import {{
       routeEvent,
     }} from {json.dumps(event_router_module)};
+    import {{
+      renderRoundNavigator,
+    }} from {json.dumps(round_navigator_module)};
 
     function makeContainer(id) {{
       const container = document.createElement('section');
@@ -1083,7 +1169,36 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
       }});
     }}
 
+    function cssColorAlpha(value) {{
+      const text = String(value || '').trim();
+      const colorAlpha = text.match(/\\/\\s*([0-9.]+)\\)?$/);
+      if (colorAlpha) return Number(colorAlpha[1]);
+      const rgbaAlpha = text.match(/^rgba\\([^,]+,[^,]+,[^,]+,\\s*([0-9.]+)\\)$/);
+      if (rgbaAlpha) return Number(rgbaAlpha[1]);
+      return 1;
+    }}
+
+    function readToolSummaryVisualState(block) {{
+      const summary = block.querySelector('.tool-summary');
+      const label = summary.querySelector('.tool-summary-label');
+      const preview = summary.querySelector('.tool-summary-preview');
+      const status = summary.querySelector('.tool-status');
+      return {{
+        status: block.dataset.status || '',
+        summaryAlpha: cssColorAlpha(getComputedStyle(summary).color),
+        labelOpacity: Number(getComputedStyle(label).opacity),
+        previewOpacity: Number(getComputedStyle(preview).opacity),
+        statusOpacity: Number(getComputedStyle(status).opacity),
+      }};
+    }}
+
     window.__streamTimelineHarness = {{
+      readToolSummaryVisualWeight(toolCallId) {{
+        return readToolSummaryVisualState(
+          document.querySelector(`[data-tool-call-id="${{toolCallId}}"]`),
+        );
+      }},
+
       renderLiveTextAroundToolCalls() {{
         clearAllStreamState();
         const container = makeContainer('live-text-around-tools');
@@ -1177,6 +1292,49 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
               status: part.status || '',
             }})),
           cursorCount: container.querySelectorAll('.streaming-cursor').length,
+        }};
+      }},
+
+      renderToolSummaryVisualWeight() {{
+        clearAllStreamState();
+        const container = makeContainer('tool-summary-visual-weight');
+        const runId = 'run-tool-summary-visual-weight';
+        getOrCreateStreamBlock(container, 'primary', 'Coordinator', 'Main Agent', runId);
+        appendToolCallBlock(
+          container,
+          'primary',
+          'shell',
+          {{ command: 'date' }},
+          'call-muted-tool',
+          {{ runId, roleId: 'Coordinator', label: 'Main Agent' }},
+        );
+        updateToolResult(
+          'primary',
+          'shell',
+          {{ ok: true, output: 'done' }},
+          false,
+          'call-muted-tool',
+          {{ runId, roleId: 'Coordinator', label: 'Main Agent', container }},
+        );
+        appendToolCallBlock(
+          container,
+          'primary',
+          'grep',
+          {{ pattern: 'missing' }},
+          'call-error-tool',
+          {{ runId, roleId: 'Coordinator', label: 'Main Agent' }},
+        );
+        updateToolResult(
+          'primary',
+          'grep',
+          {{ ok: false, error: 'failed' }},
+          true,
+          'call-error-tool',
+          {{ runId, roleId: 'Coordinator', label: 'Main Agent', container }},
+        );
+        return {{
+          completed: readToolSummaryVisualState(container.querySelector('[data-tool-call-id="call-muted-tool"]')),
+          error: readToolSummaryVisualState(container.querySelector('[data-tool-call-id="call-error-tool"]')),
         }};
       }},
 
@@ -3697,9 +3855,105 @@ def _open_harness(page: Page, tmp_path: Path) -> None:
         }};
       }},
 
+      async renderSubagentRoundNavigatorSuppression() {{
+        const existingNav = document.getElementById('round-nav-float');
+        existingNav?.remove?.();
+        document.querySelectorAll('.chat-container').forEach(node => node.remove());
+
+        const shell = document.createElement('main');
+        shell.id = 'chat-container';
+        shell.className = 'chat-container is-subagent-session-active';
+        shell.style.width = '960px';
+        shell.style.height = '420px';
+        shell.style.display = 'flex';
+        shell.style.position = 'relative';
+        const scroll = document.createElement('div');
+        scroll.className = 'chat-scroll';
+        scroll.style.width = '960px';
+        scroll.style.height = '420px';
+        const wrapper = document.createElement('section');
+        wrapper.className = 'subagent-session-view';
+        const body = document.createElement('div');
+        body.className = 'subagent-session-body';
+        wrapper.appendChild(body);
+        scroll.appendChild(wrapper);
+        shell.appendChild(scroll);
+        document.body.appendChild(shell);
+
+        const rounds = [
+          {{
+            run_id: 'round-suppressed-1',
+            intent: 'Suppressed round one',
+            status: 'completed',
+            created_at: '2026-04-25T12:00:00Z',
+          }},
+          {{
+            run_id: 'round-suppressed-2',
+            intent: 'Suppressed round two',
+            status: 'running',
+            created_at: '2026-04-25T12:02:00Z',
+          }},
+        ];
+        const nextFrame = () => new Promise(resolve => {{
+          window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+        }});
+        const isVisible = element => {{
+          if (!element) return false;
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== 'none'
+            && style.visibility !== 'hidden'
+            && Number(rect.width || 0) > 0
+            && Number(rect.height || 0) > 0;
+        }};
+
+        renderRoundNavigator(rounds, () => {{}}, {{ activeRunId: 'round-suppressed-1' }});
+        await nextFrame();
+        const subagentNav = document.getElementById('round-nav-float');
+        const subagentNavVisible = isVisible(subagentNav);
+        const subagentHasTimelineClass = shell.classList.contains('rounds-timeline-visible');
+        const subagentDensity = shell.getAttribute('data-round-timeline-density') || '';
+
+        const baselineWidth = Math.round(wrapper.getBoundingClientRect().width);
+        const staleNav = subagentNav || document.createElement('aside');
+        staleNav.id = 'round-nav-float';
+        staleNav.className = 'round-nav-float round-nav-timeline';
+        staleNav.style.display = 'block';
+        if (!staleNav.parentNode) {{
+          shell.appendChild(staleNav);
+        }}
+        shell.classList.add('rounds-timeline-visible');
+        shell.dataset.roundTimelineDensity = 'full';
+        await nextFrame();
+        const staleWidth = Math.round(wrapper.getBoundingClientRect().width);
+        const scrollWidth = Math.round(scroll.getBoundingClientRect().width);
+        const staleNavVisible = isVisible(staleNav);
+
+        shell.classList.remove('is-subagent-session-active');
+        shell.classList.remove('rounds-timeline-visible');
+        delete shell.dataset.roundTimelineDensity;
+        wrapper.remove();
+        renderRoundNavigator(rounds, () => {{}}, {{ activeRunId: 'round-suppressed-1' }});
+        await nextFrame();
+        const mainNav = document.getElementById('round-nav-float');
+        return {{
+          subagentNavVisible,
+          subagentHasTimelineClass,
+          subagentDensity,
+          staleNavVisible,
+          baselineWidth,
+          staleWidth,
+          staleWithinScroll: staleWidth <= scrollWidth,
+          mainNavVisible: isVisible(mainNav),
+          mainHasTimelineClass: shell.classList.contains('rounds-timeline-visible'),
+          mainNodeCount: mainNav?.querySelectorAll?.('.round-nav-node')?.length || 0,
+        }};
+      }},
+
       measureSubagentSessionWidth() {{
         const shell = document.createElement('main');
         shell.id = 'chat-container';
+        shell.className = 'chat-container';
         shell.style.width = '960px';
         shell.style.height = '400px';
         shell.style.display = 'block';

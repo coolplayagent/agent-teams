@@ -31,6 +31,10 @@ import {
     state,
 } from '../core/state.js';
 import { endStream, resumeRunStream } from '../core/stream.js';
+import {
+    canRenderMainSessionView,
+    hasActiveSubagentSessionFor,
+} from '../core/viewGuards.js';
 import { els } from '../utils/dom.js';
 import { formatMessage, t } from '../utils/i18n.js';
 import { sysLog } from '../utils/logger.js';
@@ -109,7 +113,6 @@ export async function hydrateSessionView(
     throwIfAborted(signal);
 
     startSessionContinuity(safeSessionId);
-    const preserveActiveSubagentView = shouldPreserveActiveSubagentView(safeSessionId);
     const shouldSkipRoundsReload = !!(
         includeRounds
         && state.currentSessionId === safeSessionId
@@ -127,7 +130,7 @@ export async function hydrateSessionView(
         await loadSessionRounds(safeSessionId, {
             forceRefresh: forceRefresh === true,
             priority,
-            render: !preserveActiveSubagentView,
+            render: canRenderMainSessionView(safeSessionId),
             scrollPolicy: roundsScrollPolicy || undefined,
             signal,
         });
@@ -171,7 +174,7 @@ export async function hydrateSessionSwitchView(
     startSessionContinuity(safeSessionId);
     await loadSessionRounds(safeSessionId, {
         priority,
-        render: !shouldPreserveActiveSubagentView(safeSessionId),
+        render: canRenderMainSessionView(safeSessionId),
         scrollPolicy: roundsScrollPolicy || 'session-load',
         signal,
         timelineLoadMode: 'background',
@@ -1162,7 +1165,7 @@ async function runScheduledContinuityRefresh(request) {
     if (canRefreshRounds) {
         await loadSessionRounds(safeSessionId, {
             forceRefresh: request.forceRefresh === true,
-            render: !shouldPreserveActiveSubagentView(safeSessionId),
+            render: canRenderMainSessionView(safeSessionId),
         });
         if (state.currentSessionId !== safeSessionId) return null;
     }
@@ -1189,6 +1192,7 @@ async function ensureAutomaticRecoveryStream(
 ) {
     const safeSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
     if (!safeSessionId || state.currentSessionId !== safeSessionId) return false;
+    if (!canRenderMainSessionView(safeSessionId)) return false;
     const activeRun = snapshot?.activeRun || null;
     if (!shouldAutoAttachRecoveryStream(activeRun)) return false;
 
@@ -1230,7 +1234,7 @@ async function reconcileMissingActiveRun(
 
     endStream({ preserveRunStreamState: true, focusPrompt: false });
     await loadSessionRounds(safeSessionId, {
-        render: !shouldPreserveActiveSubagentView(safeSessionId),
+        render: canRenderMainSessionView(safeSessionId),
     });
     if (state.currentSessionId !== safeSessionId) return false;
 
@@ -1245,14 +1249,7 @@ async function reconcileMissingActiveRun(
 }
 
 function shouldPreserveActiveSubagentView(sessionId = state.currentSessionId) {
-    const active = state.activeSubagentSession;
-    const safeSessionId = String(sessionId || '').trim();
-    return !!(
-        active
-        && typeof active === 'object'
-        && safeSessionId
-        && String(active.sessionId || '').trim() === safeSessionId
-    );
+    return hasActiveSubagentSessionFor(sessionId);
 }
 
 function resolveRecoveryAfterEventId(activeRun) {

@@ -872,6 +872,7 @@ def _run_round_timeline_script(tmp_path: Path, runner_source: str) -> dict[str, 
     replacements = {
         "../../utils/dom.js": "./mockDom.mjs",
         "../../core/state.js": "./mockState.mjs",
+        "../../core/viewGuards.js": "./mockViewGuards.mjs",
         "../../core/api.js": "./mockApi.mjs",
         "../agentPanel.js": "./mockAgentPanel.mjs",
         "../messageRenderer.js": "./mockMessageRenderer.mjs",
@@ -924,6 +925,33 @@ export function getRunPrimaryRoleLabel() {
 
 export function isRunPrimaryRoleId() {
     return false;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockViewGuards.mjs").write_text(
+        """
+import { state } from "./mockState.mjs";
+
+export function hasActiveSubagentSessionFor(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const active = state.activeSubagentSession;
+    return !!(
+        safeSessionId
+        && active
+        && typeof active === "object"
+        && String(active.sessionId || "").trim() === safeSessionId
+    );
+}
+
+export function canRenderMainSessionView(sessionId = state.currentSessionId) {
+    const safeSessionId = String(sessionId || "").trim();
+    const currentSessionId = String(state.currentSessionId || "").trim();
+    return !!(
+        safeSessionId
+        && currentSessionId === safeSessionId
+        && !hasActiveSubagentSessionFor(safeSessionId)
+    );
 }
 """.strip(),
         encoding="utf-8",
@@ -1030,6 +1058,10 @@ export function renderRoundNavigator(rounds) {
 }
 
 export function clearRoundNavigator() {
+    return undefined;
+}
+
+export function hideRoundNavigator() {
     return undefined;
 }
 

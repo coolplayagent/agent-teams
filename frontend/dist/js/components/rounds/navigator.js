@@ -48,6 +48,10 @@ export function renderRoundNavigator(rounds, onSelectRound, options = {}) {
     if (Object.prototype.hasOwnProperty.call(options, 'activeRunId')) {
         navActiveRunId = String(options.activeRunId || '').trim() || null;
     }
+    if (isRoundNavigatorSuppressed()) {
+        hideRoundNavigator();
+        return;
+    }
     const nav = ensureRoundNavigator();
     if (navRounds.length === 0) {
         hideRoundNavigator();
@@ -92,6 +96,10 @@ export function clearRoundNavigator() {
 
 export function setActiveRoundNav(runId, options = {}) {
     navActiveRunId = String(runId || '').trim() || null;
+    if (isRoundNavigatorSuppressed()) {
+        hideRoundNavigator();
+        return;
+    }
     const nav = document.getElementById(ROUND_NAV_ID);
     if (!nav || navRounds.length === 0) return;
     syncRoundNavActiveState(nav);
@@ -170,6 +178,14 @@ function setTimelineVisibility(visible) {
     if (!visible) {
         delete host.dataset.roundTimelineDensity;
     }
+}
+
+function isRoundNavigatorSuppressed() {
+    const chat = document.querySelector('.chat-container');
+    return !!(
+        chat?.classList?.contains?.('is-subagent-session-active')
+        || document.querySelector('.subagent-session-view')
+    );
 }
 
 function renderNavigatorDom(nav, options = {}) {
@@ -744,6 +760,10 @@ function mergeRoundNavLayoutReason(current, next) {
 }
 
 function syncRoundNavLayout(reason = 'structure') {
+    if (isRoundNavigatorSuppressed()) {
+        hideRoundNavigator();
+        return;
+    }
     const nav = document.getElementById(ROUND_NAV_ID);
     const list = nav?.querySelector?.('.round-nav-list');
     const track = list?.querySelector?.('.round-nav-track');

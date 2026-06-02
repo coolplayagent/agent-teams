@@ -601,6 +601,7 @@ export async function openSubagentSession(sessionId, record) {
     if (!safeSessionId || normalized === null) {
         return;
     }
+    emitSessionSelectionCancelledForSubagentOpen(normalized);
     abortMainSessionRestore();
     state.activeSubagentSession = normalized;
     state.activeView = 'subagent-session';
@@ -621,6 +622,24 @@ export async function openSubagentSession(sessionId, record) {
     }
     cancelTerminalRefreshForInstance(normalized.instanceId);
     await renderActiveSubagentSession({ showLoading: true });
+}
+
+function emitSessionSelectionCancelledForSubagentOpen(active) {
+    if (
+        typeof document === 'undefined'
+        || typeof document.dispatchEvent !== 'function'
+    ) {
+        return;
+    }
+    const detail = {
+        reason: 'subagent-session-opened',
+        sessionId: active.sessionId,
+        instanceId: active.instanceId,
+    };
+    const event = typeof CustomEvent === 'function'
+        ? new CustomEvent('agent-teams-session-selection-cancelled', { detail })
+        : { type: 'agent-teams-session-selection-cancelled', detail };
+    document.dispatchEvent(event);
 }
 
 export async function returnToMainSessionView() {

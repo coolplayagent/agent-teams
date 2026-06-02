@@ -123,7 +123,7 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     assert 'src="/vendor/chart.js" defer' in index_html
     assert 'id="projects-list"' in index_html
     assert "<h2>agent-teams</h2>" not in index_html
-    assert '<div class="workspace-title">agent-teams</div>' in index_html
+    assert '<div class="workspace-title">relay-teams</div>' in index_html
     assert 'id="backend-status"' in index_html
     assert 'id="backend-status-label"' in index_html
     assert 'id="language-toggle-btn"' in index_html

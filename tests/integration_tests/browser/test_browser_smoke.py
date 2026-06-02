@@ -21,6 +21,7 @@ from relay_teams.interfaces.cli.gateway_cli import _build_acp_stdio_runtime
 from pydantic import JsonValue
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, Request, Response
+from playwright.sync_api import Route
 from playwright.sync_api import expect
 from playwright.sync_api import sync_playwright
 import pytest
@@ -2177,6 +2178,169 @@ def test_browser_session_send_switch_and_subagent_view_stay_responsive_under_loa
     assert len(session_index_requests) <= 4
 
 
+def test_browser_subagent_view_survives_complex_switching_races(
+    browser_page: Page,
+    integration_env: IntegrationEnvironment,
+    api_client: httpx.Client,
+) -> None:
+    subagent_session_id = create_session(
+        api_client,
+        session_id=new_session_id("browser-subagent-race"),
+    )
+    run_id = create_run(
+        api_client,
+        session_id=subagent_session_id,
+        intent=(
+            "[hook-subagent-lifecycle] spawn one synchronous subagent and "
+            "finish browser subagent race guard"
+        ),
+        execution_mode="ai",
+    )
+    events = stream_run_until_terminal(
+        api_client,
+        run_id=run_id,
+        timeout_seconds=80.0,
+    )
+    assert events[-1]["event_type"] == "run_completed"
+    control_session_id = create_session(
+        api_client,
+        session_id=new_session_id("browser-subagent-race-control"),
+    )
+
+    page = browser_page
+    raced_request_urls: list[str] = []
+
+    def record_raced_parent_requests(route: Route) -> None:
+        request = route.request
+        request_url = str(request.url)
+        parent_path = f"/api/sessions/{subagent_session_id}"
+        if parent_path in request_url and (
+            request_url.endswith(parent_path) or f"{parent_path}/rounds?" in request_url
+        ):
+            raced_request_urls.append(request_url)
+        route.continue_()
+
+    page.route(f"**/api/sessions/{subagent_session_id}**", record_raced_parent_requests)
+    page.add_init_script(
+        f"""
+        (() => {{
+          const targetSessionId = {json.dumps(subagent_session_id)};
+          const originalFetch = window.fetch.bind(window);
+          const state = {{
+            enabled: false,
+            delayedCount: 0,
+            waiters: [],
+          }};
+          const shouldDelay = input => {{
+            if (!state.enabled) return false;
+            const rawUrl = typeof input === 'string' ? input : (input && input.url) || '';
+            if (!rawUrl) return false;
+            const url = new URL(rawUrl, window.location.origin);
+            return url.pathname === `/api/sessions/${{targetSessionId}}`
+              || url.pathname === `/api/sessions/${{targetSessionId}}/rounds`;
+          }};
+          window.__subagentRaceDelay = {{
+            enable() {{
+              state.enabled = true;
+            }},
+            release() {{
+              state.enabled = false;
+              const waiters = state.waiters.splice(0);
+              waiters.forEach(resolve => resolve());
+            }},
+            delayedCount() {{
+              return state.delayedCount;
+            }},
+          }};
+          window.fetch = async (...args) => {{
+            if (shouldDelay(args[0])) {{
+              state.delayedCount += 1;
+              await new Promise(resolve => {{
+                state.waiters.push(resolve);
+                window.setTimeout(resolve, 1500);
+              }});
+            }}
+            return originalFetch(...args);
+          }};
+        }})();
+        """,
+    )
+
+    _open_app(page, integration_env)
+    _click_visible_session_item(page, subagent_session_id)
+    subagent_toggle = page.locator(
+        f'.session-subagents-toggle[data-session-id="{subagent_session_id}"]'
+    ).first
+    expect(subagent_toggle).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+    subagent_toggle.click()
+    child = page.locator(
+        f'.session-subagent-item[data-session-id="{subagent_session_id}"]'
+    ).first
+    expect(child).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+    child_instance_id = str(child.get_attribute("data-subagent-instance-id") or "")
+    assert child_instance_id
+
+    _click_visible_session_item(page, control_session_id)
+    expect(page.locator(".session-item.active")).to_have_attribute(
+        "data-session-id",
+        control_session_id,
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    page.evaluate("() => window.__subagentRaceDelay.enable()")
+    _click_visible_session_item(page, subagent_session_id)
+    child.click(timeout=_WAIT_TIMEOUT_MS)
+    _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
+    page.evaluate("() => window.__subagentRaceDelay.release()")
+    page.wait_for_timeout(1800)
+    _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
+
+    page.evaluate("() => window.dispatchEvent(new Event('focus'))")
+    page.evaluate(
+        """
+        sessionId => document.dispatchEvent(new CustomEvent(
+          'agent-teams-subagent-sessions-changed',
+          { detail: { sessionId, reason: 'status', forceRefresh: false } }
+        ))
+        """,
+        subagent_session_id,
+    )
+    page.wait_for_timeout(600)
+    _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
+
+    _click_visible_session_item(page, control_session_id)
+    expect(page.locator(".session-item.active")).to_have_attribute(
+        "data-session-id",
+        control_session_id,
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    child.click(timeout=_WAIT_TIMEOUT_MS)
+    _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
+
+    page.locator(".subagent-session-back-btn").click()
+    expect(page.locator(".session-round-section").first).to_be_visible(
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator(".subagent-session-view")).to_have_count(
+        0,
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator("#prompt-input")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+    child.click(timeout=_WAIT_TIMEOUT_MS)
+    _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
+    _click_visible_session_item(page, subagent_session_id)
+    expect(page.locator(".session-round-section").first).to_be_visible(
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator(".subagent-session-view")).to_have_count(
+        0,
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+
+    assert raced_request_urls
+    assert page.evaluate("() => window.__subagentRaceDelay.delayedCount()") > 0
+
+
 @pytest.mark.skip(reason="Timing-sensitive; unreliable on shared CI runners")
 def test_browser_burst_new_session_starts_stay_within_request_budget(
     browser_page: Page,
@@ -2402,6 +2566,34 @@ def _click_visible_session_item(page: Page, session_id: str) -> None:
     raise AssertionError(
         f"Timed out clicking visible session item: {session_id}"
     ) from last_error
+
+
+def _assert_subagent_child_view(
+    page: Page,
+    session_id: str,
+    instance_id: str,
+) -> None:
+    expect(page.locator(".subagent-session-view")).to_be_visible(
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator(".chat-container")).to_have_class(
+        re.compile(r"\bis-subagent-session-active\b"),
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator(".subagent-main-session-loading")).to_have_count(
+        0,
+        timeout=1200,
+    )
+    expect(page.locator(".session-round-section")).to_have_count(
+        0,
+        timeout=1200,
+    )
+    child = page.locator(
+        f'.session-subagent-item[data-session-id="{session_id}"]'
+        f'[data-subagent-instance-id="{instance_id}"]'
+    ).first
+    expect(child).to_have_class(re.compile(r"\bactive\b"), timeout=_WAIT_TIMEOUT_MS)
+    expect(page.locator("#input-container")).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
 
 
 def _api_path(integration_env: IntegrationEnvironment, url: str) -> str:

@@ -110,10 +110,8 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
         in recovery_script
     )
     assert "await loadSessionRounds(safeSessionId, {" in recovery_script
-    assert "render: !preserveActiveSubagentView," in recovery_script
-    assert (
-        "render: !shouldPreserveActiveSubagentView(safeSessionId)," in recovery_script
-    )
+    assert "render: canRenderMainSessionView(safeSessionId)," in recovery_script
+    assert "canRenderMainSessionView," in recovery_script
     assert "clearRunStreamState(safePreviousActiveRunId);" in recovery_script
     assert "clearRunPrimaryRole(safePreviousActiveRunId);" in recovery_script
     assert (

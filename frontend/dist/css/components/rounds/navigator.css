@@ -35,6 +35,18 @@
     width: min(1264px, 100%);
 }
 
+.chat-container.is-subagent-session-active #round-nav-float.round-nav-timeline {
+    display: none !important;
+}
+
+.chat-container.is-subagent-session-active.rounds-timeline-visible .chat-scroll > * {
+    width: min(1264px, 100%);
+}
+
+.chat-container.is-subagent-session-active.rounds-timeline-visible .subagent-workspace {
+    padding-right: 0;
+}
+
 .round-nav-float.round-nav-timeline {
     position: absolute;
     top: 0.75rem;

@@ -45,6 +45,12 @@ console.log(JSON.stringify({
     assert "settings-model-stack" in modal_html
     assert "status-stack" in modal_html
     assert "settings-actions-bar" in modal_html
+    assert modal_html.index('id="add-command-btn"') < modal_html.index(
+        'id="refresh-commands-btn"'
+    )
+    assert modal_html.index('id="refresh-commands-btn"') < modal_html.index(
+        'id="preview-command-btn"'
+    )
     assert "Proxy Settings" in modal_html
     assert "Connectivity Test" in modal_html
     assert 'class="proxy-editor-form"' in modal_html

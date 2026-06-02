@@ -28,9 +28,6 @@ export function bindCommandsSettingsHandlers() {
     bindClick('refresh-commands-btn', () => {
         void loadCommandsSettingsPanel();
     });
-    bindClick('refresh-command-catalog-btn', () => {
-        void loadCommandsSettingsPanel();
-    });
     bindClick('add-command-btn', () => {
         openCreateCommandEditor();
     });
@@ -136,6 +133,7 @@ export function syncCommandsSettingsActions() {
         return;
     }
     const isEditorOpen = commandEditorMode !== 'list';
+    setActionDisplay('refresh-commands-btn', !isEditorOpen);
     setActionDisplay('add-command-btn', !isEditorOpen);
     setActionDisplay('cancel-command-btn', isEditorOpen);
     setActionDisplay('preview-command-btn', isEditorOpen);
@@ -358,9 +356,7 @@ function buildSuggestedPath(name) {
 function renderLoading() {
     return `
         <div class="commands-shell">
-            <div class="commands-panel-toolbar">
-                <span>${escapeHtml(t('settings.commands.loading'))}</span>
-            </div>
+            <div class="settings-status-inline">${escapeHtml(t('settings.commands.loading'))}</div>
         </div>
     `;
 }
@@ -377,7 +373,6 @@ function renderCommandCatalog(catalog) {
     }
     return `
         <div class="commands-shell">
-            ${renderCatalogActions()}
             ${renderCommandSearch()}
             <div class="commands-catalog">
                 ${
@@ -386,16 +381,6 @@ function renderCommandCatalog(catalog) {
                         : renderSearchEmpty()
                 }
             </div>
-        </div>
-    `;
-}
-
-function renderCatalogActions() {
-    return `
-        <div class="commands-panel-toolbar">
-            <button class="secondary-btn section-action-btn commands-refresh-btn" id="refresh-command-catalog-btn" type="button">
-                ${escapeHtml(t('settings.commands.refresh'))}
-            </button>
         </div>
     `;
 }
@@ -418,7 +403,6 @@ function renderCommandSearch() {
 function renderCatalogEmptyState(total) {
     return `
         <div class="commands-shell">
-            ${renderCatalogActions()}
             <div class="settings-empty-state commands-empty-card">
                 <h4>${escapeHtml(t('settings.commands.empty'))}</h4>
                 <p>${escapeHtml(t('settings.commands.empty_copy'))}</p>
@@ -432,9 +416,6 @@ function renderCommandGroup(group) {
     const rows = Array.isArray(group.refs) ? group.refs : [];
     const isSearchActive = Boolean(commandSearchQuery);
     const isCollapsed = !isSearchActive && isCommandGroupCollapsed(group);
-    const hintKey = isCollapsed
-        ? 'settings.commands.expand_hint'
-        : 'settings.commands.collapse_hint';
     return `
         <section class="commands-group ${isCollapsed ? 'commands-group-collapsed' : ''}">
             <button class="commands-group-header" id="toggle-command-group-${escapeHtml(group.key)}" type="button" aria-expanded="${isCollapsed ? 'false' : 'true'}">
@@ -444,27 +425,13 @@ function renderCommandGroup(group) {
                     <span class="commands-count-pill">${escapeHtml(String(rows.length))}</span>
                     ${group.subtitle ? `<span class="commands-group-path">${escapeHtml(group.subtitle)}</span>` : ''}
                 </div>
-                <span class="commands-group-hint">${escapeHtml(t(hintKey))}</span>
             </button>
             ${
                 isCollapsed
-                    ? renderCollapsedSummary(rows, group)
+                    ? ''
                     : renderExpandedGroupRows(rows, group)
             }
         </section>
-    `;
-}
-
-function renderCollapsedSummary(rows, group) {
-    if (rows.length === 0) {
-        return renderCommandGroupEmpty(group.emptyCopy);
-    }
-    return `
-        <div class="commands-group-summary">
-            ${escapeHtml(formatCount(rows.length))}
-            <span aria-hidden="true">&middot;</span>
-            ${escapeHtml(t('settings.commands.expand_hint'))}
-        </div>
     `;
 }
 
@@ -707,9 +674,6 @@ function renderLoadFailedState(error) {
             <div class="settings-empty-state settings-empty-state-compact commands-empty-card commands-empty-card-compact">
                 <h4>${escapeHtml(t('settings.commands.load_failed'))}</h4>
                 <p>${escapeHtml(error.message || t('settings.commands.load_failed_copy'))}</p>
-                <button class="secondary-btn section-action-btn" id="refresh-commands-btn" type="button">
-                    ${escapeHtml(t('settings.commands.refresh'))}
-                </button>
             </div>
         </div>
     `;
@@ -809,8 +773,8 @@ function isCommandGroupCollapsed(group) {
     return defaultCommandGroupCollapsed(group.key);
 }
 
-function defaultCommandGroupCollapsed(key) {
-    return key !== 'app';
+function defaultCommandGroupCollapsed() {
+    return true;
 }
 
 function catalogCommandRefs() {
@@ -862,12 +826,6 @@ function formatAliasList(aliases) {
 
 function formatAliasesInput(value) {
     return normalizeAliases(value).map(alias => formatCommandName(alias)).join(', ');
-}
-
-function formatCount(count) {
-    return count === 1
-        ? t('settings.commands.count_one')
-        : t('settings.commands.count_many').replace('{count}', String(count));
 }
 
 function compactPath(path) {

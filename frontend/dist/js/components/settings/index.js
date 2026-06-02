@@ -148,6 +148,7 @@ const ACTION_TAB_OWNERS = {
     'save-agent-btn': 'agents',
     'delete-agent-btn': 'agents',
     'cancel-agent-btn': 'agents',
+    'refresh-commands-btn': 'commands',
     'add-command-btn': 'commands',
     'preview-command-btn': 'commands',
     'save-command-btn': 'commands',
@@ -1015,6 +1016,7 @@ function createModal() {
                             <button class="secondary-btn section-action-btn settings-action" id="delete-agent-btn" type="button" style="display:none;" data-i18n="settings.action.delete">Delete</button>
                             <button class="secondary-btn section-action-btn settings-action" id="cancel-agent-btn" type="button" style="display:none;" data-i18n="settings.action.cancel">Cancel</button>
                             <button class="secondary-btn section-action-btn settings-action" id="add-command-btn" type="button" style="display:none;" data-i18n="settings.commands.add">Add Command</button>
+                            <button class="secondary-btn section-action-btn settings-action" id="refresh-commands-btn" type="button" style="display:none;" data-i18n="settings.commands.refresh">Refresh</button>
                             <button class="secondary-btn section-action-btn settings-action" id="preview-command-btn" type="button" style="display:none;" data-i18n="settings.commands.preview">Preview</button>
                             <button class="primary-btn section-action-btn settings-action" id="save-command-btn" type="button" style="display:none;" data-i18n="settings.action.save">Save</button>
                             <button class="secondary-btn section-action-btn settings-action" id="add-role-btn" type="button" style="display:none;" data-i18n="settings.action.add_role">Add Role</button>

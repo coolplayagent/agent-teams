@@ -129,8 +129,6 @@ export function t(key) {
         "settings.commands.table_scope": "Scope",
         "settings.commands.table_source_path": "Source path",
         "settings.commands.table_actions": "Actions",
-        "settings.commands.expand_hint": "Click to expand",
-        "settings.commands.collapse_hint": "Click to collapse",
         "settings.commands.template": "Prompt template",
         "settings.commands.source_path": "Source path",
         "settings.commands.source_meta": "Source info:",
@@ -212,6 +210,9 @@ const {
 } = await import("./commandsSettings.mjs");
 await loadCommandsSettingsPanel();
 const catalogHtml = element("commands-status").innerHTML;
+const refreshButtonDisplayInList = element("refresh-commands-btn").style.display;
+element("toggle-command-group-app").onclick();
+const appExpandedHtml = element("commands-status").innerHTML;
 element("command-search-input").value = "opsx";
 element("command-search-input").oninput();
 const searchHtml = element("commands-status").innerHTML;
@@ -219,9 +220,14 @@ element("command-search-input").value = "";
 element("command-search-input").oninput();
 element("toggle-command-group-workspace-workspace-1").onclick();
 const expandedCatalogHtml = element("commands-status").innerHTML;
+element("toggle-command-group-workspace-workspace-2").onclick();
+const emptyWorkspaceExpandedHtml = element("commands-status").innerHTML;
+element("toggle-command-group-workspace-workspace-2").onclick();
+const emptyWorkspaceCollapsedAgainHtml = element("commands-status").innerHTML;
 
 element("edit-command-workspace-0-0").onclick();
 const editHtml = element("commands-status").innerHTML;
+const refreshButtonDisplayInEdit = element("refresh-commands-btn").style.display;
 element("command-description-input").value = "Updated proposal command";
 element("command-template-input").value = "Updated {{args}}";
 element("preview-command-btn").onclick();
@@ -241,12 +247,16 @@ const addButtonDisplayInCreate = element("add-command-btn").style.display;
 const saveButtonDisplayInCreate = element("save-command-btn").style.display;
 const cancelButtonDisplayInCreate = element("cancel-command-btn").style.display;
 const previewButtonDisplayInCreate = element("preview-command-btn").style.display;
+const refreshButtonDisplayInCreate = element("refresh-commands-btn").style.display;
 await element("save-command-btn").onclick();
 
 console.log(JSON.stringify({
     catalogHtml,
+    appExpandedHtml,
     searchHtml,
     expandedCatalogHtml,
+    emptyWorkspaceExpandedHtml,
+    emptyWorkspaceCollapsedAgainHtml,
     editHtml,
     createHtml,
     suggestedPath: element("command-path-input").value,
@@ -259,6 +269,9 @@ console.log(JSON.stringify({
     saveButtonDisplayInCreate,
     cancelButtonDisplayInCreate,
     previewButtonDisplayInCreate,
+    refreshButtonDisplayInList,
+    refreshButtonDisplayInEdit,
+    refreshButtonDisplayInCreate,
     documentEvents: globalThis.__documentEvents || [],
 }));
 """.strip()
@@ -273,32 +286,46 @@ console.log(JSON.stringify({
 
     payload = json.loads(result.stdout)
     catalog_html = str(payload["catalogHtml"])
+    app_expanded_html = str(payload["appExpandedHtml"])
     search_html = str(payload["searchHtml"])
     expanded_catalog_html = str(payload["expandedCatalogHtml"])
+    empty_workspace_expanded_html = str(payload["emptyWorkspaceExpandedHtml"])
+    empty_workspace_collapsed_again_html = str(
+        payload["emptyWorkspaceCollapsedAgainHtml"]
+    )
     edit_html = str(payload["editHtml"])
     create_html = str(payload["createHtml"])
     assert "Global commands" in catalog_html
-    assert "/global" in catalog_html
+    assert "/global" not in catalog_html
+    assert "/global" in app_expanded_html
     assert "Search command or workspace" in catalog_html
     assert "commands-table" not in catalog_html
     assert "commands-table-head" not in catalog_html
     assert "commands-total" not in catalog_html
+    assert "refresh-command-catalog-btn" not in catalog_html
     toolbar_html = catalog_html.split("Search command or workspace", 1)[0]
     assert "1 command" not in toolbar_html
     assert "workspace" not in toolbar_html
-    assert 'class="settings-record-list commands-list"' in catalog_html
+    assert 'class="settings-record-list commands-list"' not in catalog_html
     assert "workspace-1" in catalog_html
     assert "workspace-2" in catalog_html
     assert "read-only" in catalog_html
     assert "remote-only" in catalog_html
-    assert "Click to expand" in catalog_html
+    assert "Click to expand" not in catalog_html
+    assert "Click to collapse" not in app_expanded_html
     assert "/opsx:propose" not in catalog_html
     assert "/opsx:propose" in search_html
     assert "alias /opsx/propose" in search_html
     assert "/opsx:propose" in expanded_catalog_html
     assert "alias /opsx/propose" in expanded_catalog_html
-    assert "No project commands in this workspace." in catalog_html
-    assert "Edit" in catalog_html
+    assert "No project commands in this workspace." not in catalog_html
+    assert "No project commands in this workspace." in empty_workspace_expanded_html
+    assert (
+        "No project commands in this workspace."
+        not in empty_workspace_collapsed_again_html
+    )
+    assert "Edit" in app_expanded_html
+    assert "Edit" in expanded_catalog_html
     assert "C:/repo/.claude/commands/opsx/propose.md" in edit_html
     assert "Edit Command" in edit_html
     assert "Aliases (optional)" in edit_html
@@ -311,6 +338,9 @@ console.log(JSON.stringify({
     assert payload["saveButtonDisplayInCreate"] == "inline-flex"
     assert payload["cancelButtonDisplayInCreate"] == "inline-flex"
     assert payload["previewButtonDisplayInCreate"] == "inline-flex"
+    assert payload["refreshButtonDisplayInList"] == "inline-flex"
+    assert payload["refreshButtonDisplayInEdit"] == "none"
+    assert payload["refreshButtonDisplayInCreate"] == "none"
     assert "aliases: [opsx/propose]" in str(payload["previewText"])
     assert "Updated {{args}}" in str(payload["previewText"])
     assert payload["suggestedPath"] == "opsx/review.md"
@@ -458,6 +488,7 @@ resolveCurrent({
 await currentLoad;
 rejectStale(new Error("stale load failed"));
 await staleLoad;
+element("toggle-command-group-app").onclick();
 
 console.log(JSON.stringify({
     html: element("commands-status").innerHTML,

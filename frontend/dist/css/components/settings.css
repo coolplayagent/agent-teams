@@ -375,22 +375,6 @@
     width: 100%;
 }
 
-.commands-panel-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 1rem;
-    min-height: 40px;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-}
-
-.commands-refresh-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-}
-
 .commands-search-row {
     width: 100%;
 }
@@ -536,12 +520,6 @@
     white-space: nowrap;
 }
 
-.commands-group-hint {
-    flex: 0 0 auto;
-    color: var(--text-secondary);
-    font-size: 0.78rem;
-}
-
 .commands-list {
     display: flex;
     flex-direction: column;
@@ -641,17 +619,6 @@
     padding: 0 var(--settings-action-btn-padding-x);
 }
 
-.commands-group-summary {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    min-height: 32px;
-    padding-left: 2.55rem;
-    color: var(--text-secondary);
-    font-size: 0.82rem;
-    border-top: 1px solid color-mix(in srgb, var(--settings-border-soft) 72%, transparent);
-}
-
 .commands-group-empty {
     display: flex;
     align-items: center;
@@ -663,6 +630,11 @@
     color: var(--text-secondary);
     font-size: 0.84rem;
     background: var(--settings-surface-bg);
+}
+
+.settings-content-stack .commands-group-empty {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
 }
 
 .commands-empty-card {

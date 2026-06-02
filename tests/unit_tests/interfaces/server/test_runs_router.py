@@ -34,8 +34,9 @@ class _FakeRunService:
     def __init__(self) -> None:
         self.resumed_run_ids: list[str] = []
         self.started_run_ids: list[str] = []
-        self.resolved_tool_approvals: list[tuple[str, str, str, str]] = []
+        self.resolved_tool_approvals: list[tuple[str, str, str, str, str]] = []
         self.raise_on_tool_approval = False
+        self.raise_on_tool_approval_value_error = False
         self.inject_calls: list[tuple[str, str, str, str, str | None]] = []
         self.subagent_inject_calls: list[tuple[str, str, str]] = []
         self.raise_on_inject = False
@@ -97,12 +98,17 @@ class _FakeRunService:
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
         if self.raise_on_tool_approval:
             raise RuntimeError(
                 "Run run-1 is stopped. Resume the run before resolving tool approval."
             )
-        self.resolved_tool_approvals.append((run_id, tool_call_id, action, feedback))
+        if self.raise_on_tool_approval_value_error:
+            raise ValueError("Unknown ACP permission option_id: missing")
+        self.resolved_tool_approvals.append(
+            (run_id, tool_call_id, action, feedback, option_id)
+        )
 
     async def resolve_tool_approval_async(
         self,
@@ -111,12 +117,14 @@ class _FakeRunService:
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
         self.resolve_tool_approval(
             run_id=run_id,
             tool_call_id=tool_call_id,
             action=action,
             feedback=feedback,
+            option_id=option_id,
         )
 
     def ensure_run_started(self, run_id: str) -> None:
@@ -1011,10 +1019,48 @@ def test_resolve_tool_approval_route_accepts_approve_exact() -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "action": "approve_exact"}
+    assert response.json() == {
+        "status": "ok",
+        "action": "approve_exact",
+        "option_id": None,
+    }
     assert fake_service.resolved_tool_approvals == [
-        ("run-1", "call-1", "approve_exact", "persist this")
+        ("run-1", "call-1", "approve_exact", "persist this", "")
     ]
+
+
+def test_resolve_tool_approval_route_accepts_option_id() -> None:
+    fake_service = _FakeRunService()
+    client = _create_client(fake_service)
+
+    response = client.post(
+        "/api/runs/run-1/tool-approvals/call-1/resolve",
+        json={"action": "approve", "option_id": "allow_always"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "action": "approve",
+        "option_id": "allow_always",
+    }
+    assert fake_service.resolved_tool_approvals == [
+        ("run-1", "call-1", "approve", "", "allow_always")
+    ]
+
+
+def test_resolve_tool_approval_route_maps_option_validation_to_bad_request() -> None:
+    fake_service = _FakeRunService()
+    fake_service.raise_on_tool_approval_value_error = True
+    client = _create_client(fake_service)
+
+    response = client.post(
+        "/api/runs/run-1/tool-approvals/call-1/resolve",
+        json={"action": "approve", "option_id": "missing"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unknown ACP permission option_id: missing"
 
 
 def test_resume_route_rejects_none_like_run_id() -> None:

@@ -79,6 +79,37 @@ class AsyncAgentTeamsClient:
             {},
         )
 
+    async def list_agent_runtime_registry(
+        self,
+        *,
+        refresh: bool = False,
+    ) -> dict[str, JsonValue]:
+        path = "/api/system/configs/agent-runtime-registry"
+        if refresh:
+            path = f"{path}?refresh=true"
+        return await self._request_json("GET", path)
+
+    async def refresh_agent_runtime_registry(self) -> dict[str, JsonValue]:
+        return await self._request_json(
+            "POST",
+            "/api/system/configs/agent-runtime-registry:refresh",
+            {},
+        )
+
+    async def install_agent_runtime_from_registry(
+        self,
+        registry_id: str,
+        payload: dict[str, JsonValue] | None = None,
+    ) -> dict[str, JsonValue]:
+        return await self._request_json(
+            "POST",
+            (
+                "/api/system/configs/agent-runtime-registry/"
+                f"{quote(registry_id, safe='')}:install"
+            ),
+            {} if payload is None else payload,
+        )
+
     async def get_web_config(self) -> dict[str, JsonValue]:
         return await self._request_json("GET", "/api/system/configs/web")
 
@@ -506,12 +537,20 @@ class AsyncAgentTeamsClient:
         return await self._request_json("GET", f"/api/runs/{run_id}/todo")
 
     async def resolve_tool_approval(
-        self, run_id: str, tool_call_id: str, action: str, feedback: str = ""
+        self,
+        run_id: str,
+        tool_call_id: str,
+        action: str,
+        feedback: str = "",
+        option_id: str | None = None,
     ) -> dict[str, JsonValue]:
+        payload: dict[str, JsonValue] = {"action": action, "feedback": feedback}
+        if option_id is not None:
+            payload["option_id"] = option_id
         return await self._request_json(
             "POST",
             f"/api/runs/{run_id}/tool-approvals/{tool_call_id}/resolve",
-            {"action": action, "feedback": feedback},
+            payload,
         )
 
     async def list_user_questions(self, run_id: str) -> list[dict[str, JsonValue]]:

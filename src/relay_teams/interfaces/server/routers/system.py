@@ -48,11 +48,17 @@ from relay_teams.env.localhost_run_tunnel_service import (
     LocalhostRunTunnelService,
 )
 from relay_teams.agent_runtimes import (
+    AcpRegistryCatalogResponse,
+    AcpRegistryError,
+    AcpRegistryInstallRequest,
+    AcpRegistryInstallResult,
+    AcpRegistryService,
     ExternalAgentConfig,
     ExternalAgentConfigService,
     ExternalAgentProtocol,
     ExternalAgentSummary,
     ExternalAgentTestResult,
+    registry_default_agent_id,
 )
 from relay_teams.agent_runtimes.runtime_probe import probe_agent_runtime
 from relay_teams.env.proxy_config_service import ProxyConfigService
@@ -66,6 +72,7 @@ from relay_teams.net.web_connectivity import (
     WebConnectivityProbeService,
 )
 from relay_teams.interfaces.server.deps import (
+    get_acp_registry_service,
     get_container,
     get_clawhub_connectivity_probe_service,
     get_clawhub_config_service,
@@ -1280,6 +1287,88 @@ async def list_agent_runtimes(
     return await asyncio.to_thread(service.list_agents)
 
 
+@router.get(
+    "/configs/agent-runtime-registry",
+    response_model=AcpRegistryCatalogResponse,
+)
+async def list_agent_runtime_registry(
+    refresh: bool = Query(False),
+    registry_service: AcpRegistryService = Depends(get_acp_registry_service),
+    agent_service: ExternalAgentConfigService = Depends(
+        get_external_agent_config_service
+    ),
+) -> AcpRegistryCatalogResponse:
+    try:
+        installed_agents = await asyncio.to_thread(agent_service.list_agent_configs)
+        return await registry_service.get_catalog(
+            installed_agents=installed_agents,
+            refresh=refresh,
+        )
+    except (AcpRegistryError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/configs/agent-runtime-registry:refresh",
+    response_model=AcpRegistryCatalogResponse,
+)
+async def refresh_agent_runtime_registry(
+    registry_service: AcpRegistryService = Depends(get_acp_registry_service),
+    agent_service: ExternalAgentConfigService = Depends(
+        get_external_agent_config_service
+    ),
+) -> AcpRegistryCatalogResponse:
+    try:
+        installed_agents = await asyncio.to_thread(agent_service.list_agent_configs)
+        return await registry_service.refresh_catalog(installed_agents=installed_agents)
+    except (AcpRegistryError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/configs/agent-runtime-registry/{registry_id:path}:install",
+    response_model=AcpRegistryInstallResult,
+)
+async def install_agent_runtime_from_registry(
+    registry_id: str,
+    req: AcpRegistryInstallRequest = Body(default_factory=AcpRegistryInstallRequest),
+    registry_service: AcpRegistryService = Depends(get_acp_registry_service),
+    agent_service: ExternalAgentConfigService = Depends(
+        get_external_agent_config_service
+    ),
+) -> AcpRegistryInstallResult:
+    try:
+        current_agent: ExternalAgentConfig | None = None
+        if req.env is None:
+            current_agent_id = req.agent_id or registry_default_agent_id(registry_id)
+            try:
+                current_agent = await asyncio.to_thread(
+                    agent_service.get_agent,
+                    current_agent_id,
+                )
+            except KeyError:
+                current_agent = None
+        result = await registry_service.build_install_config(
+            registry_id=registry_id,
+            request=req,
+            current_agent=current_agent,
+        )
+        saved = await asyncio.to_thread(
+            agent_service.save_agent,
+            result.agent.agent_id,
+            result.agent,
+        )
+        return result.model_copy(update={"agent": saved})
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (
+        AcpRegistryError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/configs/agent-runtimes/{agent_id}", response_model=ExternalAgentConfig)
 async def get_agent_runtime(
     agent_id: RequiredIdentifierStr,
@@ -1325,9 +1414,11 @@ async def test_agent_runtime(
     workspace_manager: WorkspaceManager = Depends(get_workspace_manager),
 ) -> ExternalAgentTestResult:
     try:
-        config = await asyncio.to_thread(service.resolve_runtime_agent, agent_id)
+        config = await service.resolve_runtime_agent_async(agent_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (AcpRegistryError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     runtime_cwd = None
     if config.protocol == ExternalAgentProtocol.CLI:
         runtime_cwd = (

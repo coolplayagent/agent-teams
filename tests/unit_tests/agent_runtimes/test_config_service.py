@@ -4,15 +4,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from relay_teams.agent_runtimes import (
+    AcpRegistryService,
     ExternalAgentConfig,
     ExternalAgentConfigService,
     ExternalAgentProtocol,
     ExternalAgentSecretBinding,
     ExternalAgentSecretStore,
+    RegistryTransportConfig,
     StdioTransportConfig,
     StreamableHttpTransportConfig,
 )
+from relay_teams.env.proxy_env import ProxyEnvConfig
 
 
 class _FakeSecretStore(ExternalAgentSecretStore):
@@ -61,6 +66,26 @@ class _FakeSecretStore(ExternalAgentSecretStore):
         self.values = next_values
 
 
+class _FakeRegistryService(AcpRegistryService):
+    def __init__(self) -> None:
+        super().__init__(
+            config_dir=Path("."),
+            get_proxy_config=ProxyEnvConfig,
+        )
+        self.captured_transport: RegistryTransportConfig | None = None
+
+    async def resolve_runtime_transport_async(
+        self,
+        transport: RegistryTransportConfig,
+    ) -> StdioTransportConfig:
+        self.captured_transport = transport
+        return StdioTransportConfig(
+            command="resolved-registry-agent",
+            args=("--stdio",),
+            env=transport.env,
+        )
+
+
 def test_save_agent_persists_secret_bindings_without_writing_values(
     tmp_path: Path,
 ) -> None:
@@ -107,7 +132,8 @@ def test_save_agent_persists_secret_bindings_without_writing_values(
     )
 
 
-def test_resolve_runtime_agent_restores_secret_values(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_resolve_runtime_agent_restores_secret_values(tmp_path: Path) -> None:
     secret_store = _FakeSecretStore()
     service = ExternalAgentConfigService(
         config_dir=tmp_path,
@@ -136,12 +162,55 @@ def test_resolve_runtime_agent_restores_secret_values(tmp_path: Path) -> None:
         ),
     )
 
-    resolved = service.resolve_runtime_agent("codex_local")
+    resolved = await service.resolve_runtime_agent_async("codex_local")
 
     assert isinstance(resolved.transport, StdioTransportConfig)
     assert resolved.transport.env[0].value == "secret-123"
     assert resolved.transport.env[0].configured is True
     assert resolved.transport.env[1].value == "cli"
+
+
+@pytest.mark.asyncio
+async def test_registry_transport_persists_secrets_and_resolves_to_stdio(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FakeSecretStore()
+    registry_service = _FakeRegistryService()
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+        registry_service=registry_service,
+    )
+    saved = service.save_agent(
+        "vendor_runtime",
+        ExternalAgentConfig(
+            agent_id="vendor_runtime",
+            name="Vendor Runtime",
+            protocol=ExternalAgentProtocol.ACP,
+            transport=RegistryTransportConfig(
+                registry_id="vendor/runtime",
+                distribution="auto",
+                env=(
+                    ExternalAgentSecretBinding(
+                        name="VENDOR_TOKEN",
+                        value="secret-123",
+                        secret=True,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert isinstance(saved.transport, RegistryTransportConfig)
+    assert saved.transport.env[0].value is None
+    assert saved.transport.env[0].configured is True
+
+    resolved = await service.resolve_runtime_agent_async("vendor_runtime")
+
+    assert isinstance(resolved.transport, StdioTransportConfig)
+    assert resolved.transport.command == "resolved-registry-agent"
+    assert registry_service.captured_transport is not None
+    assert registry_service.captured_transport.env[0].value == "secret-123"
 
 
 def test_save_agent_deletes_secret_binding_when_marked_unconfigured(

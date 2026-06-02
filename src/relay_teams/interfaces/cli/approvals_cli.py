@@ -54,6 +54,11 @@ def build_approvals_app(
             help="approve, approve_once, approve_exact, approve_prefix, or deny",
         ),
         feedback: str = typer.Option("", "--feedback"),
+        option_id: str | None = typer.Option(
+            None,
+            "--option-id",
+            help="ACP permission option id to select when resolving external agent approvals.",
+        ),
         base_url: str = typer.Option(default_base_url, "--base-url"),
         autostart: bool = typer.Option(True, "--autostart/--no-autostart"),
         daemon: bool = typer.Option(
@@ -80,11 +85,14 @@ def build_approvals_app(
                 "action must be approve, approve_once, approve_exact, "
                 "approve_prefix, or deny"
             )
+        payload: dict[str, object] = {"action": action, "feedback": feedback}
+        if option_id:
+            payload["option_id"] = option_id
         result = request_json(
             base_url,
             "POST",
             f"/api/runs/{run_id}/tool-approvals/{tool_call_id}/resolve",
-            {"action": action, "feedback": feedback},
+            payload,
         )
         typer.echo(json.dumps(result, ensure_ascii=False))
 

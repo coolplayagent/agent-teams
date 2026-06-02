@@ -2,6 +2,17 @@ from __future__ import annotations
 
 from relay_teams.agent_runtimes.config_service import ExternalAgentConfigService
 from relay_teams.agent_runtimes.agent_cli import build_agent_runtimes_app
+from relay_teams.agent_runtimes.acp_permission_models import (
+    AcpCancelledPermissionOutcome,
+    AcpPermissionOption,
+    AcpPermissionOptionKind,
+    AcpPermissionRequest,
+    AcpRequestPermissionResponse,
+    AcpSelectedPermissionOutcome,
+    AcpToolCallUpdate,
+    acp_cancelled_permission_response,
+    acp_selected_permission_response,
+)
 from relay_teams.agent_runtimes.models import (
     CustomTransportConfig,
     ExternalAgentConfig,
@@ -13,6 +24,11 @@ from relay_teams.agent_runtimes.models import (
     ExternalAgentSummary,
     ExternalAgentTestResult,
     ExternalAgentTransportType,
+    RegistryBinaryTargetSnapshot,
+    RegistryDistributionSetSnapshot,
+    RegistryEntrySnapshot,
+    RegistryPackageDistributionSnapshot,
+    RegistryTransportConfig,
     StdioTransportConfig,
     StreamableHttpTransportConfig,
 )
@@ -27,6 +43,25 @@ from relay_teams.agent_runtimes.secret_store import (
     ExternalAgentSecretStore,
     get_external_agent_secret_store,
 )
+from relay_teams.agent_runtimes.registry_models import (
+    AcpRegistryAgentView,
+    AcpRegistryBinaryTarget,
+    AcpRegistryCatalogResponse,
+    AcpRegistryDistribution,
+    AcpRegistryDistributionSet,
+    AcpRegistryEntry,
+    AcpRegistryIndex,
+    AcpRegistryInstallRequest,
+    AcpRegistryInstallResult,
+    AcpRegistryPackageDistribution,
+    AcpRegistryResolvedRuntime,
+)
+from relay_teams.agent_runtimes.registry_service import (
+    AcpRegistryError,
+    AcpRegistryService,
+    AcpRegistryUnsupportedError,
+    registry_default_agent_id,
+)
 from relay_teams.agent_runtimes.session_repository import (
     ExternalAgentSessionRepository,
 )
@@ -37,16 +72,44 @@ from relay_teams.agent_runtimes.skill_bridge import (
 )
 
 __all__ = [
+    "AcpCancelledPermissionOutcome",
+    "AcpPermissionOption",
+    "AcpPermissionOptionKind",
+    "AcpPermissionRequest",
+    "AcpRequestPermissionResponse",
+    "AcpRegistryAgentView",
+    "AcpRegistryBinaryTarget",
+    "AcpRegistryCatalogResponse",
+    "AcpRegistryDistribution",
+    "AcpRegistryDistributionSet",
+    "AcpRegistryEntry",
+    "AcpRegistryError",
+    "AcpRegistryIndex",
+    "AcpRegistryInstallRequest",
+    "AcpRegistryInstallResult",
+    "AcpRegistryPackageDistribution",
+    "AcpRegistryResolvedRuntime",
+    "AcpRegistryService",
+    "AcpRegistryUnsupportedError",
+    "AcpSelectedPermissionOutcome",
+    "AcpToolCallUpdate",
     "BridgedSkill",
     "CustomTransportConfig",
     "NativeConfigContent",
     "NativeConfigGenerator",
     "NativeConfigSpec",
+    "RegistryBinaryTargetSnapshot",
+    "RegistryDistributionSetSnapshot",
+    "RegistryEntrySnapshot",
+    "RegistryPackageDistributionSnapshot",
     "SkillBridgeManifest",
     "SkillBridgeService",
+    "RegistryTransportConfig",
     "StdioTransportConfig",
     "StreamableHttpTransportConfig",
     "assemble_native_config_content",
+    "acp_cancelled_permission_response",
+    "acp_selected_permission_response",
     "build_agent_runtimes_app",
     "ExternalAgentConfig",
     "ExternalAgentConfigService",
@@ -61,5 +124,6 @@ __all__ = [
     "ExternalAgentTestResult",
     "ExternalAgentTransportType",
     "get_external_agent_secret_store",
+    "registry_default_agent_id",
     "resolve_native_config_filename",
 ]

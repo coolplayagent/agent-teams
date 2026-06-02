@@ -8,7 +8,7 @@ from typing import Annotated, ClassVar, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from relay_teams.general import GeneralConfigService
 from relay_teams.agents.orchestration.policy_models import OrchestrationPolicy
@@ -234,6 +234,7 @@ class ResolveToolApprovalRequest(BaseModel):
         "deny",
     ]
     feedback: str = ""
+    option_id: str | None = None
 
 
 class AnswerUserQuestionRequest(BaseModel):
@@ -646,7 +647,7 @@ async def force_queued_injections(
 async def list_tool_approvals(
     run_id: RequiredIdentifierStr,
     service: Annotated[SessionRunService, Depends(get_run_service)],
-) -> list[dict[str, str]]:
+) -> list[dict[str, JsonValue]]:
     with bind_trace_context(trace_id=run_id, run_id=run_id):
         result = await service.list_open_tool_approvals_async(run_id)
         log_event(
@@ -774,13 +775,15 @@ async def resolve_tool_approval(
     tool_call_id: RequiredIdentifierStr,
     req: ResolveToolApprovalRequest,
     service: Annotated[SessionRunService, Depends(get_run_service)],
-) -> dict[str, str]:
+) -> dict[str, str | None]:
+    selected_option_id = req.option_id or ""
     try:
         await service.resolve_tool_approval_async(
             run_id=run_id,
             tool_call_id=tool_call_id,
             action=req.action,
             feedback=req.feedback,
+            option_id=selected_option_id,
         )
         with bind_trace_context(
             trace_id=run_id, run_id=run_id, tool_call_id=tool_call_id
@@ -790,11 +793,20 @@ async def resolve_tool_approval(
                 logging.INFO,
                 event="tool.approval.resolved",
                 message="Tool approval resolved",
-                payload={"action": req.action, "feedback_length": len(req.feedback)},
+                payload={
+                    "action": req.action,
+                    "feedback_length": len(req.feedback),
+                    "option_id": req.option_id,
+                },
             )
-        return {"status": "ok", "action": req.action}
+        return {"status": "ok", "action": req.action, "option_id": req.option_id}
     except KeyError as exc:
         raise http_exception_for(exc) from exc
+    except ValueError as exc:
+        raise http_exception_for(
+            exc,
+            mappings=((ValueError, 400),),
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

@@ -4,6 +4,10 @@
  */
 import { bindAgentSettingsHandlers, loadAgentSettingsPanel } from './agentsSettings.js';
 import {
+    bindAgentRegistrySettingsHandlers,
+    showAgentRegistryListView,
+} from './agentRegistrySettings.js';
+import {
     bindCommandsSettingsHandlers,
     loadCommandsSettingsPanel,
     syncCommandsSettingsActions,
@@ -145,6 +149,8 @@ const ACTION_TAB_OWNERS = {
     'delete-ssh-profile-btn': 'workspace',
     'test-agent-btn': 'agents',
     'add-agent-btn': 'agents',
+    'refresh-agent-registry-btn': 'agents',
+    'back-agents-btn': 'agents',
     'save-agent-btn': 'agents',
     'delete-agent-btn': 'agents',
     'cancel-agent-btn': 'agents',
@@ -512,17 +518,19 @@ function createModal() {
                     <div class="settings-panel" id="agents-panel" style="display:none;">
                         <div class="settings-section">
                             <div class="settings-content-stack">
-                                <div class="roles-list" id="agents-list"></div>
-                                <div class="role-editor-panel" id="agent-editor-panel" style="display:none;">
+                                <div class="agent-runtime-settings-view" id="agent-runtime-settings-view">
+                                    <div class="roles-list" id="agents-list"></div>
+                                    <div class="role-editor-panel" id="agent-editor-panel" style="display:none;">
                                     <div class="roles-editor-empty settings-empty-state settings-empty-state-compact" id="agents-editor-empty" style="display:none;">
                                         <h4 data-i18n="settings.agents.empty">No runtime selected</h4>
                                         <p data-i18n="settings.agents.empty_copy">Select an agent runtime to edit its protocol and transport settings.</p>
                                     </div>
                                     <div class="role-editor-form" id="agent-editor-form" style="display:none;">
-                                        <div class="role-editor-header">
-                                            <div>
-                                                <h4 data-i18n="settings.agents.editor">Runtime Editor</h4>
-                                                <p data-i18n="settings.agents.editor_copy">Configure an external agent runtime and bind it to roles.</p>
+                                        <div class="agent-create-method-bar" id="agent-create-method-bar" style="display:none;">
+                                            <span data-i18n="settings.agents.create_method_label">New agent</span>
+                                            <div class="agent-create-method-tabs" role="tablist" aria-label="Agent creation method">
+                                                <button class="agent-create-method-tab active" id="agent-create-custom-btn" type="button" role="tab" aria-selected="true" data-agent-create-method="custom" data-i18n="settings.action.add_agent_custom">Custom</button>
+                                                <button class="agent-create-method-tab" id="agent-create-registry-btn" type="button" role="tab" aria-selected="false" data-agent-create-method="registry" data-i18n="settings.action.add_agent_registry">Registry</button>
                                             </div>
                                         </div>
                                         <div class="role-editor-sections">
@@ -554,6 +562,7 @@ function createModal() {
                                                             <option value="stdio" data-i18n="settings.agents.transport_stdio">stdio</option>
                                                             <option value="streamable_http" data-i18n="settings.agents.transport_http">streamable_http</option>
                                                             <option value="custom" data-i18n="settings.agents.transport_custom">custom</option>
+                                                            <option value="registry" data-i18n="settings.agents.transport_registry">registry</option>
                                                         </select>
                                                     </div>
                                                 </div>
@@ -615,9 +624,65 @@ function createModal() {
                                                     </div>
                                                 </div>
                                             </section>
+                                            <section class="role-editor-section" id="agent-transport-registry" style="display:none;">
+                                                <h5 data-i18n="settings.agents.registry_transport">ACP Registry Transport</h5>
+                                                <div class="profile-editor-grid role-editor-grid">
+                                                    <div class="form-group">
+                                                        <label for="agent-registry-id-input" data-i18n="settings.agents.registry_id">Registry ID</label>
+                                                        <input type="text" id="agent-registry-id-input" placeholder="e.g. zed-industries/claude-code-acp" data-i18n-placeholder="settings.agents.registry_id_placeholder">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="agent-registry-distribution-input" data-i18n="settings.agents.registry_distribution">Distribution</label>
+                                                        <select id="agent-registry-distribution-input">
+                                                            <option value="auto" data-i18n="settings.agents.registry_distribution_auto">Auto</option>
+                                                            <option value="binary" data-i18n="settings.agents.registry_distribution_binary">Binary</option>
+                                                            <option value="npx" data-i18n="settings.agents.registry_distribution_npx">npx</option>
+                                                            <option value="uvx" data-i18n="settings.agents.registry_distribution_uvx">uvx</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group form-group-span-2">
+                                                        <label for="agent-registry-version-input" data-i18n="settings.agents.registry_version">Registry Version</label>
+                                                        <input type="text" id="agent-registry-version-input" readonly>
+                                                    </div>
+                                                </div>
+                                                <div class="role-prompt-header">
+                                                    <h5 data-i18n="settings.agents.env_bindings">Environment Bindings</h5>
+                                                    <div class="role-prompt-tabs">
+                                                        <button class="role-prompt-tab active" id="add-agent-registry-env-btn" type="button" data-i18n="settings.agents.add_env_binding">Add Variable</button>
+                                                    </div>
+                                                </div>
+                                                <div id="agent-registry-env-list"></div>
+                                            </section>
                                         </div>
                                         <div class="role-editor-status" id="agent-editor-status" style="display:none;"></div>
                                     </div>
+                                    </div>
+                                </div>
+                                <div class="agent-registry-view" id="agent-registry-view" style="display:none;">
+                                    <div class="agent-create-method-bar" id="agent-registry-create-method-bar" style="display:none;">
+                                        <span data-i18n="settings.agents.create_method_label">New agent</span>
+                                        <div class="agent-create-method-tabs" role="tablist" aria-label="Agent creation method">
+                                            <button class="agent-create-method-tab" id="agent-registry-create-custom-btn" type="button" role="tab" aria-selected="false" data-agent-create-method="custom" data-i18n="settings.action.add_agent_custom">Custom</button>
+                                            <button class="agent-create-method-tab active" id="agent-registry-create-registry-btn" type="button" role="tab" aria-selected="true" data-agent-create-method="registry" data-i18n="settings.action.add_agent_registry">Registry</button>
+                                        </div>
+                                    </div>
+                                    <div class="agent-registry-toolbar">
+                                        <label class="agent-registry-search-field" for="agent-registry-search-input">
+                                            <span data-i18n="settings.agents.registry_search_label">Search</span>
+                                            <input type="search" id="agent-registry-search-input" placeholder="Search registry" data-i18n-placeholder="settings.agents.registry_search" autocomplete="off">
+                                        </label>
+                                        <label class="agent-registry-filter-field" for="agent-registry-filter-input">
+                                            <span data-i18n="settings.agents.registry_filter_label">Status</span>
+                                            <select id="agent-registry-filter-input" aria-label="Registry filter">
+                                                <option value="all" data-i18n="settings.agents.registry_filter_all">All</option>
+                                                <option value="available" data-i18n="settings.agents.registry_filter_available">Available</option>
+                                                <option value="installed" data-i18n="settings.agents.registry_filter_installed">Installed</option>
+                                                <option value="updates" data-i18n="settings.agents.registry_filter_updates">Updates</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div class="role-editor-status" id="agent-registry-status" style="display:none;"></div>
+                                    <div class="roles-list" id="agent-registry-list"></div>
                                 </div>
                             </div>
                         </div>
@@ -1011,6 +1076,8 @@ function createModal() {
                             <button class="primary-btn section-action-btn settings-action" id="save-ssh-profile-btn" type="button" style="display:none;" data-i18n="settings.action.save">Save</button>
                             <button class="secondary-btn section-action-btn settings-action" id="cancel-profile-btn" type="button" style="display:none;" data-i18n="settings.action.cancel">Cancel</button>
                             <button class="secondary-btn section-action-btn settings-action" id="cancel-ssh-profile-btn" type="button" style="display:none;" data-i18n="settings.action.cancel">Cancel</button>
+                            <button class="secondary-btn section-action-btn settings-action" id="back-agents-btn" type="button" style="display:none;" data-i18n="settings.action.back_agents">Back</button>
+                            <button class="secondary-btn section-action-btn settings-action" id="refresh-agent-registry-btn" type="button" style="display:none;" data-i18n="settings.action.refresh">Refresh</button>
                             <button class="secondary-btn section-action-btn settings-action" id="add-agent-btn" type="button" style="display:none;" data-i18n="settings.action.add_agent">Add Agent</button>
                             <button class="primary-btn section-action-btn settings-action" id="save-agent-btn" type="button" style="display:none;" data-i18n="settings.action.save">Save</button>
                             <button class="secondary-btn section-action-btn settings-action" id="delete-agent-btn" type="button" style="display:none;" data-i18n="settings.action.delete">Delete</button>
@@ -1068,6 +1135,9 @@ function setupEventListeners() {
     bindHooksSettingsHandlers();
     bindPluginsSettingsHandlers();
     bindAgentSettingsHandlers();
+    bindAgentRegistrySettingsHandlers({
+        onBack: () => loadAgentSettingsPanel(),
+    });
     bindOrchestrationSettingsHandlers();
     bindRoleSettingsHandlers();
     bindGeneralSettingsHandlers();
@@ -1109,6 +1179,9 @@ async function showPanel(tab) {
     bindHooksSettingsHandlers();
     bindPluginsSettingsHandlers();
     bindAgentSettingsHandlers();
+    bindAgentRegistrySettingsHandlers({
+        onBack: () => loadAgentSettingsPanel(),
+    });
     bindOrchestrationSettingsHandlers();
     bindRoleSettingsHandlers();
     bindSpeechSettingsHandlers();
@@ -1133,6 +1206,7 @@ async function loadSettingsPanel(tab) {
     } else if (tab === 'hooks') {
         await loadHooksSettingsPanel();
     } else if (tab === 'agents') {
+        showAgentRegistryListView(false);
         await loadAgentSettingsPanel();
     } else if (tab === 'roles') {
         await loadRoleSettingsPanel();

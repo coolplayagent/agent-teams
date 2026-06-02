@@ -1504,11 +1504,12 @@ function renderRecoveryBanner() {
             approvalsHost.querySelectorAll('[data-approval-action]').forEach(button => {
                 const toolCallId = String(button.dataset.toolCallId || '');
                 const action = String(button.dataset.approvalAction || '');
+                const optionId = String(button.dataset.approvalOptionId || '');
                 if (!toolCallId || !action) return;
                 const approval = approvals.find(item => item.tool_call_id === toolCallId);
                 if (!approval) return;
                 button.onclick = () => {
-                    void handleApprovalAction(activeRun.run_id, approval, action);
+                    void handleApprovalAction(activeRun.run_id, approval, action, optionId);
                 };
             });
         } else {
@@ -1761,10 +1762,11 @@ async function handleRecoveryAction(actionDef, activeRun, pausedSubagent) {
     }
 }
 
-async function handleApprovalAction(runId, approval, action) {
+async function handleApprovalAction(runId, approval, action, optionId = '') {
     const safeRunId = String(runId || '').trim();
     const safeToolCallId = String(approval?.tool_call_id || '').trim();
     const safeAction = String(action || '').trim().toLowerCase();
+    const safeOptionId = String(optionId || '').trim();
     if (!safeRunId || !safeToolCallId || !safeAction) return;
     if (approvalActionBusyIds.has(safeToolCallId)) return;
 
@@ -1792,7 +1794,7 @@ async function handleApprovalAction(runId, approval, action) {
             await waitForFreshApprovalRequest(safeRunId, safeToolCallId);
         }
 
-        await resolveToolApproval(safeRunId, safeToolCallId, safeAction, '');
+        await resolveToolApproval(safeRunId, safeToolCallId, safeAction, '', safeOptionId);
         if (!approvalWillResolveViaLiveRun) {
             markToolApprovalResolved(safeToolCallId);
         }
@@ -2499,24 +2501,7 @@ function renderApprovalItem(activeRun, approval) {
                 ${subtitle ? `<div class="recovery-approval-meta">${escapeHtml(subtitle)}</div>` : ''}
             </div>
             <div class="recovery-approval-actions">
-                <button
-                    type="button"
-                    class="recovery-approval-action recovery-approval-action-approve"
-                    data-approval-action="approve"
-                    data-tool-call-id="${escapeAttribute(toolCallId)}"
-                    ${busy || recoveryActionBusy ? 'disabled' : ''}
-                >
-                    ${escapeHtml(t('recovery.approve'))}
-                </button>
-                <button
-                    type="button"
-                    class="recovery-approval-action recovery-approval-action-deny"
-                    data-approval-action="deny"
-                    data-tool-call-id="${escapeAttribute(toolCallId)}"
-                    ${busy || recoveryActionBusy ? 'disabled' : ''}
-                >
-                    ${escapeHtml(t('recovery.deny'))}
-                </button>
+                ${renderApprovalActionButtons(approval, busy || recoveryActionBusy)}
                 ${statusText
         ? `<span class="recovery-approval-status ${error ? 'is-error' : ''}">${escapeHtml(statusText)}</span>`
         : ''
@@ -2524,6 +2509,74 @@ function renderApprovalItem(activeRun, approval) {
             </div>
         </section>
     `;
+}
+
+function renderApprovalActionButtons(approval, disabled) {
+    const toolCallId = String(approval?.tool_call_id || '');
+    const options = normalizeApprovalOptions(approval?.acp_options);
+    if (options.length > 0) {
+        return options.map(option => {
+            const action = approvalActionForAcpOption(option);
+            const buttonClass = action === 'deny'
+                ? 'recovery-approval-action-deny'
+                : 'recovery-approval-action-approve';
+            return `
+                <button
+                    type="button"
+                    class="recovery-approval-action ${buttonClass}"
+                    data-approval-action="${escapeAttribute(action)}"
+                    data-approval-option-id="${escapeAttribute(option.optionId)}"
+                    data-tool-call-id="${escapeAttribute(toolCallId)}"
+                    ${disabled ? 'disabled' : ''}
+                >
+                    ${escapeHtml(option.name)}
+                </button>
+            `;
+        }).join('');
+    }
+    return `
+        <button
+            type="button"
+            class="recovery-approval-action recovery-approval-action-approve"
+            data-approval-action="approve"
+            data-approval-option-id=""
+            data-tool-call-id="${escapeAttribute(toolCallId)}"
+            ${disabled ? 'disabled' : ''}
+        >
+            ${escapeHtml(t('recovery.approve'))}
+        </button>
+        <button
+            type="button"
+            class="recovery-approval-action recovery-approval-action-deny"
+            data-approval-action="deny"
+            data-approval-option-id=""
+            data-tool-call-id="${escapeAttribute(toolCallId)}"
+            ${disabled ? 'disabled' : ''}
+        >
+            ${escapeHtml(t('recovery.deny'))}
+        </button>
+    `;
+}
+
+function normalizeApprovalOptions(rawOptions) {
+    if (!Array.isArray(rawOptions)) return [];
+    return rawOptions
+        .map(item => {
+            if (!item || typeof item !== 'object') return null;
+            const optionId = String(item.optionId || item.option_id || '').trim();
+            const kind = String(item.kind || '').trim().toLowerCase();
+            const name = String(item.name || kind || optionId).trim();
+            if (!optionId || !name) return null;
+            return { optionId, kind, name };
+        })
+        .filter(Boolean);
+}
+
+function approvalActionForAcpOption(option) {
+    if (option.kind === 'reject_once' || option.kind === 'reject_always') {
+        return 'deny';
+    }
+    return 'approve';
 }
 
 function approvalTitle(approval) {

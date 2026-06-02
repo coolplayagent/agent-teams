@@ -2448,12 +2448,14 @@ class SessionRunService:
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
         self._interaction_service.resolve_tool_approval(
             run_id,
             tool_call_id,
             action,
             feedback,
+            option_id,
         )
 
     async def resolve_tool_approval_async(
@@ -2463,6 +2465,7 @@ class SessionRunService:
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
         if self._should_delegate_to_bound_loop():
             await self._call_coroutine_in_bound_loop_async(
@@ -2471,6 +2474,7 @@ class SessionRunService:
                     tool_call_id=tool_call_id,
                     action=action,
                     feedback=feedback,
+                    option_id=option_id,
                 )
             )
             return
@@ -2479,6 +2483,7 @@ class SessionRunService:
             tool_call_id=tool_call_id,
             action=action,
             feedback=feedback,
+            option_id=option_id,
         )
 
     def _persist_shell_approval_grants(
@@ -2492,10 +2497,12 @@ class SessionRunService:
             action=action,
         )
 
-    def list_open_tool_approvals(self, run_id: str) -> list[dict[str, str]]:
+    def list_open_tool_approvals(self, run_id: str) -> list[dict[str, JsonValue]]:
         return self._interaction_service.list_open_tool_approvals(run_id)
 
-    async def list_open_tool_approvals_async(self, run_id: str) -> list[dict[str, str]]:
+    async def list_open_tool_approvals_async(
+        self, run_id: str
+    ) -> list[dict[str, JsonValue]]:
         return await self._interaction_service.list_open_tool_approvals_async(run_id)
 
     def list_user_questions(self, run_id: str) -> list[dict[str, JsonValue]]:

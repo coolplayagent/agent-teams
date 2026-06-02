@@ -50,6 +50,7 @@ _OPTIONS_WITH_VALUES = frozenset(
         "-m",
         "--account-id",
         "--action",
+        "--agent-id",
         "--answers-json",
         "--arg",
         "--base-url",
@@ -58,8 +59,10 @@ _OPTIONS_WITH_VALUES = frozenset(
         "--config-json",
         "--content",
         "--description",
+        "--distribution",
         "--draft-id",
         "--env",
+        "--env-json",
         "--feedback",
         "--format",
         "--header",
@@ -74,6 +77,7 @@ _OPTIONS_WITH_VALUES = frozenset(
         "--message",
         "--mode",
         "--objective",
+        "--option-id",
         "--orchestration",
         "--payload-json",
         "--port",
@@ -290,11 +294,22 @@ _FAST_SERVER_JSON_OPTION_SCOPES: dict[
     ("agent-runtimes", "save"): (frozenset({"--config-json"}), frozenset()),
     ("agent-runtimes", "delete"): (frozenset(), frozenset()),
     ("agent-runtimes", "test"): (frozenset(), frozenset()),
+    ("agent-runtimes", "registry", "list"): (
+        frozenset(),
+        frozenset({"--refresh"}),
+    ),
+    ("agent-runtimes", "registry", "refresh"): (frozenset(), frozenset()),
+    ("agent-runtimes", "registry", "install"): (
+        frozenset({"--agent-id", "--distribution", "--env-json"}),
+        frozenset(),
+    ),
     ("commands", "list"): (frozenset({"--workspace"}), frozenset()),
     ("commands", "show"): (frozenset({"--workspace"}), frozenset()),
     ("approvals", "list"): (frozenset({"--run-id"}), frozenset()),
     ("approvals", "resolve"): (
-        frozenset({"--run-id", "--tool-call-id", "--action", "--feedback"}),
+        frozenset(
+            {"--run-id", "--tool-call-id", "--action", "--feedback", "--option-id"}
+        ),
         frozenset(),
     ),
     ("questions", "list"): (frozenset({"--run-id"}), frozenset()),
@@ -442,6 +457,9 @@ _FAST_SERVER_JSON_POSITIONAL_ARITY: dict[tuple[str, ...], tuple[int, int]] = {
     ("agent-runtimes", "save"): (1, 1),
     ("agent-runtimes", "delete"): (1, 1),
     ("agent-runtimes", "test"): (1, 1),
+    ("agent-runtimes", "registry", "list"): (0, 0),
+    ("agent-runtimes", "registry", "refresh"): (0, 0),
+    ("agent-runtimes", "registry", "install"): (1, 1),
     ("commands", "list"): (0, 0),
     ("commands", "show"): (1, 1),
     ("approvals", "list"): (0, 0),
@@ -1656,6 +1674,12 @@ def _handle_fast_server_json_command(args: list[str]) -> bool:
 def _fast_server_json_candidate(args: list[str]) -> bool:
     if len(args) < 2:
         return False
+    if len(args) >= 3 and args[:3] in (
+        ["agent-runtimes", "registry", "list"],
+        ["agent-runtimes", "registry", "refresh"],
+        ["agent-runtimes", "registry", "install"],
+    ):
+        return _wants_json(args)
     command = args[:2]
     if command == ["memories", "delete"]:
         return False
@@ -1772,6 +1796,40 @@ def _fast_server_json_route(
             f"/api/system/configs/agent-runtimes/{quote(runtime_name, safe='')}:test",
             None,
         )
+    if len(args) >= 3 and args[:3] == ["agent-runtimes", "registry", "list"]:
+        if not _wants_json(args):
+            return None
+        query = "?refresh=true" if "--refresh" in args else ""
+        return "GET", f"/api/system/configs/agent-runtime-registry{query}", None
+    if len(args) >= 3 and args[:3] == ["agent-runtimes", "registry", "refresh"]:
+        if not _wants_json(args):
+            return None
+        return "POST", "/api/system/configs/agent-runtime-registry:refresh", None
+    if len(args) >= 4 and args[:3] == ["agent-runtimes", "registry", "install"]:
+        if not _wants_json(args):
+            return None
+        registry_id = _required_fast_positional_arg(args[3:])
+        registry_payload: dict[str, object] = {}
+        raw_distribution = _option_value(args, "--distribution", "").strip()
+        if raw_distribution:
+            registry_payload["distribution"] = raw_distribution
+        raw_env_text = _option_value(args, "--env-json", "")
+        if raw_env_text:
+            raw_env = _json_object_option(raw_env_text, "--env-json")
+            registry_payload["env"] = {
+                str(key): str(value) for key, value in raw_env.items()
+            }
+        agent_id = _option_value(args, "--agent-id", "").strip()
+        if agent_id:
+            registry_payload["agent_id"] = agent_id
+        return (
+            "POST",
+            (
+                "/api/system/configs/agent-runtime-registry/"
+                f"{quote(registry_id, safe='')}:install"
+            ),
+            registry_payload,
+        )
     if len(args) >= 2 and args[:2] == ["commands", "list"]:
         if _wants_json(args):
             workspace_id = _resolve_fast_workspace_id(args)
@@ -1800,16 +1858,20 @@ def _fast_server_json_route(
     if len(args) >= 2 and args[:2] == ["approvals", "resolve"]:
         run_id = _required_option_value(args, "--run-id")
         tool_call_id = _required_option_value(args, "--tool-call-id")
+        approval_payload: dict[str, object] = {
+            "action": _required_option_value(args, "--action"),
+            "feedback": _option_value(args, "--feedback", ""),
+        }
+        option_id = _option_value(args, "--option-id", "").strip()
+        if option_id:
+            approval_payload["option_id"] = option_id
         return (
             "POST",
             (
                 f"/api/runs/{quote(run_id, safe='')}/tool-approvals/"
                 f"{quote(tool_call_id, safe='')}/resolve"
             ),
-            {
-                "action": _required_option_value(args, "--action"),
-                "feedback": _option_value(args, "--feedback", ""),
-            },
+            approval_payload,
         )
     if len(args) >= 2 and args[:2] == ["questions", "list"]:
         if _wants_json(args):

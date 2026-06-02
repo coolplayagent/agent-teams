@@ -1206,6 +1206,12 @@ async def test_agent_runtime_sdk_calls_expected_endpoints(monkeypatch) -> None:
         "codex_local", {"agent_id": "codex_local"}
     ) == {"status": "ok"}
     assert await client.test_agent_runtime("codex_local") == {"status": "ok"}
+    assert await client.list_agent_runtime_registry(refresh=True) == {"status": "ok"}
+    assert await client.refresh_agent_runtime_registry() == {"status": "ok"}
+    assert await client.install_agent_runtime_from_registry(
+        "vendor/runtime",
+        {"distribution": "npx"},
+    ) == {"status": "ok"}
     assert await client.delete_agent_runtime("codex_local") == {"status": "ok"}
     assert calls == [
         ("GET", "/api/system/configs/agent-runtimes", None),
@@ -1216,8 +1222,57 @@ async def test_agent_runtime_sdk_calls_expected_endpoints(monkeypatch) -> None:
             {"agent_id": "codex_local"},
         ),
         ("POST", "/api/system/configs/agent-runtimes/codex_local:test", {}),
+        (
+            "GET",
+            "/api/system/configs/agent-runtime-registry?refresh=true",
+            None,
+        ),
+        (
+            "POST",
+            "/api/system/configs/agent-runtime-registry:refresh",
+            {},
+        ),
+        (
+            "POST",
+            "/api/system/configs/agent-runtime-registry/vendor%2Fruntime:install",
+            {"distribution": "npx"},
+        ),
         ("DELETE", "/api/system/configs/agent-runtimes/codex_local", None),
     ]
+
+
+async def test_resolve_tool_approval_sends_acp_option_id(monkeypatch) -> None:
+    client = AsyncAgentTeamsClient()
+    captured: dict[str, object] = {}
+
+    async def fake_request_json(
+        method: str,
+        path: str,
+        payload: object | None = None,
+    ) -> dict[str, object]:
+        captured["method"] = method
+        captured["path"] = path
+        captured["payload"] = payload
+        return {"status": "ok"}
+
+    monkeypatch.setattr(client, "_request_json", fake_request_json)
+
+    assert await client.resolve_tool_approval(
+        "run-1",
+        "tool-call-1",
+        "approve",
+        "ok",
+        option_id="allow_always",
+    ) == {"status": "ok"}
+    assert captured == {
+        "method": "POST",
+        "path": "/api/runs/run-1/tool-approvals/tool-call-1/resolve",
+        "payload": {
+            "action": "approve",
+            "feedback": "ok",
+            "option_id": "allow_always",
+        },
+    }
 
 
 async def test_sdk_misc_endpoint_wrappers_cover_async_primitives(monkeypatch) -> None:

@@ -8,6 +8,8 @@ from relay_teams.sessions.runs.run_state_models import (
     RunStatePhase,
     RunStateRecord,
     RunStateStatus,
+    _payload_object_tuple,
+    _payload_questions,
     apply_run_event_to_state,
 )
 
@@ -205,6 +207,46 @@ def test_user_question_events_project_run_to_awaiting_manual_action() -> None:
     assert answered.status == RunStateStatus.RUNNING
     assert answered.phase == RunStatePhase.STREAMING
     assert answered.pending_user_questions == ()
+
+
+def test_tool_approval_event_projects_acp_options_and_filters_invalid_items() -> None:
+    requested = apply_run_event_to_state(
+        None,
+        event=_build_event(
+            RunEventType.TOOL_APPROVAL_REQUESTED,
+            occurred_at=datetime(2026, 3, 6, 0, 1, tzinfo=UTC),
+            payload_json=(
+                '{"tool_call_id":"call-1","tool_name":"shell",'
+                '"acp_options":['
+                '{"optionId":"allow","name":"Allow once","kind":"allow_once"},'
+                '"ignored",'
+                '{"optionId":"deny","name":"Deny","kind":"reject_once"}'
+                "],"
+                '"questions":["ignored"]}'
+            ),
+        ),
+        event_id=1,
+    )
+
+    assert requested.status == RunStateStatus.PAUSED
+    assert requested.phase == RunStatePhase.AWAITING_TOOL_APPROVAL
+    assert len(requested.pending_tool_approvals) == 1
+    assert requested.pending_tool_approvals[0].acp_options == (
+        {"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
+        {"optionId": "deny", "name": "Deny", "kind": "reject_once"},
+    )
+
+
+def test_payload_helpers_skip_invalid_shapes() -> None:
+    assert _payload_object_tuple({"acp_options": "invalid"}, "acp_options") == ()
+    assert (
+        _payload_object_tuple(
+            {"acp_options": [{"value": object()}]},
+            "acp_options",
+        )
+        == ()
+    )
+    assert _payload_questions({"questions": [{"question": "Missing options"}]}) == ()
 
 
 def test_completed_user_question_keeps_subagent_followup_phase() -> None:

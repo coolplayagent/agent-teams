@@ -33,6 +33,12 @@ from relay_teams.sessions.runs.user_question_repository import (
     UserQuestionRepository,
     UserQuestionStatusConflictError,
 )
+from relay_teams.tools.runtime.acp_approval import (
+    ACP_PERMISSION_METADATA_KEY,
+    ACP_SELECTED_OPTION_ID_METADATA_KEY,
+    acp_options_projection,
+    selected_acp_option_id_for_action,
+)
 from relay_teams.tools.runtime.approval_state import (
     ToolApprovalAction,
     ToolApprovalManager,
@@ -146,6 +152,56 @@ def shell_approval_grant_specs(
             for candidate in prefix_candidates
         )
     return ()
+
+
+def _is_acp_permission_ticket(ticket: ApprovalTicketRecord | None) -> bool:
+    if ticket is None:
+        return False
+    return ticket.metadata.get(ACP_PERMISSION_METADATA_KEY) is True
+
+
+def _manager_approval_projection(item: dict[str, str]) -> dict[str, JsonValue]:
+    return {key: value for key, value in item.items()}
+
+
+def _ticket_approval_projection(item: ApprovalTicketRecord) -> dict[str, JsonValue]:
+    return {
+        "tool_call_id": item.tool_call_id,
+        "instance_id": item.instance_id,
+        "role_id": item.role_id,
+        "tool_name": item.tool_name,
+        "args_preview": item.args_preview,
+        "acp_options": acp_options_projection(item.metadata),
+    }
+
+
+def _resolve_acp_selected_option_id(
+    *,
+    ticket: ApprovalTicketRecord | None,
+    action: str,
+    option_id: str,
+) -> str:
+    normalized_option_id = option_id.strip()
+    if not _is_acp_permission_ticket(ticket):
+        if normalized_option_id:
+            raise ValueError("option_id is only supported for ACP permission tickets")
+        return ""
+    if ticket is None:
+        return ""
+    return selected_acp_option_id_for_action(
+        metadata=ticket.metadata,
+        action=action,
+        requested_option_id=normalized_option_id,
+    )
+
+
+def _acp_selected_option_metadata_patch(
+    selected_option_id: str,
+) -> dict[str, JsonValue] | None:
+    normalized_option_id = selected_option_id.strip()
+    if not normalized_option_id:
+        return None
+    return {ACP_SELECTED_OPTION_ID_METADATA_KEY: normalized_option_id}
 
 
 def validate_user_question_answers(
@@ -330,6 +386,7 @@ class RunInteractionService:
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
         approval_action = parse_tool_approval_action(action)
         runtime = self._get_runtime(run_id)
@@ -358,6 +415,11 @@ class RunInteractionService:
         )
         if ticket is not None and ticket.run_id != run_id:
             raise KeyError(f"Tool approval {tool_call_id} not found for run {run_id}")
+        selected_option_id = _resolve_acp_selected_option_id(
+            ticket=ticket,
+            action=action,
+            option_id=option_id,
+        )
         resolved_ticket = ticket
         if approval_ticket_repo is not None:
             try:
@@ -369,6 +431,9 @@ class RunInteractionService:
                         else ApprovalTicketStatus.DENIED
                     ),
                     feedback=feedback,
+                    metadata_patch=_acp_selected_option_metadata_patch(
+                        selected_option_id
+                    ),
                     expected_status=ApprovalTicketStatus.REQUESTED,
                 )
             except ApprovalTicketStatusConflictError as exc:
@@ -378,7 +443,9 @@ class RunInteractionService:
                         status=exc.actual_status,
                     )
                 ) from exc
-        if approval_action_requires_shell_grant(action):
+        if approval_action_requires_shell_grant(
+            action
+        ) and not _is_acp_permission_ticket(ticket):
             self.persist_shell_approval_grants(ticket=ticket, action=action)
         if approval is not None:
             try:
@@ -426,6 +493,7 @@ class RunInteractionService:
                         "tool_name": tool_name,
                         "action": action,
                         "feedback": feedback,
+                        "option_id": selected_option_id,
                         "instance_id": instance_id,
                         "role_id": role_id,
                     }
@@ -441,6 +509,7 @@ class RunInteractionService:
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
         approval_action = parse_tool_approval_action(action)
         runtime = await self._get_runtime_async(run_id)
@@ -469,6 +538,11 @@ class RunInteractionService:
         )
         if ticket is not None and ticket.run_id != run_id:
             raise KeyError(f"Tool approval {tool_call_id} not found for run {run_id}")
+        selected_option_id = _resolve_acp_selected_option_id(
+            ticket=ticket,
+            action=action,
+            option_id=option_id,
+        )
         resolved_ticket = ticket
         if approval_ticket_repo is not None:
             try:
@@ -480,6 +554,9 @@ class RunInteractionService:
                         else ApprovalTicketStatus.DENIED
                     ),
                     feedback=feedback,
+                    metadata_patch=_acp_selected_option_metadata_patch(
+                        selected_option_id
+                    ),
                     expected_status=ApprovalTicketStatus.REQUESTED,
                 )
             except ApprovalTicketStatusConflictError as exc:
@@ -489,7 +566,9 @@ class RunInteractionService:
                         status=exc.actual_status,
                     )
                 ) from exc
-        if approval_action_requires_shell_grant(action):
+        if approval_action_requires_shell_grant(
+            action
+        ) and not _is_acp_permission_ticket(ticket):
             await self.persist_shell_approval_grants_async(
                 ticket=ticket,
                 action=action,
@@ -540,6 +619,7 @@ class RunInteractionService:
                         "tool_name": tool_name,
                         "action": action,
                         "feedback": feedback,
+                        "option_id": selected_option_id,
                         "instance_id": instance_id,
                         "role_id": role_id,
                     }
@@ -588,36 +668,34 @@ class RunInteractionService:
                 value=value,
             )
 
-    def list_open_tool_approvals(self, run_id: str) -> list[dict[str, str]]:
+    def list_open_tool_approvals(self, run_id: str) -> list[dict[str, JsonValue]]:
         approval_ticket_repo = self._get_approval_ticket_repo()
         if approval_ticket_repo is None:
-            return self._tool_approval_manager.list_open_approvals(run_id=run_id)
+            return [
+                _manager_approval_projection(item)
+                for item in self._tool_approval_manager.list_open_approvals(
+                    run_id=run_id
+                )
+            ]
         return [
-            {
-                "tool_call_id": item.tool_call_id,
-                "instance_id": item.instance_id,
-                "role_id": item.role_id,
-                "tool_name": item.tool_name,
-                "args_preview": item.args_preview,
-            }
+            _ticket_approval_projection(item)
             for item in approval_ticket_repo.list_open_by_run(run_id)
         ]
 
     async def list_open_tool_approvals_async(
         self,
         run_id: str,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, JsonValue]]:
         approval_ticket_repo = self._get_approval_ticket_repo()
         if approval_ticket_repo is None:
-            return self._tool_approval_manager.list_open_approvals(run_id=run_id)
+            return [
+                _manager_approval_projection(item)
+                for item in self._tool_approval_manager.list_open_approvals(
+                    run_id=run_id
+                )
+            ]
         return [
-            {
-                "tool_call_id": item.tool_call_id,
-                "instance_id": item.instance_id,
-                "role_id": item.role_id,
-                "tool_name": item.tool_name,
-                "args_preview": item.args_preview,
-            }
+            _ticket_approval_projection(item)
             for item in await approval_ticket_repo.list_open_by_run_async(run_id)
         ]
 

@@ -52,13 +52,13 @@ export async function resolveGate(runId, taskId, action, feedback = '') {
     );
 }
 
-export async function resolveToolApproval(runId, toolCallId, action, feedback = '') {
+export async function resolveToolApproval(runId, toolCallId, action, feedback = '', optionId = '') {
     return requestJson(
         `/api/runs/${runId}/tool-approvals/${toolCallId}/resolve`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, feedback }),
+            body: JSON.stringify({ action, feedback, option_id: optionId }),
         },
         'Failed to resolve tool approval',
     );

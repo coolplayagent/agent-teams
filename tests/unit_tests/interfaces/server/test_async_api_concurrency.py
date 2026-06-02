@@ -104,7 +104,7 @@ class _AsyncRunService:
         self._created_runs: dict[str, IntentInput] = {}
         self.started_run_ids: list[str] = []
         self.injected_messages: list[tuple[str, str, str, str]] = []
-        self.resolved_tool_approvals: list[tuple[str, str, str, str]] = []
+        self.resolved_tool_approvals: list[tuple[str, str, str, str, str]] = []
 
     def create_run(self, intent_input: IntentInput) -> tuple[str, str]:
         _ = intent_input
@@ -160,11 +160,12 @@ class _AsyncRunService:
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
         await asyncio.sleep(0.001)
         async with self._lock:
             self.resolved_tool_approvals.append(
-                (run_id, tool_call_id, action, feedback)
+                (run_id, tool_call_id, action, feedback, option_id)
             )
 
 

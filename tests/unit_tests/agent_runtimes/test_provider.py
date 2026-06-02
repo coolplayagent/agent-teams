@@ -41,7 +41,7 @@ from relay_teams.agent_runtimes.session_repository import (
 )
 from relay_teams.mcp.mcp_models import McpConfigScope, McpServerSpec
 from relay_teams.mcp.mcp_registry import McpRegistry
-from relay_teams.notifications import NotificationService
+from relay_teams.notifications import NotificationConfig, NotificationService
 from relay_teams.persistence.shared_state_repo import SharedStateRepository
 from relay_teams.providers.model_config import (
     CodeAgentAuthConfig,
@@ -66,9 +66,15 @@ from relay_teams.sessions.runs.run_runtime_repo import RunRuntimeRepository
 from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.gateway.im.service import ImToolService
 from relay_teams.tools.registry import ToolRegistry
+from relay_teams.tools.runtime.acp_approval import (
+    ACP_SELECTED_OPTION_ID_METADATA_KEY,
+)
 from relay_teams.tools.runtime.approval_state import ToolApprovalManager
 from relay_teams.tools.runtime.policy import ToolApprovalPolicy
-from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
+from relay_teams.tools.runtime.approval_ticket_repo import (
+    ApprovalTicketRepository,
+    ApprovalTicketStatus,
+)
 from relay_teams.media import UserPromptContent
 from relay_teams.workspace import WorkspaceManager, build_conversation_id
 
@@ -94,7 +100,7 @@ class _FakeConfigService:
     def __init__(self, agent: ExternalAgentConfig) -> None:
         self._agent = agent
 
-    def resolve_runtime_agent(self, agent_id: str) -> ExternalAgentConfig:
+    async def resolve_runtime_agent_async(self, agent_id: str) -> ExternalAgentConfig:
         assert agent_id == self._agent.agent_id
         return self._agent
 
@@ -540,10 +546,15 @@ def _build_manager(
     workdir: Path,
     config_dir: Path,
     tool_approval_policy: ToolApprovalPolicy | None = None,
+    approval_ticket_repo: ApprovalTicketRepository | None = None,
+    run_runtime_repo: RunRuntimeRepository | None = None,
+    run_intent_repo: RunIntentRepository | None = None,
+    tool_approval_manager: ToolApprovalManager | None = None,
     agent: ExternalAgentConfig | None = None,
     injection_manager: RunInjectionManager | None = None,
     message_repo: _FakeMessageRepo | None = None,
     run_event_hub: RunEventHub | None = None,
+    notification_service: NotificationService | None = None,
     resolve_model_config: (
         Callable[[RoleDefinition, LLMRequest], ModelEndpointConfig | None] | None
     ) = None,
@@ -563,22 +574,24 @@ def _build_manager(
         event_bus=cast(EventLog, object()),
         injection_manager=injection_manager or cast(RunInjectionManager, object()),
         agent_repo=cast(AgentInstanceRepository, object()),
-        approval_ticket_repo=cast(ApprovalTicketRepository, object()),
+        approval_ticket_repo=approval_ticket_repo
+        or cast(ApprovalTicketRepository, object()),
         user_question_repo=None,
-        run_runtime_repo=cast(RunRuntimeRepository, object()),
-        run_intent_repo=cast(RunIntentRepository, object()),
+        run_runtime_repo=run_runtime_repo or cast(RunRuntimeRepository, object()),
+        run_intent_repo=run_intent_repo or cast(RunIntentRepository, object()),
         background_task_service=None,
         tool_registry=cast(ToolRegistry, object()),
-        get_mcp_registry=lambda: McpRegistry(),
+        get_mcp_registry=McpRegistry,
         get_skill_registry=lambda: cast(SkillRegistry, object()),
-        get_role_registry=lambda: cast(RoleRegistry, object()),
+        get_role_registry=RoleRegistry,
         get_task_execution_service=lambda: cast(TaskExecutionService, object()),
         get_task_service=lambda: cast(TaskOrchestrationService, object()),
         run_control_manager=cast(RunControlManager, object()),
-        tool_approval_manager=cast(ToolApprovalManager, object()),
+        tool_approval_manager=tool_approval_manager
+        or cast(ToolApprovalManager, object()),
         user_question_manager=None,
         tool_approval_policy=tool_approval_policy or ToolApprovalPolicy(),
-        get_notification_service=lambda: cast(NotificationService | None, None),
+        get_notification_service=lambda: notification_service,
         resolve_model_config=resolve_model_config,
         im_tool_service=cast(ImToolService | None, None),
     )
@@ -714,6 +727,58 @@ def _build_handle(
     )
     handle.active_prompt = _ActivePromptState(request=request)
     return handle
+
+
+def _build_permission_params(
+    *,
+    session_id: str = "external-session-1",
+    options: list[dict[str, JsonValue]] | None = None,
+) -> dict[str, JsonValue]:
+    return cast(
+        dict[str, JsonValue],
+        {
+            "sessionId": session_id,
+            "_meta": {"traceId": "trace-1"},
+            "toolCall": {
+                "toolCallId": "external-call-1",
+                "title": "shell",
+                "kind": "execute",
+                "rawInput": {"command": "pwd"},
+            },
+            "options": options
+            if options is not None
+            else [
+                {
+                    "optionId": "allow",
+                    "name": "Allow once",
+                    "kind": "allow_once",
+                },
+                {
+                    "optionId": "allow_always",
+                    "name": "Allow always",
+                    "kind": "allow_always",
+                },
+                {
+                    "optionId": "deny",
+                    "name": "Deny",
+                    "kind": "reject_once",
+                },
+            ],
+        },
+    )
+
+
+async def _wait_for_open_ticket(
+    repo: ApprovalTicketRepository,
+    *,
+    run_id: str,
+) -> str:
+    for _ in range(50):
+        open_tickets = await repo.list_open_by_run_async(run_id)
+        if open_tickets:
+            return open_tickets[0].tool_call_id
+        await asyncio.sleep(0.01)
+    raise AssertionError("Timed out waiting for open approval ticket")
 
 
 _PNG_BASE64 = (
@@ -1535,6 +1600,279 @@ async def test_external_acp_routes_mcp_callbacks_to_host_bridge(
         }
     ]
     assert bridge.close_calls == ["conn-1"]
+
+
+@pytest.mark.asyncio
+async def test_external_acp_request_permission_auto_selects_allow_with_yolo(
+    tmp_path: Path,
+) -> None:
+    manager = _build_manager(
+        prompt_text="print the working directory",
+        workdir=tmp_path,
+        config_dir=tmp_path / "config",
+        tool_approval_policy=ToolApprovalPolicy(yolo=True),
+        approval_ticket_repo=ApprovalTicketRepository(tmp_path / "approvals.db"),
+        run_runtime_repo=RunRuntimeRepository(tmp_path / "runtime.db"),
+        run_intent_repo=RunIntentRepository(tmp_path / "intent.db"),
+        tool_approval_manager=ToolApprovalManager(),
+    )
+    request = _build_request()
+    key = _conversation_key(
+        session_id=request.session_id,
+        role_id=request.role_id,
+        agent_id="agent-1",
+    )
+    manager._conversations[key] = _build_handle(
+        transport=_RequestCapturingTransport(),
+        request=request,
+    )
+
+    result = await manager._handle_transport_message(
+        key=key,
+        method="session/request_permission",
+        params=_build_permission_params(),
+        message_id=1,
+    )
+
+    assert result == {"outcome": {"outcome": "selected", "optionId": "allow"}}
+
+
+def test_active_prompt_reuses_published_external_tool_call_id() -> None:
+    request = _build_request()
+    state = _ActivePromptState(request=request)
+
+    assert state.mark_tool_call_published("external-call-1") is True
+
+    host_tool_call_id = state.bind_acp_tool_call_id(
+        request=request,
+        external_tool_call_id="external-call-1",
+    )
+
+    assert host_tool_call_id == "external-call-1"
+    assert state.resolve_host_tool_call_id("external-call-1") == "external-call-1"
+
+
+@pytest.mark.asyncio
+async def test_external_acp_request_permission_waits_for_selected_option(
+    tmp_path: Path,
+) -> None:
+    approval_repo = ApprovalTicketRepository(tmp_path / "approvals.db")
+    runtime_repo = RunRuntimeRepository(tmp_path / "runtime.db")
+    approval_manager = ToolApprovalManager()
+    run_event_hub = RunEventHub()
+    published_events: list[RunEvent] = []
+    run_event_hub.add_publish_listener(published_events.append)
+    notification_service = NotificationService(
+        run_event_hub=run_event_hub,
+        get_config=NotificationConfig,
+    )
+    manager = _build_manager(
+        prompt_text="print the working directory",
+        workdir=tmp_path,
+        config_dir=tmp_path / "config",
+        approval_ticket_repo=approval_repo,
+        run_runtime_repo=runtime_repo,
+        run_intent_repo=RunIntentRepository(tmp_path / "intent.db"),
+        tool_approval_manager=approval_manager,
+        run_event_hub=run_event_hub,
+        notification_service=notification_service,
+    )
+    request = _build_request()
+    key = _conversation_key(
+        session_id=request.session_id,
+        role_id=request.role_id,
+        agent_id="agent-1",
+    )
+    manager._conversations[key] = _build_handle(
+        transport=_RequestCapturingTransport(),
+        request=request,
+    )
+
+    pending = asyncio.create_task(
+        manager._handle_transport_message(
+            key=key,
+            method="session/request_permission",
+            params=_build_permission_params(),
+            message_id=1,
+        )
+    )
+    ticket_id = await _wait_for_open_ticket(approval_repo, run_id=request.run_id)
+    runtime = await runtime_repo.get_async(request.run_id)
+    assert runtime is not None
+    assert runtime.status.value == "paused"
+    assert runtime.phase.value == "awaiting_tool_approval"
+    notification_events = [
+        event
+        for event in published_events
+        if event.event_type == RunEventType.NOTIFICATION_REQUESTED
+    ]
+    assert len(notification_events) == 1
+    _ = await approval_repo.resolve_async(
+        tool_call_id=ticket_id,
+        status=ApprovalTicketStatus.APPROVED,
+        metadata_patch={ACP_SELECTED_OPTION_ID_METADATA_KEY: "allow_always"},
+        expected_status=ApprovalTicketStatus.REQUESTED,
+    )
+    approval_manager.resolve_approval(
+        run_id=request.run_id,
+        tool_call_id=ticket_id,
+        action="approve",
+    )
+
+    result = await pending
+
+    assert result == {"outcome": {"outcome": "selected", "optionId": "allow_always"}}
+    runtime = await runtime_repo.get_async(request.run_id)
+    assert runtime is not None
+    assert runtime.status.value == "running"
+    assert runtime.phase.value == "subagent_running"
+
+
+@pytest.mark.asyncio
+async def test_external_acp_request_permission_denies_ticket_when_option_mapping_fails(
+    tmp_path: Path,
+) -> None:
+    approval_repo = ApprovalTicketRepository(tmp_path / "approvals.db")
+    approval_manager = ToolApprovalManager()
+    manager = _build_manager(
+        prompt_text="print the working directory",
+        workdir=tmp_path,
+        config_dir=tmp_path / "config",
+        approval_ticket_repo=approval_repo,
+        run_runtime_repo=RunRuntimeRepository(tmp_path / "runtime.db"),
+        run_intent_repo=RunIntentRepository(tmp_path / "intent.db"),
+        tool_approval_manager=approval_manager,
+    )
+    request = _build_request()
+    key = _conversation_key(
+        session_id=request.session_id,
+        role_id=request.role_id,
+        agent_id="agent-1",
+    )
+    manager._conversations[key] = _build_handle(
+        transport=_RequestCapturingTransport(),
+        request=request,
+    )
+
+    pending = asyncio.create_task(
+        manager._handle_transport_message(
+            key=key,
+            method="session/request_permission",
+            params=_build_permission_params(
+                options=[
+                    {
+                        "optionId": "allow",
+                        "name": "Allow once",
+                        "kind": "allow_once",
+                    },
+                ],
+            ),
+            message_id=1,
+        )
+    )
+    ticket_id = await _wait_for_open_ticket(approval_repo, run_id=request.run_id)
+    approval_manager.resolve_approval(
+        run_id=request.run_id,
+        tool_call_id=ticket_id,
+        action="deny",
+        feedback="Denied from CLI.",
+    )
+
+    result = await pending
+
+    assert result == {"outcome": {"outcome": "cancelled"}}
+    ticket = await approval_repo.get_async(ticket_id)
+    assert ticket is not None
+    assert ticket.status == ApprovalTicketStatus.DENIED
+    assert ticket.feedback == "Denied from CLI."
+    assert await approval_repo.list_open_by_run_async(request.run_id) == ()
+
+
+@pytest.mark.asyncio
+async def test_external_acp_request_permission_cancel_resolves_open_ticket(
+    tmp_path: Path,
+) -> None:
+    approval_repo = ApprovalTicketRepository(tmp_path / "approvals.db")
+    approval_manager = ToolApprovalManager()
+    manager = _build_manager(
+        prompt_text="print the working directory",
+        workdir=tmp_path,
+        config_dir=tmp_path / "config",
+        tool_approval_policy=ToolApprovalPolicy(timeout_seconds=0.2),
+        approval_ticket_repo=approval_repo,
+        run_runtime_repo=RunRuntimeRepository(tmp_path / "runtime.db"),
+        run_intent_repo=RunIntentRepository(tmp_path / "intent.db"),
+        tool_approval_manager=approval_manager,
+    )
+    request = _build_request()
+    key = _conversation_key(
+        session_id=request.session_id,
+        role_id=request.role_id,
+        agent_id="agent-1",
+    )
+    manager._conversations[key] = _build_handle(
+        transport=_RequestCapturingTransport(),
+        request=request,
+    )
+
+    pending = asyncio.create_task(
+        manager._handle_transport_message(
+            key=key,
+            method="session/request_permission",
+            params=_build_permission_params(),
+            message_id=1,
+        )
+    )
+    ticket_id = await _wait_for_open_ticket(approval_repo, run_id=request.run_id)
+
+    pending.cancel()
+    done, pending_tasks = await asyncio.wait({pending}, timeout=1.0)
+    assert done == {pending}
+    assert not pending_tasks
+    assert pending.cancelled()
+
+    ticket = await approval_repo.get_async(ticket_id)
+    assert ticket is not None
+    assert ticket.status == ApprovalTicketStatus.DENIED
+    assert ticket.feedback == "Prompt turn was cancelled."
+    assert approval_manager.list_open_approvals(run_id=request.run_id) == []
+    assert await approval_repo.list_open_by_run_async(request.run_id) == ()
+
+
+@pytest.mark.asyncio
+async def test_external_acp_request_permission_without_options_is_cancelled(
+    tmp_path: Path,
+) -> None:
+    approval_repo = ApprovalTicketRepository(tmp_path / "approvals.db")
+    manager = _build_manager(
+        prompt_text="print the working directory",
+        workdir=tmp_path,
+        config_dir=tmp_path / "config",
+        approval_ticket_repo=approval_repo,
+        run_runtime_repo=RunRuntimeRepository(tmp_path / "runtime.db"),
+        run_intent_repo=RunIntentRepository(tmp_path / "intent.db"),
+        tool_approval_manager=ToolApprovalManager(),
+    )
+    request = _build_request()
+    key = _conversation_key(
+        session_id=request.session_id,
+        role_id=request.role_id,
+        agent_id="agent-1",
+    )
+    manager._conversations[key] = _build_handle(
+        transport=_RequestCapturingTransport(),
+        request=request,
+    )
+
+    result = await manager._handle_transport_message(
+        key=key,
+        method="session/request_permission",
+        params=_build_permission_params(options=[]),
+        message_id=1,
+    )
+
+    assert result == {"outcome": {"outcome": "cancelled"}}
+    assert await approval_repo.list_open_by_run_async(request.run_id) == ()
 
 
 @pytest.mark.asyncio

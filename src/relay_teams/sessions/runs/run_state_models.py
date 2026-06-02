@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.runs.run_models import RunEvent
@@ -52,6 +52,7 @@ class PendingToolApprovalState(BaseModel):
     target_summary: str = ""
     source: str = ""
     execution_surface: str = ""
+    acp_options: tuple[dict[str, JsonValue], ...] = ()
 
 
 class PausedSubagentState(BaseModel):
@@ -122,6 +123,7 @@ _STOPPED_FOLLOWUP_EVENT_TYPES = {
     RunEventType.RUN_COMPLETED,
     RunEventType.RUN_FAILED,
 }
+_JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 
 
 def initialize_run_state(event: RunEvent, event_id: int) -> RunStateRecord:
@@ -224,6 +226,7 @@ def apply_run_event_to_state(
                 target_summary=_payload_str(payload, "target_summary"),
                 source=_payload_str(payload, "source"),
                 execution_surface=_payload_str(payload, "execution_surface"),
+                acp_options=_payload_object_tuple(payload, "acp_options"),
             )
         status = RunStateStatus.PAUSED
         phase = RunStatePhase.AWAITING_TOOL_APPROVAL
@@ -373,6 +376,24 @@ def _parse_payload(payload_json: str) -> dict[str, object]:
 def _payload_str(payload: dict[str, object], key: str) -> str:
     value = payload.get(key)
     return value if isinstance(value, str) else ""
+
+
+def _payload_object_tuple(
+    payload: dict[str, object],
+    key: str,
+) -> tuple[dict[str, JsonValue], ...]:
+    raw_items = payload.get(key)
+    if not isinstance(raw_items, list):
+        return ()
+    items: list[dict[str, JsonValue]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        try:
+            items.append(_JSON_OBJECT_ADAPTER.validate_python(raw_item))
+        except ValueError:
+            continue
+    return tuple(items)
 
 
 def _payload_questions(

@@ -20,6 +20,7 @@ from relay_teams.media import content_parts_to_text
 from relay_teams.media import normalize_user_prompt_content
 from relay_teams.media import text_part
 from relay_teams.media import user_prompt_content_to_text
+from relay_teams.tools.runtime.acp_approval import acp_options_projection
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRecord
 from relay_teams.sessions.runs.assistant_errors import RunCompletionReason
 from relay_teams.sessions.runs.enums import RunEventType
@@ -1520,6 +1521,7 @@ def approvals_to_projection(
                 "requested_at": record.created_at.isoformat(),
                 "status": record.status.value,
                 "feedback": record.feedback,
+                "acp_options": acp_options_projection(record.metadata),
             }
         )
     for items in by_run.values():

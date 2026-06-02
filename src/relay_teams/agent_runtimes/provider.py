@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import re
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import httpx
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart
 from pydantic_ai.messages import UserPromptPart
 
@@ -33,6 +34,14 @@ from relay_teams.agent_runtimes.clients.acp import (
 from relay_teams.agent_runtimes.clients.a2a import send_a2a_prompt
 from relay_teams.agent_runtimes.clients.cli import run_cli_agent_prompt
 from relay_teams.agent_runtimes.config_service import ExternalAgentConfigService
+from relay_teams.agent_runtimes.acp_permission_models import (
+    AcpPermissionOption,
+    AcpPermissionOptionKind,
+    AcpPermissionRequest,
+    AcpToolCallUpdate,
+    acp_cancelled_permission_response,
+    acp_selected_permission_response,
+)
 from relay_teams.agent_runtimes.host_tool_bridge import (
     HOST_TOOL_SERVER_ID,
     ExternalAcpHostToolBridge,
@@ -60,6 +69,7 @@ from relay_teams.mcp.mcp_registry import (
     McpRegistry,
     overlay_mcp_server_config_w3_auth_env,
 )
+from relay_teams.notifications import NotificationContext, NotificationType
 from relay_teams.providers.model_config import ModelEndpointConfig, ProviderType
 from relay_teams.providers.openai_support import build_model_request_headers
 from relay_teams.providers.provider_contracts import LLMProvider, LLMRequest
@@ -70,7 +80,23 @@ from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.runs.event_stream import RunEventHub, publish_run_event_async
 from relay_teams.sessions.runs.injection_queue import RunInjectionManager
 from relay_teams.sessions.runs.run_models import RunEvent
+from relay_teams.sessions.runs.run_runtime_repo import (
+    RunRuntimePhase,
+    RunRuntimeStatus,
+)
 from relay_teams.sessions.runs.system_injection import SystemInjectionConsumer
+from relay_teams.tools.runtime.acp_approval import (
+    ACP_OPTIONS_METADATA_KEY,
+    ACP_PERMISSION_METADATA_KEY,
+    ACP_SELECTED_OPTION_ID_METADATA_KEY,
+    ACP_TOOL_CALL_ID_METADATA_KEY,
+    acp_options_projection,
+    selected_acp_option_id_for_action,
+)
+from relay_teams.tools.runtime.approval_ticket_repo import (
+    ApprovalTicketStatus,
+    ApprovalTicketStatusConflictError,
+)
 from relay_teams.tools.runtime.context import (
     GatewaySessionLookupLike,
     XiaolubanNotifyServiceLike,
@@ -136,6 +162,8 @@ _OPENCODE_CUSTOM_API_KEY_ENV = "AGENT_TEAMS_OPENCODE_API_KEY"
 _OPENCODE_ZAI_PROVIDER_ID = "zai"
 _OPENCODE_ZAI_API_KEY_ENV = "ZHIPU_API_KEY"
 _OPENCODE_ZAI_DEFAULT_CONTEXT_WINDOW = 128000
+_ACP_PERMISSION_APPROVAL_RISK_LEVEL = "high"
+_ACP_PERMISSION_SOURCE = "external_acp"
 
 
 class AgentRuntimeProvider(LLMProvider):
@@ -268,7 +296,7 @@ class AgentRuntimeSessionManager:
         )
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
-            agent = self._config_service.resolve_runtime_agent(agent_id)
+            agent = await self._config_service.resolve_runtime_agent_async(agent_id)
             if agent.protocol == ExternalAgentProtocol.A2A:
                 prompt_start_content = await self._apply_prompt_start_system_reminders(
                     request
@@ -997,6 +1025,11 @@ class AgentRuntimeSessionManager:
             handle=handle,
             params=params,
         )
+        if method == "session/request_permission":
+            return await self._handle_request_permission(
+                handle=handle,
+                params=params,
+            )
         if method == "mcp/connect":
             server_id = _required_str(params, "acpId", fallback_key="serverId")
             if server_id != HOST_TOOL_SERVER_ID:
@@ -1030,6 +1063,477 @@ class AgentRuntimeSessionManager:
             except KeyError as exc:
                 raise AcpProtocolError(-32602, str(exc)) from exc
         raise AcpProtocolError(-32601, f"Method not found: {method}")
+
+    async def _handle_request_permission(
+        self,
+        *,
+        handle: _ConversationHandle,
+        params: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]:
+        if handle.active_prompt is None:
+            return acp_cancelled_permission_response()
+        try:
+            permission_request = AcpPermissionRequest.model_validate(params)
+        except ValidationError as exc:
+            raise AcpProtocolError(-32602, str(exc)) from exc
+        state = handle.active_prompt
+        state.mark_activity()
+        request = state.request
+        host_tool_call_id = state.bind_acp_tool_call_id(
+            request=request,
+            external_tool_call_id=permission_request.tool_call.tool_call_id,
+        )
+        tool_name = _acp_tool_name(permission_request.tool_call)
+        args = _acp_tool_args(permission_request.tool_call)
+        args_preview = _json_preview(args)
+        await self._publish_external_tool_call(
+            request=request,
+            state=state,
+            tool_call_id=host_tool_call_id,
+            tool_name=tool_name,
+            args=args,
+        )
+        selected_option_id = await self._select_acp_permission_option(
+            request=request,
+            tool_call=permission_request.tool_call,
+            options=permission_request.options,
+            host_tool_call_id=host_tool_call_id,
+            tool_name=tool_name,
+            args_preview=args_preview,
+        )
+        if not selected_option_id:
+            return acp_cancelled_permission_response()
+        return acp_selected_permission_response(selected_option_id)
+
+    async def _select_acp_permission_option(
+        self,
+        *,
+        request: LLMRequest,
+        tool_call: AcpToolCallUpdate,
+        options: tuple[AcpPermissionOption, ...],
+        host_tool_call_id: str,
+        tool_name: str,
+        args_preview: str,
+    ) -> str:
+        if not options:
+            return ""
+        if await self._should_auto_approve_acp_permission(request):
+            option = _first_acp_permission_option(
+                options,
+                preferred=(
+                    AcpPermissionOptionKind.ALLOW_ONCE,
+                    AcpPermissionOptionKind.ALLOW_ALWAYS,
+                ),
+            )
+            return option.option_id if option is not None else ""
+        metadata = _acp_permission_metadata(
+            tool_call=tool_call,
+            options=options,
+        )
+        await self._approval_ticket_repo.upsert_requested_async(
+            tool_call_id=host_tool_call_id,
+            run_id=request.run_id,
+            session_id=request.session_id,
+            task_id=request.task_id,
+            instance_id=request.instance_id,
+            role_id=request.role_id,
+            tool_name=tool_name,
+            args_preview=args_preview,
+            metadata=metadata,
+            signature_args_preview=tool_call.tool_call_id,
+        )
+        try:
+            existing_approval = self._tool_approval_manager.get_approval(
+                run_id=request.run_id,
+                tool_call_id=host_tool_call_id,
+            )
+            if existing_approval is None:
+                self._tool_approval_manager.open_approval(
+                    run_id=request.run_id,
+                    tool_call_id=host_tool_call_id,
+                    instance_id=request.instance_id,
+                    role_id=request.role_id,
+                    tool_name=tool_name,
+                    args_preview=args_preview,
+                    risk_level=_ACP_PERMISSION_APPROVAL_RISK_LEVEL,
+                )
+            await self._mark_run_awaiting_acp_permission(request)
+            await self._publish_acp_approval_requested(
+                request=request,
+                tool_call_id=host_tool_call_id,
+                tool_name=tool_name,
+                args_preview=args_preview,
+                metadata=metadata,
+            )
+            await self._publish_acp_approval_notification(
+                request=request,
+                tool_call_id=host_tool_call_id,
+                tool_name=tool_name,
+            )
+            try:
+                action, feedback = await asyncio.to_thread(
+                    self._tool_approval_manager.wait_for_approval,
+                    run_id=request.run_id,
+                    tool_call_id=host_tool_call_id,
+                    timeout=self._tool_approval_policy.timeout_seconds,
+                )
+            except TimeoutError:
+                self._tool_approval_manager.close_approval(
+                    run_id=request.run_id,
+                    tool_call_id=host_tool_call_id,
+                )
+                await self._resolve_acp_approval_timeout(
+                    request=request,
+                    tool_call_id=host_tool_call_id,
+                    tool_name=tool_name,
+                )
+                return ""
+            self._tool_approval_manager.close_approval(
+                run_id=request.run_id,
+                tool_call_id=host_tool_call_id,
+            )
+            return await self._resolve_selected_acp_permission_option(
+                request=request,
+                tool_call_id=host_tool_call_id,
+                tool_name=tool_name,
+                action=action,
+                feedback=feedback,
+                metadata=metadata,
+            )
+        except asyncio.CancelledError:
+            self._cancel_open_acp_approval_waiter(
+                run_id=request.run_id,
+                tool_call_id=host_tool_call_id,
+            )
+            self._tool_approval_manager.close_approval(
+                run_id=request.run_id,
+                tool_call_id=host_tool_call_id,
+            )
+            await self._resolve_acp_approval_cancelled(
+                request=request,
+                tool_call_id=host_tool_call_id,
+                tool_name=tool_name,
+            )
+            raise
+
+    def _cancel_open_acp_approval_waiter(
+        self,
+        *,
+        run_id: str,
+        tool_call_id: str,
+    ) -> None:
+        with suppress(KeyError):
+            self._tool_approval_manager.resolve_approval(
+                run_id=run_id,
+                tool_call_id=tool_call_id,
+                action="deny",
+                feedback="Prompt turn was cancelled.",
+            )
+
+    async def _should_auto_approve_acp_permission(self, request: LLMRequest) -> bool:
+        try:
+            intent = await self._run_intent_repo.get_async(request.run_id)
+        except KeyError:
+            return self._tool_approval_policy.yolo
+        return intent.yolo
+
+    async def _mark_run_awaiting_acp_permission(self, request: LLMRequest) -> None:
+        await self._run_runtime_repo.ensure_async(
+            run_id=request.run_id,
+            session_id=request.session_id,
+            root_task_id=request.task_id,
+            status=RunRuntimeStatus.PAUSED,
+            phase=RunRuntimePhase.AWAITING_TOOL_APPROVAL,
+        )
+        await self._run_runtime_repo.update_async(
+            request.run_id,
+            status=RunRuntimeStatus.PAUSED,
+            phase=RunRuntimePhase.AWAITING_TOOL_APPROVAL,
+            active_instance_id=request.instance_id,
+            active_task_id=request.task_id,
+            active_role_id=request.role_id,
+            active_subagent_instance_id=None,
+            last_error=None,
+        )
+
+    async def _publish_external_tool_call(
+        self,
+        *,
+        request: LLMRequest,
+        state: _ActivePromptState,
+        tool_call_id: str,
+        tool_name: str,
+        args: JsonValue,
+    ) -> None:
+        if not state.mark_tool_call_published(tool_call_id):
+            return
+        await publish_run_event_async(
+            self._run_event_hub,
+            RunEvent(
+                session_id=request.session_id,
+                run_id=request.run_id,
+                trace_id=request.trace_id,
+                task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
+                event_type=RunEventType.TOOL_CALL,
+                payload_json=json.dumps(
+                    {
+                        "tool_call_id": tool_call_id,
+                        "tool_name": tool_name,
+                        "args": args,
+                        "role_id": request.role_id,
+                        "instance_id": request.instance_id,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            ),
+        )
+
+    async def _publish_acp_approval_requested(
+        self,
+        *,
+        request: LLMRequest,
+        tool_call_id: str,
+        tool_name: str,
+        args_preview: str,
+        metadata: dict[str, JsonValue],
+    ) -> None:
+        await publish_run_event_async(
+            self._run_event_hub,
+            RunEvent(
+                session_id=request.session_id,
+                run_id=request.run_id,
+                trace_id=request.trace_id,
+                task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
+                event_type=RunEventType.TOOL_APPROVAL_REQUESTED,
+                payload_json=json.dumps(
+                    {
+                        "tool_call_id": tool_call_id,
+                        "tool_name": tool_name,
+                        "args_preview": args_preview,
+                        "instance_id": request.instance_id,
+                        "role_id": request.role_id,
+                        "risk_level": _ACP_PERMISSION_APPROVAL_RISK_LEVEL,
+                        "permission_scope": "",
+                        "target_summary": tool_name,
+                        "source": _ACP_PERMISSION_SOURCE,
+                        "execution_surface": "",
+                        "acp_options": acp_options_projection(metadata),
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+
+    async def _publish_acp_approval_notification(
+        self,
+        *,
+        request: LLMRequest,
+        tool_call_id: str,
+        tool_name: str,
+    ) -> None:
+        notification_service = self._get_notification_service()
+        if notification_service is None:
+            return
+        role_label = request.role_id or "An external agent"
+        body = f"{role_label} requests approval for {tool_name}."
+        _ = await notification_service.emit_async(
+            notification_type=NotificationType.TOOL_APPROVAL_REQUESTED,
+            title="Approval Required",
+            body=body,
+            dedupe_key=f"tool_approval_requested:{request.run_id}:{tool_call_id}",
+            context=NotificationContext(
+                session_id=request.session_id,
+                run_id=request.run_id,
+                trace_id=request.trace_id,
+                task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+            ),
+        )
+
+    async def _resolve_acp_approval_timeout(
+        self,
+        *,
+        request: LLMRequest,
+        tool_call_id: str,
+        tool_name: str,
+    ) -> None:
+        with suppress(KeyError, ApprovalTicketStatusConflictError):
+            await self._approval_ticket_repo.resolve_async(
+                tool_call_id=tool_call_id,
+                status=ApprovalTicketStatus.TIMED_OUT,
+                expected_status=ApprovalTicketStatus.REQUESTED,
+            )
+        await self._publish_acp_approval_resolved(
+            request=request,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            action="timeout",
+            feedback="",
+        )
+
+    async def _resolve_acp_approval_cancelled(
+        self,
+        *,
+        request: LLMRequest,
+        tool_call_id: str,
+        tool_name: str,
+    ) -> None:
+        feedback = "Prompt turn was cancelled."
+        with suppress(KeyError, ApprovalTicketStatusConflictError):
+            await self._approval_ticket_repo.resolve_async(
+                tool_call_id=tool_call_id,
+                status=ApprovalTicketStatus.DENIED,
+                feedback=feedback,
+                expected_status=ApprovalTicketStatus.REQUESTED,
+            )
+        await self._publish_acp_approval_resolved(
+            request=request,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            action="cancelled",
+            feedback=feedback,
+        )
+
+    async def _resolve_selected_acp_permission_option(
+        self,
+        *,
+        request: LLMRequest,
+        tool_call_id: str,
+        tool_name: str,
+        action: str,
+        feedback: str,
+        metadata: dict[str, JsonValue],
+    ) -> str:
+        ticket = await self._approval_ticket_repo.get_async(tool_call_id)
+        resolved_metadata = metadata if ticket is None else ticket.metadata
+        selected_option_id = str(
+            resolved_metadata.get(ACP_SELECTED_OPTION_ID_METADATA_KEY) or ""
+        ).strip()
+        if not selected_option_id:
+            try:
+                selected_option_id = selected_acp_option_id_for_action(
+                    metadata=resolved_metadata,
+                    action=action,
+                )
+            except ValueError as exc:
+                log_event(
+                    LOGGER,
+                    logging.WARNING,
+                    event="external_agent.acp_permission.option_unresolved",
+                    message="Could not map ACP permission approval to an option",
+                    payload={
+                        "tool_call_id": tool_call_id,
+                        "action": action,
+                        "error": str(exc),
+                    },
+                )
+                if ticket is None or ticket.status == ApprovalTicketStatus.REQUESTED:
+                    with suppress(KeyError, ApprovalTicketStatusConflictError):
+                        await self._approval_ticket_repo.resolve_async(
+                            tool_call_id=tool_call_id,
+                            status=ApprovalTicketStatus.DENIED,
+                            feedback=feedback,
+                            expected_status=ApprovalTicketStatus.REQUESTED,
+                        )
+                await self._publish_acp_approval_resolved(
+                    request=request,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    action="cancelled",
+                    feedback=feedback,
+                )
+                return ""
+            if ticket is None or ticket.status == ApprovalTicketStatus.REQUESTED:
+                status = (
+                    ApprovalTicketStatus.APPROVED
+                    if action
+                    in {
+                        "approve",
+                        "approve_once",
+                        "approve_exact",
+                        "approve_prefix",
+                    }
+                    else ApprovalTicketStatus.DENIED
+                )
+                ticket = await self._approval_ticket_repo.resolve_async(
+                    tool_call_id=tool_call_id,
+                    status=status,
+                    feedback=feedback,
+                    metadata_patch={
+                        ACP_SELECTED_OPTION_ID_METADATA_KEY: selected_option_id
+                    },
+                    expected_status=ApprovalTicketStatus.REQUESTED,
+                )
+        await self._publish_acp_approval_resolved(
+            request=request,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            action=action,
+            feedback=feedback if ticket is None else ticket.feedback,
+        )
+        await self._mark_run_running_after_acp_permission(request)
+        return selected_option_id
+
+    async def _mark_run_running_after_acp_permission(
+        self,
+        request: LLMRequest,
+    ) -> None:
+        is_coordinator = self._get_role_registry().is_coordinator_role(request.role_id)
+        await self._run_runtime_repo.update_async(
+            request.run_id,
+            status=RunRuntimeStatus.RUNNING,
+            phase=(
+                RunRuntimePhase.COORDINATOR_RUNNING
+                if is_coordinator
+                else RunRuntimePhase.SUBAGENT_RUNNING
+            ),
+            active_instance_id=request.instance_id,
+            active_task_id=request.task_id,
+            active_role_id=request.role_id,
+            active_subagent_instance_id=None if is_coordinator else request.instance_id,
+            last_error=None,
+        )
+
+    async def _publish_acp_approval_resolved(
+        self,
+        *,
+        request: LLMRequest,
+        tool_call_id: str,
+        tool_name: str,
+        action: str,
+        feedback: str,
+    ) -> None:
+        await publish_run_event_async(
+            self._run_event_hub,
+            RunEvent(
+                session_id=request.session_id,
+                run_id=request.run_id,
+                trace_id=request.trace_id,
+                task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
+                event_type=RunEventType.TOOL_APPROVAL_RESOLVED,
+                payload_json=json.dumps(
+                    {
+                        "tool_call_id": tool_call_id,
+                        "tool_name": tool_name,
+                        "action": action,
+                        "feedback": feedback,
+                        "instance_id": request.instance_id,
+                        "role_id": request.role_id,
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
 
     async def _handle_session_update(
         self,
@@ -1100,30 +1604,26 @@ class AgentRuntimeSessionManager:
             )
             return
         if update_name == "tool_call":
-            payload = {
-                "tool_call_id": update.get("toolCallId"),
-                "tool_name": _optional_str(update.get("title")) or "tool",
-            }
+            external_tool_call_id = _optional_str(update.get("toolCallId")) or ""
+            tool_call_id = handle.active_prompt.resolve_host_tool_call_id(
+                external_tool_call_id
+            )
             raw_input = update.get("rawInput")
-            if raw_input is not None:
-                payload["args"] = raw_input
-            await publish_run_event_async(
-                self._run_event_hub,
-                RunEvent(
-                    session_id=request.session_id,
-                    run_id=request.run_id,
-                    trace_id=request.trace_id,
-                    task_id=request.task_id,
-                    instance_id=request.instance_id,
-                    role_id=request.role_id,
-                    event_type=RunEventType.TOOL_CALL,
-                    payload_json=json.dumps(payload, ensure_ascii=False, default=str),
-                ),
+            await self._publish_external_tool_call(
+                request=request,
+                state=handle.active_prompt,
+                tool_call_id=tool_call_id or external_tool_call_id,
+                tool_name=_optional_str(update.get("title")) or "tool",
+                args=raw_input if raw_input is not None else {},
             )
             return
         if update_name == "tool_call_update":
             tool_result = _extract_tool_result(update)
             tool_title = _optional_str(update.get("title")) or "tool"
+            external_tool_call_id = _optional_str(update.get("toolCallId")) or ""
+            tool_call_id = handle.active_prompt.resolve_host_tool_call_id(
+                external_tool_call_id
+            )
             tool_result = _annotate_external_computer_tool_result(
                 tool_name=tool_title,
                 tool_result=tool_result,
@@ -1141,7 +1641,7 @@ class AgentRuntimeSessionManager:
                     event_type=RunEventType.TOOL_RESULT,
                     payload_json=json.dumps(
                         {
-                            "tool_call_id": update.get("toolCallId"),
+                            "tool_call_id": tool_call_id or external_tool_call_id,
                             "tool_name": tool_title,
                             "result": tool_result,
                             "error": _optional_str(update.get("status")) == "failed",
@@ -1420,6 +1920,8 @@ class _ActivePromptState:
         self.text_chunks: list[str] = []
         self.thinking_started = False
         self.last_tool_result_text: str | None = None
+        self._acp_tool_call_ids: dict[str, str] = {}
+        self._published_tool_call_ids: set[str] = set()
         self._activity_event = asyncio.Event()
 
     def mark_activity(self) -> None:
@@ -1437,6 +1939,50 @@ class _ActivePromptState:
         if text is not None:
             self.last_tool_result_text = text
 
+    def bind_acp_tool_call_id(
+        self,
+        *,
+        request: LLMRequest,
+        external_tool_call_id: str,
+    ) -> str:
+        normalized_external_id = external_tool_call_id.strip()
+        existing = self._acp_tool_call_ids.get(normalized_external_id)
+        if existing is not None:
+            return existing
+        if (
+            normalized_external_id
+            and normalized_external_id in self._published_tool_call_ids
+        ):
+            self._acp_tool_call_ids[normalized_external_id] = normalized_external_id
+            return normalized_external_id
+        digest = hashlib.sha256(
+            "||".join(
+                [
+                    request.run_id,
+                    request.task_id,
+                    request.instance_id,
+                    request.role_id,
+                    normalized_external_id,
+                ]
+            ).encode("utf-8")
+        ).hexdigest()[:24]
+        host_tool_call_id = f"acp-perm-{digest}"
+        self._acp_tool_call_ids[normalized_external_id] = host_tool_call_id
+        return host_tool_call_id
+
+    def resolve_host_tool_call_id(self, external_tool_call_id: str) -> str:
+        return self._acp_tool_call_ids.get(
+            external_tool_call_id.strip(),
+            external_tool_call_id,
+        )
+
+    def mark_tool_call_published(self, tool_call_id: str) -> bool:
+        normalized_tool_call_id = tool_call_id.strip()
+        if normalized_tool_call_id in self._published_tool_call_ids:
+            return False
+        self._published_tool_call_ids.add(normalized_tool_call_id)
+        return True
+
     def resolve_output(self) -> str:
         text_output = "".join(self.text_chunks).strip()
         if text_output:
@@ -1450,6 +1996,63 @@ class _ActivePromptState:
         if self.text_chunks:
             return None
         return _extract_image_timeout_fallback(self.last_tool_result_text)
+
+
+def _first_acp_permission_option(
+    options: tuple[AcpPermissionOption, ...],
+    *,
+    preferred: tuple[AcpPermissionOptionKind, ...],
+) -> AcpPermissionOption | None:
+    for kind in preferred:
+        for option in options:
+            if option.kind == kind:
+                return option
+    return None
+
+
+def _acp_tool_name(tool_call: AcpToolCallUpdate) -> str:
+    for candidate in (tool_call.title, tool_call.kind):
+        normalized = candidate.strip()
+        if normalized:
+            return normalized
+    return "external_acp_tool"
+
+
+def _acp_tool_args(tool_call: AcpToolCallUpdate) -> JsonValue:
+    if tool_call.raw_input is not None:
+        return tool_call.raw_input
+    fallback: dict[str, JsonValue] = {}
+    if tool_call.kind.strip():
+        fallback["kind"] = tool_call.kind.strip()
+    if tool_call.title.strip():
+        fallback["title"] = tool_call.title.strip()
+    if tool_call.content:
+        fallback["content"] = list(tool_call.content)
+    return fallback
+
+
+def _json_preview(value: JsonValue) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)[:4000]
+
+
+def _acp_permission_metadata(
+    *,
+    tool_call: AcpToolCallUpdate,
+    options: tuple[AcpPermissionOption, ...],
+) -> dict[str, JsonValue]:
+    metadata: dict[str, JsonValue] = {
+        ACP_PERMISSION_METADATA_KEY: True,
+        ACP_TOOL_CALL_ID_METADATA_KEY: tool_call.tool_call_id,
+        ACP_OPTIONS_METADATA_KEY: [
+            option.model_dump(mode="json", by_alias=True, exclude_none=True)
+            for option in options
+        ],
+    }
+    if tool_call.title.strip():
+        metadata["acp_tool_title"] = tool_call.title.strip()
+    if tool_call.kind.strip():
+        metadata["acp_tool_kind"] = tool_call.kind.strip()
+    return metadata
 
 
 def _conversation_key(*, session_id: str, role_id: str, agent_id: str) -> str:

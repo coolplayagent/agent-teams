@@ -2270,6 +2270,116 @@ def test_resolve_tool_approval_tolerates_publish_failure(tmp_path: Path) -> None
     assert manager.list_open_tool_approvals("run-existing") == []
 
 
+def test_list_open_tool_approvals_projects_acp_options(tmp_path: Path) -> None:
+    db_path = tmp_path / "run_approval_acp_options.db"
+    manager = _build_manager(db_path)
+    RunRuntimeRepository(db_path).ensure(
+        run_id="run-existing",
+        session_id="session-1",
+        root_task_id="task-root-1",
+    )
+    ApprovalTicketRepository(db_path).upsert_requested(
+        tool_call_id="call-1",
+        run_id="run-existing",
+        session_id="session-1",
+        task_id="task-root-1",
+        instance_id="inst-1",
+        role_id="Coordinator",
+        tool_name="shell",
+        args_preview="{}",
+        metadata=cast(
+            dict[str, JsonValue],
+            {
+                "acp_permission_request": True,
+                "acp_options": [
+                    {"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
+                    {
+                        "optionId": "reject",
+                        "name": "Reject once",
+                        "kind": "reject_once",
+                    },
+                ],
+            },
+        ),
+    )
+
+    approvals = manager.list_open_tool_approvals("run-existing")
+
+    assert approvals == [
+        {
+            "tool_call_id": "call-1",
+            "instance_id": "inst-1",
+            "role_id": "Coordinator",
+            "tool_name": "shell",
+            "args_preview": "{}",
+            "acp_options": [
+                {"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
+                {"optionId": "reject", "name": "Reject once", "kind": "reject_once"},
+            ],
+        }
+    ]
+
+
+def test_resolve_tool_approval_persists_acp_selected_option_id(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "run_approval_acp_option.db"
+    manager = _build_manager(db_path)
+    runtime_repo = RunRuntimeRepository(db_path)
+    ticket_repo = ApprovalTicketRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-existing",
+        session_id="session-1",
+        root_task_id="task-root-1",
+    )
+    runtime_repo.update(
+        "run-existing",
+        status=RunRuntimeStatus.PAUSED,
+        phase=RunRuntimePhase.AWAITING_TOOL_APPROVAL,
+    )
+    ticket_repo.upsert_requested(
+        tool_call_id="call-1",
+        run_id="run-existing",
+        session_id="session-1",
+        task_id="task-root-1",
+        instance_id="inst-1",
+        role_id="Coordinator",
+        tool_name="shell",
+        args_preview="{}",
+        metadata=cast(
+            dict[str, JsonValue],
+            {
+                "acp_permission_request": True,
+                "acp_options": [
+                    {"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
+                    {
+                        "optionId": "allow_always",
+                        "name": "Allow always",
+                        "kind": "allow_always",
+                    },
+                    {
+                        "optionId": "reject",
+                        "name": "Reject once",
+                        "kind": "reject_once",
+                    },
+                ],
+            },
+        ),
+    )
+
+    manager.resolve_tool_approval(
+        "run-existing",
+        "call-1",
+        "approve",
+        option_id="allow_always",
+    )
+
+    ticket = ticket_repo.get("call-1")
+    assert ticket is not None
+    assert ticket.status == ApprovalTicketStatus.APPROVED
+    assert ticket.metadata["acp_selected_option_id"] == "allow_always"
+
+
 def test_resolve_tool_approval_returns_conflict_when_ticket_was_resolved_mid_submit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -4518,8 +4628,11 @@ async def test_bound_loop_helpers_dispatch_callbacks_to_service_loop(
         tool_call_id: str,
         action: str,
         feedback: str = "",
+        option_id: str = "",
     ) -> None:
-        lifecycle_calls.append(f"resolve:{run_id}:{tool_call_id}:{action}:{feedback}")
+        lifecycle_calls.append(
+            f"resolve:{run_id}:{tool_call_id}:{action}:{feedback}:{option_id}"
+        )
 
     monkeypatch.setattr(manager, "_create_run_local_async", _create_run_local_async)
     monkeypatch.setattr(manager, "_ensure_run_started_local_async", _ensure_started)
@@ -4593,7 +4706,7 @@ async def test_bound_loop_helpers_dispatch_callbacks_to_service_loop(
         "inject:run-created:user:wake up",
         "stop:run-created",
         "resume:run-created",
-        "resolve:run-created:call-1:approve:ok",
+        "resolve:run-created:call-1:approve:ok:",
     ]
 
 

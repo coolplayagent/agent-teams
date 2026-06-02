@@ -12,9 +12,11 @@ from relay_teams.agent_runtimes.models import (
     ExternalAgentProtocol,
     ExternalAgentSecretBinding,
     ExternalAgentSummary,
+    RegistryTransportConfig,
     StdioTransportConfig,
     StreamableHttpTransportConfig,
 )
+from relay_teams.agent_runtimes.registry_service import AcpRegistryService
 from relay_teams.agent_runtimes.secret_store import (
     ExternalAgentSecretStore,
     get_external_agent_secret_store,
@@ -29,12 +31,14 @@ class ExternalAgentConfigService:
         *,
         config_dir: Path,
         secret_store: ExternalAgentSecretStore | None = None,
+        registry_service: AcpRegistryService | None = None,
     ) -> None:
         self._config_dir = config_dir
         self._config_path = config_dir / _CONFIG_FILE_NAME
         self._secret_store = (
             get_external_agent_secret_store() if secret_store is None else secret_store
         )
+        self._registry_service = registry_service
 
     def list_agents(self) -> tuple[ExternalAgentSummary, ...]:
         return tuple(
@@ -58,6 +62,9 @@ class ExternalAgentConfigService:
             )
             for agent in self._load_collection().agents
         )
+
+    def list_agent_configs(self) -> tuple[ExternalAgentConfig, ...]:
+        return self._load_collection().agents
 
     def get_agent(self, agent_id: str) -> ExternalAgentConfig:
         normalized_agent_id = _normalize_required_text(agent_id, "agent_id")
@@ -109,7 +116,7 @@ class ExternalAgentConfigService:
             agent_id=normalized_agent_id,
         )
 
-    def resolve_runtime_agent(self, agent_id: str) -> ExternalAgentConfig:
+    async def resolve_runtime_agent_async(self, agent_id: str) -> ExternalAgentConfig:
         config = self.get_agent(agent_id)
         if isinstance(config.transport, StdioTransportConfig):
             return config.model_copy(
@@ -136,6 +143,27 @@ class ExternalAgentConfigService:
                                 kind="header",
                             )
                         }
+                    )
+                }
+            )
+        if isinstance(config.transport, RegistryTransportConfig):
+            if self._registry_service is None:
+                raise RuntimeError("ACP registry service is not configured")
+            resolved_transport = config.transport.model_copy(
+                update={
+                    "env": self._resolve_runtime_bindings(
+                        agent_id=config.agent_id,
+                        bindings=config.transport.env,
+                        kind="env",
+                    )
+                }
+            )
+            return config.model_copy(
+                update={
+                    "transport": (
+                        await self._registry_service.resolve_runtime_transport_async(
+                            resolved_transport
+                        )
                     )
                 }
             )
@@ -212,6 +240,29 @@ class ExternalAgentConfigService:
             )
         if isinstance(incoming.transport, CustomTransportConfig):
             return incoming
+        if isinstance(incoming.transport, RegistryTransportConfig):
+            return incoming.model_copy(
+                update={
+                    "transport": incoming.transport.model_copy(
+                        update={
+                            "env": self._persist_secret_bindings(
+                                agent_id=incoming.agent_id,
+                                bindings=incoming.transport.env,
+                                current_bindings=(
+                                    current.transport.env
+                                    if isinstance(current, ExternalAgentConfig)
+                                    and isinstance(
+                                        current.transport,
+                                        RegistryTransportConfig,
+                                    )
+                                    else ()
+                                ),
+                                kind="env",
+                            )
+                        }
+                    )
+                }
+            )
         raise ValueError(
             f"Unsupported external agent transport: {incoming.transport.transport.value}"
         )
@@ -307,6 +358,20 @@ class ExternalAgentConfigService:
                                 agent_id=config.agent_id,
                                 bindings=config.transport.headers,
                                 kind="header",
+                            )
+                        }
+                    )
+                }
+            )
+        if isinstance(config.transport, RegistryTransportConfig):
+            return config.model_copy(
+                update={
+                    "transport": config.transport.model_copy(
+                        update={
+                            "env": self._attach_bindings(
+                                agent_id=config.agent_id,
+                                bindings=config.transport.env,
+                                kind="env",
                             )
                         }
                     )
@@ -417,6 +482,25 @@ class ExternalAgentConfigService:
                     )
                 }
             )
+        elif isinstance(config.transport, RegistryTransportConfig):
+            transport = config.transport.model_copy(
+                update={
+                    "registry_id": _normalize_required_text(
+                        config.transport.registry_id,
+                        "registry_id",
+                    ),
+                    "distribution": _normalize_registry_distribution(
+                        config.transport.distribution
+                    ),
+                    "registry_version": str(
+                        config.transport.registry_version or ""
+                    ).strip(),
+                    "env": tuple(
+                        _normalize_secret_binding(binding)
+                        for binding in config.transport.env
+                    ),
+                }
+            )
         else:  # pragma: no cover - defensive guard for future transports
             raise ValueError(
                 f"Unsupported external agent transport: {config.transport.transport.value}"
@@ -466,7 +550,8 @@ def _validate_protocol_transport(
     protocol: ExternalAgentProtocol,
     transport: StdioTransportConfig
     | StreamableHttpTransportConfig
-    | CustomTransportConfig,
+    | CustomTransportConfig
+    | RegistryTransportConfig,
 ) -> None:
     if protocol == ExternalAgentProtocol.A2A and not isinstance(
         transport, StreamableHttpTransportConfig
@@ -476,6 +561,18 @@ def _validate_protocol_transport(
         transport, StdioTransportConfig
     ):
         raise ValueError("CLI agent runtimes require stdio transport")
+    if protocol != ExternalAgentProtocol.ACP and isinstance(
+        transport,
+        RegistryTransportConfig,
+    ):
+        raise ValueError("Registry agent runtimes require acp protocol")
+
+
+def _normalize_registry_distribution(value: str) -> str:
+    normalized = str(value or "").strip()
+    if normalized in {"auto", "binary", "npx", "uvx"}:
+        return normalized
+    raise ValueError("Registry distribution must be auto, binary, npx, or uvx")
 
 
 def _strip_legacy_stdio_workdir(payload: object) -> object:

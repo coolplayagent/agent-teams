@@ -390,16 +390,22 @@ class ApprovalTicketRepository(SharedSqliteRepository):
         tool_call_id: str,
         status: ApprovalTicketStatus,
         feedback: str = "",
+        metadata_patch: dict[str, JsonValue] | None = None,
         expected_status: ApprovalTicketStatus | None = None,
     ) -> ApprovalTicketRecord:
         now = datetime.now(tz=timezone.utc).isoformat()
         resolved_at = now if status != ApprovalTicketStatus.REQUESTED else None
+        metadata_json = self._merged_metadata_json(
+            tool_call_id=tool_call_id,
+            metadata_patch=metadata_patch,
+        )
         rowcount = self._run_write(
             operation_name="resolve",
             operation=lambda: self._resolve_row(
                 tool_call_id=tool_call_id,
                 status=status,
                 feedback=feedback,
+                metadata_json=metadata_json,
                 updated_at=now,
                 resolved_at=resolved_at,
                 expected_status=expected_status,
@@ -422,10 +428,15 @@ class ApprovalTicketRepository(SharedSqliteRepository):
         tool_call_id: str,
         status: ApprovalTicketStatus,
         feedback: str = "",
+        metadata_patch: dict[str, JsonValue] | None = None,
         expected_status: ApprovalTicketStatus | None = None,
     ) -> ApprovalTicketRecord:
         now = datetime.now(tz=timezone.utc).isoformat()
         resolved_at = now if status != ApprovalTicketStatus.REQUESTED else None
+        metadata_json = await self._merged_metadata_json_async(
+            tool_call_id=tool_call_id,
+            metadata_patch=metadata_patch,
+        )
         rowcount = await self._run_async_write(
             operation_name="resolve_async",
             operation=lambda conn: self._resolve_row_async(
@@ -433,6 +444,7 @@ class ApprovalTicketRepository(SharedSqliteRepository):
                 tool_call_id=tool_call_id,
                 status=status,
                 feedback=feedback,
+                metadata_json=metadata_json,
                 updated_at=now,
                 resolved_at=resolved_at,
                 expected_status=expected_status,
@@ -743,32 +755,46 @@ class ApprovalTicketRepository(SharedSqliteRepository):
         tool_call_id: str,
         status: ApprovalTicketStatus,
         feedback: str,
+        metadata_json: str | None,
         updated_at: str,
         resolved_at: str | None,
         expected_status: ApprovalTicketStatus | None,
     ) -> int:
+        metadata_clause = ""
+        if metadata_json is not None:
+            metadata_clause = "metadata_json=?, "
         if expected_status is None:
             cursor = self._conn.execute(
-                """
+                f"""
                 UPDATE approval_tickets
-                SET status=?, feedback=?, updated_at=?, resolved_at=?
+                SET status=?, feedback=?, {metadata_clause}updated_at=?, resolved_at=?
                 WHERE tool_call_id=?
                 """,
-                (status.value, feedback, updated_at, resolved_at, tool_call_id),
+                _resolve_row_params(
+                    status=status,
+                    feedback=feedback,
+                    metadata_json=metadata_json,
+                    updated_at=updated_at,
+                    resolved_at=resolved_at,
+                    tool_call_id=tool_call_id,
+                ),
             )
             return int(cursor.rowcount or 0)
         cursor = self._conn.execute(
-            """
+            f"""
             UPDATE approval_tickets
-            SET status=?, feedback=?, updated_at=?, resolved_at=?
+            SET status=?, feedback=?, {metadata_clause}updated_at=?, resolved_at=?
             WHERE tool_call_id=? AND status=?
             """,
             (
-                status.value,
-                feedback,
-                updated_at,
-                resolved_at,
-                tool_call_id,
+                *_resolve_row_params(
+                    status=status,
+                    feedback=feedback,
+                    metadata_json=metadata_json,
+                    updated_at=updated_at,
+                    resolved_at=resolved_at,
+                    tool_call_id=tool_call_id,
+                ),
                 expected_status.value,
             ),
         )
@@ -782,40 +808,80 @@ class ApprovalTicketRepository(SharedSqliteRepository):
         tool_call_id: str,
         status: ApprovalTicketStatus,
         feedback: str,
+        metadata_json: str | None,
         updated_at: str,
         resolved_at: str | None,
         expected_status: ApprovalTicketStatus | None,
     ) -> int:
+        metadata_clause = ""
+        if metadata_json is not None:
+            metadata_clause = "metadata_json=?, "
         if expected_status is None:
             cursor = await conn.execute(
-                """
+                f"""
                 UPDATE approval_tickets
-                SET status=?, feedback=?, updated_at=?, resolved_at=?
+                SET status=?, feedback=?, {metadata_clause}updated_at=?, resolved_at=?
                 WHERE tool_call_id=?
                 """,
-                (status.value, feedback, updated_at, resolved_at, tool_call_id),
+                _resolve_row_params(
+                    status=status,
+                    feedback=feedback,
+                    metadata_json=metadata_json,
+                    updated_at=updated_at,
+                    resolved_at=resolved_at,
+                    tool_call_id=tool_call_id,
+                ),
             )
             rowcount = int(cursor.rowcount or 0)
             await cursor.close()
             return rowcount
         cursor = await conn.execute(
-            """
+            f"""
             UPDATE approval_tickets
-            SET status=?, feedback=?, updated_at=?, resolved_at=?
+            SET status=?, feedback=?, {metadata_clause}updated_at=?, resolved_at=?
             WHERE tool_call_id=? AND status=?
             """,
             (
-                status.value,
-                feedback,
-                updated_at,
-                resolved_at,
-                tool_call_id,
+                *_resolve_row_params(
+                    status=status,
+                    feedback=feedback,
+                    metadata_json=metadata_json,
+                    updated_at=updated_at,
+                    resolved_at=resolved_at,
+                    tool_call_id=tool_call_id,
+                ),
                 expected_status.value,
             ),
         )
         rowcount = int(cursor.rowcount or 0)
         await cursor.close()
         return rowcount
+
+    def _merged_metadata_json(
+        self,
+        *,
+        tool_call_id: str,
+        metadata_patch: dict[str, JsonValue] | None,
+    ) -> str | None:
+        if metadata_patch is None:
+            return None
+        record = self.get(tool_call_id)
+        metadata = {} if record is None else dict(record.metadata)
+        metadata.update(metadata_patch)
+        return json.dumps(metadata, ensure_ascii=False, sort_keys=True)
+
+    async def _merged_metadata_json_async(
+        self,
+        *,
+        tool_call_id: str,
+        metadata_patch: dict[str, JsonValue] | None,
+    ) -> str | None:
+        if metadata_patch is None:
+            return None
+        record = await self.get_async(tool_call_id)
+        metadata = {} if record is None else dict(record.metadata)
+        metadata.update(metadata_patch)
+        return json.dumps(metadata, ensure_ascii=False, sort_keys=True)
 
     def _to_record(
         self,
@@ -938,6 +1004,22 @@ def _load_ticket_timestamps(
         created_at,
         updated_at,
     )
+
+
+def _resolve_row_params(
+    *,
+    status: ApprovalTicketStatus,
+    feedback: str,
+    metadata_json: str | None,
+    updated_at: str,
+    resolved_at: str | None,
+    tool_call_id: str,
+) -> tuple[object, ...]:
+    params: list[object] = [status.value, feedback]
+    if metadata_json is not None:
+        params.append(metadata_json)
+    params.extend([updated_at, resolved_at, tool_call_id])
+    return tuple(params)
 
 
 def _optional_ticket_timestamp(

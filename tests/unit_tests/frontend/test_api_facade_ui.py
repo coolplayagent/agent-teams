@@ -816,6 +816,8 @@ export function invalidateManagedRequests(prefix) {
                 "await mod.fetchAgentRuntimeRegistry(true); "
                 "await mod.refreshAgentRuntimeRegistry(); "
                 "await mod.installAgentRuntimeFromRegistry('vendor/runtime', { distribution: 'npx' }); "
+                "await mod.startAgentRuntimeTestJob('local-agent'); "
+                "await mod.fetchAgentRuntimeTestJob('job-1'); "
                 "await mod.saveModelProfile('vision-profile', { model: 'vision-model' }); "
                 "await mod.deleteModelProfile('vision-profile'); "
                 "await mod.saveClawHubSkill('writer', { name: 'Writer' }); "
@@ -860,6 +862,8 @@ export function invalidateManagedRequests(prefix) {
         "/api/system/configs/agent-runtime-registry?refresh=true",
         "/api/system/configs/agent-runtime-registry:refresh",
         "/api/system/configs/agent-runtime-registry/vendor%2Fruntime:install",
+        "/api/system/configs/agent-runtimes/local-agent:test-job",
+        "/api/system/configs/agent-runtime-test-jobs/job-1",
         "/api/system/configs/model/profiles/vision-profile",
         "/api/system/configs/model/profiles/vision-profile",
         "/api/system/configs/clawhub/skills/writer",

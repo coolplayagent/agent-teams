@@ -61,6 +61,7 @@ import { markSessionTerminalRunViewed } from '../api.js';
 
 const TERMINAL_VIEW_RETRY_DELAY_MS = 250;
 const TERMINAL_VIEW_MAX_ATTEMPTS = 3;
+const runtimeSetupElements = new Map();
 
 export function handleRunStarted(eventMeta, { resumeSubagents = false } = {}) {
     sysLog(`Run started (trace: ${eventMeta?.trace_id})`);
@@ -217,7 +218,14 @@ export function handleOutputDelta(payload, eventMeta, instanceId, roleId) {
     });
 }
 
-export function handleGenerationProgress(payload) {
+export function handleGenerationProgress(payload, eventMeta, instanceId, roleId) {
+    if (
+        String(payload?.source || '') === 'agent_runtime_registry'
+        || String(payload?.run_kind || '') === 'agent_runtime_setup'
+    ) {
+        renderRuntimeSetupProgress(payload, eventMeta, instanceId, roleId);
+        return;
+    }
     const runKind = String(payload?.run_kind || 'generation');
     const phase = String(payload?.phase || 'running');
     if (phase === 'started') {
@@ -231,6 +239,104 @@ export function handleGenerationProgress(payload) {
     if (phase === 'failed') {
         sysLog(`${runKind} failed.`, 'log-error');
     }
+}
+
+function renderRuntimeSetupProgress(payload, eventMeta, instanceId, roleId) {
+    const runId = String(eventMeta?.run_id || eventMeta?.trace_id || state.activeRunId || '').trim();
+    if (!runId) return;
+    const primaryRoleId = getRunPrimaryRoleId(runId);
+    const isPrimary = !roleId || isRunPrimaryRoleId(roleId, runId);
+    const container = isPrimary
+        ? coordinatorContainerFor(eventMeta)
+        : getActiveSubagentSessionStreamContainer(instanceId);
+    if (!container) {
+        applyStreamOverlayEvent('generation_progress', payload, {
+            runId,
+            instanceId,
+            roleId: roleId || primaryRoleId,
+            label: isPrimary ? getRunPrimaryRoleLabel(runId) : roleId,
+            eventId: eventMeta?.event_id || '',
+        });
+        return;
+    }
+    const streamKey = runtimeSetupElementKey(runId, instanceId, roleId, isPrimary);
+    let statusEl = runtimeSetupElements.get(streamKey);
+    if (!statusEl || !statusEl.isConnected) {
+        statusEl = document.createElement('div');
+        statusEl.className = 'runtime-setup-status';
+        statusEl.dataset.runId = runId;
+        statusEl.dataset.streamKey = streamKey;
+        statusEl.innerHTML = `
+            <div class="runtime-setup-status-header">
+                <div class="runtime-setup-status-title"></div>
+                <div class="runtime-setup-status-percent"></div>
+            </div>
+            <div class="runtime-setup-status-message"></div>
+            <div class="runtime-setup-progress" aria-hidden="true"><span></span></div>
+            <div class="runtime-setup-status-meta"></div>
+        `;
+        container.appendChild(statusEl);
+        runtimeSetupElements.set(streamKey, statusEl);
+    }
+    const phase = String(payload?.phase || 'running').trim() || 'running';
+    const percent = normalizedPercent(payload?.progress_percent);
+    const message = String(payload?.message || '').trim();
+    const errorMessage = String(payload?.error_message || '').trim();
+    const byteText = formatRuntimeSetupByteProgress(
+        payload?.downloaded_bytes,
+        payload?.total_bytes,
+    );
+    statusEl.dataset.state = phase;
+    statusEl.classList.toggle('is-terminal', phase === 'completed' || phase === 'failed');
+    statusEl.classList.toggle('is-error', phase === 'failed');
+    statusEl.querySelector('.runtime-setup-status-title').textContent = 'Preparing Agent Runtime';
+    statusEl.querySelector('.runtime-setup-status-message').textContent = (
+        errorMessage || message || 'Preparing Agent Runtime...'
+    );
+    statusEl.querySelector('.runtime-setup-status-meta').textContent = [
+        phase.replaceAll('_', ' '),
+        String(payload?.registry_id || '').trim(),
+        String(payload?.distribution || '').trim(),
+        byteText,
+    ].filter(Boolean).join(' · ');
+    const percentEl = statusEl.querySelector('.runtime-setup-status-percent');
+    percentEl.textContent = percent === null ? '' : `${percent}%`;
+    const progressEl = statusEl.querySelector('.runtime-setup-progress');
+    const progressBar = progressEl.querySelector('span');
+    progressEl.classList.toggle('indeterminate', percent === null && phase !== 'completed' && phase !== 'failed');
+    progressBar.style.width = `${percent === null ? 42 : percent}%`;
+}
+
+function runtimeSetupElementKey(runId, instanceId, roleId, isPrimary) {
+    if (isPrimary) return `${runId}:primary`;
+    return `${runId}:${String(instanceId || roleId || 'subagent').trim()}`;
+}
+
+function normalizedPercent(value) {
+    if (value == null) return null;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function formatRuntimeSetupByteProgress(downloadedBytes, totalBytes) {
+    const downloaded = Number(downloadedBytes || 0);
+    const total = totalBytes == null ? null : Number(totalBytes);
+    if (!downloaded && !total) return '';
+    if (Number.isFinite(total) && total > 0) {
+        return `${formatRuntimeSetupBytes(downloaded)} / ${formatRuntimeSetupBytes(total)}`;
+    }
+    return formatRuntimeSetupBytes(downloaded);
+}
+
+function formatRuntimeSetupBytes(value) {
+    const bytes = Number(value || 0);
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) {
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 export function handleThinkingStarted(payload, eventMeta, instanceId, roleId) {

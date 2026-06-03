@@ -8,7 +8,7 @@ import json
 import os
 import platform
 import threading
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import TracebackType
@@ -23,6 +23,8 @@ from relay_teams.agent_runtimes import (
     AcpRegistryError,
     AcpRegistryInstallRequest,
     AcpRegistryService,
+    AgentRuntimeSetupPhase,
+    AgentRuntimeSetupProgress,
     ExternalAgentConfig,
     ExternalAgentProtocol,
     ExternalAgentSecretBinding,
@@ -58,6 +60,39 @@ class _FakeHttpClient:
         if isinstance(self._response, Exception):
             raise self._response
         return self._response
+
+    def stream(self, method: str, url: httpx.URL | str) -> "_FakeHttpStream":
+        _ = method
+        self._urls.append(str(url))
+        return _FakeHttpStream(self._response)
+
+
+class _FakeHttpStream:
+    def __init__(self, response: httpx.Response | Exception) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> "_FakeHttpStreamResponse":
+        if isinstance(self._response, Exception):
+            raise self._response
+        return _FakeHttpStreamResponse(self._response)
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        _ = (exc_type, exc_value, traceback)
+
+
+class _FakeHttpStreamResponse:
+    def __init__(self, response: httpx.Response) -> None:
+        self.status_code = response.status_code
+        self.headers = response.headers
+        self._content = response.content
+
+    async def aiter_bytes(self) -> AsyncIterator[bytes]:
+        yield self._content
 
 
 class _FakeHttpClientFactory:
@@ -670,17 +705,96 @@ async def test_binary_resolution_supports_raw_executable_download(
         factory=_FakeHttpClientFactory(
             [
                 _json_response(payload),
-                httpx.Response(200, content=b"runtime"),
+                httpx.Response(
+                    200,
+                    content=b"runtime",
+                    headers={"content-length": str(len(b"runtime"))},
+                ),
             ]
         ),
     )
+    progress_events: list[AgentRuntimeSetupProgress] = []
+
+    async def progress_callback(progress: AgentRuntimeSetupProgress) -> None:
+        progress_events.append(progress)
 
     resolved = await service.resolve_runtime_transport_async(
-        RegistryTransportConfig(registry_id="vendor/runtime")
+        RegistryTransportConfig(registry_id="vendor/runtime"),
+        agent_id="vendor_runtime",
+        progress_callback=progress_callback,
     )
 
     assert resolved.command.endswith("agent.exe")
     assert Path(resolved.command).read_bytes() == b"runtime"
+    assert any(
+        event.phase == AgentRuntimeSetupPhase.DOWNLOADING
+        and event.progress_percent == 75
+        and event.downloaded_bytes == len(b"runtime")
+        for event in progress_events
+    )
+    assert progress_events[-1].phase == AgentRuntimeSetupPhase.READY
+    assert progress_events[-1].progress_percent == 100
+
+    progress_events.clear()
+    cached = await service.resolve_runtime_transport_async(
+        RegistryTransportConfig(registry_id="vendor/runtime"),
+        agent_id="vendor_runtime",
+        progress_callback=progress_callback,
+    )
+
+    assert cached.command == resolved.command
+    assert any(
+        event.phase == AgentRuntimeSetupPhase.READY
+        and event.message == "Agent Runtime binary is already prepared."
+        for event in progress_events
+    )
+
+
+@pytest.mark.asyncio
+async def test_binary_download_reports_unbounded_progress_without_content_length(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        registry_service_module,
+        "_current_registry_platform_key",
+        lambda: "windows-x86_64",
+    )
+    content = b"x" * (1024 * 1024)
+    payload = _registry_payload(
+        _binary_agent(
+            "vendor/runtime",
+            sha256=hashlib.sha256(content).hexdigest(),
+            archive_url="https://example.test/agent.exe",
+        )
+    )
+    service = _service(
+        tmp_path,
+        factory=_FakeHttpClientFactory(
+            [
+                _json_response(payload),
+                httpx.Response(200, content=content, headers={"content-length": ""}),
+            ]
+        ),
+    )
+    progress_events: list[AgentRuntimeSetupProgress] = []
+
+    async def progress_callback(progress: AgentRuntimeSetupProgress) -> None:
+        progress_events.append(progress)
+
+    resolved = await service.resolve_runtime_transport_async(
+        RegistryTransportConfig(registry_id="vendor/runtime"),
+        agent_id="vendor_runtime",
+        progress_callback=progress_callback,
+    )
+
+    assert resolved.command.endswith("agent.exe")
+    assert any(
+        event.phase == AgentRuntimeSetupPhase.DOWNLOADING
+        and event.progress_percent is None
+        and event.downloaded_bytes == len(content)
+        for event in progress_events
+    )
 
 
 @pytest.mark.asyncio
@@ -899,7 +1013,12 @@ async def test_binary_download_rejects_http_error(tmp_path: Path) -> None:
     )
 
     with pytest.raises(AcpRegistryError, match="Failed to download"):
-        await service._download_bytes("https://example.test/runtime.zip")
+        await service._download_bytes(
+            "https://example.test/runtime.zip",
+            agent_id="vendor_runtime",
+            registry_id="vendor/runtime",
+            progress_callback=None,
+        )
 
 
 @pytest.mark.asyncio

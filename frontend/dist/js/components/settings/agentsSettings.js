@@ -5,10 +5,11 @@
 import {
     deleteAgentRuntime,
     fetchAgentRuntime,
+    fetchAgentRuntimeTestJob,
     fetchAgentRuntimes,
     fetchEnvironmentVariables,
     saveAgentRuntime,
-    testAgentRuntime,
+    startAgentRuntimeTestJob,
 } from '../../core/api.js';
 import { showToast } from '../../utils/feedback.js';
 import { t } from '../../utils/i18n.js';
@@ -26,6 +27,7 @@ const HIDDEN_APP_ENV_KEYS = new Set([
     'SSL_VERIFY',
     'ssl_verify',
 ]);
+const AGENT_RUNTIME_TEST_POLL_MS = 600;
 
 let agentSummaries = [];
 let selectedAgentId = '';
@@ -38,6 +40,8 @@ let currentRegistryEnv = [];
 let currentRegistryEntry = null;
 let availableEnvironmentBindings = [];
 let languageBound = false;
+let agentActionBusy = false;
+let activeAgentTestJobId = '';
 
 export function bindAgentSettingsHandlers() {
     bindActionButton('add-agent-btn', handleAddAgent);
@@ -605,11 +609,39 @@ async function handleSaveAgent() {
 }
 
 async function handleTestAgent() {
+    if (agentActionBusy) return;
+    let jobId = '';
     try {
+        setAgentActionBusy(true);
         const draft = buildDraftFromForm();
         const pathAgentId = selectedSourceAgentId || draft.agent_id;
         const saved = normalizeAgentConfig(await saveAgentRuntime(pathAgentId, draft));
-        const result = await testAgentRuntime(saved.agent_id);
+        selectedAgentId = saved.agent_id;
+        selectedSourceAgentId = saved.agent_id;
+        const initialJob = normalizeTestJob(await startAgentRuntimeTestJob(saved.agent_id));
+        jobId = initialJob.job_id;
+        activeAgentTestJobId = jobId;
+        renderAgentTestJobStatus(initialJob);
+        const completedJob = await waitForAgentRuntimeTestJob(jobId);
+        if (activeAgentTestJobId !== jobId) {
+            return;
+        }
+        renderAgentTestJobStatus(completedJob);
+        if (completedJob.status === 'failed') {
+            throw new Error(
+                completedJob.error_message
+                || completedJob.message
+                || t('settings.agents.test_failed_message'),
+            );
+        }
+        const result = completedJob.result || {};
+        if (result.ok === false) {
+            throw new Error(
+                result.message
+                || completedJob.message
+                || t('settings.agents.test_failed_message'),
+            );
+        }
         selectedAgentId = saved.agent_id;
         selectedSourceAgentId = saved.agent_id;
         await loadAgentSettingsPanel(saved.agent_id);
@@ -626,6 +658,11 @@ async function handleTestAgent() {
             message: error.message || t('settings.agents.test_failed_message'),
             tone: 'danger',
         });
+    } finally {
+        if (!jobId || activeAgentTestJobId === jobId) {
+            activeAgentTestJobId = '';
+        }
+        setAgentActionBusy(false);
     }
 }
 
@@ -814,12 +851,34 @@ function toggleAgentActions(visibility) {
     setActionDisplay('save-agent-btn', visibility.save);
     setActionDisplay('delete-agent-btn', visibility.delete);
     setActionDisplay('cancel-agent-btn', visibility.cancel);
+    setAgentActionBusy(agentActionBusy);
 }
 
 function setActionDisplay(id, visible) {
     const button = document.getElementById(id);
     if (button) {
         button.style.display = visible ? 'inline-flex' : 'none';
+    }
+}
+
+function setAgentActionBusy(isBusy) {
+    agentActionBusy = isBusy === true;
+    [
+        'test-agent-btn',
+        'save-agent-btn',
+        'delete-agent-btn',
+        'cancel-agent-btn',
+    ].forEach(id => {
+        const button = document.getElementById(id);
+        if (!button) return;
+        button.disabled = agentActionBusy;
+        button.setAttribute?.('aria-busy', agentActionBusy ? 'true' : 'false');
+    });
+    const testButton = document.getElementById('test-agent-btn');
+    if (testButton) {
+        testButton.textContent = agentActionBusy
+            ? t('settings.agents.testing')
+            : t('settings.action.test');
     }
 }
 
@@ -837,6 +896,125 @@ function renderAgentStatus(message, tone) {
         statusEl.classList.add(`role-editor-status-${tone}`);
     }
     statusEl.textContent = message;
+}
+
+function renderAgentTestJobStatus(job) {
+    const statusEl = document.getElementById('agent-editor-status');
+    if (!statusEl) return;
+    const normalizedJob = normalizeTestJob(job);
+    const percent = Number.isFinite(normalizedJob.progress_percent)
+        ? Math.max(0, Math.min(100, Number(normalizedJob.progress_percent)))
+        : null;
+    const byteText = formatByteProgress(
+        normalizedJob.downloaded_bytes,
+        normalizedJob.total_bytes,
+    );
+    statusEl.className = 'role-editor-status role-editor-status-progress';
+    if (normalizedJob.status === 'failed' || normalizedJob.phase === 'failed') {
+        statusEl.classList.add('role-editor-status-danger');
+    } else {
+        statusEl.classList.add('role-editor-status-warning');
+    }
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = `
+        <div class="agent-runtime-test-status">
+            <div class="agent-runtime-test-status-main">
+                ${escapeHtml(normalizedJob.message || t('settings.agents.testing_message'))}
+            </div>
+            <div class="agent-runtime-test-status-meta">
+                ${escapeHtml(formatRuntimeTestMeta(normalizedJob, byteText))}
+            </div>
+            <div class="agent-runtime-test-progress${percent === null ? ' indeterminate' : ''}" aria-hidden="true">
+                <span style="width: ${percent === null ? 42 : percent}%;"></span>
+            </div>
+        </div>
+    `;
+}
+
+async function waitForAgentRuntimeTestJob(jobId) {
+    let latest = normalizeTestJob(await fetchAgentRuntimeTestJob(jobId));
+    renderAgentTestJobStatus(latest);
+    while (latest.status === 'queued' || latest.status === 'running') {
+        await delay(AGENT_RUNTIME_TEST_POLL_MS);
+        if (activeAgentTestJobId !== jobId) {
+            return latest;
+        }
+        latest = normalizeTestJob(await fetchAgentRuntimeTestJob(jobId));
+        renderAgentTestJobStatus(latest);
+    }
+    return latest;
+}
+
+function normalizeTestJob(job) {
+    return {
+        job_id: String(job?.job_id || '').trim(),
+        agent_id: String(job?.agent_id || '').trim(),
+        registry_id: String(job?.registry_id || '').trim(),
+        distribution: String(job?.distribution || '').trim(),
+        status: String(job?.status || 'running').trim() || 'running',
+        phase: String(job?.phase || 'queued').trim() || 'queued',
+        message: String(job?.message || '').trim(),
+        progress_percent: job?.progress_percent == null
+            ? null
+            : Number.isFinite(Number(job.progress_percent))
+            ? Number(job.progress_percent)
+            : null,
+        downloaded_bytes: Number.isFinite(Number(job?.downloaded_bytes))
+            ? Number(job.downloaded_bytes)
+            : 0,
+        total_bytes: job?.total_bytes == null
+            ? null
+            : Number.isFinite(Number(job.total_bytes))
+            ? Number(job.total_bytes)
+            : null,
+        result: job?.result && typeof job.result === 'object' ? job.result : null,
+        error_message: String(job?.error_message || '').trim(),
+    };
+}
+
+function formatRuntimeTestMeta(job, byteText) {
+    const parts = [];
+    if (job.phase) {
+        parts.push(job.phase.replaceAll('_', ' '));
+    }
+    if (job.registry_id) {
+        parts.push(job.registry_id);
+    }
+    if (job.distribution) {
+        parts.push(job.distribution);
+    }
+    if (byteText) {
+        parts.push(byteText);
+    }
+    return parts.join(' · ');
+}
+
+function formatByteProgress(downloadedBytes, totalBytes) {
+    if (!downloadedBytes && !totalBytes) return '';
+    if (totalBytes) {
+        return `${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}`;
+    }
+    return formatBytes(downloadedBytes);
+}
+
+function formatBytes(value) {
+    const bytes = Number(value || 0);
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function delay(ms) {
+    return new Promise(resolve => {
+        window.setTimeout(resolve, ms);
+    });
 }
 
 function setInputValue(id, value) {

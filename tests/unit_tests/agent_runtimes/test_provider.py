@@ -35,6 +35,10 @@ from relay_teams.agent_runtimes.models import (
     StdioTransportConfig,
     StreamableHttpTransportConfig,
 )
+from relay_teams.agent_runtimes.setup_models import (
+    AgentRuntimeSetupPhase,
+    AgentRuntimeSetupProgress,
+)
 from relay_teams.agent_runtimes.clients.a2a import A2aPromptResult
 from relay_teams.agent_runtimes.session_repository import (
     ExternalAgentSessionRepository,
@@ -89,6 +93,7 @@ _extract_tool_result = provider_module._extract_tool_result
 _inject_opencode_model_args = provider_module._inject_opencode_model_args
 AcpTransportClient = provider_module.AcpTransportClient
 AgentRuntimeSessionManager = provider_module.AgentRuntimeSessionManager
+_runtime_setup_progress_update = provider_module._runtime_setup_progress_update
 
 _TransportMessageHandler = Callable[
     [str, dict[str, JsonValue], str | int | None],
@@ -100,7 +105,13 @@ class _FakeConfigService:
     def __init__(self, agent: ExternalAgentConfig) -> None:
         self._agent = agent
 
-    async def resolve_runtime_agent_async(self, agent_id: str) -> ExternalAgentConfig:
+    async def resolve_runtime_agent_async(
+        self,
+        agent_id: str,
+        *,
+        progress_callback: object | None = None,
+    ) -> ExternalAgentConfig:
+        _ = progress_callback
         assert agent_id == self._agent.agent_id
         return self._agent
 
@@ -597,6 +608,79 @@ def _build_manager(
     )
 
 
+@pytest.mark.asyncio
+async def test_runtime_setup_progress_helpers_publish_generation_progress(
+    tmp_path: Path,
+) -> None:
+    event_hub = _CapturingRunEventHub()
+    manager = _build_manager(
+        prompt_text="run external agent",
+        workdir=tmp_path,
+        config_dir=tmp_path / "config",
+        run_event_hub=cast(RunEventHub, event_hub),
+    )
+    request = _build_request()
+    progress = AgentRuntimeSetupProgress(
+        agent_id="agent-1",
+        registry_id="vendor/runtime",
+        distribution="binary",
+        phase=AgentRuntimeSetupPhase.DOWNLOADING,
+        message="Downloading Agent Runtime binary.",
+        progress_percent=35,
+    )
+
+    await manager._publish_runtime_setup_phase(
+        request=request,
+        progress=None,
+        phase=AgentRuntimeSetupPhase.READY,
+        message="Ready.",
+        progress_percent=100,
+    )
+    await manager._publish_runtime_setup_phase(
+        request=request,
+        progress=progress,
+        phase=AgentRuntimeSetupPhase.READY,
+        message="Ready.",
+        progress_percent=100,
+    )
+
+    assert len(event_hub.events) == 1
+    event = event_hub.events[0]
+    assert event.event_type == RunEventType.GENERATION_PROGRESS
+    payload = json.loads(event.payload_json)
+    assert payload["run_kind"] == "agent_runtime_setup"
+    assert payload["source"] == "agent_runtime_registry"
+    assert payload["role_id"] == request.role_id
+    assert payload["instance_id"] == request.instance_id
+    assert payload["phase"] == AgentRuntimeSetupPhase.READY.value
+    assert payload["progress_percent"] == 100
+
+
+def test_runtime_setup_progress_update_sets_failed_error_message() -> None:
+    progress = AgentRuntimeSetupProgress(
+        agent_id="agent-1",
+        phase=AgentRuntimeSetupPhase.DOWNLOADING,
+        message="Downloading.",
+    )
+
+    implicit_error = _runtime_setup_progress_update(
+        progress,
+        phase=AgentRuntimeSetupPhase.FAILED,
+        message="Setup failed.",
+        progress_percent=None,
+    )
+    explicit_error = _runtime_setup_progress_update(
+        progress,
+        phase=AgentRuntimeSetupPhase.FAILED,
+        message="Setup failed.",
+        progress_percent=None,
+        error_message="boom",
+    )
+
+    assert implicit_error.error_message == "Setup failed."
+    assert explicit_error.error_message == "boom"
+
+
 def _install_transport_builder(
     *,
     monkeypatch: pytest.MonkeyPatch,
@@ -779,6 +863,18 @@ async def _wait_for_open_ticket(
             return open_tickets[0].tool_call_id
         await asyncio.sleep(0.01)
     raise AssertionError("Timed out waiting for open approval ticket")
+
+
+async def _wait_for_published_event(
+    events: list[RunEvent],
+    event_type: RunEventType,
+) -> RunEvent:
+    for _ in range(50):
+        for event in events:
+            if event.event_type == event_type:
+                return event
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"Timed out waiting for {event_type.value} event")
 
 
 _PNG_BASE64 = (
@@ -1701,12 +1797,10 @@ async def test_external_acp_request_permission_waits_for_selected_option(
     assert runtime is not None
     assert runtime.status.value == "paused"
     assert runtime.phase.value == "awaiting_tool_approval"
-    notification_events = [
-        event
-        for event in published_events
-        if event.event_type == RunEventType.NOTIFICATION_REQUESTED
-    ]
-    assert len(notification_events) == 1
+    _ = await _wait_for_published_event(
+        published_events,
+        RunEventType.NOTIFICATION_REQUESTED,
+    )
     _ = await approval_repo.resolve_async(
         tool_call_id=ticket_id,
         status=ApprovalTicketStatus.APPROVED,

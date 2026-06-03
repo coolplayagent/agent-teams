@@ -62,6 +62,12 @@ from relay_teams.agent_runtimes.registry_service import (
     AcpRegistryUnsupportedError,
     registry_default_agent_id,
 )
+from relay_teams.agent_runtimes.setup_models import (
+    AgentRuntimeJobStatus,
+    AgentRuntimeSetupPhase,
+    AgentRuntimeSetupProgress,
+    AgentRuntimeTestJob,
+)
 from relay_teams.agent_runtimes.session_repository import (
     ExternalAgentSessionRepository,
 )
@@ -70,6 +76,7 @@ from relay_teams.agent_runtimes.skill_bridge import (
     SkillBridgeManifest,
     SkillBridgeService,
 )
+from relay_teams.agent_runtimes.test_job_service import AgentRuntimeTestJobService
 
 __all__ = [
     "AcpCancelledPermissionOutcome",
@@ -93,6 +100,11 @@ __all__ = [
     "AcpRegistryUnsupportedError",
     "AcpSelectedPermissionOutcome",
     "AcpToolCallUpdate",
+    "AgentRuntimeJobStatus",
+    "AgentRuntimeSetupPhase",
+    "AgentRuntimeSetupProgress",
+    "AgentRuntimeTestJob",
+    "AgentRuntimeTestJobService",
     "BridgedSkill",
     "CustomTransportConfig",
     "NativeConfigContent",

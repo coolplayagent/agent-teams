@@ -61,6 +61,10 @@ from relay_teams.agent_runtimes.native_config import (
 from relay_teams.agent_runtimes.session_repository import (
     ExternalAgentSessionRepository,
 )
+from relay_teams.agent_runtimes.setup_models import (
+    AgentRuntimeSetupPhase,
+    AgentRuntimeSetupProgress,
+)
 from relay_teams.agent_runtimes.skill_bridge import SkillBridgeService
 from relay_teams.logger import get_logger, log_event
 from relay_teams.media import MediaAssetService
@@ -296,7 +300,36 @@ class AgentRuntimeSessionManager:
         )
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
-            agent = await self._config_service.resolve_runtime_agent_async(agent_id)
+            runtime_setup_progress: AgentRuntimeSetupProgress | None = None
+
+            async def publish_runtime_setup_progress(
+                progress: AgentRuntimeSetupProgress,
+            ) -> None:
+                nonlocal runtime_setup_progress
+                runtime_setup_progress = progress
+                await self._publish_runtime_setup_progress(
+                    request=request,
+                    progress=progress,
+                )
+
+            try:
+                agent = await self._config_service.resolve_runtime_agent_async(
+                    agent_id,
+                    progress_callback=publish_runtime_setup_progress,
+                )
+            except Exception as exc:
+                if runtime_setup_progress is not None:
+                    await self._publish_runtime_setup_progress(
+                        request=request,
+                        progress=_runtime_setup_progress_update(
+                            runtime_setup_progress,
+                            phase=AgentRuntimeSetupPhase.FAILED,
+                            message=str(exc),
+                            error_message=str(exc),
+                            progress_percent=None,
+                        ),
+                    )
+                raise
             if agent.protocol == ExternalAgentProtocol.A2A:
                 prompt_start_content = await self._apply_prompt_start_system_reminders(
                     request
@@ -320,12 +353,27 @@ class AgentRuntimeSessionManager:
             prompt_start_content = await self._apply_prompt_start_system_reminders(
                 request
             )
-            handle = await self._ensure_conversation(
-                key=key,
-                agent=agent,
-                role=role,
-                request=request,
-            )
+            try:
+                handle = await self._ensure_conversation(
+                    key=key,
+                    agent=agent,
+                    role=role,
+                    request=request,
+                    runtime_setup_progress=runtime_setup_progress,
+                )
+            except Exception as exc:
+                if runtime_setup_progress is not None:
+                    await self._publish_runtime_setup_progress(
+                        request=request,
+                        progress=_runtime_setup_progress_update(
+                            runtime_setup_progress,
+                            phase=AgentRuntimeSetupPhase.FAILED,
+                            message=str(exc),
+                            error_message=str(exc),
+                            progress_percent=None,
+                        ),
+                    )
+                raise
             prompt_text = self._resolve_external_user_prompt(
                 request,
                 prompt_start_content=prompt_start_content,
@@ -801,6 +849,7 @@ class AgentRuntimeSessionManager:
         agent: ExternalAgentConfig,
         role: RoleDefinition,
         request: LLMRequest,
+        runtime_setup_progress: AgentRuntimeSetupProgress | None = None,
     ) -> _ConversationHandle:
         runtime_agent = self._resolve_transport_agent_config(
             agent=agent,
@@ -818,12 +867,31 @@ class AgentRuntimeSessionManager:
             self._conversations.pop(key, None)
             existing = None
         if existing is not None:
+            await self._publish_runtime_setup_phase(
+                request=request,
+                progress=runtime_setup_progress,
+                phase=AgentRuntimeSetupPhase.STARTING_PROCESS,
+                message="Starting Agent Runtime process.",
+            )
             await existing.transport.start()
+            await self._publish_runtime_setup_phase(
+                request=request,
+                progress=runtime_setup_progress,
+                phase=AgentRuntimeSetupPhase.INITIALIZING,
+                message="Checking Agent Runtime session.",
+            )
             await self._refresh_remote_session_if_needed(
                 handle=existing,
                 role=role,
                 request=request,
                 agent=agent,
+            )
+            await self._publish_runtime_setup_phase(
+                request=request,
+                progress=runtime_setup_progress,
+                phase=AgentRuntimeSetupPhase.COMPLETED,
+                message="Agent Runtime is ready.",
+                progress_percent=100,
             )
             return existing
 
@@ -845,7 +913,19 @@ class AgentRuntimeSessionManager:
             on_message=on_message,
             runtime_cwd=str(workspace.resolve_workdir()),
         )
+        await self._publish_runtime_setup_phase(
+            request=request,
+            progress=runtime_setup_progress,
+            phase=AgentRuntimeSetupPhase.STARTING_PROCESS,
+            message="Starting Agent Runtime process.",
+        )
         await transport.start()
+        await self._publish_runtime_setup_phase(
+            request=request,
+            progress=runtime_setup_progress,
+            phase=AgentRuntimeSetupPhase.INITIALIZING,
+            message="Initializing Agent Runtime protocol.",
+        )
         _ = await transport.send_request("initialize", {"protocolVersion": 1})
         handle = _ConversationHandle(
             transport=transport,
@@ -864,6 +944,12 @@ class AgentRuntimeSessionManager:
             role=role,
             request=request,
         )
+        await self._publish_runtime_setup_phase(
+            request=request,
+            progress=runtime_setup_progress,
+            phase=AgentRuntimeSetupPhase.INITIALIZING,
+            message="Opening Agent Runtime session.",
+        )
         handle.external_session_id = await self._load_or_create_remote_session(
             transport=transport,
             persisted=persisted,
@@ -881,6 +967,13 @@ class AgentRuntimeSessionManager:
             request=request,
             agent=runtime_agent,
             external_session_id=handle.external_session_id,
+        )
+        await self._publish_runtime_setup_phase(
+            request=request,
+            progress=runtime_setup_progress,
+            phase=AgentRuntimeSetupPhase.COMPLETED,
+            message="Agent Runtime is ready.",
+            progress_percent=100,
         )
         return handle
 
@@ -1781,6 +1874,52 @@ class AgentRuntimeSessionManager:
             {"sessionId": handle.external_session_id},
         )
 
+    async def _publish_runtime_setup_phase(
+        self,
+        *,
+        request: LLMRequest,
+        progress: AgentRuntimeSetupProgress | None,
+        phase: AgentRuntimeSetupPhase,
+        message: str,
+        progress_percent: int | None = None,
+    ) -> None:
+        if progress is None:
+            return
+        await self._publish_runtime_setup_progress(
+            request=request,
+            progress=_runtime_setup_progress_update(
+                progress,
+                phase=phase,
+                message=message,
+                progress_percent=progress_percent,
+            ),
+        )
+
+    async def _publish_runtime_setup_progress(
+        self,
+        *,
+        request: LLMRequest,
+        progress: AgentRuntimeSetupProgress,
+    ) -> None:
+        payload = progress.model_dump(mode="json")
+        payload["run_kind"] = "agent_runtime_setup"
+        payload["source"] = "agent_runtime_registry"
+        payload["role_id"] = request.role_id
+        payload["instance_id"] = request.instance_id
+        await publish_run_event_async(
+            self._run_event_hub,
+            RunEvent(
+                session_id=request.session_id,
+                run_id=request.run_id,
+                trace_id=request.trace_id,
+                task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
+                event_type=RunEventType.GENERATION_PROGRESS,
+                payload_json=json.dumps(payload, ensure_ascii=False, default=str),
+            ),
+        )
+
     async def _publish_text_delta(self, *, request: LLMRequest, text: str) -> None:
         await publish_run_event_async(
             self._run_event_hub,
@@ -2397,6 +2536,26 @@ def _transport_signature(agent: ExternalAgentConfig) -> str:
         sort_keys=True,
         default=str,
     )
+
+
+def _runtime_setup_progress_update(
+    progress: AgentRuntimeSetupProgress,
+    *,
+    phase: AgentRuntimeSetupPhase,
+    message: str,
+    progress_percent: int | None,
+    error_message: str | None = None,
+) -> AgentRuntimeSetupProgress:
+    updates: dict[str, object] = {
+        "phase": phase,
+        "message": message,
+        "progress_percent": progress_percent,
+    }
+    if error_message is not None:
+        updates["error_message"] = error_message
+    elif phase == AgentRuntimeSetupPhase.FAILED:
+        updates["error_message"] = message
+    return progress.model_copy(update=updates)
 
 
 def _build_mcp_servers_for_role(

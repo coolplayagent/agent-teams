@@ -947,6 +947,42 @@
     box-shadow: inset 0 0 0 1px var(--settings-border-soft);
 }
 
+.agent-registry-source-field {
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 0.65rem;
+    margin: -0.1rem 0 0.7rem;
+}
+
+.agent-registry-source-field .settings-token-source-label {
+    min-height: 34px;
+}
+
+.agent-registry-source-field .agent-registry-source-link {
+    min-height: 34px;
+    padding: 0.4rem 0.55rem 0.4rem 0.65rem;
+    gap: 0.6rem;
+    border-color: var(--settings-border-default);
+}
+
+.agent-registry-source-field .web-provider-link-copy {
+    display: block;
+}
+
+.agent-registry-source-field .web-provider-link-url {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-registry-source-field .web-provider-link-arrow {
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+}
+
 .agent-registry-toolbar {
     display: grid;
     grid-template-columns: minmax(260px, 1fr) minmax(150px, 210px);
@@ -1456,6 +1492,63 @@
     border-color: rgba(239, 68, 68, 0.3);
     background: rgba(239, 68, 68, 0.08);
     color: #f2aaaa;
+}
+
+.role-editor-status-warning {
+    border-color: color-mix(in srgb, var(--button-primary-border) 34%, transparent);
+    background: color-mix(in srgb, var(--button-primary-bg) 12%, var(--settings-panel-bg));
+    color: var(--text-primary);
+}
+
+.role-editor-status-progress {
+    display: block;
+}
+
+.agent-runtime-test-status {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.agent-runtime-test-status-main {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.agent-runtime-test-status-meta {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+}
+
+.agent-runtime-test-progress {
+    position: relative;
+    height: 0.35rem;
+    overflow: hidden;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--settings-border-default) 60%, transparent);
+}
+
+.agent-runtime-test-progress span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--button-primary-bg);
+    transition: width 140ms ease;
+}
+
+.agent-runtime-test-progress.indeterminate span {
+    width: 42%;
+    animation: agent-runtime-progress-indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes agent-runtime-progress-indeterminate {
+    0% {
+        transform: translateX(-110%);
+    }
+
+    100% {
+        transform: translateX(240%);
+    }
 }
 
 .status-list {

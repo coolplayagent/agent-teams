@@ -79,6 +79,25 @@ class AsyncAgentTeamsClient:
             {},
         )
 
+    async def start_agent_runtime_test_job(
+        self,
+        agent_id: str,
+    ) -> dict[str, JsonValue]:
+        return await self._request_json(
+            "POST",
+            f"/api/system/configs/agent-runtimes/{quote(agent_id, safe='')}:test-job",
+            {},
+        )
+
+    async def get_agent_runtime_test_job(
+        self,
+        job_id: str,
+    ) -> dict[str, JsonValue]:
+        return await self._request_json(
+            "GET",
+            f"/api/system/configs/agent-runtime-test-jobs/{quote(job_id, safe='')}",
+        )
+
     async def list_agent_runtime_registry(
         self,
         *,

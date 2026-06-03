@@ -8,6 +8,8 @@ import pytest
 
 from relay_teams.agent_runtimes import (
     AcpRegistryService,
+    AgentRuntimeSetupPhase,
+    AgentRuntimeSetupProgress,
     ExternalAgentConfig,
     ExternalAgentConfigService,
     ExternalAgentProtocol,
@@ -17,6 +19,7 @@ from relay_teams.agent_runtimes import (
     StdioTransportConfig,
     StreamableHttpTransportConfig,
 )
+from relay_teams.agent_runtimes.setup_models import AgentRuntimeSetupProgressCallback
 from relay_teams.env.proxy_env import ProxyEnvConfig
 
 
@@ -73,12 +76,30 @@ class _FakeRegistryService(AcpRegistryService):
             get_proxy_config=ProxyEnvConfig,
         )
         self.captured_transport: RegistryTransportConfig | None = None
+        self.captured_agent_id = ""
+        self.captured_progress_callback: AgentRuntimeSetupProgressCallback | None = None
 
     async def resolve_runtime_transport_async(
         self,
         transport: RegistryTransportConfig,
+        *,
+        agent_id: str = "",
+        progress_callback: AgentRuntimeSetupProgressCallback | None = None,
     ) -> StdioTransportConfig:
         self.captured_transport = transport
+        self.captured_agent_id = agent_id
+        self.captured_progress_callback = progress_callback
+        if progress_callback is not None:
+            await progress_callback(
+                AgentRuntimeSetupProgress(
+                    agent_id=agent_id,
+                    registry_id=transport.registry_id,
+                    distribution=transport.distribution,
+                    phase=AgentRuntimeSetupPhase.READY,
+                    message="ready",
+                    progress_percent=100,
+                )
+            )
         return StdioTransportConfig(
             command="resolved-registry-agent",
             args=("--stdio",),
@@ -205,12 +226,23 @@ async def test_registry_transport_persists_secrets_and_resolves_to_stdio(
     assert saved.transport.env[0].value is None
     assert saved.transport.env[0].configured is True
 
-    resolved = await service.resolve_runtime_agent_async("vendor_runtime")
+    progress_events: list[AgentRuntimeSetupProgress] = []
+
+    async def progress_callback(progress: AgentRuntimeSetupProgress) -> None:
+        progress_events.append(progress)
+
+    resolved = await service.resolve_runtime_agent_async(
+        "vendor_runtime",
+        progress_callback=progress_callback,
+    )
 
     assert isinstance(resolved.transport, StdioTransportConfig)
     assert resolved.transport.command == "resolved-registry-agent"
     assert registry_service.captured_transport is not None
+    assert registry_service.captured_agent_id == "vendor_runtime"
+    assert registry_service.captured_progress_callback is progress_callback
     assert registry_service.captured_transport.env[0].value == "secret-123"
+    assert progress_events[-1].phase == AgentRuntimeSetupPhase.READY
 
 
 def test_save_agent_deletes_secret_binding_when_marked_unconfigured(

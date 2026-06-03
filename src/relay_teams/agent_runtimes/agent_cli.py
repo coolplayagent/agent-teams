@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import Enum
 import json
+import time
 from urllib.parse import quote
 
 import typer
@@ -182,6 +183,11 @@ def build_agent_runtimes_app(
             help="Render as an ASCII table or JSON.",
             case_sensitive=False,
         ),
+        watch: bool = typer.Option(
+            False,
+            "--watch",
+            help="Poll and print runtime preparation progress.",
+        ),
         base_url: str = typer.Option(default_base_url, "--base-url"),
         autostart: bool = typer.Option(True, "--autostart/--no-autostart"),
         daemon: bool = typer.Option(
@@ -197,6 +203,31 @@ def build_agent_runtimes_app(
         ),
     ) -> None:
         auto_start_if_needed(base_url, autostart, daemon, force)
+        if watch:
+            job_payload = request_json(
+                base_url,
+                "POST",
+                _agent_runtime_path(agent_id, suffix=":test-job"),
+                None,
+            )
+            data = _watch_agent_runtime_test_job(
+                request_json=request_json,
+                base_url=base_url,
+                job=_require_object_response(job_payload, "agent-runtimes test"),
+                output_format=output_format,
+            )
+            failed = _test_job_failed(data)
+            if output_format == AgentOutputFormat.JSON:
+                typer.echo(json.dumps(data, ensure_ascii=False))
+                if failed:
+                    raise typer.Exit(1)
+                return
+            result = _object_value(data, "result")
+            if result:
+                _render_test_result(agent_id, result)
+            if failed:
+                raise typer.Exit(1)
+            return
         payload = request_json(
             base_url,
             "POST",
@@ -391,6 +422,104 @@ def _require_object_response(
     if isinstance(payload, dict):
         return payload
     raise RuntimeError(f"Expected JSON object from {path}")
+
+
+def _object_value(item: dict[str, object], key: str) -> dict[str, object]:
+    value = item.get(key)
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _test_job_failed(item: dict[str, object]) -> bool:
+    status = str(item.get("status") or "").strip()
+    if status == "failed":
+        return True
+    result = _object_value(item, "result")
+    ok = result.get("ok")
+    return ok is False
+
+
+def _watch_agent_runtime_test_job(
+    *,
+    request_json: RequestJsonCallable,
+    base_url: str,
+    job: dict[str, object],
+    output_format: AgentOutputFormat,
+) -> dict[str, object]:
+    latest = job
+    last_line = ""
+    while True:
+        if output_format != AgentOutputFormat.JSON:
+            line = _format_test_job_progress(latest)
+            if line and line != last_line:
+                typer.echo(line)
+                last_line = line
+        status = str(latest.get("status") or "").strip()
+        if status not in {"queued", "running"}:
+            return latest
+        job_id = str(latest.get("job_id") or "").strip()
+        if not job_id:
+            raise RuntimeError("Agent runtime test job response did not include job_id")
+        time.sleep(0.6)
+        payload = request_json(
+            base_url,
+            "GET",
+            f"/api/system/configs/agent-runtime-test-jobs/{quote(job_id, safe='')}",
+            None,
+        )
+        latest = _require_object_response(payload, "agent-runtimes test --watch")
+
+
+def _format_test_job_progress(item: dict[str, object]) -> str:
+    status = str(item.get("status") or "").strip() or "running"
+    phase = str(item.get("phase") or "").strip()
+    message = str(item.get("message") or "").strip()
+    percent = item.get("progress_percent")
+    percent_text = (
+        f" {int(percent)}%"
+        if isinstance(percent, int | float) and 0 <= percent <= 100
+        else ""
+    )
+    byte_text = _format_job_byte_progress(
+        item.get("downloaded_bytes"),
+        item.get("total_bytes"),
+    )
+    parts = [status]
+    if phase:
+        parts.append(phase.replace("_", " "))
+    if percent_text:
+        parts.append(percent_text.strip())
+    if byte_text:
+        parts.append(byte_text)
+    prefix = " | ".join(parts)
+    return f"{prefix}: {message}" if message else prefix
+
+
+def _format_job_byte_progress(downloaded_value: object, total_value: object) -> str:
+    downloaded = _numeric_value(downloaded_value)
+    total = _numeric_value(total_value)
+    if downloaded <= 0 and total <= 0:
+        return ""
+    if total > 0:
+        return f"{_format_job_bytes(downloaded)} / {_format_job_bytes(total)}"
+    return _format_job_bytes(downloaded)
+
+
+def _numeric_value(value: object) -> float:
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
+
+
+def _format_job_bytes(value: float) -> str:
+    if value < 1024:
+        return f"{int(value)} B"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} KB"
+    if value < 1024 * 1024 * 1024:
+        return f"{value / (1024 * 1024):.1f} MB"
+    return f"{value / (1024 * 1024 * 1024):.1f} GB"
 
 
 def _render_agent_summary_table(items: list[dict[str, object]]) -> None:

@@ -250,6 +250,9 @@ def test_agents_settings_panel_markup_uses_i18n_keys() -> None:
     assert 'data-i18n="settings.agents.env_bindings"' in panel_html
     assert 'data-i18n="settings.agents.header_bindings"' in panel_html
     assert 'data-i18n="settings.agents.registry_transport"' in panel_html
+    assert 'data-i18n="settings.agents.registry_source_label"' in panel_html
+    assert 'id="agent-registry-source-link"' in panel_html
+    assert "web-provider-link-card" in panel_html
     assert 'data-i18n-placeholder="settings.agents.id_placeholder"' in panel_html
     assert 'data-i18n-placeholder="settings.agents.command_placeholder"' in panel_html
     assert 'data-i18n="settings.agents.transport_http"' in panel_html
@@ -444,6 +447,34 @@ export async function testAgentRuntime(agentId) {
     return {
         ok: true,
         message: "Connected",
+    };
+}
+
+export async function startAgentRuntimeTestJob(agentId) {
+    globalThis.__testCalls.push(agentId);
+    return {
+        job_id: "job-1",
+        agent_id: agentId,
+        status: "running",
+        phase: "starting_process",
+        message: "Starting Agent Runtime probe.",
+        progress_percent: null,
+    };
+}
+
+export async function fetchAgentRuntimeTestJob(jobId) {
+    return {
+        job_id: jobId,
+        agent_id: "codex_local",
+        status: "succeeded",
+        phase: "completed",
+        message: "Connected",
+        progress_percent: 100,
+        result: {
+            ok: true,
+            message: "Connected",
+            protocol: "acp",
+        },
     };
 }
 

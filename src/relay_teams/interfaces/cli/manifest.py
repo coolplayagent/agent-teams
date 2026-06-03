@@ -176,7 +176,7 @@ CLI_COMMAND_SPECS: Final[dict[tuple[str, ...], CliCommandSpec]] = {
         1,
         1,
         _COMMON_SERVER_VALUE_OPTIONS,
-        _COMMON_SERVER_FLAG_OPTIONS,
+        _COMMON_SERVER_FLAG_OPTIONS | frozenset({"--watch"}),
         False,
     ),
     ("agent-runtimes", "registry", "list"): CliCommandSpec(

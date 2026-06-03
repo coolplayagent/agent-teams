@@ -2,18 +2,183 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from relay_teams_evals.models import EvalResult
 
-if TYPE_CHECKING:
-    from relay_teams_evals.run_config import RunConfig
-
 _CHECKPOINT_VERSION = 1
+
+
+class AgentBenchCheckpointSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    benchmark_image: str
+    runtime_image: str
+    api_key_env_var: str
+    execution_mode: str
+    suite: str
+    os_suite: str
+    num_os_tasks: int | None
+    num_db_tasks: int | None
+    max_steps: int | None
+    task_timeout_seconds: float | None
+    model: str
+    model_base_url: str
+    os_prompt_template: str | None
+    db_prompt_template: str | None
+
+
+class _CheckpointAgentTeamsConfig(Protocol):
+    @property
+    def execution_mode(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def session_mode(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def orchestration_preset_id(self) -> str | None:
+        raise NotImplementedError
+
+    @property
+    def yolo(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    def timeout_seconds(self) -> float:
+        raise NotImplementedError
+
+    @property
+    def config_dir(self) -> Path | None:
+        raise NotImplementedError
+
+
+class _CheckpointDockerConfig(Protocol):
+    @property
+    def image_prefix(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def agent_runtime_image(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def agent_runtime_bin(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def container_repo_path(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def forward_env_vars(self) -> Sequence[str]:
+        raise NotImplementedError
+
+    @property
+    def extra_env(self) -> Mapping[str, str]:
+        raise NotImplementedError
+
+
+class _CheckpointAgentBenchConfig(Protocol):
+    @property
+    def benchmark_image(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def runtime_image(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def api_key_env_var(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def execution_mode(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def suite(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def os_suite(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def num_os_tasks(self) -> int | None:
+        raise NotImplementedError
+
+    @property
+    def num_db_tasks(self) -> int | None:
+        raise NotImplementedError
+
+    @property
+    def max_steps(self) -> int | None:
+        raise NotImplementedError
+
+    @property
+    def task_timeout_seconds(self) -> float | None:
+        raise NotImplementedError
+
+    @property
+    def model(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def model_base_url(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def os_prompt_template(self) -> str | None:
+        raise NotImplementedError
+
+    @property
+    def db_prompt_template(self) -> str | None:
+        raise NotImplementedError
+
+
+class _CheckpointRunConfig(Protocol):
+    @property
+    def dataset(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def scorer(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def swebench_pass_threshold(self) -> float:
+        raise NotImplementedError
+
+    @property
+    def backend(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def workspace_mode(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def agent_teams(self) -> _CheckpointAgentTeamsConfig:
+        raise NotImplementedError
+
+    @property
+    def git_clone_timeout_seconds(self) -> float:
+        raise NotImplementedError
+
+    @property
+    def docker(self) -> _CheckpointDockerConfig:
+        raise NotImplementedError
+
+    @property
+    def agentbench(self) -> _CheckpointAgentBenchConfig:
+        raise NotImplementedError
 
 
 class EvalCheckpointSignature(BaseModel):
@@ -40,6 +205,7 @@ class EvalCheckpointSignature(BaseModel):
     docker_container_repo_path: str | None = None
     docker_forward_env_vars: tuple[str, ...] = ()
     docker_extra_env: tuple[tuple[str, str], ...] = ()
+    agentbench: AgentBenchCheckpointSettings | None = None
 
 
 class EvalCheckpointMeta(BaseModel):
@@ -51,14 +217,17 @@ class EvalCheckpointMeta(BaseModel):
 
 
 def build_checkpoint_signature(
-    cfg: RunConfig,
+    cfg: _CheckpointRunConfig,
     *,
     dataset_path: Path,
     item_ids: tuple[str, ...],
 ) -> EvalCheckpointSignature:
     resolved_dataset_path = dataset_path.resolve()
     dataset_bytes = resolved_dataset_path.read_bytes()
-    docker_extra_env = tuple(sorted(cfg.docker.extra_env.items()))
+    docker_extra_env = _checkpoint_docker_extra_env(cfg.docker.extra_env)
+    agentbench_settings = (
+        _agentbench_checkpoint_settings(cfg) if cfg.dataset == "agentbench" else None
+    )
     return EvalCheckpointSignature(
         dataset=cfg.dataset,
         dataset_path=str(resolved_dataset_path),
@@ -97,6 +266,43 @@ def build_checkpoint_signature(
             tuple(cfg.docker.forward_env_vars) if cfg.workspace_mode == "docker" else ()
         ),
         docker_extra_env=docker_extra_env if cfg.workspace_mode == "docker" else (),
+        agentbench=agentbench_settings,
+    )
+
+
+def _checkpoint_docker_extra_env(
+    extra_env: Mapping[str, str],
+) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (key, _checkpoint_env_value_digest(value))
+        for key, value in sorted(extra_env.items())
+    )
+
+
+def _checkpoint_env_value_digest(value: str) -> str:
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
+def _agentbench_checkpoint_settings(
+    cfg: _CheckpointRunConfig,
+) -> AgentBenchCheckpointSettings:
+    agentbench = cfg.agentbench
+    return AgentBenchCheckpointSettings(
+        benchmark_image=agentbench.benchmark_image,
+        runtime_image=agentbench.runtime_image,
+        api_key_env_var=agentbench.api_key_env_var,
+        execution_mode=agentbench.execution_mode,
+        suite=agentbench.suite,
+        os_suite=agentbench.os_suite,
+        num_os_tasks=agentbench.num_os_tasks,
+        num_db_tasks=agentbench.num_db_tasks,
+        max_steps=agentbench.max_steps,
+        task_timeout_seconds=agentbench.task_timeout_seconds,
+        model=agentbench.model,
+        model_base_url=agentbench.model_base_url,
+        os_prompt_template=agentbench.os_prompt_template,
+        db_prompt_template=agentbench.db_prompt_template,
     )
 
 

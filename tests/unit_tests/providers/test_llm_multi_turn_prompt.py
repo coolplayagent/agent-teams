@@ -4012,8 +4012,9 @@ async def test_subagent_resume_after_tool_call_cancellation_replays_from_safe_bo
         if isinstance(part, ToolReturnPart)
     )
     assert isinstance(recovered_return.content, dict)
-    assert recovered_return.content["time"] == "2026-03-07T10:00:00Z"
-    assert recovered_return.content["timezone"] == "UTC"
+    recovered_content = cast(dict[str, object], recovered_return.content)
+    assert recovered_content["time"] == "2026-03-07T10:00:00Z"
+    assert recovered_content["timezone"] == "UTC"
 
 
 @pytest.mark.asyncio

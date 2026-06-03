@@ -106,7 +106,10 @@ def test_message_repo_sanitizes_stale_task_status_error_on_read(tmp_path: Path) 
     history_part = history[1].parts[0]
     assert isinstance(history_part, ToolReturnPart)
     assert isinstance(history_part.content, dict)
-    history_task_status = history_part.content["data"]["task_status"]["ask_time"]
+    history_content = cast(dict[str, object], history_part.content)
+    history_data = cast(dict[str, object], history_content["data"])
+    history_task_status_map = cast(dict[str, object], history_data["task_status"])
+    history_task_status = cast(dict[str, object], history_task_status_map["ask_time"])
     assert history_task_status["status"] == "completed"
     assert "error" not in history_task_status
 

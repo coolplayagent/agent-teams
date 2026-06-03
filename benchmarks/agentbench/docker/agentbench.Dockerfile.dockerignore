@@ -1,0 +1,16 @@
+**
+!benchmarks/
+!benchmarks/__init__.py
+!benchmarks/common/
+!benchmarks/common/**
+!benchmarks/docker/
+!benchmarks/docker/**
+!benchmarks/agentbench/
+!benchmarks/agentbench/**
+!.agent_teams/
+!.agent_teams/benchmarks/
+!.agent_teams/benchmarks/repos/
+!.agent_teams/benchmarks/repos/AgentBench/
+!.agent_teams/benchmarks/repos/AgentBench/**
+.agent_teams/benchmarks/repos/AgentBench/.git
+.agent_teams/benchmarks/repos/AgentBench/.git/**

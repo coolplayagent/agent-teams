@@ -1175,8 +1175,9 @@ async def test_restore_pending_tool_results_recovers_background_subagent_result(
     assert isinstance(result_part, ToolReturnPart)
     content = result_part.content
     assert isinstance(content, dict)
-    assert content["ok"] is True
-    data = content["data"]
+    content_map = cast(dict[str, object], content)
+    assert content_map["ok"] is True
+    data = content_map["data"]
     assert isinstance(data, dict)
     assert data["background_task_id"] == "background-subagent-record"
     assert data["completed"] is False

@@ -139,6 +139,7 @@ def integration_env(
     shared_env["PYTHONPATH"] = _PYTHONPATH_SEPARATOR.join(python_paths)
     shared_env["AGENT_TEAMS_COMPUTER_RUNTIME"] = "fake"
     shared_env["RELAY_TEAMS_LLM_HTTP_MAX_CONCURRENCY"] = "4"
+    shared_env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
 
     fake_llm_log_file = runtime_root / "fake-llm.log"
     backend_log_file = runtime_root / "backend.log"

@@ -189,6 +189,64 @@ def test_runner_extracts_patch_and_passes_to_scorer() -> None:
     )
 
 
+def test_runner_preserves_scorer_provided_duration() -> None:
+    item = EvalItem(item_id="demo", dataset="agentbench", intent="demo")
+
+    class DurationScorer(FakeScorer):
+        @property
+        def name(self) -> str:
+            return "agentbench"
+
+        def score(
+            self,
+            *,
+            item: EvalItem,
+            run_id: str,
+            session_id: str,
+            outcome: RunOutcome,
+            agent_output: str,
+            generated_patch: str,
+            raw_generated_patch: str,
+            filtered_generated_files: tuple[str, ...],
+            token_usage: TokenUsage,
+            duration_seconds: float,
+            workspace: PreparedWorkspace | None = None,
+            error: str | None = None,
+        ) -> EvalResult:
+            _ = (
+                outcome,
+                agent_output,
+                generated_patch,
+                raw_generated_patch,
+                filtered_generated_files,
+                token_usage,
+                duration_seconds,
+                workspace,
+                error,
+            )
+            return EvalResult(
+                item_id=item.item_id,
+                dataset=item.dataset,
+                run_id=run_id,
+                session_id=session_id,
+                outcome=RunOutcome.COMPLETED,
+                passed=True,
+                score=1.0,
+                scorer_name=self.name,
+                duration_seconds=2.5,
+            )
+
+    runner = EvalRunner(
+        backend=FakeBackend(),
+        scorer=DurationScorer(),
+        workspace_setup=FakeWorkspaceSetup(),
+    )
+
+    result = runner.run_item(item)
+
+    assert result.duration_seconds == 2.5
+
+
 def test_runner_retries_retryable_prepare_failures_and_returns_success() -> None:
     item = EvalItem(item_id="demo", dataset="swebench", intent="demo")
     backend = FakeBackend()
@@ -257,6 +315,42 @@ def test_runner_returns_failed_result_after_retry_exhausted() -> None:
     assert workspace_setup.prepare_attempts == 2
     assert len(artifact_collector.calls) == 1
     assert artifact_collector.calls[0][1].build_log_path is None
+
+
+def test_runner_retries_backend_failure_before_metadata() -> None:
+    item = EvalItem(item_id="demo", dataset="agentbench", intent="demo")
+    scorer = FakeScorer()
+
+    class FlakyBackend(AgentBackend):
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        def run(
+            self,
+            intent: str,
+            workspace: PreparedWorkspace,
+            keep_workspace: bool = False,
+        ):
+            _ = (intent, workspace, keep_workspace)
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("temporary Docker/network failure")
+            yield AgentEvent(type="metadata", run_id="run-1", session_id="session-1")
+            yield AgentEvent(type="text_delta", text="done")
+            yield AgentEvent(type="completed")
+
+    backend = FlakyBackend()
+    runner = EvalRunner(
+        backend=backend,
+        scorer=scorer,
+        infra_retry_attempts=1,
+        infra_retry_backoff_seconds=0.0,
+    )
+
+    result = runner.run_item(item)
+
+    assert result.passed is True
+    assert backend.attempts == 2
 
 
 def test_runner_does_not_retry_non_retryable_workspace_build_failures() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from relay_teams_evals.checkpoint import (
 )
 from relay_teams_evals.backends.agent_teams_config import AgentTeamsConfig
 from relay_teams_evals.models import EvalResult, RunOutcome, TokenUsage
-from relay_teams_evals.run_config import RunConfig
+from relay_teams_evals.run_config import AgentBenchConfig, RunConfig
 
 
 def _signature() -> EvalCheckpointSignature:
@@ -128,3 +129,115 @@ def test_build_checkpoint_signature_expands_agent_config_dir(tmp_path: Path) -> 
     )
 
     assert signature.agent_config_dir == str(config_dir.expanduser().resolve())
+
+
+def test_build_checkpoint_signature_hashes_docker_extra_env_values(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "dataset.jsonl"
+    dataset_path.write_text('{"item_id":"a","intent":"demo"}\n', encoding="utf-8")
+    base_cfg = RunConfig(
+        dataset_path=dataset_path,
+        workspace_mode="docker",
+    )
+    secret_cfg = base_cfg.model_copy(
+        update={
+            "docker": base_cfg.docker.model_copy(
+                update={
+                    "extra_env": {
+                        "RELAY_TEAMS_BENCH_API_KEY": "super-secret",
+                    }
+                }
+            )
+        }
+    )
+    changed_secret_cfg = base_cfg.model_copy(
+        update={
+            "docker": base_cfg.docker.model_copy(
+                update={
+                    "extra_env": {
+                        "RELAY_TEAMS_BENCH_API_KEY": "different-secret",
+                    }
+                }
+            )
+        }
+    )
+
+    signature = build_checkpoint_signature(
+        secret_cfg,
+        dataset_path=dataset_path,
+        item_ids=("a",),
+    )
+    changed_signature = build_checkpoint_signature(
+        changed_secret_cfg,
+        dataset_path=dataset_path,
+        item_ids=("a",),
+    )
+
+    expected_digest = hashlib.sha256(b"super-secret").hexdigest()
+    assert "super-secret" not in signature.model_dump_json()
+    assert dict(signature.docker_extra_env) == {
+        "RELAY_TEAMS_BENCH_API_KEY": f"sha256:{expected_digest}",
+    }
+    assert signature != changed_signature
+
+
+def test_build_checkpoint_signature_includes_agentbench_settings(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "agentbench.json"
+    dataset_path.write_text('{"results":[]}\n', encoding="utf-8")
+    base_cfg = RunConfig(
+        dataset="agentbench",
+        dataset_path=dataset_path,
+        agentbench=AgentBenchConfig(
+            model="deepseek-v4-flash",
+            model_base_url="https://api.deepseek.com",
+            max_steps=3,
+            task_timeout_seconds=20.0,
+            os_prompt_template="os {task_description}",
+        ),
+    )
+    changed_cfg = base_cfg.model_copy(
+        update={
+            "agentbench": base_cfg.agentbench.model_copy(
+                update={
+                    "model": "other-model",
+                    "max_steps": 5,
+                    "db_prompt_template": "db {task_description}",
+                }
+            )
+        }
+    )
+    rerun_cfg = base_cfg.model_copy(
+        update={
+            "agentbench": base_cfg.agentbench.model_copy(
+                update={
+                    "rerun_infra_failures": True,
+                    "rerun_db_mutation_failures": False,
+                }
+            )
+        }
+    )
+
+    base_signature = build_checkpoint_signature(
+        base_cfg,
+        dataset_path=dataset_path,
+        item_ids=("os:0",),
+    )
+    changed_signature = build_checkpoint_signature(
+        changed_cfg,
+        dataset_path=dataset_path,
+        item_ids=("os:0",),
+    )
+    rerun_signature = build_checkpoint_signature(
+        rerun_cfg,
+        dataset_path=dataset_path,
+        item_ids=("os:0",),
+    )
+
+    assert base_signature.agentbench is not None
+    assert base_signature.agentbench.model == "deepseek-v4-flash"
+    assert base_signature.agentbench.max_steps == 3
+    assert base_signature != changed_signature
+    assert base_signature == rerun_signature

@@ -813,6 +813,9 @@ export function invalidateManagedRequests(prefix) {
                 f"const mod = await import({module_under_test_path.as_uri()!r}); "
                 "await mod.saveAgentRuntime('local-agent', { name: 'Local Agent' }); "
                 "await mod.deleteAgentRuntime('local-agent'); "
+                "await mod.fetchAgentRuntimeRegistry(true); "
+                "await mod.refreshAgentRuntimeRegistry(); "
+                "await mod.installAgentRuntimeFromRegistry('vendor/runtime', { distribution: 'npx' }); "
                 "await mod.saveModelProfile('vision-profile', { model: 'vision-model' }); "
                 "await mod.deleteModelProfile('vision-profile'); "
                 "await mod.saveClawHubSkill('writer', { name: 'Writer' }); "
@@ -854,6 +857,9 @@ export function invalidateManagedRequests(prefix) {
     assert [request["url"] for request in payload["requests"]] == [
         "/api/system/configs/agent-runtimes/local-agent",
         "/api/system/configs/agent-runtimes/local-agent",
+        "/api/system/configs/agent-runtime-registry?refresh=true",
+        "/api/system/configs/agent-runtime-registry:refresh",
+        "/api/system/configs/agent-runtime-registry/vendor%2Fruntime:install",
         "/api/system/configs/model/profiles/vision-profile",
         "/api/system/configs/model/profiles/vision-profile",
         "/api/system/configs/clawhub/skills/writer",
@@ -873,6 +879,7 @@ export function invalidateManagedRequests(prefix) {
         "/api/system/configs/plugins/demo?scope=user&prune=false",
     ]
     assert payload["invalidatedPrefixes"] == [
+        "roles:",
         "roles:",
         "roles:",
         "system:model-profiles",

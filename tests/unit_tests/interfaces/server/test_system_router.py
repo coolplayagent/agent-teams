@@ -16,10 +16,18 @@ from pydantic import JsonValue
 
 from relay_teams.env.proxy_env import ProxyEnvInput
 from relay_teams.agent_runtimes import (
+    AcpRegistryError,
+    AcpRegistryAgentView,
+    AcpRegistryCatalogResponse,
+    AcpRegistryDistribution,
+    AcpRegistryInstallRequest,
+    AcpRegistryInstallResult,
     ExternalAgentConfig,
     ExternalAgentProtocol,
+    ExternalAgentSecretBinding,
     ExternalAgentSummary,
     ExternalAgentTestResult,
+    RegistryTransportConfig,
     StdioTransportConfig,
 )
 from relay_teams.env.clawhub_config_models import ClawHubConfig
@@ -56,6 +64,7 @@ from relay_teams.net.web_connectivity import (
 )
 from relay_teams.media import MediaModality
 from relay_teams.interfaces.server.deps import (
+    get_acp_registry_service,
     get_clawhub_connectivity_probe_service,
     get_clawhub_config_service,
     get_clawhub_skill_service,
@@ -186,6 +195,13 @@ class _FakeSystemService:
                 transport=StdioTransportConfig(command="codex", args=("--serve",)),
             )
         }
+        self.registry_refresh_count = 0
+        self.registry_install_requests: list[tuple[str, AcpRegistryInstallRequest]] = []
+        self.registry_install_current_agents: list[ExternalAgentConfig | None] = []
+        self.registry_catalog_error: Exception | None = None
+        self.registry_install_error: Exception | None = None
+        self.resolved_runtime_agent_ids: list[str] = []
+        self.runtime_resolve_error: Exception | None = None
         self.clawhub_skills: dict[str, ClawHubSkillDetail] = {
             "skill-creator-2": ClawHubSkillDetail(
                 skill_id="skill-creator-2",
@@ -386,6 +402,9 @@ class _FakeSystemService:
             for agent in self.external_agents.values()
         )
 
+    def list_agent_configs(self) -> tuple[ExternalAgentConfig, ...]:
+        return tuple(self.external_agents.values())
+
     def get_agent(self, agent_id: str) -> ExternalAgentConfig:
         return self.external_agents[agent_id]
 
@@ -400,8 +419,91 @@ class _FakeSystemService:
     def delete_agent(self, agent_id: str) -> None:
         self.external_agents.pop(agent_id)
 
-    def resolve_runtime_agent(self, agent_id: str) -> ExternalAgentConfig:
+    async def resolve_runtime_agent_async(self, agent_id: str) -> ExternalAgentConfig:
+        if self.runtime_resolve_error is not None:
+            raise self.runtime_resolve_error
+        self.resolved_runtime_agent_ids.append(agent_id)
         return self.external_agents[agent_id]
+
+    async def get_catalog(
+        self,
+        *,
+        installed_agents: tuple[ExternalAgentConfig, ...] = (),
+        refresh: bool = False,
+    ) -> AcpRegistryCatalogResponse:
+        if self.registry_catalog_error is not None:
+            raise self.registry_catalog_error
+        if refresh:
+            self.registry_refresh_count += 1
+        return AcpRegistryCatalogResponse(
+            registry_version="1.0.0",
+            agents=(
+                AcpRegistryAgentView(
+                    registry_id="vendor/runtime",
+                    name="Vendor Runtime",
+                    version="2.0.0",
+                    description="Official runtime",
+                    distributions=(AcpRegistryDistribution.NPX,),
+                    selected_distribution=AcpRegistryDistribution.NPX,
+                    supports_current_platform=True,
+                    installed=any(
+                        isinstance(agent.transport, RegistryTransportConfig)
+                        and agent.transport.registry_id == "vendor/runtime"
+                        for agent in installed_agents
+                    ),
+                ),
+            ),
+            cache_path="/tmp/registry.json",
+        )
+
+    async def refresh_catalog(
+        self,
+        *,
+        installed_agents: tuple[ExternalAgentConfig, ...] = (),
+    ) -> AcpRegistryCatalogResponse:
+        self.registry_refresh_count += 1
+        return await self.get_catalog(installed_agents=installed_agents)
+
+    async def build_install_config(
+        self,
+        *,
+        registry_id: str,
+        request: AcpRegistryInstallRequest,
+        current_agent: ExternalAgentConfig | None = None,
+    ) -> AcpRegistryInstallResult:
+        if self.registry_install_error is not None:
+            raise self.registry_install_error
+        self.registry_install_requests.append((registry_id, request))
+        self.registry_install_current_agents.append(current_agent)
+        distribution = request.distribution or AcpRegistryDistribution.NPX
+        agent = ExternalAgentConfig(
+            agent_id=request.agent_id or "vendor-runtime",
+            name="Vendor Runtime",
+            description="Official runtime",
+            protocol=ExternalAgentProtocol.ACP,
+            transport=RegistryTransportConfig(
+                registry_id=registry_id,
+                distribution=distribution.value,
+                registry_version="2.0.0",
+            ),
+        )
+        return AcpRegistryInstallResult(
+            status="installed",
+            agent=agent,
+            registry_agent=AcpRegistryAgentView(
+                registry_id=registry_id,
+                name="Vendor Runtime",
+                version="2.0.0",
+                description="Official runtime",
+                distributions=(distribution,),
+                selected_distribution=distribution,
+                supports_current_platform=True,
+                installed=True,
+                installed_agent_id=agent.agent_id,
+                installed_version="2.0.0",
+            ),
+            message="Installed registry runtime.",
+        )
 
     def save_web_config(self, config: WebConfig) -> None:
         self.saved_web_config = config.model_dump(
@@ -1032,6 +1134,7 @@ def _create_test_client(
     app.dependency_overrides[get_github_config_service] = lambda: fake_service
     app.dependency_overrides[get_localhost_run_tunnel_service] = lambda: fake_service
     app.dependency_overrides[get_github_trigger_service] = lambda: fake_service
+    app.dependency_overrides[get_acp_registry_service] = lambda: fake_service
     app.dependency_overrides[get_external_agent_config_service] = lambda: fake_service
     app.dependency_overrides[get_hook_service] = lambda: fake_service
     app.dependency_overrides[get_workspace_manager] = lambda: (
@@ -1408,7 +1511,8 @@ def test_sync_system_write_routes_run_service_calls_in_threadpool(monkeypatch) -
 
     monkeypatch.setattr(system.asyncio, "to_thread", fake_to_thread)
     monkeypatch.setattr(system, "probe_agent_runtime", fake_probe)
-    client = _create_test_client(_FakeSystemService())
+    service = _FakeSystemService()
+    client = _create_test_client(service)
 
     responses = [
         client.put("/api/system/configs/ui-language", json={"language": "en-US"}),
@@ -1556,7 +1660,6 @@ def test_sync_system_write_routes_run_service_calls_in_threadpool(monkeypatch) -
         "save_web_config",
         "save_agent",
         "delete_agent",
-        "resolve_runtime_agent",
         "save_clawhub_config",
         "save_skill",
         "delete_skill",
@@ -1568,6 +1671,7 @@ def test_sync_system_write_routes_run_service_calls_in_threadpool(monkeypatch) -
         "save_user_config",
         "validate_config",
     ]
+    assert service.resolved_runtime_agent_ids == ["codex_local"]
 
 
 def test_save_and_delete_ssh_profile() -> None:
@@ -2762,6 +2866,139 @@ def test_list_agent_runtimes() -> None:
     ]
 
 
+def test_agent_runtime_registry_list_and_refresh() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    list_response = client.get("/api/system/configs/agent-runtime-registry")
+    refresh_response = client.post("/api/system/configs/agent-runtime-registry:refresh")
+
+    assert list_response.status_code == 200
+    assert list_response.json()["agents"][0]["registry_id"] == "vendor/runtime"
+    assert refresh_response.status_code == 200
+    assert service.registry_refresh_count == 1
+
+
+def test_agent_runtime_registry_list_maps_registry_errors_to_bad_request() -> None:
+    service = _FakeSystemService()
+    service.registry_catalog_error = AcpRegistryError("registry unavailable")
+    client = _create_test_client(service)
+
+    response = client.get("/api/system/configs/agent-runtime-registry")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "registry unavailable"
+
+
+def test_agent_runtime_registry_install_saves_registry_transport() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.post(
+        "/api/system/configs/agent-runtime-registry/vendor%2Fruntime:install",
+        json={"agent_id": "vendor_runtime", "distribution": "npx", "env": {}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent"]["agent_id"] == "vendor_runtime"
+    assert payload["agent"]["transport"] == {
+        "transport": "registry",
+        "registry_id": "vendor/runtime",
+        "distribution": "npx",
+        "registry_version": "2.0.0",
+        "env": [],
+        "registry_entry": None,
+    }
+    assert service.registry_install_requests[0][0] == "vendor/runtime"
+    assert service.registry_install_current_agents == [None]
+
+
+def test_agent_runtime_registry_update_passes_existing_agent_for_env_preserve() -> None:
+    service = _FakeSystemService()
+    service.external_agents["vendor_runtime"] = ExternalAgentConfig(
+        agent_id="vendor_runtime",
+        name="Vendor Runtime",
+        description="Official runtime",
+        protocol=ExternalAgentProtocol.ACP,
+        transport=RegistryTransportConfig(
+            registry_id="vendor/runtime",
+            distribution="npx",
+            registry_version="1.0.0",
+            env=(
+                ExternalAgentSecretBinding(
+                    name="VENDOR_TOKEN",
+                    secret=True,
+                    configured=True,
+                ),
+            ),
+        ),
+    )
+    client = _create_test_client(service)
+
+    response = client.post(
+        "/api/system/configs/agent-runtime-registry/vendor%2Fruntime:install",
+        json={"agent_id": "vendor_runtime", "distribution": "npx"},
+    )
+
+    assert response.status_code == 200
+    assert service.registry_install_requests[0][1].env is None
+    current_agent = service.registry_install_current_agents[0]
+    assert current_agent is not None
+    assert current_agent.agent_id == "vendor_runtime"
+
+
+def test_agent_runtime_registry_update_loads_default_agent_for_env_preserve() -> None:
+    service = _FakeSystemService()
+    service.external_agents["vendor-runtime"] = ExternalAgentConfig(
+        agent_id="vendor-runtime",
+        name="Vendor Runtime",
+        description="Official runtime",
+        protocol=ExternalAgentProtocol.ACP,
+        transport=RegistryTransportConfig(
+            registry_id="vendor/runtime",
+            distribution="npx",
+            registry_version="1.0.0",
+            env=(
+                ExternalAgentSecretBinding(
+                    name="VENDOR_TOKEN",
+                    secret=True,
+                    configured=True,
+                ),
+            ),
+        ),
+    )
+    client = _create_test_client(service)
+
+    response = client.post(
+        "/api/system/configs/agent-runtime-registry/vendor%2Fruntime:install",
+        json={},
+    )
+
+    assert response.status_code == 200
+    request = service.registry_install_requests[0][1]
+    assert request.agent_id is None
+    assert request.distribution is None
+    assert request.env is None
+    current_agent = service.registry_install_current_agents[0]
+    assert current_agent is not None
+    assert current_agent.agent_id == "vendor-runtime"
+
+
+def test_agent_runtime_registry_install_maps_unknown_registry_id_to_not_found() -> None:
+    service = _FakeSystemService()
+    service.registry_install_error = KeyError("missing/runtime")
+    client = _create_test_client(service)
+
+    response = client.post(
+        "/api/system/configs/agent-runtime-registry/missing%2Fruntime:install",
+        json={"distribution": "npx", "env": {}},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "'missing/runtime'"
+
+
 def test_get_agent_runtime_omits_stdio_working_directory() -> None:
     client = _create_test_client(_FakeSystemService())
 
@@ -2856,6 +3093,17 @@ def test_test_agent_runtime(monkeypatch, tmp_path: Path) -> None:
         "protocol_version": 1,
         "protocol_version_text": None,
     }
+
+
+def test_test_agent_runtime_returns_bad_request_for_registry_resolution_error() -> None:
+    service = _FakeSystemService()
+    service.runtime_resolve_error = AcpRegistryError("Registry runtime is unavailable")
+    client = _create_test_client(service)
+
+    response = client.post("/api/system/configs/agent-runtimes/codex_local:test")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Registry runtime is unavailable"}
 
 
 def test_save_proxy_config_returns_user_error_for_missing_keyring() -> None:

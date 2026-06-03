@@ -50,6 +50,7 @@ from relay_teams.sessions.session_rounds_projection import (
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
 )
+from relay_teams.tools.runtime.acp_approval import acp_options_projection
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
 from relay_teams.sessions.runs.event_log import EventLog
 from relay_teams.agents.execution.message_repository import MessageRepository
@@ -2195,6 +2196,7 @@ class SessionService:
                 "requested_at": record.created_at.isoformat(),
                 "status": record.status.value,
                 "feedback": record.feedback,
+                "acp_options": acp_options_projection(record.metadata),
             }
             for record in self._approval_ticket_repo.list_open_by_run(run_id)
         ]

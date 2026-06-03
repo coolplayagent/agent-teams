@@ -76,6 +76,7 @@ from relay_teams.env.runtime_env import sync_app_env_to_process_env
 from relay_teams.env.web_config_service import WebConfigService
 from relay_teams.general import GeneralConfigService
 from relay_teams.agent_runtimes import (
+    AcpRegistryService,
     ExternalAgentConfigService,
     ExternalAgentSessionRepository,
 )
@@ -371,6 +372,13 @@ class ServerContainer:
         self.github_config_service: GitHubConfigService = GitHubConfigService(
             config_dir=app_config_dir,
         )
+        self.acp_registry_service = AcpRegistryService(
+            config_dir=app_config_dir,
+            get_proxy_config=self.proxy_config_service.get_proxy_config,
+            get_github_token=lambda: (
+                self.github_config_service.get_github_config().token
+            ),
+        )
         self.binary_tool_service: BinaryToolService = BinaryToolService(
             config_dir=app_config_dir,
             get_github_token=lambda: (
@@ -404,7 +412,8 @@ class ServerContainer:
             config_dir=app_config_dir
         )
         self.external_agent_config_service = ExternalAgentConfigService(
-            config_dir=app_config_dir
+            config_dir=app_config_dir,
+            registry_service=self.acp_registry_service,
         )
         self.environment_variable_service: EnvironmentVariableService = (
             EnvironmentVariableService(

@@ -27,7 +27,7 @@ from relay_teams.env.localhost_run_tunnel_service import LocalhostRunTunnelServi
 from relay_teams.env.proxy_config_service import ProxyConfigService
 from relay_teams.env.web_config_service import WebConfigService
 from relay_teams.general import GeneralConfigService
-from relay_teams.agent_runtimes import ExternalAgentConfigService
+from relay_teams.agent_runtimes import AcpRegistryService, ExternalAgentConfigService
 from relay_teams.gateway.feishu.gateway_service import FeishuGatewayService
 from relay_teams.gateway.feishu.subscription_service import FeishuSubscriptionService
 from relay_teams.gateway.feishu.trigger_handler import FeishuTriggerHandler
@@ -251,6 +251,10 @@ def get_web_config_service(request: Request) -> WebConfigService:
 
 def get_external_agent_config_service(request: Request) -> ExternalAgentConfigService:
     return get_container(request).external_agent_config_service
+
+
+def get_acp_registry_service(request: Request) -> AcpRegistryService:
+    return get_container(request).acp_registry_service
 
 
 def get_clawhub_config_service(request: Request) -> ClawHubConfigService:

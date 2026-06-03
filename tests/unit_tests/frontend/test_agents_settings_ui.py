@@ -141,6 +141,96 @@ console.log(JSON.stringify({
     }
 
 
+def test_agents_settings_registry_transport_saves_registry_payload(
+    tmp_path: Path,
+) -> None:
+    payload = _run_agents_settings_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindAgentSettingsHandlers, loadAgentSettingsPanel } from "./agentsSettings.mjs";
+
+installGlobals(createElements());
+bindAgentSettingsHandlers();
+await loadAgentSettingsPanel("registry_runtime");
+await document.getElementById("add-agent-registry-env-btn").onclick();
+await document.getElementById("save-agent-btn").onclick();
+
+console.log(JSON.stringify({
+    registrySectionDisplay: document.getElementById("agent-transport-registry").style.display,
+    saveCalls: globalThis.__saveCalls,
+}));
+""".strip(),
+    )
+
+    save_calls = cast(list[dict[str, JsonValue]], payload["saveCalls"])
+    assert payload["registrySectionDisplay"] == "block"
+    assert cast(dict[str, JsonValue], save_calls[0]["payload"]) == {
+        "agent_id": "registry_runtime",
+        "name": "Registry Runtime",
+        "description": "Runs from ACP registry.",
+        "protocol": "acp",
+        "transport": {
+            "transport": "registry",
+            "registry_id": "vendor/runtime",
+            "distribution": "auto",
+            "registry_version": "2.0.0",
+            "env": [
+                {
+                    "name": "OPENAI_API_KEY",
+                    "value": "sk-live",
+                    "secret": False,
+                    "configured": False,
+                }
+            ],
+        },
+    }
+
+
+def test_agents_settings_registry_save_preserves_secret_env_and_snapshot(
+    tmp_path: Path,
+) -> None:
+    payload = _run_agents_settings_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindAgentSettingsHandlers, loadAgentSettingsPanel } from "./agentsSettings.mjs";
+
+installGlobals(createElements());
+bindAgentSettingsHandlers();
+await loadAgentSettingsPanel("registry_secret_runtime");
+await document.getElementById("save-agent-btn").onclick();
+
+console.log(JSON.stringify({
+    saveCalls: globalThis.__saveCalls,
+}));
+""".strip(),
+    )
+
+    save_calls = cast(list[dict[str, JsonValue]], payload["saveCalls"])
+    saved_payload = cast(dict[str, JsonValue], save_calls[0]["payload"])
+    saved_transport = cast(dict[str, JsonValue], saved_payload["transport"])
+    assert saved_transport["env"] == [
+        {
+            "name": "OPENAI_API_KEY",
+            "value": "",
+            "secret": True,
+            "configured": True,
+        }
+    ]
+    assert cast(dict[str, JsonValue], saved_transport["registry_entry"]) == {
+        "id": "vendor/runtime",
+        "name": "Vendor Runtime",
+        "version": "2.0.0",
+        "description": "Runs from ACP registry.",
+        "distribution": {
+            "npx": {
+                "package": "@vendor/runtime@2.0.0",
+                "args": ["--stdio"],
+                "env": {},
+            }
+        },
+    }
+
+
 def test_agents_settings_panel_markup_uses_i18n_keys() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     source_text = (
@@ -154,15 +244,52 @@ def test_agents_settings_panel_markup_uses_i18n_keys() -> None:
     panel_html = source_text[panel_start:panel_end]
 
     assert 'data-i18n="settings.agents.empty"' in panel_html
-    assert 'data-i18n="settings.agents.editor"' in panel_html
+    assert 'data-i18n="settings.agents.editor"' not in panel_html
+    assert 'data-i18n="settings.agents.create_method_label"' in panel_html
     assert 'data-i18n="settings.agents.protocol"' in panel_html
     assert 'data-i18n="settings.agents.env_bindings"' in panel_html
     assert 'data-i18n="settings.agents.header_bindings"' in panel_html
+    assert 'data-i18n="settings.agents.registry_transport"' in panel_html
     assert 'data-i18n-placeholder="settings.agents.id_placeholder"' in panel_html
     assert 'data-i18n-placeholder="settings.agents.command_placeholder"' in panel_html
     assert 'data-i18n="settings.agents.transport_http"' in panel_html
+    assert 'data-i18n="settings.agents.transport_registry"' in panel_html
     assert 'data-i18n="settings.action.add_agent"' in source_text
+    assert 'data-i18n="settings.action.add_agent_custom"' in source_text
+    assert 'data-i18n="settings.action.add_agent_registry"' in source_text
+    assert 'id="registry-agent-btn"' not in source_text
     assert 'data-i18n="settings.action.delete"' in source_text
+
+
+def test_agents_settings_add_agent_opens_create_method_editor(tmp_path: Path) -> None:
+    payload = _run_agents_settings_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindAgentSettingsHandlers, loadAgentSettingsPanel } from "./agentsSettings.mjs";
+
+installGlobals(createElements());
+bindAgentSettingsHandlers();
+await loadAgentSettingsPanel("codex_local");
+
+document.getElementById("add-agent-btn").onclick();
+
+console.log(JSON.stringify({
+    methodBarDisplay: document.getElementById("agent-create-method-bar").style.display,
+    editorDisplay: document.getElementById("agent-editor-panel").style.display,
+    listDisplay: document.getElementById("agents-list").style.display,
+    runtimeViewDisplay: document.getElementById("agent-runtime-settings-view").style.display,
+    registryViewDisplay: document.getElementById("agent-registry-view").style.display,
+    selectedAgentId: document.getElementById("agent-id-input").value,
+}));
+""".strip(),
+    )
+
+    assert payload["methodBarDisplay"] == "flex"
+    assert payload["editorDisplay"] == "block"
+    assert payload["listDisplay"] == "none"
+    assert payload["runtimeViewDisplay"] == "block"
+    assert payload["registryViewDisplay"] == "none"
+    assert payload["selectedAgentId"] == ""
 
 
 def _run_agents_settings_script(
@@ -201,6 +328,52 @@ const agentRecords = {
             env: [],
         },
     },
+    registry_runtime: {
+        agent_id: "registry_runtime",
+        name: "Registry Runtime",
+        description: "Runs from ACP registry.",
+        protocol: "acp",
+        transport: {
+            transport: "registry",
+            registry_id: "vendor/runtime",
+            distribution: "auto",
+            registry_version: "2.0.0",
+            env: [],
+        },
+    },
+    registry_secret_runtime: {
+        agent_id: "registry_secret_runtime",
+        name: "Registry Secret Runtime",
+        description: "Keeps registry secrets.",
+        protocol: "acp",
+        transport: {
+            transport: "registry",
+            registry_id: "vendor/runtime",
+            distribution: "auto",
+            registry_version: "2.0.0",
+            env: [
+                {
+                    name: "OPENAI_API_KEY",
+                    value: "",
+                    secret: true,
+                    configured: true,
+                },
+            ],
+            registry_entry: {
+                id: "vendor/runtime",
+                name: "Vendor Runtime",
+                version: "2.0.0",
+                description: "Runs from ACP registry.",
+                distribution: {
+                    npx: {
+                        package: "@vendor/runtime@2.0.0",
+                        args: ["--stdio"],
+                        env: {},
+                    },
+                },
+            },
+        },
+    },
 };
 
 export async function fetchAgentRuntimes() {
@@ -211,6 +384,20 @@ export async function fetchAgentRuntimes() {
             description: "Runs Codex locally.",
             protocol: "acp",
             transport: "stdio",
+        },
+        {
+            agent_id: "registry_runtime",
+            name: "Registry Runtime",
+            description: "Runs from ACP registry.",
+            protocol: "acp",
+            transport: "registry",
+        },
+        {
+            agent_id: "registry_secret_runtime",
+            name: "Registry Secret Runtime",
+            description: "Keeps registry secrets.",
+            protocol: "acp",
+            transport: "registry",
         },
     ];
 }
@@ -299,15 +486,18 @@ const TRANSLATIONS = {
     "settings.agents.name_required": "Agent name is required.",
     "settings.agents.http_url_required": "HTTP transport URL is required.",
     "settings.agents.custom_adapter_required": "Custom transport adapter ID is required.",
+    "settings.agents.registry_id_required": "Registry ID is required.",
     "settings.agents.stdio_command_required": "Stdio command is required.",
     "settings.agents.a2a_requires_http": "A2A runtimes require Streamable HTTP transport.",
     "settings.agents.cli_requires_stdio": "CLI runtimes require Stdio transport.",
+    "settings.agents.registry_requires_acp": "Registry runtimes require ACP protocol.",
     "settings.agents.custom_config": "Config JSON",
     "settings.agents.json_object_required": "must be a JSON object.",
     "settings.agents.json_invalid": "must be valid JSON.",
     "settings.agents.transport_stdio_label": "Stdio",
     "settings.agents.transport_http_label": "HTTP",
     "settings.agents.transport_custom_label": "Custom",
+    "settings.agents.transport_registry_label": "Registry",
     "settings.agents.protocol_acp_label": "ACP",
     "settings.agents.protocol_a2a_label": "A2A",
     "settings.agents.protocol_cli_label": "CLI",
@@ -435,6 +625,14 @@ function createElement(initialDisplay = "block") {{
 
 function createElements() {{
     return new Map([
+        ["agent-runtime-settings-view", createElement("block")],
+        ["agent-registry-view", createElement("none")],
+        ["agent-create-method-bar", createElement("none")],
+        ["agent-create-custom-btn", createElement("block")],
+        ["agent-create-registry-btn", createElement("block")],
+        ["agent-registry-create-method-bar", createElement("none")],
+        ["agent-registry-create-custom-btn", createElement("block")],
+        ["agent-registry-create-registry-btn", createElement("block")],
         ["agents-list", createElement("block")],
         ["agent-editor-panel", createElement("none")],
         ["agents-editor-empty", createElement("none")],
@@ -447,6 +645,7 @@ function createElements() {{
         ["agent-transport-stdio", createElement("block")],
         ["agent-transport-http", createElement("none")],
         ["agent-transport-custom", createElement("none")],
+        ["agent-transport-registry", createElement("none")],
         ["agent-stdio-command-input", createElement("block")],
         ["agent-stdio-args-input", createElement("block")],
         ["agent-stdio-env-list", createElement("block")],
@@ -455,13 +654,20 @@ function createElements() {{
         ["agent-http-header-list", createElement("block")],
         ["agent-custom-adapter-id-input", createElement("block")],
         ["agent-custom-config-input", createElement("block")],
+        ["agent-registry-id-input", createElement("block")],
+        ["agent-registry-distribution-input", createElement("block")],
+        ["agent-registry-version-input", createElement("block")],
+        ["agent-registry-env-list", createElement("block")],
         ["agent-editor-status", createElement("none")],
         ["add-agent-btn", createElement("block")],
+        ["refresh-agent-registry-btn", createElement("none")],
+        ["back-agents-btn", createElement("none")],
         ["save-agent-btn", createElement("block")],
         ["test-agent-btn", createElement("block")],
         ["delete-agent-btn", createElement("block")],
         ["cancel-agent-btn", createElement("block")],
         ["add-agent-stdio-env-btn", createElement("block")],
+        ["add-agent-registry-env-btn", createElement("block")],
         ["add-agent-http-header-btn", createElement("block")],
     ]);
 }}

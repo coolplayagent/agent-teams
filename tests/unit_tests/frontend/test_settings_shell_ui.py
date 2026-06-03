@@ -842,6 +842,7 @@ def _run_settings_script(tmp_path: Path, runner_source: str) -> dict[str, object
     mock_hooks_settings_path = tmp_path / "mockHooksSettings.mjs"
     mock_plugins_settings_path = tmp_path / "mockPluginsSettings.mjs"
     mock_agents_settings_path = tmp_path / "mockAgentsSettings.mjs"
+    mock_agent_registry_settings_path = tmp_path / "mockAgentRegistrySettings.mjs"
     mock_environment_path = tmp_path / "mockEnvironmentVariables.mjs"
     mock_notifications_path = tmp_path / "mockNotifications.mjs"
     mock_orchestration_settings_path = tmp_path / "mockOrchestrationSettings.mjs"
@@ -959,6 +960,22 @@ export function bindAgentSettingsHandlers() {
 
 export async function loadAgentSettingsPanel() {
     globalThis.__loadCalls.agents += 1;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    mock_agent_registry_settings_path.write_text(
+        """
+export function bindAgentRegistrySettingsHandlers() {
+    globalThis.__bindCalls.agentRegistry += 1;
+}
+
+export async function loadAgentRegistryPanel() {
+    globalThis.__loadCalls.agentRegistry += 1;
+}
+
+export function showAgentRegistryListView(visible) {
+    globalThis.__agentRegistryVisible = visible;
 }
 """.strip(),
         encoding="utf-8",
@@ -1310,6 +1327,7 @@ export function sysLog(message, tone = 'info') {
     source_text = (
         source_path.read_text(encoding="utf-8")
         .replace("./agentsSettings.js", "./mockAgentsSettings.mjs")
+        .replace("./agentRegistrySettings.js", "./mockAgentRegistrySettings.mjs")
         .replace("./commandsSettings.js", "./mockCommandsSettings.mjs")
         .replace("./hooksSettings.js", "./mockHooksSettings.mjs")
         .replace("./pluginsSettings.js", "./mockPluginsSettings.mjs")
@@ -1528,6 +1546,7 @@ function createElement(tagName = "div") {{
         plugins: 0,
     hooks: 0,
     agents: 0,
+    agentRegistry: 0,
     roles: 0,
     orchestration: 0,
     triggers: 0,
@@ -1547,6 +1566,7 @@ function createElement(tagName = "div") {{
         plugins: 0,
     hooks: 0,
     agents: 0,
+    agentRegistry: 0,
     roles: 0,
     orchestration: 0,
     triggers: 0,

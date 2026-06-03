@@ -74,6 +74,13 @@ CLI_COMMAND_DESCRIPTIONS: Final[dict[tuple[str, ...], str]] = {
     ("mcp", "test"): "Connect to one MCP server and report status.",
     ("mcp", "enable"): "Enable an app-scoped MCP server.",
     ("mcp", "disable"): "Disable an app-scoped MCP server.",
+    ("agent-runtimes", "registry", "list"): "List official ACP registry agents.",
+    ("agent-runtimes", "registry", "refresh"): "Refresh official ACP registry agents.",
+    (
+        "agent-runtimes",
+        "registry",
+        "install",
+    ): "Install one ACP registry runtime binding.",
 }
 
 _COMMON_SERVER_VALUE_OPTIONS = frozenset({"--base-url", "--format"})
@@ -172,6 +179,31 @@ CLI_COMMAND_SPECS: Final[dict[tuple[str, ...], CliCommandSpec]] = {
         _COMMON_SERVER_FLAG_OPTIONS,
         False,
     ),
+    ("agent-runtimes", "registry", "list"): CliCommandSpec(
+        ("agent-runtimes", "registry", "list"),
+        0,
+        0,
+        _COMMON_SERVER_VALUE_OPTIONS,
+        _COMMON_SERVER_FLAG_OPTIONS | frozenset({"--refresh"}),
+        False,
+    ),
+    ("agent-runtimes", "registry", "refresh"): CliCommandSpec(
+        ("agent-runtimes", "registry", "refresh"),
+        0,
+        0,
+        _COMMON_SERVER_VALUE_OPTIONS,
+        _COMMON_SERVER_FLAG_OPTIONS,
+        False,
+    ),
+    ("agent-runtimes", "registry", "install"): CliCommandSpec(
+        ("agent-runtimes", "registry", "install"),
+        1,
+        1,
+        _COMMON_SERVER_VALUE_OPTIONS
+        | frozenset({"--agent-id", "--distribution", "--env-json"}),
+        _COMMON_SERVER_FLAG_OPTIONS,
+        False,
+    ),
     ("approvals", "list"): CliCommandSpec(
         ("approvals", "list"),
         0,
@@ -185,7 +217,9 @@ CLI_COMMAND_SPECS: Final[dict[tuple[str, ...], CliCommandSpec]] = {
         0,
         0,
         _COMMON_SERVER_VALUE_OPTIONS
-        | frozenset({"--run-id", "--tool-call-id", "--action", "--feedback"}),
+        | frozenset(
+            {"--run-id", "--tool-call-id", "--action", "--feedback", "--option-id"}
+        ),
         _COMMON_SERVER_FLAG_OPTIONS,
         False,
     ),

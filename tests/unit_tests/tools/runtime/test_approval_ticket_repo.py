@@ -220,6 +220,65 @@ def test_approval_signature_key_prefers_cache_key_over_args_preview() -> None:
     assert wrapped == direct
 
 
+def test_resolve_merges_metadata_patch(tmp_path: Path) -> None:
+    repository = ApprovalTicketRepository(tmp_path / "approval_ticket_metadata.db")
+    _ = repository.upsert_requested(
+        tool_call_id="call-meta",
+        run_id="run-1",
+        session_id="session-1",
+        task_id="task-1",
+        instance_id="inst-1",
+        role_id="writer",
+        tool_name="external_acp_tool",
+        args_preview="{}",
+        metadata={"existing": "value"},
+    )
+
+    resolved = repository.resolve(
+        tool_call_id="call-meta",
+        status=ApprovalTicketStatus.APPROVED,
+        metadata_patch={"acp_selected_option_id": "allow"},
+        expected_status=ApprovalTicketStatus.REQUESTED,
+    )
+
+    assert resolved.metadata == {
+        "existing": "value",
+        "acp_selected_option_id": "allow",
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_async_merges_metadata_patch(tmp_path: Path) -> None:
+    repository = ApprovalTicketRepository(
+        tmp_path / "approval_ticket_metadata_async.db"
+    )
+    try:
+        _ = await repository.upsert_requested_async(
+            tool_call_id="call-meta",
+            run_id="run-1",
+            session_id="session-1",
+            task_id="task-1",
+            instance_id="inst-1",
+            role_id="writer",
+            tool_name="external_acp_tool",
+            args_preview="{}",
+            metadata={"existing": "value"},
+        )
+        resolved = await repository.resolve_async(
+            tool_call_id="call-meta",
+            status=ApprovalTicketStatus.APPROVED,
+            metadata_patch={"acp_selected_option_id": "allow"},
+            expected_status=ApprovalTicketStatus.REQUESTED,
+        )
+    finally:
+        await repository.close_async()
+
+    assert resolved.metadata == {
+        "existing": "value",
+        "acp_selected_option_id": "allow",
+    }
+
+
 def test_find_reusable_matches_approved_ticket_by_cache_key(tmp_path: Path) -> None:
     repository = ApprovalTicketRepository(tmp_path / "approval_ticket_cache_key.db")
     cache_key = build_shell_cache_key(

@@ -102,6 +102,30 @@ def test_recovery_ui_tracks_background_tasks_in_banner_and_events() -> None:
     assert "recovery.background_task.stop" in i18n_script
 
 
+def test_recovery_approval_buttons_support_acp_permission_options() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    recovery_script = (
+        repo_root / "frontend" / "dist" / "js" / "app" / "recovery.js"
+    ).read_text(encoding="utf-8")
+    api_script = (
+        repo_root / "frontend" / "dist" / "js" / "core" / "api" / "runs.js"
+    ).read_text(encoding="utf-8")
+
+    assert "normalizeApprovalOptions(approval?.acp_options)" in recovery_script
+    assert 'data-approval-option-id="${escapeAttribute(option.optionId)}"' in (
+        recovery_script
+    )
+    assert (
+        "void handleApprovalAction(activeRun.run_id, approval, action, optionId)"
+        in (recovery_script)
+    )
+    assert (
+        "await resolveToolApproval(safeRunId, safeToolCallId, safeAction, '', safeOptionId)"
+        in recovery_script
+    )
+    assert "option_id: optionId" in api_script
+
+
 def test_background_task_event_renders_control_strip_immediately(
     tmp_path: Path,
 ) -> None:

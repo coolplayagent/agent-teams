@@ -908,7 +908,44 @@ Each item includes:
 - `name`
 - `description`
 - `protocol`: `acp`, `a2a`, or `cli`
-- `transport`: `stdio`, `streamable_http`, or `custom`
+- `transport`: `stdio`, `streamable_http`, `custom`, or `registry`
+
+### `GET /system/configs/agent-runtime-registry`
+
+Returns the official ACP registry catalog with installed/update markers for saved runtimes.
+
+Query parameters:
+- `refresh`: optional boolean. When true, bypasses the stale-refresh throttle and fetches the registry before returning.
+
+The backend fetches `https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json` through the configured async HTTP client and proxy settings. Registry JSON is cached under the app config directory at `agent-runtime-registry/registry.json`; a failed refresh falls back to cached data and returns `stale=true` plus `error_message`.
+
+Response fields:
+- `registry_version`
+- `agents[]`: registry entries with `registry_id`, `name`, `version`, `description`, `repository`, `website`, `icon`, `distributions[]`, `selected_distribution`, `supports_current_platform`, `installed`, `installed_agent_id`, `installed_version`, and `update_available`
+- `fetched_at`
+- `cache_path`
+- `stale`
+- `error_message`
+
+### `POST /system/configs/agent-runtime-registry:refresh`
+
+Refreshes the official ACP registry catalog and returns the same response as `GET /system/configs/agent-runtime-registry`.
+
+### `POST /system/configs/agent-runtime-registry/{registry_id}:install`
+
+Creates or updates a saved ACP runtime binding for one registry entry. This does not download binaries or prepare packages immediately; first test/run lazily resolves and materializes the selected distribution.
+
+Request body:
+- `agent_id`: optional saved runtime id; defaults to a safe slug derived from the registry id
+- `distribution`: optional `auto`, `binary`, `npx`, or `uvx`; first installs default to `auto`. When updating an existing saved runtime, omitting `distribution` preserves the saved preference, while sending `auto` explicitly resets to automatic selection.
+- `env`: optional user environment bindings for the runtime; values are persisted as secret bindings. When updating an existing saved runtime, omitting `env` preserves current bindings, while sending `{}` clears them.
+
+Response fields:
+- `status`
+- `agent`: the saved `ExternalAgentConfig`
+- `registry_agent`: the selected catalog entry view
+- `message`
+- `installed_at`
 
 ### `GET /system/configs/agent-runtimes/{agent_id}`
 
@@ -918,6 +955,7 @@ The `transport` field is a discriminated union:
 - `stdio`: `command`, `args[]`, optional `env[]`
 - `streamable_http`: `url`, optional `headers[]`, optional `ssl_verify`
 - `custom`: `adapter_id`, `config`
+- `registry`: `registry_id`, `distribution`, optional `registry_version`, optional user `env[]`, optional `registry_entry` install snapshot
 
 The `protocol` field selects the runtime protocol:
 - `acp`: existing Agent Client Protocol session lifecycle over stdio, HTTP, or custom transport
@@ -933,6 +971,9 @@ Binding items under `env[]` or `headers[]` include:
 Notes:
 - Secret binding values are not returned on read. Instead, `configured=true` tells the UI that a secret exists in the unified secret store.
 - Any ACP-compatible agent runtime may be configured here, including tools such as Claude Code or OpenCode, as long as it speaks the expected transport.
+- Registry runtimes are ACP runtimes saved as registry references. Runtime execution resolves them to concrete `stdio` transport first: `auto` prefers a current-platform binary, then `npx`, then `uvx`. Saved installs include a typed `registry_entry` snapshot so an already-installed runtime remains runnable after the catalog refreshes and reports an available update.
+- Binary registry distributions download and extract under `agent-runtime-registry/agents/{registry_id}/{version-or-hash}/`, verify SHA-256 when available, use GitHub asset digests for tag and latest-release URLs when available, materialize raw executable downloads when the URL is not an archive, reject unsafe archive members or escaping commands, and use a per-agent/version install lock.
+- `npx` and `uvx` registry distributions use isolated per-agent cache/prefix directories, merge registry env/proxy env/user env in order, and defer package preparation until the runtime is tested or executed.
 - A2A runtimes follow the public Agent2Agent Agent Card and `message/send` JSON-RPC flow.
 - CLI runtimes are process-based JSON-RPC servers over stdio. The backend performs `initialize`, sends `initialized`, creates an ephemeral `thread/start`, submits the composed runtime prompt through `turn/start`, collects assistant output from `item/agentMessage/delta` or completed `agentMessage` items, and waits for `turn/completed`.
 - Bare `codex` CLI configs are launched as `codex app-server --listen stdio://`. Legacy `codex exec` prompt flags are not forwarded to app-server; approval policy is set through JSON-RPC thread/turn params.
@@ -1901,6 +1942,17 @@ Session round projections expose public user/subagent injections as
 
 Lists pending tool approvals.
 
+Response fields:
+- `tool_call_id`
+- `instance_id`
+- `role_id`
+- `tool_name`
+- `args_preview`
+- `acp_options[]`: present for external ACP `session/request_permission` approvals; empty for local tool approvals
+  - `optionId`
+  - `name`
+  - `kind`: `allow_once | allow_always | reject_once | reject_always`
+
 ### `GET /runs/{run_id}/questions`
 
 Lists persisted `ask_question` requests for the run.
@@ -2281,6 +2333,7 @@ Allowed `action` values:
 Notes:
 - Shell exact/prefix approvals are project-scoped and shell-runtime-scoped. Git Bash approvals do not automatically apply to PowerShell, and vice versa.
 - Shell `workdir` values must stay inside the workspace writable roots even when the command itself targets external executables or scripts.
+- `option_id` is optional and is only used for external ACP permission requests. When present, it must match one of the pending approval's `acp_options[].optionId`; the selected ACP option id is returned to the external agent. For local tool approvals, omit `option_id`.
 
 ### `POST /runs/{run_id}/stop`
 

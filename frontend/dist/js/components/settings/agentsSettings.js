@@ -34,16 +34,31 @@ let currentProtocol = 'acp';
 let currentTransport = 'stdio';
 let currentStdioEnv = [];
 let currentHttpHeaders = [];
+let currentRegistryEnv = [];
+let currentRegistryEntry = null;
 let availableEnvironmentBindings = [];
 let languageBound = false;
 
 export function bindAgentSettingsHandlers() {
     bindActionButton('add-agent-btn', handleAddAgent);
+    bindActionButton('agent-create-custom-btn', event => {
+        if (event?.stopPropagation) {
+            event.stopPropagation();
+        }
+        handleAddAgent();
+    });
+    bindActionButton('agent-registry-create-custom-btn', event => {
+        if (event?.stopPropagation) {
+            event.stopPropagation();
+        }
+        handleAddAgent();
+    });
     bindActionButton('save-agent-btn', handleSaveAgent);
     bindActionButton('test-agent-btn', handleTestAgent);
     bindActionButton('delete-agent-btn', handleDeleteAgent);
     bindActionButton('cancel-agent-btn', handleCancelAgent);
     bindActionButton('add-agent-stdio-env-btn', () => addBindingRow('stdio'));
+    bindActionButton('add-agent-registry-env-btn', () => addBindingRow('registry'));
     bindActionButton('add-agent-http-header-btn', () => addBindingRow('http'));
 
     const protocolSelect = document.getElementById('agent-protocol-input');
@@ -63,6 +78,7 @@ export function bindAgentSettingsHandlers() {
         document.addEventListener('agent-teams-language-changed', () => {
             renderAgentsList();
             renderBindingRows('stdio');
+            renderBindingRows('registry');
             renderBindingRows('http');
         });
         languageBound = true;
@@ -225,6 +241,27 @@ function normalizeAgentConfig(config) {
             },
         };
     }
+    if (safeTransport === 'registry') {
+        const registryEntry = config?.transport?.registry_entry;
+        return {
+            agent_id: String(config?.agent_id || '').trim(),
+            name: String(config?.name || '').trim(),
+            description: String(config?.description || '').trim(),
+            protocol: safeProtocol,
+            transport: {
+                transport: 'registry',
+                registry_id: String(config?.transport?.registry_id || '').trim(),
+                distribution: String(config?.transport?.distribution || 'auto').trim() || 'auto',
+                registry_version: String(config?.transport?.registry_version || '').trim(),
+                env: Array.isArray(config?.transport?.env)
+                    ? config.transport.env.map(normalizeBinding)
+                    : [],
+                registry_entry: registryEntry && typeof registryEntry === 'object'
+                    ? registryEntry
+                    : null,
+            },
+        };
+    }
     return {
         agent_id: String(config?.agent_id || '').trim(),
         name: String(config?.name || '').trim(),
@@ -321,6 +358,12 @@ function applyAgentRecord(record) {
     currentHttpHeaders = currentTransport === 'streamable_http'
         ? record.transport.headers.map(normalizeBinding)
         : [];
+    currentRegistryEnv = currentTransport === 'registry'
+        ? record.transport.env.map(normalizeBinding)
+        : [];
+    currentRegistryEntry = currentTransport === 'registry'
+        ? record.transport.registry_entry || null
+        : null;
 
     setInputValue('agent-id-input', record.agent_id || '');
     setInputValue('agent-name-input', record.name || '');
@@ -346,7 +389,11 @@ function applyAgentRecord(record) {
             ? JSON.stringify(record.transport.config || {}, null, 2)
             : '{}',
     );
+    setInputValue('agent-registry-id-input', currentTransport === 'registry' ? record.transport.registry_id || '' : '');
+    setInputValue('agent-registry-distribution-input', currentTransport === 'registry' ? record.transport.distribution || 'auto' : 'auto');
+    setInputValue('agent-registry-version-input', currentTransport === 'registry' ? record.transport.registry_version || '' : '');
     renderBindingRows('stdio');
+    renderBindingRows('registry');
     renderBindingRows('http');
     renderTransportSections();
     renderAgentStatus('', '');
@@ -355,11 +402,17 @@ function applyAgentRecord(record) {
 function renderBindingRows(kind) {
     const containerId = kind === 'stdio'
         ? 'agent-stdio-env-list'
-        : 'agent-http-header-list';
+        : kind === 'registry'
+            ? 'agent-registry-env-list'
+            : 'agent-http-header-list';
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    const rows = kind === 'stdio' ? currentStdioEnv : currentHttpHeaders;
+    const rows = kind === 'stdio'
+        ? currentStdioEnv
+        : kind === 'registry'
+            ? currentRegistryEnv
+            : currentHttpHeaders;
     container.className = 'agent-binding-list';
     if (!rows.length) {
         container.innerHTML = renderEmptyBindingState(kind);
@@ -368,13 +421,13 @@ function renderBindingRows(kind) {
 
     container.innerHTML = rows
         .map((binding, index) =>
-            kind === 'stdio'
-                ? renderEnvironmentBindingRow(binding, index)
+            kind === 'stdio' || kind === 'registry'
+                ? renderEnvironmentBindingRow(binding, index, kind)
                 : renderHttpHeaderBindingRow(binding, index),
         )
         .join('');
 
-    if (kind === 'stdio') {
+    if (kind === 'stdio' || kind === 'registry') {
         container.querySelectorAll('.agent-binding-name-select').forEach(select => {
             select.onchange = event => updateBindingField(kind, event, 'name');
         });
@@ -397,10 +450,14 @@ function renderBindingRows(kind) {
 function updateBindingField(kind, event, field) {
     const target = event?.target;
     const index = Number(target?.dataset?.index || -1);
-    const rows = kind === 'stdio' ? currentStdioEnv : currentHttpHeaders;
+    const rows = kind === 'stdio'
+        ? currentStdioEnv
+        : kind === 'registry'
+            ? currentRegistryEnv
+            : currentHttpHeaders;
     if (index < 0 || index >= rows.length) return;
     const current = rows[index];
-    if (kind === 'stdio' && field === 'name') {
+    if ((kind === 'stdio' || kind === 'registry') && field === 'name') {
         const nextName = String(target?.value || '').trim();
         const matchedBinding = resolveEnvironmentBinding(nextName);
         rows[index] = matchedBinding
@@ -409,7 +466,7 @@ function updateBindingField(kind, event, field) {
                 ...current,
                 name: nextName,
             };
-        renderBindingRows('stdio');
+        renderBindingRows(kind);
         return;
     }
     if (field === 'secret') {
@@ -427,22 +484,26 @@ function updateBindingField(kind, event, field) {
 }
 
 function addBindingRow(kind) {
-    const rows = kind === 'stdio' ? currentStdioEnv : currentHttpHeaders;
-    if (kind === 'stdio') {
+    const rows = kind === 'stdio'
+        ? currentStdioEnv
+        : kind === 'registry'
+            ? currentRegistryEnv
+            : currentHttpHeaders;
+    if (kind === 'stdio' || kind === 'registry') {
         if (!availableEnvironmentBindings.length) {
             showToast({
                 title: t('settings.agents.no_env_options'),
                 message: t('settings.agents.no_env_options_copy'),
                 tone: 'warning',
             });
-            renderBindingRows('stdio');
+            renderBindingRows(kind);
             return;
         }
         const nextBinding = availableEnvironmentBindings.find(option =>
             !rows.some(item => item.name === option.key),
         ) || availableEnvironmentBindings[0];
         rows.push(createEnvironmentBinding(nextBinding));
-        renderBindingRows('stdio');
+        renderBindingRows(kind);
         return;
     }
     rows.push({
@@ -461,6 +522,11 @@ function removeBindingRow(kind, indexValue) {
         renderBindingRows('stdio');
         return;
     }
+    if (kind === 'registry') {
+        currentRegistryEnv = currentRegistryEnv.filter((_, itemIndex) => itemIndex !== index);
+        renderBindingRows('registry');
+        return;
+    }
     currentHttpHeaders = currentHttpHeaders.filter((_, itemIndex) => itemIndex !== index);
     renderBindingRows('http');
 }
@@ -469,9 +535,11 @@ function renderTransportSections() {
     const stdioSection = document.getElementById('agent-transport-stdio');
     const httpSection = document.getElementById('agent-transport-http');
     const customSection = document.getElementById('agent-transport-custom');
+    const registrySection = document.getElementById('agent-transport-registry');
     if (stdioSection) stdioSection.style.display = currentTransport === 'stdio' ? 'block' : 'none';
     if (httpSection) httpSection.style.display = currentTransport === 'streamable_http' ? 'block' : 'none';
     if (customSection) customSection.style.display = currentTransport === 'custom' ? 'block' : 'none';
+    if (registrySection) registrySection.style.display = currentTransport === 'registry' ? 'block' : 'none';
 }
 
 function renderEmptyAgentsList(
@@ -483,6 +551,7 @@ function renderEmptyAgentsList(
     if (editorPanel) {
         editorPanel.style.display = 'none';
     }
+    setAgentCreateMethodBarVisible(false);
     if (listEl) {
         listEl.innerHTML = `
             <div class="settings-empty-state">
@@ -498,9 +567,13 @@ function renderEmptyAgentsList(
 function handleAddAgent() {
     selectedAgentId = '';
     selectedSourceAgentId = '';
+    const runtimeView = document.getElementById('agent-runtime-settings-view');
+    const registryView = document.getElementById('agent-registry-view');
+    if (runtimeView) runtimeView.style.display = 'block';
+    if (registryView) registryView.style.display = 'none';
     renderAgentsList();
     applyAgentRecord(createBlankAgentConfig());
-    showAgentEditor();
+    showAgentEditor({ createMode: true });
     const idInput = document.getElementById('agent-id-input');
     if (idInput?.focus) {
         idInput.focus();
@@ -637,6 +710,31 @@ function buildDraftFromForm() {
             },
         };
     }
+    if (transport === 'registry') {
+        const registryId = String(getInputValue('agent-registry-id-input')).trim();
+        if (!registryId) {
+            throw new Error(t('settings.agents.registry_id_required'));
+        }
+        const registryVersion = String(getInputValue('agent-registry-version-input')).trim();
+        const registryTransport = {
+            transport: 'registry',
+            registry_id: registryId,
+            distribution: String(getInputValue('agent-registry-distribution-input')).trim() || 'auto',
+            registry_version: registryVersion,
+            env: normalizeBindingsForSave(syncEnvironmentBindings(currentRegistryEnv)),
+        };
+        const registryEntry = registryEntrySnapshotForSave(registryId, registryVersion);
+        if (registryEntry) {
+            registryTransport.registry_entry = registryEntry;
+        }
+        return {
+            agent_id: agentId,
+            name,
+            description,
+            protocol,
+            transport: registryTransport,
+        };
+    }
     const command = String(getInputValue('agent-stdio-command-input')).trim();
     if (!command) {
         throw new Error(t('settings.agents.stdio_command_required'));
@@ -673,6 +771,9 @@ function validateProtocolTransport(protocol, transport) {
     if (protocol === 'cli' && transport !== 'stdio') {
         throw new Error(t('settings.agents.cli_requires_stdio'));
     }
+    if (transport === 'registry' && protocol !== 'acp') {
+        throw new Error(t('settings.agents.registry_requires_acp'));
+    }
 }
 
 function showAgentsList() {
@@ -680,6 +781,7 @@ function showAgentsList() {
     const editorPanel = document.getElementById('agent-editor-panel');
     if (listEl) listEl.style.display = 'block';
     if (editorPanel) editorPanel.style.display = 'none';
+    setAgentCreateMethodBarVisible(false);
     toggleAgentActions({
         add: true,
         test: false,
@@ -689,11 +791,12 @@ function showAgentsList() {
     });
 }
 
-function showAgentEditor() {
+function showAgentEditor(options = {}) {
     const listEl = document.getElementById('agents-list');
     const editorPanel = document.getElementById('agent-editor-panel');
     if (listEl) listEl.style.display = 'none';
     if (editorPanel) editorPanel.style.display = 'block';
+    setAgentCreateMethodBarVisible(options.createMode === true, 'custom');
     toggleAgentActions({
         add: false,
         test: true,
@@ -705,6 +808,8 @@ function showAgentEditor() {
 
 function toggleAgentActions(visibility) {
     setActionDisplay('add-agent-btn', visibility.add);
+    setActionDisplay('refresh-agent-registry-btn', false);
+    setActionDisplay('back-agents-btn', false);
     setActionDisplay('test-agent-btn', visibility.test);
     setActionDisplay('save-agent-btn', visibility.save);
     setActionDisplay('delete-agent-btn', visibility.delete);
@@ -787,7 +892,30 @@ function serializeTriStateValue(value) {
 function formatTransportLabel(transport) {
     if (transport === 'streamable_http') return t('settings.agents.transport_http_label');
     if (transport === 'custom') return t('settings.agents.transport_custom_label');
+    if (transport === 'registry') return t('settings.agents.transport_registry_label');
     return t('settings.agents.transport_stdio_label');
+}
+
+export function setAgentCreateMethodBarVisible(visible, mode = 'custom') {
+    setElementDisplay('agent-create-method-bar', visible && mode !== 'registry');
+    setElementDisplay('agent-registry-create-method-bar', visible && mode === 'registry');
+    setAgentCreateMethodMode(mode);
+}
+
+export function setAgentCreateMethodMode(mode) {
+    const normalizedMode = mode === 'registry' ? 'registry' : 'custom';
+    document.querySelectorAll?.('.agent-create-method-tab').forEach(button => {
+        const active = String(button.dataset.agentCreateMethod || '') === normalizedMode;
+        button.classList.toggle('active', active);
+        button.setAttribute?.('aria-selected', active ? 'true' : 'false');
+    });
+}
+
+function setElementDisplay(id, visible) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.style.display = visible ? 'flex' : 'none';
+    }
 }
 
 function formatProtocolLabel(protocol) {
@@ -797,7 +925,7 @@ function formatProtocolLabel(protocol) {
 }
 
 function renderEmptyBindingState(kind) {
-    if (kind === 'stdio' && !availableEnvironmentBindings.length) {
+    if ((kind === 'stdio' || kind === 'registry') && !availableEnvironmentBindings.length) {
         return `
             <div class="role-option-empty agent-binding-empty">
                 <div>${escapeHtml(t('settings.agents.no_env_options'))}</div>
@@ -805,23 +933,23 @@ function renderEmptyBindingState(kind) {
             </div>
         `;
     }
-    if (kind === 'stdio') {
+    if (kind === 'stdio' || kind === 'registry') {
         return `<div class="role-option-empty agent-binding-empty">${escapeHtml(t('settings.agents.no_env_bindings'))}</div>`;
     }
     return `<div class="role-option-empty agent-binding-empty">${escapeHtml(t('settings.agents.no_headers'))}</div>`;
 }
 
-function renderEnvironmentBindingRow(binding, index) {
+function renderEnvironmentBindingRow(binding, index, kind = 'stdio') {
     const selectedName = String(binding?.name || '').trim();
     return `
-        <div class="agent-binding-row agent-env-binding-row" data-kind="stdio" data-index="${index}">
+        <div class="agent-binding-row agent-env-binding-row" data-kind="${escapeHtml(kind)}" data-index="${index}">
             <div class="agent-env-binding-main">
-                <select class="agent-binding-name-select agent-env-binding-select" data-kind="stdio" data-index="${index}" aria-label="${escapeHtml(t('settings.agents.select_env'))}">
+                <select class="agent-binding-name-select agent-env-binding-select" data-kind="${escapeHtml(kind)}" data-index="${index}" aria-label="${escapeHtml(t('settings.agents.select_env'))}">
                     ${renderEnvironmentBindingOptions(selectedName)}
                 </select>
                 <div class="agent-env-binding-meta">${escapeHtml(formatEnvironmentBindingMeta(selectedName))}</div>
             </div>
-            <button class="secondary-btn section-action-btn agent-binding-remove-btn agent-env-binding-remove" data-kind="stdio" data-index="${index}" type="button">${escapeHtml(t('settings.agents.action_remove'))}</button>
+            <button class="secondary-btn section-action-btn agent-binding-remove-btn agent-env-binding-remove" data-kind="${escapeHtml(kind)}" data-index="${index}" type="button">${escapeHtml(t('settings.agents.action_remove'))}</button>
         </div>
     `;
 }
@@ -887,8 +1015,26 @@ function syncEnvironmentBindings(bindings) {
     return (Array.isArray(bindings) ? bindings : []).map(binding => {
         const normalizedBinding = normalizeBinding(binding);
         const matchedBinding = resolveEnvironmentBinding(normalizedBinding.name);
-        return matchedBinding ? createEnvironmentBinding(matchedBinding) : normalizedBinding;
+        if (!matchedBinding) {
+            return normalizedBinding;
+        }
+        if (normalizedBinding.secret || normalizedBinding.configured) {
+            return normalizedBinding;
+        }
+        return createEnvironmentBinding(matchedBinding);
     });
+}
+
+function registryEntrySnapshotForSave(registryId, registryVersion) {
+    if (!currentRegistryEntry || typeof currentRegistryEntry !== 'object') {
+        return null;
+    }
+    const entryId = String(currentRegistryEntry.id || '').trim();
+    const entryVersion = String(currentRegistryEntry.version || '').trim();
+    if (entryId !== registryId || entryVersion !== registryVersion) {
+        return null;
+    }
+    return currentRegistryEntry;
 }
 
 function formatEnvironmentBindingMeta(bindingName) {

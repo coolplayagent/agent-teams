@@ -381,6 +381,37 @@ export async function fetchAgentRuntimes() {
     return requestJson('/api/system/configs/agent-runtimes', undefined, 'Failed to fetch agent runtimes');
 }
 
+export async function fetchAgentRuntimeRegistry(refresh = false) {
+    const suffix = refresh ? '?refresh=true' : '';
+    return requestJson(
+        `/api/system/configs/agent-runtime-registry${suffix}`,
+        undefined,
+        'Failed to fetch ACP registry',
+    );
+}
+
+export async function refreshAgentRuntimeRegistry() {
+    return requestJson(
+        '/api/system/configs/agent-runtime-registry:refresh',
+        { method: 'POST' },
+        'Failed to refresh ACP registry',
+    );
+}
+
+export async function installAgentRuntimeFromRegistry(registryId, payload = {}) {
+    const result = await requestJson(
+        `/api/system/configs/agent-runtime-registry/${encodeURIComponent(registryId)}:install`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        },
+        'Failed to install ACP registry runtime',
+    );
+    invalidateRoleOptionDependencies();
+    return result;
+}
+
 export async function fetchAgentRuntime(agentId) {
     return requestJson(
         `/api/system/configs/agent-runtimes/${encodeURIComponent(agentId)}`,

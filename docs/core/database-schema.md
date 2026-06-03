@@ -1035,7 +1035,34 @@ Notes:
 
 ### 2.9.0 `approval_tickets` and `shell_approval_grants`
 
-`approval_tickets` persists pending and reusable tool-approval records. Shell tickets also store `metadata_json`, which carries normalized command data used when the operator resolves a pending shell approval as `approve_exact` or `approve_prefix`.
+`approval_tickets` persists pending and reusable tool-approval records. `metadata_json` carries structured approval context: shell tickets store normalized command data used when the operator resolves a pending shell approval as `approve_exact` or `approve_prefix`, and external ACP permission tickets store agent-provided option metadata plus the selected `optionId`.
+
+```sql
+CREATE TABLE IF NOT EXISTS approval_tickets (
+    tool_call_id   TEXT PRIMARY KEY,
+    signature_key  TEXT NOT NULL,
+    run_id         TEXT NOT NULL,
+    session_id     TEXT NOT NULL,
+    task_id        TEXT NOT NULL,
+    instance_id    TEXT NOT NULL,
+    role_id        TEXT NOT NULL,
+    tool_name      TEXT NOT NULL,
+    args_preview   TEXT NOT NULL DEFAULT '',
+    metadata_json  TEXT NOT NULL DEFAULT '{}',
+    status         TEXT NOT NULL,
+    feedback       TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    resolved_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_tickets_run_status
+    ON approval_tickets(run_id, status, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_approval_tickets_session_status
+    ON approval_tickets(session_id, status, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_approval_tickets_signature
+    ON approval_tickets(signature_key, updated_at DESC);
+```
 
 `shell_approval_grants` stores project-scoped reusable shell approvals keyed by:
 - `workspace_key`

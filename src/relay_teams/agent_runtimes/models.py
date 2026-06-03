@@ -16,6 +16,7 @@ class ExternalAgentTransportType(str, Enum):
     STDIO = "stdio"
     STREAMABLE_HTTP = "streamable_http"
     CUSTOM = "custom"
+    REGISTRY = "registry"
 
 
 class ExternalAgentProtocol(str, Enum):
@@ -65,8 +66,65 @@ class CustomTransportConfig(BaseModel):
     config: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class RegistryBinaryTargetSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    archive: str = Field(min_length=1)
+    cmd: str = Field(min_length=1)
+    args: tuple[str, ...] = ()
+    env: dict[str, str] = Field(default_factory=dict)
+    sha256: str | None = None
+
+
+class RegistryPackageDistributionSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    package: str = Field(min_length=1)
+    args: tuple[str, ...] = ()
+    env: dict[str, str] = Field(default_factory=dict)
+
+
+class RegistryDistributionSetSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    binary: dict[str, RegistryBinaryTargetSnapshot] = Field(default_factory=dict)
+    npx: RegistryPackageDistributionSnapshot | None = None
+    uvx: RegistryPackageDistributionSnapshot | None = None
+
+
+class RegistryEntrySnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: RequiredIdentifierStr
+    name: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    description: str = ""
+    repository: str | None = None
+    website: str | None = None
+    authors: tuple[str, ...] = ()
+    license: str | None = None
+    icon: str | None = None
+    distribution: RegistryDistributionSetSnapshot
+
+
+class RegistryTransportConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transport: Literal[ExternalAgentTransportType.REGISTRY] = (
+        ExternalAgentTransportType.REGISTRY
+    )
+    registry_id: RequiredIdentifierStr
+    distribution: Literal["auto", "binary", "npx", "uvx"] = "auto"
+    registry_version: str = ""
+    env: tuple[ExternalAgentSecretBinding, ...] = ()
+    registry_entry: RegistryEntrySnapshot | None = None
+
+
 ExternalAgentTransportConfig = Annotated[
-    StdioTransportConfig | StreamableHttpTransportConfig | CustomTransportConfig,
+    StdioTransportConfig
+    | StreamableHttpTransportConfig
+    | CustomTransportConfig
+    | RegistryTransportConfig,
     Field(discriminator="transport"),
 ]
 
@@ -101,6 +159,11 @@ class ExternalAgentConfig(BaseModel):
             StdioTransportConfig,
         ):
             raise ValueError("CLI agent runtimes require stdio transport")
+        if self.protocol != ExternalAgentProtocol.ACP and isinstance(
+            self.transport,
+            RegistryTransportConfig,
+        ):
+            raise ValueError("Registry agent runtimes require acp protocol")
         return self
 
 

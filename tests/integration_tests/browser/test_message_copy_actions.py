@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import SimpleHTTPRequestHandler
-from http.server import ThreadingHTTPServer
 import os
 from pathlib import Path
 import threading
@@ -13,6 +12,10 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Page
 from playwright.sync_api import sync_playwright
+
+from tests.integration_tests.browser._safe_http_server import (
+    create_browser_safe_http_server,
+)
 import pytest
 
 
@@ -581,7 +584,7 @@ def _serve_harness_directory(repo_root: Path, harness_root: Path) -> Iterator[st
         def log_message(self, format: str, *args: object) -> None:
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = create_browser_safe_http_server(Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

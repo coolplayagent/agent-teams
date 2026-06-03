@@ -53,14 +53,14 @@ from relay_teams.agent_runtimes import (
     AcpRegistryInstallRequest,
     AcpRegistryInstallResult,
     AcpRegistryService,
+    AgentRuntimeTestJob,
+    AgentRuntimeTestJobService,
     ExternalAgentConfig,
     ExternalAgentConfigService,
-    ExternalAgentProtocol,
     ExternalAgentSummary,
     ExternalAgentTestResult,
     registry_default_agent_id,
 )
-from relay_teams.agent_runtimes.runtime_probe import probe_agent_runtime
 from relay_teams.env.proxy_config_service import ProxyConfigService
 from relay_teams.env.proxy_env import ProxyEnvInput
 from relay_teams.env.web_config_models import WebConfig
@@ -79,6 +79,7 @@ from relay_teams.interfaces.server.deps import (
     get_clawhub_skill_service,
     get_config_status_service,
     get_environment_variable_service,
+    get_agent_runtime_test_job_service,
     get_external_agent_config_service,
     get_general_config_service,
     get_github_connectivity_probe_service,
@@ -98,7 +99,6 @@ from relay_teams.interfaces.server.deps import (
     get_web_connectivity_probe_service,
     get_hook_service,
     get_plugin_registry,
-    get_workspace_manager,
 )
 from relay_teams.interfaces.server.container import ServerContainer
 from relay_teams.interfaces.server.control_plane import (
@@ -183,13 +183,9 @@ from relay_teams.workspace import (
     SshProfilePasswordRevealView,
     SshProfileRecord,
     SshProfileService,
-    WorkspaceManager,
 )
 
 router = APIRouter(prefix="/system", tags=["System"])
-_AGENT_RUNTIME_PROBE_WORKSPACE_ID = "default"
-_AGENT_RUNTIME_PROBE_SESSION_ID = "agent-runtime-probe"
-_AGENT_RUNTIME_PROBE_ROLE_ID = "agent-runtime-probe"
 
 
 class PluginInstallRequest(BaseModel):
@@ -1410,30 +1406,47 @@ async def delete_agent_runtime(
 )
 async def test_agent_runtime(
     agent_id: RequiredIdentifierStr,
-    service: ExternalAgentConfigService = Depends(get_external_agent_config_service),
-    workspace_manager: WorkspaceManager = Depends(get_workspace_manager),
+    service: AgentRuntimeTestJobService = Depends(get_agent_runtime_test_job_service),
 ) -> ExternalAgentTestResult:
     try:
-        config = await service.resolve_runtime_agent_async(agent_id)
+        result = await service.run_test(agent_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (AcpRegistryError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    runtime_cwd = None
-    if config.protocol == ExternalAgentProtocol.CLI:
-        runtime_cwd = (
-            await workspace_manager.resolve_async(
-                session_id=_AGENT_RUNTIME_PROBE_SESSION_ID,
-                role_id=_AGENT_RUNTIME_PROBE_ROLE_ID,
-                instance_id=None,
-                workspace_id=_AGENT_RUNTIME_PROBE_WORKSPACE_ID,
-                conversation_id=_AGENT_RUNTIME_PROBE_SESSION_ID,
-            )
-        ).resolve_workdir()
-    result = await probe_agent_runtime(config, runtime_cwd=runtime_cwd)
     if result.ok:
         return result
     raise HTTPException(status_code=400, detail=result.message)
+
+
+@router.post(
+    "/configs/agent-runtimes/{agent_id}:test-job",
+    response_model=AgentRuntimeTestJob,
+)
+async def start_agent_runtime_test_job(
+    agent_id: RequiredIdentifierStr,
+    service: AgentRuntimeTestJobService = Depends(get_agent_runtime_test_job_service),
+) -> AgentRuntimeTestJob:
+    try:
+        return await service.start_job(agent_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (AcpRegistryError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/configs/agent-runtime-test-jobs/{job_id}",
+    response_model=AgentRuntimeTestJob,
+)
+async def get_agent_runtime_test_job(
+    job_id: RequiredIdentifierStr,
+    service: AgentRuntimeTestJobService = Depends(get_agent_runtime_test_job_service),
+) -> AgentRuntimeTestJob:
+    try:
+        return await service.get_job(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/configs/github")

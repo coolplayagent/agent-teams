@@ -22,6 +22,9 @@ from relay_teams.agent_runtimes import (
     AcpRegistryDistribution,
     AcpRegistryInstallRequest,
     AcpRegistryInstallResult,
+    AgentRuntimeJobStatus,
+    AgentRuntimeSetupPhase,
+    AgentRuntimeTestJob,
     ExternalAgentConfig,
     ExternalAgentProtocol,
     ExternalAgentSecretBinding,
@@ -30,6 +33,7 @@ from relay_teams.agent_runtimes import (
     RegistryTransportConfig,
     StdioTransportConfig,
 )
+from relay_teams.agent_runtimes import test_job_service as test_job_service_module
 from relay_teams.env.clawhub_config_models import ClawHubConfig
 from relay_teams.net.clawhub_connectivity import (
     ClawHubConnectivityProbeRequest,
@@ -65,6 +69,7 @@ from relay_teams.net.web_connectivity import (
 from relay_teams.media import MediaModality
 from relay_teams.interfaces.server.deps import (
     get_acp_registry_service,
+    get_agent_runtime_test_job_service,
     get_clawhub_connectivity_probe_service,
     get_clawhub_config_service,
     get_clawhub_skill_service,
@@ -419,7 +424,13 @@ class _FakeSystemService:
     def delete_agent(self, agent_id: str) -> None:
         self.external_agents.pop(agent_id)
 
-    async def resolve_runtime_agent_async(self, agent_id: str) -> ExternalAgentConfig:
+    async def resolve_runtime_agent_async(
+        self,
+        agent_id: str,
+        *,
+        progress_callback: object | None = None,
+    ) -> ExternalAgentConfig:
+        _ = progress_callback
         if self.runtime_resolve_error is not None:
             raise self.runtime_resolve_error
         self.resolved_runtime_agent_ids.append(agent_id)
@@ -436,6 +447,7 @@ class _FakeSystemService:
         if refresh:
             self.registry_refresh_count += 1
         return AcpRegistryCatalogResponse(
+            source_url="https://registry.example.test/registry.json",
             registry_version="1.0.0",
             agents=(
                 AcpRegistryAgentView(
@@ -1097,6 +1109,73 @@ class _FakeWorkspaceManager:
         return _FakeWorkspaceHandle(self.workdir)
 
 
+class _FakeAgentRuntimeTestJobService:
+    def __init__(
+        self,
+        service: _FakeSystemService,
+        workspace_manager: _FakeWorkspaceManager,
+    ) -> None:
+        self._service = service
+        self._workspace_manager = workspace_manager
+        self.jobs: dict[str, AgentRuntimeTestJob] = {}
+
+    async def run_test(self, agent_id: str) -> ExternalAgentTestResult:
+        config = await self._service.resolve_runtime_agent_async(agent_id)
+        runtime_cwd = None
+        if config.protocol == ExternalAgentProtocol.CLI:
+            runtime_cwd = (
+                await self._workspace_manager.resolve_async(
+                    session_id="agent-runtime-probe",
+                    role_id="agent-runtime-probe",
+                    instance_id=None,
+                    workspace_id="default",
+                    conversation_id="agent-runtime-probe",
+                )
+            ).resolve_workdir()
+        return await test_job_service_module.probe_agent_runtime(
+            config,
+            runtime_cwd=runtime_cwd,
+        )
+
+    async def start_job(self, agent_id: str) -> AgentRuntimeTestJob:
+        result = await self.run_test(agent_id)
+        job = AgentRuntimeTestJob(
+            job_id=f"job-{agent_id}",
+            agent_id=agent_id,
+            status=(
+                AgentRuntimeJobStatus.SUCCEEDED
+                if result.ok
+                else AgentRuntimeJobStatus.FAILED
+            ),
+            phase=(
+                AgentRuntimeSetupPhase.COMPLETED
+                if result.ok
+                else AgentRuntimeSetupPhase.FAILED
+            ),
+            message=result.message,
+            progress_percent=100 if result.ok else None,
+            result=result,
+            error_message=None if result.ok else result.message,
+        )
+        self.jobs[job.job_id] = job
+        return job
+
+    async def get_job(self, job_id: str) -> AgentRuntimeTestJob:
+        job = self.jobs.get(job_id)
+        if job is None:
+            raise KeyError(job_id)
+        return job
+
+
+class _FailingAgentRuntimeTestJobService:
+    async def start_job(self, agent_id: str) -> AgentRuntimeTestJob:
+        _ = agent_id
+        raise ValueError("Invalid runtime")
+
+    async def get_job(self, job_id: str) -> AgentRuntimeTestJob:
+        raise KeyError(job_id)
+
+
 def _create_test_client(
     fake_service: object,
     *,
@@ -1104,6 +1183,12 @@ def _create_test_client(
 ) -> TestClient:
     app = FastAPI()
     app.include_router(system.router, prefix="/api")
+    resolved_workspace_manager = workspace_manager or _FakeWorkspaceManager(Path.cwd())
+    runtime_test_job_service = (
+        _FakeAgentRuntimeTestJobService(fake_service, resolved_workspace_manager)
+        if isinstance(fake_service, _FakeSystemService)
+        else fake_service
+    )
     app.dependency_overrides[get_config_status_service] = lambda: fake_service
     app.dependency_overrides[get_general_config_service] = lambda: fake_service
     app.dependency_overrides[get_model_config_service] = lambda: fake_service
@@ -1135,11 +1220,12 @@ def _create_test_client(
     app.dependency_overrides[get_localhost_run_tunnel_service] = lambda: fake_service
     app.dependency_overrides[get_github_trigger_service] = lambda: fake_service
     app.dependency_overrides[get_acp_registry_service] = lambda: fake_service
+    app.dependency_overrides[get_agent_runtime_test_job_service] = lambda: (
+        runtime_test_job_service
+    )
     app.dependency_overrides[get_external_agent_config_service] = lambda: fake_service
     app.dependency_overrides[get_hook_service] = lambda: fake_service
-    app.dependency_overrides[get_workspace_manager] = lambda: (
-        workspace_manager or _FakeWorkspaceManager(Path.cwd())
-    )
+    app.dependency_overrides[get_workspace_manager] = lambda: resolved_workspace_manager
     return TestClient(app)
 
 
@@ -1510,7 +1596,7 @@ def test_sync_system_write_routes_run_service_calls_in_threadpool(monkeypatch) -
         )
 
     monkeypatch.setattr(system.asyncio, "to_thread", fake_to_thread)
-    monkeypatch.setattr(system, "probe_agent_runtime", fake_probe)
+    monkeypatch.setattr(test_job_service_module, "probe_agent_runtime", fake_probe)
     service = _FakeSystemService()
     client = _create_test_client(service)
 
@@ -2874,6 +2960,10 @@ def test_agent_runtime_registry_list_and_refresh() -> None:
     refresh_response = client.post("/api/system/configs/agent-runtime-registry:refresh")
 
     assert list_response.status_code == 200
+    assert (
+        list_response.json()["source_url"]
+        == "https://registry.example.test/registry.json"
+    )
     assert list_response.json()["agents"][0]["registry_id"] == "vendor/runtime"
     assert refresh_response.status_code == 200
     assert service.registry_refresh_count == 1
@@ -3068,7 +3158,7 @@ def test_test_agent_runtime(monkeypatch, tmp_path: Path) -> None:
             protocol_version=1,
         )
 
-    monkeypatch.setattr(system, "probe_agent_runtime", fake_probe)
+    monkeypatch.setattr(test_job_service_module, "probe_agent_runtime", fake_probe)
     service = _FakeSystemService()
     service.external_agents["codex_local"] = service.external_agents[
         "codex_local"
@@ -3104,6 +3194,71 @@ def test_test_agent_runtime_returns_bad_request_for_registry_resolution_error() 
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Registry runtime is unavailable"}
+
+
+def test_agent_runtime_test_job_endpoints_return_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_probe(
+        config: ExternalAgentConfig,
+        *,
+        runtime_cwd: Path | None = None,
+    ) -> ExternalAgentTestResult:
+        _ = (config, runtime_cwd)
+        return ExternalAgentTestResult(
+            ok=True,
+            message="Connected",
+            protocol=ExternalAgentProtocol.ACP,
+        )
+
+    monkeypatch.setattr(test_job_service_module, "probe_agent_runtime", fake_probe)
+    client = _create_test_client(_FakeSystemService())
+
+    start_response = client.post(
+        "/api/system/configs/agent-runtimes/codex_local:test-job"
+    )
+
+    assert start_response.status_code == 200
+    started = start_response.json()
+    assert started["status"] == "succeeded"
+    assert started["phase"] == "completed"
+    assert started["result"]["ok"] is True
+
+    get_response = client.get(
+        f"/api/system/configs/agent-runtime-test-jobs/{started['job_id']}"
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.json()["job_id"] == started["job_id"]
+
+
+def test_agent_runtime_test_job_start_returns_not_found_for_unknown_agent() -> None:
+    service = _FakeSystemService()
+    service.external_agents.pop("codex_local")
+    client = _create_test_client(service)
+
+    response = client.post("/api/system/configs/agent-runtimes/codex_local:test-job")
+
+    assert response.status_code == 404
+    assert "codex_local" in response.json()["detail"]
+
+
+def test_agent_runtime_test_job_get_returns_not_found_for_unknown_job() -> None:
+    client = _create_test_client(_FakeSystemService())
+
+    response = client.get("/api/system/configs/agent-runtime-test-jobs/missing-job")
+
+    assert response.status_code == 404
+    assert "missing-job" in response.json()["detail"]
+
+
+def test_agent_runtime_test_job_start_returns_bad_request_for_invalid_runtime() -> None:
+    client = _create_test_client(_FailingAgentRuntimeTestJobService())
+
+    response = client.post("/api/system/configs/agent-runtimes/codex_local:test-job")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid runtime"}
 
 
 def test_save_proxy_config_returns_user_error_for_missing_keyring() -> None:

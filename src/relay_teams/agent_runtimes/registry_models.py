@@ -90,6 +90,7 @@ class AcpRegistryAgentView(BaseModel):
 class AcpRegistryCatalogResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    source_url: str = ""
     registry_version: str = ""
     agents: tuple[AcpRegistryAgentView, ...] = ()
     fetched_at: datetime | None = None

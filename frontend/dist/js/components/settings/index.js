@@ -666,6 +666,20 @@ function createModal() {
                                             <button class="agent-create-method-tab active" id="agent-registry-create-registry-btn" type="button" role="tab" aria-selected="true" data-agent-create-method="registry" data-i18n="settings.action.add_agent_registry">Registry</button>
                                         </div>
                                     </div>
+                                    <div class="agent-registry-source-field proxy-inline-field web-provider-inline-field">
+                                        <span class="settings-token-source-label" data-i18n="settings.agents.registry_source_label">Source</span>
+                                        <a class="web-provider-link-card agent-registry-source-link" id="agent-registry-source-link" href="https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json" target="_blank" rel="noreferrer" title="https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json" aria-label="https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json">
+                                            <span class="web-provider-link-copy">
+                                                <span class="web-provider-link-url agent-registry-source-url">https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json</span>
+                                            </span>
+                                            <span class="web-provider-link-arrow" aria-hidden="true">
+                                                <svg viewBox="0 0 24 24" fill="none" class="icon-sm">
+                                                    <path d="M7 17L17 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                    <path d="M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                </svg>
+                                            </span>
+                                        </a>
+                                    </div>
                                     <div class="agent-registry-toolbar">
                                         <label class="agent-registry-search-field" for="agent-registry-search-input">
                                             <span data-i18n="settings.agents.registry_search_label">Search</span>

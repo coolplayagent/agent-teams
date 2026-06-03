@@ -21,6 +21,7 @@ from relay_teams.agent_runtimes.secret_store import (
     ExternalAgentSecretStore,
     get_external_agent_secret_store,
 )
+from relay_teams.agent_runtimes.setup_models import AgentRuntimeSetupProgressCallback
 
 _CONFIG_FILE_NAME = "agents.json"
 
@@ -116,7 +117,12 @@ class ExternalAgentConfigService:
             agent_id=normalized_agent_id,
         )
 
-    async def resolve_runtime_agent_async(self, agent_id: str) -> ExternalAgentConfig:
+    async def resolve_runtime_agent_async(
+        self,
+        agent_id: str,
+        *,
+        progress_callback: AgentRuntimeSetupProgressCallback | None = None,
+    ) -> ExternalAgentConfig:
         config = self.get_agent(agent_id)
         if isinstance(config.transport, StdioTransportConfig):
             return config.model_copy(
@@ -162,7 +168,9 @@ class ExternalAgentConfigService:
                 update={
                     "transport": (
                         await self._registry_service.resolve_runtime_transport_async(
-                            resolved_transport
+                            resolved_transport,
+                            agent_id=config.agent_id,
+                            progress_callback=progress_callback,
                         )
                     )
                 }

@@ -452,6 +452,22 @@ export async function testAgentRuntime(agentId) {
     );
 }
 
+export async function startAgentRuntimeTestJob(agentId) {
+    return requestJson(
+        `/api/system/configs/agent-runtimes/${encodeURIComponent(agentId)}:test-job`,
+        { method: 'POST' },
+        'Failed to start agent runtime test',
+    );
+}
+
+export async function fetchAgentRuntimeTestJob(jobId) {
+    return requestJson(
+        `/api/system/configs/agent-runtime-test-jobs/${encodeURIComponent(jobId)}`,
+        undefined,
+        'Failed to fetch agent runtime test progress',
+    );
+}
+
 export async function fetchWebConfig() {
     return requestJson('/api/system/configs/web', undefined, 'Failed to fetch web config');
 }

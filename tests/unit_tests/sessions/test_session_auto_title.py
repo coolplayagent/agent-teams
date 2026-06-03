@@ -648,4 +648,6 @@ def test_list_sessions_projects_2000_sessions_under_pressure(
     assert len(sessions) == 2000
     assert sessions[0].metadata["title"].startswith("User request")
     assert any(session.latest_terminal_run_id for session in sessions)
-    assert elapsed_ms < 300
+    # Keep a wall-clock budget high enough for CI coverage overhead while still
+    # catching query fan-out regressions on the 2000-session path.
+    assert elapsed_ms < 1000

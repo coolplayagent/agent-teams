@@ -487,6 +487,16 @@ state.activeRunId = 'run-parent';
 
 routeEvent('text_delta', {}, { run_id: 'subagent_run_deadbeef', trace_id: 'subagent_run_deadbeef' });
 routeEvent('token_usage', {}, { run_id: 'subagent_run_deadbeef', trace_id: 'subagent_run_deadbeef' });
+routeEvent(
+    'generation_progress',
+    { source: 'agent_runtime_registry', phase: 'downloading' },
+    {
+        run_id: 'subagent_run_deadbeef',
+        trace_id: 'subagent_run_deadbeef',
+        instance_id: 'inst-sub',
+        role_id: 'worker',
+    },
+);
 
 await Promise.resolve();
 
@@ -514,7 +524,21 @@ console.log(JSON.stringify({
                 None,
                 None,
             ],
-        }
+        },
+        {
+            "name": "handleGenerationProgress",
+            "args": [
+                {"source": "agent_runtime_registry", "phase": "downloading"},
+                {
+                    "run_id": "subagent_run_deadbeef",
+                    "trace_id": "subagent_run_deadbeef",
+                    "instance_id": "inst-sub",
+                    "role_id": "worker",
+                },
+                "inst-sub",
+                "worker",
+            ],
+        },
     ]
 
 

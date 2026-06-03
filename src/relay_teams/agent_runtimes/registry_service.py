@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import suppress
 from datetime import datetime, timezone
 import hashlib
@@ -15,7 +15,7 @@ import shutil
 import tarfile
 import threading
 from types import TracebackType
-from typing import Protocol
+from typing import Protocol, cast
 from urllib.parse import unquote, urlparse
 import zipfile
 
@@ -40,6 +40,11 @@ from relay_teams.agent_runtimes.registry_models import (
     AcpRegistryInstallRequest,
     AcpRegistryInstallResult,
     AcpRegistryResolvedRuntime,
+)
+from relay_teams.agent_runtimes.setup_models import (
+    AgentRuntimeSetupPhase,
+    AgentRuntimeSetupProgress,
+    AgentRuntimeSetupProgressCallback,
 )
 from relay_teams.env.clawhub_cli import resolve_npm_path
 from relay_teams.env.proxy_env import ProxyEnvConfig
@@ -91,8 +96,35 @@ class AcpRegistryHttpClient(Protocol):
     async def get(self, url: str) -> httpx.Response:
         raise NotImplementedError  # pragma: no cover
 
+    def stream(self, method: str, url: httpx.URL | str) -> "AcpRegistryHttpStream":
+        raise NotImplementedError  # pragma: no cover
 
-_DEFAULT_HTTP_CLIENT_FACTORY = create_async_http_client
+
+class AcpRegistryHttpResponse(Protocol):
+    status_code: int
+    headers: httpx.Headers
+
+    def aiter_bytes(self) -> AsyncIterator[bytes]:
+        raise NotImplementedError  # pragma: no cover
+
+
+class AcpRegistryHttpStream(Protocol):
+    async def __aenter__(self) -> AcpRegistryHttpResponse:
+        raise NotImplementedError  # pragma: no cover
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        raise NotImplementedError  # pragma: no cover
+
+
+_DEFAULT_HTTP_CLIENT_FACTORY = cast(
+    Callable[..., AcpRegistryHttpClient],
+    cast(object, create_async_http_client),
+)
 _INSTALL_LOCKS_LOCK = threading.Lock()
 _INSTALL_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 
@@ -181,6 +213,7 @@ class AcpRegistryService:
             installed_agents=installed_agents,
         )
         return AcpRegistryCatalogResponse(
+            source_url=ACP_REGISTRY_URL,
             registry_version=index.version,
             agents=agents,
             fetched_at=fetched_at,
@@ -256,9 +289,29 @@ class AcpRegistryService:
     async def resolve_runtime_transport_async(
         self,
         transport: RegistryTransportConfig,
+        *,
+        agent_id: str = "",
+        progress_callback: AgentRuntimeSetupProgressCallback | None = None,
     ) -> StdioTransportConfig:
+        progress_agent_id = agent_id or registry_default_agent_id(transport.registry_id)
+        await _emit_setup_progress(
+            progress_callback,
+            agent_id=progress_agent_id,
+            registry_id=transport.registry_id,
+            distribution=transport.distribution,
+            phase=AgentRuntimeSetupPhase.RESOLVING_REGISTRY,
+            message="Resolving ACP registry runtime.",
+        )
         index, _, _, _ = await self._load_index(refresh=False)
         entry = self._entry_for_transport(index=index, transport=transport)
+        await _emit_setup_progress(
+            progress_callback,
+            agent_id=progress_agent_id,
+            registry_id=entry.id,
+            distribution=transport.distribution,
+            phase=AgentRuntimeSetupPhase.SELECTING_DISTRIBUTION,
+            message="Selecting Agent Runtime distribution.",
+        )
         distribution = self._select_distribution(
             entry,
             AcpRegistryDistribution(transport.distribution),
@@ -266,6 +319,8 @@ class AcpRegistryService:
         resolved = await self._resolve_distribution(
             entry=entry,
             distribution=distribution,
+            agent_id=progress_agent_id,
+            progress_callback=progress_callback,
         )
         env = dict(resolved.env)
         env.update(
@@ -596,13 +651,59 @@ class AcpRegistryService:
         *,
         entry: AcpRegistryEntry,
         distribution: AcpRegistryDistribution,
+        agent_id: str,
+        progress_callback: AgentRuntimeSetupProgressCallback | None,
     ) -> AcpRegistryResolvedRuntime:
         if distribution == AcpRegistryDistribution.BINARY:
-            return await self._resolve_binary(entry)
+            return await self._resolve_binary(
+                entry,
+                agent_id=agent_id,
+                progress_callback=progress_callback,
+            )
         if distribution == AcpRegistryDistribution.NPX:
-            return self._resolve_npx(entry)
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=entry.id,
+                distribution=distribution.value,
+                phase=AgentRuntimeSetupPhase.PREPARING_COMMAND,
+                message=(
+                    "Preparing npx command. The first launch may download the package."
+                ),
+            )
+            resolved = self._resolve_npx(entry)
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=entry.id,
+                distribution=distribution.value,
+                phase=AgentRuntimeSetupPhase.READY,
+                message="Agent Runtime command is ready.",
+                progress_percent=100,
+            )
+            return resolved
         if distribution == AcpRegistryDistribution.UVX:
-            return self._resolve_uvx(entry)
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=entry.id,
+                distribution=distribution.value,
+                phase=AgentRuntimeSetupPhase.PREPARING_COMMAND,
+                message=(
+                    "Preparing uvx command. The first launch may download the package."
+                ),
+            )
+            resolved = self._resolve_uvx(entry)
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=entry.id,
+                distribution=distribution.value,
+                phase=AgentRuntimeSetupPhase.READY,
+                message="Agent Runtime command is ready.",
+                progress_percent=100,
+            )
+            return resolved
         raise AcpRegistryUnsupportedError(
             f"Unsupported registry distribution: {distribution.value}"
         )
@@ -610,6 +711,9 @@ class AcpRegistryService:
     async def _resolve_binary(
         self,
         entry: AcpRegistryEntry,
+        *,
+        agent_id: str,
+        progress_callback: AgentRuntimeSetupProgressCallback | None,
     ) -> AcpRegistryResolvedRuntime:
         platform_target = self._binary_target(entry)
         if platform_target is None:
@@ -621,6 +725,49 @@ class AcpRegistryService:
             self._registry_dir / "agents" / _safe_path_component(entry.id) / target_key
         )
         lock = _install_lock(entry.id, target_key)
+        await _emit_setup_progress(
+            progress_callback,
+            agent_id=agent_id,
+            registry_id=entry.id,
+            distribution=AcpRegistryDistribution.BINARY.value,
+            phase=AgentRuntimeSetupPhase.CHECKING_CACHE,
+            message="Checking cached Agent Runtime binary.",
+            progress_percent=10,
+        )
+        if install_dir.is_dir():
+            command = _resolve_binary_command(
+                install_dir=install_dir,
+                command=platform_target.cmd,
+            )
+            if os.name != "nt":
+                current_mode = command.stat().st_mode
+                command.chmod(current_mode | 0o755)
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=entry.id,
+                distribution=AcpRegistryDistribution.BINARY.value,
+                phase=AgentRuntimeSetupPhase.READY,
+                message="Agent Runtime binary is already prepared.",
+                progress_percent=100,
+            )
+            return AcpRegistryResolvedRuntime(
+                registry_id=entry.id,
+                distribution=AcpRegistryDistribution.BINARY,
+                command=str(command),
+                args=platform_target.args,
+                env=platform_target.env,
+            )
+        if lock.locked():
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=entry.id,
+                distribution=AcpRegistryDistribution.BINARY.value,
+                phase=AgentRuntimeSetupPhase.WAITING_FOR_LOCK,
+                message="Waiting for another Agent Runtime preparation to finish.",
+                progress_percent=12,
+            )
         await _acquire_lock(lock)
         try:
             if not install_dir.is_dir():
@@ -629,6 +776,9 @@ class AcpRegistryService:
                     sha256=platform_target.sha256,
                     install_dir=install_dir,
                     command=platform_target.cmd,
+                    agent_id=agent_id,
+                    registry_id=entry.id,
+                    progress_callback=progress_callback,
                 )
             command = _resolve_binary_command(
                 install_dir=install_dir,
@@ -637,6 +787,15 @@ class AcpRegistryService:
             if os.name != "nt":
                 current_mode = command.stat().st_mode
                 command.chmod(current_mode | 0o755)
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=entry.id,
+                distribution=AcpRegistryDistribution.BINARY.value,
+                phase=AgentRuntimeSetupPhase.READY,
+                message="Agent Runtime binary is ready.",
+                progress_percent=100,
+            )
             return AcpRegistryResolvedRuntime(
                 registry_id=entry.id,
                 distribution=AcpRegistryDistribution.BINARY,
@@ -755,16 +914,46 @@ class AcpRegistryService:
         sha256: str | None,
         install_dir: Path,
         command: str,
+        agent_id: str,
+        registry_id: str,
+        progress_callback: AgentRuntimeSetupProgressCallback | None,
     ) -> None:
         temporary_dir = install_dir.with_name(f"{install_dir.name}.tmp")
         if temporary_dir.exists():
             shutil.rmtree(temporary_dir)
         temporary_dir.mkdir(parents=True, exist_ok=True)
         try:
-            content = await self._download_bytes(archive_url)
+            content = await self._download_bytes(
+                archive_url,
+                agent_id=agent_id,
+                registry_id=registry_id,
+                progress_callback=progress_callback,
+            )
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=registry_id,
+                distribution=AcpRegistryDistribution.BINARY.value,
+                phase=AgentRuntimeSetupPhase.VERIFYING_CHECKSUM,
+                message="Verifying Agent Runtime binary.",
+                progress_percent=80,
+                downloaded_bytes=len(content),
+                total_bytes=len(content),
+            )
             expected_sha = sha256 or await self._github_asset_sha256(archive_url)
             if expected_sha is not None:
                 _verify_sha256(content, expected_sha)
+            await _emit_setup_progress(
+                progress_callback,
+                agent_id=agent_id,
+                registry_id=registry_id,
+                distribution=AcpRegistryDistribution.BINARY.value,
+                phase=AgentRuntimeSetupPhase.EXTRACTING,
+                message="Extracting Agent Runtime binary.",
+                progress_percent=90,
+                downloaded_bytes=len(content),
+                total_bytes=len(content),
+            )
             _safe_materialize_binary_payload(
                 content=content,
                 archive_url=archive_url,
@@ -778,19 +967,88 @@ class AcpRegistryService:
             shutil.rmtree(temporary_dir, ignore_errors=True)
             raise
 
-    async def _download_bytes(self, url: str) -> bytes:
+    async def _download_bytes(
+        self,
+        url: str,
+        *,
+        agent_id: str,
+        registry_id: str,
+        progress_callback: AgentRuntimeSetupProgressCallback | None,
+    ) -> bytes:
+        await _emit_setup_progress(
+            progress_callback,
+            agent_id=agent_id,
+            registry_id=registry_id,
+            distribution=AcpRegistryDistribution.BINARY.value,
+            phase=AgentRuntimeSetupPhase.DOWNLOADING,
+            message="Downloading Agent Runtime binary.",
+            progress_percent=15,
+        )
         async with self._create_http_client(
             proxy_config=self._get_proxy_config(),
             timeout_seconds=REGISTRY_INSTALL_TIMEOUT_SECONDS,
             connect_timeout_seconds=REGISTRY_FETCH_TIMEOUT_SECONDS,
             follow_redirects=True,
         ) as client:
-            response = await client.get(url)
-        if response.status_code >= 400:
-            raise AcpRegistryError(
-                f"Failed to download {url}: HTTP {response.status_code}"
-            )
-        return response.content
+            async with client.stream("GET", url) as response:
+                if response.status_code >= 400:
+                    raise AcpRegistryError(
+                        f"Failed to download {url}: HTTP {response.status_code}"
+                    )
+                total_bytes = _content_length(response.headers)
+                chunks: list[bytes] = []
+                downloaded_bytes = 0
+                last_progress_percent = 15
+                last_unbounded_report = 0
+                if total_bytes is None:
+                    await _emit_setup_progress(
+                        progress_callback,
+                        agent_id=agent_id,
+                        registry_id=registry_id,
+                        distribution=AcpRegistryDistribution.BINARY.value,
+                        phase=AgentRuntimeSetupPhase.DOWNLOADING,
+                        message="Downloading Agent Runtime binary.",
+                        progress_percent=None,
+                    )
+                async for chunk in response.aiter_bytes():
+                    if not chunk:
+                        continue
+                    chunks.append(chunk)
+                    downloaded_bytes += len(chunk)
+                    if total_bytes is None:
+                        if downloaded_bytes - last_unbounded_report < 1024 * 1024:
+                            continue
+                        last_unbounded_report = downloaded_bytes
+                        await _emit_setup_progress(
+                            progress_callback,
+                            agent_id=agent_id,
+                            registry_id=registry_id,
+                            distribution=AcpRegistryDistribution.BINARY.value,
+                            phase=AgentRuntimeSetupPhase.DOWNLOADING,
+                            message="Downloading Agent Runtime binary.",
+                            downloaded_bytes=downloaded_bytes,
+                            total_bytes=None,
+                        )
+                        continue
+                    progress_percent = min(
+                        75,
+                        15 + int(downloaded_bytes / max(total_bytes, 1) * 60),
+                    )
+                    if progress_percent <= last_progress_percent:
+                        continue
+                    last_progress_percent = progress_percent
+                    await _emit_setup_progress(
+                        progress_callback,
+                        agent_id=agent_id,
+                        registry_id=registry_id,
+                        distribution=AcpRegistryDistribution.BINARY.value,
+                        phase=AgentRuntimeSetupPhase.DOWNLOADING,
+                        message="Downloading Agent Runtime binary.",
+                        progress_percent=progress_percent,
+                        downloaded_bytes=downloaded_bytes,
+                        total_bytes=total_bytes,
+                    )
+                return b"".join(chunks)
 
     async def _github_asset_sha256(self, archive_url: str) -> str | None:
         release = _github_release_from_url(archive_url)
@@ -846,6 +1104,47 @@ class AcpRegistryService:
         if platform_key is None:
             return None
         return entry.distribution.binary.get(platform_key)
+
+
+async def _emit_setup_progress(
+    callback: AgentRuntimeSetupProgressCallback | None,
+    *,
+    agent_id: str,
+    registry_id: str,
+    distribution: str,
+    phase: AgentRuntimeSetupPhase,
+    message: str,
+    progress_percent: int | None = None,
+    downloaded_bytes: int = 0,
+    total_bytes: int | None = None,
+) -> None:
+    if callback is None:
+        return
+    await callback(
+        AgentRuntimeSetupProgress(
+            agent_id=agent_id,
+            registry_id=registry_id,
+            distribution=distribution,
+            phase=phase,
+            message=message,
+            progress_percent=progress_percent,
+            downloaded_bytes=downloaded_bytes,
+            total_bytes=total_bytes,
+        )
+    )
+
+
+def _content_length(headers: httpx.Headers) -> int | None:
+    raw_value = headers.get("content-length")
+    if raw_value is None:
+        return None
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return None
+    if value < 0:
+        return None
+    return value
 
 
 def _install_lock(registry_id: str, target_key: str) -> threading.Lock:

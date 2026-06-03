@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from relay_teams.interfaces.server.deps import (
+    get_agent_runtime_test_job_service,
     get_general_config_service,
     get_llm_evaluator,
 )
@@ -56,3 +57,16 @@ def test_get_general_config_service_returns_container_service() -> None:
         result = get_general_config_service(fake_request)
 
     assert result is fake_container.general_config_service
+
+
+def test_get_agent_runtime_test_job_service_returns_container_service() -> None:
+    fake_container = MagicMock()
+    fake_request = MagicMock()
+
+    with patch(
+        "relay_teams.interfaces.server.deps.get_container",
+        return_value=fake_container,
+    ):
+        result = get_agent_runtime_test_job_service(fake_request)
+
+    assert result is fake_container.agent_runtime_test_job_service

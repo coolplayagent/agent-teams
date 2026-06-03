@@ -126,6 +126,8 @@ export function routeEvent(evType, payload, eventMeta) {
             handleTextDelta(payload, eventMeta, instanceId, roleId);
         } else if (evType === 'output_delta') {
             handleOutputDelta(payload, eventMeta, instanceId, roleId);
+        } else if (evType === 'generation_progress') {
+            handleGenerationProgress(payload, eventMeta, instanceId, roleId);
         } else if (evType === 'thinking_started') {
             handleThinkingStarted(payload, eventMeta, instanceId, roleId);
         } else if (evType === 'thinking_delta') {

@@ -920,6 +920,7 @@ Query parameters:
 The backend fetches `https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json` through the configured async HTTP client and proxy settings. Registry JSON is cached under the app config directory at `agent-runtime-registry/registry.json`; a failed refresh falls back to cached data and returns `stale=true` plus `error_message`.
 
 Response fields:
+- `source_url`: the ACP registry JSON URL used by the backend.
 - `registry_version`
 - `agents[]`: registry entries with `registry_id`, `name`, `version`, `description`, `repository`, `website`, `icon`, `distributions[]`, `selected_distribution`, `supports_current_platform`, `installed`, `installed_agent_id`, `installed_version`, and `update_available`
 - `fetched_at`
@@ -972,7 +973,7 @@ Notes:
 - Secret binding values are not returned on read. Instead, `configured=true` tells the UI that a secret exists in the unified secret store.
 - Any ACP-compatible agent runtime may be configured here, including tools such as Claude Code or OpenCode, as long as it speaks the expected transport.
 - Registry runtimes are ACP runtimes saved as registry references. Runtime execution resolves them to concrete `stdio` transport first: `auto` prefers a current-platform binary, then `npx`, then `uvx`. Saved installs include a typed `registry_entry` snapshot so an already-installed runtime remains runnable after the catalog refreshes and reports an available update.
-- Binary registry distributions download and extract under `agent-runtime-registry/agents/{registry_id}/{version-or-hash}/`, verify SHA-256 when available, use GitHub asset digests for tag and latest-release URLs when available, materialize raw executable downloads when the URL is not an archive, reject unsafe archive members or escaping commands, and use a per-agent/version install lock.
+- Binary registry distributions download and extract under `agent-runtime-registry/agents/{registry_id}/{version-or-hash}/`, verify SHA-256 when available, use GitHub asset digests for tag and latest-release URLs when available, materialize raw executable downloads when the URL is not an archive, reject unsafe archive members or escaping commands, and use a per-agent/version install lock. Binary downloads stream bytes and report setup progress when the runtime is first tested or executed.
 - `npx` and `uvx` registry distributions use isolated per-agent cache/prefix directories, merge registry env/proxy env/user env in order, and defer package preparation until the runtime is tested or executed.
 - A2A runtimes follow the public Agent2Agent Agent Card and `message/send` JSON-RPC flow.
 - CLI runtimes are process-based JSON-RPC servers over stdio. The backend performs `initialize`, sends `initialized`, creates an ephemeral `thread/start`, submits the composed runtime prompt through `turn/start`, collects assistant output from `item/agentMessage/delta` or completed `agentMessage` items, and waits for `turn/completed`.
@@ -996,7 +997,7 @@ Deletes one saved agent runtime config and its stored secrets.
 
 Tests connectivity against the saved runtime-resolved agent runtime config.
 
-For CLI runtimes, the probe starts the process in the default workspace workdir and resolves relative command paths from that cwd. For A2A direct JSON-RPC runtimes, the probe requires a JSON-RPC 2.0 response with a matching id and rejects `-32601` method-not-found because that endpoint does not implement A2A `tasks/get`.
+For CLI runtimes, the probe starts the process in the default workspace workdir and resolves relative command paths from that cwd. For A2A direct JSON-RPC runtimes, the probe requires a JSON-RPC 2.0 response with a matching id and rejects `-32601` method-not-found because that endpoint does not implement A2A `tasks/get`. Registry runtimes remain lazy: this endpoint may prepare the selected registry distribution before probing.
 
 Response fields:
 - `ok`
@@ -1006,6 +1007,28 @@ Response fields:
 - optional `protocol_version_text`
 - optional `agent_name`
 - optional `agent_version`
+
+### `POST /system/configs/agent-runtimes/{agent_id}:test-job`
+
+Starts an in-memory agent runtime test job and returns the current job snapshot. This is intended for clients that need runtime setup progress while preserving lazy registry installation.
+
+Response fields:
+- `job_id`
+- `agent_id`
+- optional `registry_id`
+- optional `distribution`
+- `status`: `queued`, `running`, `succeeded`, or `failed`
+- `phase`: `queued`, `resolving_registry`, `selecting_distribution`, `checking_cache`, `waiting_for_lock`, `downloading`, `verifying_checksum`, `extracting`, `preparing_command`, `starting_process`, `initializing`, `ready`, `completed`, or `failed`
+- `message`
+- optional `progress_percent`
+- `downloaded_bytes`
+- optional `total_bytes`
+- optional `result`
+- optional `error_message`
+
+### `GET /system/configs/agent-runtime-test-jobs/{job_id}`
+
+Returns the latest in-memory agent runtime test job snapshot. Completed jobs are retained only for a bounded TTL and count; there is no database schema change.
 
 ### `POST /system/configs/proxy:reload`
 
@@ -1840,6 +1863,7 @@ Streams run events via SSE.
 Multimodal events:
 - `output_delta`: payload includes `output`, an array of typed content parts. Text streaming may still emit `text_delta`; media outputs are emitted through `output_delta`.
 - `generation_progress`: payload includes `run_kind`, `phase`, `progress`, and optional `preview_asset_id` for provider-native image/audio/video generation runs.
+- `generation_progress` with `run_kind="agent_runtime_setup"` and `source="agent_runtime_registry"` reports first-use registry runtime preparation. Payload includes `agent_id`, `registry_id`, `distribution`, `phase`, `message`, optional `progress_percent`, `downloaded_bytes`, optional `total_bytes`, and optional `error_message`.
 
 Thinking events:
 - `thinking_started`: payload includes `part_index`, `role_id`, `instance_id`.

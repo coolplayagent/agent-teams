@@ -77,6 +77,7 @@ from relay_teams.env.web_config_service import WebConfigService
 from relay_teams.general import GeneralConfigService
 from relay_teams.agent_runtimes import (
     AcpRegistryService,
+    AgentRuntimeTestJobService,
     ExternalAgentConfigService,
     ExternalAgentSessionRepository,
 )
@@ -512,6 +513,10 @@ class ServerContainer:
             ssh_profile_service=self.ssh_profile_service,
             builtin_skills_dir=get_builtin_skills_dir(),
             app_skills_dir=app_config_dir / "skills",
+        )
+        self.agent_runtime_test_job_service = AgentRuntimeTestJobService(
+            config_service=self.external_agent_config_service,
+            workspace_manager=self.workspace_manager,
         )
         self.media_asset_repo: MediaAssetRepository = MediaAssetRepository(
             runtime.paths.db_path

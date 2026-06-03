@@ -6,6 +6,7 @@ import json
 from click import unstyle
 from typer.testing import CliRunner
 
+from relay_teams.agent_runtimes import agent_cli as agent_cli_module
 from relay_teams.interfaces.cli import app_full as cli_app
 
 runner = CliRunner()
@@ -250,6 +251,173 @@ def test_agent_runtimes_test_supports_table_output(monkeypatch) -> None:
     assert "Agent Runtime: codex_local" in result.stdout
     assert "OK: True" in result.stdout
     assert "Message: Connected" in result.stdout
+
+
+def test_agent_runtimes_test_watch_polls_job(monkeypatch) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_autostart(
+        base_url: str, autostart: bool, daemon: bool = False, force: bool = False
+    ) -> None:
+        _ = (base_url, autostart, daemon, force)
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, object] | list[object]:
+        _ = (base_url, timeout_seconds)
+        calls.append((method, path, payload))
+        if path.endswith(":test-job"):
+            return {
+                "job_id": "job-1",
+                "agent_id": "codex_local",
+                "status": "running",
+                "phase": "downloading",
+                "message": "Downloading Agent Runtime binary.",
+                "progress_percent": 25,
+                "downloaded_bytes": 10,
+                "total_bytes": 40,
+            }
+        return {
+            "job_id": "job-1",
+            "agent_id": "codex_local",
+            "status": "succeeded",
+            "phase": "completed",
+            "message": "Connected",
+            "progress_percent": 100,
+            "result": {
+                "ok": True,
+                "message": "Connected",
+                "protocol": "acp",
+            },
+        }
+
+    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
+    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+
+    result = runner.invoke(
+        cli_app.app,
+        ["agent-runtimes", "test", "codex_local", "--watch"],
+    )
+
+    assert result.exit_code == 0
+    assert "running | downloading | 25%" in result.stdout
+    assert "Agent Runtime: codex_local" in result.stdout
+    assert calls == [
+        ("POST", "/api/system/configs/agent-runtimes/codex_local:test-job", None),
+        ("GET", "/api/system/configs/agent-runtime-test-jobs/job-1", None),
+    ]
+
+
+def test_agent_runtimes_test_watch_exits_nonzero_when_job_fails(monkeypatch) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_autostart(
+        base_url: str, autostart: bool, daemon: bool = False, force: bool = False
+    ) -> None:
+        _ = (base_url, autostart, daemon, force)
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, object] | list[object]:
+        _ = (base_url, timeout_seconds)
+        calls.append((method, path, payload))
+        if path.endswith(":test-job"):
+            return {
+                "job_id": "job-1",
+                "agent_id": "codex_local",
+                "status": "running",
+                "phase": "starting_process",
+                "message": "Starting Agent Runtime probe.",
+            }
+        return {
+            "job_id": "job-1",
+            "agent_id": "codex_local",
+            "status": "failed",
+            "phase": "failed",
+            "message": "Probe failed",
+            "error_message": "Probe failed",
+            "result": {
+                "ok": False,
+                "message": "Probe failed",
+                "protocol": "acp",
+            },
+        }
+
+    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
+    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+    monkeypatch.setattr(agent_cli_module.time, "sleep", lambda seconds: None)
+
+    result = runner.invoke(
+        cli_app.app,
+        ["agent-runtimes", "test", "codex_local", "--watch"],
+    )
+
+    assert result.exit_code == 1
+    assert "failed | failed: Probe failed" in result.stdout
+    assert "OK: False" in result.stdout
+    assert calls == [
+        ("POST", "/api/system/configs/agent-runtimes/codex_local:test-job", None),
+        ("GET", "/api/system/configs/agent-runtime-test-jobs/job-1", None),
+    ]
+
+
+def test_agent_runtimes_test_watch_json_exits_nonzero_when_job_fails(
+    monkeypatch,
+) -> None:
+    def fake_autostart(
+        base_url: str, autostart: bool, daemon: bool = False, force: bool = False
+    ) -> None:
+        _ = (base_url, autostart, daemon, force)
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, object] | list[object]:
+        _ = (base_url, method, payload, timeout_seconds)
+        if path.endswith(":test-job"):
+            return {
+                "job_id": "job-1",
+                "agent_id": "codex_local",
+                "status": "running",
+            }
+        return {
+            "job_id": "job-1",
+            "agent_id": "codex_local",
+            "status": "failed",
+            "result": {"ok": False, "message": "Probe failed", "protocol": "acp"},
+        }
+
+    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
+    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+    monkeypatch.setattr(agent_cli_module.time, "sleep", lambda seconds: None)
+
+    result = runner.invoke(
+        cli_app.app,
+        ["agent-runtimes", "test", "codex_local", "--watch", "--format", "json"],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["status"] == "failed"
+
+
+def test_agent_runtime_test_job_formatters_cover_edge_units() -> None:
+    assert agent_cli_module._test_job_failed({"result": {"ok": False}}) is True
+    assert agent_cli_module._object_value({"result": "missing"}, "result") == {}
+    assert agent_cli_module._format_job_byte_progress(0, 0) == ""
+    assert agent_cli_module._format_job_byte_progress(2048, None) == "2.0 KB"
+    assert agent_cli_module._format_job_byte_progress(1024 * 1024, 0) == "1.0 MB"
+    assert agent_cli_module._format_job_byte_progress(1024 * 1024 * 1024, 0) == "1.0 GB"
 
 
 def test_agent_runtimes_registry_commands_call_expected_endpoints(monkeypatch) -> None:

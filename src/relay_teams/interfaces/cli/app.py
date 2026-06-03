@@ -293,7 +293,7 @@ _FAST_SERVER_JSON_OPTION_SCOPES: dict[
     ("agent-runtimes", "get"): (frozenset(), frozenset()),
     ("agent-runtimes", "save"): (frozenset({"--config-json"}), frozenset()),
     ("agent-runtimes", "delete"): (frozenset(), frozenset()),
-    ("agent-runtimes", "test"): (frozenset(), frozenset()),
+    ("agent-runtimes", "test"): (frozenset(), frozenset({"--watch"})),
     ("agent-runtimes", "registry", "list"): (
         frozenset(),
         frozenset({"--refresh"}),
@@ -1788,6 +1788,8 @@ def _fast_server_json_route(
             None,
         )
     if len(args) >= 3 and args[:2] == ["agent-runtimes", "test"]:
+        if "--watch" in args:
+            return None
         if not _wants_json(args):
             return None
         runtime_name = _required_fast_positional_arg(args[2:])

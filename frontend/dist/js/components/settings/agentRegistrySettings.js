@@ -15,6 +15,8 @@ import {
     setAgentCreateMethodMode,
 } from './agentsSettings.js';
 
+const DEFAULT_ACP_REGISTRY_SOURCE_URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json';
+
 let registryCatalog = null;
 let registrySearch = '';
 let registryFilter = 'all';
@@ -68,8 +70,10 @@ export function bindAgentRegistrySettingsHandlers(options = {}) {
             renderRegistryList();
         };
     }
+    renderRegistrySourceUrl(DEFAULT_ACP_REGISTRY_SOURCE_URL);
     if (!languageBound && typeof document.addEventListener === 'function') {
         document.addEventListener('agent-teams-language-changed', () => {
+            renderRegistrySourceUrl(resolveRegistrySourceUrl(registryCatalog));
             renderRegistryList();
         });
         languageBound = true;
@@ -84,6 +88,7 @@ export async function loadAgentRegistryPanel({ refresh = false } = {}) {
         registryCatalog = refresh
             ? await refreshAgentRuntimeRegistry()
             : await fetchAgentRuntimeRegistry(false);
+        renderRegistrySourceUrl(resolveRegistrySourceUrl(registryCatalog));
         renderRegistryStatus(resolveCatalogStatus(registryCatalog), registryCatalog?.error_message ? 'warning' : '');
         renderRegistryList();
     } catch (error) {
@@ -93,6 +98,7 @@ export async function loadAgentRegistryPanel({ refresh = false } = {}) {
             errorToPayload(error),
         );
         registryCatalog = null;
+        renderRegistrySourceUrl(DEFAULT_ACP_REGISTRY_SOURCE_URL);
         renderRegistryStatus(error.message || t('settings.agents.registry_load_failed_message'), 'danger');
         renderRegistryEmpty(t('settings.agents.registry_load_failed'), error.message || t('settings.agents.registry_load_failed_message'));
     }
@@ -196,6 +202,7 @@ async function installRegistryAgent(registryId, existingAgentId = '') {
             tone: 'success',
         });
         registryCatalog = await fetchAgentRuntimeRegistry(false);
+        renderRegistrySourceUrl(resolveRegistrySourceUrl(registryCatalog));
         renderRegistryStatus(resolveCatalogStatus(registryCatalog), registryCatalog?.error_message ? 'warning' : '');
         renderRegistryList();
     } catch (error) {
@@ -258,6 +265,25 @@ function setActionDisplay(id, visible) {
     if (button) {
         button.style.display = visible ? 'inline-flex' : 'none';
     }
+}
+
+function renderRegistrySourceUrl(sourceUrl) {
+    const linkEl = document.getElementById('agent-registry-source-link');
+    if (!linkEl) return;
+    const normalizedUrl = String(sourceUrl || DEFAULT_ACP_REGISTRY_SOURCE_URL).trim()
+        || DEFAULT_ACP_REGISTRY_SOURCE_URL;
+    linkEl.href = normalizedUrl;
+    linkEl.title = normalizedUrl;
+    linkEl.setAttribute?.('aria-label', normalizedUrl);
+    const urlEl = linkEl.querySelector?.('.agent-registry-source-url');
+    if (urlEl) {
+        urlEl.textContent = normalizedUrl;
+    }
+}
+
+function resolveRegistrySourceUrl(catalog) {
+    return String(catalog?.source_url || DEFAULT_ACP_REGISTRY_SOURCE_URL).trim()
+        || DEFAULT_ACP_REGISTRY_SOURCE_URL;
 }
 
 function normalizeRegistryAgent(agent) {

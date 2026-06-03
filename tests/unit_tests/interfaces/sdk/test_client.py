@@ -1206,6 +1206,8 @@ async def test_agent_runtime_sdk_calls_expected_endpoints(monkeypatch) -> None:
         "codex_local", {"agent_id": "codex_local"}
     ) == {"status": "ok"}
     assert await client.test_agent_runtime("codex_local") == {"status": "ok"}
+    assert await client.start_agent_runtime_test_job("codex_local") == {"status": "ok"}
+    assert await client.get_agent_runtime_test_job("job-1") == {"status": "ok"}
     assert await client.list_agent_runtime_registry(refresh=True) == {"status": "ok"}
     assert await client.refresh_agent_runtime_registry() == {"status": "ok"}
     assert await client.install_agent_runtime_from_registry(
@@ -1222,6 +1224,8 @@ async def test_agent_runtime_sdk_calls_expected_endpoints(monkeypatch) -> None:
             {"agent_id": "codex_local"},
         ),
         ("POST", "/api/system/configs/agent-runtimes/codex_local:test", {}),
+        ("POST", "/api/system/configs/agent-runtimes/codex_local:test-job", {}),
+        ("GET", "/api/system/configs/agent-runtime-test-jobs/job-1", None),
         (
             "GET",
             "/api/system/configs/agent-runtime-registry?refresh=true",

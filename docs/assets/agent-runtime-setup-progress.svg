@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Runtime setup progress</title>
+  <desc id="desc">A chat run showing an Agent Runtime binary download progress card before the agent response continues.</desc>
+  <rect width="1600" height="520" fill="#ffffff"/>
+  <g transform="translate(140 56)">
+    <rect x="0" y="0" width="1320" height="164" rx="16" fill="#ffffff" stroke="#d7dce0" stroke-width="2"/>
+    <text x="36" y="54" fill="#566171" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="24">2026/6/3 11:01:48</text>
+    <rect x="354" y="30" width="64" height="34" rx="11" fill="#cceee4"/>
+    <text x="372" y="54" fill="#2f6256" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="18" font-weight="700">LIVE</text>
+    <rect x="1228" y="30" width="92" height="38" rx="15" fill="#ffffff" stroke="#cfd6dc" stroke-width="2"/>
+    <text x="1254" y="55" fill="#4b5664" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="21" font-weight="650">Running</text>
+    <text x="36" y="126" fill="#0f1620" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="27" font-weight="700">Hello</text>
+    <path d="M1268 104h16a8 8 0 0 1 8 8v16a8 8 0 0 1-8 8h-16a8 8 0 0 1-8-8v-16a8 8 0 0 1 8-8z" fill="none" stroke="#687382" stroke-width="3"/>
+    <path d="M1252 88h16a8 8 0 0 1 8 8v16" fill="none" stroke="#687382" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(150 258)">
+    <rect x="0" y="0" width="1300" height="176" rx="14" fill="#ffffff" stroke="#d7dce0" stroke-width="2"/>
+    <text x="28" y="52" fill="#0f1620" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="28" font-weight="760">Preparing Agent Runtime</text>
+    <text x="1250" y="52" text-anchor="end" fill="#4b5664" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="24">38%</text>
+    <text x="28" y="101" fill="#0f1620" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="27">Downloading Agent Runtime binary.</text>
+    <rect x="28" y="124" width="1244" height="10" rx="5" fill="#e6e9ea"/>
+    <rect x="28" y="124" width="470" height="10" rx="5" fill="#637a6d"/>
+    <text x="28" y="164" fill="#566171" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="24">downloading  -  amp-acp  -  binary  -  14.1 MB / 36.7 MB</text>
+  </g>
+</svg>

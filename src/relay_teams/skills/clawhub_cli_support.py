@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
+import json
 import os
 from pathlib import Path
 import re
 import subprocess
 from time import perf_counter
+from typing import cast
 
 from relay_teams.env.clawhub_cli import (
     install_clawhub_via_npm,
@@ -31,6 +34,7 @@ from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
 _DEFAULT_SEARCH_TIMEOUT_SECONDS = 20.0
 _DEFAULT_INSTALL_TIMEOUT_SECONDS = 180.0
 _DEFAULT_BINARY_INSTALL_TIMEOUT_SECONDS = 180.0
+_PATH_LIST_SEPARATOR = ";" if os.name == "nt" else ":"
 _INSTALLABLE_SKILL_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SEARCH_LINE_RE = re.compile(
     r"^(?P<slug>\S+)(?:\s+(?P<version>v?\d\S*))?\s{2,}"
@@ -42,17 +46,17 @@ def run_clawhub_search(
     *,
     query: str,
     limit: int,
+    token: str | None = None,
+    config_dir: Path | None = None,
     timeout_seconds: float = _DEFAULT_SEARCH_TIMEOUT_SECONDS,
 ) -> dict[str, object]:
     normalized_query = " ".join(part for part in query.split() if part.strip())
-    if not normalized_query:
-        return {
-            "ok": False,
-            "query": "",
-            "items": [],
-            "error_message": "ClawHub search query must not be empty.",
-        }
-    command = _build_search_command(normalized_query, limit)
+    default_listing = not normalized_query
+    command = (
+        _build_explore_command(limit)
+        if default_listing
+        else _build_search_command(normalized_query, limit)
+    )
     try:
         completed = subprocess.run(
             command,
@@ -60,7 +64,11 @@ def run_clawhub_search(
             text=True,
             encoding="utf-8",
             errors="replace",
-            env=build_clawhub_subprocess_env(None, base_env=os.environ),
+            env=build_clawhub_subprocess_env(
+                token,
+                config_dir=config_dir,
+                base_env=os.environ,
+            ),
             timeout=timeout_seconds,
             check=False,
         )
@@ -92,7 +100,11 @@ def run_clawhub_search(
         }
 
     try:
-        items = _parse_search_output(completed.stdout)
+        items = (
+            _parse_explore_output(completed.stdout)
+            if default_listing
+            else _parse_search_output(completed.stdout)
+        )
     except ValueError as exc:
         return {
             "ok": False,
@@ -386,6 +398,12 @@ def _build_search_command(query: str, limit: int) -> list[str]:
     return [executable, "search", query, "--limit", str(limit)]
 
 
+def _build_explore_command(limit: int) -> list[str]:
+    clawhub_path = resolve_existing_clawhub_path()
+    executable = "clawhub" if clawhub_path is None else str(clawhub_path)
+    return [executable, "explore", "--limit", str(limit), "--json"]
+
+
 def _build_install_result(
     *,
     ok: bool,
@@ -487,6 +505,71 @@ def _parse_search_line(raw_line: str) -> dict[str, object] | None:
     }
 
 
+def _parse_explore_output(raw_output: str) -> list[dict[str, object]]:
+    payload = _parse_json_payload(raw_output)
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        return []
+    items: list[dict[str, object]] = []
+    for raw_item in raw_items:
+        item_payload = _string_key_mapping(raw_item)
+        if item_payload is None:
+            continue
+        item = _parse_explore_item(item_payload)
+        if item is not None:
+            items.append(item)
+    return items
+
+
+def _parse_explore_item(payload: Mapping[str, object]) -> dict[str, object] | None:
+    slug = _string_field(payload, "slug")
+    if slug is None:
+        return None
+    latest_version_payload = _string_key_mapping(payload.get("latestVersion"))
+    tags_payload = _string_key_mapping(payload.get("tags"))
+    version = None
+    if latest_version_payload is not None:
+        version = _string_field(latest_version_payload, "version")
+    if version is None and tags_payload is not None:
+        version = _string_field(tags_payload, "latest")
+    return {
+        "slug": slug,
+        "title": _string_field(payload, "displayName") or slug,
+        "version": version,
+        "score": None,
+    }
+
+
+def _parse_json_payload(raw_output: str) -> Mapping[str, object]:
+    start_index = raw_output.find("{")
+    if start_index < 0:
+        raise ValueError("ClawHub explore returned an unexpected output format.")
+    try:
+        loaded = cast(object, json.loads(raw_output[start_index:]))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "ClawHub explore returned an unexpected output format."
+        ) from exc
+    payload = _string_key_mapping(loaded)
+    if payload is None:
+        raise ValueError("ClawHub explore returned an unexpected output format.")
+    return payload
+
+
+def _string_key_mapping(value: object) -> Mapping[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    return {key: raw_value for key, raw_value in value.items() if isinstance(key, str)}
+
+
+def _string_field(payload: Mapping[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def _normalize_optional_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -513,7 +596,7 @@ def _prepend_to_path(existing_path: str | None, directory: Path) -> str:
     path_parts = [str(directory)]
     if existing_path:
         path_parts.append(existing_path)
-    return os.pathsep.join(path_parts)
+    return _PATH_LIST_SEPARATOR.join(path_parts)
 
 
 def _first_meaningful_line(*chunks: str) -> str | None:

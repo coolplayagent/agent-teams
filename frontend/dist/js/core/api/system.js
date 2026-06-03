@@ -512,6 +512,62 @@ export async function fetchClawHubSkills() {
     return requestJson('/api/system/configs/clawhub/skills', undefined, 'Failed to fetch ClawHub skills');
 }
 
+export async function searchClawHubSkillMarket(query, options = {}) {
+    const params = new URLSearchParams();
+    params.set('query', String(query || '').trim());
+    const limit = Number(options.limit || 20);
+    if (Number.isFinite(limit) && limit > 0) {
+        params.set('limit', String(Math.floor(limit)));
+    }
+    return requestJson(
+        `/api/system/skills/market/clawhub/search?${params.toString()}`,
+        { signal: options.signal },
+        'Failed to search ClawHub skills',
+    );
+}
+
+export async function installClawHubMarketSkill(payload) {
+    const result = await requestJson(
+        '/api/system/skills/market/clawhub/install',
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        },
+        'Failed to install ClawHub skill',
+    );
+    invalidateRoleOptionDependencies();
+    return result;
+}
+
+export async function uninstallClawHubMarketSkill(slug) {
+    const result = await requestJson(
+        `/api/system/skills/market/clawhub/${encodeURIComponent(String(slug || '').trim())}`,
+        { method: 'DELETE' },
+        'Failed to uninstall ClawHub skill',
+    );
+    invalidateRoleOptionDependencies();
+    return result;
+}
+
+export async function fetchRuntimeSkillDetail(skillRef) {
+    return requestJson(
+        `/api/system/skills/${encodeURIComponent(String(skillRef || '').trim())}`,
+        undefined,
+        'Failed to fetch skill detail',
+    );
+}
+
+export async function uninstallRuntimeSkill(skillRef) {
+    const result = await requestJson(
+        `/api/system/skills/${encodeURIComponent(String(skillRef || '').trim())}`,
+        { method: 'DELETE' },
+        'Failed to uninstall skill',
+    );
+    invalidateRoleOptionDependencies();
+    return result;
+}
+
 export async function fetchClawHubSkill(skillId) {
     return requestJson(
         `/api/system/configs/clawhub/skills/${encodeURIComponent(skillId)}`,

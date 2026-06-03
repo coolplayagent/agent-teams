@@ -29,9 +29,9 @@ from relay_teams.env.web_config_service import WebConfigService
 from relay_teams.general import GeneralConfigService
 from relay_teams.agent_runtimes import (
     AcpRegistryService,
-    AgentRuntimeTestJobService,
     ExternalAgentConfigService,
 )
+from relay_teams.agent_runtimes.test_job_service import AgentRuntimeTestJobService
 from relay_teams.gateway.feishu.gateway_service import FeishuGatewayService
 from relay_teams.gateway.feishu.subscription_service import FeishuSubscriptionService
 from relay_teams.gateway.feishu.trigger_handler import FeishuTriggerHandler
@@ -72,6 +72,7 @@ from relay_teams.sessions.runs.run_service import SessionRunService
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
 from relay_teams.skills.config_reload_service import SkillsConfigReloadService
+from relay_teams.skills.skill_market_service import ClawHubSkillMarketService
 from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.skills.skill_routing_service import SkillRuntimeService
 from relay_teams.speech import RealtimeSttProxyService, SpeechConfigService
@@ -325,6 +326,12 @@ def get_skill_runtime_service(request: Request) -> SkillRuntimeService:
 
 def get_clawhub_skill_service(request: Request) -> ClawHubSkillService:
     return get_container(request).clawhub_skill_service
+
+
+def get_clawhub_skill_market_service(
+    request: Request,
+) -> ClawHubSkillMarketService:
+    return get_container(request).clawhub_skill_market_service
 
 
 def get_metrics_service(request: Request) -> MetricsService:

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import NoReturn
+import shutil
+from typing import Annotated, NoReturn
 
 import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
@@ -54,13 +55,13 @@ from relay_teams.agent_runtimes import (
     AcpRegistryInstallResult,
     AcpRegistryService,
     AgentRuntimeTestJob,
-    AgentRuntimeTestJobService,
     ExternalAgentConfig,
     ExternalAgentConfigService,
     ExternalAgentSummary,
     ExternalAgentTestResult,
     registry_default_agent_id,
 )
+from relay_teams.agent_runtimes.test_job_service import AgentRuntimeTestJobService
 from relay_teams.env.proxy_config_service import ProxyConfigService
 from relay_teams.env.proxy_env import ProxyEnvInput
 from relay_teams.env.web_config_models import WebConfig
@@ -76,6 +77,7 @@ from relay_teams.interfaces.server.deps import (
     get_container,
     get_clawhub_connectivity_probe_service,
     get_clawhub_config_service,
+    get_clawhub_skill_market_service,
     get_clawhub_skill_service,
     get_config_status_service,
     get_environment_variable_service,
@@ -99,6 +101,7 @@ from relay_teams.interfaces.server.deps import (
     get_web_connectivity_probe_service,
     get_hook_service,
     get_plugin_registry,
+    get_skill_registry,
 )
 from relay_teams.interfaces.server.container import ServerContainer
 from relay_teams.interfaces.server.control_plane import (
@@ -161,6 +164,20 @@ from relay_teams.skills.clawhub_models import (
     ClawHubSkillWriteRequest,
 )
 from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
+from relay_teams.skills.skill_market_models import (
+    ClawHubSkillMarketInstallRequest,
+    ClawHubSkillMarketInstallResponse,
+    ClawHubSkillMarketSearchResponse,
+    ClawHubSkillMarketUninstallResponse,
+)
+from relay_teams.skills.skill_market_service import ClawHubSkillMarketService
+from relay_teams.skills.skill_models import (
+    Skill,
+    SkillDetailEntry,
+    SkillSource,
+    SkillUninstallResponse,
+)
+from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.triggers import GitHubTriggerService
 from relay_teams.hooks import HookRuntimeView, HookService, HooksConfig
 from relay_teams.plugins import PluginInstallSourceKind, PluginRegistry, PluginScope
@@ -1522,6 +1539,178 @@ async def probe_clawhub_connectivity(
         return await asyncio.to_thread(service.probe, req)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/skills/market/clawhub/search",
+    response_model=ClawHubSkillMarketSearchResponse,
+)
+async def search_clawhub_skill_market(
+    query: str = "",
+    limit: Annotated[int, Query(ge=1, le=500)] = 24,
+    service: ClawHubSkillMarketService = Depends(get_clawhub_skill_market_service),
+) -> ClawHubSkillMarketSearchResponse:
+    return await asyncio.to_thread(
+        service.search_clawhub_skills,
+        query=query,
+        limit=limit,
+    )
+
+
+@router.post(
+    "/skills/market/clawhub/install",
+    response_model=ClawHubSkillMarketInstallResponse,
+)
+async def install_clawhub_skill_from_market(
+    req: ClawHubSkillMarketInstallRequest,
+    service: ClawHubSkillMarketService = Depends(get_clawhub_skill_market_service),
+) -> ClawHubSkillMarketInstallResponse:
+    try:
+        return await asyncio.to_thread(service.install_clawhub_skill, req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/skills/market/clawhub/{slug}",
+    response_model=ClawHubSkillMarketUninstallResponse,
+)
+async def uninstall_clawhub_skill_from_market(
+    slug: RequiredIdentifierStr,
+    service: ClawHubSkillMarketService = Depends(get_clawhub_skill_market_service),
+) -> ClawHubSkillMarketUninstallResponse:
+    try:
+        return await asyncio.to_thread(
+            service.uninstall_clawhub_skill,
+            slug=slug,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/skills/{skill_ref:path}",
+    response_model=SkillDetailEntry,
+)
+async def get_runtime_skill_detail(
+    skill_ref: RequiredIdentifierStr,
+    skill_registry: SkillRegistry = Depends(get_skill_registry),
+) -> SkillDetailEntry:
+    try:
+        skill = await asyncio.to_thread(skill_registry.get_skill_definition, skill_ref)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Unknown skill: {skill_ref}")
+
+    manifest_path = skill.directory / "SKILL.md"
+    try:
+        manifest_content = await asyncio.to_thread(
+            manifest_path.read_text,
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeError):
+        manifest_content = None
+    return SkillDetailEntry(
+        ref=skill.ref,
+        name=skill.metadata.name,
+        description=skill.metadata.description.strip(),
+        source=skill.source,
+        directory=str(skill.directory),
+        manifest_path=str(manifest_path),
+        instructions=skill.metadata.instructions,
+        manifest_content=manifest_content,
+    )
+
+
+@router.delete(
+    "/skills/{skill_ref:path}",
+    response_model=SkillUninstallResponse,
+)
+async def uninstall_runtime_skill(
+    skill_ref: RequiredIdentifierStr,
+    skill_registry: SkillRegistry = Depends(get_skill_registry),
+    reload_service: SkillsConfigReloadService = Depends(
+        get_skills_config_reload_service
+    ),
+) -> SkillUninstallResponse:
+    try:
+        skill = await asyncio.to_thread(skill_registry.get_skill_definition, skill_ref)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Unknown skill: {skill_ref}")
+
+    if not _runtime_skill_source_is_user_removable(skill.source):
+        return SkillUninstallResponse(
+            ok=False,
+            ref=skill.ref,
+            error_code="skill_not_removable",
+            error_message=f"Skill source is not removable: {skill.source.value}",
+        )
+
+    try:
+        await asyncio.to_thread(_delete_runtime_skill_directory, skill)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return SkillUninstallResponse(
+            ok=False,
+            ref=skill.ref,
+            error_code="uninstall_failed",
+            error_message=str(exc),
+        )
+
+    try:
+        await asyncio.to_thread(reload_service.reload_skills_config)
+    except (RuntimeError, ValueError) as exc:
+        return SkillUninstallResponse(
+            ok=True,
+            ref=skill.ref,
+            skills_reloaded=False,
+            error_code="skills_reload_failed",
+            error_message=str(exc),
+        )
+
+    return SkillUninstallResponse(
+        ok=True,
+        ref=skill.ref,
+        skills_reloaded=True,
+    )
+
+
+def _runtime_skill_source_is_user_removable(source: SkillSource) -> bool:
+    return source in {
+        SkillSource.USER_RELAY_TEAMS,
+        SkillSource.USER_AGENTS,
+        SkillSource.USER_CLAUDE,
+        SkillSource.USER_CODEX,
+        SkillSource.USER_OPENCODE,
+    }
+
+
+def _delete_runtime_skill_directory(skill: Skill) -> None:
+    skill_dir = skill.directory.resolve()
+    manifest_path = (skill_dir / "SKILL.md").resolve()
+    if not skill_dir.is_dir():
+        raise ValueError(f"Skill directory does not exist: {skill_dir}")
+    if not manifest_path.is_file():
+        raise ValueError(f"Skill directory is missing SKILL.md: {skill_dir}")
+    try:
+        manifest_path.relative_to(skill_dir)
+    except ValueError as exc:
+        raise ValueError(f"Skill manifest escapes its directory: {skill.ref}") from exc
+    if _runtime_skill_directory_is_container(skill_dir):
+        manifest_path.unlink()
+        return
+    shutil.rmtree(skill_dir)
+
+
+def _runtime_skill_directory_is_container(skill_dir: Path) -> bool:
+    if skill_dir.name.casefold() == "skills":
+        return True
+    return any(
+        child.is_dir() and (child / "SKILL.md").is_file()
+        for child in skill_dir.iterdir()
+    )
 
 
 @router.get(

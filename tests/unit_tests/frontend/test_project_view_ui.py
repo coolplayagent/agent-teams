@@ -4599,6 +4599,15 @@ def test_project_view_feedback_submit_error_aligns_with_form_fields() -> None:
     assert ".feedback-dialog-textarea-compact {" in components_css
 
 
+def test_project_view_skills_market_card_actions_are_compact() -> None:
+    components_css = load_components_css()
+
+    assert ".primary-btn.feature-skills-card-install," in components_css
+    assert ".secondary-btn.feature-skills-card-install {" in components_css
+    assert "width: auto;" in components_css
+    assert "min-height: 30px;" in components_css
+
+
 def test_project_view_skills_feature_does_not_repeat_inner_title(
     tmp_path: Path,
 ) -> None:
@@ -4616,9 +4625,18 @@ await openSkillsFeatureView();
 await flushTasks();
 await flushTasks();
 
+els.projectViewToolbarActions
+    .querySelector("[data-feature-skills-clawhub-settings]")
+    ?.onclick?.();
+await flushTasks();
+
 console.log(JSON.stringify({
     projectViewTitle: els.projectViewTitle.textContent,
+    toolbarHtml: els.projectViewToolbarActions.innerHTML,
     contentHtml: els.projectViewContent.innerHTML,
+    modalHtml: (globalThis.__bodyChildren || []).map(node => node.innerHTML || "").join("\\n"),
+    clawhubSettingsBindCalls: globalThis.__clawhubSettingsBindCalls || 0,
+    clawhubSettingsLoadCalls: globalThis.__clawhubSettingsLoadCalls || 0,
 }));
 """.strip(),
         mock_api_source="""
@@ -4770,6 +4788,758 @@ export async function updateAutomationProject() {
 
     assert payload["projectViewTitle"] == "Skills"
     assert "<h3>Skills</h3>" not in str(payload["contentHtml"])
+    assert 'data-feature-skills-tab="market"' in str(payload["contentHtml"])
+    assert 'data-feature-skills-tab="installed"' in str(payload["contentHtml"])
+    assert "feature-skills-market" in str(payload["contentHtml"])
+    assert "skills-clawhub-panel" not in str(payload["contentHtml"])
+    assert "data-feature-skills-clawhub-settings" in str(payload["toolbarHtml"])
+    assert "skills-clawhub-settings-modal" in str(payload["modalHtml"])
+    assert "skills-modal-close-btn" in str(payload["modalHtml"])
+    assert "&times;" not in str(payload["modalHtml"])
+    assert payload["clawhubSettingsBindCalls"] == 1
+    assert payload["clawhubSettingsLoadCalls"] == 1
+    assert "No matching skills" in str(payload["contentHtml"])
+    assert "Self-Improving Agent" not in str(payload["contentHtml"])
+    assert "WorkBuddy" not in str(payload["contentHtml"])
+    assert "SkillHub" not in str(payload["contentHtml"])
+
+
+def test_project_view_skills_feature_switches_between_market_and_installed(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+const marketHtml = els.projectViewContent.innerHTML;
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-tab]')
+    .find(node => node.getAttribute('data-feature-skills-tab') === 'installed')
+    ?.onclick?.();
+await flushTasks();
+const installedHtml = els.projectViewContent.innerHTML;
+const installedToolbarHtml = els.projectViewToolbarActions.innerHTML;
+
+console.log(JSON.stringify({
+    marketHtml,
+    installedHtml,
+    installedToolbarHtml,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [
+                {
+                    name: "schedule-tasks",
+                    description: "Run scheduled checks.",
+                    ref: "schedule-tasks",
+                    path: "/skills/schedule-tasks",
+                    scope: "builtin",
+                },
+                {
+                    name: "writer-helper",
+                    description: "Draft writing help.",
+                    ref: "writer-helper",
+                    path: "/skills/writer-helper",
+                    scope: "user_relay_teams",
+                },
+            ],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert "feature-skills-market" in str(payload["marketHtml"])
+    assert "skills-clawhub-panel" not in str(payload["marketHtml"])
+    assert "No matching skills" in str(payload["marketHtml"])
+    assert "Self-Improving Agent" not in str(payload["marketHtml"])
+    assert "schedule-tasks" not in str(payload["marketHtml"])
+    assert "feature-skills-market" not in str(payload["installedHtml"])
+    assert "schedule-tasks" in str(payload["installedHtml"])
+    assert "writer-helper" in str(payload["installedHtml"])
+    assert "2 installed" in str(payload["installedHtml"])
+    assert "data-feature-skills-reload" in str(payload["installedHtml"])
+    assert 'data-feature-skills-installed-uninstall="writer-helper"' in str(
+        payload["installedHtml"]
+    )
+    assert "data-feature-skills-reload" not in str(payload["installedToolbarHtml"])
+    assert "data-project-view-close" not in str(payload["installedToolbarHtml"])
+    assert "workspace-view-panel skills-directory-panel" not in str(
+        payload["installedHtml"]
+    )
+    assert "Installed Skills" not in str(payload["installedHtml"])
+
+
+def test_project_view_installed_skills_can_uninstall_user_skill(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-tab]')
+    .find(node => node.getAttribute('data-feature-skills-tab') === 'installed')
+    ?.onclick?.();
+await flushTasks();
+
+const beforeHtml = els.projectViewContent.innerHTML;
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-installed-uninstall]')
+    .find(node => node.getAttribute('data-feature-skills-installed-uninstall') === 'writer-helper')
+    ?.onclick?.({
+        stopPropagation() {
+            globalThis.__installedUninstallStopPropagation =
+                (globalThis.__installedUninstallStopPropagation || 0) + 1;
+        },
+    });
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    beforeHtml,
+    afterHtml: els.projectViewContent.innerHTML,
+    runtimeSkillUninstallRequests: globalThis.__runtimeSkillUninstallRequests || [],
+    confirmCalls: globalThis.__showConfirmDialogCalls || [],
+    toastCalls: globalThis.__toastCalls || [],
+    stopPropagationCalls: globalThis.__installedUninstallStopPropagation || 0,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    const uninstalled = Boolean(
+        globalThis.__runtimeSkillUninstallRequests?.includes("writer-helper"),
+    );
+    return {
+        skills: {
+            skills: uninstalled ? [] : [
+                {
+                    name: "writer-helper",
+                    description: "Draft writing help.",
+                    ref: "writer-helper",
+                    path: "/skills/writer-helper",
+                    scope: "user_relay_teams",
+                },
+            ],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert 'data-feature-skills-installed-uninstall="writer-helper"' in str(
+        payload["beforeHtml"]
+    )
+    assert payload["runtimeSkillUninstallRequests"] == ["writer-helper"]
+    assert payload["stopPropagationCalls"] == 1
+    confirm_calls = cast(list[dict[str, object]], payload["confirmCalls"])
+    assert confirm_calls[0]["title"] == "Uninstall skill"
+    assert 'data-feature-skills-installed-uninstall="writer-helper"' not in str(
+        payload["afterHtml"]
+    )
+    toast_calls = cast(list[dict[str, object]], payload["toastCalls"])
+    assert toast_calls[-1]["title"] == "Skill uninstalled"
+
+
+def test_project_view_runtime_uninstall_clears_market_card_by_runtime_ref(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__clawHubMarketSearchResponse = {
+    ok: true,
+    query: "",
+    items: [
+        {
+            slug: "skill-creator",
+            title: "Skill Creator",
+            version: "v1.0.0",
+            score: 1,
+            installed: false,
+        },
+    ],
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+const initialMarketHtml = els.projectViewContent.innerHTML;
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-tab]')
+    .find(node => node.getAttribute('data-feature-skills-tab') === 'installed')
+    ?.onclick?.();
+await flushTasks();
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-installed-uninstall]')
+    .find(node => node.getAttribute('data-feature-skills-installed-uninstall') === 'clawhub/skill-creator')
+    ?.onclick?.({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+await flushTasks();
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-tab]')
+    .find(node => node.getAttribute('data-feature-skills-tab') === 'market')
+    ?.onclick?.();
+await flushTasks();
+
+console.log(JSON.stringify({
+    initialMarketHtml,
+    afterUninstallMarketHtml: els.projectViewContent.innerHTML,
+    runtimeSkillUninstallRequests: globalThis.__runtimeSkillUninstallRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    const uninstalled = Boolean(
+        globalThis.__runtimeSkillUninstallRequests?.includes("clawhub/skill-creator"),
+    );
+    return {
+        skills: {
+            skills: uninstalled ? [] : [
+                {
+                    name: "Skill Creator",
+                    description: "Create skills.",
+                    ref: "clawhub/skill-creator",
+                    path: "/skills/skill-creator",
+                    scope: "user_relay_teams",
+                },
+            ],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert 'data-feature-skill-detail="installed:clawhub/skill-creator"' in str(
+        payload["initialMarketHtml"]
+    )
+    assert payload["runtimeSkillUninstallRequests"] == ["clawhub/skill-creator"]
+    assert 'data-feature-skills-market-install="skill-creator"' in str(
+        payload["afterUninstallMarketHtml"]
+    )
+    assert 'data-feature-skills-market-uninstall="skill-creator"' not in str(
+        payload["afterUninstallMarketHtml"]
+    )
+
+
+def test_project_view_skills_market_searches_and_installs_real_clawhub_results(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__clawHubMarketSearchResponse = {
+    ok: true,
+    query: "skill",
+    items: [
+        {
+            slug: "skill-creator",
+            title: "Skill Creator",
+            version: "v1.0.0",
+            score: 4.25,
+            installed: false,
+        },
+    ],
+};
+globalThis.__clawHubMarketInstallResponse = {
+    ok: true,
+    slug: "skill-creator",
+    installed_skill: {
+        skill_id: "skill-creator",
+        runtime_name: "Skill Creator",
+        ref: "clawhub/skill-creator",
+        source: "user_relay_teams",
+        directory: "/skills/skill-creator",
+        manifest_path: "/skills/skill-creator/SKILL.md",
+    },
+    diagnostics: { skills_reloaded: true },
+};
+globalThis.__runtimeSkillDetailResponse = {
+    ref: "clawhub/skill-creator",
+    name: "skill-creator",
+    description: "Create skills.",
+    source: "user_relay_teams",
+    directory: "/skills/skill-creator",
+    manifest_path: "/skills/skill-creator/SKILL.md",
+    instructions: "## Quick Start\\nUse this skill.",
+    manifest_content: "---\\nname: skill-creator\\ndescription: Create skills.\\n---\\n# Skill Creator\\n\\n## Quick Start\\nUse this skill.\\n\\n<img src=\\"javascript:alert(1)\\" onerror=\\"alert(1)\\">\\n<script>alert(1)</script>",
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+const searchInput = els.projectViewToolbarActions.querySelector("[data-feature-skills-search]");
+searchInput.value = "skill";
+searchInput.oninput?.({ target: searchInput });
+searchInput.onkeydown?.({
+    key: "Enter",
+    preventDefault() {
+        globalThis.__skillsSearchPreventDefault =
+            (globalThis.__skillsSearchPreventDefault || 0) + 1;
+    },
+});
+await flushTasks();
+await flushTasks();
+const resultsHtml = els.projectViewContent.innerHTML;
+
+els.projectViewContent
+    .querySelectorAll("[data-feature-skill-detail]")
+    .find(node => node.getAttribute("data-feature-skill-detail") === "market:skill-creator")
+    ?.onclick?.();
+await flushTasks();
+const detailHtml = (globalThis.__bodyChildren || [])
+    .map(node => node.innerHTML || "")
+    .join("\\n");
+
+els.projectViewContent
+    .querySelectorAll("[data-feature-skills-market-install]")
+    .find(node => node.getAttribute("data-feature-skills-market-install") === "skill-creator")
+    ?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+const afterInstallHtml = els.projectViewContent.innerHTML;
+
+els.projectViewContent
+    .querySelectorAll("[data-feature-skill-detail]")
+    .find(node => node.getAttribute("data-feature-skill-detail") === "installed:clawhub/skill-creator")
+    ?.onclick?.();
+await flushTasks();
+await flushTasks();
+const installedDetailHtml = (globalThis.__bodyChildren || [])
+    .map(node => node.innerHTML || "")
+    .join("\\n");
+
+els.projectViewContent
+    .querySelectorAll("[data-feature-skills-market-uninstall]")
+    .find(node => node.getAttribute("data-feature-skills-market-uninstall") === "skill-creator")
+    ?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    searchRequests: globalThis.__clawHubMarketSearchRequests || [],
+    installRequests: globalThis.__clawHubMarketInstallRequests || [],
+    uninstallRequests: globalThis.__clawHubMarketUninstallRequests || [],
+    detailRequests: globalThis.__runtimeSkillDetailRequests || [],
+    resultsHtml,
+    detailHtml,
+    installedDetailHtml,
+    afterInstallHtml,
+    afterUninstallHtml: els.projectViewContent.innerHTML,
+    toastCalls: globalThis.__toastCalls || [],
+    preventDefaultCalls: globalThis.__skillsSearchPreventDefault || 0,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    const installed = Boolean(globalThis.__clawHubMarketInstallRequests?.length)
+        && !globalThis.__clawHubMarketUninstallRequests?.length;
+    return {
+        skills: {
+            skills: installed ? [
+                {
+                    name: "Skill Creator",
+                    description: "Create skills.",
+                    ref: "clawhub/skill-creator",
+                    path: "/skills/skill-creator",
+                    scope: "user_relay_teams",
+                },
+            ] : [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["preventDefaultCalls"] == 1
+    assert payload["searchRequests"] == [
+        {"query": "", "limit": 24},
+        {"query": "skill", "limit": 24},
+    ]
+    assert "Skill Creator" in str(payload["resultsHtml"])
+    assert "skill-creator" in str(payload["resultsHtml"])
+    assert "Version v1.0.0" in str(payload["resultsHtml"])
+    assert "Score 4.25" in str(payload["resultsHtml"])
+    assert 'data-feature-skill-detail="market:skill-creator"' in str(
+        payload["resultsHtml"]
+    )
+    assert "skills-detail-modal" in str(payload["detailHtml"])
+    assert "skills-modal-close-btn" in str(payload["detailHtml"])
+    assert "skills-detail-markdown msg-text" in str(payload["detailHtml"])
+    assert "&times;" not in str(payload["detailHtml"])
+    assert "data-feature-skills-detail-install" in str(payload["detailHtml"])
+    assert payload["installRequests"] == [
+        {"slug": "skill-creator", "version": "v1.0.0", "force": False}
+    ]
+    assert 'data-feature-skills-market-uninstall="skill-creator"' in str(
+        payload["afterInstallHtml"]
+    )
+    assert 'data-feature-skill-detail="installed:clawhub/skill-creator"' in str(
+        payload["afterInstallHtml"]
+    )
+    assert payload["detailRequests"] == ["clawhub/skill-creator"]
+    assert "onerror" not in str(payload["installedDetailHtml"])
+    assert "javascript:alert" not in str(payload["installedDetailHtml"])
+    assert "<script>" not in str(payload["installedDetailHtml"])
+    assert payload["uninstallRequests"] == ["skill-creator"]
+    assert 'data-feature-skills-market-install="skill-creator"' in str(
+        payload["afterUninstallHtml"]
+    )
+    toast_calls = cast(list[dict[str, object]], payload["toastCalls"])
+    assert toast_calls[-1]["title"] == "Skill uninstalled"
+
+
+def test_project_view_skills_market_caches_and_loads_more_results(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+const initialHtml = els.projectViewContent.innerHTML;
+
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-tab]')
+    .find(node => node.getAttribute('data-feature-skills-tab') === 'installed')
+    ?.onclick?.();
+await flushTasks();
+els.projectViewContent
+    .querySelectorAll('[data-feature-skills-tab]')
+    .find(node => node.getAttribute('data-feature-skills-tab') === 'market')
+    ?.onclick?.();
+await flushTasks();
+const afterTabReturnHtml = els.projectViewContent.innerHTML;
+
+els.projectViewContent
+    .querySelector("[data-feature-skills-market-more]")
+    ?.onclick?.();
+await flushTasks();
+await flushTasks();
+const afterMoreHtml = els.projectViewContent.innerHTML;
+
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    searchRequests: globalThis.__clawHubMarketSearchRequests || [],
+    initialHtml,
+    afterTabReturnHtml,
+    afterMoreHtml,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+
+export async function searchClawHubSkillMarket(query, options = {}) {
+    globalThis.__clawHubMarketSearchRequests =
+        globalThis.__clawHubMarketSearchRequests || [];
+    const limit = options?.limit || null;
+    globalThis.__clawHubMarketSearchRequests.push({
+        query,
+        limit,
+    });
+    const count = Math.min(Number(limit || 0), 48);
+    return {
+        ok: true,
+        query,
+        items: Array.from({ length: count }, (_, index) => ({
+            slug: `skill-${String(index + 1).padStart(3, "0")}`,
+            title: `Skill ${index + 1}`,
+            version: "v1.0.0",
+            score: 1,
+            installed: false,
+        })),
+    };
+}
+""".strip(),
+    )
+
+    assert payload["searchRequests"] == [
+        {"query": "", "limit": 24},
+        {"query": "", "limit": 48},
+    ]
+    assert "skill-024" in str(payload["initialHtml"])
+    assert "skill-025" not in str(payload["initialHtml"])
+    assert "skill-024" in str(payload["afterTabReturnHtml"])
+    assert "skill-048" in str(payload["afterMoreHtml"])
+
+
+def test_project_view_skills_market_does_not_overlay_builtin_name_match(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__clawHubMarketSearchResponse = {
+    ok: true,
+    query: "",
+    items: [
+        {
+            slug: "skill-creator",
+            title: "skill-creator",
+            version: "v1.0.0",
+            score: 1,
+            installed: false,
+        },
+    ],
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    html: els.projectViewContent.innerHTML,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [
+                {
+                    name: "skill-creator",
+                    description: "Built-in helper with a colliding name.",
+                    ref: "skill-creator",
+                    path: "/builtin/skill-creator",
+                    scope: "builtin",
+                },
+            ],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert 'data-feature-skill-detail="market:skill-creator"' in str(payload["html"])
+    assert 'data-feature-skills-market-install="skill-creator"' in str(payload["html"])
+    assert 'data-feature-skills-market-uninstall="skill-creator"' not in str(
+        payload["html"]
+    )
+
+
+def test_project_view_skills_market_installed_without_runtime_ref_opens_market_detail(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__clawHubMarketSearchResponse = {
+    ok: true,
+    query: "",
+    items: [
+        {
+            slug: "skill-creator-2",
+            title: "Skill Creator",
+            version: "v1.0.0",
+            score: 1,
+            installed: true,
+        },
+    ],
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+const marketHtml = els.projectViewContent.innerHTML;
+els.projectViewContent
+    .querySelectorAll("[data-feature-skill-detail]")
+    .find(node => node.getAttribute("data-feature-skill-detail") === "market:skill-creator-2")
+    ?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    marketHtml,
+    detailHtml: (globalThis.__bodyChildren || [])
+        .map(node => node.innerHTML || "")
+        .join("\\n"),
+    detailRequests: globalThis.__runtimeSkillDetailRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert 'data-feature-skill-detail="market:skill-creator-2"' in str(
+        payload["marketHtml"]
+    )
+    assert 'data-feature-skills-market-uninstall="skill-creator-2"' in str(
+        payload["marketHtml"]
+    )
+    assert "SKILL.md is available after installation." in str(payload["detailHtml"])
+    assert payload["detailRequests"] == []
+
+
+def test_project_view_skills_search_timer_is_guarded_when_leaving_feature() -> None:
+    source = Path("frontend/dist/js/components/projectView.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function cancelSkillsFeatureAsyncWork()" in source
+    assert "if (!isSkillsMarketViewActive())" in source
+    assert "cancelSkillsFeatureAsyncWork();" in source
+    assert "isInteractiveSkillCardEventTarget(event.target, card)" in source
+
+
+def test_project_view_skills_market_ignores_stale_search_response(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+let resolveOldSearch = null;
+globalThis.__oldSkillSearchPromise = new Promise(resolve => {
+    resolveOldSearch = resolve;
+});
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+const searchInput = els.projectViewToolbarActions.querySelector("[data-feature-skills-search]");
+searchInput.value = "old";
+searchInput.oninput?.({ target: searchInput });
+searchInput.onkeydown?.({ key: "Enter", preventDefault() {} });
+await flushTasks();
+
+searchInput.value = "new";
+searchInput.oninput?.({ target: searchInput });
+resolveOldSearch({
+    ok: true,
+    query: "old",
+    items: [
+        {
+            slug: "old-skill",
+            title: "Old Skill",
+            version: "1.0.0",
+            score: 1,
+            installed: false,
+        },
+    ],
+});
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    html: els.projectViewContent.innerHTML,
+    toolbarHtml: els.projectViewToolbarActions.innerHTML,
+    searchRequests: globalThis.__clawHubMarketSearchRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function searchClawHubSkillMarket(query, options = {}) {
+    globalThis.__clawHubMarketSearchRequests =
+        globalThis.__clawHubMarketSearchRequests || [];
+    globalThis.__clawHubMarketSearchRequests.push({
+        query,
+        limit: options?.limit || null,
+    });
+    if (query === "old") {
+        return await globalThis.__oldSkillSearchPromise;
+    }
+    return {
+        ok: true,
+        query,
+        items: [],
+    };
+}
+""".strip(),
+    )
+
+    assert payload["searchRequests"] == [
+        {"query": "", "limit": 24},
+        {"query": "old", "limit": 24},
+    ]
+    assert "Old Skill" not in str(payload["html"])
+    assert 'value="new"' in str(payload["toolbarHtml"])
 
 
 def test_project_view_ignores_stale_feature_response_after_fast_switch(
@@ -4862,7 +5632,7 @@ console.log(JSON.stringify({
     assert payload["selectionEnd"] == 1
 
 
-def test_project_view_opens_runtime_tools_modal_from_group_card(
+def test_project_view_runs_runtime_tool_actions_from_cli_toolbar(
     tmp_path: Path,
 ) -> None:
     payload = _run_project_view_script(
@@ -4875,26 +5645,33 @@ import {
 import { els, flushTasks } from "./mockDom.mjs";
 
 initializeProjectView();
+Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+        clipboard: {
+            writeText(value) {
+                globalThis.__copiedRuntimeToolPaths = globalThis.__copiedRuntimeToolPaths || [];
+                globalThis.__copiedRuntimeToolPaths.push(value);
+                return Promise.resolve();
+            },
+        },
+    },
+});
 await openImFeatureView();
 await flushTasks();
 await flushTasks();
 
 const beforeHtml = els.projectViewContent.innerHTML;
-document.querySelector("[data-runtime-tools-open]")?.onclick?.({ stopPropagation() {} });
-await flushTasks();
-const openedHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
 document.querySelector("[data-runtime-tools-system-path-add]")?.onclick?.();
+await flushTasks();
+document.querySelector("[data-runtime-tool-copy-path]")?.onclick?.();
 await flushTasks();
 document.querySelector("[data-runtime-tool-download]")?.onclick?.();
 await flushTasks();
-document.querySelector("[data-runtime-tools-modal-close]")?.onclick?.();
-await flushTasks();
-const closedHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
 
 console.log(JSON.stringify({
     beforeHtml,
-    openedHtml,
-    closedHtml,
+    copiedRuntimeToolPaths: globalThis.__copiedRuntimeToolPaths || [],
     downloadRequests: globalThis.__runtimeToolDownloadRequests || [],
     systemPathRequests: globalThis.__runtimeToolsSystemPathRequests || 0,
 }));
@@ -4908,6 +5685,7 @@ export async function fetchRuntimeTools() {
                 display_name: "ripgrep",
                 status: "missing",
                 download_job_id: "rg-job",
+                path: "C:/bin/rg.exe",
             },
         ],
     };
@@ -4916,12 +5694,64 @@ export async function fetchRuntimeTools() {
     )
 
     assert "data-runtime-tools-group" in str(payload["beforeHtml"])
-    assert "data-runtime-tool-download" not in str(payload["beforeHtml"])
-    assert "data-runtime-tools-modal" in str(payload["openedHtml"])
-    assert 'data-runtime-tool-download="rg"' in str(payload["openedHtml"])
+    assert 'data-runtime-tool-card="rg"' in str(payload["beforeHtml"])
+    assert 'data-runtime-tool-copy-path="rg"' in str(payload["beforeHtml"])
+    assert 'data-runtime-tool-download="rg"' in str(payload["beforeHtml"])
+    assert payload["copiedRuntimeToolPaths"] == ["C:/bin/rg.exe"]
     assert payload["downloadRequests"] == ["rg"]
     assert payload["systemPathRequests"] == 1
-    assert "data-runtime-tools-modal" not in str(payload["closedHtml"])
+
+
+def test_project_view_can_reset_runtime_tools_system_path_after_added(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { flushTasks } from "./mockDom.mjs";
+
+globalThis.__showConfirmDialogResult = true;
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-runtime-tools-system-path-add]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    confirmCalls: globalThis.__showConfirmDialogCalls || [],
+    systemPathRequests: globalThis.__runtimeToolsSystemPathRequests || 0,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchRuntimeTools() {
+    return {
+        items: [],
+        system_path: {
+            supported: true,
+            added: true,
+            bin_dir: "C:/Users/test/.relay-teams/bin",
+        },
+    };
+}
+""".strip(),
+    )
+
+    confirm_calls = cast(list[dict[str, object]], payload["confirmCalls"])
+
+    assert len(confirm_calls) == 1
+    assert (
+        confirm_calls[0]["confirmLabel"] == "Reset"
+        or confirm_calls[0]["confirmLabel"] == "重新设置"
+    )
+    assert payload["systemPathRequests"] == 1
 
 
 def test_project_view_runtime_tool_polling_is_gateway_guarded() -> None:
@@ -4938,9 +5768,142 @@ def test_project_view_runtime_tools_load_independently_from_connectors() -> None
         encoding="utf-8"
     )
 
-    assert "void loadGatewayRuntimeTools(request.token, request.signal);" in source
-    assert "const [connectorsResponse, runtimeToolsResponse" not in source
+    assert "loadGatewayConnectors(request.token, request.signal)" in source
+    assert "loadGatewayRuntimeTools(request.token, request.signal)" in source
+    assert "Promise.allSettled(tasks)" in source
+    assert "const [connectorsResponse, triggers" not in source
     assert "await fetchRuntimeTools({ signal });" in source
+
+
+def test_project_view_surfaces_connector_load_failure_and_retries(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+const failedHtml = els.projectViewContent.innerHTML;
+document.querySelector("[data-connectors-retry]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+const retriedHtml = els.projectViewContent.innerHTML;
+
+console.log(JSON.stringify({
+    failedHtml,
+    retriedHtml,
+    connectorFetchCalls: globalThis.__connectorFetchCalls || 0,
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    globalThis.__connectorFetchCalls = (globalThis.__connectorFetchCalls || 0) + 1;
+    if (globalThis.__connectorFetchCalls === 1) {
+        throw new Error("Gateway unavailable");
+    }
+    return {
+        summary: { connected: 1, needs_config: 0, disabled: 0, error: 0, total: 1 },
+        items: [
+            {
+                connector_id: "github",
+                provider: "github",
+                status: "connected",
+                account_count: 1,
+                enabled_count: 1,
+                capabilities: ["repositories"],
+            },
+        ],
+    };
+}
+""".strip(),
+    )
+
+    assert "data-connectors-error" in str(payload["failedHtml"])
+    assert "Gateway unavailable" in str(payload["failedHtml"])
+    assert "data-runtime-tools-group" in str(payload["failedHtml"])
+    assert "Open Connector" in str(payload["retriedHtml"])
+    assert "data-connectors-error" not in str(payload["retriedHtml"])
+    assert payload["connectorFetchCalls"] == 2
+    assert any(
+        "Failed to load gateway connectors" in str(entry)
+        for entry in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_surfaces_runtime_tools_load_failure_and_retries(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+const failedHtml = els.projectViewContent.innerHTML;
+document.querySelector("[data-runtime-tools-retry]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+const retriedHtml = els.projectViewContent.innerHTML;
+
+console.log(JSON.stringify({
+    failedHtml,
+    retriedHtml,
+    runtimeToolFetchCalls: globalThis.__runtimeToolFetchCalls || 0,
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchRuntimeTools() {
+    globalThis.__runtimeToolFetchCalls = (globalThis.__runtimeToolFetchCalls || 0) + 1;
+    if (globalThis.__runtimeToolFetchCalls === 1) {
+        throw new Error("Runtime tools unavailable");
+    }
+    return {
+        items: [
+            {
+                tool_id: "rg",
+                display_name: "ripgrep",
+                status: "missing",
+            },
+        ],
+        system_path: {
+            supported: true,
+            added: false,
+            bin_dir: "C:/Users/test/.relay-teams/bin",
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert "data-runtime-tools-error" in str(payload["failedHtml"])
+    assert "Runtime tools unavailable" in str(payload["failedHtml"])
+    assert "data-runtime-tools-retry" in str(payload["failedHtml"])
+    assert "data-runtime-tools-error" not in str(payload["retriedHtml"])
+    assert 'data-runtime-tool-download="rg"' in str(payload["retriedHtml"])
+    assert payload["runtimeToolFetchCalls"] == 2
+    assert any(
+        "Failed to load gateway runtime tools" in str(entry)
+        for entry in cast(list[object], payload["logs"])
+    )
 
 
 def test_project_view_runtime_tool_download_start_is_gateway_guarded() -> None:
@@ -5075,13 +6038,21 @@ console.log(JSON.stringify({
 
     before_delay = cast(dict[str, object], payload["beforeDelay"])
     after_delay = cast(dict[str, object], payload["afterDelay"])
-    assert before_delay["summary"] == ""
+    assert before_delay["summary"] == "Loading skills..."
+    assert "feature-skills-market" in str(before_delay["contentHtml"])
+    assert "Loading ClawHub skills" in str(
+        before_delay["contentHtml"]
+    ) or "No matching skills" in str(before_delay["contentHtml"])
     assert "Loading project snapshot" not in str(before_delay["contentHtml"])
     assert after_delay["summary"] == "Loading skills..."
-    assert "Loading skills..." in str(after_delay["contentHtml"])
+    assert "feature-skills-market" in str(after_delay["contentHtml"])
+    assert "Loading ClawHub skills" in str(
+        after_delay["contentHtml"]
+    ) or "No matching skills" in str(after_delay["contentHtml"])
     assert "Loading project snapshot" not in str(after_delay["contentHtml"])
     assert payload["finalSummary"] == "1 skills available"
-    assert "review" in str(payload["finalContentHtml"])
+    assert "Self-Improving Agent" not in str(payload["finalContentHtml"])
+    assert "WorkBuddy" not in str(payload["finalContentHtml"])
 
 
 def test_project_view_replaces_existing_feature_content_while_slow_feature_loads(
@@ -5433,6 +6404,87 @@ export async function updateAutomationProject() {
     assert "gateway-feishu-section-stack" in str(payload["modalHtml"])
     assert 'id="feishu-trigger-enabled-input"' not in str(payload["modalHtml"])
     assert 'id="feishu-trigger-name-input"' not in str(payload["contentHtml"])
+
+
+def test_project_view_preserves_feishu_draft_after_deferred_trigger_load(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { flushTasks } from "./mockDom.mjs";
+
+let resolveTriggers = null;
+globalThis.__deferredTriggersPromise = new Promise(resolve => {
+    resolveTriggers = resolve;
+});
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-feature-gateway-add-feishu]")?.onclick?.();
+await flushTasks();
+document.getElementById("feishu-trigger-name-input").value = "Draft Feishu";
+document.getElementById("feishu-trigger-name-input").oninput();
+const beforeResolveHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+
+resolveTriggers([
+    {
+        trigger_id: "feishu-existing",
+        name: "Existing Feishu",
+        kind: "feishu",
+        status: "enabled",
+        config: {
+            app_id: "cli_a",
+            app_secret: "secret",
+            verification_token: "verify",
+            encrypt_key: "encrypt",
+        },
+        target_config: {},
+    },
+]);
+await flushTasks();
+await flushTasks();
+const afterResolveHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+
+console.log(JSON.stringify({
+    beforeResolveHtml,
+    afterResolveHtml,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchWorkspaces() {
+    return [{ workspace_id: "default", root_path: "/work/default" }];
+}
+
+export async function fetchRoleConfigOptions() {
+    return {
+        normal_mode_roles: [
+            {
+                role_id: "role-dev",
+                name: "Developer",
+                enabled: true,
+                mode: "normal",
+            },
+        ],
+    };
+}
+
+export async function fetchTriggers(options = {}) {
+    return await globalThis.__deferredTriggersPromise;
+}
+""".strip(),
+    )
+
+    assert 'id="feishu-trigger-name-input"' in str(payload["beforeResolveHtml"])
+    assert 'value="Draft Feishu"' in str(payload["afterResolveHtml"])
+    assert 'id="feishu-trigger-name-input"' in str(payload["afterResolveHtml"])
 
 
 def test_project_view_manages_existing_feishu_connector_from_card(
@@ -7110,6 +8162,7 @@ def _run_project_view_script(
     mock_api_path = tmp_path / "mockApi.mjs"
     mock_state_path = tmp_path / "mockState.mjs"
     mock_i18n_path = tmp_path / "mockI18n.mjs"
+    mock_markdown_path = tmp_path / "mockMarkdown.mjs"
     mock_logger_path = tmp_path / "mockLogger.mjs"
     mock_feedback_path = tmp_path / "mockFeedback.mjs"
     mock_agent_panel_path = tmp_path / "mockAgentPanel.mjs"
@@ -8013,6 +9066,74 @@ export async function addRuntimeToolsSystemPath() {
     };
 }
 """.strip(),
+        "searchClawHubSkillMarket": """
+export async function searchClawHubSkillMarket(query, options = {}) {
+    globalThis.__clawHubMarketSearchRequests =
+        globalThis.__clawHubMarketSearchRequests || [];
+    globalThis.__clawHubMarketSearchRequests.push({
+        query,
+        limit: options?.limit || null,
+    });
+    return globalThis.__clawHubMarketSearchResponse || {
+        ok: true,
+        query,
+        items: [],
+    };
+}
+""".strip(),
+        "installClawHubMarketSkill": """
+export async function installClawHubMarketSkill(payload) {
+    globalThis.__clawHubMarketInstallRequests =
+        globalThis.__clawHubMarketInstallRequests || [];
+    globalThis.__clawHubMarketInstallRequests.push(payload);
+    return globalThis.__clawHubMarketInstallResponse || {
+        ok: true,
+        slug: payload?.slug || "",
+        diagnostics: { skills_reloaded: true },
+    };
+}
+""".strip(),
+        "uninstallClawHubMarketSkill": """
+export async function uninstallClawHubMarketSkill(slug) {
+    globalThis.__clawHubMarketUninstallRequests =
+        globalThis.__clawHubMarketUninstallRequests || [];
+    globalThis.__clawHubMarketUninstallRequests.push(slug);
+    return globalThis.__clawHubMarketUninstallResponse || {
+        ok: true,
+        slug,
+        skills_reloaded: true,
+    };
+}
+""".strip(),
+        "uninstallRuntimeSkill": """
+export async function uninstallRuntimeSkill(skillRef) {
+    globalThis.__runtimeSkillUninstallRequests =
+        globalThis.__runtimeSkillUninstallRequests || [];
+    globalThis.__runtimeSkillUninstallRequests.push(skillRef);
+    return globalThis.__runtimeSkillUninstallResponse || {
+        ok: true,
+        ref: skillRef,
+        skills_reloaded: true,
+    };
+}
+""".strip(),
+        "fetchRuntimeSkillDetail": """
+export async function fetchRuntimeSkillDetail(skillRef) {
+    globalThis.__runtimeSkillDetailRequests =
+        globalThis.__runtimeSkillDetailRequests || [];
+    globalThis.__runtimeSkillDetailRequests.push(skillRef);
+    return globalThis.__runtimeSkillDetailResponse || {
+        ref: skillRef,
+        name: skillRef,
+        description: "Create skills.",
+        source: "user_relay_teams",
+        directory: "/skills/skill-creator",
+        manifest_path: "/skills/skill-creator/SKILL.md",
+        instructions: "## Quick Start\\nUse this skill.",
+        manifest_content: "# Skill Creator\\n\\n## Quick Start\\nUse this skill.",
+    };
+}
+""".strip(),
         "fetchW3Connector": """
 export async function fetchW3Connector() {
     return null;
@@ -8308,6 +9429,7 @@ export const state = {
         "workspace_view.delivery_help_feishu": "Automation updates will be pushed to the selected Feishu chat.",
         "settings.action.delete": "Delete",
         "settings.action.cancel": "Cancel",
+        "settings.action.close": "Close",
         "settings.system.skills_reloaded": "Skills Reloaded",
         "settings.system.skills_reloaded_message": "Skills reloaded.",
         "settings.system.reload_failed": "Reload Failed",
@@ -8411,6 +9533,9 @@ export const state = {
         "settings.gateway.xiaoluban_im_forwarding_command": "Forwarding Command",
         "settings.gateway.xiaoluban_im_forwarding_after_save_copy": "Save to show the forwarding command.",
         "settings.gateway.xiaoluban_im_forwarding_saved_message": "Saved. Send this in WeLink Xiaoluban to enter the local Relay Teams session: {command}",
+        "feature.connectors.runtime_tools.system_path_reset_title": "Reset system environment variables",
+        "feature.connectors.runtime_tools.system_path_reset_message": "Runtime tools are already in the system PATH. Reapply the managed binary directory?",
+        "feature.connectors.runtime_tools.system_path_reset_confirm": "Reset",
         "settings.gateway.xiaoluban_im_status_workspace_required": "workspace required",
         "settings.gateway.xiaoluban_im_status_ready": "ready",
         "settings.gateway.xiaoluban_im_missing_workspace_options": "Create a workspace before enabling Xiaoluban IM.",
@@ -8442,9 +9567,67 @@ export const state = {
         "settings.gateway.discord_deleted_message": "Discord account deleted.",
         "settings.gateway.xiaoluban_deleted_message": "Xiaoluban account deleted.",
         "feature.skills.title": "Skills",
+        "feature.skills.subtitle": "Search ClawHub skills and review loaded Agent Teams skills.",
         "feature.skills.loading": "Loading skills...",
         "feature.skills.directory_title": "Installed Skills",
         "feature.skills.summary": "{count} skills available",
+        "feature.skills.installed_count": "{count} installed",
+        "feature.skills.market_tab": "Skill Market",
+        "feature.skills.installed_tab": "Installed",
+        "feature.skills.search_placeholder": "Search skills",
+        "feature.skills.add": "Add Skill",
+        "feature.skills.installed": "Installed",
+        "feature.skills.install": "Install",
+        "feature.skills.installing": "Installing",
+        "feature.skills.uninstall": "Uninstall",
+        "feature.skills.uninstalling": "Uninstalling",
+        "feature.skills.clawhub_settings": "ClawHub Settings",
+        "feature.skills.clawhub_settings_title": "ClawHub Settings",
+        "feature.skills.clawhub_settings_meta": "Token and connectivity for installing skills.",
+        "feature.skills.market_clawhub_title": "ClawHub",
+        "feature.skills.market_clawhub_meta": "Token and connectivity for skill installation",
+        "feature.skills.market_idle": "Loading ClawHub skills",
+        "feature.skills.market_idle_copy": "The market uses your saved ClawHub configuration.",
+        "feature.skills.market_searching": "Searching skills",
+        "feature.skills.market_searching_copy": "Searching ClawHub for {query}.",
+        "feature.skills.market_error": "Search failed",
+        "feature.skills.market_error_copy": "ClawHub search is unavailable.",
+        "feature.skills.market_empty": "No matching skills",
+        "feature.skills.market_empty_copy": "ClawHub did not return skills for this view.",
+        "feature.skills.market_load_more": "Load more",
+        "feature.skills.market_loading_more": "Loading more...",
+        "feature.skills.market_version": "Version {version}",
+        "feature.skills.market_score": "Score {score}",
+        "feature.skills.market_result": "ClawHub result",
+        "feature.skills.install_dialog_title": "Install ClawHub skill",
+        "feature.skills.install_dialog_message": "Install a skill by ClawHub slug.",
+        "feature.skills.install_slug": "Slug",
+        "feature.skills.install_slug_placeholder": "skill-creator",
+        "feature.skills.install_version": "Version",
+        "feature.skills.install_version_placeholder": "Optional version",
+        "feature.skills.install_force": "Force reinstall",
+        "feature.skills.install_force_copy": "Reinstall even when the skill already exists.",
+        "feature.skills.install_slug_required": "Skill slug is required.",
+        "feature.skills.install_success": "Skill installed",
+        "feature.skills.install_success_copy": "{skill} is ready.",
+        "feature.skills.install_failed": "Install failed",
+        "feature.skills.install_failed_copy": "ClawHub could not install this skill.",
+        "feature.skills.uninstall_dialog_title": "Uninstall skill",
+        "feature.skills.uninstall_dialog_message": "Uninstall {skill} and reload skills.",
+        "feature.skills.uninstall_success": "Skill uninstalled",
+        "feature.skills.uninstall_success_copy": "{skill} was removed.",
+        "feature.skills.uninstall_failed": "Uninstall failed",
+        "feature.skills.uninstall_failed_copy": "ClawHub could not uninstall this skill.",
+        "feature.skills.detail_slug": "Slug",
+        "feature.skills.detail_ref": "Reference",
+        "feature.skills.detail_version": "Version",
+        "feature.skills.detail_score": "Score",
+        "feature.skills.detail_source": "Source",
+        "feature.skills.detail_path": "Path",
+        "feature.skills.detail_instruction_path": "Instructions",
+        "feature.skills.detail_loading_markdown": "Loading SKILL.md...",
+        "feature.skills.detail_no_markdown": "SKILL.md is available after installation.",
+        "feature.skills.detail_markdown_failed": "Failed to load SKILL.md.",
         "feature.skills.empty": "No skills loaded",
         "feature.skills.empty_copy": "Reload after updating the configured skill directories.",
         "feature.skills.reload": "Reload Skills",
@@ -8617,6 +9800,33 @@ export function formatMessage(key, values = {}) {
     """.strip(),
         encoding="utf-8",
     )
+    mock_markdown_path.write_text(
+        """
+export function renderMarkdownToHtml(source = "") {
+    return String(source || "")
+        .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+        .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+        .replace(/\\n\\n/g, "");
+}
+
+export function stripMarkdownFrontmatter(source = "") {
+    const normalized = String(source || "").replace(/\\r\\n?/g, "\\n");
+    if (!normalized.startsWith("---\\n")) {
+        return normalized;
+    }
+    const endIndex = normalized.indexOf("\\n---\\n", 4);
+    if (endIndex < 0) {
+        return normalized;
+    }
+    return normalized.slice(endIndex + 5);
+}
+
+export function parseMarkdown(source = "") {
+    return renderMarkdownToHtml(source);
+}
+""".strip(),
+        encoding="utf-8",
+    )
     mock_feedback_path.write_text(
         """
 export async function showFormDialog(options = {}) {
@@ -8628,8 +9838,10 @@ export async function showFormDialog(options = {}) {
     return result;
 }
 
-export async function showConfirmDialog() {
-    return true;
+export async function showConfirmDialog(options = {}) {
+    globalThis.__showConfirmDialogCalls = globalThis.__showConfirmDialogCalls || [];
+    globalThis.__showConfirmDialogCalls.push(options);
+    return globalThis.__showConfirmDialogResult ?? true;
 }
 
 export function showToast(payload = {}) {
@@ -8708,18 +9920,30 @@ export function renderGitHubAccessPanelMarkup() {
     mock_connector_cards_path.parent.mkdir(parents=True, exist_ok=True)
     mock_connector_cards_path.write_text(
         """
-export function renderConnectorsCardPageMarkup({ connectorsResponse, runtimeToolsResponse, runtimeToolJobs = {}, searchQuery = "" } = {}) {
+export function renderConnectorsCardPageMarkup({ connectorsResponse, connectorsError = "", runtimeToolsResponse, runtimeToolsError = "", runtimeToolJobs = {}, searchQuery = "" } = {}) {
     const items = Array.isArray(connectorsResponse?.items) && connectorsResponse.items.length > 0
         ? connectorsResponse.items
         : [{ provider: "feishu" }];
     const runtimeTools = Array.isArray(runtimeToolsResponse?.items)
         ? runtimeToolsResponse.items
         : [];
+    const toolIds = ["rg", "gh", "clawhub", "relay-knowledge"];
     return `
         <div class="connectors-page">
             <input type="search" value="${searchQuery}" data-connectors-search>
-            ${items.map(item => `<button data-connector-open="${item.provider || item.connector_id}">Open Connector</button><button data-connector-manage="${item.provider || item.connector_id}">Manage Connector</button>`).join("")}
-            ${runtimeTools.length ? `<section data-runtime-tools-group><button data-runtime-tools-open>Runtime tools</button></section>` : ""}
+            ${connectorsError ? `<div data-connectors-error>${connectorsError}<button data-connectors-retry>Retry</button></div>` : items.map(item => `<button data-connector-open="${item.provider || item.connector_id}">Open Connector</button><button data-connector-manage="${item.provider || item.connector_id}">Manage Connector</button>`).join("")}
+            <section data-runtime-tools-group>
+                <button data-runtime-tools-system-path-add>Path</button>
+                ${runtimeToolsError ? `<div data-runtime-tools-error>${runtimeToolsError}<button data-runtime-tools-retry>Retry runtime tools</button></div>` : ""}
+                ${toolIds.map(toolId => {
+                    const tool = runtimeTools.find(item => item.tool_id === toolId);
+                    const loaded = Boolean(tool) || Boolean(runtimeToolsError);
+                    const status = tool?.status || "loading";
+                    const job = runtimeToolJobs[tool?.download_job_id || `${toolId}-job`];
+                    const showAction = loaded && !runtimeToolsError && (status !== "ready" || tool?.update_available === true);
+                    return `<article data-runtime-tool-card="${toolId}">${status}${tool?.path ? `<button data-runtime-tool-copy-path="${toolId}">Copy binary path</button>` : ""}${showAction ? `<button data-runtime-tool-download="${toolId}">${job?.status || status}</button>` : ""}</article>`;
+                }).join("")}
+            </section>
             <button data-feature-gateway-add-feishu>Add Robot</button>
             <button data-feature-gateway-add-discord>Add Discord</button>
             <button data-feature-gateway-connect-wechat>Connect WeChat</button>
@@ -8784,6 +10008,7 @@ export function unmountBoardTodoBoard() {
         .replace("../core/state.js", "./mockState.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
         .replace("../utils/i18n.js", "./mockI18n.mjs")
+        .replace("../utils/markdown.js", "./mockMarkdown.mjs")
         .replace("../utils/feedback.js", "./mockFeedback.mjs")
         .replace("../utils/logger.js", "./mockLogger.mjs")
         .replace("./agentPanel.js", "./mockAgentPanel.mjs")

@@ -64,6 +64,11 @@ import {
     openWorkspaceRoot,
     reloadSkillsConfig,
     runAutomationProject,
+    fetchRuntimeSkillDetail,
+    installClawHubMarketSkill,
+    searchClawHubSkillMarket,
+    uninstallClawHubMarketSkill,
+    uninstallRuntimeSkill,
     startRuntimeToolDownload,
     saveW3Connector,
     startWeChatGatewayLogin,
@@ -93,14 +98,18 @@ import {
 import {
     renderConnectorConfigModalMarkup,
     renderConnectorsCardPageMarkup,
-    renderRuntimeToolsModalMarkup,
 } from './connectors/connectorCards.js';
 import { mountBoardTodoBoard, unmountBoardTodoBoard } from './boards/todoBoard.js';
 import { state } from '../core/state.js';
 import { els } from '../utils/dom.js';
 import { t } from '../utils/i18n.js';
+import { parseMarkdown, stripMarkdownFrontmatter } from '../utils/markdown.js';
 import { showConfirmDialog, showFormDialog, showToast } from '../utils/feedback.js';
 import { logWarn, sysLog } from '../utils/logger.js';
+
+const SKILLS_MARKET_SEARCH_DELAY_MS = 320;
+const SKILLS_MARKET_PAGE_SIZE = 24;
+const SKILLS_MARKET_MAX_LIMIT = 500;
 
 let currentWorkspace = null;
 let lastKnownWorkspaceId = '';
@@ -114,6 +123,11 @@ let currentAutomationFeatureSection = 'schedules';
 let currentGitHubFeatureState = createInitialGitHubFeatureState();
 let currentGitHubFeatureNodeKey = 'access';
 let currentSkillsStatus = null;
+let currentSkillsFeatureState = createInitialSkillsFeatureState();
+let skillsMarketSearchTimer = null;
+let skillsMarketRequestToken = 0;
+let skillsDetailRequestToken = 0;
+let skillsMarketScrollBound = false;
 let currentGatewayFeatureState = createInitialGatewayFeatureState();
 let currentAutomationEditorState = createInitialAutomationEditorState();
 let currentSnapshot = null;
@@ -126,6 +140,7 @@ let currentFeatureLoadingTimer = null;
 let languageBound = false;
 let gatewayModalRoot = null;
 let automationEditorModalRoot = null;
+let skillsModalRoot = null;
 const runtimeToolPollingJobIds = new Set();
 let selectedTreePath = null;
 let currentDiffState = createInitialDiffState();
@@ -134,6 +149,7 @@ const expandedTreePaths = new Set();
 const loadingTreePaths = new Set();
 const treeLoadErrors = new Map();
 const workspaceViewCache = new Map();
+const skillsMarketCache = new Map();
 const FEATURE_VIEW_IDS = Object.freeze({
     skills: 'skills',
     automation: 'automation',
@@ -163,6 +179,10 @@ const FEATURE_GITHUB_FIELD_IDS = Object.freeze({
     toggleTokenButtonId: 'feature-toggle-github-token-btn',
     statusId: 'feature-github-probe-status',
     webhookStatusId: 'feature-github-webhook-probe-status',
+});
+const SKILLS_FEATURE_TABS = Object.freeze({
+    market: 'market',
+    installed: 'installed',
 });
 const FEISHU_PLATFORM = 'feishu';
 const DISCORD_PLATFORM = 'discord';
@@ -213,6 +233,20 @@ function createInitialGitHubFeatureState() {
     };
 }
 
+function createInitialSkillsFeatureState() {
+    return {
+        activeTab: 'market',
+        searchQuery: '',
+        marketQuery: '',
+        marketStatus: 'idle',
+        marketError: '',
+        marketItems: [],
+        marketLimit: SKILLS_MARKET_PAGE_SIZE,
+        marketHasMore: true,
+        marketInstallJobs: {},
+    };
+}
+
 function createInitialAutomationEditorState() {
     return {
         open: false,
@@ -246,9 +280,10 @@ function createInitialGatewayFeatureState() {
         discordAccounts: [],
         wechatAccounts: [],
         connectorsResponse: null,
+        connectorsError: '',
         runtimeToolsResponse: null,
+        runtimeToolsError: '',
         runtimeToolJobs: {},
-        runtimeToolsModalOpen: false,
         runtimeToolsSystemPathBusy: false,
         runtimeToolsSystemPathAdded: false,
         runtimeToolsSystemPathMessage: '',
@@ -2515,9 +2550,12 @@ function resolveGatewayFeatureSummary(featureState) {
     });
 }
 
-function resolveSkillsSummary(status) {
-    const count = Array.isArray(status?.skills?.skills) ? status.skills.skills.length : 0;
-    return formatMessage('feature.skills.summary', { count });
+function resolveSkillsSummary(status = currentSkillsStatus) {
+    const skills = Array.isArray(status?.skills?.skills) ? status.skills.skills : null;
+    if (!skills) {
+        return t('feature.skills.loading');
+    }
+    return formatMessage('feature.skills.summary', { count: skills.length });
 }
 
 function resolveAutomationSummary(projects) {
@@ -2792,6 +2830,9 @@ function rememberLastKnownWorkspaceId(workspaceId = state.currentWorkspaceId) {
 function openFeatureShell(featureId) {
     rememberLastKnownWorkspaceId();
     cacheProjectViewState();
+    if (featureId !== FEATURE_VIEW_IDS.skills) {
+        cancelSkillsFeatureAsyncWork();
+    }
     resetFeatureSurface();
     currentProjectViewMode = 'feature';
     currentFeatureViewId = featureId;
@@ -4157,6 +4198,7 @@ export async function openWorkspaceProjectView(workspace) {
 
     rememberLastKnownWorkspaceId(workspaceId);
     abortCurrentFeatureRequest();
+    cancelSkillsFeatureAsyncWork();
     currentFeatureRequestToken += 1;
     cacheProjectViewState();
     currentProjectViewMode = 'workspace';
@@ -4205,12 +4247,23 @@ export async function openAutomationProjectView(project) {
 
 export async function openSkillsFeatureView() {
     const request = beginFeatureRequest(FEATURE_VIEW_IDS.skills);
-    renderFeaturePendingState(
-        FEATURE_VIEW_IDS.skills,
-        t('feature.skills.title'),
-        getFeatureLoadingSummary(FEATURE_VIEW_IDS.skills),
-        request,
-    );
+    const previousState = currentSkillsFeatureState || {};
+    const searchQuery = String(previousState.searchQuery || '');
+    currentSkillsStatus = null;
+    currentSkillsFeatureState = restoreSkillsMarketStateFromCache({
+        ...createInitialSkillsFeatureState(),
+        activeTab: resolveSkillsFeatureTab(previousState.activeTab),
+        searchQuery,
+    }, searchQuery);
+    renderSkillsFeatureView();
+    if (
+        currentSkillsFeatureState.activeTab === SKILLS_FEATURE_TABS.market
+        && shouldFetchSkillsMarket(currentSkillsFeatureState.searchQuery)
+    ) {
+        void runSkillsMarketSearchNow(currentSkillsFeatureState.searchQuery, {
+            limit: currentSkillsFeatureState.marketLimit,
+        });
+    }
     try {
         currentSkillsStatus = await fetchConfigStatus({ signal: request.signal });
         if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.skills, request.token)) {
@@ -4221,7 +4274,7 @@ export async function openSkillsFeatureView() {
         if (isAbortError(error) || !isCurrentFeatureRequest(FEATURE_VIEW_IDS.skills, request.token)) {
             return;
         }
-        renderFeatureErrorState(t('feature.skills.title'), error);
+        renderFeatureErrorState(t('feature.skills.title'), error, { showClose: false });
         sysLog(`Failed to load skills feature: ${error?.message || error}`, 'log-error');
     } finally {
         finishFeatureRequest(request.controller);
@@ -4292,50 +4345,171 @@ export async function openAutomationGitHubView(nodeKey = 'access') {
 
 export async function openImFeatureView() {
     const request = beginFeatureRequest(FEATURE_VIEW_IDS.gateway);
-    renderFeaturePendingState(
-        FEATURE_VIEW_IDS.gateway,
-        t('feature.gateway.title'),
-        getFeatureLoadingSummary(FEATURE_VIEW_IDS.gateway),
-        request,
-    );
+    const previousState = currentGatewayFeatureState || {};
+    currentGatewayFeatureState = {
+        ...createInitialGatewayFeatureState(),
+        connectorSearch: String(previousState.connectorSearch || ''),
+        connectorStatusFilter: String(previousState.connectorStatusFilter || 'all') || 'all',
+        runtimeToolJobs: previousState.runtimeToolJobs || {},
+    };
+    renderGatewayFeatureView();
+    const tasks = [
+        loadGatewayConnectors(request.token, request.signal),
+        loadGatewayFeishuAccounts(request.token, request.signal),
+        loadGatewayXiaolubanAccounts(request.token, request.signal),
+        loadGatewayWeChatAccounts(request.token, request.signal),
+        loadGatewayDiscordAccounts(request.token, request.signal),
+        loadGatewayWorkspaces(request.token, request.signal),
+        loadGatewayRoleOptions(request.token, request.signal),
+        loadGatewayOrchestrationConfig(request.token, request.signal),
+        loadGatewayRuntimeTools(request.token, request.signal),
+    ];
+    void Promise.allSettled(tasks).finally(() => {
+        finishFeatureRequest(request.controller);
+    });
+}
+
+async function loadGatewayConnectors(requestToken, signal = null) {
     try {
-        const [connectorsResponse, triggers, xiaolubanAccounts, wechatAccounts, discordAccounts, workspaces, roleOptions, orchestrationConfig] = await Promise.all([
-            fetchConnectors({ signal: request.signal }),
-            fetchTriggers({ signal: request.signal }),
-            fetchXiaolubanGatewayAccounts({ signal: request.signal }),
-            fetchWeChatGatewayAccounts({ signal: request.signal }),
-            fetchDiscordGatewayAccounts({ signal: request.signal }),
-            fetchWorkspaces({ signal: request.signal }),
-            fetchRoleConfigOptions({ signal: request.signal }),
-            fetchOrchestrationConfig({ signal: request.signal }),
-        ]);
-        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, request.token)) {
+        const connectorsResponse = await fetchConnectors({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
+            connectorsResponse,
+            connectorsError: '',
+        };
+        renderGatewayFeatureView();
+    } catch (error) {
+        if (!logGatewayFeatureLoadFailure('connectors', error, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
+            connectorsResponse: null,
+            connectorsError: readErrorDetail(error) || t('feature.connectors.load_failed.copy'),
+        };
+        renderGatewayFeatureView();
+    }
+}
+
+async function loadGatewayFeishuAccounts(requestToken, signal = null) {
+    try {
+        const triggers = await fetchTriggers({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
             return;
         }
         currentGatewayFeatureState = {
             ...currentGatewayFeatureState,
             feishuTriggers: normalizeFeishuTriggers(triggers),
-            feishuEditingTriggerId: '',
-            feishuDraft: null,
-            connectorsResponse,
-            runtimeToolsResponse: null,
+        };
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
+    } catch (error) {
+        logGatewayFeatureLoadFailure('feishu accounts', error, requestToken);
+    }
+}
+
+async function loadGatewayXiaolubanAccounts(requestToken, signal = null) {
+    try {
+        const xiaolubanAccounts = await fetchXiaolubanGatewayAccounts({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
             xiaolubanAccounts: normalizeXiaolubanAccounts(xiaolubanAccounts),
+        };
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
+    } catch (error) {
+        logGatewayFeatureLoadFailure('xiaoluban accounts', error, requestToken);
+    }
+}
+
+async function loadGatewayWeChatAccounts(requestToken, signal = null) {
+    try {
+        const wechatAccounts = await fetchWeChatGatewayAccounts({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
             wechatAccounts: normalizeWeChatAccounts(wechatAccounts),
+        };
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
+    } catch (error) {
+        logGatewayFeatureLoadFailure('wechat accounts', error, requestToken);
+    }
+}
+
+async function loadGatewayDiscordAccounts(requestToken, signal = null) {
+    try {
+        const discordAccounts = await fetchDiscordGatewayAccounts({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
             discordAccounts: normalizeDiscordAccounts(discordAccounts),
+        };
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
+    } catch (error) {
+        logGatewayFeatureLoadFailure('discord accounts', error, requestToken);
+    }
+}
+
+async function loadGatewayWorkspaces(requestToken, signal = null) {
+    try {
+        const workspaces = await fetchWorkspaces({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
             workspaces: normalizeGatewayWorkspaces(workspaces),
+        };
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
+    } catch (error) {
+        logGatewayFeatureLoadFailure('workspaces', error, requestToken);
+    }
+}
+
+async function loadGatewayRoleOptions(requestToken, signal = null) {
+    try {
+        const roleOptions = await fetchRoleConfigOptions({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
             normalRoles: normalizeRoleOptions(roleOptions),
+        };
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
+    } catch (error) {
+        logGatewayFeatureLoadFailure('role options', error, requestToken);
+    }
+}
+
+async function loadGatewayOrchestrationConfig(requestToken, signal = null) {
+    try {
+        const orchestrationConfig = await fetchOrchestrationConfig({ signal });
+        if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+            return;
+        }
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
             orchestrationPresets: normalizeOrchestrationPresets(orchestrationConfig),
         };
         renderGatewayFeatureView();
-        void loadGatewayRuntimeTools(request.token, request.signal);
+        renderGatewayFeatureModal();
     } catch (error) {
-        if (isAbortError(error) || !isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, request.token)) {
-            return;
-        }
-        renderFeatureErrorState(t('feature.gateway.title'), error);
-        sysLog(`Failed to load IM feature: ${error?.message || error}`, 'log-error');
-    } finally {
-        finishFeatureRequest(request.controller);
+        logGatewayFeatureLoadFailure('orchestration config', error, requestToken);
     }
 }
 
@@ -4348,17 +4522,32 @@ async function loadGatewayRuntimeTools(requestToken, signal = null) {
         currentGatewayFeatureState = {
             ...currentGatewayFeatureState,
             runtimeToolsResponse,
+            runtimeToolsError: '',
             runtimeToolsSystemPathAdded: Boolean(runtimeToolsResponse?.system_path?.added),
         };
         resumeRuntimeToolDownloadPolling(runtimeToolsResponse);
         renderGatewayFeatureView();
         renderGatewayFeatureModal();
     } catch (error) {
-        if (isAbortError(error) || !isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+        if (!logGatewayFeatureLoadFailure('runtime tools', error, requestToken)) {
             return;
         }
-        sysLog(`Failed to load runtime tools: ${error?.message || error}`, 'log-warn');
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
+            runtimeToolsResponse: null,
+            runtimeToolsError: readErrorDetail(error) || t('feature.connectors.runtime_tools.load_failed'),
+        };
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
     }
+}
+
+function logGatewayFeatureLoadFailure(label, error, requestToken) {
+    if (isAbortError(error) || !isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, requestToken)) {
+        return false;
+    }
+    sysLog(`Failed to load gateway ${label}: ${error?.message || error}`, 'log-warn');
+    return true;
 }
 
 export async function openBoardsFeatureView() {
@@ -4451,6 +4640,7 @@ export async function refreshProjectView() {
 
 export function hideProjectView() {
     abortCurrentFeatureRequest();
+    cancelSkillsFeatureAsyncWork();
     currentFeatureRequestToken += 1;
     resetFeatureSurface();
     cacheProjectViewState();
@@ -4482,6 +4672,9 @@ export function prepareExternalFeatureView(featureId) {
     }
     rememberLastKnownWorkspaceId();
     abortCurrentFeatureRequest();
+    if (safeFeatureId !== FEATURE_VIEW_IDS.skills) {
+        cancelSkillsFeatureAsyncWork();
+    }
     currentFeatureRequestToken += 1;
     resetFeatureSurface();
     cacheProjectViewState();
@@ -4680,11 +4873,12 @@ function setProjectViewVisible(visible) {
     }
 }
 
-function renderFeatureErrorState(title, error) {
+function renderFeatureErrorState(title, error, { showClose = true } = {}) {
     renderToolbar(null, {
         title,
         mode: 'feature',
         summary: t('workspace_view.load_failed'),
+        showClose,
     });
     if (els.projectViewContent) {
         els.projectViewContent.innerHTML = `
@@ -4700,104 +4894,1559 @@ function renderSkillsFeatureView() {
     const skills = Array.isArray(currentSkillsStatus?.skills?.skills)
         ? currentSkillsStatus.skills.skills
         : [];
+    const activeTab = resolveSkillsFeatureTab(currentSkillsFeatureState.activeTab);
     renderToolbar(null, {
         title: t('feature.skills.title'),
         mode: 'feature',
-        summary: resolveSkillsSummary(currentSkillsStatus),
-        actions: `
-            <button class="secondary-btn project-view-toolbar-btn" type="button" data-feature-skills-reload>${escapeHtml(t('feature.skills.reload'))}</button>
-        `,
+        summary: resolveSkillsSummary(),
+        actions: renderSkillsToolbarActions(),
+        showClose: false,
     });
     if (!els.projectViewContent) {
         return;
     }
     els.projectViewContent.innerHTML = `
         <div class="feature-page feature-page-neutral feature-skills-page">
-            <section class="workspace-view-panel skills-clawhub-panel">
-                <div class="workspace-view-panel-header">
-                    <h3>${escapeHtml(t('settings.clawhub.section'))}</h3>
-                    <span class="workspace-view-panel-meta">${escapeHtml(t('settings.clawhub.connectivity'))}</span>
-                </div>
-                <div class="feature-panel-body">
-                    <div class="proxy-form-grid">
-                        <div class="form-group proxy-inline-field">
-                            <label for="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.tokenInputId)}">${escapeHtml(t('settings.clawhub.token'))}</label>
-                            <div class="secure-input-row">
-                                <input type="password" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.tokenInputId)}" placeholder="${escapeHtml(t('settings.clawhub.token_placeholder'))}" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
-                                <button class="secure-input-btn" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.toggleTokenButtonId)}" type="button" title="${escapeHtml(t('settings.clawhub.show_token'))}" aria-label="${escapeHtml(t('settings.clawhub.show_token'))}" style="display:none;">
-                                    <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
-                                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
-                                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"></circle>
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="form-group proxy-inline-field web-provider-inline-field">
-                            <span class="settings-token-source-label">${escapeHtml(t('settings.clawhub.token_source'))}</span>
-                            <a class="web-provider-link-card" id="feature-clawhub-token-link" href="https://clawhub.ai/settings" target="_blank" rel="noreferrer" title="https://clawhub.ai/settings" aria-label="https://clawhub.ai/settings">
-                                <span class="web-provider-link-copy">
-                                    <span class="web-provider-link-badge">ClawHub</span>
-                                    <span class="web-provider-link-url">https://clawhub.ai/settings</span>
-                                    <span class="settings-token-source-note">${escapeHtml(t('settings.clawhub.token_source_help'))}</span>
-                                </span>
-                                <span class="web-provider-link-arrow" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none" class="icon-sm">
-                                        <path d="M7 17L17 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-                                        <path d="M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-                                    </svg>
-                                </span>
-                            </a>
-                        </div>
-                        <div class="form-group proxy-inline-field proxy-inline-field-actions">
-                            <label for="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.saveButtonId)}">${escapeHtml(t('settings.clawhub.token_action'))}</label>
-                            <div class="settings-inline-action-row">
-                                <button class="secondary-btn section-action-btn proxy-inline-test-btn" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.probeButtonId)}" type="button">${escapeHtml(t('settings.clawhub.test_connection'))}</button>
-                                <button class="primary-btn section-action-btn proxy-inline-test-btn" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.saveButtonId)}" type="button">${escapeHtml(t('settings.action.save'))}</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="proxy-probe-status" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.statusId)}" style="display:none;"></div>
-                </div>
-            </section>
-            <section class="workspace-view-panel skills-directory-panel">
-                <div class="workspace-view-panel-header">
-                    <h3>${escapeHtml(t('feature.skills.directory_title'))}</h3>
-                    <span class="workspace-view-panel-meta">${escapeHtml(String(skills.length))}</span>
-                </div>
-                ${skills.length > 0 ? `
-                    <div class="skills-directory-list">
-                        ${skills.map(skill => `
-                            <article class="skills-directory-row">
-                                <div class="skills-directory-main">
-                                    <div class="skills-directory-title-row">
-                                        <strong>${escapeHtml(String(skill?.name || skill?.ref || ''))}</strong>
-                                        ${renderFeatureStatusPill(resolveSkillScopeLabel(skill?.source || skill?.scope), 'neutral')}
-                                    </div>
-                                    <p>${escapeHtml(String(skill?.description || ''))}</p>
-                                </div>
-                                <div class="skills-directory-meta">
-                                    <code>${escapeHtml(String(skill?.ref || ''))}</code>
-                                    <span>${escapeHtml(String(skill?.path || skill?.instruction_path || ''))}</span>
-                                </div>
-                            </article>
-                        `).join('')}
-                    </div>
-                ` : `
-                    <div class="feature-panel-body">
-                        ${renderFeatureEmptyState(
-                            t('feature.skills.empty'),
-                            t('feature.skills.empty_copy'),
-                        )}
-                    </div>
-                `}
-            </section>
+            ${renderSkillsPrimaryTabs(activeTab)}
+            ${activeTab === SKILLS_FEATURE_TABS.market
+                ? renderSkillsMarketView(skills)
+                : renderInstalledSkillsView(skills)}
         </div>
     `;
-    els.projectViewToolbarActions?.querySelector('[data-feature-skills-reload]')?.addEventListener('click', () => {
+    bindSkillsFeatureHandlers(activeTab);
+}
+
+function renderSkillsToolbarActions() {
+    return `
+        <div class="feature-skills-toolbar-actions">
+            <label class="feature-skills-search">
+                <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"></circle>
+                    <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                </svg>
+                <input type="search" value="${escapeHtml(currentSkillsFeatureState.searchQuery)}" placeholder="${escapeHtml(t('feature.skills.search_placeholder'))}" data-feature-skills-search>
+            </label>
+            <button class="secondary-btn project-view-toolbar-btn feature-skills-add-btn" type="button" data-feature-skills-add>
+                <span aria-hidden="true">+</span>
+                <span>${escapeHtml(t('feature.skills.add'))}</span>
+            </button>
+            <button class="secondary-btn project-view-toolbar-btn feature-skills-settings-btn" type="button" data-feature-skills-clawhub-settings title="${escapeHtml(t('feature.skills.clawhub_settings'))}">
+                <span>${escapeHtml(t('feature.skills.clawhub_settings'))}</span>
+            </button>
+        </div>
+    `;
+}
+
+function renderSkillsPrimaryTabs(activeTab) {
+    return `
+        <div class="feature-skills-primary-tabs" role="tablist" aria-label="${escapeHtml(t('feature.skills.title'))}">
+            ${renderSkillsPrimaryTab(SKILLS_FEATURE_TABS.market, t('feature.skills.market_tab'), activeTab)}
+            ${renderSkillsPrimaryTab(SKILLS_FEATURE_TABS.installed, t('feature.skills.installed_tab'), activeTab)}
+            ${renderSkillsInstalledTabTools(activeTab)}
+        </div>
+    `;
+}
+
+function renderSkillsInstalledTabTools(activeTab) {
+    if (activeTab !== SKILLS_FEATURE_TABS.installed) {
+        return '';
+    }
+    const skills = Array.isArray(currentSkillsStatus?.skills?.skills)
+        ? currentSkillsStatus.skills.skills
+        : [];
+    return `
+        <div class="feature-skills-installed-tab-tools" role="presentation">
+            <span class="feature-skills-toolbar-count">${escapeHtml(formatMessage('feature.skills.installed_count', { count: skills.length }))}</span>
+            <button class="secondary-btn project-view-toolbar-btn" type="button" data-feature-skills-reload>${escapeHtml(t('feature.skills.reload'))}</button>
+        </div>
+    `;
+}
+
+function renderSkillsPrimaryTab(tab, label, activeTab) {
+    const active = tab === activeTab;
+    return `
+        <button class="feature-skills-primary-tab${active ? ' is-active' : ''}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" data-feature-skills-tab="${escapeHtml(tab)}">
+            ${escapeHtml(label)}
+        </button>
+    `;
+}
+
+function renderSkillsMarketView(skills) {
+    const items = resolveSkillsMarketItems(skills);
+    const query = String(currentSkillsFeatureState.searchQuery || '').trim();
+    return `
+        <section class="feature-skills-market" data-feature-skills-market>
+            ${items.length > 0 ? `
+                <div class="feature-skills-market-grid">
+                    ${items.map(item => renderSkillsMarketCard(item)).join('')}
+                </div>
+                ${renderSkillsMarketPaging()}
+            ` : `
+                ${renderSkillsMarketEmptyState(query)}
+            `}
+        </section>
+    `;
+}
+
+function renderSkillsMarketPaging() {
+    if (currentSkillsFeatureState.marketStatus === 'loading_more') {
+        return `
+            <div class="feature-skills-market-more">
+                <button class="secondary-btn project-view-toolbar-btn" type="button" data-feature-skills-market-more disabled>
+                    ${escapeHtml(t('feature.skills.market_loading_more'))}
+                </button>
+            </div>
+        `;
+    }
+    if (!currentSkillsFeatureState.marketHasMore) {
+        return '';
+    }
+    return `
+        <div class="feature-skills-market-more">
+            <button class="secondary-btn project-view-toolbar-btn" type="button" data-feature-skills-market-more>
+                ${escapeHtml(t('feature.skills.market_load_more'))}
+            </button>
+        </div>
+    `;
+}
+
+function renderSkillsClawHubSettingsForm() {
+    return `
+        <div class="skills-clawhub-settings-form">
+            <div class="proxy-form-grid">
+                <div class="form-group proxy-inline-field">
+                    <label for="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.tokenInputId)}">${escapeHtml(t('settings.clawhub.token'))}</label>
+                    <div class="secure-input-row">
+                        <input type="password" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.tokenInputId)}" placeholder="${escapeHtml(t('settings.clawhub.token_placeholder'))}" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+                        <button class="secure-input-btn" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.toggleTokenButtonId)}" type="button" title="${escapeHtml(t('settings.clawhub.show_token'))}" aria-label="${escapeHtml(t('settings.clawhub.show_token'))}" style="display:none;">
+                            <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+                                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"></circle>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group proxy-inline-field web-provider-inline-field">
+                    <span class="settings-token-source-label">${escapeHtml(t('settings.clawhub.token_source'))}</span>
+                    <a class="web-provider-link-card" id="feature-clawhub-token-link" href="https://clawhub.ai/settings" target="_blank" rel="noreferrer" title="https://clawhub.ai/settings" aria-label="https://clawhub.ai/settings">
+                        <span class="web-provider-link-copy">
+                            <span class="web-provider-link-badge">ClawHub</span>
+                            <span class="web-provider-link-url">https://clawhub.ai/settings</span>
+                            <span class="settings-token-source-note">${escapeHtml(t('settings.clawhub.token_source_help'))}</span>
+                        </span>
+                        <span class="web-provider-link-arrow" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" class="icon-sm">
+                                <path d="M7 17L17 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                <path d="M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </span>
+                    </a>
+                </div>
+                <div class="form-group proxy-inline-field proxy-inline-field-actions">
+                    <label for="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.saveButtonId)}">${escapeHtml(t('settings.clawhub.token_action'))}</label>
+                    <div class="settings-inline-action-row">
+                        <button class="secondary-btn section-action-btn proxy-inline-test-btn" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.probeButtonId)}" type="button">${escapeHtml(t('settings.clawhub.test_connection'))}</button>
+                        <button class="primary-btn section-action-btn proxy-inline-test-btn" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.saveButtonId)}" type="button">${escapeHtml(t('settings.action.save'))}</button>
+                    </div>
+                </div>
+            </div>
+            <div class="proxy-probe-status" id="${escapeHtml(FEATURE_CLAWHUB_FIELD_IDS.statusId)}" style="display:none;"></div>
+        </div>
+    `;
+}
+
+function renderSkillsMarketEmptyState(query) {
+    if (currentSkillsFeatureState.marketStatus === 'loading') {
+        return renderFeatureEmptyState(
+            t('feature.skills.market_searching'),
+            query
+                ? formatMessage('feature.skills.market_searching_copy', { query })
+                : t('feature.skills.market_idle_copy'),
+        );
+    }
+    if (currentSkillsFeatureState.marketStatus === 'error') {
+        return renderFeatureEmptyState(
+            t('feature.skills.market_error'),
+            currentSkillsFeatureState.marketError || t('feature.skills.market_error_copy'),
+        );
+    }
+    if (currentSkillsFeatureState.marketStatus === 'loaded') {
+        return renderFeatureEmptyState(
+            t('feature.skills.market_empty'),
+            t('feature.skills.market_empty_copy'),
+        );
+    }
+    return renderFeatureEmptyState(
+        t('feature.skills.market_idle'),
+        t('feature.skills.market_idle_copy'),
+    );
+}
+
+function renderSkillsMarketCard(item) {
+    const slug = String(item?.slug || '').trim();
+    const title = String(item?.title || slug).trim() || slug;
+    const initial = title.slice(0, 1).toUpperCase() || 'S';
+    const installed = item?.installed === true;
+    const runtimeRef = resolveSkillsMarketRuntimeRef(item);
+    const detailKind = installed && runtimeRef ? 'installed' : 'market';
+    const detailKey = detailKind === 'installed' ? runtimeRef : slug;
+    const jobStatus = currentSkillsFeatureState.marketInstallJobs?.[slug] || '';
+    const busy = jobStatus === 'installing' || jobStatus === 'uninstalling';
+    const actionLabel = installed
+        ? (jobStatus === 'uninstalling' ? t('feature.skills.uninstalling') : t('feature.skills.uninstall'))
+        : (jobStatus === 'installing' ? t('feature.skills.installing') : t('feature.skills.install'));
+    const actionAttr = installed
+        ? `data-feature-skills-market-uninstall="${escapeHtml(slug)}"`
+        : `data-feature-skills-market-install="${escapeHtml(slug)}"`;
+    const actionClass = installed
+        ? 'secondary-btn danger-btn'
+        : 'primary-btn';
+    const metaItems = [
+        item?.version ? formatMessage('feature.skills.market_version', { version: item.version }) : '',
+        Number.isFinite(Number(item?.score))
+            ? formatMessage('feature.skills.market_score', { score: Number(item.score).toFixed(2) })
+            : '',
+    ].filter(Boolean);
+    return `
+        <article class="feature-skills-market-card" role="button" tabindex="0" data-skills-market-card="${escapeHtml(slug)}" data-feature-skill-detail="${escapeHtml(detailKind)}:${escapeHtml(detailKey)}" data-feature-skill-detail-kind="${escapeHtml(detailKind)}" data-feature-skill-detail-key="${escapeHtml(detailKey)}">
+            <div class="feature-skills-card-icon is-gray" aria-hidden="true">${escapeHtml(initial)}</div>
+            <div class="feature-skills-card-main">
+                <div class="feature-skills-card-title-row">
+                    <h4 title="${escapeHtml(title)}">${escapeHtml(title)}</h4>
+                    <button class="${actionClass} feature-skills-card-install" type="button" ${actionAttr} ${busy ? 'disabled' : ''}>${escapeHtml(actionLabel)}</button>
+                </div>
+                <p><code>${escapeHtml(slug)}</code></p>
+                <div class="feature-skills-card-meta">
+                    ${metaItems.length > 0
+                        ? metaItems.map(meta => `<span>${escapeHtml(meta)}</span>`).join('')
+                        : `<span>${escapeHtml(t('feature.skills.market_result'))}</span>`
+                    }
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function renderInstalledSkillsView(skills) {
+    const filteredSkills = filterInstalledSkills(skills);
+    return `
+        <section class="skills-directory-panel">
+            ${filteredSkills.length > 0 ? `
+                <div class="skills-directory-grid">
+                    ${filteredSkills.map(skill => renderInstalledSkillCard(skill)).join('')}
+                </div>
+            ` : `
+                ${renderFeatureEmptyState(
+                    t('feature.skills.empty'),
+                    t('feature.skills.empty_copy'),
+                )}
+            `}
+        </section>
+    `;
+}
+
+function renderInstalledSkillCard(skill) {
+    const name = String(skill?.name || skill?.ref || '').trim();
+    const key = resolveInstalledSkillKey(skill);
+    const uninstallSlug = resolveSkillUninstallSlug(skill);
+    const canUninstall = isInstalledSkillUninstallable(skill) && Boolean(uninstallSlug);
+    const jobStatus = uninstallSlug ? currentSkillsFeatureState.marketInstallJobs?.[uninstallSlug] || '' : '';
+    const uninstalling = jobStatus === 'uninstalling';
+    const initial = name.slice(0, 1).toUpperCase() || 'S';
+    return `
+        <article class="feature-skills-installed-card" role="button" tabindex="0" data-feature-skill-detail="installed:${escapeHtml(key)}" data-feature-skill-detail-kind="installed" data-feature-skill-detail-key="${escapeHtml(key)}">
+            <div class="feature-skills-card-icon is-gray" aria-hidden="true">${escapeHtml(initial)}</div>
+            <div class="feature-skills-card-main">
+                <div class="feature-skills-card-title-row">
+                    <h4 title="${escapeHtml(name)}">${escapeHtml(name)}</h4>
+                    ${canUninstall
+                        ? `<button class="secondary-btn danger-btn feature-skills-card-install" type="button" data-feature-skills-installed-uninstall="${escapeHtml(uninstallSlug)}" ${uninstalling ? 'disabled' : ''}>${escapeHtml(uninstalling ? t('feature.skills.uninstalling') : t('feature.skills.uninstall'))}</button>`
+                        : renderFeatureStatusPill(resolveSkillScopeLabel(skill?.source || skill?.scope), 'neutral')}
+                </div>
+                <p>${escapeHtml(String(skill?.description || ''))}</p>
+                <div class="feature-skills-installed-meta">
+                    <code>${escapeHtml(String(skill?.ref || ''))}</code>
+                    <span>${escapeHtml(String(skill?.path || skill?.instruction_path || ''))}</span>
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function bindSkillsFeatureHandlers(activeTab) {
+    els.projectViewToolbarActions?.querySelector('[data-feature-skills-search]')?.addEventListener('input', event => {
+        const searchQuery = String(event.target?.value || '');
+        if (activeTab === SKILLS_FEATURE_TABS.market) {
+            skillsMarketRequestToken += 1;
+        }
+        currentSkillsFeatureState = restoreSkillsMarketStateFromCache({
+            ...currentSkillsFeatureState,
+            searchQuery,
+        }, searchQuery);
+        if (activeTab === SKILLS_FEATURE_TABS.market) {
+            renderSkillsFeatureView();
+            focusSkillsSearchInput();
+            if (shouldFetchSkillsMarket(searchQuery)) {
+                scheduleSkillsMarketSearch(searchQuery);
+            }
+            return;
+        }
+        renderSkillsFeatureView();
+        focusSkillsSearchInput();
+    });
+    els.projectViewToolbarActions?.querySelector('[data-feature-skills-search]')?.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || activeTab !== SKILLS_FEATURE_TABS.market) {
+            return;
+        }
+        event.preventDefault();
+        void runSkillsMarketSearchNow(currentSkillsFeatureState.searchQuery);
+    });
+    els.projectViewToolbarActions?.querySelector('[data-feature-skills-add]')?.addEventListener('click', () => {
+        currentSkillsFeatureState = {
+            ...currentSkillsFeatureState,
+            activeTab: SKILLS_FEATURE_TABS.market,
+        };
+        renderSkillsFeatureView();
+        void openSkillsMarketInstallDialog();
+    });
+    els.projectViewToolbarActions?.querySelector('[data-feature-skills-clawhub-settings]')?.addEventListener('click', () => {
+        openSkillsClawHubSettingsModal();
+    });
+    els.projectViewContent?.querySelector('[data-feature-skills-reload]')?.addEventListener('click', () => {
         void handleSkillsReloadFeature();
     });
+    els.projectViewContent?.querySelectorAll('[data-feature-skills-tab]').forEach(button => {
+        button.addEventListener('click', () => {
+            const activeTabValue = resolveSkillsFeatureTab(button.getAttribute('data-feature-skills-tab'));
+            currentSkillsFeatureState = {
+                ...currentSkillsFeatureState,
+                activeTab: activeTabValue,
+            };
+            renderSkillsFeatureView();
+            if (activeTabValue === SKILLS_FEATURE_TABS.market) {
+                if (shouldFetchSkillsMarket(currentSkillsFeatureState.searchQuery)) {
+                    void runSkillsMarketSearchNow(currentSkillsFeatureState.searchQuery, {
+                        limit: currentSkillsFeatureState.marketLimit,
+                    });
+                }
+            }
+        });
+    });
+    els.projectViewContent?.querySelector('[data-feature-skills-market-more]')?.addEventListener('click', () => {
+        void loadNextSkillsMarketPage();
+    });
+    els.projectViewContent?.querySelectorAll('[data-feature-skills-market-install]').forEach(button => {
+        button.addEventListener('click', event => {
+            event?.stopPropagation?.();
+            const slug = String(button.getAttribute('data-feature-skills-market-install') || '').trim();
+            const item = currentSkillsFeatureState.marketItems.find(candidate => String(candidate?.slug || '').trim() === slug);
+            void handleSkillsMarketInstall({
+                slug,
+                version: item?.version || null,
+                force: false,
+            });
+        });
+    });
+    els.projectViewContent?.querySelectorAll('[data-feature-skills-market-uninstall]').forEach(button => {
+        button.addEventListener('click', event => {
+            event?.stopPropagation?.();
+            const slug = String(button.getAttribute('data-feature-skills-market-uninstall') || '').trim();
+            void handleSkillsMarketUninstall({ slug });
+        });
+    });
+    els.projectViewContent?.querySelectorAll('[data-feature-skills-installed-uninstall]').forEach(button => {
+        button.addEventListener('click', event => {
+            event?.stopPropagation?.();
+            const slug = String(button.getAttribute('data-feature-skills-installed-uninstall') || '').trim();
+            void handleInstalledSkillUninstall({ skillRef: slug });
+        });
+    });
+    bindSkillDetailCardHandlers();
+    if (activeTab === SKILLS_FEATURE_TABS.market) {
+        bindSkillsMarketScrollLoader();
+    }
+}
+
+function bindSkillDetailCardHandlers() {
+    els.projectViewContent?.querySelectorAll('[data-feature-skill-detail]').forEach(card => {
+        const open = () => {
+            const compactDetail = String(card.getAttribute('data-feature-skill-detail') || '').trim();
+            const separatorIndex = compactDetail.indexOf(':');
+            openSkillDetailModal({
+                kind: separatorIndex >= 0 ? compactDetail.slice(0, separatorIndex) : card.getAttribute('data-feature-skill-detail-kind'),
+                key: separatorIndex >= 0 ? compactDetail.slice(separatorIndex + 1) : card.getAttribute('data-feature-skill-detail-key'),
+            });
+        };
+        card.addEventListener('click', open);
+        card.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+            if (isInteractiveSkillCardEventTarget(event.target, card)) {
+                return;
+            }
+            event.preventDefault();
+            open();
+        });
+    });
+}
+
+function isInteractiveSkillCardEventTarget(target, card) {
+    if (!target || target === card || typeof target.closest !== 'function') {
+        return false;
+    }
+    const interactive = target.closest('button,a,input,textarea,select,summary,[role="button"],[tabindex]');
+    if (!interactive || interactive === card) {
+        return false;
+    }
+    return typeof card.contains === 'function'
+        ? card.contains(interactive)
+        : true;
+}
+
+function bindSkillsMarketScrollLoader() {
+    if (skillsMarketScrollBound) {
+        return;
+    }
+    skillsMarketScrollBound = true;
+    els.projectViewContent?.addEventListener?.('scroll', handleSkillsMarketScroll, { passive: true });
+    globalThis.window?.addEventListener?.('scroll', handleSkillsMarketScroll, { passive: true });
+}
+
+function handleSkillsMarketScroll() {
+    if (
+        currentFeatureViewId !== FEATURE_VIEW_IDS.skills
+        || currentSkillsFeatureState.activeTab !== SKILLS_FEATURE_TABS.market
+    ) {
+        return;
+    }
+    if (!isSkillsMarketNearBottom()) {
+        return;
+    }
+    void loadNextSkillsMarketPage();
+}
+
+function isSkillsMarketNearBottom() {
+    const threshold = 320;
+    const content = els.projectViewContent;
+    if (
+        content
+        && Number.isFinite(Number(content.scrollHeight))
+        && Number(content.scrollHeight) > 0
+    ) {
+        const scrollTop = Number(content.scrollTop || 0);
+        const clientHeight = Number(content.clientHeight || 0);
+        const scrollHeight = Number(content.scrollHeight || 0);
+        if (scrollHeight > clientHeight) {
+            return scrollHeight - scrollTop - clientHeight <= threshold;
+        }
+    }
+    const doc = globalThis.document?.documentElement;
+    if (!doc) {
+        return false;
+    }
+    const scrollTop = Number(globalThis.scrollY || doc.scrollTop || 0);
+    const clientHeight = Number(globalThis.innerHeight || doc.clientHeight || 0);
+    const scrollHeight = Number(doc.scrollHeight || 0);
+    return scrollHeight > clientHeight && scrollHeight - scrollTop - clientHeight <= threshold;
+}
+
+function ensureSkillsModalRoot() {
+    if (!document?.body) {
+        return null;
+    }
+    if (!skillsModalRoot) {
+        try {
+            skillsModalRoot = document.getElementById('skills-feature-modal-root');
+        } catch {
+            skillsModalRoot = null;
+        }
+    }
+    if (!skillsModalRoot && typeof document.createElement === 'function') {
+        skillsModalRoot = document.createElement('div');
+        skillsModalRoot.id = 'skills-feature-modal-root';
+        skillsModalRoot.className = 'gateway-feature-modal-root skills-feature-modal-root';
+        if (typeof document.body.appendChild === 'function') {
+            document.body.appendChild(skillsModalRoot);
+        }
+    }
+    return skillsModalRoot;
+}
+
+function closeSkillsModal() {
+    skillsDetailRequestToken += 1;
+    if (skillsModalRoot) {
+        skillsModalRoot.innerHTML = '';
+    }
+}
+
+function bindSkillsModalCloseHandlers(modalRoot) {
+    modalRoot.querySelectorAll('[data-feature-skills-modal-close]').forEach(button => {
+        button.addEventListener('click', closeSkillsModal);
+    });
+    modalRoot.querySelector('[data-feature-skills-modal]')?.addEventListener('click', event => {
+        if (event.target === event.currentTarget) {
+            closeSkillsModal();
+        }
+    });
+}
+
+function renderSkillsModalCloseButton() {
+    return `
+        <button class="skills-modal-close-btn" type="button" aria-label="${escapeHtml(t('settings.action.close'))}" title="${escapeHtml(t('settings.action.close'))}" data-feature-skills-modal-close>
+            <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                <path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            </svg>
+        </button>
+    `;
+}
+
+function openSkillsClawHubSettingsModal() {
+    const modalRoot = ensureSkillsModalRoot();
+    if (!modalRoot) {
+        return;
+    }
+    modalRoot.innerHTML = `
+        <div class="modal gateway-feature-modal skills-clawhub-settings-modal" data-feature-skills-modal>
+            <div class="modal-content gateway-feature-modal-content skills-clawhub-settings-modal-content" role="dialog" aria-modal="true" aria-labelledby="skills-clawhub-settings-title">
+                <div class="modal-header gateway-feature-modal-header">
+                    <div class="gateway-feature-modal-heading">
+                        <h3 id="skills-clawhub-settings-title">${escapeHtml(t('feature.skills.clawhub_settings_title'))}</h3>
+                        <p>${escapeHtml(t('feature.skills.clawhub_settings_meta'))}</p>
+                    </div>
+                    ${renderSkillsModalCloseButton()}
+                </div>
+                <div class="gateway-feature-modal-body skills-clawhub-settings-modal-body">
+                    ${renderSkillsClawHubSettingsForm()}
+                </div>
+            </div>
+        </div>
+    `;
+    bindSkillsModalCloseHandlers(modalRoot);
     bindClawHubSettingsHandlers(FEATURE_CLAWHUB_FIELD_IDS);
     void loadClawHubSettingsPanel(FEATURE_CLAWHUB_FIELD_IDS);
+}
+
+function openSkillDetailModal({ kind, key }) {
+    const detail = resolveSkillDetail({ kind, key });
+    if (!detail) {
+        return;
+    }
+    const modalRoot = ensureSkillsModalRoot();
+    if (!modalRoot) {
+        return;
+    }
+    const detailRequestToken = ++skillsDetailRequestToken;
+    modalRoot.innerHTML = renderSkillDetailModal(detail);
+    bindSkillsModalCloseHandlers(modalRoot);
+    if (detail.runtimeRef) {
+        void loadSkillDetailMarkdown(detail.runtimeRef, detailRequestToken);
+    }
+    modalRoot.querySelector('[data-feature-skills-detail-install]')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        const target = event?.currentTarget || modalRoot.querySelector('[data-feature-skills-detail-install]');
+        const slug = String(target?.getAttribute('data-feature-skills-detail-install') || '').trim();
+        const version = String(target?.getAttribute('data-feature-skills-detail-version') || '').trim() || null;
+        closeSkillsModal();
+        void handleSkillsMarketInstall({ slug, version, force: false });
+    });
+    modalRoot.querySelector('[data-feature-skills-detail-uninstall]')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        const target = event?.currentTarget || modalRoot.querySelector('[data-feature-skills-detail-uninstall]');
+        const slug = String(target?.getAttribute('data-feature-skills-detail-uninstall') || '').trim();
+        const mode = String(target?.getAttribute('data-feature-skills-detail-uninstall-mode') || '').trim();
+        closeSkillsModal();
+        if (mode === 'runtime') {
+            void handleInstalledSkillUninstall({ skillRef: slug });
+            return;
+        }
+        void handleSkillsMarketUninstall({ slug });
+    });
+}
+
+function resolveSkillDetail({ kind, key }) {
+    const normalizedKind = String(kind || '').trim();
+    const normalizedKey = String(key || '').trim();
+    const skills = Array.isArray(currentSkillsStatus?.skills?.skills)
+        ? currentSkillsStatus.skills.skills
+        : [];
+    if (normalizedKind === 'market') {
+        const item = resolveSkillsMarketItems(skills).find(candidate => String(candidate?.slug || '').trim() === normalizedKey);
+        if (!item) {
+            return null;
+        }
+        const slug = String(item?.slug || '').trim();
+        const title = String(item?.title || slug).trim() || slug;
+        return {
+            kind: 'market',
+            title,
+            subtitle: slug,
+            description: String(item?.description || ''),
+            initial: title.slice(0, 1).toUpperCase() || 'S',
+            installed: item?.installed === true,
+            canInstall: item?.installed !== true,
+            canUninstall: item?.installed === true,
+            actionSlug: slug,
+            version: String(item?.version || '').trim(),
+            rows: [
+                { label: t('feature.skills.detail_slug'), value: slug, code: true },
+                { label: t('feature.skills.detail_version'), value: String(item?.version || '').trim() },
+                {
+                    label: t('feature.skills.detail_score'),
+                    value: Number.isFinite(Number(item?.score))
+                        ? Number(item.score).toFixed(2)
+                        : '',
+                },
+                { label: t('feature.skills.detail_source'), value: t('feature.skills.market_result') },
+            ],
+            runtimeRef: item?.installed === true ? resolveSkillsMarketRuntimeRef(item) : '',
+        };
+    }
+    if (normalizedKind !== 'installed') {
+        return null;
+    }
+    const skill = skills.find(candidate => resolveInstalledSkillKey(candidate) === normalizedKey);
+    if (!skill) {
+        return null;
+    }
+    const title = String(skill?.name || skill?.ref || normalizedKey).trim() || normalizedKey;
+    const uninstallSlug = resolveSkillUninstallSlug(skill);
+    return {
+        kind: 'installed',
+        title,
+        subtitle: resolveSkillScopeLabel(skill?.source || skill?.scope),
+        description: String(skill?.description || ''),
+        initial: title.slice(0, 1).toUpperCase() || 'S',
+        installed: true,
+        canInstall: false,
+        canUninstall: isInstalledSkillUninstallable(skill) && Boolean(uninstallSlug),
+        uninstallMode: 'runtime',
+        actionSlug: uninstallSlug,
+        version: '',
+        rows: [
+            { label: t('feature.skills.detail_ref'), value: String(skill?.ref || '').trim(), code: true },
+            { label: t('feature.skills.detail_source'), value: resolveSkillScopeLabel(skill?.source || skill?.scope) },
+            { label: t('feature.skills.detail_path'), value: String(skill?.path || '').trim(), code: true },
+            { label: t('feature.skills.detail_instruction_path'), value: String(skill?.instruction_path || '').trim(), code: true },
+        ],
+        runtimeRef: String(skill?.ref || skill?.name || '').trim(),
+    };
+}
+
+function renderSkillDetailModal(detail) {
+    return `
+        <div class="modal gateway-feature-modal skills-detail-modal" data-feature-skills-modal>
+            <div class="modal-content gateway-feature-modal-content skills-detail-modal-content" role="dialog" aria-modal="true" aria-labelledby="skills-detail-modal-title">
+                <div class="modal-header gateway-feature-modal-header skills-detail-modal-header">
+                    <div class="skills-detail-heading">
+                        <div class="feature-skills-card-icon is-gray" aria-hidden="true">${escapeHtml(detail.initial)}</div>
+                        <div>
+                            <h3 id="skills-detail-modal-title">${escapeHtml(detail.title)}</h3>
+                            <p>${escapeHtml(detail.subtitle)}</p>
+                        </div>
+                    </div>
+                    <div class="skills-detail-header-actions">
+                        ${renderSkillDetailAction(detail)}
+                        ${renderSkillsModalCloseButton()}
+                    </div>
+                </div>
+                <div class="gateway-feature-modal-body skills-detail-modal-body">
+                    ${detail.description
+                        ? `<p class="skills-detail-description">${escapeHtml(detail.description)}</p>`
+                        : ''}
+                    <div class="skills-detail-markdown-shell">
+                        <div class="skills-detail-markdown msg-text" data-feature-skills-detail-markdown>
+                            ${detail.runtimeRef
+                                ? escapeHtml(t('feature.skills.detail_loading_markdown'))
+                                : escapeHtml(t('feature.skills.detail_no_markdown'))}
+                        </div>
+                    </div>
+                    <dl class="skills-detail-list">
+                        ${detail.rows.map(row => renderSkillDetailRow(row)).join('')}
+                    </dl>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function loadSkillDetailMarkdown(skillRef, requestToken) {
+    const normalizedRef = String(skillRef || '').trim();
+    if (!normalizedRef) {
+        return;
+    }
+    try {
+        const detail = await fetchRuntimeSkillDetail(normalizedRef);
+        if (requestToken !== skillsDetailRequestToken) {
+            return;
+        }
+        const markdown = stripMarkdownFrontmatter(
+            String(detail?.manifest_content || detail?.instructions || ''),
+        ).trim();
+        const markdownEl = skillsModalRoot?.querySelector?.('[data-feature-skills-detail-markdown]');
+        if (!markdownEl) {
+            return;
+        }
+        markdownEl.innerHTML = markdown
+            ? sanitizeSkillMarkdownHtml(parseMarkdown(markdown))
+            : escapeHtml(t('feature.skills.detail_no_markdown'));
+    } catch (error) {
+        if (requestToken !== skillsDetailRequestToken) {
+            return;
+        }
+        const markdownEl = skillsModalRoot?.querySelector?.('[data-feature-skills-detail-markdown]');
+        if (markdownEl) {
+            markdownEl.textContent = String(error?.message || error || t('feature.skills.detail_markdown_failed'));
+        }
+        sysLog(`Failed to load skill detail ${normalizedRef}: ${error?.message || error}`, 'log-warn');
+    }
+}
+
+function sanitizeSkillMarkdownHtml(html) {
+    const rawHtml = String(html || '');
+    if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        const template = document.createElement('template');
+        if (template?.content && typeof template.content.querySelectorAll === 'function') {
+            template.innerHTML = rawHtml;
+            sanitizeSkillMarkdownFragment(template.content);
+            return template.innerHTML;
+        }
+    }
+    return sanitizeSkillMarkdownHtmlFallback(rawHtml);
+}
+
+function sanitizeSkillMarkdownFragment(fragment) {
+    const blockedTags = new Set([
+        'script',
+        'style',
+        'iframe',
+        'object',
+        'embed',
+        'link',
+        'meta',
+        'svg',
+        'math',
+        'form',
+        'input',
+        'button',
+        'select',
+        'textarea',
+    ]);
+    fragment.querySelectorAll('*').forEach(element => {
+        const tagName = String(element?.tagName || '').toLowerCase();
+        if (blockedTags.has(tagName)) {
+            element.remove();
+            return;
+        }
+        Array.from(element.attributes || []).forEach(attribute => {
+            const name = String(attribute?.name || '').toLowerCase();
+            if (
+                name === 'style'
+                || name === 'srcdoc'
+                || name.startsWith('on')
+                || (['href', 'src'].includes(name) && !isSafeSkillMarkdownUrl(attribute?.value))
+            ) {
+                element.removeAttribute(attribute.name);
+            }
+        });
+    });
+}
+
+function sanitizeSkillMarkdownHtmlFallback(html) {
+    return String(html || '')
+        .replace(/<(script|style|iframe|object|embed|svg|math|form|button|select|textarea)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+        .replace(/<(link|meta|input)\b[^>]*>/gi, '')
+        .replace(/\s+on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+        .replace(/\s+(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, '')
+        .replace(/\s+srcdoc\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+}
+
+function isSafeSkillMarkdownUrl(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+        return true;
+    }
+    if (normalized.startsWith('#') || normalized.startsWith('/') || normalized.startsWith('./') || normalized.startsWith('../')) {
+        return true;
+    }
+    try {
+        const parsed = new URL(normalized, globalThis.location?.href || 'http://localhost/');
+        return ['http:', 'https:', 'mailto:', 'tel:'].includes(parsed.protocol);
+    } catch {
+        return false;
+    }
+}
+
+function renderSkillDetailAction(detail) {
+    if (detail.canInstall) {
+        return `
+            <button class="primary-btn feature-skills-detail-action" type="button" data-feature-skills-detail-install="${escapeHtml(detail.actionSlug)}" data-feature-skills-detail-version="${escapeHtml(detail.version || '')}">
+                ${escapeHtml(t('feature.skills.install'))}
+            </button>
+        `;
+    }
+    if (detail.canUninstall) {
+        return `
+            <button class="secondary-btn danger-btn feature-skills-detail-action" type="button" data-feature-skills-detail-uninstall="${escapeHtml(detail.actionSlug)}" data-feature-skills-detail-uninstall-mode="${escapeHtml(detail.uninstallMode || 'market')}">
+                ${escapeHtml(t('feature.skills.uninstall'))}
+            </button>
+        `;
+    }
+    return `<span class="profile-card-chip">${escapeHtml(t('feature.skills.installed'))}</span>`;
+}
+
+function renderSkillDetailRow(row) {
+    const value = String(row?.value || '').trim();
+    if (!value) {
+        return '';
+    }
+    return `
+        <div class="skills-detail-row">
+            <dt>${escapeHtml(row.label)}</dt>
+            <dd>${row.code ? `<code>${escapeHtml(value)}</code>` : escapeHtml(value)}</dd>
+        </div>
+    `;
+}
+
+function focusSkillsSearchInput() {
+    const input = els.projectViewToolbarActions?.querySelector?.('[data-feature-skills-search]');
+    if (!input || typeof input.focus !== 'function') {
+        return;
+    }
+    input.focus({ preventScroll: true });
+    const valueLength = String(input.value || '').length;
+    if (typeof input.setSelectionRange === 'function') {
+        input.setSelectionRange(valueLength, valueLength);
+    }
+}
+
+function resolveSkillsMarketItems(installedSkills) {
+    const installedSkillsByIdentity = resolveInstalledClawHubSkillLookup(installedSkills);
+    return (Array.isArray(currentSkillsFeatureState.marketItems)
+        ? currentSkillsFeatureState.marketItems
+        : []
+    ).map(item => {
+        const installedSkill = resolveMarketItemInstalledSkill(item, installedSkillsByIdentity);
+        const normalizedInstalledSkill = normalizeSkillsMarketInstalledSkill(item?.installedSkill || item?.installed_skill);
+        const resolvedInstalledSkill = installedSkill || normalizedInstalledSkill;
+        return {
+            ...item,
+            installed: item?.installed === true || Boolean(resolvedInstalledSkill),
+            installedSkill: resolvedInstalledSkill || null,
+            runtimeRef: resolveInstalledSkillRuntimeRef(resolvedInstalledSkill),
+        };
+    });
+}
+
+function filterInstalledSkills(skills) {
+    const query = normalizeSearchQuery(currentSkillsFeatureState.searchQuery);
+    if (!query) {
+        return skills;
+    }
+    return skills.filter(skill => [
+        skill?.name,
+        skill?.ref,
+        skill?.description,
+        skill?.path,
+        skill?.instruction_path,
+        skill?.source,
+        skill?.scope,
+    ].join(' ').toLowerCase().includes(query));
+}
+
+function resolveInstalledClawHubSkillLookup(skills) {
+    const lookup = new Map();
+    (Array.isArray(skills) ? skills : [])
+        .filter(isInstalledClawHubSkill)
+        .forEach(skill => {
+            getSkillIdentityValues(skill).forEach(value => {
+                lookup.set(normalizeSkillIdentity(value), skill);
+            });
+        });
+    return lookup;
+}
+
+function resolveMarketItemInstalledSkill(item, installedSkillsByIdentity) {
+    if (!(installedSkillsByIdentity instanceof Map)) {
+        return null;
+    }
+    for (const value of getMarketItemIdentityValues(item)) {
+        const skill = installedSkillsByIdentity.get(normalizeSkillIdentity(value));
+        if (skill) {
+            return normalizeSkillsMarketInstalledSkill(skill);
+        }
+    }
+    return null;
+}
+
+function getMarketItemIdentityValues(item) {
+    const installedSkill = item?.installedSkill || item?.installed_skill || {};
+    return [
+        item?.slug,
+        item?.title,
+        item?.runtimeRef,
+        item?.runtime_ref,
+        installedSkill?.skill_id,
+        installedSkill?.runtime_name,
+        installedSkill?.ref,
+    ].map(value => String(value || '').trim()).filter(Boolean);
+}
+
+function getSkillIdentityValues(skill) {
+    return [
+        skill?.ref,
+        skill?.name,
+        skill?.skill_id,
+        skill?.id,
+        skill?.runtime_name,
+    ].map(value => String(value || '').trim()).filter(Boolean);
+}
+
+function normalizeSkillIdentity(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function isInstalledClawHubSkill(skill) {
+    const source = String(skill?.source || skill?.scope || '').trim().toLowerCase();
+    return source === 'user_relay_teams';
+}
+
+function normalizeSkillsMarketInstalledSkill(skill) {
+    if (!skill) {
+        return null;
+    }
+    const ref = String(skill?.ref || skill?.skill_id || skill?.name || '').trim();
+    const runtimeName = String(skill?.runtime_name || skill?.name || ref).trim();
+    const skillId = String(skill?.skill_id || skill?.id || skill?.ref || skill?.name || '').trim();
+    if (!ref && !runtimeName && !skillId) {
+        return null;
+    }
+    return {
+        skill_id: skillId,
+        runtime_name: runtimeName,
+        ref,
+        source: String(skill?.source || skill?.scope || '').trim(),
+        path: String(skill?.path || skill?.directory || '').trim(),
+        instruction_path: String(skill?.instruction_path || skill?.manifest_path || '').trim(),
+    };
+}
+
+function resolveInstalledSkillRuntimeRef(skill) {
+    return String(
+        skill?.ref
+        || skill?.runtimeRef
+        || skill?.runtime_ref
+        || skill?.skill_id
+        || skill?.runtime_name
+        || skill?.name
+        || '',
+    ).trim();
+}
+
+function resolveSkillsMarketRuntimeRef(item) {
+    return resolveInstalledSkillRuntimeRef(item?.installedSkill || item?.installed_skill || item);
+}
+
+function resolveSkillsFeatureTab(tab) {
+    const value = String(tab || '').trim();
+    return value === SKILLS_FEATURE_TABS.installed
+        ? SKILLS_FEATURE_TABS.installed
+        : SKILLS_FEATURE_TABS.market;
+}
+
+function normalizeSearchQuery(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function resolveSkillsMarketCacheKey(query) {
+    return normalizeSearchQuery(query);
+}
+
+function restoreSkillsMarketStateFromCache(stateValue, query) {
+    const key = resolveSkillsMarketCacheKey(query);
+    const cached = skillsMarketCache.get(key);
+    if (!cached) {
+        return {
+            ...stateValue,
+            marketQuery: String(query || '').trim(),
+            marketStatus: 'idle',
+            marketError: '',
+            marketItems: [],
+            marketLimit: SKILLS_MARKET_PAGE_SIZE,
+            marketHasMore: true,
+        };
+    }
+    return {
+        ...stateValue,
+        marketQuery: String(cached.query || query || '').trim(),
+        marketStatus: String(cached.status || 'loaded'),
+        marketError: String(cached.error || ''),
+        marketItems: Array.isArray(cached.items) ? cached.items : [],
+        marketLimit: clampSkillsMarketLimit(cached.limit),
+        marketHasMore: cached.hasMore !== false,
+    };
+}
+
+function shouldFetchSkillsMarket(query) {
+    const cached = skillsMarketCache.get(resolveSkillsMarketCacheKey(query));
+    return !cached || cached.status === 'error';
+}
+
+function writeSkillsMarketCache({ query, status, error = '', items = [], limit, hasMore = true }) {
+    skillsMarketCache.set(resolveSkillsMarketCacheKey(query), {
+        query: String(query || '').trim(),
+        status: String(status || 'loaded'),
+        error: String(error || ''),
+        items: dedupeSkillsMarketItems(items),
+        limit: clampSkillsMarketLimit(limit),
+        hasMore: hasMore === true,
+    });
+}
+
+function clampSkillsMarketLimit(limit) {
+    const numericLimit = Number(limit);
+    if (!Number.isFinite(numericLimit) || numericLimit <= 0) {
+        return SKILLS_MARKET_PAGE_SIZE;
+    }
+    return Math.min(SKILLS_MARKET_MAX_LIMIT, Math.max(SKILLS_MARKET_PAGE_SIZE, Math.floor(numericLimit)));
+}
+
+function dedupeSkillsMarketItems(items) {
+    const seen = new Set();
+    const result = [];
+    for (const item of Array.isArray(items) ? items : []) {
+        const slug = String(item?.slug || '').trim();
+        if (!slug || seen.has(slug)) {
+            continue;
+        }
+        seen.add(slug);
+        result.push(item);
+    }
+    return result;
+}
+
+function clearSkillsMarketSearchTimer() {
+    if (!skillsMarketSearchTimer) {
+        return;
+    }
+    globalThis.clearTimeout(skillsMarketSearchTimer);
+    skillsMarketSearchTimer = null;
+}
+
+function cancelSkillsFeatureAsyncWork() {
+    clearSkillsMarketSearchTimer();
+    skillsMarketRequestToken += 1;
+    skillsDetailRequestToken += 1;
+}
+
+function isSkillsMarketViewActive() {
+    return (
+        currentProjectViewMode === 'feature'
+        && currentFeatureViewId === FEATURE_VIEW_IDS.skills
+        && resolveSkillsFeatureTab(currentSkillsFeatureState.activeTab) === SKILLS_FEATURE_TABS.market
+    );
+}
+
+function isCurrentSkillsMarketSearchResponse(requestToken, query) {
+    return (
+        requestToken === skillsMarketRequestToken
+        && currentFeatureViewId === FEATURE_VIEW_IDS.skills
+        && normalizeSearchQuery(currentSkillsFeatureState.searchQuery) === normalizeSearchQuery(query)
+    );
+}
+
+function scheduleSkillsMarketSearch(rawQuery) {
+    clearSkillsMarketSearchTimer();
+    const query = String(rawQuery || '').trim();
+    skillsMarketSearchTimer = globalThis.setTimeout(() => {
+        skillsMarketSearchTimer = null;
+        if (!isSkillsMarketViewActive()) {
+            return;
+        }
+        void runSkillsMarketSearchNow(query, { force: true });
+    }, SKILLS_MARKET_SEARCH_DELAY_MS);
+}
+
+async function loadNextSkillsMarketPage() {
+    if (
+        currentSkillsFeatureState.marketStatus === 'loading'
+        || currentSkillsFeatureState.marketStatus === 'loading_more'
+        || !currentSkillsFeatureState.marketHasMore
+    ) {
+        return;
+    }
+    const currentLimit = clampSkillsMarketLimit(currentSkillsFeatureState.marketLimit);
+    const nextLimit = clampSkillsMarketLimit(currentLimit + SKILLS_MARKET_PAGE_SIZE);
+    if (nextLimit <= currentLimit) {
+        return;
+    }
+    await runSkillsMarketSearchNow(currentSkillsFeatureState.searchQuery, {
+        force: true,
+        limit: nextLimit,
+        loadingMore: true,
+    });
+}
+
+async function runSkillsMarketSearchNow(rawQuery, options = {}) {
+    clearSkillsMarketSearchTimer();
+    if (!isSkillsMarketViewActive()) {
+        return;
+    }
+    const query = String(rawQuery || '').trim();
+    const requestedLimit = clampSkillsMarketLimit(options.limit || SKILLS_MARKET_PAGE_SIZE);
+    if (options.force !== true) {
+        const cached = skillsMarketCache.get(resolveSkillsMarketCacheKey(query));
+        if (cached && cached.status !== 'error' && clampSkillsMarketLimit(cached.limit) >= requestedLimit) {
+            currentSkillsFeatureState = restoreSkillsMarketStateFromCache({
+                ...currentSkillsFeatureState,
+                searchQuery: query,
+            }, query);
+            renderSkillsFeatureView();
+            focusSkillsSearchInput();
+            return;
+        }
+    }
+    const requestToken = ++skillsMarketRequestToken;
+    const loadingMore = options.loadingMore === true && currentSkillsFeatureState.marketItems.length > 0;
+    currentSkillsFeatureState = {
+        ...currentSkillsFeatureState,
+        searchQuery: query,
+        marketQuery: query,
+        marketStatus: loadingMore ? 'loading_more' : 'loading',
+        marketError: '',
+        marketLimit: requestedLimit,
+    };
+    renderSkillsFeatureView();
+    focusSkillsSearchInput();
+    try {
+        const response = await searchClawHubSkillMarket(query, {
+            limit: requestedLimit,
+        });
+        if (!isCurrentSkillsMarketSearchResponse(requestToken, query)) {
+            return;
+        }
+        const items = dedupeSkillsMarketItems(Array.isArray(response?.items) ? response.items : []);
+        const hasMore = response?.ok !== false
+            && items.length >= requestedLimit
+            && requestedLimit < SKILLS_MARKET_MAX_LIMIT;
+        writeSkillsMarketCache({
+            query,
+            status: response?.ok === false ? 'error' : 'loaded',
+            error: response?.ok === false
+                ? String(response?.error_message || t('feature.skills.market_error_copy'))
+                : '',
+            items,
+            limit: requestedLimit,
+            hasMore,
+        });
+        currentSkillsFeatureState = {
+            ...currentSkillsFeatureState,
+            marketQuery: query,
+            marketStatus: response?.ok === false ? 'error' : 'loaded',
+            marketError: response?.ok === false
+                ? String(response?.error_message || t('feature.skills.market_error_copy'))
+                : '',
+            marketItems: items,
+            marketLimit: requestedLimit,
+            marketHasMore: hasMore,
+        };
+        renderSkillsFeatureView();
+        focusSkillsSearchInput();
+    } catch (error) {
+        if (!isCurrentSkillsMarketSearchResponse(requestToken, query)) {
+            return;
+        }
+        writeSkillsMarketCache({
+            query,
+            status: 'error',
+            error: String(error?.message || error || t('feature.skills.market_error_copy')),
+            items: currentSkillsFeatureState.marketItems,
+            limit: requestedLimit,
+            hasMore: currentSkillsFeatureState.marketHasMore,
+        });
+        currentSkillsFeatureState = {
+            ...currentSkillsFeatureState,
+            marketQuery: query,
+            marketStatus: 'error',
+            marketError: String(error?.message || error || t('feature.skills.market_error_copy')),
+            marketLimit: requestedLimit,
+        };
+        renderSkillsFeatureView();
+        focusSkillsSearchInput();
+        sysLog(`Failed to search ClawHub skills: ${error?.message || error}`, 'log-warn');
+    }
+}
+
+async function handleSkillsMarketInstall({ slug, version = null, force = false }) {
+    const normalizedSlug = String(slug || '').trim();
+    if (!normalizedSlug || currentSkillsFeatureState.marketInstallJobs?.[normalizedSlug]) {
+        return;
+    }
+    currentSkillsFeatureState = {
+        ...currentSkillsFeatureState,
+        marketInstallJobs: {
+            ...currentSkillsFeatureState.marketInstallJobs,
+            [normalizedSlug]: 'installing',
+        },
+    };
+    renderSkillsFeatureView();
+    try {
+        const response = await installClawHubMarketSkill({
+            slug: normalizedSlug,
+            version: String(version || '').trim() || null,
+            force: force === true,
+        });
+        if (response?.ok === false) {
+            showToast({
+                title: t('feature.skills.install_failed'),
+                message: String(response?.error_message || t('feature.skills.install_failed_copy')),
+                tone: 'danger',
+            });
+            return;
+        }
+        markSkillsMarketItemInstalled(response, normalizedSlug);
+        await refreshSkillsFeatureStatus();
+        showToast({
+            title: t('feature.skills.install_success'),
+            message: formatMessage('feature.skills.install_success_copy', {
+                skill: resolveInstalledSkillName(response, normalizedSlug),
+            }),
+            tone: 'success',
+        });
+    } catch (error) {
+        showToast({
+            title: t('feature.skills.install_failed'),
+            message: String(error?.message || error || t('feature.skills.install_failed_copy')),
+            tone: 'danger',
+        });
+        sysLog(`Failed to install ClawHub skill ${normalizedSlug}: ${error?.message || error}`, 'log-warn');
+    } finally {
+        const nextJobs = { ...currentSkillsFeatureState.marketInstallJobs };
+        delete nextJobs[normalizedSlug];
+        currentSkillsFeatureState = {
+            ...currentSkillsFeatureState,
+            marketInstallJobs: nextJobs,
+        };
+        if (currentFeatureViewId === FEATURE_VIEW_IDS.skills) {
+            renderSkillsFeatureView();
+        }
+    }
+}
+
+async function handleSkillsMarketUninstall({ slug }) {
+    const normalizedSlug = String(slug || '').trim();
+    if (!normalizedSlug || currentSkillsFeatureState.marketInstallJobs?.[normalizedSlug]) {
+        return;
+    }
+    const confirmed = await showConfirmDialog({
+        title: t('feature.skills.uninstall_dialog_title'),
+        message: formatMessage('feature.skills.uninstall_dialog_message', { skill: normalizedSlug }),
+        tone: 'danger',
+        confirmLabel: t('feature.skills.uninstall'),
+        cancelLabel: t('settings.action.cancel'),
+    });
+    if (!confirmed) {
+        return;
+    }
+    currentSkillsFeatureState = {
+        ...currentSkillsFeatureState,
+        marketInstallJobs: {
+            ...currentSkillsFeatureState.marketInstallJobs,
+            [normalizedSlug]: 'uninstalling',
+        },
+    };
+    renderSkillsFeatureView();
+    try {
+        const response = await uninstallClawHubMarketSkill(normalizedSlug);
+        if (response?.ok === false) {
+            showToast({
+                title: t('feature.skills.uninstall_failed'),
+                message: String(response?.error_message || t('feature.skills.uninstall_failed_copy')),
+                tone: 'danger',
+            });
+            return;
+        }
+        markSkillsMarketItemUninstalled(normalizedSlug, response);
+        await refreshSkillsFeatureStatus();
+        showToast({
+            title: t('feature.skills.uninstall_success'),
+            message: formatMessage('feature.skills.uninstall_success_copy', { skill: normalizedSlug }),
+            tone: 'success',
+        });
+    } catch (error) {
+        showToast({
+            title: t('feature.skills.uninstall_failed'),
+            message: String(error?.message || error || t('feature.skills.uninstall_failed_copy')),
+            tone: 'danger',
+        });
+        sysLog(`Failed to uninstall ClawHub skill ${normalizedSlug}: ${error?.message || error}`, 'log-warn');
+    } finally {
+        const nextJobs = { ...currentSkillsFeatureState.marketInstallJobs };
+        delete nextJobs[normalizedSlug];
+        currentSkillsFeatureState = {
+            ...currentSkillsFeatureState,
+            marketInstallJobs: nextJobs,
+        };
+        if (currentFeatureViewId === FEATURE_VIEW_IDS.skills) {
+            renderSkillsFeatureView();
+        }
+    }
+}
+
+async function handleInstalledSkillUninstall({ skillRef }) {
+    const normalizedRef = String(skillRef || '').trim();
+    if (!normalizedRef || currentSkillsFeatureState.marketInstallJobs?.[normalizedRef]) {
+        return;
+    }
+    const confirmed = await showConfirmDialog({
+        title: t('feature.skills.uninstall_dialog_title'),
+        message: formatMessage('feature.skills.uninstall_dialog_message', { skill: normalizedRef }),
+        tone: 'danger',
+        confirmLabel: t('feature.skills.uninstall'),
+        cancelLabel: t('settings.action.cancel'),
+    });
+    if (!confirmed) {
+        return;
+    }
+    currentSkillsFeatureState = {
+        ...currentSkillsFeatureState,
+        marketInstallJobs: {
+            ...currentSkillsFeatureState.marketInstallJobs,
+            [normalizedRef]: 'uninstalling',
+        },
+    };
+    renderSkillsFeatureView();
+    try {
+        const response = await uninstallRuntimeSkill(normalizedRef);
+        if (response?.ok === false) {
+            showToast({
+                title: t('feature.skills.uninstall_failed'),
+                message: String(response?.error_message || t('feature.skills.uninstall_failed_copy')),
+                tone: 'danger',
+            });
+            return;
+        }
+        markSkillsMarketItemUninstalled(normalizedRef, response);
+        await refreshSkillsFeatureStatus();
+        showToast({
+            title: t('feature.skills.uninstall_success'),
+            message: formatMessage('feature.skills.uninstall_success_copy', { skill: normalizedRef }),
+            tone: 'success',
+        });
+    } catch (error) {
+        showToast({
+            title: t('feature.skills.uninstall_failed'),
+            message: String(error?.message || error || t('feature.skills.uninstall_failed_copy')),
+            tone: 'danger',
+        });
+        sysLog(`Failed to uninstall skill ${normalizedRef}: ${error?.message || error}`, 'log-warn');
+    } finally {
+        const nextJobs = { ...currentSkillsFeatureState.marketInstallJobs };
+        delete nextJobs[normalizedRef];
+        currentSkillsFeatureState = {
+            ...currentSkillsFeatureState,
+            marketInstallJobs: nextJobs,
+        };
+        if (currentFeatureViewId === FEATURE_VIEW_IDS.skills) {
+            renderSkillsFeatureView();
+        }
+    }
+}
+
+async function openSkillsMarketInstallDialog() {
+    const result = await showFormDialog({
+        title: t('feature.skills.install_dialog_title'),
+        message: t('feature.skills.install_dialog_message'),
+        confirmLabel: t('feature.skills.install'),
+        fields: [
+            {
+                id: 'slug',
+                label: t('feature.skills.install_slug'),
+                placeholder: t('feature.skills.install_slug_placeholder'),
+            },
+            {
+                id: 'version',
+                label: t('feature.skills.install_version'),
+                placeholder: t('feature.skills.install_version_placeholder'),
+            },
+            {
+                id: 'force',
+                type: 'checkbox',
+                label: t('feature.skills.install_force'),
+                description: t('feature.skills.install_force_copy'),
+                value: false,
+            },
+        ],
+        submitHandler: async values => {
+            const slug = String(values?.slug || '').trim();
+            if (!slug) {
+                throw new Error(t('feature.skills.install_slug_required'));
+            }
+            const response = await installClawHubMarketSkill({
+                slug,
+                version: String(values?.version || '').trim() || null,
+                force: values?.force === true,
+            });
+            if (response?.ok === false) {
+                throw new Error(String(response?.error_message || t('feature.skills.install_failed_copy')));
+            }
+            markSkillsMarketItemInstalled(response, slug);
+            await refreshSkillsFeatureStatus();
+            return response;
+        },
+    });
+    if (!result) {
+        return;
+    }
+    showToast({
+        title: t('feature.skills.install_success'),
+        message: formatMessage('feature.skills.install_success_copy', {
+            skill: resolveInstalledSkillName(result, String(result?.slug || '')),
+        }),
+        tone: 'success',
+    });
+}
+
+function markSkillsMarketItemInstalled(response, fallbackSlug) {
+    const installedSkill = normalizeSkillsMarketInstalledSkill(response?.installed_skill);
+    const installedRefs = resolveInstallResponseIdentitySet(response, fallbackSlug);
+    const markItemInstalled = item => {
+        if (!skillsMarketItemMatchesIdentitySet(item, installedRefs)) {
+            return item;
+        }
+        return {
+            ...item,
+            installed: true,
+            installedSkill,
+            runtimeRef: resolveInstalledSkillRuntimeRef(installedSkill),
+        };
+    };
+    currentSkillsFeatureState = {
+        ...currentSkillsFeatureState,
+        marketItems: currentSkillsFeatureState.marketItems.map(markItemInstalled),
+    };
+    updateSkillsMarketCacheItems(markItemInstalled);
+}
+
+function markSkillsMarketItemUninstalled(slug, response = null) {
+    const identitySet = resolveUninstallResponseIdentitySet(response, slug);
+    if (identitySet.size <= 0) {
+        return;
+    }
+    const markItemUninstalled = item => {
+        if (!skillsMarketItemMatchesIdentitySet(item, identitySet)) {
+            return item;
+        }
+        return {
+            ...item,
+            installed: false,
+            installedSkill: null,
+            runtimeRef: '',
+        };
+    };
+    currentSkillsFeatureState = {
+        ...currentSkillsFeatureState,
+        marketItems: currentSkillsFeatureState.marketItems.map(markItemUninstalled),
+    };
+    updateSkillsMarketCacheItems(markItemUninstalled);
+}
+
+function resolveInstallResponseIdentitySet(response, fallbackSlug) {
+    return new Set([
+        fallbackSlug,
+        response?.slug,
+        response?.installed_skill?.skill_id,
+        response?.installed_skill?.runtime_name,
+        response?.installed_skill?.ref,
+    ].map(normalizeSkillIdentity).filter(Boolean));
+}
+
+function resolveUninstallResponseIdentitySet(response, fallbackRef) {
+    return new Set([
+        fallbackRef,
+        response?.slug,
+        response?.ref,
+        response?.skill_ref,
+        response?.installed_skill?.skill_id,
+        response?.installed_skill?.runtime_name,
+        response?.installed_skill?.ref,
+    ].map(normalizeSkillIdentity).filter(Boolean));
+}
+
+function skillsMarketItemMatchesIdentitySet(item, identitySet) {
+    if (!(identitySet instanceof Set) || identitySet.size <= 0) {
+        return false;
+    }
+    return getMarketItemIdentityValues(item)
+        .map(normalizeSkillIdentity)
+        .some(value => identitySet.has(value));
+}
+
+function updateSkillsMarketCacheItems(mapper) {
+    skillsMarketCache.forEach((cached, key) => {
+        const items = Array.isArray(cached?.items) ? cached.items : [];
+        skillsMarketCache.set(key, {
+            ...cached,
+            items: items.map(mapper),
+        });
+    });
+}
+
+function resolveInstalledSkillName(response, fallbackSlug) {
+    return String(
+        response?.installed_skill?.runtime_name
+        || response?.installed_skill?.ref
+        || response?.installed_skill?.skill_id
+        || response?.slug
+        || fallbackSlug
+        || '',
+    ).trim();
+}
+
+function resolveInstalledSkillKey(skill) {
+    return String(
+        skill?.skill_id
+        || skill?.id
+        || skill?.ref
+        || skill?.name
+        || skill?.path
+        || skill?.instruction_path
+        || '',
+    ).trim();
+}
+
+function resolveSkillUninstallSlug(skill) {
+    return String(
+        skill?.skill_id
+        || skill?.ref
+        || skill?.name
+        || '',
+    ).trim();
+}
+
+function isInstalledSkillUninstallable(skill) {
+    const source = String(skill?.source || skill?.scope || '').trim().toLowerCase();
+    return [
+        'user_relay_teams',
+        'user_agents',
+        'user_claude',
+        'user_codex',
+        'user_opencode',
+        'user',
+    ].includes(source);
+}
+
+async function refreshSkillsFeatureStatus() {
+    try {
+        const status = await fetchConfigStatus();
+        if (currentFeatureViewId !== FEATURE_VIEW_IDS.skills) {
+            return;
+        }
+        currentSkillsStatus = status;
+        renderSkillsFeatureView();
+    } catch (error) {
+        sysLog(`Failed to refresh skills status: ${error?.message || error}`, 'log-warn');
+    }
 }
 
 function renderAutomationHomeView() {
@@ -5881,8 +7530,6 @@ function renderGatewayFeatureModal() {
         content = renderGatewayDiscordModal();
     } else if (currentGatewayFeatureState.wechatModalOpen) {
         content = renderGatewayWeChatConnectModal();
-    } else if (currentGatewayFeatureState.runtimeToolsModalOpen) {
-        content = renderRuntimeToolsModal();
     } else {
         content = renderConnectorConfigModal();
     }
@@ -5891,7 +7538,6 @@ function renderGatewayFeatureModal() {
         return;
     }
     bindConnectorConfigModalHandlers(root);
-    bindRuntimeToolsModalHandlers(root);
     root.querySelectorAll('[data-feature-gateway-modal-close]').forEach(button => {
         button.addEventListener('click', () => {
             if (currentGatewayFeatureState.discordDraft) {
@@ -5967,17 +7613,6 @@ function renderConnectorConfigModal() {
         item: modalItem,
         accountManagementMarkup: renderConnectorAccountManagement(modalItem),
         showConfigureAction: provider !== W3_PLATFORM,
-    });
-}
-
-function renderRuntimeToolsModal() {
-    return renderRuntimeToolsModalMarkup({
-        runtimeToolsResponse: currentGatewayFeatureState.runtimeToolsResponse,
-        runtimeToolJobs: currentGatewayFeatureState.runtimeToolJobs,
-        systemPathBusy: currentGatewayFeatureState.runtimeToolsSystemPathBusy,
-        systemPathAdded: currentGatewayFeatureState.runtimeToolsSystemPathAdded,
-        systemPathMessage: currentGatewayFeatureState.runtimeToolsSystemPathMessage,
-        systemPathTone: currentGatewayFeatureState.runtimeToolsSystemPathTone,
     });
 }
 
@@ -6344,8 +7979,14 @@ function renderGatewayFeatureView({ restoreSearchFocus = false, searchSelectionS
     els.projectViewContent.innerHTML = `
         ${renderConnectorsCardPageMarkup({
             connectorsResponse: currentGatewayFeatureState.connectorsResponse,
+            connectorsError: currentGatewayFeatureState.connectorsError,
             runtimeToolsResponse: currentGatewayFeatureState.runtimeToolsResponse,
+            runtimeToolsError: currentGatewayFeatureState.runtimeToolsError,
             runtimeToolJobs: currentGatewayFeatureState.runtimeToolJobs,
+            systemPathBusy: currentGatewayFeatureState.runtimeToolsSystemPathBusy,
+            systemPathAdded: currentGatewayFeatureState.runtimeToolsSystemPathAdded,
+            systemPathMessage: currentGatewayFeatureState.runtimeToolsSystemPathMessage,
+            systemPathTone: currentGatewayFeatureState.runtimeToolsSystemPathTone,
             searchQuery: currentGatewayFeatureState.connectorSearch,
             statusFilter: currentGatewayFeatureState.connectorStatusFilter,
         })}
@@ -6377,6 +8018,16 @@ function renderGatewayFeatureView({ restoreSearchFocus = false, searchSelectionS
             renderGatewayFeatureView();
         });
     });
+    els.projectViewContent.querySelectorAll('[data-connectors-retry]').forEach(button => {
+        button.addEventListener('click', () => {
+            retryGatewayConnectors();
+        });
+    });
+    els.projectViewContent.querySelectorAll('[data-runtime-tools-retry]').forEach(button => {
+        button.addEventListener('click', () => {
+            retryGatewayRuntimeTools();
+        });
+    });
     els.projectViewContent.querySelectorAll('[data-connector-open]').forEach(button => {
         button.addEventListener('click', () => {
             void handleOpenConnectorCard(button.getAttribute('data-connector-open'));
@@ -6387,20 +8038,19 @@ function renderGatewayFeatureView({ restoreSearchFocus = false, searchSelectionS
             void handleManageConnectorCard(button.getAttribute('data-connector-manage'));
         });
     });
-    els.projectViewContent.querySelectorAll('[data-runtime-tools-card]').forEach(card => {
-        card.addEventListener('click', () => {
-            handleOpenRuntimeToolsModal();
-        });
-    });
-    els.projectViewContent.querySelectorAll('[data-runtime-tools-open]').forEach(button => {
-        button.addEventListener('click', event => {
-            event.stopPropagation();
-            handleOpenRuntimeToolsModal();
-        });
-    });
     els.projectViewContent.querySelectorAll('[data-runtime-tool-download]').forEach(button => {
         button.addEventListener('click', () => {
             void handleDownloadRuntimeTool(button.getAttribute('data-runtime-tool-download'));
+        });
+    });
+    els.projectViewContent.querySelectorAll('[data-runtime-tool-copy-path]').forEach(button => {
+        button.addEventListener('click', () => {
+            void handleCopyRuntimeToolPath(button.getAttribute('data-runtime-tool-copy-path'));
+        });
+    });
+    els.projectViewContent.querySelectorAll('[data-runtime-tools-system-path-add]').forEach(button => {
+        button.addEventListener('click', () => {
+            void handleAddRuntimeToolsSystemPath();
         });
     });
     bindGatewayRecordHandlers();
@@ -6408,6 +8058,32 @@ function renderGatewayFeatureView({ restoreSearchFocus = false, searchSelectionS
     if (restoreSearchFocus) {
         restoreConnectorSearchFocus(searchSelectionStart, searchSelectionEnd);
     }
+}
+
+function retryGatewayConnectors() {
+    if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, currentFeatureRequestToken)) {
+        return;
+    }
+    currentGatewayFeatureState = {
+        ...currentGatewayFeatureState,
+        connectorsResponse: null,
+        connectorsError: '',
+    };
+    renderGatewayFeatureView();
+    void loadGatewayConnectors(currentFeatureRequestToken);
+}
+
+function retryGatewayRuntimeTools() {
+    if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.gateway, currentFeatureRequestToken)) {
+        return;
+    }
+    currentGatewayFeatureState = {
+        ...currentGatewayFeatureState,
+        runtimeToolsResponse: null,
+        runtimeToolsError: '',
+    };
+    renderGatewayFeatureView();
+    void loadGatewayRuntimeTools(currentFeatureRequestToken);
 }
 
 function restoreConnectorSearchFocus(selectionStart, selectionEnd) {
@@ -6445,7 +8121,6 @@ async function handleOpenConnectorCard(provider) {
         return;
     }
     if (normalizedProvider === RELAY_KNOWLEDGE_PLATFORM) {
-        handleOpenRuntimeToolsModal();
         return;
     }
     const item = getConnectorItemByProvider(normalizedProvider);
@@ -6456,7 +8131,6 @@ async function handleOpenConnectorCard(provider) {
     currentGatewayFeatureState = {
         ...currentGatewayFeatureState,
         connectorModalProvider: normalizedProvider,
-        runtimeToolsModalOpen: false,
     };
     renderGatewayFeatureModal();
 }
@@ -6471,50 +8145,13 @@ async function handleManageConnectorCard(provider) {
         await loadW3ConnectorState();
     }
     if (normalizedProvider === RELAY_KNOWLEDGE_PLATFORM) {
-        handleOpenRuntimeToolsModal();
         return;
     }
     currentGatewayFeatureState = {
         ...currentGatewayFeatureState,
         connectorModalProvider: normalizedProvider,
-        runtimeToolsModalOpen: false,
     };
     renderGatewayFeatureModal();
-}
-
-function handleOpenRuntimeToolsModal() {
-    currentGatewayFeatureState = {
-        ...currentGatewayFeatureState,
-        runtimeToolsModalOpen: true,
-        connectorModalProvider: '',
-    };
-    renderGatewayFeatureModal();
-}
-
-function handleCloseRuntimeToolsModal() {
-    currentGatewayFeatureState = {
-        ...currentGatewayFeatureState,
-        runtimeToolsModalOpen: false,
-    };
-    renderGatewayFeatureModal();
-}
-
-function bindRuntimeToolsModalHandlers(root) {
-    root.querySelectorAll('[data-runtime-tools-modal-close]').forEach(button => {
-        button.addEventListener('click', () => {
-            handleCloseRuntimeToolsModal();
-        });
-    });
-    root.querySelectorAll('[data-runtime-tool-download]').forEach(button => {
-        button.addEventListener('click', () => {
-            void handleDownloadRuntimeTool(button.getAttribute('data-runtime-tool-download'));
-        });
-    });
-    root.querySelectorAll('[data-runtime-tools-system-path-add]').forEach(button => {
-        button.addEventListener('click', () => {
-            void handleAddRuntimeToolsSystemPath();
-        });
-    });
 }
 
 async function handleAddRuntimeToolsSystemPath() {
@@ -6525,7 +8162,15 @@ async function handleAddRuntimeToolsSystemPath() {
         currentGatewayFeatureState.runtimeToolsSystemPathAdded
         || currentGatewayFeatureState.runtimeToolsResponse?.system_path?.added
     ) {
-        return;
+        const confirmed = await showConfirmDialog({
+            title: t('feature.connectors.runtime_tools.system_path_reset_title'),
+            message: t('feature.connectors.runtime_tools.system_path_reset_message'),
+            confirmLabel: t('feature.connectors.runtime_tools.system_path_reset_confirm'),
+            cancelLabel: t('settings.action.cancel'),
+        });
+        if (!confirmed) {
+            return;
+        }
     }
     currentGatewayFeatureState = {
         ...currentGatewayFeatureState,
@@ -6533,6 +8178,7 @@ async function handleAddRuntimeToolsSystemPath() {
         runtimeToolsSystemPathMessage: '',
         runtimeToolsSystemPathTone: '',
     };
+    renderGatewayFeatureView();
     renderGatewayFeatureModal();
     try {
         const result = await addRuntimeToolsSystemPath();
@@ -6548,6 +8194,7 @@ async function handleAddRuntimeToolsSystemPath() {
             runtimeToolsSystemPathTone: 'success',
         };
         if (currentFeatureViewId === FEATURE_VIEW_IDS.gateway) {
+            renderGatewayFeatureView();
             renderGatewayFeatureModal();
             showToast({
                 title: t('feature.connectors.runtime_tools.system_path_add'),
@@ -6563,6 +8210,7 @@ async function handleAddRuntimeToolsSystemPath() {
             runtimeToolsSystemPathTone: 'danger',
         };
         if (currentFeatureViewId === FEATURE_VIEW_IDS.gateway) {
+            renderGatewayFeatureView();
             renderGatewayFeatureModal();
             showToast({
                 title: t('feature.connectors.runtime_tools.system_path_failed'),
@@ -6626,6 +8274,7 @@ async function refreshRuntimeToolsStatus() {
         currentGatewayFeatureState = {
             ...currentGatewayFeatureState,
             runtimeToolsResponse,
+            runtimeToolsError: '',
             runtimeToolsSystemPathAdded: Boolean(runtimeToolsResponse?.system_path?.added),
         };
         resumeRuntimeToolDownloadPolling(runtimeToolsResponse);
@@ -6824,8 +8473,62 @@ async function handleConnectConnectorFromModal(provider) {
         return;
     }
     if (normalizedProvider === RELAY_KNOWLEDGE_PLATFORM) {
-        handleOpenRuntimeToolsModal();
+        return;
     }
+}
+
+async function handleCopyRuntimeToolPath(toolId) {
+    const path = getRuntimeToolPath(toolId);
+    if (!path) {
+        showToast({
+            title: t('feature.connectors.runtime_tools.copy_path_failed'),
+            message: t('feature.connectors.runtime_tools.copy_path_empty'),
+            tone: 'danger',
+        });
+        return;
+    }
+    const clipboard = globalThis.navigator?.clipboard;
+    if (!clipboard || typeof clipboard.writeText !== 'function') {
+        showToast({
+            title: t('feature.connectors.runtime_tools.copy_path_failed'),
+            message: t('message.copy_unavailable_message'),
+            tone: 'danger',
+        });
+        return;
+    }
+    try {
+        await clipboard.writeText(path);
+        showToast({
+            title: t('feature.connectors.runtime_tools.copy_path_success'),
+            message: t('feature.connectors.runtime_tools.copy_path_success_message'),
+            tone: 'success',
+        });
+    } catch (error) {
+        showToast({
+            title: t('feature.connectors.runtime_tools.copy_path_failed'),
+            message: String(error?.message || error || ''),
+            tone: 'danger',
+        });
+    }
+}
+
+function getRuntimeToolPath(toolId) {
+    const normalizedToolId = String(toolId || '').trim();
+    if (!normalizedToolId) {
+        return '';
+    }
+    const items = Array.isArray(currentGatewayFeatureState.runtimeToolsResponse?.items)
+        ? currentGatewayFeatureState.runtimeToolsResponse.items
+        : [];
+    const item = items.find(candidate => String(candidate?.tool_id || '').trim() === normalizedToolId);
+    if (!item) {
+        return '';
+    }
+    const jobId = String(item?.download_job_id || '').trim();
+    const job = jobId && currentGatewayFeatureState.runtimeToolJobs
+        ? currentGatewayFeatureState.runtimeToolJobs[jobId]
+        : null;
+    return String(job?.path || item?.path || '').trim();
 }
 
 async function loadW3ConnectorState() {
@@ -8302,7 +10005,7 @@ function resetFeatureSurface({ clearContent = true } = {}) {
     els.projectViewCloseBtn = null;
 }
 
-function renderToolbar(projectOrWorkspace, { title = '', summary = '', mode = 'workspace', actions = '' } = {}) {
+function renderToolbar(projectOrWorkspace, { title = '', summary = '', mode = 'workspace', actions = '', showClose = true } = {}) {
     const toolbar = getProjectViewToolbarElement();
     toolbar?.classList?.remove('is-hidden');
     if (els.projectViewTitle) {
@@ -8321,14 +10024,19 @@ function renderToolbar(projectOrWorkspace, { title = '', summary = '', mode = 'w
         const reloadAction = mode === 'feature'
             ? ''
             : `<button id="project-view-reload" class="secondary-btn" type="button" data-project-view-reload>${escapeHtml(t('workspace_view.reload'))}</button>`;
+        const closeAction = showClose
+            ? `
+                <button id="project-view-close" class="icon-btn" type="button" title="${escapeHtml(t('workspace_view.back'))}" aria-label="${escapeHtml(t('workspace_view.back'))}" data-project-view-close>
+                    <svg viewBox="0 0 24 24" fill="none" class="icon" aria-hidden="true">
+                        <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                </button>
+            `
+            : '';
         els.projectViewToolbarActions.innerHTML = `
             ${actions || ''}
             ${reloadAction}
-            <button id="project-view-close" class="icon-btn" type="button" title="${escapeHtml(t('workspace_view.back'))}" aria-label="${escapeHtml(t('workspace_view.back'))}" data-project-view-close>
-                <svg viewBox="0 0 24 24" fill="none" class="icon" aria-hidden="true">
-                    <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-            </button>
+            ${closeAction}
         `;
         els.projectViewReloadBtn = els.projectViewToolbarActions.querySelector('[data-project-view-reload]');
         els.projectViewCloseBtn = els.projectViewToolbarActions.querySelector('[data-project-view-close]');

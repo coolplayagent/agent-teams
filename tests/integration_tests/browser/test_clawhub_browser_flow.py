@@ -61,6 +61,12 @@ def test_browser_clawhub_saved_token_wins_over_autofilled_dom_value(
     page.goto(integration_env.api_base_url, wait_until="domcontentloaded")
     expect(page.locator("#projects-list")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
+    page.locator('.home-feature-item[data-feature-id="skills"]').click()
+    expect(page.locator("#project-view")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+    expect(page.locator("[data-feature-skills-clawhub-settings]")).to_be_visible(
+        timeout=_WAIT_TIMEOUT_MS
+    )
+
     with page.expect_response(
         lambda response: (
             response.request.method == "GET"
@@ -70,9 +76,8 @@ def test_browser_clawhub_saved_token_wins_over_autofilled_dom_value(
         ),
         timeout=_WAIT_TIMEOUT_MS,
     ):
-        page.locator('.home-feature-item[data-feature-id="skills"]').click()
+        page.locator("[data-feature-skills-clawhub-settings]").click()
 
-    expect(page.locator("#project-view")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
     token_input = page.locator("#feature-clawhub-token")
     expect(token_input).to_have_attribute("autocomplete", "new-password")
     expect(token_input).to_have_value("", timeout=_WAIT_TIMEOUT_MS)

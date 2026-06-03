@@ -70,6 +70,29 @@ class SkillSummaryEntry(BaseModel):
     source: SkillSource
 
 
+class SkillDetailEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ref: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str = ""
+    source: SkillSource
+    directory: str
+    manifest_path: str
+    instructions: str = ""
+    manifest_content: str | None = None
+
+
+class SkillUninstallResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
+    ref: str = Field(min_length=1)
+    skills_reloaded: bool = False
+    error_code: str | None = None
+    error_message: str | None = None
+
+
 class SkillOptionEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

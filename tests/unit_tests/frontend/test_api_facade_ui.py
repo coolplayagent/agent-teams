@@ -822,6 +822,11 @@ export function invalidateManagedRequests(prefix) {
                 "await mod.deleteModelProfile('vision-profile'); "
                 "await mod.saveClawHubSkill('writer', { name: 'Writer' }); "
                 "await mod.deleteClawHubSkill('writer'); "
+                "await mod.fetchRuntimeSkillDetail('skill-creator'); "
+                "await mod.uninstallRuntimeSkill('skill-creator'); "
+                "await mod.searchClawHubSkillMarket('skill creator', { limit: 12 }); "
+                "await mod.installClawHubMarketSkill({ slug: 'skill-creator', version: 'v1.0.0', force: false }); "
+                "await mod.uninstallClawHubMarketSkill('skill-creator'); "
                 "await mod.reloadMcpConfig(); "
                 "await mod.addMcpServer({ name: 'filesystem' }); "
                 "await mod.deleteMcpServer('filesystem'); "
@@ -868,6 +873,11 @@ export function invalidateManagedRequests(prefix) {
         "/api/system/configs/model/profiles/vision-profile",
         "/api/system/configs/clawhub/skills/writer",
         "/api/system/configs/clawhub/skills/writer",
+        "/api/system/skills/skill-creator",
+        "/api/system/skills/skill-creator",
+        "/api/system/skills/market/clawhub/search?query=skill+creator&limit=12",
+        "/api/system/skills/market/clawhub/install",
+        "/api/system/skills/market/clawhub/skill-creator",
         "/api/system/configs/mcp:reload",
         "/api/mcp/servers",
         "/api/mcp/servers/filesystem",
@@ -889,6 +899,9 @@ export function invalidateManagedRequests(prefix) {
         "system:model-profiles",
         "roles:",
         "system:model-profiles",
+        "roles:",
+        "roles:",
+        "roles:",
         "roles:",
         "roles:",
         "roles:",

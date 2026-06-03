@@ -24,6 +24,15 @@ const CONNECTOR_GROUP_BY_PROVIDER = Object.freeze({
     'relay-knowledge': 'official',
 });
 
+const CONNECTOR_PLACEHOLDER_ORDER = Object.freeze([
+    'github',
+    'w3',
+    'discord',
+    'feishu',
+    'wechat',
+    'xiaoluban',
+]);
+
 const CONNECTOR_GROUP_LABEL_KEYS = Object.freeze({
     official: 'feature.connectors.group.official',
     models: 'feature.connectors.group.models',
@@ -35,6 +44,7 @@ const STATUS_LABEL_KEYS = Object.freeze({
     needs_config: 'feature.connectors.status.needs_config',
     disabled: 'feature.connectors.status.disabled',
     error: 'feature.connectors.status.error',
+    loading: 'feature.connectors.status.loading',
 });
 
 const PROVIDER_NAME_KEYS = Object.freeze({
@@ -89,16 +99,54 @@ const CONNECT_ACTION_LABEL_KEYS = Object.freeze({
     w3: 'feature.connectors.action.connect_w3',
 });
 
+const RUNTIME_TOOL_ORDER = Object.freeze([
+    'rg',
+    'gh',
+    'clawhub',
+    'relay-knowledge',
+]);
+
+const RUNTIME_TOOL_DEFAULTS = Object.freeze({
+    rg: {
+        display_name: 'ripgrep',
+        executable_name: 'rg',
+    },
+    gh: {
+        display_name: 'GitHub CLI',
+        executable_name: 'gh',
+    },
+    clawhub: {
+        display_name: 'ClawHub CLI',
+        executable_name: 'clawhub',
+    },
+    'relay-knowledge': {
+        display_name: 'Relay Knowledge CLI',
+        executable_name: 'relay-knowledge',
+    },
+});
+
 export function renderConnectorsCardPageMarkup({
     connectorsResponse,
+    connectorsError = '',
     runtimeToolsResponse,
+    runtimeToolsError = '',
     runtimeToolJobs = {},
+    systemPathBusy = false,
+    systemPathAdded = false,
+    systemPathMessage = '',
+    systemPathTone = 'info',
     searchQuery = '',
     statusFilter = 'all',
 } = {}) {
-    const items = Array.isArray(connectorsResponse?.items)
+    const connectorLoadError = String(connectorsError || '').trim();
+    const connectorsLoaded = !connectorLoadError
+        && Array.isArray(connectorsResponse?.items)
+        && connectorsResponse.items.length > 0;
+    const sourceItems = connectorsLoaded
         ? connectorsResponse.items
-        : [];
+        : buildConnectorPlaceholders();
+    const items = sourceItems
+        .filter(item => String(item?.provider || item?.connector_id || '').trim() !== 'relay-knowledge');
     const filteredItems = filterConnectorItems(items, { searchQuery, statusFilter });
     const grouped = groupConnectorItems(filteredItems);
     const summary = connectorsResponse?.summary && typeof connectorsResponse.summary === 'object'
@@ -114,7 +162,7 @@ export function renderConnectorsCardPageMarkup({
                 <div class="connectors-summary" aria-label="${escapeHtml(t('feature.gateway.summary'))}">
                     ${renderSummaryChip(t('feature.connectors.summary.connected'), summary.connected || 0, 'connected')}
                     ${renderSummaryChip(t('feature.connectors.summary.pending'), summary.needs_config || 0, 'pending')}
-                    ${renderSummaryChip(t('feature.connectors.summary.error'), summary.error || 0, 'error')}
+                    ${renderSummaryChip(t('feature.connectors.summary.error'), summary.error || (connectorLoadError ? 1 : 0), 'error')}
                 </div>
             </section>
             <section class="connectors-toolbar" aria-label="${escapeHtml(t('feature.gateway.filters'))}">
@@ -128,11 +176,20 @@ export function renderConnectorsCardPageMarkup({
                     ${renderFilterButton('unconnected', t('feature.connectors.filter.unconnected'), statusFilter)}
                 </div>
             </section>
-            ${renderConnectorGroup('official', grouped.official)}
-            ${renderConnectorGroup('models', grouped.models)}
-            ${renderConnectorGroup('internal', grouped.internal)}
-            ${renderRuntimeToolsGroup(runtimeToolsResponse, runtimeToolJobs)}
-            ${filteredItems.length === 0 ? renderEmptyState() : ''}
+            ${connectorLoadError ? renderLoadErrorState(connectorLoadError) : ''}
+            ${connectorLoadError ? '' : renderConnectorGroup('official', grouped.official)}
+            ${connectorLoadError ? '' : renderConnectorGroup('models', grouped.models)}
+            ${connectorLoadError ? '' : renderConnectorGroup('internal', grouped.internal)}
+            ${renderRuntimeToolsGroup({
+                runtimeToolsResponse,
+                runtimeToolsError,
+                runtimeToolJobs,
+                systemPathBusy,
+                systemPathAdded,
+                systemPathMessage,
+                systemPathTone,
+            })}
+            ${!connectorLoadError && connectorsLoaded && filteredItems.length === 0 ? renderEmptyState() : ''}
         </div>
     `;
 }
@@ -269,9 +326,10 @@ function renderConnectorCard(item) {
     const provider = String(item?.provider || item?.connector_id || '').trim();
     const status = String(item?.status || 'needs_config').trim();
     const accountCount = Number(item?.account_count || 0);
+    const isLoading = status === 'loading' || item?.is_loading === true;
     return `
         <article class="connectors-card" data-connector-card="${escapeHtml(provider)}">
-            <button class="connectors-card-menu" type="button" aria-label="${escapeHtml(t('feature.connectors.action.manage'))}" data-connector-manage="${escapeHtml(provider)}">...</button>
+            <button class="connectors-card-menu" type="button" aria-label="${escapeHtml(t('feature.connectors.action.manage'))}" data-connector-manage="${escapeHtml(provider)}"${isLoading ? ' disabled' : ''}>...</button>
             <div class="connectors-card-main">
                 <img class="connectors-card-icon" src="${escapeHtml(CONNECTOR_ICON_BY_PROVIDER[provider] || '')}" alt="" aria-hidden="true">
                 <div class="connectors-card-title">
@@ -284,7 +342,7 @@ function renderConnectorCard(item) {
                     <span class="connectors-status-dot is-${escapeHtml(status)}"></span>
                     ${escapeHtml(formatStatus(status))}
                 </span>
-                <button class="connectors-card-action" type="button" data-connector-open="${escapeHtml(provider)}">
+                <button class="connectors-card-action" type="button" data-connector-open="${escapeHtml(provider)}"${isLoading ? ' disabled' : ''}>
                     ${escapeHtml(formatCardActionLabel(provider, status, accountCount))}
                 </button>
             </div>
@@ -292,48 +350,134 @@ function renderConnectorCard(item) {
     `;
 }
 
-function renderRuntimeToolsGroup(runtimeToolsResponse, runtimeToolJobs) {
-    const items = getRuntimeToolItems(runtimeToolsResponse);
-    const hasLoadedItems = Array.isArray(runtimeToolsResponse?.items);
-    const summary = summarizeRuntimeTools(items, runtimeToolJobs);
-    const cardStatus = hasLoadedItems
-        ? formatRuntimeToolCardStatus(summary)
-        : t('feature.connectors.runtime_tools.status.loading');
-    const cardStatusClass = hasLoadedItems
-        ? summary.error > 0
-            ? 'error'
-            : summary.downloading > 0
-                ? 'needs_config'
-                : summary.missing > 0
-                ? 'needs_config'
-                : summary.outdated > 0
-                    ? 'needs_config'
-                    : 'connected'
-        : 'needs_config';
+function renderRuntimeToolsGroup({
+    runtimeToolsResponse,
+    runtimeToolsError = '',
+    runtimeToolJobs,
+    systemPathBusy = false,
+    systemPathAdded = false,
+} = {}) {
+    const loadError = String(runtimeToolsError || '').trim();
+    const items = getRuntimeToolCardItems(runtimeToolsResponse, loadError);
     return `
-        <section class="connectors-section connectors-runtime-tools">
-            <h3>${escapeHtml(t('feature.connectors.runtime_tools.group_title'))}</h3>
-            <div class="connectors-card-grid connectors-runtime-card-grid">
-                <article class="connectors-card connectors-runtime-card" data-runtime-tools-card>
-                    <div class="connectors-card-main">
-                        <div class="connectors-runtime-card-icon" aria-hidden="true">CLI</div>
-                        <div class="connectors-card-title">
-                            <h4>${escapeHtml(t('feature.connectors.runtime_tools.title'))}</h4>
-                            <p>${escapeHtml(formatRuntimeToolSummary(summary))}</p>
-                        </div>
-                    </div>
-                    <div class="connectors-card-footer">
-                        <span class="connectors-card-status">
-                            <span class="connectors-status-dot is-${escapeHtml(cardStatusClass)}"></span>
-                            ${escapeHtml(cardStatus)}
-                        </span>
-                        <button class="connectors-card-action" type="button" data-runtime-tools-open>
-                            ${escapeHtml(t('feature.connectors.runtime_tools.open'))}
+        <section class="connectors-section connectors-runtime-tools" data-runtime-tools-group>
+            <div class="connectors-runtime-heading">
+                <h3>${escapeHtml(t('feature.connectors.runtime_tools.group_title'))}</h3>
+                <div class="connectors-runtime-heading-actions">
+                    ${loadError ? `
+                        <button class="connectors-card-action" type="button" data-runtime-tools-retry>
+                            ${escapeHtml(t('feature.connectors.runtime_tools.retry'))}
                         </button>
-                    </div>
-                </article>
+                    ` : ''}
+                    ${renderRuntimeToolsSystemPathButton({
+                        runtimeToolsResponse,
+                        systemPathBusy,
+                        systemPathAdded,
+                    })}
+                </div>
+            </div>
+            <div class="connectors-card-grid connectors-runtime-card-grid">
+                ${items.map(item => renderRuntimeToolCard(item, runtimeToolJobs)).join('')}
             </div>
         </section>
+    `;
+}
+
+function renderRuntimeToolsSystemPathButton({
+    runtimeToolsResponse,
+    systemPathBusy,
+    systemPathAdded,
+}) {
+    const state = resolveRuntimeToolsSystemPathState({
+        runtimeToolsResponse,
+        systemPathBusy,
+        systemPathAdded,
+    });
+    return `
+        <button class="connectors-runtime-path-button${state.pathAdded ? ' is-complete' : ''}" type="button" data-runtime-tools-system-path-add${state.pathDisabled ? ' disabled' : ''} title="${escapeHtml(state.pathLabel)}" aria-label="${escapeHtml(state.pathLabel)}">
+            <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                ${state.pathAdded
+                    ? '<path d="M5 12.5l4 4 10-10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>'
+                    : '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>'}
+            </svg>
+            <span class="connectors-runtime-path-label">${escapeHtml(state.pathLabel)}</span>
+        </button>
+    `;
+}
+
+function resolveRuntimeToolsSystemPathState({
+    runtimeToolsResponse,
+    systemPathBusy,
+    systemPathAdded,
+}) {
+    const pathState = runtimeToolsResponse?.system_path;
+    const pathKnown = pathState !== undefined && pathState !== null;
+    const pathSupported = pathState?.supported === true;
+    const pathAdded = systemPathAdded || Boolean(pathState?.added);
+    const pathDisabled = systemPathBusy || !pathSupported;
+    const pathLabel = systemPathBusy
+        ? t('feature.connectors.runtime_tools.system_path_adding')
+        : pathAdded
+            ? t('feature.connectors.runtime_tools.system_path_added')
+            : pathSupported || !pathKnown
+                ? t('feature.connectors.runtime_tools.system_path_add')
+                : t('feature.connectors.runtime_tools.system_path_unsupported');
+    return { pathAdded, pathDisabled, pathLabel };
+}
+
+function renderRuntimeToolCard(item, runtimeToolJobs) {
+    const state = resolveRuntimeToolViewState(item, runtimeToolJobs);
+    return `
+        <article class="connectors-card connectors-runtime-card" data-runtime-tool-card="${escapeHtml(state.toolId)}">
+            <div class="connectors-card-main">
+                <div class="connectors-runtime-card-icon" aria-hidden="true">${escapeHtml(formatRuntimeToolIconText(state.toolId))}</div>
+                <div class="connectors-card-title">
+                    <h4>${escapeHtml(state.displayName)}</h4>
+                    ${state.detail ? `<p>${escapeHtml(state.detail)}</p>` : ''}
+                    ${renderRuntimeToolProgress(state.job)}
+                    ${state.errorMessage ? `<p class="connectors-runtime-error">${escapeHtml(state.errorMessage)}</p>` : ''}
+                </div>
+            </div>
+            <div class="connectors-card-footer">
+                <span class="connectors-card-status">
+                    <span class="connectors-status-dot is-${escapeHtml(state.cardStatusClass)}"></span>
+                    ${escapeHtml(state.statusLabel)}
+                </span>
+                ${renderRuntimeToolCardActions(state)}
+            </div>
+        </article>
+    `;
+}
+
+function renderRuntimeToolCardActions(state) {
+    const copyAction = state.path
+        ? `
+            <button class="connectors-runtime-copy-path-button" type="button" data-runtime-tool-copy-path="${escapeHtml(state.toolId)}" title="${escapeHtml(t('feature.connectors.runtime_tools.copy_path'))}" aria-label="${escapeHtml(t('feature.connectors.runtime_tools.copy_path'))}">
+                <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                    <rect x="9" y="9" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.8"></rect>
+                    <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                </svg>
+            </button>
+        `
+        : '';
+    const downloadAction = state.showAction
+        ? `
+            <button class="connectors-card-action" type="button" data-runtime-tool-download="${escapeHtml(state.toolId)}"${state.isBusy ? ' disabled' : ''}>
+                ${escapeHtml(formatRuntimeToolActionLabel({
+                    isBusy: state.isBusy,
+                    updateAvailable: state.updateAvailable,
+                }))}
+            </button>
+        `
+        : '';
+    if (!copyAction && !downloadAction) {
+        return '';
+    }
+    return `
+        <div class="connectors-runtime-card-actions">
+            ${copyAction}
+            ${downloadAction}
+        </div>
     `;
 }
 
@@ -346,46 +490,25 @@ function renderRuntimeToolsList(items, runtimeToolJobs) {
 }
 
 function renderRuntimeToolRow(item, runtimeToolJobs) {
-    const toolId = String(item?.tool_id || '').trim();
-    const status = String(item?.status || 'missing').trim();
-    const jobId = String(item?.download_job_id || '').trim();
-    const job = jobId && runtimeToolJobs && typeof runtimeToolJobs === 'object'
-        ? runtimeToolJobs[jobId]
-        : null;
-    const jobStatus = String(job?.status || '').trim();
-    const isBusy = status === 'downloading' || jobStatus === 'running' || jobStatus === 'queued';
-    const isReady = status === 'ready' || jobStatus === 'succeeded';
-    const updateAvailable = item?.update_available === true && jobStatus !== 'succeeded';
-    const path = String(job?.path || item?.path || '').trim();
-    const version = String(item?.version || '').trim();
-    const targetVersion = String(item?.target_version || '').trim();
-    const source = formatRuntimeToolSource(item?.path_source);
-    const detail = [
-        version ? formatMessage('feature.connectors.runtime_tools.version', { version }) : '',
-        updateAvailable && targetVersion
-            ? formatMessage('feature.connectors.runtime_tools.update_available', { version: targetVersion })
-            : '',
-        source,
-        path,
-    ]
-        .map(value => String(value || '').trim())
-        .filter(Boolean)
-        .join(' · ');
+    const state = resolveRuntimeToolViewState(item, runtimeToolJobs);
     return `
-        <article class="connectors-runtime-row" data-runtime-tool="${escapeHtml(toolId)}">
+        <article class="connectors-runtime-row" data-runtime-tool="${escapeHtml(state.toolId)}">
             <div class="connectors-runtime-main">
-                <strong>${escapeHtml(item?.display_name || toolId)}</strong>
-                <span class="connectors-runtime-status is-${escapeHtml(isReady ? 'ready' : status)}">${escapeHtml(formatRuntimeToolStatus(isReady ? 'ready' : status))}</span>
-                ${detail ? `<p>${escapeHtml(detail)}</p>` : ''}
-                ${renderRuntimeToolProgress(job)}
-                ${job?.error_message || item?.error_message ? `<p class="connectors-runtime-error">${escapeHtml(job?.error_message || item?.error_message)}</p>` : ''}
+                <strong>${escapeHtml(state.displayName)}</strong>
+                <span class="connectors-runtime-status is-${escapeHtml(state.runtimeStatusClass)}">${escapeHtml(state.statusLabel)}</span>
+                ${state.detail ? `<p>${escapeHtml(state.detail)}</p>` : ''}
+                ${renderRuntimeToolProgress(state.job)}
+                ${state.errorMessage ? `<p class="connectors-runtime-error">${escapeHtml(state.errorMessage)}</p>` : ''}
             </div>
             <div class="connectors-runtime-actions">
-                ${isReady && !updateAvailable ? '' : `
-                    <button class="connectors-card-action" type="button" data-runtime-tool-download="${escapeHtml(toolId)}"${isBusy ? ' disabled' : ''}>
-                        ${escapeHtml(formatRuntimeToolActionLabel({ isBusy, updateAvailable }))}
+                ${state.showAction ? `
+                    <button class="connectors-card-action" type="button" data-runtime-tool-download="${escapeHtml(state.toolId)}"${state.isBusy ? ' disabled' : ''}>
+                        ${escapeHtml(formatRuntimeToolActionLabel({
+                            isBusy: state.isBusy,
+                            updateAvailable: state.updateAvailable,
+                        }))}
                     </button>
-                `}
+                ` : ''}
             </div>
         </article>
     `;
@@ -395,6 +518,112 @@ function getRuntimeToolItems(runtimeToolsResponse) {
     return Array.isArray(runtimeToolsResponse?.items)
         ? runtimeToolsResponse.items
         : [];
+}
+
+function buildConnectorPlaceholders() {
+    return CONNECTOR_PLACEHOLDER_ORDER.map(provider => ({
+        connector_id: provider,
+        provider,
+        status: 'loading',
+        account_count: 0,
+        enabled_count: 0,
+        capabilities: [],
+        is_loading: true,
+    }));
+}
+
+function getRuntimeToolCardItems(runtimeToolsResponse, runtimeToolsError = '') {
+    const errorMessage = String(runtimeToolsError || '').trim();
+    return RUNTIME_TOOL_ORDER.map(toolId => {
+        const loaded = findRuntimeToolItem(runtimeToolsResponse, toolId);
+        const defaults = RUNTIME_TOOL_DEFAULTS[toolId] || {};
+        if (errorMessage) {
+            return {
+                tool_id: toolId,
+                display_name: defaults.display_name || toolId,
+                executable_name: defaults.executable_name || toolId,
+                loaded: true,
+                load_error: true,
+                status: 'error',
+                error_message: errorMessage,
+            };
+        }
+        return {
+            tool_id: toolId,
+            display_name: defaults.display_name || toolId,
+            executable_name: defaults.executable_name || toolId,
+            ...(loaded || {}),
+            loaded: Boolean(loaded),
+        };
+    });
+}
+
+function findRuntimeToolItem(runtimeToolsResponse, toolId) {
+    const items = getRuntimeToolItems(runtimeToolsResponse);
+    return items.find(item => String(item?.tool_id || '').trim() === toolId) || null;
+}
+
+function resolveRuntimeToolViewState(item, runtimeToolJobs) {
+    const toolId = String(item?.tool_id || '').trim();
+    const loaded = item?.loaded !== false;
+    const loadError = item?.load_error === true;
+    const status = loaded
+        ? String(item?.status || 'missing').trim()
+        : 'loading';
+    const jobId = String(item?.download_job_id || '').trim();
+    const job = jobId && runtimeToolJobs && typeof runtimeToolJobs === 'object'
+        ? runtimeToolJobs[jobId]
+        : null;
+    const jobStatus = String(job?.status || '').trim();
+    const effectiveStatus = jobStatus === 'running' || jobStatus === 'queued'
+        ? 'downloading'
+        : jobStatus === 'failed'
+            ? 'error'
+            : status;
+    const isBusy = effectiveStatus === 'downloading';
+    const isReady = effectiveStatus === 'ready' || jobStatus === 'succeeded';
+    const updateAvailable = item?.update_available === true && jobStatus !== 'succeeded';
+    const statusKey = !loaded
+        ? 'loading'
+        : isBusy
+            ? 'downloading'
+            : jobStatus === 'failed' || effectiveStatus === 'error'
+                ? 'error'
+                : updateAvailable && isReady
+                    ? 'update_available'
+                    : isReady
+                        ? 'ready'
+                        : 'missing';
+    const version = String(item?.version || '').trim();
+    const targetVersion = String(item?.target_version || '').trim();
+    const path = String(job?.path || item?.path || '').trim();
+    const source = formatRuntimeToolSource(item?.path_source);
+    const detail = formatRuntimeToolCardDetail([
+        version ? formatMessage('feature.connectors.runtime_tools.version', { version }) : '',
+        updateAvailable && targetVersion
+            ? formatMessage('feature.connectors.runtime_tools.update_available', { version: targetVersion })
+            : '',
+        source,
+    ]);
+    const cardStatusClass = statusKey === 'error'
+        ? 'error'
+        : statusKey === 'ready'
+            ? 'connected'
+            : 'needs_config';
+    return {
+        toolId,
+        displayName: String(item?.display_name || toolId).trim() || toolId,
+        statusLabel: formatRuntimeToolStatus(statusKey),
+        runtimeStatusClass: statusKey === 'ready' ? 'ready' : statusKey,
+        cardStatusClass,
+        detail,
+        path,
+        job,
+        isBusy,
+        updateAvailable,
+        showAction: loaded && !loadError && (!isReady || updateAvailable),
+        errorMessage: String(job?.error_message || item?.error_message || '').trim(),
+    };
 }
 
 function summarizeRuntimeTools(items, runtimeToolJobs) {
@@ -492,9 +721,27 @@ function formatRuntimeToolSource(value) {
     return t(`feature.connectors.runtime_tools.source.${source}`) || source;
 }
 
+function formatRuntimeToolCardDetail(parts) {
+    return parts
+        .map(value => String(value || '').trim())
+        .filter(Boolean)
+        .join(' · ');
+}
+
+function formatRuntimeToolIconText(toolId) {
+    const value = String(toolId || '').trim();
+    if (value === 'relay-knowledge') {
+        return 'RK';
+    }
+    if (value === 'clawhub') {
+        return 'CH';
+    }
+    return value.toUpperCase();
+}
+
 function formatCardActionLabel(provider, status, accountCount) {
-    if (provider === 'relay-knowledge') {
-        return t('feature.connectors.runtime_tools.open');
+    if (status === 'loading') {
+        return formatStatus(status);
     }
     if (provider === 'github') {
         return status === 'connected'
@@ -526,6 +773,21 @@ function renderEmptyState() {
     `;
 }
 
+function renderLoadErrorState(message) {
+    const copy = message || t('feature.connectors.load_failed.copy');
+    return `
+        <div class="connectors-empty is-error" data-connectors-error>
+            <h3>${escapeHtml(t('feature.connectors.load_failed.title'))}</h3>
+            <p>${escapeHtml(copy)}</p>
+            <div class="connectors-empty-actions">
+                <button class="connectors-card-action" type="button" data-connectors-retry>
+                    ${escapeHtml(t('feature.connectors.load_failed.retry'))}
+                </button>
+            </div>
+        </div>
+    `;
+}
+
 function filterConnectorItems(items, { searchQuery, statusFilter }) {
     const normalizedQuery = String(searchQuery || '').trim().toLowerCase();
     return items.filter(item => {
@@ -543,6 +805,8 @@ function filterConnectorItems(items, { searchQuery, statusFilter }) {
             item?.display_name,
             item?.description,
             item?.provider,
+            formatProviderName(item),
+            formatProviderDescription(item),
             ...(Array.isArray(item?.capabilities) ? item.capabilities : []),
         ].join(' ').toLowerCase();
         return haystack.includes(normalizedQuery);

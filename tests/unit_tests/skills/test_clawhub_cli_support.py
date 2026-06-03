@@ -1,13 +1,117 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import subprocess
 from typing import cast
 
 from relay_teams.env.clawhub_cli import ClawHubCliInstallResult
-from relay_teams.skills.clawhub_cli_support import run_clawhub_install
+from relay_teams.skills.clawhub_cli_support import (
+    _PATH_LIST_SEPARATOR,
+    run_clawhub_install,
+    run_clawhub_search,
+)
+
+
+def test_run_clawhub_search_allows_default_listing_and_uses_saved_env(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / ".relay-teams"
+    monkeypatch.setattr(
+        "relay_teams.skills.clawhub_cli_support.resolve_existing_clawhub_path",
+        lambda: Path("/usr/bin/clawhub"),
+    )
+    monkeypatch.setattr(
+        "relay_teams.skills.clawhub_cli_support.os.environ",
+        {"LANG": "zh_CN.UTF-8", "PATH": "/usr/bin"},
+    )
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        command = cast(list[str], args[0])
+        env = kwargs.get("env")
+        assert command == [
+            str(Path("/usr/bin/clawhub")),
+            "explore",
+            "--limit",
+            "5",
+            "--json",
+        ]
+        assert isinstance(env, dict)
+        assert env["CLAWHUB_TOKEN"] == "ch_secret"
+        assert env["CLAWHUB_REGISTRY"] == "https://mirror-cn.clawhub.com"
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=0,
+            stdout=(
+                "- Fetching latest skills\n"
+                '{"items":[null,{"displayName":"Missing Slug"},'
+                '{"slug":"skill-creator","displayName":"Skill Creator",'
+                '"latestVersion":{"version":"1.0.0"}},'
+                '{"slug":"tagged-skill","tags":{"latest":"2.0.0"}}]}'
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = run_clawhub_search(
+        query="",
+        limit=5,
+        token="ch_secret",
+        config_dir=config_dir,
+    )
+
+    assert result == {
+        "ok": True,
+        "query": "",
+        "items": [
+            {
+                "slug": "skill-creator",
+                "title": "Skill Creator",
+                "version": "1.0.0",
+                "score": None,
+            },
+            {
+                "slug": "tagged-skill",
+                "title": "tagged-skill",
+                "version": "2.0.0",
+                "score": None,
+            },
+        ],
+    }
+
+
+def test_run_clawhub_search_reports_invalid_default_listing_json(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "relay_teams.skills.clawhub_cli_support.resolve_existing_clawhub_path",
+        lambda: Path("/usr/bin/clawhub"),
+    )
+    monkeypatch.setattr(
+        "relay_teams.skills.clawhub_cli_support.os.environ",
+        {"PATH": "/usr/bin"},
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="not json",
+            stderr="",
+        ),
+    )
+
+    result = run_clawhub_search(query="", limit=5, config_dir=tmp_path)
+
+    assert result["ok"] is False
+    assert result["items"] == []
+    assert result["error_message"] == (
+        "ClawHub explore returned an unexpected output format."
+    )
 
 
 def test_run_clawhub_install_reports_runtime_identity(
@@ -122,7 +226,7 @@ def test_run_clawhub_install_installs_missing_binary(
             "skill-creator",
         ]
         assert isinstance(env, dict)
-        assert env["PATH"].split(os.pathsep)[0] == str(installed_path.parent)
+        assert env["PATH"].split(_PATH_LIST_SEPARATOR)[0] == str(installed_path.parent)
         skill_dir = config_dir / "skills" / "skill-creator"
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(

@@ -24,6 +24,7 @@ query PullRequestLinkedIssues($owner: String!, $name: String!, $number: Int!) {
   }
 }
 """.strip()
+_DEPENDABOT_AUTHOR_LOGINS = frozenset({"dependabot[bot]"})
 
 
 class PullRequestIssueLinkContext(NamedTuple):
@@ -31,6 +32,7 @@ class PullRequestIssueLinkContext(NamedTuple):
     repository_name: str
     pull_request_number: int
     base_ref: str
+    author_login: str
 
 
 class LinkedIssueCountFetcher(Protocol):
@@ -66,11 +68,13 @@ def load_pull_request_issue_link_context(
     owner = _require_mapping(repository, "owner")
     pull_request = _require_mapping(payload, "pull_request")
     base = _require_mapping(pull_request, "base")
+    author = _require_mapping(pull_request, "user")
     return PullRequestIssueLinkContext(
         owner=_require_text(owner, "login"),
         repository_name=_require_text(repository, "name"),
         pull_request_number=_require_int(pull_request, "number"),
         base_ref=_require_text(base, "ref"),
+        author_login=_require_text(author, "login"),
     )
 
 
@@ -250,6 +254,12 @@ def main() -> int:
             print(
                 f"Skipping linked-issue check for PR #{context.pull_request_number}: "
                 f"base branch is {context.base_ref}."
+            )
+            return 0
+        if context.author_login in _DEPENDABOT_AUTHOR_LOGINS:
+            print(
+                f"Skipping linked-issue check for PR #{context.pull_request_number}: "
+                f"author is {context.author_login}."
             )
             return 0
         linked_issue_count = ensure_pull_request_links_issue(

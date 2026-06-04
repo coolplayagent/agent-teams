@@ -14,6 +14,7 @@ from relay_teams.release.pull_request_issue_link import (
     build_graphql_url,
     ensure_pull_request_links_issue,
     load_pull_request_issue_link_context,
+    main,
 )
 
 
@@ -81,6 +82,7 @@ def test_load_pull_request_issue_link_context_reads_event_payload(
                 "pull_request": {
                     "number": 42,
                     "base": {"ref": "main"},
+                    "user": {"login": "octocat"},
                 },
             }
         ),
@@ -94,6 +96,7 @@ def test_load_pull_request_issue_link_context_reads_event_payload(
         repository_name="agent-teams",
         pull_request_number=42,
         base_ref="main",
+        author_login="octocat",
     )
 
 
@@ -103,6 +106,7 @@ def test_ensure_pull_request_links_issue_accepts_positive_issue_count() -> None:
         repository_name="agent-teams",
         pull_request_number=42,
         base_ref="main",
+        author_login="octocat",
     )
 
     linked_issue_count = ensure_pull_request_links_issue(
@@ -121,6 +125,7 @@ def test_ensure_pull_request_links_issue_rejects_missing_link() -> None:
         repository_name="agent-teams",
         pull_request_number=42,
         base_ref="main",
+        author_login="octocat",
     )
 
     with pytest.raises(IssueLinkRequirementError, match="must link at least one issue"):
@@ -143,6 +148,7 @@ def test_fetch_linked_issue_count_returns_count(monkeypatch) -> None:
         repository_name="agent-teams",
         pull_request_number=42,
         base_ref="main",
+        author_login="octocat",
     )
 
     response = httpx.Response(
@@ -195,6 +201,7 @@ def test_fetch_linked_issue_count_raises_on_http_error(monkeypatch) -> None:
         repository_name="agent-teams",
         pull_request_number=42,
         base_ref="main",
+        author_login="octocat",
     )
 
     fake_client = _FakeGitHubGraphqlClient(
@@ -228,6 +235,7 @@ def test_fetch_linked_issue_count_raises_on_request_error(monkeypatch) -> None:
         repository_name="agent-teams",
         pull_request_number=42,
         base_ref="main",
+        author_login="octocat",
     )
 
     fake_client = _FakeGitHubGraphqlClient(
@@ -247,3 +255,35 @@ def test_fetch_linked_issue_count_raises_on_request_error(monkeypatch) -> None:
             token="ghp_secret",
             graphql_url="https://api.github.com/graphql",
         )
+
+
+def test_main_skips_dependabot_pull_requests_without_token(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    event_path = tmp_path / "pull_request_event.json"
+    event_path.write_text(
+        json.dumps(
+            {
+                "repository": {
+                    "name": "agent-teams",
+                    "owner": {"login": "openai"},
+                },
+                "pull_request": {
+                    "number": 42,
+                    "base": {"ref": "main"},
+                    "user": {"login": "dependabot[bot]"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_path))
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    exit_code = main()
+
+    assert exit_code == 0
+    assert "author is dependabot[bot]" in capsys.readouterr().out

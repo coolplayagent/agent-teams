@@ -6,17 +6,22 @@ from pathlib import Path
 
 from relay_teams.env.clawhub_config_models import ClawHubConfig
 from relay_teams.skills.clawhub_cli_support import (
+    run_clawhub_api_search,
+    run_clawhub_browse,
     run_clawhub_install,
-    run_clawhub_search,
+    run_clawhub_skill_detail,
 )
 from relay_teams.skills.clawhub_models import ClawHubSkillSummary
 from relay_teams.skills.skill_market_models import (
+    ClawHubSkillMarketDetailResponse,
+    ClawHubSkillMarketFile,
     ClawHubSkillMarketInstalledSkill,
     ClawHubSkillMarketInstallDiagnostics,
     ClawHubSkillMarketInstallRequest,
     ClawHubSkillMarketInstallResponse,
     ClawHubSkillMarketSearchItem,
     ClawHubSkillMarketSearchResponse,
+    ClawHubSkillMarketStats,
     ClawHubSkillMarketUninstallResponse,
 )
 from relay_teams.skills.skill_models import SkillSource
@@ -47,7 +52,7 @@ class ClawHubSkillMarketService:
     ) -> ClawHubSkillMarketSearchResponse:
         normalized_query = " ".join(part for part in query.split() if part.strip())
         config = self._get_clawhub_config()
-        payload = run_clawhub_search(
+        payload = run_clawhub_api_search(
             query=normalized_query,
             limit=limit,
             token=config.token,
@@ -55,6 +60,39 @@ class ClawHubSkillMarketService:
         )
         installed_refs = self._installed_skill_refs()
         return _build_search_response(payload, installed_refs)
+
+    def browse_clawhub_skills(
+        self,
+        *,
+        limit: int,
+        cursor: str = "",
+        sort: str = "popular",
+    ) -> ClawHubSkillMarketSearchResponse:
+        config = self._get_clawhub_config()
+        payload = run_clawhub_browse(
+            limit=limit,
+            cursor=cursor,
+            sort=sort,
+            token=config.token,
+            config_dir=self._config_dir,
+        )
+        installed_refs = self._installed_skill_refs()
+        return _build_search_response(payload, installed_refs)
+
+    def get_clawhub_skill_market_detail(
+        self,
+        *,
+        slug: str,
+        version: str | None = None,
+    ) -> ClawHubSkillMarketDetailResponse:
+        config = self._get_clawhub_config()
+        payload = run_clawhub_skill_detail(
+            slug=slug,
+            version=version,
+            token=config.token,
+            config_dir=self._config_dir,
+        )
+        return _build_detail_response(payload)
 
     def install_clawhub_skill(
         self,
@@ -165,6 +203,8 @@ def _build_search_response(
         ok=_bool_field(payload, "ok"),
         query=_string_field(payload, "query") or "",
         items=tuple(items),
+        sort=_string_field(payload, "sort"),
+        next_cursor=_string_field(payload, "next_cursor"),
         error_message=_string_field(payload, "error_message"),
     )
 
@@ -181,9 +221,71 @@ def _build_search_item(
     return ClawHubSkillMarketSearchItem(
         slug=slug,
         title=title,
+        summary=_string_field(payload, "summary") or "",
         version=_string_field(payload, "version"),
         score=_float_field(payload, "score"),
+        stats=_build_stats(payload.get("stats")),
+        owner_handle=_string_field(payload, "owner_handle"),
+        owner_display_name=_string_field(payload, "owner_display_name"),
+        owner_image=_string_field(payload, "owner_image"),
+        created_at_ms=_int_optional_field(payload, "created_at_ms"),
+        updated_at_ms=_int_optional_field(payload, "updated_at_ms"),
         installed=installed,
+    )
+
+
+def _build_stats(payload: object) -> ClawHubSkillMarketStats | None:
+    stats_payload = _string_key_mapping(payload)
+    if stats_payload is None:
+        return None
+    return ClawHubSkillMarketStats(
+        comments=_int_optional_field(stats_payload, "comments"),
+        downloads=_int_optional_field(stats_payload, "downloads"),
+        installs_all_time=_int_optional_field(stats_payload, "installs_all_time"),
+        installs_current=_int_optional_field(stats_payload, "installs_current"),
+        stars=_int_optional_field(stats_payload, "stars"),
+        versions=_int_optional_field(stats_payload, "versions"),
+    )
+
+
+def _build_detail_response(
+    payload: Mapping[str, object],
+) -> ClawHubSkillMarketDetailResponse:
+    raw_files = payload.get("files")
+    files: list[ClawHubSkillMarketFile] = []
+    if isinstance(raw_files, list | tuple):
+        for raw_file in raw_files:
+            file_payload = _string_key_mapping(raw_file)
+            if file_payload is None:
+                continue
+            path = _string_field(file_payload, "path")
+            if path is None:
+                continue
+            files.append(
+                ClawHubSkillMarketFile(
+                    path=path,
+                    size=_int_optional_field(file_payload, "size"),
+                    sha256=_string_field(file_payload, "sha256"),
+                    content_type=_string_field(file_payload, "content_type"),
+                )
+            )
+    return ClawHubSkillMarketDetailResponse(
+        ok=_bool_field(payload, "ok"),
+        slug=_string_field(payload, "slug") or "",
+        title=_string_field(payload, "title") or "",
+        summary=_string_field(payload, "summary") or "",
+        version=_string_field(payload, "version"),
+        manifest_content=_string_field(payload, "manifest_content"),
+        changelog=_string_field(payload, "changelog"),
+        license=_string_field(payload, "license"),
+        files=tuple(files),
+        stats=_build_stats(payload.get("stats")),
+        owner_handle=_string_field(payload, "owner_handle"),
+        owner_display_name=_string_field(payload, "owner_display_name"),
+        owner_image=_string_field(payload, "owner_image"),
+        created_at_ms=_int_optional_field(payload, "created_at_ms"),
+        updated_at_ms=_int_optional_field(payload, "updated_at_ms"),
+        error_message=_string_field(payload, "error_message"),
     )
 
 
@@ -284,6 +386,17 @@ def _int_field(payload: Mapping[str, object], key: str) -> int:
     if isinstance(value, float):
         return int(value)
     return 0
+
+
+def _int_optional_field(payload: Mapping[str, object], key: str) -> int | None:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return None
 
 
 def _float_field(payload: Mapping[str, object], key: str) -> float | None:

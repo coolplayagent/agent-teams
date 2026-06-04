@@ -65,6 +65,8 @@ import {
     reloadSkillsConfig,
     runAutomationProject,
     fetchRuntimeSkillDetail,
+    fetchClawHubSkillMarket,
+    fetchClawHubSkillMarketDetail,
     installClawHubMarketSkill,
     searchClawHubSkillMarket,
     uninstallClawHubMarketSkill,
@@ -110,6 +112,14 @@ import { logWarn, sysLog } from '../utils/logger.js';
 const SKILLS_MARKET_SEARCH_DELAY_MS = 320;
 const SKILLS_MARKET_PAGE_SIZE = 24;
 const SKILLS_MARKET_MAX_LIMIT = 500;
+const SKILLS_MARKET_BROWSE_SORT = 'popular';
+const SKILLS_MARKET_CACHE_STORAGE_KEY = 'relay-teams.skills.market.cache.v1';
+const SKILLS_MARKET_DETAIL_CACHE_STORAGE_KEY = 'relay-teams.skills.market.detail.cache.v1';
+const SKILLS_MARKET_CACHE_VERSION = 1;
+const SKILLS_MARKET_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const SKILLS_MARKET_DETAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const SKILLS_MARKET_CACHE_MAX_ENTRIES = 8;
+const SKILLS_MARKET_DETAIL_CACHE_MAX_ENTRIES = 20;
 
 let currentWorkspace = null;
 let lastKnownWorkspaceId = '';
@@ -150,6 +160,9 @@ const loadingTreePaths = new Set();
 const treeLoadErrors = new Map();
 const workspaceViewCache = new Map();
 const skillsMarketCache = new Map();
+const skillsMarketDetailCache = new Map();
+let skillsMarketCacheStorageLoaded = false;
+let skillsMarketDetailCacheStorageLoaded = false;
 const FEATURE_VIEW_IDS = Object.freeze({
     skills: 'skills',
     automation: 'automation',
@@ -243,6 +256,7 @@ function createInitialSkillsFeatureState() {
         marketItems: [],
         marketLimit: SKILLS_MARKET_PAGE_SIZE,
         marketHasMore: true,
+        marketNextCursor: '',
         marketInstallJobs: {},
     };
 }
@@ -4269,6 +4283,7 @@ export async function openSkillsFeatureView() {
         if (!isCurrentFeatureRequest(FEATURE_VIEW_IDS.skills, request.token)) {
             return;
         }
+        reconcileSkillsMarketInstalledState(currentSkillsStatus?.skills?.skills);
         renderSkillsFeatureView();
     } catch (error) {
         if (isAbortError(error) || !isCurrentFeatureRequest(FEATURE_VIEW_IDS.skills, request.token)) {
@@ -5085,6 +5100,7 @@ function renderSkillsMarketEmptyState(query) {
 function renderSkillsMarketCard(item) {
     const slug = String(item?.slug || '').trim();
     const title = String(item?.title || slug).trim() || slug;
+    const summary = String(item?.summary || item?.description || '').trim();
     const initial = title.slice(0, 1).toUpperCase() || 'S';
     const installed = item?.installed === true;
     const runtimeRef = resolveSkillsMarketRuntimeRef(item);
@@ -5101,12 +5117,8 @@ function renderSkillsMarketCard(item) {
     const actionClass = installed
         ? 'secondary-btn danger-btn'
         : 'primary-btn';
-    const metaItems = [
-        item?.version ? formatMessage('feature.skills.market_version', { version: item.version }) : '',
-        Number.isFinite(Number(item?.score))
-            ? formatMessage('feature.skills.market_score', { score: Number(item.score).toFixed(2) })
-            : '',
-    ].filter(Boolean);
+    const identityMeta = resolveSkillsMarketIdentityMeta(item);
+    const statsItems = resolveSkillsMarketStatsItems(item);
     return `
         <article class="feature-skills-market-card" role="button" tabindex="0" data-skills-market-card="${escapeHtml(slug)}" data-feature-skill-detail="${escapeHtml(detailKind)}:${escapeHtml(detailKey)}" data-feature-skill-detail-kind="${escapeHtml(detailKind)}" data-feature-skill-detail-key="${escapeHtml(detailKey)}">
             <div class="feature-skills-card-icon is-gray" aria-hidden="true">${escapeHtml(initial)}</div>
@@ -5115,16 +5127,115 @@ function renderSkillsMarketCard(item) {
                     <h4 title="${escapeHtml(title)}">${escapeHtml(title)}</h4>
                     <button class="${actionClass} feature-skills-card-install" type="button" ${actionAttr} ${busy ? 'disabled' : ''}>${escapeHtml(actionLabel)}</button>
                 </div>
-                <p><code>${escapeHtml(slug)}</code></p>
-                <div class="feature-skills-card-meta">
-                    ${metaItems.length > 0
-                        ? metaItems.map(meta => `<span>${escapeHtml(meta)}</span>`).join('')
-                        : `<span>${escapeHtml(t('feature.skills.market_result'))}</span>`
+                <p>${escapeHtml(summary || slug)}</p>
+                <div class="feature-skills-market-identity" title="${escapeHtml(identityMeta)}">${escapeHtml(identityMeta)}</div>
+                <div class="feature-skills-card-meta feature-skills-market-stats">
+                    ${statsItems.length > 0
+                        ? statsItems.map(meta => `
+                            <span class="feature-skills-market-stat" title="${escapeHtml(`${meta.label}: ${meta.value}`)}" aria-label="${escapeHtml(`${meta.label}: ${meta.value}`)}">
+                                ${renderSkillsMarketStatIcon(meta.icon)}
+                                <strong>${escapeHtml(meta.value)}</strong>
+                            </span>
+                        `).join('')
+                        : `<span><strong>${escapeHtml(t('feature.skills.market_result'))}</strong></span>`
                     }
                 </div>
             </div>
         </article>
     `;
+}
+
+function resolveSkillsMarketIdentityMeta(item) {
+    const slug = String(item?.slug || '').trim();
+    const metaItems = slug ? [slug] : [];
+    if (item?.version) {
+        metaItems.push(formatMessage('feature.skills.market_version', { version: item.version }));
+    }
+    return metaItems.join(' · ') || t('feature.skills.market_result');
+}
+
+function resolveSkillsMarketStatsItems(item) {
+    const metaItems = [];
+    const stats = item?.stats || {};
+    const installs = Number(stats?.installs_current ?? stats?.installs_all_time);
+    const stars = Number(stats?.stars);
+    const downloads = Number(stats?.downloads);
+    if (Number.isFinite(installs)) {
+        metaItems.push({
+            value: formatSkillsMarketCount(installs),
+            label: t('feature.skills.market_installs_short'),
+            icon: 'package',
+        });
+    }
+    if (Number.isFinite(stars)) {
+        metaItems.push({
+            value: formatSkillsMarketCount(stars),
+            label: t('feature.skills.market_stars_short'),
+            icon: 'star',
+        });
+    }
+    if (Number.isFinite(downloads)) {
+        metaItems.push({
+            value: formatSkillsMarketCount(downloads),
+            label: t('feature.skills.market_downloads_short'),
+            icon: 'download',
+        });
+    }
+    if (
+        normalizeSearchQuery(currentSkillsFeatureState.searchQuery)
+        && Number.isFinite(Number(item?.score))
+    ) {
+        metaItems.push({
+            value: Number(item.score).toFixed(2),
+            label: t('feature.skills.detail_score'),
+            icon: 'target',
+        });
+    }
+    return metaItems;
+}
+
+function renderSkillsMarketStatIcon(icon) {
+    const name = String(icon || '').trim();
+    if (name === 'star') {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" class="feature-skills-market-stat-icon" aria-hidden="true">
+                <path d="M12 3.5l2.5 5.1 5.6.8-4.1 4 1 5.6-5-2.7-5 2.7 1-5.6-4.1-4 5.6-.8L12 3.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+            </svg>
+        `;
+    }
+    if (name === 'download') {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" class="feature-skills-market-stat-icon" aria-hidden="true">
+                <path d="M12 3v10m0 0l4-4m-4 4L8 9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M5 17v1.5A2.5 2.5 0 0 0 7.5 21h9A2.5 2.5 0 0 0 19 18.5V17" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path>
+            </svg>
+        `;
+    }
+    if (name === 'target') {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" class="feature-skills-market-stat-icon" aria-hidden="true">
+                <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"></circle>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"></circle>
+            </svg>
+        `;
+    }
+    return `
+        <svg viewBox="0 0 24 24" fill="none" class="feature-skills-market-stat-icon" aria-hidden="true">
+            <path d="M4.5 8.5L12 4l7.5 4.5v7L12 20 4.5 15.5v-7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+            <path d="M4.8 8.7L12 13l7.2-4.3M12 13v7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+    `;
+}
+
+function formatSkillsMarketCount(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return '';
+    }
+    return new Intl.NumberFormat(undefined, {
+        notation: numericValue >= 10000 ? 'compact' : 'standard',
+        maximumFractionDigits: numericValue >= 10000 ? 1 : 0,
+    }).format(numericValue);
 }
 
 function renderInstalledSkillsView(skills) {
@@ -5441,6 +5552,12 @@ function openSkillDetailModal({ kind, key }) {
     bindSkillsModalCloseHandlers(modalRoot);
     if (detail.runtimeRef) {
         void loadSkillDetailMarkdown(detail.runtimeRef, detailRequestToken);
+    } else if (detail.marketSlug) {
+        void loadMarketSkillDetailMarkdown({
+            slug: detail.marketSlug,
+            version: detail.marketVersion,
+            requestToken: detailRequestToken,
+        });
     }
     modalRoot.querySelector('[data-feature-skills-detail-install]')?.addEventListener('click', event => {
         event?.stopPropagation?.();
@@ -5481,21 +5598,32 @@ function resolveSkillDetail({ kind, key }) {
             kind: 'market',
             title,
             subtitle: slug,
-            description: String(item?.description || ''),
+            description: String(item?.summary || item?.description || ''),
             initial: title.slice(0, 1).toUpperCase() || 'S',
             installed: item?.installed === true,
             canInstall: item?.installed !== true,
             canUninstall: item?.installed === true,
             actionSlug: slug,
             version: String(item?.version || '').trim(),
+            marketSlug: slug,
+            marketVersion: String(item?.version || '').trim(),
             rows: [
                 { label: t('feature.skills.detail_slug'), value: slug, code: true },
                 { label: t('feature.skills.detail_version'), value: String(item?.version || '').trim() },
                 {
                     label: t('feature.skills.detail_score'),
-                    value: Number.isFinite(Number(item?.score))
+                    value: normalizeSearchQuery(currentSkillsFeatureState.searchQuery)
+                        && Number.isFinite(Number(item?.score))
                         ? Number(item.score).toFixed(2)
                         : '',
+                },
+                {
+                    label: t('feature.skills.market_installs_short'),
+                    value: formatSkillsMarketCount(item?.stats?.installs_current ?? item?.stats?.installs_all_time),
+                },
+                {
+                    label: t('feature.skills.market_stars_short'),
+                    value: formatSkillsMarketCount(item?.stats?.stars),
                 },
                 { label: t('feature.skills.detail_source'), value: t('feature.skills.market_result') },
             ],
@@ -5556,7 +5684,7 @@ function renderSkillDetailModal(detail) {
                         : ''}
                     <div class="skills-detail-markdown-shell">
                         <div class="skills-detail-markdown msg-text" data-feature-skills-detail-markdown>
-                            ${detail.runtimeRef
+                            ${detail.runtimeRef || detail.marketSlug
                                 ? escapeHtml(t('feature.skills.detail_loading_markdown'))
                                 : escapeHtml(t('feature.skills.detail_no_markdown'))}
                         </div>
@@ -5600,6 +5728,67 @@ async function loadSkillDetailMarkdown(skillRef, requestToken) {
         }
         sysLog(`Failed to load skill detail ${normalizedRef}: ${error?.message || error}`, 'log-warn');
     }
+}
+
+async function loadMarketSkillDetailMarkdown({ slug, version = '', requestToken }) {
+    const normalizedSlug = String(slug || '').trim();
+    if (!normalizedSlug) {
+        return;
+    }
+    const normalizedVersion = String(version || '').trim();
+    const cachedDetail = getSkillsMarketDetailCacheEntry(normalizedSlug, normalizedVersion);
+    if (cachedDetail) {
+        if (requestToken !== skillsDetailRequestToken) {
+            return;
+        }
+        renderMarketSkillDetailMarkdown(cachedDetail);
+        return;
+    }
+    try {
+        const detail = await fetchClawHubSkillMarketDetail(normalizedSlug, {
+            version: normalizedVersion,
+        });
+        const markdown = stripMarkdownFrontmatter(
+            String(detail?.manifest_content || ''),
+        ).trim();
+        if (detail?.ok !== false && markdown) {
+            writeSkillsMarketDetailCache({
+                slug: normalizedSlug,
+                version: normalizedVersion,
+                markdown,
+                summary: String(detail?.summary || ''),
+                source: String(detail?.source || ''),
+                errorMessage: String(detail?.error_message || ''),
+            });
+        }
+        if (requestToken !== skillsDetailRequestToken) {
+            return;
+        }
+        renderMarketSkillDetailMarkdown({
+            markdown,
+            errorMessage: String(detail?.error_message || ''),
+        });
+    } catch (error) {
+        if (requestToken !== skillsDetailRequestToken) {
+            return;
+        }
+        const markdownEl = skillsModalRoot?.querySelector?.('[data-feature-skills-detail-markdown]');
+        if (markdownEl) {
+            markdownEl.textContent = String(error?.message || error || t('feature.skills.detail_markdown_failed'));
+        }
+        sysLog(`Failed to load ClawHub skill detail ${normalizedSlug}: ${error?.message || error}`, 'log-warn');
+    }
+}
+
+function renderMarketSkillDetailMarkdown(detail) {
+    const markdownEl = skillsModalRoot?.querySelector?.('[data-feature-skills-detail-markdown]');
+    if (!markdownEl) {
+        return;
+    }
+    const markdown = String(detail?.markdown || '').trim();
+    markdownEl.innerHTML = markdown
+        ? sanitizeSkillMarkdownHtml(parseMarkdown(markdown))
+        : escapeHtml(String(detail?.errorMessage || t('feature.skills.detail_markdown_failed')));
 }
 
 function sanitizeSkillMarkdownHtml(html) {
@@ -5720,21 +5909,76 @@ function focusSkillsSearchInput() {
     }
 }
 
-function resolveSkillsMarketItems(installedSkills) {
+function resolveSkillsMarketItems(installedSkills, options = {}) {
     const installedSkillsByIdentity = resolveInstalledClawHubSkillLookup(installedSkills);
+    const preserveCachedInstalled = options?.preserveCachedInstalled === true
+        || (options?.preserveCachedInstalled !== false && currentSkillsStatus === null);
     return (Array.isArray(currentSkillsFeatureState.marketItems)
         ? currentSkillsFeatureState.marketItems
         : []
     ).map(item => {
         const installedSkill = resolveMarketItemInstalledSkill(item, installedSkillsByIdentity);
-        const normalizedInstalledSkill = normalizeSkillsMarketInstalledSkill(item?.installedSkill || item?.installed_skill);
+        const normalizedInstalledSkill = preserveCachedInstalled
+            ? normalizeSkillsMarketInstalledSkill(item?.installedSkill || item?.installed_skill)
+            : null;
         const resolvedInstalledSkill = installedSkill || normalizedInstalledSkill;
         return {
             ...item,
-            installed: item?.installed === true || Boolean(resolvedInstalledSkill),
+            installed: preserveCachedInstalled
+                ? item?.installed === true || Boolean(resolvedInstalledSkill)
+                : Boolean(resolvedInstalledSkill),
             installedSkill: resolvedInstalledSkill || null,
             runtimeRef: resolveInstalledSkillRuntimeRef(resolvedInstalledSkill),
         };
+    });
+}
+
+function reconcileSkillsMarketInstalledState(installedSkills) {
+    const currentItems = Array.isArray(currentSkillsFeatureState.marketItems)
+        ? currentSkillsFeatureState.marketItems
+        : [];
+    if (currentItems.length === 0) {
+        return;
+    }
+    const reconciledItems = resolveSkillsMarketItems(installedSkills, {
+        preserveCachedInstalled: false,
+    });
+    if (!hasSkillsMarketInstalledStateChanged(currentItems, reconciledItems)) {
+        return;
+    }
+    currentSkillsFeatureState = {
+        ...currentSkillsFeatureState,
+        marketItems: reconciledItems,
+    };
+    if (
+        currentSkillsFeatureState.marketStatus === 'loading'
+        || currentSkillsFeatureState.marketStatus === 'loading_more'
+    ) {
+        return;
+    }
+    writeSkillsMarketCache({
+        query: currentSkillsFeatureState.searchQuery,
+        status: currentSkillsFeatureState.marketStatus,
+        error: currentSkillsFeatureState.marketError,
+        items: reconciledItems,
+        limit: currentSkillsFeatureState.marketLimit,
+        hasMore: currentSkillsFeatureState.marketHasMore,
+        nextCursor: currentSkillsFeatureState.marketNextCursor,
+    });
+}
+
+function hasSkillsMarketInstalledStateChanged(leftItems, rightItems) {
+    if (leftItems.length !== rightItems.length) {
+        return true;
+    }
+    return leftItems.some((leftItem, index) => {
+        const rightItem = rightItems[index] || {};
+        return (
+            leftItem?.installed !== rightItem?.installed
+            || String(leftItem?.runtimeRef || leftItem?.runtime_ref || '') !== String(rightItem?.runtimeRef || rightItem?.runtime_ref || '')
+            || String(leftItem?.installedSkill?.runtime_name || leftItem?.installed_skill?.runtime_name || '') !== String(rightItem?.installedSkill?.runtime_name || rightItem?.installed_skill?.runtime_name || '')
+            || String(leftItem?.installedSkill?.ref || leftItem?.installed_skill?.ref || '') !== String(rightItem?.installedSkill?.ref || rightItem?.installed_skill?.ref || '')
+        );
     });
 }
 
@@ -5858,13 +6102,158 @@ function normalizeSearchQuery(value) {
     return String(value || '').trim().toLowerCase();
 }
 
-function resolveSkillsMarketCacheKey(query) {
-    return normalizeSearchQuery(query);
+function resolveSkillsMarketMode(query) {
+    return normalizeSearchQuery(query) ? 'search' : 'browse';
+}
+
+function resolveSkillsMarketCacheKey(query, sort = SKILLS_MARKET_BROWSE_SORT) {
+    const mode = resolveSkillsMarketMode(query);
+    const normalizedQuery = normalizeSearchQuery(query);
+    const normalizedSort = mode === 'browse'
+        ? String(sort || SKILLS_MARKET_BROWSE_SORT).trim() || SKILLS_MARKET_BROWSE_SORT
+        : '';
+    return `${mode}:${normalizedSort}:${normalizedQuery}`;
+}
+
+function resolvePersistentStorage() {
+    let storage = null;
+    try {
+        storage = globalThis.localStorage || globalThis.window?.localStorage || null;
+    } catch {
+        return null;
+    }
+    if (
+        !storage
+        || typeof storage.getItem !== 'function'
+        || typeof storage.setItem !== 'function'
+    ) {
+        return null;
+    }
+    return storage;
+}
+
+function readPersistentJson(storageKey) {
+    const storage = resolvePersistentStorage();
+    if (!storage) {
+        return null;
+    }
+    try {
+        const rawValue = storage.getItem(storageKey);
+        return rawValue ? JSON.parse(rawValue) : null;
+    } catch {
+        return null;
+    }
+}
+
+function writePersistentJson(storageKey, payload) {
+    const storage = resolvePersistentStorage();
+    if (!storage) {
+        return;
+    }
+    try {
+        storage.setItem(storageKey, JSON.stringify(payload));
+    } catch {
+        // Ignore storage quota and restricted-runtime failures.
+    }
+}
+
+function removePersistentJson(storageKey) {
+    const storage = resolvePersistentStorage();
+    if (!storage || typeof storage.removeItem !== 'function') {
+        return;
+    }
+    try {
+        storage.removeItem(storageKey);
+    } catch {
+        // Ignore restricted-runtime failures.
+    }
+}
+
+function isFreshPersistentCacheEntry(entry, ttlMs, now = Date.now()) {
+    const updatedAt = Number(entry?.updatedAt);
+    return (
+        Number.isFinite(updatedAt)
+        && updatedAt > 0
+        && updatedAt <= now + 60 * 1000
+        && now - updatedAt <= ttlMs
+    );
+}
+
+function ensureSkillsMarketCacheLoaded() {
+    if (skillsMarketCacheStorageLoaded) {
+        return;
+    }
+    skillsMarketCacheStorageLoaded = true;
+    const payload = readPersistentJson(SKILLS_MARKET_CACHE_STORAGE_KEY);
+    if (!payload) {
+        return;
+    }
+    if (Number(payload?.version) !== SKILLS_MARKET_CACHE_VERSION || !Array.isArray(payload?.entries)) {
+        removePersistentJson(SKILLS_MARKET_CACHE_STORAGE_KEY);
+        return;
+    }
+    const now = Date.now();
+    let droppedEntry = false;
+    payload.entries.forEach(entry => {
+        const cached = normalizeSkillsMarketCacheEntry(entry, now);
+        if (!cached) {
+            droppedEntry = true;
+            return;
+        }
+        skillsMarketCache.set(cached.key, cached);
+    });
+    trimSkillsMarketCache();
+    if (droppedEntry || skillsMarketCache.size !== payload.entries.length) {
+        persistSkillsMarketCache();
+    }
+}
+
+function normalizeSkillsMarketCacheEntry(entry, now = Date.now()) {
+    const key = String(entry?.key || '').trim();
+    if (!key || !isFreshPersistentCacheEntry(entry, SKILLS_MARKET_CACHE_TTL_MS, now)) {
+        return null;
+    }
+    return {
+        key,
+        mode: String(entry?.mode || '').trim(),
+        sort: String(entry?.sort || '').trim(),
+        query: String(entry?.query || '').trim(),
+        status: String(entry?.status || 'loaded'),
+        error: String(entry?.error || ''),
+        items: dedupeSkillsMarketItems(entry?.items),
+        limit: clampSkillsMarketLimit(entry?.limit),
+        hasMore: entry?.hasMore === true,
+        nextCursor: String(entry?.nextCursor || ''),
+        updatedAt: Number(entry.updatedAt),
+    };
+}
+
+function getSkillsMarketCacheEntry(query) {
+    ensureSkillsMarketCacheLoaded();
+    return skillsMarketCache.get(resolveSkillsMarketCacheKey(query));
+}
+
+function trimSkillsMarketCache() {
+    const entries = Array.from(skillsMarketCache.entries())
+        .sort((left, right) => Number(right[1]?.updatedAt || 0) - Number(left[1]?.updatedAt || 0));
+    entries.slice(SKILLS_MARKET_CACHE_MAX_ENTRIES).forEach(([key]) => {
+        skillsMarketCache.delete(key);
+    });
+}
+
+function persistSkillsMarketCache() {
+    trimSkillsMarketCache();
+    const entries = Array.from(skillsMarketCache.values())
+        .sort((left, right) => Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0))
+        .slice(0, SKILLS_MARKET_CACHE_MAX_ENTRIES);
+    writePersistentJson(SKILLS_MARKET_CACHE_STORAGE_KEY, {
+        version: SKILLS_MARKET_CACHE_VERSION,
+        entries,
+    });
 }
 
 function restoreSkillsMarketStateFromCache(stateValue, query) {
-    const key = resolveSkillsMarketCacheKey(query);
-    const cached = skillsMarketCache.get(key);
+    const cached = getSkillsMarketCacheEntry(query);
     if (!cached) {
         return {
             ...stateValue,
@@ -5874,6 +6263,7 @@ function restoreSkillsMarketStateFromCache(stateValue, query) {
             marketItems: [],
             marketLimit: SKILLS_MARKET_PAGE_SIZE,
             marketHasMore: true,
+            marketNextCursor: '',
         };
     }
     return {
@@ -5884,22 +6274,130 @@ function restoreSkillsMarketStateFromCache(stateValue, query) {
         marketItems: Array.isArray(cached.items) ? cached.items : [],
         marketLimit: clampSkillsMarketLimit(cached.limit),
         marketHasMore: cached.hasMore !== false,
+        marketNextCursor: String(cached.nextCursor || ''),
     };
 }
 
 function shouldFetchSkillsMarket(query) {
-    const cached = skillsMarketCache.get(resolveSkillsMarketCacheKey(query));
+    const cached = getSkillsMarketCacheEntry(query);
     return !cached || cached.status === 'error';
 }
 
-function writeSkillsMarketCache({ query, status, error = '', items = [], limit, hasMore = true }) {
-    skillsMarketCache.set(resolveSkillsMarketCacheKey(query), {
+function writeSkillsMarketCache({ query, status, error = '', items = [], limit, hasMore = true, nextCursor = '' }) {
+    ensureSkillsMarketCacheLoaded();
+    const key = resolveSkillsMarketCacheKey(query);
+    const mode = resolveSkillsMarketMode(query);
+    skillsMarketCache.set(key, {
+        key,
+        mode,
+        sort: mode === 'browse' ? SKILLS_MARKET_BROWSE_SORT : '',
         query: String(query || '').trim(),
         status: String(status || 'loaded'),
         error: String(error || ''),
         items: dedupeSkillsMarketItems(items),
         limit: clampSkillsMarketLimit(limit),
         hasMore: hasMore === true,
+        nextCursor: String(nextCursor || ''),
+        updatedAt: Date.now(),
+    });
+    persistSkillsMarketCache();
+}
+
+function resolveSkillsMarketDetailCacheKey(slug, version = '') {
+    const normalizedSlug = String(slug || '').trim();
+    const normalizedVersion = String(version || '').trim() || 'latest';
+    return `${normalizedSlug}@${normalizedVersion}`;
+}
+
+function ensureSkillsMarketDetailCacheLoaded() {
+    if (skillsMarketDetailCacheStorageLoaded) {
+        return;
+    }
+    skillsMarketDetailCacheStorageLoaded = true;
+    const payload = readPersistentJson(SKILLS_MARKET_DETAIL_CACHE_STORAGE_KEY);
+    if (!payload) {
+        return;
+    }
+    if (Number(payload?.version) !== SKILLS_MARKET_CACHE_VERSION || !Array.isArray(payload?.entries)) {
+        removePersistentJson(SKILLS_MARKET_DETAIL_CACHE_STORAGE_KEY);
+        return;
+    }
+    const now = Date.now();
+    let droppedEntry = false;
+    payload.entries.forEach(entry => {
+        const cached = normalizeSkillsMarketDetailCacheEntry(entry, now);
+        if (!cached) {
+            droppedEntry = true;
+            return;
+        }
+        skillsMarketDetailCache.set(cached.key, cached);
+    });
+    trimSkillsMarketDetailCache();
+    if (droppedEntry || skillsMarketDetailCache.size !== payload.entries.length) {
+        persistSkillsMarketDetailCache();
+    }
+}
+
+function normalizeSkillsMarketDetailCacheEntry(entry, now = Date.now()) {
+    const key = String(entry?.key || '').trim();
+    const slug = String(entry?.slug || '').trim();
+    const markdown = String(entry?.markdown || '').trim();
+    if (!key || !slug || !markdown || !isFreshPersistentCacheEntry(entry, SKILLS_MARKET_DETAIL_CACHE_TTL_MS, now)) {
+        return null;
+    }
+    return {
+        key,
+        slug,
+        version: String(entry?.version || '').trim(),
+        markdown,
+        summary: String(entry?.summary || ''),
+        source: String(entry?.source || ''),
+        errorMessage: String(entry?.errorMessage || ''),
+        updatedAt: Number(entry.updatedAt),
+    };
+}
+
+function getSkillsMarketDetailCacheEntry(slug, version = '') {
+    ensureSkillsMarketDetailCacheLoaded();
+    return skillsMarketDetailCache.get(resolveSkillsMarketDetailCacheKey(slug, version));
+}
+
+function writeSkillsMarketDetailCache({ slug, version = '', markdown = '', summary = '', source = '', errorMessage = '' }) {
+    ensureSkillsMarketDetailCacheLoaded();
+    const normalizedMarkdown = String(markdown || '').trim();
+    if (!normalizedMarkdown) {
+        return;
+    }
+    const key = resolveSkillsMarketDetailCacheKey(slug, version);
+    skillsMarketDetailCache.set(key, {
+        key,
+        slug: String(slug || '').trim(),
+        version: String(version || '').trim(),
+        markdown: normalizedMarkdown,
+        summary: String(summary || ''),
+        source: String(source || ''),
+        errorMessage: String(errorMessage || ''),
+        updatedAt: Date.now(),
+    });
+    persistSkillsMarketDetailCache();
+}
+
+function trimSkillsMarketDetailCache() {
+    const entries = Array.from(skillsMarketDetailCache.entries())
+        .sort((left, right) => Number(right[1]?.updatedAt || 0) - Number(left[1]?.updatedAt || 0));
+    entries.slice(SKILLS_MARKET_DETAIL_CACHE_MAX_ENTRIES).forEach(([key]) => {
+        skillsMarketDetailCache.delete(key);
+    });
+}
+
+function persistSkillsMarketDetailCache() {
+    trimSkillsMarketDetailCache();
+    const entries = Array.from(skillsMarketDetailCache.values())
+        .sort((left, right) => Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0))
+        .slice(0, SKILLS_MARKET_DETAIL_CACHE_MAX_ENTRIES);
+    writePersistentJson(SKILLS_MARKET_DETAIL_CACHE_STORAGE_KEY, {
+        version: SKILLS_MARKET_CACHE_VERSION,
+        entries,
     });
 }
 
@@ -5975,12 +6473,26 @@ async function loadNextSkillsMarketPage() {
     ) {
         return;
     }
+    const query = String(currentSkillsFeatureState.searchQuery || '').trim();
+    if (!normalizeSearchQuery(query)) {
+        const cursor = String(currentSkillsFeatureState.marketNextCursor || '').trim();
+        if (!cursor) {
+            return;
+        }
+        await runSkillsMarketSearchNow(query, {
+            force: true,
+            limit: SKILLS_MARKET_PAGE_SIZE,
+            loadingMore: true,
+            cursor,
+        });
+        return;
+    }
     const currentLimit = clampSkillsMarketLimit(currentSkillsFeatureState.marketLimit);
     const nextLimit = clampSkillsMarketLimit(currentLimit + SKILLS_MARKET_PAGE_SIZE);
     if (nextLimit <= currentLimit) {
         return;
     }
-    await runSkillsMarketSearchNow(currentSkillsFeatureState.searchQuery, {
+    await runSkillsMarketSearchNow(query, {
         force: true,
         limit: nextLimit,
         loadingMore: true,
@@ -5993,9 +6505,10 @@ async function runSkillsMarketSearchNow(rawQuery, options = {}) {
         return;
     }
     const query = String(rawQuery || '').trim();
+    const browseMode = !normalizeSearchQuery(query);
     const requestedLimit = clampSkillsMarketLimit(options.limit || SKILLS_MARKET_PAGE_SIZE);
     if (options.force !== true) {
-        const cached = skillsMarketCache.get(resolveSkillsMarketCacheKey(query));
+        const cached = getSkillsMarketCacheEntry(query);
         if (cached && cached.status !== 'error' && clampSkillsMarketLimit(cached.limit) >= requestedLimit) {
             currentSkillsFeatureState = restoreSkillsMarketStateFromCache({
                 ...currentSkillsFeatureState,
@@ -6019,16 +6532,32 @@ async function runSkillsMarketSearchNow(rawQuery, options = {}) {
     renderSkillsFeatureView();
     focusSkillsSearchInput();
     try {
-        const response = await searchClawHubSkillMarket(query, {
-            limit: requestedLimit,
-        });
+        const response = browseMode
+            ? await fetchClawHubSkillMarket({
+                limit: requestedLimit,
+                cursor: options.cursor,
+                sort: SKILLS_MARKET_BROWSE_SORT,
+            })
+            : await searchClawHubSkillMarket(query, {
+                limit: requestedLimit,
+            });
         if (!isCurrentSkillsMarketSearchResponse(requestToken, query)) {
             return;
         }
-        const items = dedupeSkillsMarketItems(Array.isArray(response?.items) ? response.items : []);
-        const hasMore = response?.ok !== false
-            && items.length >= requestedLimit
-            && requestedLimit < SKILLS_MARKET_MAX_LIMIT;
+        const responseItems = dedupeSkillsMarketItems(Array.isArray(response?.items) ? response.items : []);
+        const items = browseMode && loadingMore
+            ? dedupeSkillsMarketItems([
+                ...currentSkillsFeatureState.marketItems,
+                ...responseItems,
+            ])
+            : responseItems;
+        const nextCursor = browseMode ? String(response?.next_cursor || '').trim() : '';
+        const hasMore = response?.ok !== false && (
+            browseMode
+                ? Boolean(nextCursor)
+                : items.length >= requestedLimit && requestedLimit < SKILLS_MARKET_MAX_LIMIT
+        );
+        const cacheLimit = browseMode ? Math.max(items.length, requestedLimit) : requestedLimit;
         writeSkillsMarketCache({
             query,
             status: response?.ok === false ? 'error' : 'loaded',
@@ -6036,8 +6565,9 @@ async function runSkillsMarketSearchNow(rawQuery, options = {}) {
                 ? String(response?.error_message || t('feature.skills.market_error_copy'))
                 : '',
             items,
-            limit: requestedLimit,
+            limit: cacheLimit,
             hasMore,
+            nextCursor,
         });
         currentSkillsFeatureState = {
             ...currentSkillsFeatureState,
@@ -6047,8 +6577,9 @@ async function runSkillsMarketSearchNow(rawQuery, options = {}) {
                 ? String(response?.error_message || t('feature.skills.market_error_copy'))
                 : '',
             marketItems: items,
-            marketLimit: requestedLimit,
+            marketLimit: cacheLimit,
             marketHasMore: hasMore,
+            marketNextCursor: nextCursor,
         };
         renderSkillsFeatureView();
         focusSkillsSearchInput();
@@ -6063,6 +6594,7 @@ async function runSkillsMarketSearchNow(rawQuery, options = {}) {
             items: currentSkillsFeatureState.marketItems,
             limit: requestedLimit,
             hasMore: currentSkillsFeatureState.marketHasMore,
+            nextCursor: currentSkillsFeatureState.marketNextCursor,
         });
         currentSkillsFeatureState = {
             ...currentSkillsFeatureState,
@@ -6383,6 +6915,7 @@ function skillsMarketItemMatchesIdentitySet(item, identitySet) {
 }
 
 function updateSkillsMarketCacheItems(mapper) {
+    ensureSkillsMarketCacheLoaded();
     skillsMarketCache.forEach((cached, key) => {
         const items = Array.isArray(cached?.items) ? cached.items : [];
         skillsMarketCache.set(key, {
@@ -6390,6 +6923,7 @@ function updateSkillsMarketCacheItems(mapper) {
             items: items.map(mapper),
         });
     });
+    persistSkillsMarketCache();
 }
 
 function resolveInstalledSkillName(response, fallbackSlug) {

@@ -8,7 +8,12 @@ import pytest
 from relay_teams.env.clawhub_config_models import ClawHubConfig
 from relay_teams.skills.clawhub_models import ClawHubSkillSummary
 from relay_teams.skills.skill_market_models import ClawHubSkillMarketInstallRequest
-from relay_teams.skills.skill_market_service import ClawHubSkillMarketService
+from relay_teams.skills.skill_market_service import (
+    ClawHubSkillMarketService,
+    _build_detail_response,
+    _float_field,
+    _int_optional_field,
+)
 from relay_teams.skills.skill_models import SkillSource
 
 
@@ -41,7 +46,7 @@ def test_clawhub_market_search_marks_installed_results(
         }
 
     monkeypatch.setattr(
-        "relay_teams.skills.skill_market_service.run_clawhub_search",
+        "relay_teams.skills.skill_market_service.run_clawhub_api_search",
         fake_search,
     )
     service = ClawHubSkillMarketService(
@@ -89,7 +94,7 @@ def test_clawhub_market_search_returns_runtime_failure_payload(
         }
 
     monkeypatch.setattr(
-        "relay_teams.skills.skill_market_service.run_clawhub_search",
+        "relay_teams.skills.skill_market_service.run_clawhub_api_search",
         fake_search,
     )
     service = ClawHubSkillMarketService(
@@ -139,7 +144,7 @@ def test_clawhub_market_search_uses_backend_token_for_default_listing(
         }
 
     monkeypatch.setattr(
-        "relay_teams.skills.skill_market_service.run_clawhub_search",
+        "relay_teams.skills.skill_market_service.run_clawhub_api_search",
         fake_search,
     )
     service = ClawHubSkillMarketService(
@@ -160,6 +165,218 @@ def test_clawhub_market_search_uses_backend_token_for_default_listing(
     }
     assert response.ok is True
     assert response.items[0].slug == "skill-creator"
+
+
+def test_clawhub_market_browse_uses_backend_token_and_cursor(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_browse(
+        *,
+        limit: int,
+        cursor: str = "",
+        sort: str = "popular",
+        token: str | None = None,
+        config_dir: Path | None = None,
+    ) -> dict[str, object]:
+        captured.update(
+            {
+                "limit": limit,
+                "cursor": cursor,
+                "sort": sort,
+                "token": token,
+                "config_dir": config_dir,
+            }
+        )
+        return {
+            "ok": True,
+            "query": "",
+            "sort": sort,
+            "next_cursor": "next-page",
+            "items": [
+                {
+                    "slug": "self-improving-agent",
+                    "title": "Self-Improving Agent",
+                    "summary": "Captures learnings.",
+                    "version": "3.0.21",
+                    "stats": {
+                        "downloads": 457018,
+                        "installs_current": 6352,
+                        "stars": 3735,
+                    },
+                    "updated_at_ms": 1778485729679,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "relay_teams.skills.skill_market_service.run_clawhub_browse",
+        fake_browse,
+    )
+    service = ClawHubSkillMarketService(
+        config_dir=tmp_path,
+        get_clawhub_config=lambda: ClawHubConfig(token="ch_secret"),
+        list_clawhub_skills=lambda: (),
+        delete_clawhub_skill=lambda skill_id: None,
+        reload_skills_config=lambda: None,
+    )
+
+    response = service.browse_clawhub_skills(
+        limit=24,
+        cursor="cursor-1",
+        sort="popular",
+    )
+
+    assert captured == {
+        "limit": 24,
+        "cursor": "cursor-1",
+        "sort": "popular",
+        "token": "ch_secret",
+        "config_dir": tmp_path,
+    }
+    assert response.ok is True
+    assert response.sort == "popular"
+    assert response.next_cursor == "next-page"
+    assert response.items[0].summary == "Captures learnings."
+    assert response.items[0].stats is not None
+    assert response.items[0].stats.installs_current == 6352
+    assert response.items[0].updated_at_ms == 1778485729679
+
+
+def test_clawhub_market_detail_uses_backend_token_and_maps_manifest(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_detail(
+        *,
+        slug: str,
+        version: str | None = None,
+        token: str | None = None,
+        config_dir: Path | None = None,
+    ) -> dict[str, object]:
+        captured.update(
+            {
+                "slug": slug,
+                "version": version,
+                "token": token,
+                "config_dir": config_dir,
+            }
+        )
+        return {
+            "ok": True,
+            "slug": "skill-creator",
+            "title": "Skill Creator",
+            "summary": "Create skills.",
+            "version": "0.1.0",
+            "manifest_content": "# Skill Creator\n\nUse it.",
+            "files": [
+                {
+                    "path": "SKILL.md",
+                    "size": 24,
+                    "sha256": "abc123",
+                    "content_type": "text/plain",
+                }
+            ],
+            "stats": {
+                "downloads": 10,
+                "installs_current": 7,
+                "stars": 3,
+            },
+        }
+
+    monkeypatch.setattr(
+        "relay_teams.skills.skill_market_service.run_clawhub_skill_detail",
+        fake_detail,
+    )
+    service = ClawHubSkillMarketService(
+        config_dir=tmp_path,
+        get_clawhub_config=lambda: ClawHubConfig(token="ch_secret"),
+        list_clawhub_skills=lambda: (),
+        delete_clawhub_skill=lambda skill_id: None,
+        reload_skills_config=lambda: None,
+    )
+
+    response = service.get_clawhub_skill_market_detail(
+        slug="skill-creator",
+        version="0.1.0",
+    )
+
+    assert captured == {
+        "slug": "skill-creator",
+        "version": "0.1.0",
+        "token": "ch_secret",
+        "config_dir": tmp_path,
+    }
+    assert response.ok is True
+    assert response.manifest_content == "# Skill Creator\n\nUse it."
+    assert response.files[0].path == "SKILL.md"
+    assert response.stats is not None
+    assert response.stats.installs_current == 7
+
+
+def test_clawhub_market_detail_builder_skips_bad_files_and_coerces_fields() -> None:
+    response = _build_detail_response(
+        {
+            "ok": True,
+            "slug": "skill-creator",
+            "title": "Skill Creator",
+            "summary": "Create skills.",
+            "version": "0.1.0",
+            "files": [
+                None,
+                {"size": 12},
+                {
+                    "path": "SKILL.md",
+                    "size": 24.9,
+                    "sha256": "abc123",
+                    "content_type": "text/markdown",
+                },
+            ],
+            "stats": {
+                "downloads": True,
+                "installs_current": 7.9,
+                "stars": 3,
+            },
+            "created_at_ms": True,
+            "updated_at_ms": 456.7,
+        }
+    )
+
+    assert response.ok is True
+    assert response.files[0].path == "SKILL.md"
+    assert response.files[0].size == 24
+    assert response.files[0].sha256 == "abc123"
+    assert response.files[0].content_type == "text/markdown"
+    assert response.stats is not None
+    assert response.stats.downloads is None
+    assert response.stats.installs_current == 7
+    assert response.stats.stars == 3
+    assert response.created_at_ms is None
+    assert response.updated_at_ms == 456
+
+
+def test_clawhub_market_scalar_helpers_handle_optional_values() -> None:
+    payload = {
+        "bool": True,
+        "int": 3,
+        "float": 3.8,
+        "text": "4",
+    }
+
+    assert _int_optional_field(payload, "bool") is None
+    assert _int_optional_field(payload, "int") == 3
+    assert _int_optional_field(payload, "float") == 3
+    assert _int_optional_field(payload, "text") is None
+    assert _int_optional_field(payload, "missing") is None
+    assert _float_field(payload, "bool") == 1.0
+    assert _float_field(payload, "int") == 3.0
+    assert _float_field(payload, "float") == 3.8
+    assert _float_field(payload, "text") is None
+    assert _float_field(payload, "missing") is None
 
 
 def test_clawhub_market_install_uses_backend_token_and_reloads(
@@ -378,7 +595,7 @@ def test_clawhub_market_search_skips_invalid_items_and_numeric_score(
         }
 
     monkeypatch.setattr(
-        "relay_teams.skills.skill_market_service.run_clawhub_search",
+        "relay_teams.skills.skill_market_service.run_clawhub_api_search",
         fake_search,
     )
     service = ClawHubSkillMarketService(

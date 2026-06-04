@@ -295,25 +295,30 @@
 .connectors-runtime-heading {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 12px;
 }
 
 .connectors-runtime-heading h3 {
+    flex: 0 0 auto;
     margin: 0;
 }
 
 .connectors-runtime-heading-actions {
     display: inline-flex;
     align-items: center;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
     gap: 8px;
+    max-width: 100%;
     min-width: 0;
 }
 
 .connectors-runtime-path-button {
     display: inline-flex;
-    height: 34px;
-    max-width: min(320px, calc(100% - 110px));
+    min-height: 34px;
+    max-width: 100%;
     align-items: center;
     justify-content: center;
     gap: 8px;
@@ -330,9 +335,10 @@
 
 .connectors-runtime-path-label {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+    white-space: normal;
 }
 
 .connectors-runtime-path-button:hover {

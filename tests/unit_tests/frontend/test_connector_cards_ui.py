@@ -185,6 +185,34 @@ console.log(JSON.stringify({ busyHtml, pendingHtml, supportedHtml, addedHtml }))
     assert "data-runtime-tools-system-path-add disabled" not in added_html
 
 
+def test_cli_tools_system_path_button_keeps_full_label_visible() -> None:
+    css_source = (
+        Path(__file__).resolve().parents[3]
+        / "frontend"
+        / "dist"
+        / "css"
+        / "components"
+        / "connectors.css"
+    ).read_text(encoding="utf-8")
+
+    heading_block = _css_block(css_source, ".connectors-runtime-heading")
+    heading_title_block = _css_block(css_source, ".connectors-runtime-heading h3")
+    action_block = _css_block(css_source, ".connectors-runtime-heading-actions")
+    button_block = _css_block(css_source, ".connectors-runtime-path-button")
+    label_block = _css_block(css_source, ".connectors-runtime-path-label")
+
+    assert "flex-wrap: wrap;" in heading_block
+    assert "flex: 0 0 auto;" in heading_title_block
+    assert "flex-wrap: wrap;" in action_block
+    assert "justify-content: flex-end;" not in action_block
+    assert "max-width: 100%;" in button_block
+    assert "overflow: visible;" in label_block
+    assert "overflow-wrap: anywhere;" in label_block
+    assert "white-space: normal;" in label_block
+    assert "overflow: hidden;" not in label_block
+    assert "text-overflow" not in label_block
+
+
 def test_cli_tools_cards_hide_full_install_paths() -> None:
     payload = _render_connector_cards(
         """
@@ -287,3 +315,9 @@ def _render_connector_cards(script_body: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise AssertionError(f"Expected object payload, got {payload!r}")
     return payload
+
+
+def _css_block(css_source: str, selector: str) -> str:
+    start = css_source.index(f"{selector} {{")
+    end = css_source.index("\n}", start) + 2
+    return css_source[start:end]

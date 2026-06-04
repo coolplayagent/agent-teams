@@ -122,6 +122,8 @@ export {
     fetchProxyConfig,
     fetchClawHubConfig,
     fetchClawHubSkill,
+    fetchClawHubSkillMarketDetail,
+    fetchClawHubSkillMarket,
     fetchClawHubSkills,
     fetchRuntimeSkillDetail,
     installClawHubMarketSkill,

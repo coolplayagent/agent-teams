@@ -4977,7 +4977,7 @@ import {
 } from "./projectView.mjs";
 import { els, flushTasks } from "./mockDom.mjs";
 
-globalThis.__clawHubMarketSearchResponse = {
+globalThis.__clawHubMarketBrowseResponse = {
     ok: true,
     query: "",
     items: [
@@ -5067,6 +5067,18 @@ import {
 } from "./projectView.mjs";
 import { els, flushTasks } from "./mockDom.mjs";
 
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
 globalThis.__clawHubMarketSearchResponse = {
     ok: true,
     query: "skill",
@@ -5092,6 +5104,13 @@ globalThis.__clawHubMarketInstallResponse = {
         manifest_path: "/skills/skill-creator/SKILL.md",
     },
     diagnostics: { skills_reloaded: true },
+};
+globalThis.__clawHubMarketDetailResponse = {
+    ok: true,
+    slug: "skill-creator",
+    title: "Skill Creator",
+    version: "v1.0.0",
+    manifest_content: "---\\nname: skill-creator\\n---\\n# Skill Creator\\n\\n## Market Preview\\nInstall after reading.\\n\\n<img src=\\"javascript:alert(1)\\" onerror=\\"alert(1)\\">\\n<script>alert(1)</script>",
 };
 globalThis.__runtimeSkillDetailResponse = {
     ref: "clawhub/skill-creator",
@@ -5128,6 +5147,8 @@ els.projectViewContent
     .find(node => node.getAttribute("data-feature-skill-detail") === "market:skill-creator")
     ?.onclick?.();
 await flushTasks();
+await flushTasks();
+await flushTasks();
 const detailHtml = (globalThis.__bodyChildren || [])
     .map(node => node.innerHTML || "")
     .join("\\n");
@@ -5140,6 +5161,7 @@ await flushTasks();
 await flushTasks();
 await flushTasks();
 const afterInstallHtml = els.projectViewContent.innerHTML;
+const afterInstallCacheRaw = globalThis.localStorage.getItem("relay-teams.skills.market.cache.v1");
 
 els.projectViewContent
     .querySelectorAll("[data-feature-skill-detail]")
@@ -5158,9 +5180,12 @@ els.projectViewContent
 await flushTasks();
 await flushTasks();
 await flushTasks();
+await flushTasks();
 
 console.log(JSON.stringify({
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
     searchRequests: globalThis.__clawHubMarketSearchRequests || [],
+    marketDetailRequests: globalThis.__clawHubMarketDetailRequests || [],
     installRequests: globalThis.__clawHubMarketInstallRequests || [],
     uninstallRequests: globalThis.__clawHubMarketUninstallRequests || [],
     detailRequests: globalThis.__runtimeSkillDetailRequests || [],
@@ -5168,7 +5193,9 @@ console.log(JSON.stringify({
     detailHtml,
     installedDetailHtml,
     afterInstallHtml,
+    afterInstallCacheRaw,
     afterUninstallHtml: els.projectViewContent.innerHTML,
+    afterUninstallCacheRaw: globalThis.localStorage.getItem("relay-teams.skills.market.cache.v1"),
     toastCalls: globalThis.__toastCalls || [],
     preventDefaultCalls: globalThis.__skillsSearchPreventDefault || 0,
 }));
@@ -5195,22 +5222,31 @@ export async function fetchConfigStatus() {
     )
 
     assert payload["preventDefaultCalls"] == 1
+    assert payload["browseRequests"] == [
+        {"limit": 24, "cursor": "", "sort": "popular"},
+    ]
     assert payload["searchRequests"] == [
-        {"query": "", "limit": 24},
         {"query": "skill", "limit": 24},
     ]
     assert "Skill Creator" in str(payload["resultsHtml"])
     assert "skill-creator" in str(payload["resultsHtml"])
     assert "Version v1.0.0" in str(payload["resultsHtml"])
-    assert "Score 4.25" in str(payload["resultsHtml"])
+    assert "4.25" in str(payload["resultsHtml"])
+    assert "Score" in str(payload["resultsHtml"])
     assert 'data-feature-skill-detail="market:skill-creator"' in str(
         payload["resultsHtml"]
     )
     assert "skills-detail-modal" in str(payload["detailHtml"])
     assert "skills-modal-close-btn" in str(payload["detailHtml"])
     assert "skills-detail-markdown msg-text" in str(payload["detailHtml"])
+    assert "onerror" not in str(payload["detailHtml"])
+    assert "javascript:alert" not in str(payload["detailHtml"])
+    assert "<script>" not in str(payload["detailHtml"])
     assert "&times;" not in str(payload["detailHtml"])
     assert "data-feature-skills-detail-install" in str(payload["detailHtml"])
+    assert payload["marketDetailRequests"] == [
+        {"slug": "skill-creator", "version": "v1.0.0"}
+    ]
     assert payload["installRequests"] == [
         {"slug": "skill-creator", "version": "v1.0.0", "force": False}
     ]
@@ -5220,6 +5256,12 @@ export async function fetchConfigStatus() {
     assert 'data-feature-skill-detail="installed:clawhub/skill-creator"' in str(
         payload["afterInstallHtml"]
     )
+    after_install_cache = json.loads(str(payload["afterInstallCacheRaw"]))
+    after_install_items = cast(
+        list[dict[str, object]],
+        after_install_cache["entries"][0]["items"],
+    )
+    assert after_install_items[0]["installed"] is True
     assert payload["detailRequests"] == ["clawhub/skill-creator"]
     assert "onerror" not in str(payload["installedDetailHtml"])
     assert "javascript:alert" not in str(payload["installedDetailHtml"])
@@ -5228,6 +5270,12 @@ export async function fetchConfigStatus() {
     assert 'data-feature-skills-market-install="skill-creator"' in str(
         payload["afterUninstallHtml"]
     )
+    after_uninstall_cache = json.loads(str(payload["afterUninstallCacheRaw"]))
+    after_uninstall_items = cast(
+        list[dict[str, object]],
+        after_uninstall_cache["entries"][0]["items"],
+    )
+    assert after_uninstall_items[0]["installed"] is False
     toast_calls = cast(list[dict[str, object]], payload["toastCalls"])
     assert toast_calls[-1]["title"] == "Skill uninstalled"
 
@@ -5274,6 +5322,7 @@ await flushTasks();
 await flushTasks();
 
 console.log(JSON.stringify({
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
     searchRequests: globalThis.__clawHubMarketSearchRequests || [],
     initialHtml,
     afterTabReturnHtml,
@@ -5289,23 +5338,29 @@ export async function fetchConfigStatus() {
     };
 }
 
-export async function searchClawHubSkillMarket(query, options = {}) {
-    globalThis.__clawHubMarketSearchRequests =
-        globalThis.__clawHubMarketSearchRequests || [];
+export async function fetchClawHubSkillMarket(options = {}) {
+    globalThis.__clawHubMarketBrowseRequests =
+        globalThis.__clawHubMarketBrowseRequests || [];
     const limit = options?.limit || null;
-    globalThis.__clawHubMarketSearchRequests.push({
-        query,
+    const cursor = options?.cursor || "";
+    globalThis.__clawHubMarketBrowseRequests.push({
         limit,
+        cursor,
+        sort: options?.sort || "",
     });
-    const count = Math.min(Number(limit || 0), 48);
+    const offset = cursor === "next-24" ? 24 : 0;
+    const count = Math.min(Number(limit || 0), 24);
     return {
         ok: true,
-        query,
+        query: "",
+        sort: "popular",
+        next_cursor: cursor ? null : "next-24",
         items: Array.from({ length: count }, (_, index) => ({
-            slug: `skill-${String(index + 1).padStart(3, "0")}`,
-            title: `Skill ${index + 1}`,
+            slug: `skill-${String(offset + index + 1).padStart(3, "0")}`,
+            title: `Skill ${offset + index + 1}`,
+            summary: `Skill ${offset + index + 1} summary`,
             version: "v1.0.0",
-            score: 1,
+            stats: { installs_current: 10 },
             installed: false,
         })),
     };
@@ -5313,14 +5368,710 @@ export async function searchClawHubSkillMarket(query, options = {}) {
 """.strip(),
     )
 
-    assert payload["searchRequests"] == [
-        {"query": "", "limit": 24},
-        {"query": "", "limit": 48},
+    assert payload["browseRequests"] == [
+        {"limit": 24, "cursor": "", "sort": "popular"},
+        {"limit": 24, "cursor": "next-24", "sort": "popular"},
     ]
+    assert payload["searchRequests"] == []
     assert "skill-024" in str(payload["initialHtml"])
     assert "skill-025" not in str(payload["initialHtml"])
     assert "skill-024" in str(payload["afterTabReturnHtml"])
     assert "skill-048" in str(payload["afterMoreHtml"])
+
+
+def test_project_view_skills_market_restores_persisted_home_cache(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
+globalThis.localStorage.setItem("relay-teams.skills.market.cache.v1", JSON.stringify({
+    version: 1,
+    entries: [
+        {
+            key: "browse:popular:",
+            mode: "browse",
+            sort: "popular",
+            query: "",
+            status: "loaded",
+            error: "",
+            items: [
+                {
+                    slug: "cached-skill",
+                    title: "Cached Skill",
+                    summary: "Loaded from localStorage.",
+                    version: "1.0.0",
+                    stats: { installs_current: 123, stars: 7 },
+                    installed: false,
+                },
+            ],
+            limit: 24,
+            hasMore: true,
+            nextCursor: "next-cached",
+            updatedAt: Date.now(),
+        },
+    ],
+}));
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    html: els.projectViewContent.innerHTML,
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
+    searchRequests: globalThis.__clawHubMarketSearchRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["browseRequests"] == []
+    assert payload["searchRequests"] == []
+    assert "Cached Skill" in str(payload["html"])
+    assert "Loaded from localStorage." in str(payload["html"])
+    assert "data-feature-skills-market-more" in str(payload["html"])
+
+
+def test_project_view_skills_market_falls_back_when_local_storage_is_blocked(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    get() {
+        throw new Error("storage blocked");
+    },
+});
+globalThis.__clawHubMarketBrowseResponse = {
+    ok: true,
+    query: "",
+    sort: "popular",
+    next_cursor: null,
+    items: [
+        {
+            slug: "fresh-skill",
+            title: "Fresh Skill",
+            summary: "Loaded without storage.",
+            version: "1.0.0",
+            installed: false,
+        },
+    ],
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    html: els.projectViewContent.innerHTML,
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
+    searchRequests: globalThis.__clawHubMarketSearchRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["browseRequests"] == [
+        {"limit": 24, "cursor": "", "sort": "popular"},
+    ]
+    assert payload["searchRequests"] == []
+    assert "Fresh Skill" in str(payload["html"])
+    assert "Loaded without storage." in str(payload["html"])
+
+
+def test_project_view_skills_market_reconciles_cached_installed_state(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
+globalThis.localStorage.setItem("relay-teams.skills.market.cache.v1", JSON.stringify({
+    version: 1,
+    entries: [
+        {
+            key: "browse:popular:",
+            mode: "browse",
+            sort: "popular",
+            query: "",
+            status: "loaded",
+            error: "",
+            items: [
+                {
+                    slug: "stale-installed-skill",
+                    title: "Stale Installed Skill",
+                    summary: "The installed flag is stale.",
+                    version: "1.0.0",
+                    installed: true,
+                    installedSkill: {
+                        name: "stale-installed-skill",
+                        ref: "clawhub/stale-installed-skill",
+                        source: "clawhub",
+                        runtime_name: "stale-installed-skill",
+                    },
+                },
+            ],
+            limit: 24,
+            hasMore: false,
+            nextCursor: "",
+            updatedAt: Date.now(),
+        },
+    ],
+}));
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    html: els.projectViewContent.innerHTML,
+    cachedRaw: globalThis.localStorage.getItem("relay-teams.skills.market.cache.v1"),
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    cached = json.loads(str(payload["cachedRaw"]))
+    entries = cast(list[dict[str, object]], cached["entries"])
+    cached_items = cast(list[dict[str, object]], entries[0]["items"])
+    assert payload["browseRequests"] == []
+    assert cached_items[0]["installed"] is False
+    assert cached_items[0]["installedSkill"] is None
+    assert 'data-feature-skills-market-install="stale-installed-skill"' in str(
+        payload["html"]
+    )
+    assert 'data-feature-skills-market-uninstall="stale-installed-skill"' not in str(
+        payload["html"]
+    )
+
+
+def test_project_view_skills_market_ignores_expired_persisted_cache(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
+globalThis.localStorage.setItem("relay-teams.skills.market.cache.v1", JSON.stringify({
+    version: 1,
+    entries: [
+        {
+            key: "browse:popular:",
+            mode: "browse",
+            sort: "popular",
+            query: "",
+            status: "loaded",
+            error: "",
+            items: [
+                {
+                    slug: "expired-skill",
+                    title: "Expired Skill",
+                    summary: "Should not render.",
+                    version: "1.0.0",
+                    installed: false,
+                },
+            ],
+            limit: 24,
+            hasMore: false,
+            nextCursor: "",
+            updatedAt: Date.now() - (7 * 60 * 60 * 1000),
+        },
+    ],
+}));
+globalThis.__clawHubMarketBrowseResponse = {
+    ok: true,
+    query: "",
+    sort: "popular",
+    next_cursor: null,
+    items: [
+        {
+            slug: "fresh-skill",
+            title: "Fresh Skill",
+            summary: "Loaded from ClawHub.",
+            version: "1.0.0",
+            installed: false,
+        },
+    ],
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    html: els.projectViewContent.innerHTML,
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["browseRequests"] == [
+        {"limit": 24, "cursor": "", "sort": "popular"},
+    ]
+    assert "Fresh Skill" in str(payload["html"])
+    assert "Expired Skill" not in str(payload["html"])
+
+
+def test_project_view_skills_market_restores_persisted_search_cache(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
+globalThis.localStorage.setItem("relay-teams.skills.market.cache.v1", JSON.stringify({
+    version: 1,
+    entries: [
+        {
+            key: "search::skill",
+            mode: "search",
+            sort: "",
+            query: "skill",
+            status: "loaded",
+            error: "",
+            items: [
+                {
+                    slug: "cached-search-skill",
+                    title: "Cached Search Skill",
+                    summary: "Search cache result.",
+                    version: "1.0.0",
+                    score: 3.5,
+                    installed: false,
+                },
+            ],
+            limit: 24,
+            hasMore: false,
+            nextCursor: "",
+            updatedAt: Date.now(),
+        },
+    ],
+}));
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+
+const searchInput = els.projectViewToolbarActions.querySelector("[data-feature-skills-search]");
+searchInput.value = "skill";
+searchInput.oninput?.({ target: searchInput });
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    html: els.projectViewContent.innerHTML,
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
+    searchRequests: globalThis.__clawHubMarketSearchRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["browseRequests"] == [
+        {"limit": 24, "cursor": "", "sort": "popular"},
+    ]
+    assert payload["searchRequests"] == []
+    assert "Cached Search Skill" in str(payload["html"])
+    assert "Search cache result." in str(payload["html"])
+    assert "3.50" in str(payload["html"])
+
+
+def test_project_view_skills_market_persists_loaded_pages(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+els.projectViewContent
+    .querySelector("[data-feature-skills-market-more]")
+    ?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
+    cachedRaw: globalThis.localStorage.getItem("relay-teams.skills.market.cache.v1"),
+    html: els.projectViewContent.innerHTML,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+
+export async function fetchClawHubSkillMarket(options = {}) {
+    globalThis.__clawHubMarketBrowseRequests =
+        globalThis.__clawHubMarketBrowseRequests || [];
+    const limit = options?.limit || null;
+    const cursor = options?.cursor || "";
+    globalThis.__clawHubMarketBrowseRequests.push({
+        limit,
+        cursor,
+        sort: options?.sort || "",
+    });
+    const offset = cursor === "next-24" ? 24 : 0;
+    const count = Math.min(Number(limit || 0), 24);
+    return {
+        ok: true,
+        query: "",
+        sort: "popular",
+        next_cursor: cursor ? null : "next-24",
+        items: Array.from({ length: count }, (_, index) => ({
+            slug: `persisted-skill-${String(offset + index + 1).padStart(3, "0")}`,
+            title: `Persisted Skill ${offset + index + 1}`,
+            summary: `Persisted Skill ${offset + index + 1} summary`,
+            version: "1.0.0",
+            installed: false,
+        })),
+    };
+}
+""".strip(),
+    )
+
+    cached = json.loads(str(payload["cachedRaw"]))
+    entries = cast(list[dict[str, object]], cached["entries"])
+    browse_entry = entries[0]
+    cached_items = cast(list[dict[str, object]], browse_entry["items"])
+    assert payload["browseRequests"] == [
+        {"limit": 24, "cursor": "", "sort": "popular"},
+        {"limit": 24, "cursor": "next-24", "sort": "popular"},
+    ]
+    assert browse_entry["nextCursor"] == ""
+    assert len(cached_items) == 48
+    assert cached_items[-1]["slug"] == "persisted-skill-048"
+    assert "persisted-skill-048" in str(payload["html"])
+
+
+def test_project_view_skills_market_uses_persisted_detail_cache(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
+globalThis.localStorage.setItem("relay-teams.skills.market.detail.cache.v1", JSON.stringify({
+    version: 1,
+    entries: [
+        {
+            key: "skill-creator@v1.0.0",
+            slug: "skill-creator",
+            version: "v1.0.0",
+            markdown: "# Cached Preview\\n\\nRead before installing.",
+            summary: "Cached summary.",
+            source: "clawhub",
+            errorMessage: "",
+            updatedAt: Date.now(),
+        },
+    ],
+}));
+globalThis.__clawHubMarketBrowseResponse = {
+    ok: true,
+    query: "",
+    items: [
+        {
+            slug: "skill-creator",
+            title: "Skill Creator",
+            summary: "Create skills.",
+            version: "v1.0.0",
+            installed: false,
+        },
+    ],
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+els.projectViewContent
+    .querySelectorAll("[data-feature-skill-detail]")
+    .find(node => node.getAttribute("data-feature-skill-detail") === "market:skill-creator")
+    ?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    detailHtml: (globalThis.__bodyChildren || [])
+        .map(node => node.innerHTML || "")
+        .join("\\n"),
+    markdownHtml: globalThis.__bodyChildren[0]
+        ?.querySelector("[data-feature-skills-detail-markdown]")
+        ?.innerHTML || "",
+    marketDetailRequests: globalThis.__clawHubMarketDetailRequests || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["marketDetailRequests"] == []
+    assert "Cached Preview" in str(payload["markdownHtml"])
+    assert "Read before installing." in str(payload["markdownHtml"])
+
+
+def test_project_view_skills_market_does_not_cache_failed_detail_preview(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openSkillsFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+const storageData = new Map();
+globalThis.localStorage = {
+    getItem(key) {
+        return storageData.has(key) ? storageData.get(key) : null;
+    },
+    setItem(key, value) {
+        storageData.set(key, String(value));
+    },
+    removeItem(key) {
+        storageData.delete(key);
+    },
+};
+globalThis.__clawHubMarketBrowseResponse = {
+    ok: true,
+    query: "",
+    items: [
+        {
+            slug: "skill-creator",
+            title: "Skill Creator",
+            summary: "Create skills.",
+            version: "v1.0.0",
+            installed: false,
+        },
+    ],
+};
+globalThis.__clawHubMarketDetailResponse = {
+    ok: true,
+    slug: "skill-creator",
+    title: "Skill Creator",
+    version: "v1.0.0",
+    manifest_content: "",
+    error_message: "Package preview is unavailable.",
+    files: [],
+};
+
+initializeProjectView();
+await openSkillsFeatureView();
+await flushTasks();
+await flushTasks();
+const detailCard = els.projectViewContent
+    .querySelectorAll("[data-feature-skill-detail]")
+    .find(node => node.getAttribute("data-feature-skill-detail") === "market:skill-creator");
+detailCard?.onclick?.();
+await flushTasks();
+await flushTasks();
+detailCard?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    cachedRaw: globalThis.localStorage.getItem("relay-teams.skills.market.detail.cache.v1"),
+    marketDetailRequests: globalThis.__clawHubMarketDetailRequests || [],
+    markdownHtml: globalThis.__bodyChildren[globalThis.__bodyChildren.length - 1]
+        ?.querySelector("[data-feature-skills-detail-markdown]")
+        ?.innerHTML || "",
+    detailHtml: (globalThis.__bodyChildren || [])
+        .map(node => node.innerHTML || "")
+        .join("\\n"),
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConfigStatus() {
+    return {
+        skills: {
+            skills: [],
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["marketDetailRequests"] == [
+        {"slug": "skill-creator", "version": "v1.0.0"},
+        {"slug": "skill-creator", "version": "v1.0.0"},
+    ]
+    assert payload["cachedRaw"] is None
+    assert "Package preview is unavailable." in str(payload["markdownHtml"])
 
 
 def test_project_view_skills_market_does_not_overlay_builtin_name_match(
@@ -5335,7 +6086,7 @@ import {
 } from "./projectView.mjs";
 import { els, flushTasks } from "./mockDom.mjs";
 
-globalThis.__clawHubMarketSearchResponse = {
+globalThis.__clawHubMarketBrowseResponse = {
     ok: true,
     query: "",
     items: [
@@ -5396,7 +6147,7 @@ import {
 } from "./projectView.mjs";
 import { els, flushTasks } from "./mockDom.mjs";
 
-globalThis.__clawHubMarketSearchResponse = {
+globalThis.__clawHubMarketBrowseResponse = {
     ok: true,
     query: "",
     items: [
@@ -5428,6 +6179,7 @@ console.log(JSON.stringify({
         .map(node => node.innerHTML || "")
         .join("\\n"),
     detailRequests: globalThis.__runtimeSkillDetailRequests || [],
+    marketDetailRequests: globalThis.__clawHubMarketDetailRequests || [],
 }));
 """.strip(),
         mock_api_source="""
@@ -5444,11 +6196,16 @@ export async function fetchConfigStatus() {
     assert 'data-feature-skill-detail="market:skill-creator-2"' in str(
         payload["marketHtml"]
     )
-    assert 'data-feature-skills-market-uninstall="skill-creator-2"' in str(
+    assert 'data-feature-skills-market-install="skill-creator-2"' in str(
         payload["marketHtml"]
     )
-    assert "SKILL.md is available after installation." in str(payload["detailHtml"])
+    assert 'data-feature-skills-market-uninstall="skill-creator-2"' not in str(
+        payload["marketHtml"]
+    )
     assert payload["detailRequests"] == []
+    assert payload["marketDetailRequests"] == [
+        {"slug": "skill-creator-2", "version": "v1.0.0"}
+    ]
 
 
 def test_project_view_skills_search_timer_is_guarded_when_leaving_feature() -> None:
@@ -5511,6 +6268,7 @@ await flushTasks();
 console.log(JSON.stringify({
     html: els.projectViewContent.innerHTML,
     toolbarHtml: els.projectViewToolbarActions.innerHTML,
+    browseRequests: globalThis.__clawHubMarketBrowseRequests || [],
     searchRequests: globalThis.__clawHubMarketSearchRequests || [],
 }));
 """.strip(),
@@ -5535,8 +6293,10 @@ export async function searchClawHubSkillMarket(query, options = {}) {
     )
 
     assert payload["searchRequests"] == [
-        {"query": "", "limit": 24},
         {"query": "old", "limit": 24},
+    ]
+    assert payload["browseRequests"] == [
+        {"limit": 24, "cursor": "", "sort": "popular"},
     ]
     assert "Old Skill" not in str(payload["html"])
     assert 'value="new"' in str(payload["toolbarHtml"])
@@ -9081,6 +9841,42 @@ export async function searchClawHubSkillMarket(query, options = {}) {
     };
 }
 """.strip(),
+        "fetchClawHubSkillMarket": """
+export async function fetchClawHubSkillMarket(options = {}) {
+    globalThis.__clawHubMarketBrowseRequests =
+        globalThis.__clawHubMarketBrowseRequests || [];
+    globalThis.__clawHubMarketBrowseRequests.push({
+        limit: options?.limit || null,
+        cursor: options?.cursor || "",
+        sort: options?.sort || "",
+    });
+    return globalThis.__clawHubMarketBrowseResponse || {
+        ok: true,
+        query: "",
+        items: [],
+        sort: "popular",
+        next_cursor: null,
+    };
+}
+""".strip(),
+        "fetchClawHubSkillMarketDetail": """
+export async function fetchClawHubSkillMarketDetail(slug, options = {}) {
+    globalThis.__clawHubMarketDetailRequests =
+        globalThis.__clawHubMarketDetailRequests || [];
+    globalThis.__clawHubMarketDetailRequests.push({
+        slug,
+        version: options?.version || "",
+    });
+    return globalThis.__clawHubMarketDetailResponse || {
+        ok: true,
+        slug,
+        title: slug,
+        version: options?.version || "1.0.0",
+        manifest_content: "# Skill Creator\\n\\n## Quick Start\\nUse this skill.",
+        files: [{ path: "SKILL.md", size: 42 }],
+    };
+}
+""".strip(),
         "installClawHubMarketSkill": """
 export async function installClawHubMarketSkill(payload) {
     globalThis.__clawHubMarketInstallRequests =
@@ -9597,6 +10393,12 @@ export const state = {
         "feature.skills.market_load_more": "Load more",
         "feature.skills.market_loading_more": "Loading more...",
         "feature.skills.market_version": "Version {version}",
+        "feature.skills.market_installs": "{count} installs",
+        "feature.skills.market_installs_short": "Installs",
+        "feature.skills.market_stars": "{count} stars",
+        "feature.skills.market_stars_short": "Stars",
+        "feature.skills.market_downloads": "{count} downloads",
+        "feature.skills.market_downloads_short": "Downloads",
         "feature.skills.market_score": "Score {score}",
         "feature.skills.market_result": "ClawHub result",
         "feature.skills.install_dialog_title": "Install ClawHub skill",
@@ -9626,7 +10428,7 @@ export const state = {
         "feature.skills.detail_path": "Path",
         "feature.skills.detail_instruction_path": "Instructions",
         "feature.skills.detail_loading_markdown": "Loading SKILL.md...",
-        "feature.skills.detail_no_markdown": "SKILL.md is available after installation.",
+        "feature.skills.detail_no_markdown": "No SKILL.md preview is available.",
         "feature.skills.detail_markdown_failed": "Failed to load SKILL.md.",
         "feature.skills.empty": "No skills loaded",
         "feature.skills.empty_copy": "Reload after updating the configured skill directories.",

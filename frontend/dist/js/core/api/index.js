@@ -119,6 +119,8 @@ export {
     probeWebConnectivity,
     fetchClawHubConfig,
     fetchClawHubSkill,
+    fetchClawHubSkillMarketDetail,
+    fetchClawHubSkillMarket,
     fetchClawHubSkills,
     fetchRuntimeSkillDetail,
     installClawHubMarketSkill,

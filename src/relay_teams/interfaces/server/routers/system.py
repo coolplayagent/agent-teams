@@ -165,6 +165,7 @@ from relay_teams.skills.clawhub_models import (
 )
 from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
 from relay_teams.skills.skill_market_models import (
+    ClawHubSkillMarketDetailResponse,
     ClawHubSkillMarketInstallRequest,
     ClawHubSkillMarketInstallResponse,
     ClawHubSkillMarketSearchResponse,
@@ -1542,6 +1543,24 @@ async def probe_clawhub_connectivity(
 
 
 @router.get(
+    "/skills/market/clawhub",
+    response_model=ClawHubSkillMarketSearchResponse,
+)
+async def browse_clawhub_skill_market(
+    limit: Annotated[int, Query(ge=1, le=200)] = 24,
+    cursor: str = "",
+    sort: str = "popular",
+    service: ClawHubSkillMarketService = Depends(get_clawhub_skill_market_service),
+) -> ClawHubSkillMarketSearchResponse:
+    return await asyncio.to_thread(
+        service.browse_clawhub_skills,
+        limit=limit,
+        cursor=cursor,
+        sort=sort,
+    )
+
+
+@router.get(
     "/skills/market/clawhub/search",
     response_model=ClawHubSkillMarketSearchResponse,
 )
@@ -1567,6 +1586,25 @@ async def install_clawhub_skill_from_market(
 ) -> ClawHubSkillMarketInstallResponse:
     try:
         return await asyncio.to_thread(service.install_clawhub_skill, req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/skills/market/clawhub/{slug}",
+    response_model=ClawHubSkillMarketDetailResponse,
+)
+async def get_clawhub_skill_market_detail(
+    slug: RequiredIdentifierStr,
+    version: str | None = None,
+    service: ClawHubSkillMarketService = Depends(get_clawhub_skill_market_service),
+) -> ClawHubSkillMarketDetailResponse:
+    try:
+        return await asyncio.to_thread(
+            service.get_clawhub_skill_market_detail,
+            slug=slug,
+            version=version,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -813,30 +813,112 @@ The request may include:
 - optional `token`
 - optional `timeout_ms`
 
-### `GET /system/skills/market/clawhub/search`
+### `GET /system/skills/market/clawhub`
 
-Searches ClawHub for installable skills. This is the Skills page market data
-source; it does not read or return a ClawHub token.
+Browses ClawHub installable skills for the Skills page market home. This
+endpoint uses the saved ClawHub token when one is configured; clients do not
+send or receive plaintext tokens.
 
 Query:
-- `query`: optional search text. When omitted or blank, the endpoint asks
-  ClawHub for the default market listing.
+- `limit`: optional result cap, default `24`, max `200`
+- `cursor`: optional ClawHub `nextCursor` from a previous browse response
+- `sort`: optional market sort, default `popular`. Supported values are
+  `popular`, `downloads`, `stars`, `newest`, `installsAllTime`, and `trending`.
+  `popular` maps to ClawHub's current installs ranking, and `newest` maps to
+  ClawHub's creation-time ranking.
+
+Response fields include:
+- `ok`
+- `query`: always blank for browse responses
+- `sort`
+- `next_cursor`
+- `items[]`
+  - `slug`
+  - `title`
+  - `summary`
+  - optional `version`
+  - optional `score`; browse results omit it
+  - optional `stats` with comments, downloads, installs, stars, and versions
+  - optional owner fields
+  - optional `created_at_ms`
+  - optional `updated_at_ms`
+  - `installed`: whether the result matches a currently loaded ClawHub skill
+- optional `error_message`
+
+Runtime problems such as network failures, timeout, malformed ClawHub output,
+or listing failure return `200` with `ok = false`. Invalid query parameters
+such as an out-of-range `limit` still return validation errors.
+
+### `GET /system/skills/market/clawhub/search`
+
+Searches ClawHub for installable skills. This is used when the user enters a
+search query in the Skills page market tab; it does not read or return a
+plaintext ClawHub token.
+
+Query:
+- `query`: optional search text. When omitted or blank, the endpoint returns
+  the default market listing for backward compatibility; new clients should use
+  `/system/skills/market/clawhub` for the market home.
 - `limit`: optional result cap, default `24`, max `500`
 
 Response fields include:
 - `ok`
 - `query`
+- optional `sort`
+- optional `next_cursor`
 - `items[]`
   - `slug`
   - `title`
+  - `summary`
   - optional `version`
   - optional `score`
+  - optional `stats`
+  - optional owner fields
+  - optional `created_at_ms`
+  - optional `updated_at_ms`
   - `installed`: whether the result matches a currently loaded ClawHub skill
 - optional `error_message`
 
-Runtime problems such as a missing ClawHub CLI, timeout, malformed CLI output,
+Runtime problems such as network failures, timeout, malformed ClawHub output,
 or search failure return `200` with `ok = false`. Invalid query parameters such
 as an out-of-range `limit` still return validation errors.
+
+### `GET /system/skills/market/clawhub/{slug}`
+
+Returns ClawHub market detail for one installable skill before installation.
+The backend uses the saved ClawHub token when configured, reads ClawHub skill
+metadata, and reads the selected version's `SKILL.md` through ClawHub's raw file
+API. It does not install, download, or unpack the skill into the local runtime
+directory.
+
+Query:
+- optional `version`; when omitted, the latest ClawHub version is used
+
+Response fields include:
+- `ok`
+- `slug`
+- `title`
+- `summary`
+- optional `version`
+- optional `manifest_content`: the previewable `SKILL.md` content
+- optional `changelog`
+- optional `license`
+- `files[]`
+  - `path`
+  - optional `size`
+  - optional `sha256`
+  - optional `content_type`
+- optional `stats`
+- optional owner fields
+- optional `created_at_ms`
+- optional `updated_at_ms`
+- optional `error_message`
+
+Runtime problems such as missing ClawHub metadata, file preview failure, missing
+`SKILL.md`, or non-UTF-8 manifest content return `200` with `ok = false` for
+missing metadata or `ok = true` with `error_message` when metadata is available
+but the manifest cannot be previewed. Invalid path parameters still return
+request validation errors.
 
 ### `POST /system/skills/market/clawhub/install`
 

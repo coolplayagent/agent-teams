@@ -142,6 +142,8 @@ from relay_teams.skills.clawhub_models import (
     ClawHubSkillWriteRequest,
 )
 from relay_teams.skills.skill_market_models import (
+    ClawHubSkillMarketDetailResponse,
+    ClawHubSkillMarketFile,
     ClawHubSkillMarketInstallDiagnostics,
     ClawHubSkillMarketInstallRequest,
     ClawHubSkillMarketInstallResponse,
@@ -260,6 +262,37 @@ class _FakeSystemService:
                 ),
             ),
         )
+        self.clawhub_market_browse_response = ClawHubSkillMarketSearchResponse(
+            ok=True,
+            query="",
+            sort="popular",
+            next_cursor="next-page",
+            items=(
+                ClawHubSkillMarketSearchItem(
+                    slug="self-improving-agent",
+                    title="Self-Improving Agent",
+                    summary="Captures learnings.",
+                    version="3.0.21",
+                    installed=False,
+                ),
+            ),
+        )
+        self.clawhub_market_detail_response = ClawHubSkillMarketDetailResponse(
+            ok=True,
+            slug="skill-creator",
+            title="Skill Creator",
+            summary="Create skills.",
+            version="0.1.0",
+            manifest_content="# Skill Creator\n\nCreate skills safely.",
+            files=(
+                ClawHubSkillMarketFile(
+                    path="SKILL.md",
+                    size=42,
+                    sha256="abc123",
+                    content_type="text/plain",
+                ),
+            ),
+        )
         self.clawhub_market_install_response = ClawHubSkillMarketInstallResponse(
             ok=True,
             slug="skill-creator",
@@ -277,6 +310,8 @@ class _FakeSystemService:
             skills_reloaded=True,
         )
         self.last_clawhub_market_search: tuple[str, int] | None = None
+        self.last_clawhub_market_browse: tuple[int, str, str] | None = None
+        self.last_clawhub_market_detail: tuple[str, str | None] | None = None
         self.last_clawhub_market_install: ClawHubSkillMarketInstallRequest | None = None
         self.last_clawhub_market_uninstall: str | None = None
         self.ssh_profiles: dict[str, SshProfileRecord] = {
@@ -705,6 +740,25 @@ class _FakeSystemService:
     ) -> ClawHubSkillMarketSearchResponse:
         self.last_clawhub_market_search = (query, limit)
         return self.clawhub_market_search_response
+
+    def browse_clawhub_skills(
+        self,
+        *,
+        limit: int,
+        cursor: str = "",
+        sort: str = "popular",
+    ) -> ClawHubSkillMarketSearchResponse:
+        self.last_clawhub_market_browse = (limit, cursor, sort)
+        return self.clawhub_market_browse_response
+
+    def get_clawhub_skill_market_detail(
+        self,
+        *,
+        slug: str,
+        version: str | None = None,
+    ) -> ClawHubSkillMarketDetailResponse:
+        self.last_clawhub_market_detail = (slug, version)
+        return self.clawhub_market_detail_response
 
     def install_clawhub_skill(
         self,
@@ -2438,12 +2492,64 @@ def test_search_clawhub_skill_market() -> None:
             {
                 "slug": "skill-creator",
                 "title": "Skill Creator",
+                "summary": "",
                 "version": "v1.0.0",
                 "score": 3.2,
+                "stats": None,
+                "owner_handle": None,
+                "owner_display_name": None,
+                "owner_image": None,
+                "created_at_ms": None,
+                "updated_at_ms": None,
                 "installed": False,
             }
         ],
+        "sort": None,
+        "next_cursor": None,
         "error_message": None,
+    }
+
+
+def test_browse_clawhub_skill_market() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.get(
+        "/api/system/skills/market/clawhub",
+        params={"limit": "12", "cursor": "next-cursor", "sort": "downloads"},
+    )
+
+    assert response.status_code == 200
+    assert service.last_clawhub_market_browse == (12, "next-cursor", "downloads")
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["query"] == ""
+    assert payload["sort"] == "popular"
+    assert payload["next_cursor"] == "next-page"
+    assert payload["items"][0]["slug"] == "self-improving-agent"
+    assert payload["items"][0]["summary"] == "Captures learnings."
+
+
+def test_get_clawhub_skill_market_detail() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.get(
+        "/api/system/skills/market/clawhub/skill-creator",
+        params={"version": "0.1.0"},
+    )
+
+    assert response.status_code == 200
+    assert service.last_clawhub_market_detail == ("skill-creator", "0.1.0")
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["slug"] == "skill-creator"
+    assert payload["manifest_content"] == "# Skill Creator\n\nCreate skills safely."
+    assert payload["files"][0] == {
+        "path": "SKILL.md",
+        "size": 42,
+        "sha256": "abc123",
+        "content_type": "text/plain",
     }
 
 
@@ -2481,6 +2587,8 @@ def test_search_clawhub_skill_market_returns_runtime_failure_payload() -> None:
         "ok": False,
         "query": "broken",
         "items": [],
+        "sort": None,
+        "next_cursor": None,
         "error_message": "ClawHub CLI is not available on PATH.",
     }
 

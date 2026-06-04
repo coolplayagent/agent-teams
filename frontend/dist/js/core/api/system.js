@@ -512,6 +512,27 @@ export async function fetchClawHubSkills() {
     return requestJson('/api/system/configs/clawhub/skills', undefined, 'Failed to fetch ClawHub skills');
 }
 
+export async function fetchClawHubSkillMarket(options = {}) {
+    const params = new URLSearchParams();
+    const limit = Number(options.limit || 24);
+    if (Number.isFinite(limit) && limit > 0) {
+        params.set('limit', String(Math.floor(limit)));
+    }
+    const cursor = String(options.cursor || '').trim();
+    if (cursor) {
+        params.set('cursor', cursor);
+    }
+    const sort = String(options.sort || 'popular').trim();
+    if (sort) {
+        params.set('sort', sort);
+    }
+    return requestJson(
+        `/api/system/skills/market/clawhub?${params.toString()}`,
+        { signal: options.signal },
+        'Failed to fetch ClawHub skill market',
+    );
+}
+
 export async function searchClawHubSkillMarket(query, options = {}) {
     const params = new URLSearchParams();
     params.set('query', String(query || '').trim());
@@ -523,6 +544,21 @@ export async function searchClawHubSkillMarket(query, options = {}) {
         `/api/system/skills/market/clawhub/search?${params.toString()}`,
         { signal: options.signal },
         'Failed to search ClawHub skills',
+    );
+}
+
+export async function fetchClawHubSkillMarketDetail(slug, options = {}) {
+    const normalizedSlug = String(slug || '').trim();
+    const params = new URLSearchParams();
+    const version = String(options.version || '').trim();
+    if (version) {
+        params.set('version', version);
+    }
+    const query = params.toString();
+    return requestJson(
+        `/api/system/skills/market/clawhub/${encodeURIComponent(normalizedSlug)}${query ? `?${query}` : ''}`,
+        { signal: options.signal },
+        'Failed to fetch ClawHub skill detail',
     );
 }
 

@@ -7,6 +7,7 @@ from relay_teams.agents.tasks.enums import TaskStatus, VerificationLayer
 from relay_teams.agents.tasks.models import TaskEnvelope, TaskRecord
 from relay_teams.agents.tasks.models import VerificationCheckResult
 from relay_teams.roles.role_contracts import (
+    RoleContractInvariantType,
     RoleContractPostconditionType,
     RoleContractPreconditionType,
     is_empty_role_contract,
@@ -45,7 +46,7 @@ def role_contract_precondition_failures(
     failures: list[str] = list(
         role_contract_invariant_failures(
             contract=contract,
-            tools=role.tools,
+            tools=_runtime_contract_tools(role),
             mcp_servers=role.mcp_servers,
             skills=role.skills,
         )
@@ -154,7 +155,7 @@ def _role_contract_invariant_checks(
 ) -> tuple[VerificationCheckResult, ...]:
     failures = role_contract_invariant_failures(
         contract=role.contract,
-        tools=role.tools,
+        tools=_runtime_contract_tools(role),
         mcp_servers=role.mcp_servers,
         skills=role.skills,
     )
@@ -174,6 +175,16 @@ def _role_contract_invariant_checks(
         )
         for failure in failures
     )
+
+
+def _runtime_contract_tools(role: RoleDefinition) -> tuple[str, ...]:
+    denied_tools: set[str] = set()
+    for invariant in role.contract.invariants:
+        if invariant.invariant == RoleContractInvariantType.MUST_NOT_HAVE_TOOLS:
+            denied_tools.update(invariant.tools)
+    if not denied_tools:
+        return role.tools
+    return tuple(tool for tool in role.tools if tool not in denied_tools)
 
 
 def _dependency_completion_failures(

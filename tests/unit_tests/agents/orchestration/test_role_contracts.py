@@ -119,6 +119,29 @@ def test_role_contract_preconditions_without_role_filter_use_dependencies() -> N
     )
 
 
+def test_role_contract_filters_denied_tools_for_runtime_invariants() -> None:
+    role = _role(
+        contract=RoleContract(
+            invariants=(
+                RoleContractInvariant(
+                    invariant=RoleContractInvariantType.MUST_NOT_HAVE_TOOLS,
+                    tools=("shell",),
+                ),
+            ),
+        ),
+        tools=("read", "shell"),
+    )
+
+    assert (
+        role_contract_precondition_failures(
+            role=role,
+            task=_task(),
+            records_by_id={},
+        )
+        == ()
+    )
+
+
 def test_role_contract_verification_checks_cover_postconditions_and_invariants() -> (
     None
 ):

@@ -332,9 +332,15 @@ class EvalRunner:
             if result is None:
                 raise RuntimeError("eval run produced no result")
 
+            measured_duration_seconds = time.monotonic() - t_start
+            duration_seconds = (
+                result.duration_seconds
+                if result.duration_seconds > 0.0
+                else measured_duration_seconds
+            )
             result = result.model_copy(
                 update={
-                    "duration_seconds": time.monotonic() - t_start,
+                    "duration_seconds": duration_seconds,
                     "started_at": started_at,
                 }
             )

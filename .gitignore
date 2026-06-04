@@ -22,6 +22,7 @@ package.json
 !src/relay_teams/builtin/skills/pptx-craft/package.json
 !src/relay_teams/builtin/skills/pptx-craft/designer/lib/html-to-pptx/package.json
 .claude
+.agent_teams/benchmarks/
 .agent_teams/evals/
 !.agent_teams/
 !.agent_teams/evals/
@@ -34,6 +35,8 @@ package.json
 !.agent_teams/evals/datasets/
 .agent_teams/evals/datasets/*
 !.agent_teams/evals/datasets/*.jsonl
+!.agent_teams/evals/datasets/manifests/
+.agent_teams/evals/datasets/manifests/*
 logs/
 src/relay_teams/builtin/skills/pptx-craft/designer/lib/html-to-pptx/dist/
 src/relay_teams/builtin/skills/pptx-craft/designer/lib/html-to-pptx/node/dist/

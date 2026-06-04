@@ -1,0 +1,62 @@
+dataset: agentbench
+dataset_path: null
+scorer: agentbench
+swebench_pass_threshold: 0.8
+
+backend: agent_teams
+agent_teams:
+  base_url: "http://127.0.0.1:8000"
+  execution_mode: ai
+  session_mode: orchestration
+  orchestration_preset_id: default
+  yolo: true
+  timeout_seconds: 600
+  config_dir: "~/.relay-teams"
+
+workspace_mode: docker
+evals_workdir: .agent_teams/evals/workspaces
+git_clone_timeout_seconds: 120
+
+docker:
+  image_prefix: "swebench/sweb.eval.x86_64"
+  agent_runtime_image: "agent-teams-runtime:latest"
+  agent_runtime_bin: "/opt/agent-runtime/bin/relay-teams"
+  container_startup_timeout_seconds: 60
+  forward_env_vars:
+    - DEEPSEEK_API_KEY
+    - HTTP_PROXY
+    - HTTPS_PROXY
+    - NO_PROXY
+  extra_env: {}
+
+agentbench:
+  benchmark_image: "relay-teams-agentbench-tools:latest"
+  runtime_image: "agent-teams-runtime:latest"
+  api_key_env_var: "DEEPSEEK_API_KEY"
+  execution_mode: suite
+  suite: all
+  os_suite: std
+  num_os_tasks: null
+  num_db_tasks: null
+  max_steps: null
+  task_timeout_seconds: null
+  rerun_infra_failures: false
+  rerun_db_mutation_failures: true
+  model: "deepseek-v4-flash"
+  model_base_url: "https://api.deepseek.com"
+limit: null
+item_ids: []
+
+concurrency: 1
+keep_workspaces: false
+save_artifacts: true
+infra_retry_attempts: 2
+infra_retry_backoff_seconds: 5.0
+
+output_dir: .agent_teams/evals/results/orchestration/agentbench/deepseek-v4-flash
+report_format: both
+
+cost_per_million_input_tokens: 0.0
+cost_per_million_cached_input_tokens: 0.0
+cost_per_million_output_tokens: 0.0
+cost_per_million_reasoning_output_tokens: 0.0

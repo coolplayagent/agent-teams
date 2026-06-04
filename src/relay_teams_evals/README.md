@@ -38,6 +38,13 @@ relay-teams-evals run --config eval.yaml --item-ids astropy__astropy-8707 --reru
 relay-teams-evals run --config eval.yaml --item-ids astropy__astropy-8707,astropy__astropy-14309 --rerun --concurrency 2
 ```
 
+AgentBench quick run:
+
+```bash
+relay-teams-evals run --config .agent_teams/evals/configs/normal/eval-agentbench.yaml --limit 5 --concurrency 2
+relay-teams-evals run --config .agent_teams/evals/configs/orchestration/eval-agentbench.yaml --limit 5 --concurrency 2
+```
+
 ## Workspace modes
 
 ### git mode (default)
@@ -52,7 +59,13 @@ git_clone_timeout_seconds: 120
 
 ### docker mode
 
-Runs each eval item inside a dedicated SWE-bench Docker container. The relay-teams server starts inside the container alongside the repo. This is the recommended mode for SWE-bench.
+For SWE-bench, runs each eval item inside a dedicated SWE-bench Docker
+container. The relay-teams server starts inside the container alongside the
+repo. This is the recommended mode for SWE-bench. AgentBench also uses
+`workspace_mode: docker`, and benchmark execution is suite-oriented by default:
+one benchmark container can run all scheduled tasks in a single invocation,
+while the eval runner still handles checkpointing, reruns, reports, and
+artifacts.
 
 ```yaml
 workspace_mode: docker
@@ -100,17 +113,24 @@ generated `setup_repo.sh` as-is. If an instance image build fails, the run
 fails during workspace preparation and surfaces the exact `build_image.log`
 path instead of continuing into `docker run` retries for a missing image.
 
+For `dataset: agentbench`, docker mode starts the
+benchmark tool container with the runtime image mounted via `--volumes-from`.
+The benchmark container starts a container-local relay-teams server, runs the
+official benchmark harness, then converts the raw harness output into the same
+`report.json`, `report.html`, checkpoint, and artifact structure used by
+SWE-bench.
+
 ## Config file reference
 
 All settings live in a single YAML file. Use `init-config` to generate a commented template.
 
 ```yaml
 # --- Dataset ---
-dataset: jsonl                          # jsonl | swebench
+dataset: jsonl                          # jsonl | swebench | agentbench
 dataset_path: .agent_teams/evals/datasets/custom.jsonl
 
 # --- Scorer ---
-scorer: keyword                         # keyword | regex | event_status | swebench | swebench_docker
+scorer: keyword                         # keyword | regex | event_status | swebench | swebench_docker | agentbench
 swebench_pass_threshold: 0.8            # patch Jaccard threshold (primary for swebench, auxiliary for swebench_docker)
 
 # --- Backend ---
@@ -138,10 +158,27 @@ docker:
   agent_runtime_image: "agent-teams-runtime:latest"
   container_startup_timeout_seconds: 60
   forward_env_vars:
+    - DEEPSEEK_API_KEY
     - ANTHROPIC_API_KEY
     - HTTP_PROXY
     - HTTPS_PROXY
     - NO_PROXY
+
+agentbench:
+  benchmark_image: "relay-teams-agentbench-tools:latest"
+  runtime_image: "agent-teams-runtime:latest"
+  api_key_env_var: "DEEPSEEK_API_KEY"
+  execution_mode: suite                  # suite: run scheduled tasks in one container; item: legacy per-task container
+  suite: all                            # all | os | db
+  os_suite: std                         # std | dev
+  num_os_tasks: null
+  num_db_tasks: null
+  max_steps: null                       # null = runner default, 0 = no step limit
+  task_timeout_seconds: null            # null = runner default, 0 = no task timeout
+  rerun_infra_failures: false
+  rerun_db_mutation_failures: true
+  model: "deepseek-v4-flash"
+  model_base_url: "https://api.deepseek.com"
 
 # --- Filtering ---
 limit: null                             # max items to run, null = all
@@ -203,6 +240,32 @@ from the original `problem_statement` content:
 - `hints_text`, when present, is emitted as a separate `<hints_text>` block
 - `FAIL_TO_PASS`, `PASS_TO_PASS`, and `test_patch` remain scorer-only metadata and are not included in the agent-facing intent
 
+### AgentBench
+
+Set `dataset: agentbench`, `scorer: agentbench`, and `workspace_mode: docker`.
+The runner invokes the pinned AgentBench OS/DB harness inside
+`relay-teams-agentbench-tools:latest`. CLI `--limit` is applied to the selected
+suite. For `suite: all`, the runner executes OS tasks first; configure
+`agentbench.num_os_tasks` and `agentbench.num_db_tasks` when you want an exact
+OS/DB split.
+
+Start an AgentBench run with:
+
+```bash
+relay-teams-evals run \
+  --config .agent_teams/evals/configs/normal/eval-agentbench.yaml \
+  --limit 5 \
+  --concurrency 2
+
+relay-teams-evals run \
+  --config .agent_teams/evals/configs/orchestration/eval-agentbench.yaml \
+  --limit 5 \
+  --concurrency 2
+```
+
+AgentBench raw results are converted into eval `report.json`, `report.html`,
+checkpoint files, and per-task artifacts under `output_dir`.
+
 ## Scorers
 
 | Scorer | Passes when | Requires |
@@ -212,6 +275,7 @@ from the original `problem_statement` content:
 | `event_status` | run outcome is `completed` (baseline) | -- |
 | `swebench` | Jaccard similarity of generated vs reference patch >= threshold | git diff, `reference_patch` |
 | `swebench_docker` | filtered candidate patch applies, `test_patch` applies, `fail_to_pass` tests pass, and `pass_to_pass` tests do not regress | docker mode, `fail_to_pass`/`pass_to_pass` |
+| `agentbench` | AgentBench reports `passed: true` | docker mode, AgentBench raw results |
 
 For SWE-bench, `swebench_docker` is the recommended primary scorer. It runs `pytest`
 inside a fresh scoring container started from the same SWE-bench instance image used
@@ -233,12 +297,20 @@ recorded as an auxiliary diagnostic score for the scored patch.
 
 ### docker mode
 
+For SWE-bench:
+
 1. A stopped runtime data container is created once from `agent_runtime_image`
 2. For each item, a SWE-bench image is launched with `docker run -d`, mounting the runtime via `--volumes-from`
 3. The relay-teams server starts inside the container; the runner waits for it to become ready
 4. A temporary workspace is registered pointing to `container_repo_path` inside the container
 5. After the run, the workspace is deleted and the container is removed (unless `keep_workspaces: true`)
 6. The runtime data container is removed after all items finish
+
+For AgentBench, the eval runner still owns item selection,
+checkpointing, retry, reports, and artifacts. With `execution_mode: suite`, a
+single benchmark invocation handles the scheduled task list and returns results for
+multiple items at once. This matches the official benchmark harness scheduling
+model better and avoids repeated container start/stop for each item.
 
 ## Output
 
@@ -250,6 +322,11 @@ Results land in `output_dir` (default `.agent_teams/evals/results/`):
 - `report.html` -- self-contained HTML report with per-item table and auxiliary scores
 - `artifacts/<item_id>/patch.diff` -- scored patch after benchmark test-file filtering
 - `artifacts/<item_id>/raw_patch.diff` -- original extracted patch when different
+
+For AgentBench, `artifacts/<item_id>/metadata.json` and
+`agent_output.txt` are created from the raw benchmark result. Infrastructure
+failures are marked with `failure_kind=infra` in scorer detail and can be
+rerun after the underlying network/container issue is fixed.
 
 `report.json` is refreshed after each completed item. If a run is interrupted,
 rerunning the same command resumes from the checkpoint and rebuilds the report
@@ -319,6 +396,7 @@ src/relay_teams_evals/
         base.py             DatasetLoader ABC
         jsonl_loader.py     generic JSONL (multi-line JSON supported)
         swebench_loader.py  SWE-bench field mapping
+        agentbench_task_loader.py  AgentBench result loader
     scorers/
         base.py             Scorer ABC
         keyword_scorer.py
@@ -326,6 +404,10 @@ src/relay_teams_evals/
         event_status_scorer.py
         swebench_scorer.py      Jaccard patch similarity
         swebench_docker_scorer.py  pytest inside container via docker exec
+        agentbench_scorer.py  AgentBench result scorer
+    agentbench_runs/
+        docker_runner.py        AgentBench Docker harness runner
+        reporting.py            raw AgentBench result to EvalReport conversion
     workspace/
         base.py             PreparedWorkspace model + WorkspaceSetup ABC
         git_setup.py        git clone + checkout per item

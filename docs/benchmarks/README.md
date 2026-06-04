@@ -1,6 +1,6 @@
 # Benchmark Suite
 
-This directory contains the three-layer benchmark system for relay-teams.
+This directory contains the benchmark system for relay-teams.
 
 ## Layer 1: Micro-Benchmarks
 
@@ -122,8 +122,173 @@ print(f'Modules checked: {result.modules_checked}')
 - **Workflow:** `.github/workflows/benchmarks-spec-compliance.yml`
 - **Failure threshold:** `overall_score < 0.7` (70%)
 
+## AgentBench
+
+**Location:** `benchmarks/agentbench/`, `benchmarks/docker/`,
+`scripts/benchmarks/`, `src/relay_teams_evals/`
+
+The AgentBench runner runs relay-teams through the public HTTP/SSE API and lets
+the benchmark harness score OS and DB task behavior. API keys are not stored in
+this repository; pass the target model key into the Docker run as an environment
+variable.
+
+The preferred entrypoint is now the same eval CLI used by SWE-bench:
+
+```bash
+relay-teams-evals run --config .agent_teams/evals/configs/normal/eval-agentbench.yaml --limit 5 --concurrency 2
+relay-teams-evals run --config .agent_teams/evals/configs/orchestration/eval-agentbench.yaml --limit 5 --concurrency 2
+```
+
+The `scripts/benchmarks/run_*_docker.py` wrappers remain available for direct
+harness debugging, but first-class eval runs should use `relay-teams-evals run`
+so reports, checkpoints, and artifacts are generated through the same path as
+SWE-bench.
+
+### Prepared benchmark image
+
+The Docker image pins the AgentBench source used by the runner:
+
+| Benchmark | Source | Pin |
+|---|---|---|
+| AgentBench OS/DB | `THUDM/AgentBench` | `d1e4a10db08c87075c78972e48ecc182be03e2d5` |
+
+```bash
+# Build the relay-teams runtime image, AgentBench image, and pinned benchmark repo
+python scripts/benchmarks/prepare_benchmarks.py
+```
+
+The script creates local cache/output state under `.agent_teams/benchmarks/`
+and builds `agent-teams-runtime:latest` plus
+`relay-teams-agentbench-tools:latest`. The tool image copies the pinned local
+repository cache into the image so Docker builds do not need to clone benchmark
+sources again.
+
+### Runtime assumptions
+
+AgentBench runs in the same Docker-contained style as SWE-bench. Build the
+relay-teams runtime image once, create a runtime data container, and mount it
+into the benchmark container with `--volumes-from`. The benchmark entrypoint
+starts `relay-teams server` inside the benchmark container and points the
+runner at `http://127.0.0.1:8000`.
+
+Provide the model key through the configured benchmark `api_key_env_var`
+environment variable. The tracked example configs default to
+`DEEPSEEK_API_KEY`; `RELAY_TEAMS_BENCH_API_KEY` is also accepted as a generic
+one-off override. When no staged `model.json` is mounted, the benchmark
+entrypoint writes a container-local model profile and defaults to
+`deepseek-v4-flash` at `https://api.deepseek.com`.
+
+```bash
+DOCKER=/Applications/Docker.app/Contents/Resources/bin/docker
+DOCKER_PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+
+# Avoid putting the key directly in command history.
+read -rsp 'DEEPSEEK_API_KEY: ' DEEPSEEK_API_KEY
+echo
+export DEEPSEEK_API_KEY
+
+RUNTIME_CONTAINER=$(PATH="$DOCKER_PATH" "$DOCKER" create agent-teams-runtime:latest)
+```
+
+Useful environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `DEEPSEEK_API_KEY` | Default key variable consumed by the container-local `model.json` |
+| `RELAY_TEAMS_BENCH_API_KEY` | Generic one-off key variable, used when the configured key variable is unset |
+| `RELAY_TEAMS_BENCH_API_KEY_ENV_VAR` | Name of the provider-specific key variable to read inside the benchmark container |
+| `RELAY_TEAMS_BENCH_MODEL` | Model name, defaults to `deepseek-v4-flash` |
+| `RELAY_TEAMS_BENCH_MODEL_BASE_URL` | Model base URL, defaults to `https://api.deepseek.com` |
+| `RELAY_TEAMS_BENCH_MODEL_PROFILE` | Container-local profile name, defaults to `deepseek` |
+| `RELAY_TEAMS_BENCH_BASE_URL` | relay-teams API URL; set by the Docker entrypoint for AgentBench |
+| `RELAY_TEAMS_BENCH_WORKSPACE` | Optional container workspace path passed to `/api/workspaces/pick` |
+| `RELAY_TEAMS_BENCH_SESSION_MODE` | `normal` or `orchestration` |
+| `RELAY_TEAMS_BENCH_ROLE_ID` | Optional normal-mode root role |
+| `RELAY_TEAMS_BENCH_ORCHESTRATION_ID` | Optional orchestration preset |
+| `RELAY_TEAMS_BENCH_YOLO` | Defaults to `true` for unattended benchmark execution |
+| `RELAY_TEAMS_BENCH_SKIP_SERVER_START` | Set to `true` only for manifest discovery or when a relay-teams server is already running |
+
+### AgentBench OS and DB
+
+First-class eval run:
+
+```bash
+relay-teams-evals run \
+  --config .agent_teams/evals/configs/normal/eval-agentbench.yaml \
+  --limit 5 \
+  --concurrency 2
+
+relay-teams-evals run \
+  --config .agent_teams/evals/configs/orchestration/eval-agentbench.yaml \
+  --limit 5 \
+  --concurrency 2
+```
+
+Direct harness run:
+
+```bash
+python scripts/benchmarks/run_agentbench_docker.py \
+  --suite all \
+  --api-key-env-var DEEPSEEK_API_KEY
+```
+
+By default the AgentBench runner does not impose a per-task step cap or
+wall-clock timeout. Use `--max-steps` or `--task-timeout-seconds` only when a
+bounded smoke/debug run is desired:
+
+```bash
+python scripts/benchmarks/run_agentbench_docker.py \
+  --suite os \
+  --os-suite dev \
+  --num-os-tasks 1 \
+  --max-steps 6 \
+  --task-timeout-seconds 900
+```
+
+Use explicit task counts for a smaller smoke run:
+
+```bash
+python scripts/benchmarks/run_agentbench_docker.py \
+  --suite all \
+  --os-suite dev \
+  --num-os-tasks 2 \
+  --num-db-tasks 2
+```
+
+The AgentBench runner uses the official AgentBench OS/DB task data while
+running through relay-teams' container-local HTTP API. By default, OS uses the
+official `os-std` split from `configs/tasks/os.yaml` (144 tasks). Use
+`--os-suite dev` only for the smaller 26-task development split. The OS task
+runs commands inside short-lived Docker containers based on the `local-os/*`
+images built by `prepare_benchmarks.py`; the DB task evaluates SQL over
+the benchmark table payloads inside the benchmark container.
+
+AgentBench writes `results.json` after every task and classifies failed tasks as
+`failure_kind=agent` or `failure_kind=infra`. Infrastructure failures are retried
+inside the benchmark container with `--infra-retry-attempts` and
+`--infra-retry-backoff-seconds`. After the Docker wrapper finishes, it writes the
+same eval-style `evaluation.json`, `report.json`, `checkpoint.meta.json`,
+`checkpoint.results.jsonl`, and `artifacts/` files described above. To resume a
+previous run directory and only rerun infrastructure failures:
+
+```bash
+python scripts/benchmarks/run_agentbench_docker.py \
+  --run-id 2026-05-25__10-55-13 \
+  --suite all \
+  --rerun-infra-failures
+```
+
+The tracked eval configs under `.agent_teams/evals/configs/normal/` and
+`.agent_teams/evals/configs/orchestration/` are the canonical local examples
+for first-class AgentBench runs. Raw
+benchmark result files are still produced by the official harness, then
+converted into eval-style `evaluation.json`, `report.json`, `report.html`,
+checkpoint files, and per-task artifacts under the configured eval
+`output_dir`.
+
 ## Design Principles
 
 1. **Micro-benchmarks** validate individual component performance; they should complete in under 60 seconds total
 2. **SWE-bench tracking** measures end-to-end quality at the task resolution level; it is expensive and runs on schedule
 3. **Spec-compliance** acts as a CI gate to prevent coding standard drift; it is fast and runs on every PR
+4. **AgentBench** measures OS/DB task-solving behavior through public interfaces and should run from isolated Docker tooling

@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from relay_teams_evals.backends.agent_teams_config import AgentTeamsConfig
 from relay_teams_evals.workspace.docker_setup import DockerConfig
 
+AgentBenchExecutionMode = Literal["item", "suite"]
+
 _SAMPLE_YAML = """\
 # Agent Teams Eval Config
 # Generate this file: relay-teams-evals init-config
@@ -18,11 +20,11 @@ _SAMPLE_YAML = """\
 #   relay-teams-evals run --config eval.yaml --restart
 
 # --- Dataset ---
-dataset: jsonl                          # jsonl | swebench
+dataset: jsonl                          # jsonl | swebench | agentbench
 dataset_path: .agent_teams/evals/datasets/custom.jsonl
 
 # --- Scorer ---
-scorer: keyword                         # keyword | regex | event_status | swebench | swebench_docker
+scorer: keyword                         # keyword | regex | event_status | swebench | swebench_docker | agentbench
 swebench_pass_threshold: 0.8            # patch Jaccard threshold (primary for swebench, auxiliary for swebench_docker)
 
 # --- Backend ---
@@ -56,15 +58,46 @@ docker:
   container_startup_timeout_seconds: 60
   forward_env_vars:
     - ANTHROPIC_API_KEY
-    - HTTP_PROXY
-    - HTTPS_PROXY
-    - NO_PROXY
   # extra_env: verbatim env vars injected into containers.
-  # Use when container-side values differ from host, e.g. proxy with
-  # host.docker.internal instead of 127.0.0.1:
+  # Leave proxy vars out by default. Add them only when a benchmark dataset
+  # needs outbound network access through a proxy.
   # extra_env:
   #   HTTP_PROXY: "http://host.docker.internal:7897"
   #   HTTPS_PROXY: "http://host.docker.internal:7897"
+
+# --- AgentBench Docker adapter ---
+# Used when dataset is agentbench.
+agentbench:
+  benchmark_image: "relay-teams-agentbench-tools:latest"
+  runtime_image: "agent-teams-runtime:latest"
+  api_key_env_var: "DEEPSEEK_API_KEY"
+  # suite: run all matching tasks in one benchmark container; item: keep legacy task-per-container mode.
+  execution_mode: suite
+  suite: all                            # all | os | db
+  os_suite: std                         # std | dev
+  num_os_tasks: null                    # null = all selected OS tasks
+  num_db_tasks: null                    # null = all selected DB tasks
+  max_steps: null                       # null = runner default, 0 = no step limit
+  task_timeout_seconds: null            # null = runner default, 0 = no timeout
+  rerun_infra_failures: false
+  rerun_db_mutation_failures: true
+  model: "deepseek-v4-flash"
+  model_base_url: "https://api.deepseek.com"
+  # os_prompt_template: |
+  #   你需要通过执行 shell 命令完成以下任务：
+  #   {task_description}
+  #
+  #   可用工具：
+  #   - shell: 执行 shell 命令
+  #   请直接给出执行命令，不要询问额外问题。
+  # db_prompt_template: |
+  #   你需要编写 SQL 查询来完成以下任务：
+  #   {task_description}
+  #
+  #   数据库结构：
+  #   {schema_info}
+  #
+  #   请只返回 SQL 语句，不要包含解释。
 
 # --- Filtering ---
 limit: null                             # max items to run, null = all
@@ -90,6 +123,27 @@ cost_per_million_reasoning_output_tokens: 15.0  # reasoning output price when re
 """
 
 
+class AgentBenchConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    benchmark_image: str = "relay-teams-agentbench-tools:latest"
+    runtime_image: str = "agent-teams-runtime:latest"
+    api_key_env_var: str = Field(default="DEEPSEEK_API_KEY", min_length=1)
+    execution_mode: AgentBenchExecutionMode = "suite"
+    suite: Literal["all", "os", "db"] = "all"
+    os_suite: Literal["std", "dev"] = "std"
+    num_os_tasks: int | None = None
+    num_db_tasks: int | None = None
+    max_steps: int | None = None
+    task_timeout_seconds: float | None = None
+    rerun_infra_failures: bool = False
+    rerun_db_mutation_failures: bool = True
+    model: str = "deepseek-v4-flash"
+    model_base_url: str = "https://api.deepseek.com"
+    os_prompt_template: str | None = None
+    db_prompt_template: str | None = None
+
+
 class RunConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -110,6 +164,7 @@ class RunConfig(BaseModel):
     evals_workdir: Path = Path(".agent_teams/evals/workspaces")
     git_clone_timeout_seconds: float = 120.0
     docker: DockerConfig = Field(default_factory=DockerConfig)
+    agentbench: AgentBenchConfig = Field(default_factory=AgentBenchConfig)
 
     # Filtering
     limit: int | None = None

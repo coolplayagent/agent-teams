@@ -813,6 +813,128 @@ The request may include:
 - optional `token`
 - optional `timeout_ms`
 
+### `GET /system/skills/market/clawhub/search`
+
+Searches ClawHub for installable skills. This is the Skills page market data
+source; it does not read or return a ClawHub token.
+
+Query:
+- `query`: optional search text. When omitted or blank, the endpoint asks
+  ClawHub for the default market listing.
+- `limit`: optional result cap, default `24`, max `500`
+
+Response fields include:
+- `ok`
+- `query`
+- `items[]`
+  - `slug`
+  - `title`
+  - optional `version`
+  - optional `score`
+  - `installed`: whether the result matches a currently loaded ClawHub skill
+- optional `error_message`
+
+Runtime problems such as a missing ClawHub CLI, timeout, malformed CLI output,
+or search failure return `200` with `ok = false`. Invalid query parameters such
+as an out-of-range `limit` still return validation errors.
+
+### `POST /system/skills/market/clawhub/install`
+
+Installs one ClawHub skill from the market and reloads the runtime skill
+registry on success. The backend reads the saved ClawHub token from
+`/system/configs/clawhub`; clients must not send plaintext tokens to this
+endpoint.
+
+Request body:
+- `slug`
+- optional `version`
+- optional `force`
+
+Response fields include:
+- `ok`
+- `slug`
+- optional `requested_version`
+- optional `installed_skill`
+  - `skill_id`
+  - `runtime_name`
+  - `description`
+  - `ref`
+  - `source`
+  - `directory`
+  - `manifest_path`
+  - `valid`
+  - optional `error`
+- `clawhub_path`
+- `latency_ms`
+- `checked_at`
+- `diagnostics.binary_available`
+- `diagnostics.token_configured`
+- `diagnostics.installation_attempted`
+- `diagnostics.installed_during_install`
+- optional `diagnostics.registry`
+- `diagnostics.endpoint_fallback_used`
+- optional `diagnostics.workdir`
+- `diagnostics.skills_reloaded`
+- `retryable`
+- optional `error_code`
+- optional `error_message`
+
+Runtime problems such as missing CLI, install failure, or post-install reload
+failure return `200` with `ok = false`. Invalid request bodies still return
+validation errors.
+
+### `DELETE /system/skills/market/clawhub/{slug}`
+
+Uninstalls one ClawHub-managed skill from the market UI and reloads the runtime
+skill registry through the ClawHub skill service mutation callback.
+
+Response fields include:
+- `ok`
+- `slug`
+- `skills_reloaded`
+- optional `error_code`
+- optional `error_message`
+
+Runtime problems such as a missing installed skill or filesystem delete failure
+return `200` with `ok = false`. Invalid path parameters still return request
+validation errors.
+
+### `GET /system/skills/{skill_ref}`
+
+Returns one loaded runtime skill definition for the Skills page detail view. This
+is a read-only view over the current runtime skill registry; it does not query
+ClawHub or expose tokens.
+
+Response fields include:
+- `ref`
+- `name`
+- `description`
+- `source`
+- `directory`
+- `manifest_path`
+- `instructions`
+- optional `manifest_content`
+
+The frontend renders `manifest_content` as `SKILL.md` when available, falling
+back to `instructions` if the file cannot be read. Unknown skills return `404`.
+
+### `DELETE /system/skills/{skill_ref}`
+
+Uninstalls a loaded runtime skill that comes from a user-owned skill directory,
+then reloads the runtime skill registry.
+
+Response fields include:
+- `ok`
+- `ref`
+- `skills_reloaded`
+- optional `error_code`
+- optional `error_message`
+
+The endpoint refuses built-in, plugin, and project-scoped skills with
+`ok = false` and `error_code = skill_not_removable` so the UI cannot delete
+skills that are owned by the application bundle, plugins, or the current
+workspace. Unknown skills return `404`.
+
 ### `GET /system/configs/clawhub/skills`
 
 Returns app-scoped ClawHub-managed skills discovered under the app config skill directory.
@@ -832,40 +954,6 @@ Notes:
 - `skill_id` is the on-disk directory identity.
 - `runtime_name` is the runtime authorization identity used by the skill registry.
 - These values may differ.
-
-Request body:
-- `slug`
-- optional `version`
-- optional `force`
-- optional `token`
-
-Response fields include:
-- `ok`
-- `slug`
-- optional `requested_version`
-- optional `installed_skill`
-  - `skill_id`
-  - `runtime_name`
-  - `description`
-  - `ref`
-  - `scope`
-  - `directory`
-  - `manifest_path`
-  - `valid`
-  - optional `error`
-- `clawhub_path`
-- `latency_ms`
-- `checked_at`
-- `diagnostics.binary_available`
-- `diagnostics.token_configured`
-- `diagnostics.installation_attempted`
-- `diagnostics.installed_during_install`
-- optional `diagnostics.registry`
-- `diagnostics.endpoint_fallback_used`
-- optional `diagnostics.workdir`
-- `diagnostics.skills_reloaded`
-- optional `error_code`
-- optional `error_message`
 
 ### `GET /system/configs/clawhub/skills/{skill_id}`
 
@@ -3493,17 +3581,18 @@ display.
 
 Connector APIs are aggregation endpoints under `/api/*`. Most connectors derive
 state from their owning domain: GitHub state comes from `triggers`; Feishu,
-WeChat, Discord, and Xiaoluban state comes from `gateway`; Relay Knowledge
-state comes from the managed runtime CLI tool registry. W3 is the unified
+WeChat, Discord, and Xiaoluban state comes from `gateway`. Relay Knowledge is
+shown as a runtime CLI tool under `/connectors/runtime-tools`, not as a
+`/connectors` list item. W3 is the unified
 authentication connector exception: it stores non-sensitive connector metadata
 in a JSON config file and stores the password in the unified secret store.
 
 ### `GET /connectors`
 
 Returns only built-in connectors backed by existing implementations: GitHub,
-Relay Knowledge, Discord, Feishu, WeChat, Xiaoluban, and W3. Gmail, Slack,
-Jira, and other future providers are not returned until their backend capability
-exists.
+Discord, Feishu, WeChat, Xiaoluban, and W3. Gmail, Slack, Jira, Relay
+Knowledge, and other future providers are not returned until their backend
+capability exists as a real connector list item.
 
 Response shape:
 - `summary`: counts for `connected`, `needs_config`, `disabled`, `error`, and
@@ -3513,8 +3602,7 @@ Response shape:
   `enabled_count`, `last_activity_at`, `last_error`, and `capabilities`
 
 Enums:
-- `provider`: `github`, `relay-knowledge`, `discord`, `feishu`, `wechat`,
-  `xiaoluban`, or `w3`
+- `provider`: `github`, `discord`, `feishu`, `wechat`, `xiaoluban`, or `w3`
 - `category`: `auth`, `development`, `im`, or `models`
 - `status`: `needs_config`, `connected`, `disabled`, or `error`
 - `auth_type`: includes connector-specific values such as `api_token`,

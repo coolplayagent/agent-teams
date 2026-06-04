@@ -48,6 +48,37 @@ console.log(JSON.stringify({ html }));
     assert '<a href="/docs" target="_blank" rel="noreferrer">docs</a>' in html
 
 
+def test_markdown_frontmatter_can_be_stripped_before_rendering(
+    tmp_path: Path,
+) -> None:
+    payload = _run_markdown_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { renderMarkdownToHtml, stripMarkdownFrontmatter } from "./markdown.mjs";
+
+const source = [
+    "---",
+    "name: skill-creator",
+    "description: Create skills.",
+    "---",
+    "# Skill Creator",
+    "",
+    "## Quick Start",
+    "Use this skill.",
+].join("\\n");
+const stripped = stripMarkdownFrontmatter(source);
+const html = renderMarkdownToHtml(stripped);
+
+console.log(JSON.stringify({ stripped, html }));
+""".strip(),
+    )
+
+    assert "name: skill-creator" not in payload["stripped"]
+    assert payload["stripped"].startswith("# Skill Creator")
+    assert "<h1>Skill Creator</h1>" in payload["html"]
+    assert "description: Create skills." not in payload["html"]
+
+
 def test_frontend_index_avoids_external_markdown_and_font_cdns() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     index_html = (repo_root / "frontend" / "dist" / "index.html").read_text(

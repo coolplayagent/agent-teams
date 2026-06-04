@@ -18,8 +18,19 @@ from relay_teams.skills.clawhub_models import (
 )
 from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
 from relay_teams.skills.config_reload_service import SkillsConfigReloadService
+from relay_teams.skills.skill_market_models import (
+    ClawHubSkillMarketInstalledSkill,
+    ClawHubSkillMarketInstallDiagnostics,
+    ClawHubSkillMarketInstallRequest,
+    ClawHubSkillMarketInstallResponse,
+    ClawHubSkillMarketSearchItem,
+    ClawHubSkillMarketSearchResponse,
+    ClawHubSkillMarketUninstallResponse,
+)
+from relay_teams.skills.skill_market_service import ClawHubSkillMarketService
 from relay_teams.skills.skill_models import (
     Skill,
+    SkillDetailEntry,
     SkillInstructionEntry,
     SkillMetadata,
     SkillOptionEntry,
@@ -27,6 +38,7 @@ from relay_teams.skills.skill_models import (
     SkillSource,
     SkillScript,
     SkillSummaryEntry,
+    SkillUninstallResponse,
 )
 from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.skills.skill_routing_models import (
@@ -51,6 +63,7 @@ from relay_teams.skills.skill_team_roles import (
 
 __all__ = [
     "Skill",
+    "SkillDetailEntry",
     "SkillIndexService",
     "SkillsConfigReloadService",
     "SkillInstructionEntry",
@@ -71,11 +84,20 @@ __all__ = [
     "SkillTeamRoleDefinition",
     "SkillTeamRoleSummary",
     "SkillSummaryEntry",
+    "SkillUninstallResponse",
     "SkillsDirectory",
     "SkillRegistry",
     "build_skill_routing_query_text",
     "ClawHubSkillDetail",
     "ClawHubSkillFile",
+    "ClawHubSkillMarketInstalledSkill",
+    "ClawHubSkillMarketInstallDiagnostics",
+    "ClawHubSkillMarketInstallRequest",
+    "ClawHubSkillMarketInstallResponse",
+    "ClawHubSkillMarketSearchItem",
+    "ClawHubSkillMarketSearchResponse",
+    "ClawHubSkillMarketUninstallResponse",
+    "ClawHubSkillMarketService",
     "ClawHubSkillService",
     "ClawHubSkillSummary",
     "ClawHubSkillWriteRequest",

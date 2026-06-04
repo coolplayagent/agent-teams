@@ -72,6 +72,7 @@ from relay_teams.interfaces.server.deps import (
     get_agent_runtime_test_job_service,
     get_clawhub_connectivity_probe_service,
     get_clawhub_config_service,
+    get_clawhub_skill_market_service,
     get_clawhub_skill_service,
     get_config_status_service,
     get_environment_variable_service,
@@ -90,6 +91,7 @@ from relay_teams.interfaces.server.deps import (
     get_proxy_config_service,
     get_ssh_profile_service,
     get_skills_config_reload_service,
+    get_skill_registry,
     get_ui_language_settings_service,
     get_web_config_service,
     get_web_connectivity_probe_service,
@@ -139,7 +141,15 @@ from relay_teams.skills.clawhub_models import (
     ClawHubSkillSummary,
     ClawHubSkillWriteRequest,
 )
-from relay_teams.skills.skill_models import SkillSource
+from relay_teams.skills.skill_market_models import (
+    ClawHubSkillMarketInstallDiagnostics,
+    ClawHubSkillMarketInstallRequest,
+    ClawHubSkillMarketInstallResponse,
+    ClawHubSkillMarketSearchItem,
+    ClawHubSkillMarketSearchResponse,
+    ClawHubSkillMarketUninstallResponse,
+)
+from relay_teams.skills.skill_models import Skill, SkillMetadata, SkillSource
 from relay_teams.hooks import HookRuntimeView, HooksConfig
 from relay_teams.notifications.models import NotificationConfig
 from relay_teams.agents.orchestration.settings_models import OrchestrationSettings
@@ -153,7 +163,7 @@ from relay_teams.workspace import (
 
 
 class _FakeSystemService:
-    def __init__(self) -> None:
+    def __init__(self, *, skill_dir: Path | None = None) -> None:
         self.general_config = GeneralConfig(shell_safety_policy_enabled=True)
         self.general_config_error: OSError | None = None
         self.saved_notification_config: dict[str, object] | None = None
@@ -192,6 +202,7 @@ class _FakeSystemService:
         self.proxy_reload_error: Exception | None = None
         self.mcp_reload_error: Exception | None = None
         self.skills_reload_error: Exception | None = None
+        self.skills_reload_calls = 0
         self.external_agents: dict[str, ExternalAgentConfig] = {
             "codex_local": ExternalAgentConfig(
                 agent_id="codex_local",
@@ -223,6 +234,51 @@ class _FakeSystemService:
                 files=(),
             )
         }
+        runtime_skill_dir = skill_dir or Path("/tmp/.relay-teams/skills/skill-creator")
+        self.skill_definitions: dict[str, Skill] = {
+            "skill-creator": Skill(
+                ref="skill-creator",
+                metadata=SkillMetadata(
+                    name="Skill Creator",
+                    description="Create Codex skills.",
+                    instructions="Create skills safely.",
+                ),
+                directory=runtime_skill_dir,
+                source=SkillSource.USER_RELAY_TEAMS,
+            )
+        }
+        self.clawhub_market_search_response = ClawHubSkillMarketSearchResponse(
+            ok=True,
+            query="skill creator",
+            items=(
+                ClawHubSkillMarketSearchItem(
+                    slug="skill-creator",
+                    title="Skill Creator",
+                    version="v1.0.0",
+                    score=3.2,
+                    installed=False,
+                ),
+            ),
+        )
+        self.clawhub_market_install_response = ClawHubSkillMarketInstallResponse(
+            ok=True,
+            slug="skill-creator",
+            requested_version=None,
+            installed_skill=None,
+            diagnostics=ClawHubSkillMarketInstallDiagnostics(
+                binary_available=True,
+                token_configured=True,
+                skills_reloaded=True,
+            ),
+        )
+        self.clawhub_market_uninstall_response = ClawHubSkillMarketUninstallResponse(
+            ok=True,
+            slug="skill-creator",
+            skills_reloaded=True,
+        )
+        self.last_clawhub_market_search: tuple[str, int] | None = None
+        self.last_clawhub_market_install: ClawHubSkillMarketInstallRequest | None = None
+        self.last_clawhub_market_uninstall: str | None = None
         self.ssh_profiles: dict[str, SshProfileRecord] = {
             "prod": SshProfileRecord(
                 ssh_profile_id="prod",
@@ -240,6 +296,9 @@ class _FakeSystemService:
 
     def get_config_status(self) -> dict[str, object]:
         return {"model": {"loaded": True}}
+
+    def get_skill_definition(self, name: str) -> Skill | None:
+        return self.skill_definitions.get(name)
 
     def get_config(self) -> GeneralConfig:
         return self.general_config
@@ -638,6 +697,30 @@ class _FakeSystemService:
     def delete_skill(self, skill_id: str) -> None:
         self.clawhub_skills.pop(skill_id)
 
+    def search_clawhub_skills(
+        self,
+        *,
+        query: str,
+        limit: int,
+    ) -> ClawHubSkillMarketSearchResponse:
+        self.last_clawhub_market_search = (query, limit)
+        return self.clawhub_market_search_response
+
+    def install_clawhub_skill(
+        self,
+        request: ClawHubSkillMarketInstallRequest,
+    ) -> ClawHubSkillMarketInstallResponse:
+        self.last_clawhub_market_install = request
+        return self.clawhub_market_install_response
+
+    def uninstall_clawhub_skill(
+        self,
+        *,
+        slug: str,
+    ) -> ClawHubSkillMarketUninstallResponse:
+        self.last_clawhub_market_uninstall = slug
+        return self.clawhub_market_uninstall_response
+
     def reload_mcp_config(self) -> None:
         if self.mcp_reload_error is not None:
             raise self.mcp_reload_error
@@ -646,6 +729,7 @@ class _FakeSystemService:
     def reload_skills_config(self) -> None:
         if self.skills_reload_error is not None:
             raise self.skills_reload_error
+        self.skills_reload_calls += 1
         return None
 
     def get_notification_config(self) -> NotificationConfig:
@@ -1196,6 +1280,7 @@ def _create_test_client(
     app.dependency_overrides[get_orchestration_settings_service] = lambda: fake_service
     app.dependency_overrides[get_mcp_config_reload_service] = lambda: fake_service
     app.dependency_overrides[get_skills_config_reload_service] = lambda: fake_service
+    app.dependency_overrides[get_skill_registry] = lambda: fake_service
     app.dependency_overrides[get_proxy_config_service] = lambda: fake_service
     app.dependency_overrides[get_web_connectivity_probe_service] = lambda: (
         _AsyncWebProbeAdapter(fake_service)
@@ -1216,6 +1301,7 @@ def _create_test_client(
     app.dependency_overrides[get_web_config_service] = lambda: fake_service
     app.dependency_overrides[get_clawhub_config_service] = lambda: fake_service
     app.dependency_overrides[get_clawhub_skill_service] = lambda: fake_service
+    app.dependency_overrides[get_clawhub_skill_market_service] = lambda: fake_service
     app.dependency_overrides[get_github_config_service] = lambda: fake_service
     app.dependency_overrides[get_localhost_run_tunnel_service] = lambda: fake_service
     app.dependency_overrides[get_github_trigger_service] = lambda: fake_service
@@ -2332,6 +2418,432 @@ def test_probe_clawhub_connectivity_runs_service_call_in_threadpool(
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert [call.token for call in calls] == ["ch_secret"]
+
+
+def test_search_clawhub_skill_market() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.get(
+        "/api/system/skills/market/clawhub/search",
+        params={"query": "skill creator", "limit": "12"},
+    )
+
+    assert response.status_code == 200
+    assert service.last_clawhub_market_search == ("skill creator", 12)
+    assert response.json() == {
+        "ok": True,
+        "query": "skill creator",
+        "items": [
+            {
+                "slug": "skill-creator",
+                "title": "Skill Creator",
+                "version": "v1.0.0",
+                "score": 3.2,
+                "installed": False,
+            }
+        ],
+        "error_message": None,
+    }
+
+
+def test_search_clawhub_skill_market_allows_default_listing() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.get(
+        "/api/system/skills/market/clawhub/search",
+        params={"limit": "20"},
+    )
+
+    assert response.status_code == 200
+    assert service.last_clawhub_market_search == ("", 20)
+    assert response.json()["ok"] is True
+
+
+def test_search_clawhub_skill_market_returns_runtime_failure_payload() -> None:
+    service = _FakeSystemService()
+    service.clawhub_market_search_response = ClawHubSkillMarketSearchResponse(
+        ok=False,
+        query="broken",
+        items=(),
+        error_message="ClawHub CLI is not available on PATH.",
+    )
+    client = _create_test_client(service)
+
+    response = client.get(
+        "/api/system/skills/market/clawhub/search",
+        params={"query": "broken"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": False,
+        "query": "broken",
+        "items": [],
+        "error_message": "ClawHub CLI is not available on PATH.",
+    }
+
+
+def test_install_clawhub_skill_market() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.post(
+        "/api/system/skills/market/clawhub/install",
+        json={"slug": "skill-creator", "version": "v1.0.0", "force": True},
+    )
+
+    assert response.status_code == 200
+    assert service.last_clawhub_market_install == ClawHubSkillMarketInstallRequest(
+        slug="skill-creator",
+        version="v1.0.0",
+        force=True,
+    )
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["slug"] == "skill-creator"
+    assert payload["diagnostics"]["token_configured"] is True
+    assert payload["diagnostics"]["skills_reloaded"] is True
+
+
+def test_install_clawhub_skill_market_rejects_invalid_slug() -> None:
+    client = _create_test_client(_FakeSystemService())
+
+    response = client.post(
+        "/api/system/skills/market/clawhub/install",
+        json={"slug": "openai/skill-creator"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_install_clawhub_skill_market_maps_value_error(monkeypatch) -> None:
+    service = _FakeSystemService()
+
+    def fail_install(
+        request: ClawHubSkillMarketInstallRequest,
+    ) -> ClawHubSkillMarketInstallResponse:
+        raise ValueError(f"Invalid skill slug: {request.slug}")
+
+    monkeypatch.setattr(service, "install_clawhub_skill", fail_install)
+    client = _create_test_client(service)
+
+    response = client.post(
+        "/api/system/skills/market/clawhub/install",
+        json={"slug": "bad-skill"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid skill slug: bad-skill"
+
+
+def test_uninstall_clawhub_skill_market() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/market/clawhub/skill-creator")
+
+    assert response.status_code == 200
+    assert service.last_clawhub_market_uninstall == "skill-creator"
+    assert response.json() == {
+        "ok": True,
+        "slug": "skill-creator",
+        "skills_reloaded": True,
+        "error_code": None,
+        "error_message": None,
+    }
+
+
+def test_uninstall_clawhub_skill_market_returns_runtime_failure_payload() -> None:
+    service = _FakeSystemService()
+    service.clawhub_market_uninstall_response = ClawHubSkillMarketUninstallResponse(
+        ok=False,
+        slug="skill-creator",
+        error_code="skill_not_installed",
+        error_message="'skill-creator'",
+    )
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/market/clawhub/skill-creator")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert response.json()["error_code"] == "skill_not_installed"
+
+
+def test_uninstall_clawhub_skill_market_maps_value_error(monkeypatch) -> None:
+    service = _FakeSystemService()
+
+    def fail_uninstall(*, slug: str) -> ClawHubSkillMarketUninstallResponse:
+        raise ValueError(f"Invalid skill slug: {slug}")
+
+    monkeypatch.setattr(service, "uninstall_clawhub_skill", fail_uninstall)
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/market/clawhub/bad-skill")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid skill slug: bad-skill"
+
+
+def test_uninstall_clawhub_skill_market_rejects_invalid_slug() -> None:
+    client = _create_test_client(_FakeSystemService())
+
+    response = client.delete("/api/system/skills/market/clawhub/openai%2Fskill")
+
+    assert response.status_code == 404
+
+
+def test_get_runtime_skill_detail_returns_skill_markdown(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "skill-creator"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "# Skill Creator\n\n## Quick Start\nCreate skills safely.\n",
+        encoding="utf-8",
+    )
+    client = _create_test_client(_FakeSystemService(skill_dir=skill_dir))
+
+    response = client.get("/api/system/skills/skill-creator")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ref"] == "skill-creator"
+    assert payload["name"] == "Skill Creator"
+    assert payload["manifest_path"] == str(skill_dir / "SKILL.md")
+    assert payload["manifest_content"] == (
+        "# Skill Creator\n\n## Quick Start\nCreate skills safely.\n"
+    )
+    assert payload["instructions"] == "Create skills safely."
+
+
+def test_get_runtime_skill_detail_accepts_slash_ref(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "plugin-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Plugin Skill\n", encoding="utf-8")
+    service = _FakeSystemService()
+    service.skill_definitions["plugin/skill"] = Skill(
+        ref="plugin/skill",
+        metadata=SkillMetadata(
+            name="Plugin Skill",
+            description="Plugin skill.",
+            instructions="Use plugin skill.",
+        ),
+        directory=skill_dir,
+        source=SkillSource.USER_CODEX,
+    )
+    client = _create_test_client(service)
+
+    response = client.get("/api/system/skills/plugin%2Fskill")
+
+    assert response.status_code == 200
+    assert response.json()["ref"] == "plugin/skill"
+
+
+def test_get_runtime_skill_detail_returns_404_for_unknown_skill() -> None:
+    client = _create_test_client(_FakeSystemService())
+
+    response = client.get("/api/system/skills/missing-skill")
+
+    assert response.status_code == 404
+
+
+def test_get_runtime_skill_detail_maps_registry_value_error(monkeypatch) -> None:
+    service = _FakeSystemService()
+
+    def fail_get_skill_definition(name: str) -> Skill | None:
+        raise ValueError(f"Invalid skill ref: {name}")
+
+    monkeypatch.setattr(service, "get_skill_definition", fail_get_skill_definition)
+    client = _create_test_client(service)
+
+    response = client.get("/api/system/skills/bad-skill")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid skill ref: bad-skill"
+
+
+def test_get_runtime_skill_detail_returns_none_for_missing_markdown(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "skills" / "skill-creator"
+    skill_dir.mkdir(parents=True)
+    client = _create_test_client(_FakeSystemService(skill_dir=skill_dir))
+
+    response = client.get("/api/system/skills/skill-creator")
+
+    assert response.status_code == 200
+    assert response.json()["manifest_content"] is None
+
+
+def test_uninstall_runtime_skill_deletes_user_skill_and_reloads(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "skills" / "skill-creator"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "# Skill Creator\n\nCreate skills safely.\n",
+        encoding="utf-8",
+    )
+    service = _FakeSystemService(skill_dir=skill_dir)
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/skill-creator")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "ref": "skill-creator",
+        "skills_reloaded": True,
+        "error_code": None,
+        "error_message": None,
+    }
+    assert not skill_dir.exists()
+    assert service.skills_reload_calls == 1
+
+
+def test_uninstall_runtime_skill_reports_reload_failure_after_delete(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "skills" / "skill-creator"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Skill Creator\n", encoding="utf-8")
+    service = _FakeSystemService(skill_dir=skill_dir)
+    service.skills_reload_error = RuntimeError("Invalid skills config")
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/skill-creator")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "ref": "skill-creator",
+        "skills_reloaded": False,
+        "error_code": "skills_reload_failed",
+        "error_message": "Invalid skills config",
+    }
+    assert not skill_dir.exists()
+    assert service.skills_reload_calls == 0
+
+
+def test_uninstall_runtime_skill_accepts_slash_ref(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "skills" / "plugin-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Plugin Skill\n", encoding="utf-8")
+    service = _FakeSystemService()
+    service.skill_definitions["plugin/skill"] = Skill(
+        ref="plugin/skill",
+        metadata=SkillMetadata(
+            name="Plugin Skill",
+            description="Plugin skill.",
+            instructions="Use plugin skill.",
+        ),
+        directory=skill_dir,
+        source=SkillSource.USER_CODEX,
+    )
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/plugin%2Fskill")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert not skill_dir.exists()
+    assert service.skills_reload_calls == 1
+
+
+def test_uninstall_runtime_root_skill_preserves_sibling_skills(
+    tmp_path: Path,
+) -> None:
+    skill_root = tmp_path / "skills"
+    sibling_dir = skill_root / "sibling"
+    sibling_dir.mkdir(parents=True)
+    (skill_root / "SKILL.md").write_text("# Root Skill\n", encoding="utf-8")
+    (sibling_dir / "SKILL.md").write_text("# Sibling Skill\n", encoding="utf-8")
+    service = _FakeSystemService(skill_dir=skill_root)
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/skill-creator")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert skill_root.exists()
+    assert not (skill_root / "SKILL.md").exists()
+    assert (sibling_dir / "SKILL.md").exists()
+    assert service.skills_reload_calls == 1
+
+
+def test_uninstall_runtime_skill_refuses_project_skill(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "project" / ".codex" / "skills" / "project-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "# Project Skill\n",
+        encoding="utf-8",
+    )
+    service = _FakeSystemService()
+    service.skill_definitions["project-skill"] = Skill(
+        ref="project-skill",
+        metadata=SkillMetadata(
+            name="Project Skill",
+            description="Project-local skill.",
+            instructions="Use project rules.",
+        ),
+        directory=skill_dir,
+        source=SkillSource.PROJECT_CODEX,
+    )
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/project-skill")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert response.json()["error_code"] == "skill_not_removable"
+    assert skill_dir.exists()
+    assert service.skills_reload_calls == 0
+
+
+def test_uninstall_runtime_skill_returns_404_for_unknown_skill() -> None:
+    client = _create_test_client(_FakeSystemService())
+
+    response = client.delete("/api/system/skills/missing-skill")
+
+    assert response.status_code == 404
+
+
+def test_uninstall_runtime_skill_maps_registry_value_error(monkeypatch) -> None:
+    service = _FakeSystemService()
+
+    def fail_get_skill_definition(name: str) -> Skill | None:
+        raise ValueError(f"Invalid skill ref: {name}")
+
+    monkeypatch.setattr(service, "get_skill_definition", fail_get_skill_definition)
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/bad-skill")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid skill ref: bad-skill"
+
+
+def test_uninstall_runtime_skill_reports_missing_manifest(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "skills" / "skill-creator"
+    skill_dir.mkdir(parents=True)
+    service = _FakeSystemService(skill_dir=skill_dir)
+    client = _create_test_client(service)
+
+    response = client.delete("/api/system/skills/skill-creator")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert response.json()["error_code"] == "uninstall_failed"
+    assert "missing SKILL.md" in response.json()["error_message"]
+    assert skill_dir.exists()
+    assert service.skills_reload_calls == 0
 
 
 def test_probe_github_connectivity() -> None:

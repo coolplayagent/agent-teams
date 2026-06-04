@@ -18,6 +18,18 @@ export function renderMarkdownToHtml(source = '') {
     return renderFallbackMarkdown(text);
 }
 
+export function stripMarkdownFrontmatter(source = '') {
+    const normalized = String(source || '').replace(/\r\n?/g, '\n');
+    if (!normalized.startsWith('---\n')) {
+        return normalized;
+    }
+    const endIndex = normalized.indexOf('\n---\n', 4);
+    if (endIndex < 0) {
+        return normalized;
+    }
+    return normalized.slice(endIndex + 5);
+}
+
 export function parseMarkdown(source = '') {
     ensureMarkdownInteractions();
     

@@ -77,11 +77,11 @@ from relay_teams.env.web_config_service import WebConfigService
 from relay_teams.general import GeneralConfigService
 from relay_teams.agent_runtimes import (
     AcpRegistryService,
-    AgentRuntimeTestJobService,
     ExternalAgentConfigService,
     ExternalAgentSessionRepository,
 )
 from relay_teams.agent_runtimes.provider import AgentRuntimeSessionManager
+from relay_teams.agent_runtimes.test_job_service import AgentRuntimeTestJobService
 from relay_teams.gateway.feishu.account_repository import FeishuAccountRepository
 from relay_teams.gateway.feishu.client import FeishuClient
 from relay_teams.gateway.feishu.gateway_service import FeishuGatewayService
@@ -203,6 +203,7 @@ from relay_teams.sessions.session_history_marker_repository import (
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.skills.config_reload_service import SkillsConfigReloadService
 from relay_teams.skills.clawhub_skill_service import ClawHubSkillService
+from relay_teams.skills.skill_market_service import ClawHubSkillMarketService
 from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.skills.skill_routing_service import SkillRuntimeService
 from relay_teams.agent_runtimes.instances.instance_repository import (
@@ -1248,6 +1249,17 @@ class ServerContainer:
         self.clawhub_skill_service: ClawHubSkillService = ClawHubSkillService(
             config_dir=app_config_dir,
             on_skill_mutated=self._reload_skills_config,
+        )
+        self.clawhub_skill_market_service: ClawHubSkillMarketService = (
+            ClawHubSkillMarketService(
+                config_dir=app_config_dir,
+                get_clawhub_config=self.clawhub_config_service.get_clawhub_config,
+                list_clawhub_skills=lambda: self.clawhub_skill_service.list_skills(),
+                delete_clawhub_skill=lambda skill_id: (
+                    self.clawhub_skill_service.delete_skill(skill_id)
+                ),
+                reload_skills_config=self._reload_skills_config,
+            )
         )
         self.memory_evolution_service: MemoryEvolutionService = MemoryEvolutionService(
             repository=self.memory_bank_repo,

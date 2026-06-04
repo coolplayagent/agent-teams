@@ -178,6 +178,10 @@ def _resolve_executable_path(command: str) -> str | None:
     return None
 
 
+def resolve_registry_executable_path(command: str) -> str | None:
+    return _resolve_executable_path(command)
+
+
 class AcpRegistryService:
     def __init__(
         self,

@@ -240,8 +240,10 @@ class _RuntimeToolService:
         self._relay_knowledge_version = relay_knowledge_version
         self._relay_knowledge_target_version = relay_knowledge_target_version
         self._relay_knowledge_update_available = relay_knowledge_update_available
+        self.list_tools_calls = 0
 
     async def list_tools(self) -> BinaryToolListResponse:
+        self.list_tools_calls += 1
         return BinaryToolListResponse(
             items=(
                 BinaryToolItem(
@@ -276,15 +278,28 @@ async def test_connector_summary_uses_real_builtin_providers_only() -> None:
 
     assert [item.provider.value for item in response.items] == [
         "github",
-        "relay-knowledge",
         "discord",
         "feishu",
         "wechat",
         "xiaoluban",
         "w3",
     ]
-    assert response.summary.total == 7
-    assert response.summary.connected == 7
+    assert response.summary.total == 6
+    assert response.summary.connected == 6
+
+
+@pytest.mark.asyncio
+async def test_list_connectors_does_not_probe_runtime_tools() -> None:
+    runtime_tool_service = _RuntimeToolService(
+        relay_knowledge_status=BinaryToolStatus.READY,
+        relay_knowledge_version="1.0.0",
+    )
+    service = _build_service(runtime_tool_service=runtime_tool_service)
+
+    response = await service.list_connectors()
+
+    assert "relay-knowledge" not in {item.connector_id for item in response.items}
+    assert runtime_tool_service.list_tools_calls == 0
 
 
 @pytest.mark.asyncio
@@ -295,14 +310,13 @@ async def test_empty_accounts_need_config() -> None:
 
     assert {item.connector_id: item.status for item in response.items} == {
         "github": ConnectorStatus.NEEDS_CONFIG,
-        "relay-knowledge": ConnectorStatus.NEEDS_CONFIG,
         "discord": ConnectorStatus.NEEDS_CONFIG,
         "feishu": ConnectorStatus.NEEDS_CONFIG,
         "wechat": ConnectorStatus.NEEDS_CONFIG,
         "xiaoluban": ConnectorStatus.NEEDS_CONFIG,
         "w3": ConnectorStatus.NEEDS_CONFIG,
     }
-    assert response.summary.needs_config == 7
+    assert response.summary.needs_config == 6
 
 
 @pytest.mark.asyncio
@@ -352,7 +366,7 @@ async def test_disabled_accounts_are_reported_disabled() -> None:
     assert {
         connector_id: status
         for connector_id, status in statuses.items()
-        if connector_id not in {"relay-knowledge", "w3"}
+        if connector_id != "w3"
     } == {
         "github": ConnectorStatus.DISABLED,
         "discord": ConnectorStatus.DISABLED,
@@ -360,7 +374,6 @@ async def test_disabled_accounts_are_reported_disabled() -> None:
         "wechat": ConnectorStatus.DISABLED,
         "xiaoluban": ConnectorStatus.DISABLED,
     }
-    assert statuses["relay-knowledge"] == ConnectorStatus.NEEDS_CONFIG
     assert statuses["w3"] == ConnectorStatus.NEEDS_CONFIG
     assert response.summary.disabled == 5
 
@@ -424,15 +437,10 @@ async def test_relay_knowledge_connector_reports_available_update() -> None:
         relay_knowledge_update_available=True,
     )
 
-    response = await service.list_connectors()
-    relay_knowledge = next(
-        item for item in response.items if item.connector_id == "relay-knowledge"
-    )
     result = await service.test_connector("relay-knowledge")
 
-    assert relay_knowledge.status == ConnectorStatus.CONNECTED
-    assert relay_knowledge.auth_type == ConnectorAuthType.CLI
-    assert "cli_upgrade" in relay_knowledge.capabilities
+    assert result.status == ConnectorStatus.CONNECTED
+    assert "cli_upgrade" in result.capabilities
     assert result.ok is False
     assert {check.name: check.ok for check in result.checks}["target_version"] is False
 
@@ -600,6 +608,7 @@ def _build_service(
     relay_knowledge_version: str | None = None,
     relay_knowledge_target_version: str | None = "1.0.0",
     relay_knowledge_update_available: bool = False,
+    runtime_tool_service: _RuntimeToolService | None = None,
 ) -> ConnectorService:
     resolved_github_tokens = (
         {
@@ -620,7 +629,8 @@ def _build_service(
         xiaoluban_gateway_service=_XiaolubanService(xiaoluban_accounts),
         xiaoluban_im_listener_service=_XiaolubanListenerService(),
         w3_connector_service=_W3ConnectorService(w3_status),
-        runtime_tool_service=_RuntimeToolService(
+        runtime_tool_service=runtime_tool_service
+        or _RuntimeToolService(
             relay_knowledge_status,
             relay_knowledge_version=relay_knowledge_version,
             relay_knowledge_target_version=relay_knowledge_target_version,

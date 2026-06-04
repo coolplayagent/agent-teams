@@ -181,10 +181,8 @@ class ConnectorService:
         discord_accounts = await self._discord_gateway_service.list_accounts()
         wechat_accounts = await self._wechat_gateway_service.list_accounts_async()
         xiaoluban_accounts = await self._xiaoluban_gateway_service.list_accounts_async()
-        runtime_tools = await self._runtime_tool_service.list_tools()
         items = (
             self._github_item(github_accounts),
-            self._relay_knowledge_item(runtime_tools),
             self._discord_item(discord_accounts),
             self._feishu_item(feishu_accounts),
             self._wechat_item(wechat_accounts),

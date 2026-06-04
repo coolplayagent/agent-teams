@@ -140,17 +140,17 @@
 .connectors-card-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 18px;
+    gap: 14px;
 }
 
 .connectors-card {
     position: relative;
     display: flex;
-    min-height: 180px;
+    min-height: 136px;
     flex-direction: column;
     justify-content: space-between;
-    gap: 22px;
-    padding: 26px;
+    gap: 16px;
+    padding: 20px;
     border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 8px;
     background: var(--bg-surface, #fff);
@@ -175,30 +175,40 @@
 
 .connectors-card-main {
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr);
-    gap: 16px;
-    align-items: start;
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
     padding-right: 34px;
 }
 
 .connectors-card-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+}
+
+.connectors-card-title {
+    min-width: 0;
 }
 
 .connectors-card-title h4 {
-    margin: 3px 0 12px;
+    margin: 0 0 6px;
+    overflow: hidden;
     color: var(--text-primary, #111827);
-    font-size: 17px;
+    font-size: 16px;
     line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .connectors-card-title p {
     margin: 0;
+    overflow: hidden;
     color: var(--text-secondary, #64748b);
-    font-size: 14px;
-    line-height: 1.55;
+    font-size: 13px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .connectors-card-footer {
@@ -240,9 +250,9 @@
 }
 
 .connectors-card-action {
-    min-width: 92px;
-    height: 38px;
-    padding: 0 18px;
+    min-width: 74px;
+    height: 34px;
+    padding: 0 14px;
     border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 8px;
     color: var(--text-primary, #111827);
@@ -263,6 +273,11 @@
     opacity: 0.64;
 }
 
+.connectors-card-menu:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
 .connectors-card-action.is-complete {
     border-color: rgba(2, 122, 72, 0.32);
     color: var(--success, #027a48);
@@ -270,25 +285,117 @@
 }
 
 .connectors-runtime-card {
-    cursor: pointer;
+    cursor: default;
 }
 
 .connectors-runtime-card-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.connectors-runtime-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.connectors-runtime-heading h3 {
+    margin: 0;
+}
+
+.connectors-runtime-heading-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.connectors-runtime-path-button {
+    display: inline-flex;
+    height: 34px;
+    max-width: min(320px, calc(100% - 110px));
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    color: var(--text-secondary, #475569);
+    background: var(--bg-surface, #fff);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.connectors-runtime-path-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.connectors-runtime-path-button:hover {
+    border-color: var(--primary, #1f6b57);
+    color: var(--primary, #1f6b57);
+}
+
+.connectors-runtime-path-button:disabled {
+    cursor: default;
+    opacity: 0.64;
+}
+
+.connectors-runtime-path-button.is-complete {
+    border-color: rgba(2, 122, 72, 0.32);
+    color: var(--success, #027a48);
+    background: rgba(2, 122, 72, 0.08);
+}
+
 .connectors-runtime-card-icon {
     display: inline-flex;
-    width: 42px;
-    height: 42px;
+    width: 36px;
+    height: 36px;
     align-items: center;
     justify-content: center;
     border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 8px;
     color: var(--text-primary, #111827);
     background: var(--bg-surface-muted, #f8fafc);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 800;
+}
+
+.connectors-runtime-card .connectors-card-main {
+    padding-right: 0;
+}
+
+.connectors-runtime-card .connectors-card-footer {
+    gap: 12px;
+}
+
+.connectors-runtime-card-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.connectors-runtime-copy-path-button {
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    color: var(--text-secondary, #475569);
+    background: var(--bg-surface, #fff);
+    cursor: pointer;
+}
+
+.connectors-runtime-copy-path-button:hover {
+    border-color: var(--primary, #1f6b57);
+    color: var(--primary, #1f6b57);
 }
 
 .connectors-runtime-modal-content {
@@ -304,6 +411,10 @@
 .connectors-runtime-toolbar {
     display: flex;
     justify-content: flex-end;
+}
+
+.connectors-runtime-card .connectors-runtime-progress {
+    width: 100%;
 }
 
 .connectors-runtime-system-path-status {
@@ -668,6 +779,17 @@
     margin: 8px 0 0;
 }
 
+.connectors-empty.is-error {
+    border-color: rgba(229, 72, 77, 0.28);
+    background: rgba(229, 72, 77, 0.06);
+}
+
+.connectors-empty-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 16px;
+}
+
 body:not(.light-theme) .connectors-page {
     background: var(--bg-base);
 }
@@ -677,6 +799,8 @@ body:not(.light-theme) .connectors-search,
 body:not(.light-theme) .connectors-tabs,
 body:not(.light-theme) .connectors-card,
 body:not(.light-theme) .connectors-card-action,
+body:not(.light-theme) .connectors-runtime-path-button,
+body:not(.light-theme) .connectors-runtime-copy-path-button,
 body:not(.light-theme) .connectors-runtime-card-icon,
 body:not(.light-theme) .connectors-runtime-empty,
 body:not(.light-theme) .connectors-runtime-list,
@@ -705,7 +829,9 @@ body:not(.light-theme) .connectors-tab.is-active {
 }
 
 body:not(.light-theme) .connectors-card-action:hover,
-body:not(.light-theme) .connectors-card-menu:hover {
+body:not(.light-theme) .connectors-card-menu:hover,
+body:not(.light-theme) .connectors-runtime-path-button:hover,
+body:not(.light-theme) .connectors-runtime-copy-path-button:hover {
     border-color: var(--primary);
     color: var(--primary);
 }

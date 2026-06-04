@@ -15,11 +15,18 @@ from relay_teams.agent_runtimes import (
     ExternalAgentProtocol,
     ExternalAgentSecretBinding,
     ExternalAgentSecretStore,
+    AgentRuntimeTestJobService,
     RegistryTransportConfig,
     StdioTransportConfig,
     StreamableHttpTransportConfig,
 )
 from relay_teams.agent_runtimes.setup_models import AgentRuntimeSetupProgressCallback
+from relay_teams.agent_runtimes.config_service import (
+    _current_platform_key,
+    _legacy_env_bindings,
+    _load_legacy_registry_entries,
+    _normalize_legacy_persisted_agent,
+)
 from relay_teams.env.proxy_env import ProxyEnvConfig
 
 
@@ -245,6 +252,38 @@ async def test_registry_transport_persists_secrets_and_resolves_to_stdio(
     assert progress_events[-1].phase == AgentRuntimeSetupPhase.READY
 
 
+def test_saved_registry_transport_loads_as_registry_after_restart(
+    tmp_path: Path,
+) -> None:
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+    service.save_agent(
+        "vendor_runtime",
+        ExternalAgentConfig(
+            agent_id="vendor_runtime",
+            name="Vendor Runtime",
+            protocol=ExternalAgentProtocol.ACP,
+            transport=RegistryTransportConfig(
+                registry_id="vendor/runtime",
+                distribution="npx",
+                registry_version="2.0.0",
+            ),
+        ),
+    )
+    reloaded_service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = reloaded_service.get_agent("vendor_runtime")
+
+    assert isinstance(loaded.transport, RegistryTransportConfig)
+    assert loaded.transport.registry_id == "vendor/runtime"
+    assert AgentRuntimeTestJobService.__name__ == "AgentRuntimeTestJobService"
+
+
 def test_save_agent_deletes_secret_binding_when_marked_unconfigured(
     tmp_path: Path,
 ) -> None:
@@ -338,6 +377,631 @@ def test_get_agent_strips_legacy_stdio_workdir_from_saved_config(
         "skill_bridge_skills": [],
         "skill_bridge_mode": "inline",
     }
+
+
+def test_get_agent_migrates_legacy_registry_npx_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "relay_teams.agent_runtimes.config_service._legacy_resolve_npm_path",
+        lambda: None,
+    )
+    (
+        tmp_path / "agent-runtime-registry" / "agents" / "claude-acp" / "npx" / "cache"
+    ).mkdir(parents=True)
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "claude-acp",
+                        "name": "Claude Agent",
+                        "description": "Legacy registry npx config",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "claude-acp",
+                            "distribution": "npx",
+                            "registry_version": "0.40.0",
+                            "legacy_install_dir": "agent-runtime-registry",
+                            "env": [],
+                            "registry_entry": {
+                                "id": "claude-acp",
+                                "name": "Claude Agent",
+                                "version": "0.40.0",
+                                "distribution": {
+                                    "npx": {
+                                        "package": (
+                                            "@agentclientprotocol/claude-agent-acp@0.40.0"
+                                        ),
+                                        "args": ["--acp"],
+                                        "env": {"CLAUDE_AUTO_UPDATES": "0"},
+                                    }
+                                },
+                            },
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("claude-acp")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == "npx"
+    assert loaded.transport.args == (
+        "--yes",
+        "--cache",
+        str(
+            tmp_path
+            / "agent-runtime-registry"
+            / "agents"
+            / "claude-acp"
+            / "npx"
+            / "cache"
+        ),
+        "@agentclientprotocol/claude-agent-acp@0.40.0",
+        "--acp",
+    )
+    assert loaded.transport.env == (
+        ExternalAgentSecretBinding(
+            name="CLAUDE_AUTO_UPDATES",
+            value="0",
+            configured=True,
+        ),
+    )
+
+
+def test_get_agent_migrates_legacy_registry_npx_transport_with_npm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    npm_path = tmp_path / "bin" / "npm"
+    npm_path.parent.mkdir(parents=True)
+    npm_path.write_text("", encoding="utf-8")
+    safe_prefix = (
+        tmp_path / "agent-runtime-registry" / "agents" / "vendor-runtime" / "npx"
+    )
+    (safe_prefix / "cache").mkdir(parents=True)
+    monkeypatch.setattr(
+        "relay_teams.agent_runtimes.config_service._legacy_resolve_npm_path",
+        lambda: npm_path,
+    )
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "vendor-runtime",
+                        "name": "Vendor Runtime",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "vendor/runtime",
+                            "distribution": "npx",
+                            "env": [],
+                            "registry_entry": {
+                                "id": "vendor/runtime",
+                                "distribution": {
+                                    "npx": {
+                                        "package": "@vendor/runtime",
+                                        "args": ["--stdio"],
+                                    }
+                                },
+                            },
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("vendor-runtime")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == str(npm_path)
+    assert loaded.transport.args == (
+        "exec",
+        "--yes",
+        "--prefix",
+        str(safe_prefix),
+        "--",
+        "@vendor/runtime",
+        "--stdio",
+    )
+    assert (
+        ExternalAgentSecretBinding(
+            name="NPM_CONFIG_PREFIX",
+            value=str(safe_prefix),
+            configured=True,
+        )
+        in loaded.transport.env
+    )
+    assert (
+        ExternalAgentSecretBinding(
+            name="NPM_CONFIG_CACHE",
+            value=str(safe_prefix / "cache"),
+            configured=True,
+        )
+        in loaded.transport.env
+    )
+
+
+def test_get_agent_migrates_legacy_registry_auto_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "relay_teams.agent_runtimes.config_service._legacy_resolve_npm_path",
+        lambda: None,
+    )
+    (
+        tmp_path / "agent-runtime-registry" / "agents" / "claude-acp" / "npx" / "cache"
+    ).mkdir(parents=True)
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "claude-acp",
+                        "name": "Claude Agent",
+                        "description": "Legacy registry auto config",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "claude-acp",
+                            "distribution": "auto",
+                            "legacy_install_dir": "agent-runtime-registry",
+                            "registry_entry": {
+                                "id": "claude-acp",
+                                "name": "Claude Agent",
+                                "distribution": {
+                                    "npx": {
+                                        "package": "@agentclientprotocol/claude-agent-acp",
+                                        "args": ["--acp"],
+                                    }
+                                },
+                            },
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("claude-acp")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == "npx"
+    assert "@agentclientprotocol/claude-agent-acp" in loaded.transport.args
+
+
+def test_get_agent_migrates_legacy_registry_auto_to_platform_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "relay_teams.agent_runtimes.config_service._legacy_resolve_npm_path",
+        lambda: None,
+    )
+    unsupported_platform_key = (
+        "linux-aarch64"
+        if _current_platform_key() != "linux-aarch64"
+        else "darwin-x86_64"
+    )
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "hybrid-agent",
+                        "name": "Hybrid Agent",
+                        "description": "Legacy registry auto hybrid config",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "hybrid-agent",
+                            "distribution": "auto",
+                            "legacy_install_dir": "agent-runtime-registry",
+                            "registry_entry": {
+                                "id": "hybrid-agent",
+                                "name": "Hybrid Agent",
+                                "distribution": {
+                                    "binary": {
+                                        unsupported_platform_key: {
+                                            "cmd": "bin/hybrid-agent",
+                                        }
+                                    },
+                                    "npx": {
+                                        "package": "@example/hybrid-agent",
+                                        "args": ["--stdio"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("hybrid-agent")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == "npx"
+    assert "@example/hybrid-agent" in loaded.transport.args
+
+
+def test_get_agent_migrates_legacy_registry_uvx_from_registry_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "relay_teams.agent_runtimes.config_service._legacy_resolve_executable_path",
+        lambda command: command if command == "uvx" else None,
+    )
+    registry_path = tmp_path / "agent-runtime-registry" / "registry.json"
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "id": "python-agent",
+                        "distribution": {
+                            "uvx": {
+                                "package": "python-agent-acp",
+                                "args": ["--stdio"],
+                                "env": {
+                                    "TOKEN": "default-token",
+                                    "REMOTE": "enabled",
+                                },
+                            }
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "python-agent",
+                        "name": "Python Agent",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "python-agent",
+                            "legacy_install_dir": "agent-runtime-registry",
+                            "env": {"TOKEN": "local-token"},
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("python-agent")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == "uvx"
+    assert loaded.transport.args == ("python-agent-acp", "--stdio")
+    assert loaded.transport.env == (
+        ExternalAgentSecretBinding(
+            name="TOKEN",
+            value="local-token",
+            configured=True,
+        ),
+        ExternalAgentSecretBinding(
+            name="REMOTE",
+            value="enabled",
+            configured=True,
+        ),
+    )
+
+
+def test_get_agent_migrates_legacy_registry_uvx_with_uv_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "relay_teams.agent_runtimes.config_service._legacy_resolve_executable_path",
+        lambda command: str(tmp_path / "bin" / "uv") if command == "uv" else None,
+    )
+    registry_path = tmp_path / "agent-runtime-registry" / "registry.json"
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "id": "python-agent",
+                        "distribution": {
+                            "uvx": {
+                                "package": "python-agent-acp",
+                                "args": ["--stdio"],
+                            }
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "python-agent",
+                        "name": "Python Agent",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "python-agent",
+                            "legacy_install_dir": "agent-runtime-registry",
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("python-agent")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == str(tmp_path / "bin" / "uv")
+    assert loaded.transport.args == (
+        "tool",
+        "run",
+        "python-agent-acp",
+        "--stdio",
+    )
+
+
+def test_get_agent_migrates_legacy_registry_binary_from_platform_entry(
+    tmp_path: Path,
+) -> None:
+    platform_key = _current_platform_key()
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "binary-agent",
+                        "name": "Binary Agent",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "binary-agent",
+                            "distribution": "binary",
+                            "legacy_install_dir": "agent-runtime-registry",
+                            "registry_entry": {
+                                "distribution": {
+                                    "binary": {
+                                        platform_key: {
+                                            "cmd": "bin/binary-agent",
+                                            "args": ["--stdio"],
+                                            "env": {"BINARY_ENV": "1"},
+                                        }
+                                    }
+                                }
+                            },
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("binary-agent")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == "bin/binary-agent"
+    assert loaded.transport.args == ("--stdio",)
+    assert loaded.transport.env == (
+        ExternalAgentSecretBinding(
+            name="BINARY_ENV",
+            value="1",
+            configured=True,
+        ),
+    )
+
+
+def test_get_agent_migrates_legacy_registry_binary_from_install_dir(
+    tmp_path: Path,
+) -> None:
+    install_dir = (
+        tmp_path / "agent-runtime-registry" / "agents" / "legacy-tool" / "1.0.0-local"
+    )
+    install_dir.mkdir(parents=True)
+    binary_path = install_dir / "legacy-tool"
+    binary_path.write_text("", encoding="utf-8")
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "legacy-tool",
+                        "name": "Legacy Tool",
+                        "description": "Legacy registry binary config",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "legacy-tool",
+                            "distribution": "binary",
+                            "registry_version": "1.0.0",
+                            "legacy_install_dir": "agent-runtime-registry",
+                            "env": [],
+                            "registry_entry": None,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("legacy-tool")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == str(binary_path)
+
+
+def test_get_agent_migrates_legacy_registry_binary_from_safe_install_dir(
+    tmp_path: Path,
+) -> None:
+    install_dir = (
+        tmp_path
+        / "agent-runtime-registry"
+        / "agents"
+        / "vendor-runtime"
+        / "1.0.0-local"
+    )
+    install_dir.mkdir(parents=True)
+    binary_path = install_dir / "vendor-runtime"
+    binary_path.write_text("", encoding="utf-8")
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "vendor_runtime",
+                        "name": "Vendor Runtime",
+                        "description": "Legacy registry binary config",
+                        "transport": {
+                            "transport": "registry",
+                            "registry_id": "vendor/runtime",
+                            "distribution": "binary",
+                            "registry_version": "1.0.0",
+                            "legacy_install_dir": "agent-runtime-registry",
+                            "env": [],
+                            "registry_entry": None,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    loaded = service.get_agent("vendor_runtime")
+
+    assert isinstance(loaded.transport, StdioTransportConfig)
+    assert loaded.transport.command == str(binary_path)
+
+
+def test_legacy_registry_helpers_ignore_dirty_payloads(tmp_path: Path) -> None:
+    registry_path = tmp_path / "agent-runtime-registry" / "registry.json"
+    registry_path.parent.mkdir(parents=True)
+    registry_path.write_text("{bad json", encoding="utf-8")
+
+    assert _load_legacy_registry_entries(tmp_path) == {}
+    assert (
+        _normalize_legacy_persisted_agent(
+            raw_agent="not-an-agent",
+            config_dir=tmp_path,
+            registry_entries={},
+        )
+        == "not-an-agent"
+    )
+    assert _normalize_legacy_persisted_agent(
+        raw_agent={"agent_id": "plain"},
+        config_dir=tmp_path,
+        registry_entries={},
+    ) == {"agent_id": "plain"}
+    assert _legacy_env_bindings(
+        [{"name": "TOKEN", "value": "explicit"}],
+        {"TOKEN": "default", "REMOTE": "enabled"},
+    ) == (
+        {"name": "TOKEN", "value": "explicit"},
+        {
+            "name": "REMOTE",
+            "value": "enabled",
+            "secret": False,
+            "configured": True,
+        },
+    )
+
+
+def test_list_agents_skips_invalid_persisted_agent(tmp_path: Path) -> None:
+    (tmp_path / "agents.json").write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "codex_local",
+                        "name": "Codex Local",
+                        "transport": {
+                            "transport": "stdio",
+                            "command": "codex",
+                            "args": ["--serve"],
+                            "env": [],
+                        },
+                    },
+                    {
+                        "agent_id": "broken_registry",
+                        "name": "Broken Registry",
+                        "transport": {
+                            "transport": "registry",
+                            "distribution": "binary",
+                            "env": [],
+                            "registry_entry": None,
+                        },
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = ExternalAgentConfigService(
+        config_dir=tmp_path,
+        secret_store=_FakeSecretStore(),
+    )
+
+    summaries = service.list_agents()
+
+    assert tuple(summary.agent_id for summary in summaries) == ("codex_local",)
 
 
 def test_a2a_agent_requires_http_transport(tmp_path: Path) -> None:

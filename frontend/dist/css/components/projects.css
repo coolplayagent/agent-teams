@@ -382,6 +382,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 0.18rem 0.8rem 0.8rem;
+    scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--text-secondary) 38%, transparent) transparent;
 }
@@ -391,6 +392,14 @@
 }
 
 .projects-workspace-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.projects-workspace-scroll::-webkit-scrollbar-button,
+.projects-workspace-scroll::-webkit-scrollbar-corner {
+    display: none;
+    width: 0;
+    height: 0;
     background: transparent;
 }
 

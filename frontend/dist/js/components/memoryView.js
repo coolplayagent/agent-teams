@@ -21,7 +21,7 @@ import { showToast } from '../utils/feedback.js';
 import { sysLog } from '../utils/logger.js';
 import { clearAllPanels } from './agentPanel.js';
 import { clearNewSessionDraft } from './newSessionDraft.js';
-import { hideProjectView, prepareExternalFeatureView } from './projectView.js';
+import { prepareExternalFeatureView } from './projectView.js';
 import { hideRoundNavigator } from './rounds/navigator.js';
 
 const MEMORY_FEATURE_ID = 'memory';
@@ -416,11 +416,6 @@ function renderMemoryToolbar() {
                 </svg>
             </button>
         </div>
-        <button id="project-view-close" class="icon-btn" type="button" title="${escapeAttribute(t('workspace_view.back'))}" aria-label="${escapeAttribute(t('workspace_view.back'))}" data-project-view-close>
-            <svg viewBox="0 0 24 24" fill="none" class="icon" aria-hidden="true">
-                <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-        </button>
     `;
     bindMemoryToolbar();
 }
@@ -513,9 +508,6 @@ function renderDraftStatusOption(value) {
 
 function bindMemoryToolbar() {
     const controls = els.projectViewToolbarActions;
-    controls.querySelector('[data-project-view-close]')?.addEventListener('click', () => {
-        hideProjectView();
-    });
     controls.querySelector('[data-memory-refresh]')?.addEventListener('click', () => {
         if (memoryState.activeTab === 'skill-drafts') {
             void loadSkillDraftRows();
@@ -694,6 +686,7 @@ function renderMemoryContent() {
     if (!els.projectViewContent) {
         return;
     }
+    const scrollState = captureMemoryScrollState();
     if (memoryState.errorMessage) {
         els.projectViewContent.innerHTML = `
             <div class="workspace-view-empty-state is-error">
@@ -736,9 +729,11 @@ function renderMemoryContent() {
         </section>
     `;
     bindMemoryRows();
+    restoreMemoryScrollState(scrollState);
 }
 
 function renderSkillDraftContent() {
+    const scrollState = captureMemoryScrollState();
     if (memoryState.loading && memoryState.draftRows.length === 0) {
         els.projectViewContent.innerHTML = `
             ${renderSkillDraftStatusPanel()}
@@ -770,6 +765,31 @@ function renderSkillDraftContent() {
     `;
     bindSkillDraftRows();
     bindSkillDraftDetail();
+    restoreMemoryScrollState(scrollState);
+}
+
+function captureMemoryScrollState() {
+    const memoryList = els.projectViewContent?.querySelector?.('.memory-list');
+    const draftList = els.projectViewContent?.querySelector?.('.memory-draft-list');
+    return {
+        memoryListTop: Number(memoryList?.scrollTop || 0),
+        memoryListLeft: Number(memoryList?.scrollLeft || 0),
+        draftListTop: Number(draftList?.scrollTop || 0),
+        draftListLeft: Number(draftList?.scrollLeft || 0),
+    };
+}
+
+function restoreMemoryScrollState(scrollState) {
+    const memoryList = els.projectViewContent?.querySelector?.('.memory-list');
+    if (memoryList) {
+        memoryList.scrollTop = scrollState.memoryListTop;
+        memoryList.scrollLeft = scrollState.memoryListLeft;
+    }
+    const draftList = els.projectViewContent?.querySelector?.('.memory-draft-list');
+    if (draftList) {
+        draftList.scrollTop = scrollState.draftListTop;
+        draftList.scrollLeft = scrollState.draftListLeft;
+    }
 }
 
 function renderSkillDraftStatusPanel() {

@@ -1728,9 +1728,7 @@ def test_browser_workspace_and_automation_project_views(
     ) as create_automation_request_info:
         page.locator('.home-feature-item[data-feature-id="automation"]').click()
         expect(page.locator("#project-view")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        page.locator(
-            ".project-view-toolbar-actions [data-feature-automation-create]"
-        ).click()
+        page.locator("#project-view-content [data-feature-automation-create]").click()
         expect(page.locator("#automation-editor-display-name-input")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS
         )
@@ -1748,25 +1746,16 @@ def test_browser_workspace_and_automation_project_views(
     assert create_automation_payload["prompt"] == automation_prompt
     assert create_automation_payload["cron_expression"] == "0 9 * * 1-5"
     assert create_automation_payload["timezone"] == "Asia/Shanghai"
-    expect(
-        page.locator("[data-automation-home-project-id]").filter(
-            has_text=automation_name
-        )
-    ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-    with page.expect_request(
-        lambda request: (
-            request.method == "GET"
-            and "/api/automation/projects/" in request.url
-            and not request.url.endswith("/sessions")
-        )
-    ):
-        page.locator("[data-automation-home-project-id]").filter(
-            has_text=automation_name
-        ).click()
     expect(page.locator("#project-view")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
     expect(page.locator("#project-view-title")).to_contain_text(
         re.compile(r"(Automation|自动化)"),
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator(".automation-document-main")).to_contain_text(
+        automation_name,
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator("[data-automation-list-back]")).to_be_visible(
         timeout=_WAIT_TIMEOUT_MS,
     )
     expect(page.locator(".automation-prompt-inline")).to_contain_text(
@@ -1912,9 +1901,7 @@ def test_browser_gateway_xiaoluban_and_automation_binding_flow(
     ) as create_automation_request_info:
         page.locator('.home-feature-item[data-feature-id="automation"]').click()
         expect(page.locator("#project-view")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        page.locator(
-            ".project-view-toolbar-actions [data-feature-automation-create]"
-        ).click()
+        page.locator("#project-view-content [data-feature-automation-create]").click()
         expect(page.locator("#automation-editor-display-name-input")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS
         )
@@ -1943,11 +1930,14 @@ def test_browser_gateway_xiaoluban_and_automation_binding_flow(
         "source_label": "发送给自己（uidself）",
     }
     assert create_automation_payload["delivery_events"] == ["completed"]
-    expect(
-        page.locator("[data-automation-home-project-id]").filter(
-            has_text=automation_name
-        )
-    ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+    expect(page.locator(".automation-document-main")).to_contain_text(
+        automation_name,
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+    expect(page.locator(".automation-detail-sidebar")).to_contain_text(
+        re.compile(r"(Xiaoluban|小鲁班)"),
+        timeout=_WAIT_TIMEOUT_MS,
+    )
 
 
 def test_browser_sidebar_lazy_loads_subagent_sessions_on_initial_open(

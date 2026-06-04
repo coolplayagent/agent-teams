@@ -64,6 +64,10 @@ def test_browser_github_saved_token_wins_over_autofilled_dom_value(
     page.locator('.home-feature-item[data-feature-id="automation"]').click()
     expect(page.locator("#project-view")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
     page.locator('[data-automation-section="github"]').click()
+    page.locator("[data-github-open-connector]").click()
+    expect(page.locator("[data-github-connector-modal]")).to_be_visible(
+        timeout=_WAIT_TIMEOUT_MS
+    )
     token_input = page.locator("#feature-github-token")
     expect(token_input).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
     expect(token_input).to_have_attribute("autocomplete", "new-password")

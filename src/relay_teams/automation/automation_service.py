@@ -59,7 +59,7 @@ from relay_teams.gateway.session_ingress_service import (
 from relay_teams.logger import get_logger, log_event
 from relay_teams.media import content_parts_from_text
 from relay_teams.roles import RoleRegistry
-from relay_teams.sessions.session_models import ProjectKind, SessionMode
+from relay_teams.sessions.session_models import ProjectKind, SessionMode, SessionRecord
 from relay_teams.sessions.runs.run_service import SessionRunService
 from relay_teams.sessions.runs.run_models import IntentInput
 from relay_teams.sessions.session_service import SessionService
@@ -226,10 +226,14 @@ class AutomationService:
         return await self._repository.create_async(record)
 
     def list_projects(self) -> tuple[AutomationProjectRecord, ...]:
-        return self._repository.list_all()
+        projects = self._repository.list_all()
+        sessions = self._session_service.list_sessions()
+        return _with_project_run_statuses_from_sessions(projects, sessions)
 
     async def list_projects_async(self) -> tuple[AutomationProjectRecord, ...]:
-        return await self._repository.list_all_async()
+        projects = await self._repository.list_all_async()
+        sessions = await self._session_service.list_sessions_async()
+        return _with_project_run_statuses_from_sessions(projects, sessions)
 
     def get_project(self, automation_project_id: str) -> AutomationProjectRecord:
         return self._repository.get(automation_project_id)
@@ -679,34 +683,16 @@ class AutomationService:
         self,
         project: AutomationProjectRecord,
     ) -> tuple[dict[str, object], ...]:
-        sessions = list(
-            self._session_service.list_sessions_by_project(
-                project_kind=ProjectKind.AUTOMATION,
-                project_id=project.automation_project_id,
-            )
-        )
-        last_session_id = str(project.last_session_id or "").strip()
-        if not last_session_id:
-            return tuple(sessions)
-        if any(
-            str(item.get("session_id", "")).strip() == last_session_id
-            for item in sessions
-        ):
-            return tuple(sessions)
-        for session in self._session_service.list_sessions():
-            if session.session_id != last_session_id:
-                continue
-            sessions.append(session.model_dump(mode="json"))
-            break
-        sessions.sort(key=lambda item: str(item.get("updated_at", "")), reverse=True)
-        return tuple(sessions)
+        sessions = self._session_service.list_sessions()
+        return _project_session_payloads_from_sessions(project, sessions)
 
     async def list_project_sessions_async(
         self,
         automation_project_id: str,
     ) -> tuple[dict[str, object], ...]:
         project = await self._repository.get_async(automation_project_id)
-        return await asyncio.to_thread(self._list_project_sessions_for_record, project)
+        sessions = await self._session_service.list_sessions_async()
+        return _project_session_payloads_from_sessions(project, sessions)
 
     def process_due_projects(
         self,
@@ -1406,6 +1392,101 @@ def _interval_delta(
     if interval_unit == AutomationIntervalUnit.HOURS:
         return timedelta(hours=interval_every)
     return timedelta(days=interval_every)
+
+
+def _first_session_status(
+    sessions: tuple[dict[str, object], ...],
+    key: str,
+) -> str | None:
+    for session in sessions:
+        status = str(session.get(key) or "").strip()
+        if status:
+            return status
+    return None
+
+
+def _automation_session_payloads_by_project(
+    sessions: tuple[SessionRecord, ...],
+) -> tuple[dict[str, list[dict[str, object]]], dict[str, dict[str, object]]]:
+    by_project: dict[str, list[dict[str, object]]] = {}
+    by_session_id: dict[str, dict[str, object]] = {}
+    for session in sessions:
+        payload = session.model_dump(mode="json")
+        session_id = str(session.session_id).strip()
+        if session_id:
+            by_session_id[session_id] = payload
+        project_id = str(session.project_id or "").strip()
+        if session.project_kind != ProjectKind.AUTOMATION or not project_id:
+            continue
+        by_project.setdefault(project_id, []).append(payload)
+    return by_project, by_session_id
+
+
+def _project_session_payloads_from_grouped(
+    project: AutomationProjectRecord,
+    sessions_by_project: dict[str, list[dict[str, object]]],
+    sessions_by_id: dict[str, dict[str, object]],
+) -> tuple[dict[str, object], ...]:
+    sessions = list(sessions_by_project.get(project.automation_project_id, ()))
+    last_session_id = str(project.last_session_id or "").strip()
+    if last_session_id and not any(
+        str(item.get("session_id", "")).strip() == last_session_id for item in sessions
+    ):
+        last_session = sessions_by_id.get(last_session_id)
+        if last_session is not None:
+            sessions.append(last_session)
+    sessions.sort(key=lambda item: str(item.get("updated_at", "")), reverse=True)
+    return tuple(sessions)
+
+
+def _project_session_payloads_from_sessions(
+    project: AutomationProjectRecord,
+    sessions: tuple[SessionRecord, ...],
+) -> tuple[dict[str, object], ...]:
+    sessions_by_project, sessions_by_id = _automation_session_payloads_by_project(
+        sessions
+    )
+    return _project_session_payloads_from_grouped(
+        project,
+        sessions_by_project,
+        sessions_by_id,
+    )
+
+
+def _with_project_run_status_from_sessions(
+    project: AutomationProjectRecord,
+    sessions: tuple[dict[str, object], ...],
+) -> AutomationProjectRecord:
+    active_status = _first_session_status(sessions, "active_run_status")
+    terminal_status = _first_session_status(sessions, "latest_terminal_run_status")
+    if active_status is None and terminal_status is None:
+        return project
+    return project.model_copy(
+        update={
+            "active_run_status": active_status,
+            "latest_terminal_run_status": terminal_status,
+        },
+    )
+
+
+def _with_project_run_statuses_from_sessions(
+    projects: tuple[AutomationProjectRecord, ...],
+    sessions: tuple[SessionRecord, ...],
+) -> tuple[AutomationProjectRecord, ...]:
+    sessions_by_project, sessions_by_id = _automation_session_payloads_by_project(
+        sessions
+    )
+    return tuple(
+        _with_project_run_status_from_sessions(
+            project,
+            _project_session_payloads_from_grouped(
+                project,
+                sessions_by_project,
+                sessions_by_id,
+            ),
+        )
+        for project in projects
+    )
 
 
 def next_cron_occurrence(

@@ -57,7 +57,7 @@ from relay_teams.sessions.runs.run_service import SessionRunService
 from relay_teams.sessions.runs.run_models import IntentInput
 from relay_teams.sessions.runs.run_runtime_repo import RunRuntimeRepository
 from relay_teams.sessions.session_repository import SessionRepository
-from relay_teams.sessions.session_models import ProjectKind, SessionMode
+from relay_teams.sessions.session_models import ProjectKind, SessionMode, SessionRecord
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
 from relay_teams.workspace import WorkspaceRepository, WorkspaceService
@@ -422,6 +422,116 @@ def test_async_project_queries_return_repository_records(tmp_path: Path) -> None
     asyncio.run(exercise())
 
 
+def test_project_list_records_include_session_run_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, session_service = _build_service(tmp_path)
+    created = service.create_project(
+        AutomationProjectCreateInput(
+            name="running-report",
+            workspace_id="default",
+            prompt="Draft a running report.",
+            schedule_mode=AutomationScheduleMode.CRON,
+            cron_expression="0 1 * * *",
+            timezone="UTC",
+        )
+    )
+    ignored = service.create_project(
+        AutomationProjectCreateInput(
+            name="idle-report",
+            workspace_id="default",
+            prompt="Draft an idle report.",
+            schedule_mode=AutomationScheduleMode.CRON,
+            cron_expression="0 2 * * *",
+            timezone="UTC",
+        )
+    )
+    session_record = SessionRecord(
+        session_id="session-running-1",
+        workspace_id="default",
+        project_kind=ProjectKind.AUTOMATION,
+        project_id=created.automation_project_id,
+        metadata={"title": "Automation Run"},
+        active_run_status="running",
+        latest_terminal_run_status="failed",
+        updated_at=datetime(2026, 6, 4, 12, 0, tzinfo=UTC),
+    )
+    ignored_session_record = SessionRecord(
+        session_id="session-idle-1",
+        workspace_id="default",
+        project_kind=ProjectKind.AUTOMATION,
+        project_id=ignored.automation_project_id,
+        metadata={"title": "Idle Automation Run"},
+        latest_terminal_run_status="completed",
+        updated_at=datetime(2026, 6, 4, 11, 0, tzinfo=UTC),
+    )
+    calls = {"list_sessions": 0, "list_sessions_async": 0}
+
+    def list_sessions() -> tuple[SessionRecord, ...]:
+        calls["list_sessions"] += 1
+        return (session_record, ignored_session_record)
+
+    async def list_sessions_async(
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[SessionRecord, ...]:
+        assert force_refresh is False
+        calls["list_sessions_async"] += 1
+        return (session_record, ignored_session_record)
+
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions",
+        list_sessions,
+    )
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions_async",
+        list_sessions_async,
+    )
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions_by_project",
+        pytest.fail,
+    )
+
+    records = service.list_projects()
+
+    assert calls["list_sessions"] == 1
+    records_by_id = {record.automation_project_id: record for record in records}
+    assert records_by_id[created.automation_project_id].active_run_status == "running"
+    assert (
+        records_by_id[created.automation_project_id].latest_terminal_run_status
+        == "failed"
+    )
+    assert records_by_id[ignored.automation_project_id].active_run_status is None
+    assert (
+        records_by_id[ignored.automation_project_id].latest_terminal_run_status
+        == "completed"
+    )
+
+    async def exercise() -> None:
+        async_records = await service.list_projects_async()
+        async_records_by_id = {
+            record.automation_project_id: record for record in async_records
+        }
+
+        assert calls["list_sessions_async"] == 1
+        assert (
+            async_records_by_id[created.automation_project_id].active_run_status
+            == "running"
+        )
+        assert (
+            async_records_by_id[
+                created.automation_project_id
+            ].latest_terminal_run_status
+            == "failed"
+        )
+
+    asyncio.run(exercise())
+
+
 def test_async_run_now_offloads_delivery_registration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -756,7 +866,7 @@ def test_async_project_mutations_offload_delivery_binding_validation(
     asyncio.run(exercise())
 
 
-def test_list_project_sessions_async_offloads_session_reads(
+def test_list_project_sessions_async_uses_async_session_listing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -778,25 +888,33 @@ def test_list_project_sessions_async_offloads_session_reads(
         project_kind=ProjectKind.AUTOMATION,
         project_id=created.automation_project_id,
     )
-    offloaded_functions: list[str] = []
+    calls = {"list_sessions_async": 0}
 
-    async def fake_to_thread(
-        function: Callable[..., object],
+    async def fail_to_thread(
+        _function: Callable[..., object],
         /,
-        *args: object,
-        **kwargs: object,
+        *_args: object,
+        **_kwargs: object,
     ) -> object:
-        offloaded_functions.append(getattr(function, "__name__", ""))
-        return function(*args, **kwargs)
+        raise AssertionError("list_project_sessions_async must stay on async APIs")
 
-    monkeypatch.setattr(automation_service_module.asyncio, "to_thread", fake_to_thread)
+    async def list_sessions_async(
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[SessionRecord, ...]:
+        assert force_refresh is False
+        calls["list_sessions_async"] += 1
+        return session_service.list_sessions()
+
+    monkeypatch.setattr(automation_service_module.asyncio, "to_thread", fail_to_thread)
+    monkeypatch.setattr(session_service, "list_sessions_async", list_sessions_async)
 
     async def exercise() -> None:
         sessions = await service.list_project_sessions_async(
             created.automation_project_id
         )
 
-        assert offloaded_functions == ["_list_project_sessions_for_record"]
+        assert calls["list_sessions_async"] == 1
         assert len(sessions) == 1
         assert sessions[0]["session_id"] == "session-automation"
 

@@ -4365,6 +4365,8 @@ Each record includes:
 - `trigger_id`
 - `last_session_id`
 - `last_run_started_at`
+- `active_run_status`: current active session run status when the project has one
+- `latest_terminal_run_status`: most recent terminal session run status when known
 - `last_error`
 - `next_run_at`
 

@@ -96,6 +96,8 @@ import {
     bindGitHubSettingsHandlers,
     loadGitHubSettingsPanel,
     renderGitHubAccessPanelMarkup,
+    resetGitHubSettingsPanelState,
+    restoreGitHubSettingsPanelState,
 } from './settings/githubSettings.js';
 import {
     renderConnectorConfigModalMarkup,
@@ -130,6 +132,7 @@ let currentAutomationProjects = [];
 let selectedAutomationHomeProjectId = '';
 let currentAutomationHomeDetail = createInitialAutomationHomeDetail();
 let currentAutomationFeatureSection = 'schedules';
+let currentAutomationScheduleViewMode = 'list';
 let currentGitHubFeatureState = createInitialGitHubFeatureState();
 let currentGitHubFeatureNodeKey = 'access';
 let currentSkillsStatus = null;
@@ -147,6 +150,7 @@ let currentLoadToken = 0;
 let currentFeatureRequestToken = 0;
 let currentFeatureRequestController = null;
 let currentFeatureLoadingTimer = null;
+let automationHomeDetailRequestToken = 0;
 let languageBound = false;
 let gatewayModalRoot = null;
 let automationEditorModalRoot = null;
@@ -265,6 +269,7 @@ function createInitialAutomationEditorState() {
     return {
         open: false,
         mode: 'create',
+        surface: 'modal',
         projectId: '',
         project: null,
         title: '',
@@ -305,6 +310,8 @@ function createInitialGatewayFeatureState() {
         connectorSearch: '',
         connectorStatusFilter: 'all',
         connectorModalProvider: '',
+        githubConnectorSettingsLoaded: false,
+        githubConnectorSettingsLoading: false,
         w3Connector: null,
         w3Draft: {
             username: '',
@@ -1435,6 +1442,7 @@ export async function requestAutomationProjectInput(project = {}, dialogOptions 
         currentAutomationEditorState = {
             open: true,
             mode: isEditing ? 'edit' : 'create',
+            surface: String(dialogOptions?.surface || 'modal').trim() === 'page' ? 'page' : 'modal',
             projectId: String(project?.name || '').trim(),
             project,
             title: String(dialogOptions?.title || defaultTitle).trim() || defaultTitle,
@@ -2134,14 +2142,9 @@ function ensureAutomationEditorModalRoot() {
     return automationEditorModalRoot;
 }
 
-function renderAutomationEditorModal() {
-    const root = ensureAutomationEditorModalRoot();
-    if (!root) {
-        return;
-    }
+function resolveAutomationEditorRenderModel() {
     if (currentAutomationEditorState.open !== true || !currentAutomationEditorState.draft) {
-        root.innerHTML = '';
-        return;
+        return null;
     }
     const draft = currentAutomationEditorState.draft;
     const bindingOptions = buildAutomationBindingOptions(currentAutomationEditorState.deliveryBindings);
@@ -2160,6 +2163,225 @@ function renderAutomationEditorModal() {
     );
     const bindingSelected = String(draft.delivery_binding_key || '').trim().length > 0;
     const scheduleLocked = draft.requires_schedule_reset === true && draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.unsupported;
+    return {
+        draft,
+        bindingOptions,
+        workspaceOptions,
+        sessionMode,
+        normalRoleOptions,
+        orchestrationPresetOptions,
+        bindingSelected,
+        scheduleLocked,
+        scheduleDetail: renderAutomationEditorScheduleDetail(draft),
+    };
+}
+
+function renderAutomationEditorFormMarkup(model) {
+    const {
+        draft,
+        bindingOptions,
+        workspaceOptions,
+        sessionMode,
+        normalRoleOptions,
+        orchestrationPresetOptions,
+        bindingSelected,
+        scheduleLocked,
+        scheduleDetail,
+    } = model;
+    return `
+        ${currentAutomationEditorState.errorMessage
+            ? `<div class="feature-inline-status is-danger">${escapeHtml(currentAutomationEditorState.errorMessage)}</div>`
+            : ''
+        }
+        ${scheduleLocked
+            ? `<div class="feature-inline-status is-warning">${escapeHtml(formatMessage('automation.schedule.unsupported_copy', { expression: draft.unsupported_expression || t('automation.detail.not_scheduled') }))}</div>`
+            : ''
+        }
+        <div class="automation-editor-panel">
+            <section class="automation-editor-block">
+                <div class="automation-editor-section-head">
+                    <h4>${escapeHtml(t('automation.edit.section.basic'))}</h4>
+                </div>
+                <div class="automation-editor-grid automation-editor-grid-2">
+                    <label class="automation-editor-field">
+                        <span>${escapeHtml(t('automation.field.project_name'))}</span>
+                        <input id="automation-editor-display-name-input" data-automation-editor-display-name type="text" placeholder="Daily Briefing" value="${escapeHtml(draft.display_name)}">
+                    </label>
+                    <label class="automation-editor-field">
+                        <span>${escapeHtml(t('automation.field.workspace'))}</span>
+                        <select id="automation-editor-workspace-id-input" data-automation-editor-workspace>
+                            ${renderAutomationEditorFieldOptions(workspaceOptions, draft.workspace_id)}
+                        </select>
+                    </label>
+                </div>
+                <label class="automation-editor-field automation-editor-field-prompt">
+                    <span>${escapeHtml(t('automation.detail.prompt'))}</span>
+                    <textarea id="automation-editor-prompt-input" data-automation-editor-prompt>${escapeHtml(draft.prompt)}</textarea>
+                </label>
+            </section>
+            <section class="automation-editor-block">
+                <div class="automation-editor-section-head">
+                    <h4>${escapeHtml(t('automation.detail.schedule'))}</h4>
+                </div>
+                <div class="automation-editor-grid automation-editor-grid-3">
+                    <label class="automation-editor-field">
+                        <span>${escapeHtml(t('automation.schedule.kind'))}</span>
+                        <select id="automation-editor-schedule-kind-input" data-automation-editor-schedule-kind>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.unsupported)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.unsupported ? ' selected' : ''}>${escapeHtml(t('automation.schedule.choose'))}</option>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.interval)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.interval ? ' selected' : ''}>${escapeHtml(t('automation.schedule.interval'))}</option>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.daily)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.daily ? ' selected' : ''}>${escapeHtml(t('automation.schedule.daily'))}</option>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.weekdays)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.weekdays ? ' selected' : ''}>${escapeHtml(t('automation.schedule.weekdays'))}</option>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.weekly)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.weekly ? ' selected' : ''}>${escapeHtml(t('automation.schedule.weekly'))}</option>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.monthly)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.monthly ? ' selected' : ''}>${escapeHtml(t('automation.schedule.monthly'))}</option>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.advancedCron)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.advancedCron ? ' selected' : ''}>${escapeHtml(t('automation.schedule.advanced_cron'))}</option>
+                            <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.oneShot)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.oneShot ? ' selected' : ''}>${escapeHtml(t('automation.schedule.one_shot'))}</option>
+                        </select>
+                    </label>
+                    <label class="automation-editor-field">
+                        <span>${escapeHtml(t('automation.schedule.time'))}</span>
+                        <input id="automation-editor-time-input" data-automation-editor-time type="time" value="${escapeHtml(String(draft.time_of_day || '09:00'))}">
+                    </label>
+                    <label class="automation-editor-field">
+                        <span>${escapeHtml(t('automation.detail.timezone'))}</span>
+                        <select id="automation-editor-timezone-input" data-automation-editor-timezone>
+                            ${renderAutomationEditorFieldOptions(AUTOMATION_TIMEZONE_OPTIONS, draft.timezone)}
+                        </select>
+                    </label>
+                </div>
+                ${scheduleDetail
+                    ? `<div class="automation-editor-grid automation-editor-grid-2">${scheduleDetail}</div>`
+                    : ''
+                }
+            </section>
+            <section class="automation-editor-block">
+                <div class="automation-editor-section-head">
+                    <h4>${escapeHtml(t('settings.triggers.session_configuration'))}</h4>
+                </div>
+                <div class="automation-editor-grid automation-editor-grid-2">
+                    <label class="automation-editor-field">
+                        <span>${escapeHtml(t('settings.triggers.mode'))}</span>
+                        <select id="automation-editor-session-mode-input" data-automation-editor-session-mode>
+                            ${renderAutomationEditorFieldOptions(resolveAutomationSessionModeOptions(), sessionMode)}
+                        </select>
+                    </label>
+                    ${sessionMode === 'normal' ? `
+                        <label class="automation-editor-field">
+                            <span>${escapeHtml(t('settings.triggers.normal_root_role_id'))}</span>
+                            <select id="automation-editor-normal-root-role-id-input" data-automation-editor-normal-root-role-id>
+                                ${renderAutomationEditorFieldOptions(normalRoleOptions, draft.normal_root_role_id)}
+                            </select>
+                        </label>
+                    ` : `
+                        <label class="automation-editor-field">
+                            <span>${escapeHtml(t('settings.triggers.orchestration_preset_id'))}</span>
+                            <select id="automation-editor-orchestration-preset-id-input" data-automation-editor-orchestration-preset-id>
+                                ${renderAutomationEditorFieldOptions(orchestrationPresetOptions, draft.orchestration_preset_id)}
+                            </select>
+                        </label>
+                    `}
+                </div>
+            </section>
+            <section class="automation-editor-block">
+                <div class="automation-editor-section-head">
+                    <h4>${escapeHtml(t('automation.edit.section.delivery'))}</h4>
+                </div>
+                <div class="automation-editor-grid automation-editor-grid-1">
+                    <label class="automation-editor-field">
+                        <span>${escapeHtml(t('sidebar.delivery_target'))}</span>
+                        <select id="automation-editor-delivery-binding-input" data-automation-editor-binding>
+                            ${renderAutomationEditorFieldOptions(bindingOptions, draft.delivery_binding_key)}
+                        </select>
+                    </label>
+                </div>
+                ${bindingSelected ? `
+                    <div class="automation-editor-toggle-grid">
+                        <label class="automation-editor-compact-toggle">
+                            <input id="automation-editor-delivery-started-input" data-automation-editor-delivery-started type="checkbox" ${draft.delivery_event_started ? 'checked' : ''}>
+                            <span>${escapeHtml(t('sidebar.notify_on_start'))}</span>
+                        </label>
+                        <label class="automation-editor-compact-toggle">
+                            <input id="automation-editor-delivery-completed-input" data-automation-editor-delivery-completed type="checkbox" ${draft.delivery_event_completed ? 'checked' : ''}>
+                            <span>${escapeHtml(t('sidebar.notify_on_completion'))}</span>
+                        </label>
+                        <label class="automation-editor-compact-toggle">
+                            <input id="automation-editor-delivery-failed-input" data-automation-editor-delivery-failed type="checkbox" ${draft.delivery_event_failed ? 'checked' : ''}>
+                            <span>${escapeHtml(t('sidebar.notify_on_failure'))}</span>
+                        </label>
+                    </div>
+                ` : ''}
+            </section>
+        </div>
+    `;
+}
+
+function renderAutomationEditorActionsMarkup() {
+    return `
+        <button class="secondary-btn" type="button" data-automation-editor-cancel>${escapeHtml(t('settings.action.cancel'))}</button>
+        <button class="primary-btn" type="button" data-automation-editor-save>${escapeHtml(currentAutomationEditorState.confirmLabel)}</button>
+    `;
+}
+
+function renderAutomationEditorPage(model) {
+    if (!els.projectViewContent) {
+        return;
+    }
+    if (automationEditorModalRoot) {
+        automationEditorModalRoot.innerHTML = '';
+    }
+    currentAutomationFeatureSection = 'schedules';
+    currentAutomationScheduleViewMode = 'editor';
+    renderToolbar(null, {
+        title: t('feature.automation.title'),
+        mode: 'feature',
+        summary: '',
+        showClose: false,
+        actions: '',
+    });
+    els.projectViewContent.innerHTML = `
+        <div class="feature-page feature-page-neutral automation-home-page automation-editor-feature-page">
+            <section class="automation-directory automation-directory-editor" data-automation-editor-page>
+                <div class="automation-breadcrumb">
+                    <button type="button" data-automation-editor-cancel>${escapeHtml(t('feature.automation.title'))}</button>
+                    <span aria-hidden="true">/</span>
+                    <strong>${escapeHtml(currentAutomationEditorState.title)}</strong>
+                </div>
+                <div class="automation-editor-page-header">
+                    <h3 id="automation-editor-page-title">${escapeHtml(currentAutomationEditorState.title)}</h3>
+                    <p>${escapeHtml(currentAutomationEditorState.message)}</p>
+                </div>
+                <div class="automation-editor-page-body">
+                    ${renderAutomationEditorFormMarkup(model)}
+                </div>
+                <div class="automation-editor-actions automation-editor-page-actions">
+                    ${renderAutomationEditorActionsMarkup()}
+                </div>
+            </section>
+        </div>
+    `;
+    if (currentAutomationEditorState.submitting === true) {
+        els.projectViewContent.querySelectorAll('button,input,select,textarea').forEach(node => {
+            node.disabled = true;
+        });
+    }
+    bindAutomationEditorModal();
+}
+
+function renderAutomationEditorModal() {
+    const model = resolveAutomationEditorRenderModel();
+    if (!model) {
+        if (automationEditorModalRoot) {
+            automationEditorModalRoot.innerHTML = '';
+        }
+        return;
+    }
+    if (currentAutomationEditorState.surface === 'page') {
+        renderAutomationEditorPage(model);
+        return;
+    }
+    const root = ensureAutomationEditorModalRoot();
+    if (!root) {
+        return;
+    }
     root.innerHTML = `
         <div class="modal gateway-feature-modal automation-editor-modal" data-automation-editor-modal>
             <div class="modal-content gateway-feature-modal-content automation-editor-modal-content" role="dialog" aria-modal="true" aria-labelledby="automation-editor-modal-title">
@@ -2173,132 +2395,10 @@ function renderAutomationEditorModal() {
                     </button>
                 </div>
                 <div class="gateway-feature-modal-body automation-editor-modal-body">
-                    ${currentAutomationEditorState.errorMessage
-                        ? `<div class="feature-inline-status is-danger">${escapeHtml(currentAutomationEditorState.errorMessage)}</div>`
-                        : ''
-                    }
-                    ${scheduleLocked
-                        ? `<div class="feature-inline-status is-warning">${escapeHtml(formatMessage('automation.schedule.unsupported_copy', { expression: draft.unsupported_expression || t('automation.detail.not_scheduled') }))}</div>`
-                        : ''
-                    }
-                    <div class="automation-editor-panel">
-                        <section class="automation-editor-block">
-                            <div class="automation-editor-section-head">
-                                <h4>${escapeHtml(t('automation.edit.section.basic'))}</h4>
-                            </div>
-                            <div class="automation-editor-grid automation-editor-grid-2">
-                                <label class="automation-editor-field">
-                                    <span>${escapeHtml(t('automation.field.project_name'))}</span>
-                                    <input id="automation-editor-display-name-input" data-automation-editor-display-name type="text" placeholder="Daily Briefing" value="${escapeHtml(draft.display_name)}">
-                                </label>
-                                <label class="automation-editor-field">
-                                    <span>${escapeHtml(t('automation.field.workspace'))}</span>
-                                    <select id="automation-editor-workspace-id-input" data-automation-editor-workspace>
-                                        ${renderAutomationEditorFieldOptions(workspaceOptions, draft.workspace_id)}
-                                    </select>
-                                </label>
-                            </div>
-                            <label class="automation-editor-field automation-editor-field-prompt">
-                                <span>${escapeHtml(t('automation.detail.prompt'))}</span>
-                                <textarea id="automation-editor-prompt-input" data-automation-editor-prompt>${escapeHtml(draft.prompt)}</textarea>
-                            </label>
-                        </section>
-                        <section class="automation-editor-block">
-                            <div class="automation-editor-section-head">
-                                <h4>${escapeHtml(t('automation.detail.schedule'))}</h4>
-                            </div>
-                            <div class="automation-editor-grid automation-editor-grid-3">
-                                <label class="automation-editor-field">
-                                    <span>${escapeHtml(t('automation.schedule.kind'))}</span>
-                                    <select id="automation-editor-schedule-kind-input" data-automation-editor-schedule-kind>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.unsupported)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.unsupported ? ' selected' : ''}>${escapeHtml(t('automation.schedule.choose'))}</option>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.interval)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.interval ? ' selected' : ''}>${escapeHtml(t('automation.schedule.interval'))}</option>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.daily)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.daily ? ' selected' : ''}>${escapeHtml(t('automation.schedule.daily'))}</option>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.weekdays)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.weekdays ? ' selected' : ''}>${escapeHtml(t('automation.schedule.weekdays'))}</option>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.weekly)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.weekly ? ' selected' : ''}>${escapeHtml(t('automation.schedule.weekly'))}</option>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.monthly)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.monthly ? ' selected' : ''}>${escapeHtml(t('automation.schedule.monthly'))}</option>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.advancedCron)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.advancedCron ? ' selected' : ''}>${escapeHtml(t('automation.schedule.advanced_cron'))}</option>
-                                        <option value="${escapeHtml(AUTOMATION_SCHEDULE_KINDS.oneShot)}"${draft.schedule_kind === AUTOMATION_SCHEDULE_KINDS.oneShot ? ' selected' : ''}>${escapeHtml(t('automation.schedule.one_shot'))}</option>
-                                    </select>
-                                </label>
-                                <label class="automation-editor-field">
-                                    <span>${escapeHtml(t('automation.schedule.time'))}</span>
-                                    <input id="automation-editor-time-input" data-automation-editor-time type="time" value="${escapeHtml(String(draft.time_of_day || '09:00'))}">
-                                </label>
-                                <label class="automation-editor-field">
-                                    <span>${escapeHtml(t('automation.detail.timezone'))}</span>
-                                    <select id="automation-editor-timezone-input" data-automation-editor-timezone>
-                                        ${renderAutomationEditorFieldOptions(AUTOMATION_TIMEZONE_OPTIONS, draft.timezone)}
-                                    </select>
-                                </label>
-                            </div>
-                            ${renderAutomationEditorScheduleDetail(draft)
-                                ? `<div class="automation-editor-grid automation-editor-grid-2">${renderAutomationEditorScheduleDetail(draft)}</div>`
-                                : ''
-                            }
-                        </section>
-                        <section class="automation-editor-block">
-                            <div class="automation-editor-section-head">
-                                <h4>${escapeHtml(t('settings.triggers.session_configuration'))}</h4>
-                            </div>
-                            <div class="automation-editor-grid automation-editor-grid-2">
-                                <label class="automation-editor-field">
-                                    <span>${escapeHtml(t('settings.triggers.mode'))}</span>
-                                    <select id="automation-editor-session-mode-input" data-automation-editor-session-mode>
-                                        ${renderAutomationEditorFieldOptions(resolveAutomationSessionModeOptions(), sessionMode)}
-                                    </select>
-                                </label>
-                                ${sessionMode === 'normal' ? `
-                                    <label class="automation-editor-field">
-                                        <span>${escapeHtml(t('settings.triggers.normal_root_role_id'))}</span>
-                                        <select id="automation-editor-normal-root-role-id-input" data-automation-editor-normal-root-role-id>
-                                            ${renderAutomationEditorFieldOptions(normalRoleOptions, draft.normal_root_role_id)}
-                                        </select>
-                                    </label>
-                                ` : `
-                                    <label class="automation-editor-field">
-                                        <span>${escapeHtml(t('settings.triggers.orchestration_preset_id'))}</span>
-                                        <select id="automation-editor-orchestration-preset-id-input" data-automation-editor-orchestration-preset-id>
-                                            ${renderAutomationEditorFieldOptions(orchestrationPresetOptions, draft.orchestration_preset_id)}
-                                        </select>
-                                    </label>
-                                `}
-                            </div>
-                        </section>
-                        <section class="automation-editor-block">
-                            <div class="automation-editor-section-head">
-                                <h4>${escapeHtml(t('automation.edit.section.delivery'))}</h4>
-                            </div>
-                            <div class="automation-editor-grid automation-editor-grid-1">
-                                <label class="automation-editor-field">
-                                    <span>${escapeHtml(t('sidebar.delivery_target'))}</span>
-                                    <select id="automation-editor-delivery-binding-input" data-automation-editor-binding>
-                                        ${renderAutomationEditorFieldOptions(bindingOptions, draft.delivery_binding_key)}
-                                    </select>
-                                </label>
-                            </div>
-                            ${bindingSelected ? `
-                                <div class="automation-editor-toggle-grid">
-                                    <label class="automation-editor-compact-toggle">
-                                        <input id="automation-editor-delivery-started-input" data-automation-editor-delivery-started type="checkbox" ${draft.delivery_event_started ? 'checked' : ''}>
-                                        <span>${escapeHtml(t('sidebar.notify_on_start'))}</span>
-                                    </label>
-                                    <label class="automation-editor-compact-toggle">
-                                        <input id="automation-editor-delivery-completed-input" data-automation-editor-delivery-completed type="checkbox" ${draft.delivery_event_completed ? 'checked' : ''}>
-                                        <span>${escapeHtml(t('sidebar.notify_on_completion'))}</span>
-                                    </label>
-                                    <label class="automation-editor-compact-toggle">
-                                        <input id="automation-editor-delivery-failed-input" data-automation-editor-delivery-failed type="checkbox" ${draft.delivery_event_failed ? 'checked' : ''}>
-                                        <span>${escapeHtml(t('sidebar.notify_on_failure'))}</span>
-                                    </label>
-                                </div>
-                            ` : ''}
-                        </section>
-                    </div>
+                    ${renderAutomationEditorFormMarkup(model)}
                 </div>
                 <div class="gateway-connect-modal-actions automation-editor-actions">
-                    <button class="secondary-btn" type="button" data-automation-editor-cancel>${escapeHtml(t('settings.action.cancel'))}</button>
-                    <button class="primary-btn" type="button" data-automation-editor-save>${escapeHtml(currentAutomationEditorState.confirmLabel)}</button>
+                    ${renderAutomationEditorActionsMarkup()}
                 </div>
             </div>
         </div>
@@ -2320,8 +2420,38 @@ function settleAutomationEditor(result) {
     }
 }
 
+function cancelAutomationPageEditor() {
+    if (
+        currentAutomationEditorState.open !== true
+        || currentAutomationEditorState.surface !== 'page'
+    ) {
+        return;
+    }
+    const resolve = currentAutomationEditorState.resolve;
+    currentAutomationEditorState = createInitialAutomationEditorState();
+    if (typeof resolve === 'function') {
+        resolve(null);
+    }
+}
+
+function isAutomationFeatureActive() {
+    return (
+        state.currentMainView === 'project'
+        && currentProjectViewMode === 'feature'
+        && currentFeatureViewId === FEATURE_VIEW_IDS.automation
+        && String(state.currentFeatureViewId || '').trim() === FEATURE_VIEW_IDS.automation
+    );
+}
+
+function getAutomationEditorSurfaceRoot() {
+    if (currentAutomationEditorState.surface === 'page') {
+        return els.projectViewContent;
+    }
+    return ensureAutomationEditorModalRoot();
+}
+
 function bindAutomationEditorModal() {
-    const root = ensureAutomationEditorModalRoot();
+    const root = getAutomationEditorSurfaceRoot();
     if (!root) {
         return;
     }
@@ -2844,6 +2974,9 @@ function rememberLastKnownWorkspaceId(workspaceId = state.currentWorkspaceId) {
 function openFeatureShell(featureId) {
     rememberLastKnownWorkspaceId();
     cacheProjectViewState();
+    if (featureId !== FEATURE_VIEW_IDS.automation) {
+        cancelAutomationPageEditor();
+    }
     if (featureId !== FEATURE_VIEW_IDS.skills) {
         cancelSkillsFeatureAsyncWork();
     }
@@ -2867,6 +3000,7 @@ function openFeatureShell(featureId) {
     clearAllPanels();
     hideRoundNavigator();
     setProjectViewVisible(true);
+    notifyFeatureNavigationChanged(featureId);
 }
 
 function beginFeatureRequest(featureId) {
@@ -2927,6 +3061,7 @@ function renderFeaturePendingState(featureId, title, loadingSummary, request) {
         title,
         mode: 'feature',
         summary: '',
+        showClose: featureId !== FEATURE_VIEW_IDS.automation,
     });
     clearFeatureLoadingTimer();
     currentFeatureLoadingTimer = globalThis.setTimeout(() => {
@@ -2938,6 +3073,7 @@ function renderFeaturePendingState(featureId, title, loadingSummary, request) {
             title,
             mode: 'feature',
             summary: loadingSummary,
+            showClose: featureId !== FEATURE_VIEW_IDS.automation,
         });
         if (els.projectViewContent) {
             els.projectViewContent.innerHTML = renderInlineState(
@@ -2964,12 +3100,17 @@ function getFeatureLoadingSummary(featureId) {
     return t('feature.loading');
 }
 
+async function loadAutomationProjectsList(options = {}) {
+    const projects = await fetchAutomationProjects({ signal: options.signal });
+    currentAutomationProjects = Array.isArray(projects) ? projects : [];
+}
+
 async function loadAutomationHomeDetail(projectId, options = {}) {
     const normalizedProjectId = String(projectId || '').trim();
     if (!normalizedProjectId) {
         currentAutomationHomeDetail = createInitialAutomationHomeDetail();
         currentAutomationProject = null;
-        return;
+        return true;
     }
     const [project, sessions, workspaces, deliveryBindings, sessionConfigDependencies] = await Promise.all([
         fetchAutomationProject(normalizedProjectId, { signal: options.signal }),
@@ -2978,6 +3119,9 @@ async function loadAutomationHomeDetail(projectId, options = {}) {
         fetchAutomationFeishuBindings({ signal: options.signal }),
         fetchAutomationSessionConfigDependencies('detail', { signal: options.signal }),
     ]);
+    if (!isCurrentAutomationHomeDetailRequest(normalizedProjectId, options.requestToken)) {
+        return false;
+    }
     currentAutomationHomeDetail = {
         project,
         sessions: Array.isArray(sessions) ? sessions : [],
@@ -2991,6 +3135,20 @@ async function loadAutomationHomeDetail(projectId, options = {}) {
             : [],
     };
     currentAutomationProject = project;
+    return true;
+}
+
+function isCurrentAutomationHomeDetailRequest(projectId, requestToken) {
+    const numericRequestToken = Number(requestToken || 0);
+    if (!numericRequestToken) {
+        return true;
+    }
+    const normalizedProjectId = String(projectId || '').trim();
+    const normalizedSelectedId = String(selectedAutomationHomeProjectId || '').trim();
+    if (normalizedProjectId !== normalizedSelectedId) {
+        return false;
+    }
+    return numericRequestToken === automationHomeDetailRequestToken;
 }
 
 async function loadGitHubFeatureState(options = {}) {
@@ -3069,6 +3227,69 @@ function findGitHubRuleById(triggerRuleId) {
     ) || null;
 }
 
+function upsertGitHubAccountInState(account) {
+    const normalizedAccountId = String(account?.account_id || '').trim();
+    if (!normalizedAccountId) {
+        return;
+    }
+    const nextAccounts = currentGitHubFeatureState.accounts.filter(
+        item => String(item?.account_id || '').trim() !== normalizedAccountId,
+    );
+    nextAccounts.push(account);
+    currentGitHubFeatureState = {
+        ...currentGitHubFeatureState,
+        accounts: nextAccounts,
+    };
+}
+
+function removeGitHubAccountFromState(accountId) {
+    const normalizedAccountId = String(accountId || '').trim();
+    currentGitHubFeatureState = {
+        ...currentGitHubFeatureState,
+        accounts: currentGitHubFeatureState.accounts.filter(
+            item => String(item?.account_id || '').trim() !== normalizedAccountId,
+        ),
+        repos: currentGitHubFeatureState.repos.filter(
+            item => String(item?.account_id || '').trim() !== normalizedAccountId,
+        ),
+        rules: currentGitHubFeatureState.rules.filter(rule => {
+            const repo = currentGitHubFeatureState.repos.find(
+                item => String(item?.repo_subscription_id || '').trim()
+                    === String(rule?.repo_subscription_id || '').trim(),
+            );
+            return String(repo?.account_id || '').trim() !== normalizedAccountId;
+        }),
+    };
+}
+
+function upsertGitHubRepoInState(repo) {
+    const normalizedRepoId = String(repo?.repo_subscription_id || '').trim();
+    if (!normalizedRepoId) {
+        return;
+    }
+    const nextRepos = currentGitHubFeatureState.repos.filter(
+        item => String(item?.repo_subscription_id || '').trim() !== normalizedRepoId,
+    );
+    nextRepos.push(repo);
+    currentGitHubFeatureState = {
+        ...currentGitHubFeatureState,
+        repos: nextRepos,
+    };
+}
+
+function removeGitHubRepoFromState(repoSubscriptionId) {
+    const normalizedRepoId = String(repoSubscriptionId || '').trim();
+    currentGitHubFeatureState = {
+        ...currentGitHubFeatureState,
+        repos: currentGitHubFeatureState.repos.filter(
+            item => String(item?.repo_subscription_id || '').trim() !== normalizedRepoId,
+        ),
+        rules: currentGitHubFeatureState.rules.filter(
+            rule => String(rule?.repo_subscription_id || '').trim() !== normalizedRepoId,
+        ),
+    };
+}
+
 function upsertGitHubRuleInState(rule) {
     const normalizedRuleId = String(rule?.trigger_rule_id || '').trim();
     if (!normalizedRuleId) {
@@ -3092,6 +3313,19 @@ function removeGitHubRuleFromState(triggerRuleId) {
             item => String(item?.trigger_rule_id || '').trim() !== normalizedRuleId,
         ),
     };
+}
+
+async function refreshGitHubRepoSubscriptionsInState() {
+    try {
+        const repos = await fetchGitHubRepoSubscriptions();
+        currentGitHubFeatureState = {
+            ...currentGitHubFeatureState,
+            repos: Array.isArray(repos) ? repos : [],
+        };
+        currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(currentGitHubFeatureNodeKey);
+    } catch (error) {
+        sysLog(`Failed to refresh GitHub repository subscriptions: ${error?.message || error}`, 'log-error');
+    }
 }
 
 function resolveGitHubAccountLabel(account) {
@@ -4155,7 +4389,15 @@ export function initializeProjectView() {
         document.addEventListener('agent-teams-language-changed', () => {
             syncActionLabels();
             if (currentAutomationEditorState.open === true) {
-                renderAutomationEditorModal();
+                if (currentAutomationEditorState.surface === 'page') {
+                    if (isAutomationFeatureActive()) {
+                        renderAutomationEditorModal();
+                        return;
+                    }
+                    cancelAutomationPageEditor();
+                } else {
+                    renderAutomationEditorModal();
+                }
             }
             if (state.currentMainView !== 'project') {
                 return;
@@ -4306,6 +4548,7 @@ async function openAutomationFeatureView(
     const request = beginFeatureRequest(FEATURE_VIEW_IDS.automation);
     currentAutomationFeatureSection = section === 'github' ? 'github' : 'schedules';
     selectedAutomationHomeProjectId = String(projectId || '').trim();
+    currentAutomationScheduleViewMode = selectedAutomationHomeProjectId ? 'detail' : 'list';
     if (nodeKey) {
         currentGitHubFeatureNodeKey = String(nodeKey).trim() || 'access';
     }
@@ -4319,13 +4562,7 @@ async function openAutomationFeatureView(
         if (currentAutomationFeatureSection === 'github') {
             await loadGitHubFeatureState({ signal: request.signal });
         } else {
-            const projects = await fetchAutomationProjects({ signal: request.signal });
-            currentAutomationProjects = Array.isArray(projects) ? projects : [];
-            if (!selectedAutomationHomeProjectId && currentAutomationProjects.length > 0) {
-                selectedAutomationHomeProjectId = String(
-                    currentAutomationProjects[0]?.automation_project_id || '',
-                ).trim();
-            }
+            await loadAutomationProjectsList({ signal: request.signal });
             if (selectedAutomationHomeProjectId) {
                 await loadAutomationHomeDetail(selectedAutomationHomeProjectId, {
                     signal: request.signal,
@@ -4343,7 +4580,7 @@ async function openAutomationFeatureView(
         if (isAbortError(error) || !isCurrentFeatureRequest(FEATURE_VIEW_IDS.automation, request.token)) {
             return;
         }
-        renderFeatureErrorState(t('feature.automation.title'), error);
+        renderFeatureErrorState(t('feature.automation.title'), error, { showClose: false });
         sysLog(`Failed to load automation feature: ${error?.message || error}`, 'log-error');
     } finally {
         finishFeatureRequest(request.controller);
@@ -4668,6 +4905,7 @@ export function hideProjectView() {
     selectedAutomationHomeProjectId = '';
     currentAutomationHomeDetail = createInitialAutomationHomeDetail();
     currentAutomationFeatureSection = 'schedules';
+    currentAutomationScheduleViewMode = 'list';
     currentGitHubFeatureState = createInitialGitHubFeatureState();
     currentGitHubFeatureNodeKey = 'access';
     currentSkillsStatus = null;
@@ -4705,6 +4943,21 @@ export function prepareExternalFeatureView(featureId) {
     state.currentSessionId = null;
     currentLoadToken += 1;
     setProjectViewVisible(true);
+    notifyFeatureNavigationChanged(safeFeatureId);
+}
+
+function notifyFeatureNavigationChanged(featureId) {
+    if (
+        typeof CustomEvent !== 'function'
+        || typeof globalThis.document?.dispatchEvent !== 'function'
+    ) {
+        return;
+    }
+    globalThis.document.dispatchEvent(new CustomEvent('agent-teams-feature-view-changed', {
+        detail: {
+            featureId: String(featureId || '').trim(),
+        },
+    }));
 }
 
 function resetProjectViewState(workspaceId) {
@@ -6983,6 +7236,87 @@ async function refreshSkillsFeatureStatus() {
     }
 }
 
+function renderAutomationToolbarActions() {
+    return `
+        <div class="feature-inline-actions">
+            <button class="secondary-btn project-view-toolbar-btn feature-section-tab${currentAutomationFeatureSection === 'schedules' ? ' is-active' : ''}" type="button" data-automation-section="schedules">${escapeHtml(t('feature.automation.section_schedules'))}</button>
+            <button class="secondary-btn project-view-toolbar-btn feature-section-tab${currentAutomationFeatureSection === 'github' ? ' is-active' : ''}" type="button" data-automation-section="github">${escapeHtml(t('feature.automation.section_github'))}</button>
+        </div>
+    `;
+}
+
+const AUTOMATION_PROJECT_STATUS_GROUPS = [
+    { id: 'running', labelKey: 'automation.home.group_running' },
+    { id: 'paused', labelKey: 'automation.home.group_paused' },
+    { id: 'current', labelKey: 'automation.home.current' },
+];
+
+function resolveAutomationProjectStatusGroupId(project) {
+    const status = String(project?.status || '').trim().toLowerCase();
+    const runStatus = String(project?.active_run_status || project?.current_run_status || project?.run_status || '').trim().toLowerCase();
+    if (status === 'running' || runStatus === 'running' || project?.is_running === true) {
+        return 'running';
+    }
+    if (status === 'disabled') {
+        return 'paused';
+    }
+    return 'current';
+}
+
+function groupAutomationProjectsByStatus(projects) {
+    const groups = AUTOMATION_PROJECT_STATUS_GROUPS.map(group => ({
+        ...group,
+        projects: [],
+    }));
+    const groupById = new Map(groups.map(group => [group.id, group]));
+    const fallbackGroup = groupById.get('current') || groups[groups.length - 1];
+    (Array.isArray(projects) ? projects : []).forEach(project => {
+        const groupId = resolveAutomationProjectStatusGroupId(project);
+        const group = groupById.get(groupId) || fallbackGroup;
+        group.projects.push(project);
+    });
+    return groups.filter(group => group.projects.length > 0);
+}
+
+function renderAutomationProjectStatusGroups(projects, selectedProjectId = '') {
+    if (!Array.isArray(projects) || projects.length === 0) {
+        return renderFeatureEmptyState(
+            t('feature.automation.empty'),
+            t('feature.automation.empty_copy'),
+        );
+    }
+    const groups = groupAutomationProjectsByStatus(projects);
+    return `
+        <div class="automation-status-groups">
+            ${groups.map(group => {
+                const headingId = `automation-status-group-${group.id}`;
+                return `
+                    <section class="automation-status-column" aria-labelledby="${escapeHtml(headingId)}">
+                        <div class="automation-status-column-header">
+                            <h3 id="${escapeHtml(headingId)}">${escapeHtml(t(group.labelKey))}</h3>
+                            <span>${escapeHtml(String(group.projects.length))}</span>
+                        </div>
+                        <div class="automation-record-list">
+                            ${group.projects.map(project => renderAutomationProjectListRow(project, selectedProjectId)).join('')}
+                        </div>
+                    </section>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderAutomationScheduleListHeader() {
+    return `
+        <div class="automation-directory-heading">
+            <h3>${escapeHtml(t('feature.automation.section_schedules'))}</h3>
+            <button class="secondary-btn section-action-btn" type="button" data-feature-automation-create>
+                ${escapeHtml(t('feature.automation.create'))}
+            </button>
+        </div>
+    `;
+}
+
 function renderAutomationHomeView() {
     const projects = Array.isArray(currentAutomationProjects) ? currentAutomationProjects : [];
     const detail = currentAutomationHomeDetail?.project ? currentAutomationHomeDetail : createInitialAutomationHomeDetail();
@@ -6998,16 +7332,15 @@ function renderAutomationHomeView() {
         title: t('feature.automation.title'),
         mode: 'feature',
         summary: automationSummary,
-        actions: `
-            <div class="feature-inline-actions">
-                <button class="secondary-btn project-view-toolbar-btn feature-section-tab${currentAutomationFeatureSection === 'schedules' ? ' is-active' : ''}" type="button" data-automation-section="schedules">${escapeHtml(t('feature.automation.section_schedules'))}</button>
-                <button class="secondary-btn project-view-toolbar-btn feature-section-tab${currentAutomationFeatureSection === 'github' ? ' is-active' : ''}" type="button" data-automation-section="github">${escapeHtml(t('feature.automation.section_github'))}</button>
-                ${currentAutomationFeatureSection === 'github'
-                    ? `<button class="secondary-btn project-view-toolbar-btn" type="button" data-github-account-create>${escapeHtml(t('feature.automation.github_new_account'))}</button>`
-                    : `<button class="secondary-btn project-view-toolbar-btn" type="button" data-feature-automation-create>${escapeHtml(t('feature.automation.create'))}</button>`
-                }
-            </div>
-        `,
+        showClose: false,
+        actions: currentAutomationFeatureSection === 'github'
+            ? `
+                <div class="feature-inline-actions">
+                    <button class="secondary-btn project-view-toolbar-btn feature-section-tab" type="button" data-automation-section="schedules">${escapeHtml(t('feature.automation.section_schedules'))}</button>
+                    <button class="secondary-btn project-view-toolbar-btn feature-section-tab is-active" type="button" data-automation-section="github">${escapeHtml(t('feature.automation.section_github'))}</button>
+                </div>
+            `
+            : renderAutomationToolbarActions(),
     });
     if (!els.projectViewContent) {
         return;
@@ -7018,51 +7351,51 @@ function renderAutomationHomeView() {
         bindGitHubAutomationView();
         return;
     }
-    els.projectViewContent.innerHTML = `
-        <div class="feature-page feature-page-neutral automation-home-page">
-            <div class="automation-home-shell">
-                <section class="workspace-view-panel feature-list-panel automation-list-panel">
-                    <div class="feature-panel-body">
-                    ${projects.length > 0 ? `
-                        <div class="automation-record-list">
-                            ${projects.map(project => {
-                                const projectId = String(project?.automation_project_id || '').trim();
-                                const status = String(project?.status || 'disabled').trim() || 'disabled';
-                                return `
-                                    <button class="automation-record${projectId === selectedProjectId ? ' is-active' : ''}" type="button" data-automation-home-project-id="${escapeHtml(projectId)}">
-                                        <div class="automation-record-copy">
-                                            <strong>${escapeHtml(String(project?.display_name || project?.name || projectId))}</strong>
-                                            <span>${escapeHtml(describeAutomationScheduleText(project))}</span>
-                                        </div>
-                                        ${renderFeatureStatusPill(t(`automation.status.${status}`), status)}
-                                    </button>
-                                `;
-                            }).join('')}
-                        </div>
-                    ` : renderFeatureEmptyState(
-                        t('feature.automation.empty'),
-                        t('feature.automation.empty_copy'),
-                    )}
-                    </div>
-                </section>
-                <section class="workspace-view-panel feature-detail-panel automation-detail-panel-surface">
-                    <div class="feature-panel-body feature-panel-body-tight">
-                    ${detail?.project ? renderAutomationHomeDetail(detail) : renderFeatureEmptyState(
-                        t('feature.automation.empty'),
-                        t('feature.automation.select'),
-                    )}
-                    </div>
+    const isDetailPage = currentAutomationScheduleViewMode === 'detail' && detail?.project;
+    els.projectViewContent.innerHTML = isDetailPage
+        ? `
+            <div class="feature-page feature-page-neutral automation-home-page">
+                <section class="automation-directory automation-directory-detail-only" aria-label="${escapeHtml(t('feature.automation.title'))}">
+                    ${renderAutomationHomeDetail(detail, { showListCrumb: true })}
                 </section>
             </div>
-        </div>
-    `;
+        `
+        : `
+            <div class="feature-page feature-page-neutral automation-home-page">
+                <section class="automation-directory" aria-label="${escapeHtml(t('feature.automation.title'))}">
+                    ${renderAutomationScheduleListHeader()}
+                    ${renderAutomationProjectStatusGroups(projects, selectedProjectId)}
+                </section>
+            </div>
+        `;
     bindAutomationFeatureSectionButtons();
-    els.projectViewToolbarActions?.querySelector('[data-feature-automation-create]')?.addEventListener('click', () => {
+    els.projectViewContent.querySelector('[data-feature-automation-create]')?.addEventListener('click', () => {
         void handleAutomationCreateFeature();
+    });
+    els.projectViewContent.querySelector('[data-automation-list-back]')?.addEventListener('click', () => {
+        handleAutomationShowScheduleList();
     });
     els.projectViewContent.querySelectorAll('[data-automation-home-project-id]').forEach(button => {
         button.addEventListener('click', () => {
             void handleAutomationSelectFeatureProject(button.getAttribute('data-automation-home-project-id'));
+        });
+    });
+    els.projectViewContent.querySelectorAll('[data-automation-list-run]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation?.();
+            void handleAutomationRunListProject(button.getAttribute('data-automation-list-run'));
+        });
+    });
+    els.projectViewContent.querySelectorAll('[data-automation-list-edit]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation?.();
+            void handleAutomationEditListProject(button.getAttribute('data-automation-list-edit'));
+        });
+    });
+    els.projectViewContent.querySelectorAll('[data-automation-list-more]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation?.();
+            void handleAutomationSelectFeatureProject(button.getAttribute('data-automation-list-more'));
         });
     });
     els.projectViewContent.querySelector('[data-automation-edit]')?.addEventListener('click', () => {
@@ -7092,26 +7425,78 @@ function bindAutomationFeatureSectionButtons() {
     els.projectViewToolbarActions?.querySelectorAll('[data-automation-section]').forEach(button => {
         button.addEventListener('click', () => {
             const section = String(button.getAttribute('data-automation-section') || '').trim();
-            if (section === 'github') {
-                void openAutomationGitHubView(currentGitHubFeatureNodeKey);
-                return;
-            }
-            void openAutomationHomeView(selectedAutomationHomeProjectId);
+            void handleAutomationFeatureSectionSelect(section);
         });
     });
 }
 
+function handleAutomationShowScheduleList() {
+    automationHomeDetailRequestToken += 1;
+    currentAutomationFeatureSection = 'schedules';
+    currentAutomationScheduleViewMode = 'list';
+    selectedAutomationHomeProjectId = '';
+    currentAutomationHomeDetail = createInitialAutomationHomeDetail();
+    renderAutomationHomeView();
+}
+
+async function handleAutomationFeatureSectionSelect(section) {
+    const nextSection = section === 'github' ? 'github' : 'schedules';
+    if (
+        nextSection === currentAutomationFeatureSection
+        && (nextSection === 'github' || currentAutomationScheduleViewMode === 'list')
+    ) {
+        return;
+    }
+    currentAutomationFeatureSection = nextSection;
+    currentAutomationScheduleViewMode = 'list';
+    if (nextSection === 'schedules') {
+        automationHomeDetailRequestToken += 1;
+        currentAutomationHomeDetail = createInitialAutomationHomeDetail();
+        selectedAutomationHomeProjectId = '';
+        renderAutomationHomeView();
+        try {
+            await loadAutomationProjectsList();
+            if (currentAutomationFeatureSection === 'schedules') {
+                renderAutomationHomeView();
+            }
+        } catch (error) {
+            showToast({
+                title: t('feature.automation.title'),
+                message: String(error?.message || error || ''),
+                tone: 'danger',
+            });
+        }
+        return;
+    }
+    currentGitHubFeatureNodeKey = currentGitHubFeatureNodeKey || 'access';
+    renderAutomationHomeView();
+    try {
+        await loadGitHubFeatureState();
+        if (currentAutomationFeatureSection === 'github') {
+            renderAutomationHomeView();
+        }
+    } catch (error) {
+        notifyGitHubFeatureError(error);
+    }
+}
+
 function renderGitHubAutomationView() {
+    const hasTreeContent = currentGitHubFeatureState.accounts.length > 0
+        || currentGitHubFeatureState.repos.length > 0
+        || currentGitHubFeatureState.rules.length > 0
+        || currentGitHubFeatureNodeKey !== 'access';
     return `
         <div class="feature-page feature-page-neutral automation-home-page github-automation-page">
-            <div class="automation-home-shell">
-                <section class="workspace-view-panel feature-list-panel automation-list-panel">
-                    <div class="feature-panel-body">
-                        ${renderGitHubAutomationList()}
-                    </div>
-                </section>
-                <section class="workspace-view-panel feature-detail-panel automation-detail-panel-surface">
-                    <div class="feature-panel-body feature-panel-body-tight">
+            <div class="automation-github-shell${hasTreeContent ? '' : ' is-access-only'}">
+                ${hasTreeContent ? `
+                    <aside class="automation-list-panel">
+                        <div class="automation-panel-body">
+                            ${renderGitHubAutomationList()}
+                        </div>
+                    </aside>
+                ` : ''}
+                <section class="automation-github-detail-panel">
+                    <div class="automation-panel-body">
                         ${renderGitHubAutomationDetail()}
                     </div>
                 </section>
@@ -7174,72 +7559,172 @@ function renderGitHubAutomationDetail() {
     return renderGitHubAccessDetail();
 }
 
-function renderGitHubAccessDetail() {
+function renderGitHubWorkflowStep(number, title, copy, body, { disabled = false } = {}) {
     return `
-        <div class="automation-home-detail github-automation-detail">
-            <div class="feature-detail-head automation-detail-head">
-                <div class="automation-detail-copy">
-                    <div class="feature-detail-title-row">
-                        <h3>${escapeHtml(t('feature.automation.github_access'))}</h3>
-                        ${renderFeatureStatusPill(t('feature.automation.github_access_status'), 'neutral')}
-                    </div>
-                    <div class="automation-prompt-inline">${escapeHtml(t('feature.automation.github_access_copy'))}</div>
+        <section class="github-flow-step${disabled ? ' is-disabled' : ''}">
+            <span class="github-flow-step-number" aria-hidden="true">${escapeHtml(String(number))}</span>
+            <div class="github-flow-step-body">
+                <div class="github-flow-step-head">
+                    <h4>${escapeHtml(title)}</h4>
+                    <p>${escapeHtml(copy)}</p>
                 </div>
+                ${body}
             </div>
-            <div class="feature-card-grid">
-                <article class="feature-card">
-                    <div class="feature-card-header">
-                        <div>
-                            <h4>${escapeHtml(t('feature.automation.github_summary_accounts'))}</h4>
-                        </div>
-                    </div>
-                    <div class="feature-meta-list">
-                        <div><strong>${escapeHtml(String(currentGitHubFeatureState.accounts.length))}</strong></div>
-                    </div>
-                </article>
-                <article class="feature-card">
-                    <div class="feature-card-header">
-                        <div>
-                            <h4>${escapeHtml(t('feature.automation.github_summary_repos'))}</h4>
-                        </div>
-                    </div>
-                    <div class="feature-meta-list">
-                        <div><strong>${escapeHtml(String(currentGitHubFeatureState.repos.length))}</strong></div>
-                    </div>
-                </article>
-                <article class="feature-card">
-                    <div class="feature-card-header">
-                        <div>
-                            <h4>${escapeHtml(t('feature.automation.github_summary_rules'))}</h4>
-                        </div>
-                    </div>
-                    <div class="feature-meta-list">
-                        <div><strong>${escapeHtml(String(currentGitHubFeatureState.rules.length))}</strong></div>
-                    </div>
-                </article>
+        </section>
+    `;
+}
+
+function renderGitHubWorkflowRow({ title, meta, nodeKey = '', actionHtml = '', statusHtml = '' }) {
+    const main = nodeKey
+        ? `
+            <button class="github-flow-row-main" type="button" data-github-node-key="${escapeHtml(nodeKey)}">
+                <strong>${escapeHtml(title)}</strong>
+                <span>${escapeHtml(meta)}</span>
+            </button>
+        `
+        : `
+            <div class="github-flow-row-main">
+                <strong>${escapeHtml(title)}</strong>
+                <span>${escapeHtml(meta)}</span>
             </div>
-            <article class="feature-card github-access-card">
-                <div class="feature-card-header">
-                    <div>
-                        <h4>${escapeHtml(t('feature.automation.github_access'))}</h4>
-                        <p>${escapeHtml(t('feature.automation.github_access_detail_copy'))}</p>
-                    </div>
+        `;
+    return `
+        <article class="github-flow-row">
+            ${main}
+            ${statusHtml}
+            ${actionHtml ? `<div class="github-flow-row-actions">${actionHtml}</div>` : ''}
+        </article>
+    `;
+}
+
+function renderGitHubWorkflowAction(attrName, attrValue, label, { primary = false } = {}) {
+    return `
+        <button class="${primary ? 'primary-btn' : 'secondary-btn'} github-flow-action" type="button" ${attrName}="${escapeHtml(attrValue)}">
+            ${escapeHtml(label)}
+        </button>
+    `;
+}
+
+function renderGitHubAccountWorkflowStep(accounts) {
+    const safeAccounts = Array.isArray(accounts) ? accounts.filter(account => String(account?.account_id || '').trim()) : [];
+    if (safeAccounts.length === 0) {
+        return renderGitHubWorkflowStep(
+            1,
+            t('feature.automation.github_connection_status'),
+            t('feature.automation.github_connection_status_copy'),
+            `
+                <div class="github-flow-step-empty">${escapeHtml(t('feature.automation.github_connection_missing'))}</div>
+                <div class="github-flow-step-actions">
+                    ${renderGitHubWorkflowAction('data-github-open-connector', '', t('feature.automation.github_open_connector'), { primary: true })}
                 </div>
-                ${renderGitHubAccessPanelMarkup(FEATURE_GITHUB_FIELD_IDS)}
-            </article>
-            <section class="automation-flat-section">
-                <div class="automation-section-header">
-                    <h4>${escapeHtml(t('feature.automation.github_repo_section'))}</h4>
-                    <span class="workspace-view-panel-meta">${escapeHtml(String(currentGitHubFeatureState.repos.length))}</span>
-                </div>
-                ${currentGitHubFeatureState.repos.length > 0 ? `
-                    <div class="automation-record-list github-automation-inline-list">
-                        ${currentGitHubFeatureState.repos.map(repo => renderGitHubRepoListButton(repo, { includeAccount: true })).join('')}
-                    </div>
-                ` : renderFeatureEmptyState(
-                    t('feature.automation.github_no_repos'),
-                    t('feature.automation.github_no_repos_copy'),
-                )}
+            `,
+        );
+    }
+    return renderGitHubWorkflowStep(
+        1,
+        t('feature.automation.github_connection_status'),
+        t('feature.automation.github_connection_status_copy'),
+        `
+            <div class="github-flow-row-list">
+                ${safeAccounts.map(account => {
+                    const accountId = String(account?.account_id || '').trim();
+                    const status = String(account?.status || 'disabled').trim() || 'disabled';
+                    const repos = getGitHubReposForAccount(accountId);
+                    return renderGitHubWorkflowRow({
+                        title: resolveGitHubAccountLabel(account),
+                        meta: formatMessage('feature.automation.github_repo_count', { count: repos.length }),
+                        statusHtml: renderFeatureStatusPill(t(`automation.status.${status}`), status),
+                    });
+                }).join('')}
+            </div>
+            <div class="github-flow-step-actions">
+                ${renderGitHubWorkflowAction('data-github-open-connector', '', t('feature.automation.github_manage_connector'))}
+            </div>
+        `,
+    );
+}
+
+function renderGitHubRepoWorkflowStep(accounts) {
+    const safeAccounts = Array.isArray(accounts) ? accounts.filter(account => String(account?.account_id || '').trim()) : [];
+    if (safeAccounts.length === 0) {
+        return renderGitHubWorkflowStep(
+            2,
+            t('feature.automation.github_step_repo_title'),
+            t('feature.automation.github_step_repo_copy'),
+            `<div class="github-flow-step-empty">${escapeHtml(t('feature.automation.github_step_repo_disabled'))}</div>`,
+            { disabled: true },
+        );
+    }
+    return renderGitHubWorkflowStep(
+        2,
+        t('feature.automation.github_step_repo_title'),
+        t('feature.automation.github_step_repo_copy'),
+        `
+            <div class="github-flow-row-list">
+                ${safeAccounts.map(account => {
+                    const accountId = String(account?.account_id || '').trim();
+                    const repos = getGitHubReposForAccount(accountId);
+                    return renderGitHubWorkflowRow({
+                        title: resolveGitHubAccountLabel(account),
+                        meta: formatMessage('feature.automation.github_repo_count', { count: repos.length }),
+                        nodeKey: `account:${accountId}`,
+                        actionHtml: renderGitHubWorkflowAction('data-github-repo-create', accountId, t('feature.automation.github_bind_repo')),
+                    });
+                }).join('')}
+            </div>
+        `,
+    );
+}
+
+function renderGitHubRuleWorkflowStep(repos) {
+    const safeRepos = Array.isArray(repos) ? repos.filter(repo => String(repo?.repo_subscription_id || '').trim()) : [];
+    if (safeRepos.length === 0) {
+        return renderGitHubWorkflowStep(
+            3,
+            t('feature.automation.github_step_rule_title'),
+            t('feature.automation.github_step_rule_copy'),
+            `<div class="github-flow-step-empty">${escapeHtml(t('feature.automation.github_step_rule_disabled'))}</div>`,
+            { disabled: true },
+        );
+    }
+    return renderGitHubWorkflowStep(
+        3,
+        t('feature.automation.github_step_rule_title'),
+        t('feature.automation.github_step_rule_copy'),
+        `
+            <div class="github-flow-row-list">
+                ${safeRepos.map(repo => {
+                    const repoId = String(repo?.repo_subscription_id || '').trim();
+                    const rules = getGitHubRulesForRepo(repoId);
+                    return renderGitHubWorkflowRow({
+                        title: String(repo?.full_name || `${repo?.owner || ''}/${repo?.repo_name || ''}`).trim(),
+                        meta: formatMessage('feature.automation.github_rule_count', { count: rules.length }),
+                        nodeKey: `repo:${repoId}`,
+                        actionHtml: renderGitHubWorkflowAction('data-github-rule-create', repoId, t('feature.automation.github_create_rule')),
+                    });
+                }).join('')}
+            </div>
+        `,
+    );
+}
+
+function renderGitHubAccessDetail() {
+    const repos = Array.isArray(currentGitHubFeatureState.repos)
+        ? currentGitHubFeatureState.repos
+        : [];
+    const accounts = Array.isArray(currentGitHubFeatureState.accounts)
+        ? currentGitHubFeatureState.accounts
+        : [];
+    return `
+        <div class="automation-home-detail github-automation-detail github-access-detail">
+            <section class="github-flow-intro">
+                <h3>${escapeHtml(t('feature.automation.github_trigger_title'))}</h3>
+                <p>${escapeHtml(t('feature.automation.github_trigger_copy'))}</p>
+            </section>
+            <section class="github-flow-steps" aria-label="${escapeHtml(t('feature.automation.github_trigger_title'))}">
+                ${renderGitHubAccountWorkflowStep(accounts)}
+                ${renderGitHubRepoWorkflowStep(accounts)}
+                ${renderGitHubRuleWorkflowStep(repos)}
             </section>
         </div>
     `;
@@ -7260,32 +7745,23 @@ function renderGitHubAccountDetail(account) {
                     <div class="automation-prompt-inline">${escapeHtml(String(account?.name || accountId))}</div>
                 </div>
                 <div class="feature-action-row">
-                    <button class="secondary-btn" type="button" data-github-account-edit="${escapeHtml(accountId)}">${escapeHtml(t('automation.action.edit'))}</button>
-                    <button class="secondary-btn" type="button" data-github-account-toggle="${escapeHtml(accountId)}">${escapeHtml(status === 'enabled' ? t('automation.action.disable') : t('automation.action.enable'))}</button>
+                    <button class="secondary-btn" type="button" data-github-open-connector="">${escapeHtml(t('feature.automation.github_manage_connector'))}</button>
                     <button class="secondary-btn" type="button" data-github-repo-create="${escapeHtml(accountId)}">${escapeHtml(t('feature.automation.github_new_repo'))}</button>
-                    <button class="secondary-btn danger-btn" type="button" data-github-account-delete="${escapeHtml(accountId)}">${escapeHtml(t('settings.action.delete'))}</button>
                 </div>
             </div>
-            <div class="feature-card-grid">
-                <article class="feature-card">
-                    <div class="feature-meta-list">
-                        <div><span>${escapeHtml(t('feature.automation.github_account_token'))}</span><strong>${escapeHtml(account?.token_configured ? t('feature.automation.github_configured') : t('feature.automation.github_not_configured'))}</strong></div>
-                        <div><span>${escapeHtml(t('feature.automation.github_account_secret'))}</span><strong>${escapeHtml(account?.webhook_secret_configured ? t('feature.automation.github_configured') : t('feature.automation.github_not_configured'))}</strong></div>
-                        <div><span>${escapeHtml(t('feature.automation.github_summary_repos'))}</span><strong>${escapeHtml(String(repos.length))}</strong></div>
-                    </div>
-                </article>
-                <article class="feature-card">
-                    <div class="feature-meta-list">
-                        <div><span>${escapeHtml(t('automation.detail.last_error'))}</span><strong>${escapeHtml(String(account?.last_error || t('automation.detail.none')))}</strong></div>
-                        <div><span>${escapeHtml(t('automation.detail.updated_at'))}</span><strong>${escapeHtml(String(account?.updated_at || t('automation.detail.none')))}</strong></div>
-                    </div>
-                </article>
-            </div>
+            <section class="automation-property-group github-automation-properties">
+                <h4>${escapeHtml(t('automation.detail.configuration'))}</h4>
+                <div class="automation-property-list">
+                    ${renderAutomationDetailProperty(t('feature.automation.github_connection_status'), t(`automation.status.${status}`))}
+                    ${renderAutomationDetailProperty(t('feature.automation.github_summary_repos'), String(repos.length))}
+                    ${renderAutomationDetailProperty(t('automation.detail.last_error'), String(account?.last_error || t('automation.detail.none')))}
+                    ${renderAutomationDetailProperty(t('automation.detail.updated_at'), String(account?.updated_at || t('automation.detail.none')))}
+                </div>
+            </section>
             <section class="automation-flat-section">
                 <div class="automation-section-header">
-                    <div>
-                        <h4>${escapeHtml(t('feature.automation.github_repo_section'))}</h4>
-                    </div>
+                    <h4>${escapeHtml(t('feature.automation.github_repo_section'))}</h4>
+                    <span class="workspace-view-panel-meta">${escapeHtml(String(repos.length))}</span>
                 </div>
                 ${repos.length > 0 ? `
                     <div class="automation-record-list github-automation-inline-list">
@@ -7322,43 +7798,39 @@ function renderGitHubRepoDetail(repo) {
                     <button class="secondary-btn danger-btn" type="button" data-github-repo-delete="${escapeHtml(repoId)}">${escapeHtml(t('settings.action.delete'))}</button>
                 </div>
             </div>
-            <div class="feature-card-grid">
-                <article class="feature-card">
-                    <div class="feature-meta-list">
-                        <div><span>${escapeHtml(t('feature.automation.github_account'))}</span><strong>${escapeHtml(resolveGitHubAccountLabel(account))}</strong></div>
-                        <div><span>${escapeHtml(t('feature.automation.github_callback_url'))}</span><code>${escapeHtml(String(repo?.callback_url || t('automation.detail.none')))}</code></div>
-                        <div><span>${escapeHtml(t('feature.automation.github_webhook_status'))}</span><strong>${escapeHtml(formatGitHubWebhookStatusLabel(String(repo?.webhook_status || 'unregistered')))}</strong></div>
-                    </div>
-                </article>
-                <article class="feature-card">
-                    <div class="feature-meta-list">
-                        <div><span>${escapeHtml(t('feature.automation.github_default_branch'))}</span><strong>${escapeHtml(String(repo?.default_branch || t('automation.detail.none')))}</strong></div>
-                        <div><span>${escapeHtml(t('feature.automation.github_events'))}</span><strong>${escapeHtml(formatGitHubRepoEvents(repo))}</strong></div>
-                        <div><span>${escapeHtml(t('automation.detail.last_error'))}</span><strong>${escapeHtml(String(repo?.last_error || t('automation.detail.none')))}</strong></div>
-                    </div>
-                </article>
-                ${webhooksUrl
-                    ? `
-                        <article class="feature-card github-webhooks-card">
-                            <span class="settings-token-source-label">${escapeHtml(t('feature.automation.github_open_webhooks'))}</span>
-                            <a class="web-provider-link-card" href="${escapeHtml(webhooksUrl)}" target="_blank" rel="noreferrer noopener" title="${escapeHtml(webhooksUrl)}" aria-label="${escapeHtml(webhooksUrl)}">
-                                <span class="web-provider-link-copy">
-                                    <span class="web-provider-link-badge">GitHub</span>
-                                    <span class="web-provider-link-url">${escapeHtml(webhooksUrl)}</span>
-                                    <span class="settings-token-source-note">${escapeHtml(t('feature.automation.github_open_webhooks_help'))}</span>
-                                </span>
-                                <span class="web-provider-link-arrow" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none" class="icon-sm">
-                                        <path d="M7 17L17 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-                                        <path d="M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-                                    </svg>
-                                </span>
-                            </a>
-                        </article>
-                    `
-                    : ''
-                }
-            </div>
+            <section class="automation-property-group github-automation-properties">
+                <h4>${escapeHtml(t('automation.detail.configuration'))}</h4>
+                <div class="automation-property-list">
+                    ${renderAutomationDetailProperty(t('feature.automation.github_account'), resolveGitHubAccountLabel(account))}
+                    ${renderAutomationDetailProperty(t('feature.automation.github_callback_url'), String(repo?.callback_url || t('automation.detail.none')), { code: true })}
+                    ${renderAutomationDetailProperty(t('feature.automation.github_webhook_status'), formatGitHubWebhookStatusLabel(String(repo?.webhook_status || 'unregistered')))}
+                    ${renderAutomationDetailProperty(t('feature.automation.github_default_branch'), String(repo?.default_branch || t('automation.detail.none')))}
+                    ${renderAutomationDetailProperty(t('feature.automation.github_events'), formatGitHubRepoEvents(repo))}
+                    ${renderAutomationDetailProperty(t('automation.detail.last_error'), String(repo?.last_error || t('automation.detail.none')))}
+                </div>
+            </section>
+            ${webhooksUrl
+                ? `
+                    <section class="automation-flat-section github-webhooks-section">
+                        <div class="automation-section-header">
+                            <h4>${escapeHtml(t('feature.automation.github_open_webhooks'))}</h4>
+                        </div>
+                        <a class="web-provider-link-card" href="${escapeHtml(webhooksUrl)}" target="_blank" rel="noreferrer noopener" title="${escapeHtml(webhooksUrl)}" aria-label="${escapeHtml(webhooksUrl)}">
+                            <span class="web-provider-link-copy">
+                                <span class="web-provider-link-url">${escapeHtml(webhooksUrl)}</span>
+                                <span class="settings-token-source-note">${escapeHtml(t('feature.automation.github_open_webhooks_help'))}</span>
+                            </span>
+                            <span class="web-provider-link-arrow" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" class="icon-sm">
+                                    <path d="M7 17L17 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                    <path d="M9 7h8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                </svg>
+                            </span>
+                        </a>
+                    </section>
+                `
+                : ''
+            }
             <section class="automation-flat-section">
                 <div class="automation-section-header automation-runs-header">
                     <h3>${escapeHtml(t('feature.automation.github_rule_section'))}</h3>
@@ -7577,30 +8049,16 @@ function normalizeGitHubDraftPrValue(value) {
 }
 
 function bindGitHubAutomationView() {
-    bindGitHubSettingsHandlers(FEATURE_GITHUB_FIELD_IDS);
-    void loadGitHubSettingsPanel(FEATURE_GITHUB_FIELD_IDS);
-    els.projectViewToolbarActions?.querySelector('[data-github-account-create]')?.addEventListener('click', () => {
-        void handleGitHubCreateAccountFeature();
+    els.projectViewContent.querySelectorAll('[data-github-open-connector]').forEach(button => {
+        button.addEventListener('click', () => {
+            void openGitHubConnectorFeature();
+        });
     });
     els.projectViewContent.querySelectorAll('[data-github-node-key]').forEach(button => {
         button.addEventListener('click', () => {
             const nodeKey = String(button.getAttribute('data-github-node-key') || '').trim();
-            void openAutomationGitHubView(nodeKey || 'access');
-        });
-    });
-    els.projectViewContent.querySelectorAll('[data-github-account-edit]').forEach(button => {
-        button.addEventListener('click', () => {
-            void handleGitHubEditAccountFeature(button.getAttribute('data-github-account-edit'));
-        });
-    });
-    els.projectViewContent.querySelectorAll('[data-github-account-toggle]').forEach(button => {
-        button.addEventListener('click', () => {
-            void handleGitHubToggleAccountFeature(button.getAttribute('data-github-account-toggle'));
-        });
-    });
-    els.projectViewContent.querySelectorAll('[data-github-account-delete]').forEach(button => {
-        button.addEventListener('click', () => {
-            void handleGitHubDeleteAccountFeature(button.getAttribute('data-github-account-delete'));
+            currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(nodeKey || 'access');
+            renderAutomationHomeView();
         });
     });
     els.projectViewContent.querySelectorAll('[data-github-repo-create]').forEach(button => {
@@ -7645,7 +8103,129 @@ function bindGitHubAutomationView() {
     });
 }
 
-function renderAutomationHomeDetail(detail) {
+function renderAutomationListActionIcon(iconName) {
+    if (iconName === 'edit') {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                <path d="M4 20h4.5L19 9.5 14.5 5 4 15.5V20z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path>
+                <path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
+            </svg>
+        `;
+    }
+    if (iconName === 'more') {
+        return `
+            <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                <path d="M5 12h.01M12 12h.01M19 12h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"></path>
+            </svg>
+        `;
+    }
+    return `
+        <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+            <path d="M8 5.5v13l10-6.5-10-6.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path>
+        </svg>
+    `;
+}
+
+function renderAutomationListActionButton(projectId, action, label, iconName) {
+    return `
+        <button
+            class="automation-record-action"
+            type="button"
+            title="${escapeHtml(label)}"
+            aria-label="${escapeHtml(label)}"
+            data-automation-row-action
+            data-automation-list-${escapeHtml(action)}="${escapeHtml(projectId)}"
+        >
+            ${renderAutomationListActionIcon(iconName)}
+        </button>
+    `;
+}
+
+function renderAutomationProjectListRow(project, selectedProjectId = '') {
+    const projectId = String(project?.automation_project_id || '').trim();
+    const status = String(project?.status || 'disabled').trim() || 'disabled';
+    const title = String(project?.display_name || project?.name || projectId).trim();
+    const workspaceId = String(project?.workspace_id || '').trim();
+    const scheduleText = describeAutomationSchedule(project);
+    return `
+        <article class="automation-record${projectId === selectedProjectId ? ' is-active' : ''}">
+            <button class="automation-record-main" type="button" aria-label="${escapeHtml(title)}" data-automation-home-project-id="${escapeHtml(projectId)}">
+                <span class="automation-status-dot is-${escapeHtml(status)}" aria-hidden="true"></span>
+                <span class="automation-record-copy">
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>${escapeHtml(workspaceId || t('automation.detail.none'))}</span>
+                </span>
+                <span class="automation-record-schedule">${escapeHtml(scheduleText)}</span>
+            </button>
+            <span class="automation-record-actions" aria-label="${escapeHtml(t('automation.action.quick_actions'))}">
+                ${renderAutomationListActionButton(projectId, 'run', t('automation.action.run_now'), 'run')}
+                ${renderAutomationListActionButton(projectId, 'edit', t('automation.action.edit'), 'edit')}
+                ${renderAutomationListActionButton(projectId, 'more', t('automation.action.more'), 'more')}
+            </span>
+        </article>
+    `;
+}
+
+function renderAutomationDetailProperty(label, value, { code = false, valueClass = '' } = {}) {
+    const safeValue = String(value || '').trim();
+    const content = code
+        ? `<code>${escapeHtml(safeValue || t('automation.detail.none'))}</code>`
+        : `<strong class="${escapeHtml(valueClass)}">${escapeHtml(safeValue || t('automation.detail.none'))}</strong>`;
+    return `
+        <div class="automation-property-row">
+            <span>${escapeHtml(label)}</span>
+            ${content}
+        </div>
+    `;
+}
+
+function renderAutomationRunHistory(sessions) {
+    const safeSessions = Array.isArray(sessions) ? sessions : [];
+    if (safeSessions.length === 0) {
+        return `<div class="automation-inline-empty">${escapeHtml(t('automation.detail.no_runs'))}</div>`;
+    }
+    return `
+        <div class="automation-run-list">
+            ${safeSessions.map(session => {
+                const sessionStatus = String(
+                    session?.active_run_status
+                    || session?.latest_terminal_run_status
+                    || 'completed',
+                ).trim() || 'completed';
+                const sessionStatusLabel = formatAutomationRunStatusLabel(sessionStatus);
+                const sessionTitle = String(session?.metadata?.title || session?.session_id || '').trim();
+                return `
+                    <article class="automation-run-card" data-automation-session-id="${escapeHtml(String(session?.session_id || ''))}">
+                        <div class="automation-run-card-header">
+                            <span class="automation-status-dot is-${escapeHtml(sessionStatus)}" aria-hidden="true"></span>
+                            <strong>${escapeHtml(sessionTitle)}</strong>
+                        </div>
+                        <div class="automation-run-card-meta">
+                            <span>${escapeHtml(sessionStatusLabel)}</span>
+                            <span>${escapeHtml(String(session?.updated_at || ''))}</span>
+                        </div>
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function formatAutomationRunStatusLabel(status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase() || 'completed';
+    const translationKey = `automation.run_status.${normalizedStatus}`;
+    const translated = t(translationKey);
+    if (translated !== translationKey) {
+        return translated;
+    }
+    return normalizedStatus
+        .split(/[-_]+/)
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ') || normalizedStatus;
+}
+
+function renderAutomationHomeDetail(detail, { showListCrumb = false } = {}) {
     const project = detail?.project || null;
     if (!project) {
         return '';
@@ -7670,87 +8250,110 @@ function renderAutomationHomeDetail(detail) {
     const deliveryEvents = Array.isArray(project?.delivery_events) ? project.delivery_events : [];
     const workspaceId = String(project?.workspace_id || '').trim() || 'automation-system';
     const workspaceRootPath = String(workspaceRecord?.root_path || t('automation.workspace.missing'));
+    const scheduleText = describeAutomationScheduleText(project);
+    const scheduleDescription = describeAutomationSchedule(project);
+    const nextRunAt = formatAutomationUtcDateTime(project?.next_run_at, t('automation.detail.not_scheduled'));
+    const lastRunAt = formatAutomationUtcDateTime(project?.last_run_started_at, t('automation.detail.never'));
+    const lastError = String(project?.last_error || '').trim() || t('automation.detail.none');
+    const runModeLabel = sessionMode === 'orchestration' ? t('composer.mode_orchestration') : t('composer.mode_normal');
+    const roleOrPresetLabel = sessionMode === 'orchestration'
+        ? resolveAutomationPresetDisplayName(orchestrationPresetId, orchestrationPresets)
+        : resolveAutomationRoleDisplayName(normalRootRoleId, normalRoles);
+    const deliveryProviderLabel = deliveryBinding ? resolveDeliveryProviderLabel(deliveryBinding?.provider) : '';
+    const deliveryLabel = deliveryBinding
+        ? (deliveryBindingName ? `${deliveryProviderLabel} / ${deliveryBindingName}` : deliveryProviderLabel)
+        : t('workspace_view.delivery_disabled');
+    const deliveryEventsLabel = deliveryEvents.length > 0
+        ? deliveryEvents.join(', ')
+        : t('workspace_view.delivery_disabled');
     return `
-        <div class="automation-home-detail">
-            <div class="feature-detail-head automation-detail-head">
-                <div class="automation-detail-copy">
-                    <div class="feature-detail-title-row">
-                        <h3>${escapeHtml(String(project?.display_name || project?.name || ''))}</h3>
-                        ${renderFeatureStatusPill(statusLabel, status)}
+        <div class="automation-home-detail automation-document">
+            <div class="automation-detail-nav">
+                <div class="automation-detail-nav-main">
+                    <div class="automation-breadcrumb">
+                        ${showListCrumb
+                            ? `<button type="button" data-automation-list-back>${escapeHtml(t('feature.automation.title'))}</button>`
+                            : `<span>${escapeHtml(t('feature.automation.title'))}</span>`}
+                        <span aria-hidden="true">/</span>
+                        <strong>${escapeHtml(String(project?.display_name || project?.name || ''))}</strong>
                     </div>
-                    <div class="automation-prompt-inline">${escapeHtml(String(project?.prompt || ''))}</div>
                 </div>
-                <div class="feature-action-row">
+                <div class="automation-sidebar-actions automation-detail-actions">
                     <button class="secondary-btn" type="button" data-automation-edit>${escapeHtml(t('automation.action.edit'))}</button>
                     <button class="secondary-btn" type="button" data-automation-run>${escapeHtml(t('automation.action.run_now'))}</button>
                     <button class="secondary-btn" type="button" data-automation-toggle>${escapeHtml(status === 'enabled' ? t('automation.action.disable') : t('automation.action.enable'))}</button>
                     <button class="secondary-btn danger-btn" type="button" data-automation-delete>${escapeHtml(t('settings.action.delete'))}</button>
                 </div>
             </div>
-            <div class="automation-detail-grid automation-section-shell">
-                <section class="automation-flat-section automation-meta-section">
-                    <div class="automation-section-header">
-                        <div>
-                            <h4>${escapeHtml(t('automation.detail.configuration'))}</h4>
+            <div class="automation-document-layout">
+                <main class="automation-document-main">
+                    <div class="automation-detail-title-row">
+                        <h3>${escapeHtml(String(project?.display_name || project?.name || ''))}</h3>
+                    </div>
+                    <section class="automation-prompt-panel">
+                        <h4>${escapeHtml(t('automation.detail.prompt'))}</h4>
+                        <div class="automation-prompt-inline">${escapeHtml(String(project?.prompt || t('automation.detail.none')))}</div>
+                    </section>
+                    <section class="automation-history-section">
+                        <div class="automation-section-header automation-runs-header">
+                            <h4>${escapeHtml(t('automation.detail.recent_runs'))}</h4>
+                            <span>${escapeHtml(String(sessions.length))} ${escapeHtml(t('automation.detail.session_count'))}</span>
                         </div>
-                    </div>
-                    <div class="feature-meta-list automation-meta-list">
-                        <div><span>${escapeHtml(t('automation.detail.schedule'))}</span><strong>${escapeHtml(describeAutomationScheduleText(project))}</strong></div>
-                        <div><span>${escapeHtml(t('automation.detail.timezone'))}</span><strong>${escapeHtml(String(project?.timezone || 'UTC'))}</strong></div>
-                        <div><span>${escapeHtml(t('settings.triggers.mode'))}</span><strong>${escapeHtml(sessionMode === 'orchestration' ? t('composer.mode_orchestration') : t('composer.mode_normal'))}</strong></div>
-                        <div><span>${escapeHtml(sessionMode === 'orchestration' ? t('settings.triggers.orchestration_preset_id') : t('settings.triggers.normal_root_role_id'))}</span><strong>${escapeHtml(
-                            sessionMode === 'orchestration'
-                                ? resolveAutomationPresetDisplayName(orchestrationPresetId, orchestrationPresets)
-                                : resolveAutomationRoleDisplayName(normalRootRoleId, normalRoles)
-                        )}</strong></div>
-                        <div><span>${escapeHtml(t('automation.detail.next_run'))}</span><strong>${escapeHtml(formatAutomationUtcDateTime(project?.next_run_at, t('automation.detail.not_scheduled')))}</strong></div>
-                        <div><span>${escapeHtml(t('automation.detail.last_run'))}</span><strong>${escapeHtml(formatAutomationUtcDateTime(project?.last_run_started_at, t('automation.detail.never')))}</strong></div>
-                    </div>
-                </section>
-                <section class="automation-flat-section automation-meta-section">
-                    <div class="automation-section-header">
-                        <div>
-                            <h4>${escapeHtml(t('workspace_view.bindings'))}</h4>
+                        ${renderAutomationRunHistory(sessions)}
+                    </section>
+                </main>
+                <aside class="automation-detail-sidebar">
+                    <section class="automation-property-group">
+                        <h4>${escapeHtml(t('automation.detail.configuration'))}</h4>
+                        <div class="automation-property-list">
+                            <div class="automation-property-row">
+                                <span>${escapeHtml(t('automation.detail.status'))}</span>
+                                <strong class="automation-status-value">
+                                    <span class="automation-status-dot is-${escapeHtml(status)}" aria-hidden="true"></span>
+                                    ${escapeHtml(statusLabel)}
+                                </strong>
+                            </div>
+                            ${renderAutomationDetailProperty(t('automation.detail.next_run'), nextRunAt)}
+                            ${renderAutomationDetailProperty(t('automation.detail.last_run'), lastRunAt)}
+                            ${renderAutomationDetailProperty(t('automation.detail.schedule'), scheduleText)}
+                            ${renderAutomationDetailProperty(t('automation.detail.schedule_summary'), scheduleDescription)}
+                            ${renderAutomationDetailProperty(t('automation.detail.timezone'), String(project?.timezone || 'UTC'))}
+                            ${renderAutomationDetailProperty(t('settings.triggers.mode'), runModeLabel)}
+                            ${renderAutomationDetailProperty(
+                                sessionMode === 'orchestration'
+                                    ? t('settings.triggers.orchestration_preset_id')
+                                    : t('settings.triggers.normal_root_role_id'),
+                                roleOrPresetLabel,
+                            )}
+                            ${renderAutomationDetailProperty(t('automation.detail.last_error'), lastError, {
+                                valueClass: lastError === t('automation.detail.none') ? '' : 'is-error',
+                            })}
                         </div>
-                    </div>
-                    <div class="feature-meta-list automation-meta-list">
-                        <div><span>${escapeHtml(t('automation.field.workspace'))}</span><strong>${escapeHtml(workspaceId)}</strong></div>
-                        <div><span>${escapeHtml(t('automation.workspace.directory'))}</span><code>${escapeHtml(workspaceRootPath)}</code></div>
-                        <div><span>${escapeHtml(t('workspace_view.delivery_events'))}</span><strong>${escapeHtml(deliveryEvents.length > 0 ? deliveryEvents.join(', ') : t('workspace_view.delivery_disabled'))}</strong></div>
-                        ${deliveryBinding ? `
-                            <div><span>${escapeHtml(t('workspace_view.delivery_provider'))}</span><strong>${escapeHtml(resolveDeliveryProviderLabel(deliveryBinding?.provider))}</strong></div>
-                            <div><span>${escapeHtml(t('workspace_view.delivery_target'))}</span><strong>${escapeHtml(deliveryBindingName)}</strong></div>
-                        ` : ''}
-                    </div>
-                </section>
+                    </section>
+                    <section class="automation-property-group">
+                        <h4>${escapeHtml(t('workspace_view.bindings'))}</h4>
+                        <div class="automation-property-list">
+                            ${renderAutomationDetailProperty(t('automation.field.workspace'), workspaceId)}
+                            ${renderAutomationDetailProperty(t('automation.workspace.directory'), workspaceRootPath, { code: true })}
+                            ${renderAutomationDetailProperty(t('workspace_view.delivery_target'), deliveryLabel)}
+                            ${renderAutomationDetailProperty(t('workspace_view.delivery_events'), deliveryEventsLabel)}
+                        </div>
+                    </section>
+                </aside>
             </div>
-            <section class="automation-flat-section automation-runs-section">
-                <div class="automation-section-header automation-runs-header">
-                    <h3>${escapeHtml(t('automation.detail.recent_runs'))}</h3>
-                    <span class="workspace-view-panel-meta">${escapeHtml(String(sessions.length))} ${escapeHtml(t('automation.detail.session_count'))}</span>
-                </div>
-                ${sessions.length > 0 ? `
-                    <div class="automation-run-list">
-                        ${sessions.map(session => {
-                            const sessionStatus = String(session?.active_run_status || 'completed').trim() || 'completed';
-                            return `
-                                <article class="automation-run-card" data-automation-session-id="${escapeHtml(String(session?.session_id || ''))}">
-                                    <div class="automation-run-card-header">
-                                        ${renderFeatureStatusPill(t(`automation.run_status.${sessionStatus}`), sessionStatus)}
-                                        <code class="workspace-diff-path">${escapeHtml(String(session?.metadata?.title || session?.session_id || ''))}</code>
-                                    </div>
-                                    <div class="automation-run-card-meta">
-                                        <span>${escapeHtml(t('automation.detail.updated_at'))}</span>
-                                        <strong>${escapeHtml(String(session?.updated_at || ''))}</strong>
-                                    </div>
-                                </article>
-                            `;
-                        }).join('')}
-                    </div>
-                ` : renderInlineState(t('automation.detail.no_runs'))}
-            </section>
         </div>
     `;
+}
+
+function renderAutomationProjectStandaloneDetail(project, sessions, workspaceRecord = null, deliveryBindings = []) {
+    return renderAutomationHomeDetail({
+        project,
+        sessions: Array.isArray(sessions) ? sessions : [],
+        workspace: workspaceRecord,
+        deliveryBindings: Array.isArray(deliveryBindings) ? deliveryBindings : [],
+        normalRoles: [],
+        orchestrationPresets: [],
+    });
 }
 
 function resolveFeishuTriggerAppName(trigger) {
@@ -8129,6 +8732,10 @@ function getCurrentConnectorModalItem() {
 }
 
 function renderConnectorConfigModal() {
+    const selectedProvider = String(currentGatewayFeatureState.connectorModalProvider || '').trim();
+    if (selectedProvider === 'github') {
+        return renderGitHubConnectorConfigModal();
+    }
     const item = getCurrentConnectorModalItem();
     if (!item) {
         return '';
@@ -8148,6 +8755,115 @@ function renderConnectorConfigModal() {
         accountManagementMarkup: renderConnectorAccountManagement(modalItem),
         showConfigureAction: provider !== W3_PLATFORM,
     });
+}
+
+function renderGitHubConnectorConfigModal() {
+    const accountCount = currentGitHubFeatureState.accounts.length;
+    const connectorItem = getConnectorItemByProvider('github');
+    const fallbackStatus = accountCount > 0 ? 'connected' : 'needs_config';
+    const item = {
+        ...(connectorItem || {
+            provider: 'github',
+            connector_id: 'github',
+        }),
+        provider: 'github',
+        connector_id: 'github',
+        status: String(connectorItem?.status || '').trim() || fallbackStatus,
+        account_count: Number.isFinite(Number(connectorItem?.account_count))
+            ? Number(connectorItem.account_count)
+            : accountCount,
+    };
+    const status = String(item.status || 'needs_config').trim() || 'needs_config';
+    const enabledAccounts = currentGitHubFeatureState.accounts.filter(
+        account => String(account?.status || '').trim() === 'enabled',
+    ).length;
+    return `
+        <div class="modal gateway-feature-modal connectors-config-modal github-connector-modal" data-connector-modal data-github-connector-modal>
+            <div class="modal-content gateway-feature-modal-content connectors-config-modal-content github-connector-modal-content" role="dialog" aria-modal="true" aria-labelledby="github-connector-modal-title">
+                <div class="modal-header gateway-feature-modal-header">
+                    <div class="gateway-feature-modal-heading">
+                        <h3 id="github-connector-modal-title">${escapeHtml(t('feature.connectors.github.title'))}</h3>
+                        <p>${escapeHtml(t('feature.connectors.github.copy'))}</p>
+                    </div>
+                    <button class="icon-btn" type="button" aria-label="${escapeHtml(t('settings.action.cancel'))}" data-connector-modal-close>
+                        <span aria-hidden="true">×</span>
+                    </button>
+                </div>
+                <div class="gateway-feature-modal-body connectors-config-body github-connector-body">
+                    <div class="connectors-config-status-row">
+                        <span class="connectors-status-dot is-${escapeHtml(status)}"></span>
+                        <strong>${escapeHtml(t(`feature.connectors.status.${status}`))}</strong>
+                        <span>${escapeHtml(formatMessage('feature.connectors.account_summary', {
+                            enabled: enabledAccounts,
+                            total: currentGitHubFeatureState.accounts.length,
+                        }))}</span>
+                    </div>
+                    <section class="connectors-account-management github-connector-settings">
+                        <div class="connectors-account-management-header">
+                            <h4>${escapeHtml(t('feature.connectors.github.connection_settings'))}</h4>
+                        </div>
+                        ${renderGitHubAccessPanelMarkup(FEATURE_GITHUB_FIELD_IDS)}
+                    </section>
+                    ${renderGitHubConnectorAccountManagement()}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderGitHubConnectorAccountManagement() {
+    const accounts = Array.isArray(currentGitHubFeatureState.accounts)
+        ? currentGitHubFeatureState.accounts
+        : [];
+    return `
+        <section class="connectors-account-management github-connector-accounts">
+            <div class="connectors-account-management-header">
+                <h4>${escapeHtml(t('feature.connectors.github.accounts'))}</h4>
+                <button class="secondary-btn section-action-btn" type="button" data-github-account-create="">${escapeHtml(t('feature.automation.github_new_account'))}</button>
+            </div>
+            ${accounts.length > 0 ? renderGitHubConnectorAccountList(accounts) : `
+                <div class="connectors-account-empty">
+                    ${escapeHtml(t('feature.connectors.github.account_empty'))}
+                </div>
+            `}
+        </section>
+    `;
+}
+
+function renderGitHubConnectorAccountList(accounts) {
+    return `
+        <div class="connectors-account-list">
+            ${accounts.map(account => {
+                const accountId = String(account?.account_id || '').trim();
+                const status = String(account?.status || 'disabled').trim() || 'disabled';
+                const repos = getGitHubReposForAccount(accountId);
+                const tokenConfigured = account?.token_configured === true;
+                const secretConfigured = account?.webhook_secret_configured === true;
+                return renderConnectorAccountRow({
+                    id: accountId,
+                    title: resolveGitHubAccountLabel(account),
+                    chips: [
+                        t(`automation.status.${status}`),
+                        `${t('settings.github.token')}: ${tokenConfigured ? t('feature.automation.github_configured') : t('feature.automation.github_not_configured')}`,
+                        `${t('feature.automation.github_account_secret')}: ${secretConfigured ? t('feature.automation.github_configured') : t('feature.automation.github_not_configured')}`,
+                        formatMessage('feature.automation.github_repo_count', { count: repos.length }),
+                    ],
+                    meta: [
+                        String(account?.name || accountId),
+                        account?.last_error ? `${t('automation.detail.last_error')}: ${String(account.last_error)}` : '',
+                    ],
+                    actions: [
+                        {
+                            attr: 'data-github-account-toggle',
+                            label: status === 'enabled' ? t('automation.action.disable') : t('automation.action.enable'),
+                        },
+                        { attr: 'data-github-account-edit', label: t('automation.action.edit') },
+                        { attr: 'data-github-account-delete', label: t('settings.action.delete') },
+                    ],
+                });
+            }).join('')}
+        </div>
+    `;
 }
 
 function renderConnectorAccountManagement(item) {
@@ -8439,11 +9155,42 @@ function renderConnectorAccountEmptyState() {
 }
 
 function bindConnectorConfigModalHandlers(root) {
+    if (root.querySelector('[data-github-connector-modal]')) {
+        bindGitHubSettingsHandlers(FEATURE_GITHUB_FIELD_IDS, {
+            onSaved: async () => {
+                await refreshConnectorsAfterGitHubConnectorChange();
+                renderGatewayFeatureView();
+                renderGatewayFeatureModal();
+            },
+        });
+        restoreGitHubSettingsPanelState(FEATURE_GITHUB_FIELD_IDS);
+        if (
+            currentGatewayFeatureState.githubConnectorSettingsLoaded !== true
+            && currentGatewayFeatureState.githubConnectorSettingsLoading !== true
+        ) {
+            currentGatewayFeatureState = {
+                ...currentGatewayFeatureState,
+                githubConnectorSettingsLoading: true,
+            };
+            void loadGitHubSettingsPanel(FEATURE_GITHUB_FIELD_IDS, { preserveDirty: true }).finally(() => {
+                currentGatewayFeatureState = {
+                    ...currentGatewayFeatureState,
+                    githubConnectorSettingsLoaded: true,
+                    githubConnectorSettingsLoading: false,
+                };
+            });
+        }
+    }
     root.querySelectorAll('[data-connector-modal-close]').forEach(button => {
         button.addEventListener('click', () => {
+            if (root.querySelector('[data-github-connector-modal]')) {
+                resetGitHubSettingsPanelState();
+            }
             currentGatewayFeatureState = {
                 ...currentGatewayFeatureState,
                 connectorModalProvider: '',
+                githubConnectorSettingsLoaded: false,
+                githubConnectorSettingsLoading: false,
             };
             renderGatewayFeatureModal();
         });
@@ -8451,6 +9198,35 @@ function bindConnectorConfigModalHandlers(root) {
     root.querySelectorAll('[data-connector-configure]').forEach(button => {
         button.addEventListener('click', () => {
             void handleConnectConnectorFromModal(button.getAttribute('data-connector-configure'));
+        });
+    });
+    root.querySelectorAll('[data-github-account-create]').forEach(button => {
+        button.addEventListener('click', () => {
+            void handleGitHubCreateAccountFeature({ surface: 'connector' });
+        });
+    });
+    root.querySelectorAll('[data-github-account-edit]').forEach(button => {
+        button.addEventListener('click', () => {
+            void handleGitHubEditAccountFeature(
+                button.getAttribute('data-github-account-edit'),
+                { surface: 'connector' },
+            );
+        });
+    });
+    root.querySelectorAll('[data-github-account-toggle]').forEach(button => {
+        button.addEventListener('click', () => {
+            void handleGitHubToggleAccountFeature(
+                button.getAttribute('data-github-account-toggle'),
+                { surface: 'connector' },
+            );
+        });
+    });
+    root.querySelectorAll('[data-github-account-delete]').forEach(button => {
+        button.addEventListener('click', () => {
+            void handleGitHubDeleteAccountFeature(
+                button.getAttribute('data-github-account-delete'),
+                { surface: 'connector' },
+            );
         });
     });
     root.querySelectorAll('[data-feature-w3-username]').forEach(input => {
@@ -8639,10 +9415,38 @@ function restoreConnectorSearchFocus(selectionStart, selectionEnd) {
     input.setSelectionRange(start, end);
 }
 
+async function openGitHubConnectorFeature() {
+    if (currentFeatureViewId !== FEATURE_VIEW_IDS.gateway) {
+        await openImFeatureView();
+    }
+    currentGatewayFeatureState = {
+        ...currentGatewayFeatureState,
+        connectorModalProvider: 'github',
+        githubConnectorSettingsLoaded: false,
+        githubConnectorSettingsLoading: false,
+    };
+    renderGatewayFeatureView();
+    try {
+        await loadGitHubFeatureState();
+    } catch (error) {
+        showToast({
+            title: t('feature.connectors.github.load_failed'),
+            message: String(error?.message || error || ''),
+            tone: 'danger',
+        });
+    }
+    if (
+        currentFeatureViewId === FEATURE_VIEW_IDS.gateway
+        && String(currentGatewayFeatureState.connectorModalProvider || '').trim() === 'github'
+    ) {
+        renderGatewayFeatureModal();
+    }
+}
+
 async function handleOpenConnectorCard(provider) {
     const normalizedProvider = String(provider || '').trim();
     if (normalizedProvider === 'github') {
-        await openAutomationGitHubView('access');
+        await openGitHubConnectorFeature();
         return;
     }
     if (normalizedProvider === W3_PLATFORM) {
@@ -8672,7 +9476,7 @@ async function handleOpenConnectorCard(provider) {
 async function handleManageConnectorCard(provider) {
     const normalizedProvider = String(provider || '').trim();
     if (normalizedProvider === 'github') {
-        await openAutomationGitHubView('access');
+        await openGitHubConnectorFeature();
         return;
     }
     if (normalizedProvider === W3_PLATFORM) {
@@ -8978,7 +9782,7 @@ async function handleConnectConnectorFromModal(provider) {
     };
     renderGatewayFeatureModal();
     if (normalizedProvider === 'github') {
-        await openAutomationGitHubView('access');
+        await openGitHubConnectorFeature();
         return;
     }
     if (normalizedProvider === FEISHU_PLATFORM) {
@@ -9098,6 +9902,25 @@ async function refreshConnectorsAfterW3Change() {
     } catch (error) {
         logWarn('Failed to refresh connectors after W3 change', error);
     }
+}
+
+async function refreshConnectorsAfterGitHubConnectorChange() {
+    try {
+        const connectorsResponse = await fetchConnectors();
+        currentGatewayFeatureState = {
+            ...currentGatewayFeatureState,
+            connectorsResponse,
+        };
+    } catch (error) {
+        logWarn('Failed to refresh connectors after GitHub account change', error);
+    }
+}
+
+async function refreshConnectorsAfterGitHubAccountChange(surface) {
+    if (surface !== 'connector') {
+        return;
+    }
+    await refreshConnectorsAfterGitHubConnectorChange();
 }
 
 function buildW3CredentialPayload() {
@@ -9257,7 +10080,24 @@ function notifyGitHubFeatureError(error) {
     });
 }
 
-async function handleGitHubCreateAccountFeature() {
+function resolveGitHubAccountActionSurface(options = {}) {
+    if (options?.surface === 'connector') {
+        return 'connector';
+    }
+    return currentFeatureViewId === FEATURE_VIEW_IDS.gateway ? 'connector' : 'automation';
+}
+
+function renderGitHubAccountActionSurface(surface) {
+    if (surface === 'connector') {
+        renderGatewayFeatureView();
+        renderGatewayFeatureModal();
+        return;
+    }
+    renderAutomationHomeView();
+}
+
+async function handleGitHubCreateAccountFeature(options = {}) {
+    const surface = resolveGitHubAccountActionSurface(options);
     try {
         const account = await requestGitHubAccountInput(
             null,
@@ -9267,13 +10107,19 @@ async function handleGitHubCreateAccountFeature() {
             return;
         }
         notifyGitHubFeatureSaved(resolveGitHubAccountLabel(account));
-        await openAutomationGitHubView(`account:${String(account?.account_id || '').trim()}`);
+        upsertGitHubAccountInState(account);
+        if (surface === 'automation') {
+            currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(`account:${String(account?.account_id || '').trim()}`);
+        }
+        await refreshConnectorsAfterGitHubAccountChange(surface);
+        renderGitHubAccountActionSurface(surface);
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
 }
 
-async function handleGitHubEditAccountFeature(accountId) {
+async function handleGitHubEditAccountFeature(accountId, options = {}) {
+    const surface = resolveGitHubAccountActionSurface(options);
     try {
         const account = findGitHubAccountById(accountId);
         if (!account) {
@@ -9290,13 +10136,19 @@ async function handleGitHubEditAccountFeature(accountId) {
             return;
         }
         notifyGitHubFeatureSaved(resolveGitHubAccountLabel(updated));
-        await openAutomationGitHubView(`account:${String(updated?.account_id || '').trim()}`);
+        upsertGitHubAccountInState(updated);
+        if (surface === 'automation') {
+            currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(`account:${String(updated?.account_id || '').trim()}`);
+        }
+        await refreshConnectorsAfterGitHubAccountChange(surface);
+        renderGitHubAccountActionSurface(surface);
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
 }
 
-async function handleGitHubToggleAccountFeature(accountId) {
+async function handleGitHubToggleAccountFeature(accountId, options = {}) {
+    const surface = resolveGitHubAccountActionSurface(options);
     try {
         const account = findGitHubAccountById(accountId);
         if (!account) {
@@ -9306,13 +10158,19 @@ async function handleGitHubToggleAccountFeature(accountId) {
             ? await disableGitHubTriggerAccount(String(account.account_id || '').trim())
             : await enableGitHubTriggerAccount(String(account.account_id || '').trim());
         notifyGitHubFeatureSaved(resolveGitHubAccountLabel(updated));
-        await openAutomationGitHubView(`account:${String(updated?.account_id || '').trim()}`);
+        upsertGitHubAccountInState(updated);
+        if (surface === 'automation') {
+            currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(`account:${String(updated?.account_id || '').trim()}`);
+        }
+        await refreshConnectorsAfterGitHubAccountChange(surface);
+        renderGitHubAccountActionSurface(surface);
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
 }
 
-async function handleGitHubDeleteAccountFeature(accountId) {
+async function handleGitHubDeleteAccountFeature(accountId, options = {}) {
+    const surface = resolveGitHubAccountActionSurface(options);
     try {
         const account = findGitHubAccountById(accountId);
         if (!account) {
@@ -9332,7 +10190,12 @@ async function handleGitHubDeleteAccountFeature(accountId) {
         }
         await deleteGitHubTriggerAccount(String(account.account_id || '').trim());
         notifyGitHubFeatureDeleted(resolveGitHubAccountLabel(account));
-        await openAutomationGitHubView('access');
+        removeGitHubAccountFromState(account.account_id);
+        if (surface === 'automation') {
+            currentGitHubFeatureNodeKey = 'access';
+        }
+        await refreshConnectorsAfterGitHubAccountChange(surface);
+        renderGitHubAccountActionSurface(surface);
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
@@ -9350,7 +10213,9 @@ async function handleGitHubCreateRepoFeature(accountId) {
         }
         const repo = await createGitHubRepoSubscription(payload);
         notifyGitHubFeatureSaved(String(repo?.full_name || ''));
-        await openAutomationGitHubView(`repo:${String(repo?.repo_subscription_id || '').trim()}`);
+        upsertGitHubRepoInState(repo);
+        currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(`repo:${String(repo?.repo_subscription_id || '').trim()}`);
+        renderAutomationHomeView();
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
@@ -9372,7 +10237,9 @@ async function handleGitHubEditRepoFeature(repoSubscriptionId) {
         }
         const updated = await updateGitHubRepoSubscription(String(repo.repo_subscription_id || '').trim(), payload);
         notifyGitHubFeatureSaved(String(updated?.full_name || ''));
-        await openAutomationGitHubView(`repo:${String(updated?.repo_subscription_id || '').trim()}`);
+        upsertGitHubRepoInState(updated);
+        currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(`repo:${String(updated?.repo_subscription_id || '').trim()}`);
+        renderAutomationHomeView();
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
@@ -9388,7 +10255,9 @@ async function handleGitHubToggleRepoFeature(repoSubscriptionId) {
             ? await enableGitHubRepoSubscription(String(repo.repo_subscription_id || '').trim())
             : await disableGitHubRepoSubscription(String(repo.repo_subscription_id || '').trim());
         notifyGitHubFeatureSaved(String(updated?.full_name || ''));
-        await openAutomationGitHubView(`repo:${String(updated?.repo_subscription_id || '').trim()}`);
+        upsertGitHubRepoInState(updated);
+        currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(`repo:${String(updated?.repo_subscription_id || '').trim()}`);
+        renderAutomationHomeView();
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
@@ -9414,7 +10283,9 @@ async function handleGitHubDeleteRepoFeature(repoSubscriptionId) {
         }
         await deleteGitHubRepoSubscription(String(repo.repo_subscription_id || '').trim());
         notifyGitHubFeatureDeleted(String(repo?.full_name || ''));
-        await openAutomationGitHubView(`account:${String(repo?.account_id || '').trim()}`);
+        removeGitHubRepoFromState(repo.repo_subscription_id);
+        currentGitHubFeatureNodeKey = resolveGitHubFeatureNodeKey(`account:${String(repo?.account_id || '').trim()}`);
+        renderAutomationHomeView();
     } catch (error) {
         notifyGitHubFeatureError(error);
     }
@@ -9435,6 +10306,7 @@ async function handleGitHubCreateRuleFeature(repoSubscriptionId) {
             return;
         }
         upsertGitHubRuleInState(created);
+        await refreshGitHubRepoSubscriptionsInState();
         notifyGitHubFeatureSaved(String(repo?.full_name || ''));
         renderAutomationHomeView();
     } catch (error) {
@@ -9464,6 +10336,7 @@ async function handleGitHubEditRuleFeature(triggerRuleId) {
             return;
         }
         upsertGitHubRuleInState(updated);
+        await refreshGitHubRepoSubscriptionsInState();
         notifyGitHubFeatureSaved(String(rule?.name || ''));
         renderAutomationHomeView();
     } catch (error) {
@@ -9481,6 +10354,7 @@ async function handleGitHubToggleRuleFeature(triggerRuleId) {
             ? await enableGitHubTriggerRule(String(rule.trigger_rule_id || '').trim())
             : await disableGitHubTriggerRule(String(rule.trigger_rule_id || '').trim());
         upsertGitHubRuleInState(updated);
+        await refreshGitHubRepoSubscriptionsInState();
         notifyGitHubFeatureSaved(String(updated?.name || ''));
         renderAutomationHomeView();
     } catch (error) {
@@ -9508,6 +10382,7 @@ async function handleGitHubDeleteRuleFeature(triggerRuleId) {
         }
         await deleteGitHubTriggerRule(String(rule.trigger_rule_id || '').trim());
         removeGitHubRuleFromState(rule.trigger_rule_id);
+        await refreshGitHubRepoSubscriptionsInState();
         notifyGitHubFeatureDeleted(String(rule?.name || ''));
         renderAutomationHomeView();
     } catch (error) {
@@ -9516,39 +10391,165 @@ async function handleGitHubDeleteRuleFeature(triggerRuleId) {
 }
 
 async function handleAutomationCreateFeature() {
+    currentAutomationFeatureSection = 'schedules';
+    currentAutomationScheduleViewMode = 'editor';
     const created = await requestAutomationProjectInput({}, {
+        surface: 'page',
         submitHandler: async payload => await createAutomationProject(payload),
     });
     if (!created) {
+        currentAutomationScheduleViewMode = 'list';
+        if (isAutomationFeatureActive()) {
+            renderAutomationHomeView();
+        }
         return;
     }
     document.dispatchEvent(new CustomEvent('agent-teams-projects-changed'));
-    await openAutomationHomeView(String(created?.automation_project_id || ''));
+    if (!isAutomationFeatureActive()) {
+        return;
+    }
+    selectedAutomationHomeProjectId = String(created?.automation_project_id || '').trim();
+    currentAutomationScheduleViewMode = selectedAutomationHomeProjectId ? 'detail' : 'list';
+    try {
+        await loadAutomationProjectsList();
+        if (selectedAutomationHomeProjectId) {
+            await loadAutomationHomeDetail(selectedAutomationHomeProjectId);
+        }
+        renderAutomationHomeView();
+    } catch (error) {
+        if (isAbortError(error)) {
+            return;
+        }
+        renderAutomationHomeDetailLoadError(error);
+    }
 }
 
 async function handleAutomationSelectFeatureProject(projectId) {
     selectedAutomationHomeProjectId = String(projectId || '').trim();
-    await openAutomationHomeView(selectedAutomationHomeProjectId);
+    if (!selectedAutomationHomeProjectId) {
+        handleAutomationShowScheduleList();
+        return;
+    }
+    const requestToken = ++automationHomeDetailRequestToken;
+    currentAutomationScheduleViewMode = 'detail';
+    try {
+        const loaded = await loadAutomationHomeDetail(selectedAutomationHomeProjectId, {
+            requestToken,
+        });
+        if (!loaded || !isCurrentAutomationHomeDetailRequest(selectedAutomationHomeProjectId, requestToken)) {
+            return;
+        }
+        renderAutomationHomeView();
+    } catch (error) {
+        if (isAbortError(error) || !isCurrentAutomationHomeDetailRequest(selectedAutomationHomeProjectId, requestToken)) {
+            return;
+        }
+        renderAutomationHomeDetailLoadError(error);
+    }
+}
+
+function findAutomationProjectInList(projectId) {
+    const targetId = String(projectId || '').trim();
+    if (!targetId) {
+        return null;
+    }
+    return (Array.isArray(currentAutomationProjects) ? currentAutomationProjects : [])
+        .find(project => String(project?.automation_project_id || '').trim() === targetId) || null;
+}
+
+async function handleAutomationEditListProject(projectId) {
+    selectedAutomationHomeProjectId = String(projectId || '').trim();
+    if (!selectedAutomationHomeProjectId) {
+        return;
+    }
+    const requestToken = ++automationHomeDetailRequestToken;
+    try {
+        const loaded = await loadAutomationHomeDetail(selectedAutomationHomeProjectId, {
+            requestToken,
+        });
+        if (!loaded || !isCurrentAutomationHomeDetailRequest(selectedAutomationHomeProjectId, requestToken)) {
+            return;
+        }
+        await handleAutomationEditFeatureProject();
+    } catch (error) {
+        if (isAbortError(error) || !isCurrentAutomationHomeDetailRequest(selectedAutomationHomeProjectId, requestToken)) {
+            return;
+        }
+        renderAutomationHomeDetailLoadError(error);
+    }
+}
+
+function renderAutomationHomeDetailLoadError(error) {
+    renderFeatureErrorState(t('feature.automation.title'), error, { showClose: false });
+    sysLog(`Failed to load automation detail: ${error?.message || error}`, 'log-error');
+}
+
+async function handleAutomationRunListProject(projectId) {
+    try {
+        const targetProjectId = String(projectId || '').trim();
+        const project = findAutomationProjectInList(targetProjectId);
+        if (!targetProjectId || !project) {
+            return;
+        }
+        const result = await runAutomationProject(targetProjectId);
+        sysLog(formatAutomationRunLogMessage(result));
+        dispatchAutomationRunSessionUpsert(project, result);
+        document.dispatchEvent(new CustomEvent('agent-teams-projects-changed'));
+        await loadAutomationProjectsList();
+        currentAutomationScheduleViewMode = 'list';
+        renderAutomationHomeView();
+    } catch (error) {
+        notifyAutomationActionError(t('automation.action.run_now'), error);
+    }
 }
 
 async function handleAutomationEditFeatureProject() {
-    const project = currentAutomationHomeDetail?.project;
-    if (!project) {
-        return;
+    try {
+        const project = currentAutomationHomeDetail?.project;
+        if (!project) {
+            return;
+        }
+        currentAutomationScheduleViewMode = 'editor';
+        const updated = await requestAutomationProjectInput(project, {
+            surface: 'page',
+            submitHandler: async payload => await updateAutomationProject(
+                String(project?.automation_project_id || ''),
+                payload,
+            ),
+        });
+        if (!updated) {
+            currentAutomationScheduleViewMode = 'detail';
+            if (isAutomationFeatureActive()) {
+                renderAutomationHomeView();
+            }
+            return;
+        }
+        document.dispatchEvent(new CustomEvent('agent-teams-projects-changed'));
+        if (!isAutomationFeatureActive()) {
+            return;
+        }
+        selectedAutomationHomeProjectId = String(updated?.automation_project_id || project?.automation_project_id || '').trim();
+        currentAutomationScheduleViewMode = 'detail';
+        await loadAutomationProjectsList();
+        await loadAutomationHomeDetail(selectedAutomationHomeProjectId);
+        renderAutomationHomeView();
+    } catch (error) {
+        if (isAbortError(error)) {
+            return;
+        }
+        currentAutomationScheduleViewMode = 'detail';
+        renderAutomationHomeDetailLoadError(error);
     }
-    const updated = await requestAutomationProjectInput(project, {
-        submitHandler: async payload => await updateAutomationProject(
-            String(project?.automation_project_id || ''),
-            payload,
-        ),
+}
+
+function notifyAutomationActionError(title, error) {
+    const message = String(error?.message || error || '');
+    showToast({
+        title,
+        message,
+        tone: 'danger',
     });
-    if (!updated) {
-        return;
-    }
-    document.dispatchEvent(new CustomEvent('agent-teams-projects-changed'));
-    await openAutomationHomeView(
-        String(updated?.automation_project_id || project?.automation_project_id || ''),
-    );
+    sysLog(`${title}: ${message}`, 'log-error');
 }
 
 async function handleAutomationRunFeatureProject() {
@@ -9557,11 +10558,28 @@ async function handleAutomationRunFeatureProject() {
         return;
     }
     const projectId = String(project?.automation_project_id || '').trim();
-    const result = await runAutomationProject(String(project?.automation_project_id || ''));
+    let result = null;
+    try {
+        result = await runAutomationProject(String(project?.automation_project_id || ''));
+    } catch (error) {
+        notifyAutomationActionError(t('automation.action.run_now'), error);
+        return;
+    }
     sysLog(formatAutomationRunLogMessage(result));
     dispatchAutomationRunSessionUpsert(project, result);
     document.dispatchEvent(new CustomEvent('agent-teams-projects-changed'));
-    await openAutomationHomeView(projectId);
+    try {
+        await loadAutomationProjectsList();
+        await loadAutomationHomeDetail(projectId);
+        currentAutomationScheduleViewMode = 'detail';
+        renderAutomationHomeView();
+    } catch (error) {
+        if (isAbortError(error)) {
+            return;
+        }
+        currentAutomationScheduleViewMode = 'detail';
+        renderAutomationHomeDetailLoadError(error);
+    }
 }
 
 function dispatchAutomationRunSessionUpsert(project, result) {
@@ -9598,12 +10616,29 @@ async function handleAutomationToggleFeatureProject() {
         return;
     }
     const projectId = String(project?.automation_project_id || '').trim();
-    if (String(project?.status || '').trim() === 'enabled') {
-        await disableAutomationProject(projectId);
-    } else {
-        await enableAutomationProject(projectId);
+    const isEnabled = String(project?.status || '').trim() === 'enabled';
+    try {
+        if (isEnabled) {
+            await disableAutomationProject(projectId);
+        } else {
+            await enableAutomationProject(projectId);
+        }
+    } catch (error) {
+        notifyAutomationActionError(t(isEnabled ? 'automation.action.disable' : 'automation.action.enable'), error);
+        return;
     }
-    await openAutomationHomeView(projectId);
+    try {
+        await loadAutomationProjectsList();
+        await loadAutomationHomeDetail(projectId);
+        currentAutomationScheduleViewMode = 'detail';
+        renderAutomationHomeView();
+    } catch (error) {
+        if (isAbortError(error)) {
+            return;
+        }
+        currentAutomationScheduleViewMode = 'detail';
+        renderAutomationHomeDetailLoadError(error);
+    }
 }
 
 async function handleAutomationDeleteFeatureProject() {
@@ -9621,9 +10656,25 @@ async function handleAutomationDeleteFeatureProject() {
     if (!confirmed) {
         return;
     }
-    await deleteAutomationProject(String(project?.automation_project_id || '').trim());
+    try {
+        await deleteAutomationProject(String(project?.automation_project_id || '').trim());
+    } catch (error) {
+        notifyAutomationActionError(t('settings.action.delete'), error);
+        return;
+    }
     document.dispatchEvent(new CustomEvent('agent-teams-projects-changed'));
-    await openAutomationHomeView();
+    currentAutomationScheduleViewMode = 'list';
+    selectedAutomationHomeProjectId = '';
+    currentAutomationHomeDetail = createInitialAutomationHomeDetail();
+    try {
+        await loadAutomationProjectsList();
+        renderAutomationHomeView();
+    } catch (error) {
+        if (isAbortError(error)) {
+            return;
+        }
+        renderAutomationHomeDetailLoadError(error);
+    }
 }
 
 async function handleCreateFeishuFeatureTrigger() {
@@ -10138,6 +11189,7 @@ function renderAutomationLoadingState(project) {
         summary: t('workspace_view.loading_automation_project'),
         mode: 'automation',
         actions: '',
+        showClose: false,
     });
     if (els.projectViewContent) {
         els.projectViewContent.innerHTML = `
@@ -10166,6 +11218,7 @@ function renderAutomationErrorState(project, error) {
         summary: t('workspace_view.failed_automation_project'),
         mode: 'automation',
         actions: '',
+        showClose: false,
     });
     if (els.projectViewContent) {
         els.projectViewContent.innerHTML = `
@@ -10180,173 +11233,22 @@ function renderAutomationErrorState(project, error) {
 function renderAutomationProjectView(project, sessions, workspaceRecord = null, deliveryBindings = []) {
     const safeSessions = Array.isArray(sessions) ? sessions : [];
     const status = String(project?.status || '').trim() || 'unknown';
-    const scheduleMode = String(project?.schedule_mode || '').trim() || 'cron';
-    const scheduleText = describeAutomationScheduleText(project);
-    const cronDescription = describeAutomationSchedule(project);
-    const timezone = String(project?.timezone || 'UTC').trim() || 'UTC';
-    const workspaceId = String(project?.workspace_id || '').trim() || 'automation-system';
-    const workspaceRootPath = String(workspaceRecord?.root_path || '').trim() || t('automation.workspace.missing');
-    const nextRunAt = formatAutomationUtcDateTime(project?.next_run_at, t('automation.detail.not_scheduled'));
-    const lastRunAt = formatAutomationUtcDateTime(project?.last_run_started_at, t('automation.detail.never'));
-    const lastError = String(project?.last_error || '').trim() || t('automation.detail.none');
-    const deliveryBinding = project?.delivery_binding && typeof project.delivery_binding === 'object'
-        ? project.delivery_binding
-        : null;
-    const deliveryBindingName = deliveryBinding
-        ? resolveAutomationBindingDisplayName(deliveryBinding, deliveryBindings)
-        : '';
-    const deliveryEvents = Array.isArray(project?.delivery_events) ? project.delivery_events : [];
-    const deliveryEventsLabel = deliveryEvents.length > 0 ? deliveryEvents.join(', ') : 'none';
-    const runButtonLabel = t('automation.action.run_now');
-    const toggleButtonLabel = status === 'enabled' ? t('automation.action.disable') : t('automation.action.enable');
     const statusLabel = t(`automation.status.${status}`);
 
     renderToolbar(project, {
         summary: `${statusLabel} - ${safeSessions.length} ${t('automation.detail.session_count')}`,
         mode: 'automation',
-        actions: `
-            <button class="secondary-btn project-view-toolbar-btn" type="button" data-automation-edit>${escapeHtml(t('automation.action.edit'))}</button>
-            <button class="secondary-btn project-view-toolbar-btn" type="button" data-automation-run>${escapeHtml(runButtonLabel)}</button>
-            <button class="secondary-btn project-view-toolbar-btn" type="button" data-automation-toggle>${escapeHtml(toggleButtonLabel)}</button>
-        `,
+        actions: '',
+        showClose: false,
     });
     if (!els.projectViewContent) {
         return;
     }
 
     els.projectViewContent.innerHTML = `
-        <div class="automation-detail-layout">
-            <section class="workspace-view-panel automation-hero-panel">
-                <div class="automation-hero-grid">
-                    <div class="automation-hero-copy">
-                        <span class="automation-status-pill is-${escapeHtml(status.toLowerCase())}">${escapeHtml(statusLabel)}</span>
-                        <h3>${escapeHtml(t('automation.detail.overview'))}</h3>
-                    </div>
-                    <div class="automation-stat-grid">
-                        <article class="automation-stat-card automation-stat-card-wide">
-                            <span>${escapeHtml(t('automation.detail.schedule'))}</span>
-                            <strong>${escapeHtml(scheduleText)}</strong>
-                            <p class="automation-stat-note">${escapeHtml(cronDescription)}</p>
-                        </article>
-                        <article class="automation-stat-card">
-                            <span>${escapeHtml(t('automation.field.workspace'))}</span>
-                            <strong>${escapeHtml(workspaceId)}</strong>
-                        </article>
-                        <article class="automation-stat-card">
-                            <span>${escapeHtml(t('automation.detail.timezone'))}</span>
-                            <strong>${escapeHtml(timezone)}</strong>
-                        </article>
-                        <article class="automation-stat-card">
-                            <span>${escapeHtml(t('automation.detail.next_run'))}</span>
-                            <strong>${escapeHtml(nextRunAt)}</strong>
-                        </article>
-                        <article class="automation-stat-card">
-                            <span>${escapeHtml(t('automation.detail.last_run'))}</span>
-                            <strong>${escapeHtml(lastRunAt)}</strong>
-                        </article>
-                    </div>
-                </div>
-            </section>
-            <section class="workspace-view-panel automation-prompt-panel">
-                <div class="workspace-view-panel-header">
-                    <h3>${escapeHtml(t('automation.detail.prompt'))}</h3>
-                </div>
-                <div class="automation-prompt-content">${escapeHtml(String(project?.prompt || ''))}</div>
-            </section>
-            <div class="automation-detail-grid">
-                <section class="workspace-view-panel automation-detail-panel">
-                    <div class="workspace-view-panel-header">
-                        <h3>${escapeHtml(t('automation.detail.configuration'))}</h3>
-                        <span class="workspace-view-panel-meta">${escapeHtml(scheduleMode)}</span>
-                    </div>
-                    <div class="automation-detail-section">
-                        <div class="automation-detail-grid-compact">
-                            <div class="automation-detail-row">
-                                <span class="automation-detail-label">${escapeHtml(t('automation.detail.schedule'))}</span>
-                                <span class="automation-detail-value">${escapeHtml(scheduleText)}</span>
-                            </div>
-                            <div class="automation-detail-row">
-                                <span class="automation-detail-label">${escapeHtml(t('automation.detail.timezone'))}</span>
-                                <span class="automation-detail-value">${escapeHtml(timezone)}</span>
-                            </div>
-                            <div class="automation-detail-row">
-                                <span class="automation-detail-label">${escapeHtml(t('automation.detail.next_run'))}</span>
-                                <span class="automation-detail-value">${escapeHtml(nextRunAt)}</span>
-                            </div>
-                            <div class="automation-detail-row">
-                                <span class="automation-detail-label">${escapeHtml(t('automation.detail.last_run'))}</span>
-                                <span class="automation-detail-value">${escapeHtml(lastRunAt)}</span>
-                            </div>
-                        </div>
-                        <div class="automation-detail-row">
-                            <span class="automation-detail-label">${escapeHtml(t('automation.detail.last_error'))}</span>
-                            <span class="automation-detail-value${lastError === t('automation.detail.none') ? '' : ' is-error'}">${escapeHtml(lastError)}</span>
-                        </div>
-                    </div>
-                </section>
-                <section class="workspace-view-panel automation-binding-panel">
-                    <div class="workspace-view-panel-header">
-                        <h3>${escapeHtml(t('workspace_view.bindings'))}</h3>
-                        <span class="workspace-view-panel-meta">${escapeHtml(deliveryBinding ? resolveDeliveryProviderLabel(deliveryBinding?.provider) : t('workspace_view.delivery_disabled'))}</span>
-                    </div>
-                    <div class="automation-binding-list">
-                        <div class="automation-binding-item">
-                            <span>${escapeHtml(t('automation.field.workspace'))}</span>
-                            <strong>${escapeHtml(workspaceId)}</strong>
-                        </div>
-                        <div class="automation-binding-item">
-                            <span>${escapeHtml(t('automation.workspace.directory'))}</span>
-                            <code>${escapeHtml(workspaceRootPath)}</code>
-                        </div>
-                        <div class="automation-binding-item">
-                            <span>${escapeHtml(t('workspace_view.delivery_events'))}</span>
-                            <strong>${escapeHtml(deliveryEventsLabel)}</strong>
-                        </div>
-                        ${deliveryBinding ? `
-                            <div class="automation-binding-item">
-                                <span>${escapeHtml(t('workspace_view.delivery_provider'))}</span>
-                                <strong>${escapeHtml(resolveDeliveryProviderLabel(deliveryBinding?.provider))}</strong>
-                            </div>
-                            <div class="automation-binding-item">
-                                <span>${escapeHtml(t('workspace_view.delivery_target'))}</span>
-                                <strong>${escapeHtml(deliveryBindingName)}</strong>
-                            </div>
-                            ${String(deliveryBinding?.provider || '').trim().toLowerCase() === FEISHU_PLATFORM ? `
-                                <div class="automation-binding-item">
-                                <span>${escapeHtml(t('workspace_view.chat_type'))}</span>
-                                <strong>${escapeHtml(String(deliveryBinding.chat_type || ''))}</strong>
-                                </div>
-                            ` : ''}
-                        ` : ''}
-                    </div>
-                </section>
-            </div>
-            <section class="workspace-view-panel automation-runs-panel">
-                <div class="workspace-view-panel-header">
-                    <h3>${escapeHtml(t('automation.detail.recent_runs'))}</h3>
-                    <span class="workspace-view-panel-meta">${escapeHtml(String(safeSessions.length))} ${escapeHtml(t('automation.detail.session_count'))}</span>
-                </div>
-                ${safeSessions.length > 0 ? `
-                    <div class="automation-run-list">
-                        ${safeSessions.map(session => {
-                            const sessionStatus = String(session.active_run_status || 'completed').trim() || 'completed';
-                            const sessionStatusLabel = t(`automation.run_status.${sessionStatus}`);
-                            const sessionTitle = String(session?.metadata?.title || session.session_id || '').trim() || String(session.session_id || '');
-                            return `
-                                <article class="automation-run-card" data-automation-session-id="${escapeHtml(String(session.session_id || ''))}">
-                                    <div class="automation-run-card-header">
-                                        <span class="workspace-diff-status is-modified">${escapeHtml(sessionStatusLabel)}</span>
-                                        <code class="workspace-diff-path">${escapeHtml(sessionTitle)}</code>
-                                    </div>
-                                    <div class="automation-run-card-meta">
-                                        <span>${escapeHtml(t('automation.detail.updated_at'))}</span>
-                                        <strong>${escapeHtml(String(session.updated_at || ''))}</strong>
-                                    </div>
-                                </article>
-                            `;
-                        }).join('')}
-                    </div>
-                ` : renderInlineState(t('automation.detail.no_runs'))}
+        <div class="feature-page feature-page-neutral automation-home-page">
+            <section class="automation-directory automation-directory-detail-only">
+                ${renderAutomationProjectStandaloneDetail(project, safeSessions, workspaceRecord, deliveryBindings)}
             </section>
         </div>
     `;
@@ -10389,6 +11291,22 @@ function renderAutomationProjectView(project, sessions, workspaceRecord = null, 
         await openAutomationProjectView(project);
     };
     document.querySelector('[data-automation-toggle]')?.addEventListener('click', toggleAction);
+    const deleteAction = async () => {
+        const confirmed = await showConfirmDialog({
+            title: t('settings.action.delete'),
+            message: String(project?.display_name || project?.name || ''),
+            tone: 'danger',
+            confirmLabel: t('settings.action.delete'),
+            cancelLabel: t('settings.action.cancel'),
+        });
+        if (!confirmed) {
+            return;
+        }
+        await deleteAutomationProject(String(project?.automation_project_id || '').trim());
+        document.dispatchEvent(new CustomEvent('agent-teams-projects-changed'));
+        await openAutomationHomeView();
+    };
+    document.querySelector('[data-automation-delete]')?.addEventListener('click', deleteAction);
     els.projectViewContent.querySelectorAll('[data-automation-session-id]').forEach(node => {
         node.addEventListener('click', () => {
             const sessionId = String(node.getAttribute('data-automation-session-id') || '').trim();

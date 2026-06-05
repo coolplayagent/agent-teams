@@ -9,6 +9,28 @@ from typing import cast
 from .css_helpers import load_components_css
 
 
+def load_frontend_file(*parts: str) -> str:
+    return (
+        Path(__file__).resolve().parents[3] / "frontend" / "dist" / Path(*parts)
+    ).read_text(encoding="utf-8")
+
+
+def load_memory_css() -> str:
+    return load_frontend_file("css", "components", "memory.css")
+
+
+def load_memory_view_source() -> str:
+    return load_frontend_file("js", "components", "memoryView.js")
+
+
+def load_project_view_source() -> str:
+    return load_frontend_file("js", "components", "projectView.js")
+
+
+def load_sidebar_source() -> str:
+    return load_frontend_file("js", "components", "sidebar.js")
+
+
 def _merge_mock_api_source(base_source: str, override_source: str) -> str:
     merged_source = base_source
     for block in re.split(
@@ -894,14 +916,14 @@ document.getElementById("automation-editor-weekday-input").value = "5";
 document.getElementById("automation-editor-delivery-started-input").checked = true;
 document.getElementById("automation-editor-delivery-completed-input").checked = true;
 document.getElementById("automation-editor-delivery-failed-input").checked = true;
-const modalHtmlBeforeSave = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+const editorHtmlBeforeSave = els.projectViewContent.innerHTML;
 document.querySelector("[data-automation-editor-save]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
 console.log(JSON.stringify({
     contentHtml: els.projectViewContent.innerHTML,
-    modalHtml: modalHtmlBeforeSave,
+    editorHtml: editorHtmlBeforeSave,
     updatePayload: globalThis.__updatedAutomationPayload,
 }));
 """.strip(),
@@ -1134,7 +1156,7 @@ export async function updateAutomationProject(_automationProjectId, payload) {
     assert run_config["session_mode"] == "normal"
     assert run_config["normal_root_role_id"] == "Writer"
     assert run_config["orchestration_preset_id"] is None
-    assert "automation-editor-modal-title" in str(payload["modalHtml"])
+    assert "automation-editor-page-title" in str(payload["editorHtml"])
     assert "feishu_main - Release Updates" in str(payload["contentHtml"])
     assert "Writer" in str(payload["contentHtml"])
 
@@ -1160,13 +1182,13 @@ document.querySelector("[data-automation-edit]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
-const modalHtmlBeforeSave = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+const editorHtmlBeforeSave = els.projectViewContent.innerHTML;
 document.querySelector("[data-automation-editor-save]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
 console.log(JSON.stringify({
-    modalHtml: modalHtmlBeforeSave,
+    editorHtml: editorHtmlBeforeSave,
     updatePayload: globalThis.__updatedAutomationPayload,
 }));
 """.strip(),
@@ -1319,11 +1341,11 @@ export async function updateAutomationProject(_automationProjectId, payload) {
 
     update_payload = cast(dict[str, object], payload["updatePayload"])
     run_config = cast(dict[str, object], update_payload["run_config"])
-    assert "automation-editor-modal-title" in str(payload["modalHtml"])
+    assert "automation-editor-page-title" in str(payload["editorHtml"])
     assert 'id="automation-editor-normal-root-role-id-input"' in str(
-        payload["modalHtml"]
+        payload["editorHtml"]
     )
-    assert "Writer" in str(payload["modalHtml"])
+    assert "Writer" in str(payload["editorHtml"])
     assert run_config["session_mode"] == "normal"
     assert run_config["normal_root_role_id"] == "Writer"
     assert run_config["orchestration_preset_id"] is None
@@ -1339,7 +1361,7 @@ import {
     initializeProjectView,
     openAutomationProjectView,
 } from "./projectView.mjs";
-import { flushTasks } from "./mockDom.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
 
 initializeProjectView();
 await openAutomationProjectView({ automation_project_id: "aut_1", workspace_id: "alpha-project" });
@@ -1350,13 +1372,13 @@ document.querySelector("[data-automation-edit]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
-const modalHtmlBeforeSave = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+const editorHtmlBeforeSave = els.projectViewContent.innerHTML;
 document.querySelector("[data-automation-editor-save]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
 console.log(JSON.stringify({
-    modalHtml: modalHtmlBeforeSave,
+    editorHtml: editorHtmlBeforeSave,
     updatePayload: globalThis.__updatedAutomationPayload,
 }));
 """.strip(),
@@ -1513,11 +1535,11 @@ export async function updateAutomationProject(_automationProjectId, payload) {
 
     update_payload = cast(dict[str, object], payload["updatePayload"])
     run_config = cast(dict[str, object], update_payload["run_config"])
-    assert "automation-editor-modal-title" in str(payload["modalHtml"])
+    assert "automation-editor-page-title" in str(payload["editorHtml"])
     assert 'id="automation-editor-orchestration-preset-id-input"' in str(
-        payload["modalHtml"]
+        payload["editorHtml"]
     )
-    assert "preset-missing-name" in str(payload["modalHtml"])
+    assert "preset-missing-name" in str(payload["editorHtml"])
     assert run_config["session_mode"] == "orchestration"
     assert run_config["normal_root_role_id"] is None
     assert run_config["orchestration_preset_id"] == "preset-missing-name"
@@ -1533,7 +1555,7 @@ import {
     initializeProjectView,
     openAutomationProjectView,
 } from "./projectView.mjs";
-import { flushTasks } from "./mockDom.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
 
 initializeProjectView();
 await openAutomationProjectView({ automation_project_id: "aut_1", workspace_id: "alpha-project" });
@@ -1544,13 +1566,13 @@ document.querySelector("[data-automation-edit]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
-const modalHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+const editorHtml = els.projectViewContent.innerHTML;
 document.querySelector("[data-automation-editor-save]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
 console.log(JSON.stringify({
-    modalHtml,
+    editorHtml,
     updatePayload: globalThis.__updatedAutomationPayload,
 }));
 """.strip(),
@@ -1708,7 +1730,7 @@ export async function updateAutomationProject(_automationProjectId, payload) {
     update_payload = cast(dict[str, object], payload["updatePayload"])
     run_config = cast(dict[str, object], update_payload["run_config"])
     assert 'id="automation-editor-normal-root-role-id-input"' in str(
-        payload["modalHtml"]
+        payload["editorHtml"]
     )
     assert run_config["session_mode"] == "normal"
     assert run_config["normal_root_role_id"] is None
@@ -1725,7 +1747,7 @@ import {
     initializeProjectView,
     openAutomationProjectView,
 } from "./projectView.mjs";
-import { flushTasks } from "./mockDom.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
 
 initializeProjectView();
 await openAutomationProjectView({ automation_project_id: "aut_1", workspace_id: "alpha-project" });
@@ -1736,15 +1758,15 @@ document.querySelector("[data-automation-edit]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
-const modalHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+const editorHtml = els.projectViewContent.innerHTML;
 document.querySelector("[data-automation-editor-save]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
 console.log(JSON.stringify({
-    modalHtml,
+    editorHtml,
     updatePayload: globalThis.__updatedAutomationPayload || null,
-    modalHtmlAfterSave: globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n"),
+    editorHtmlAfterSave: els.projectViewContent.innerHTML,
 }));
 """.strip(),
         mock_api_source="""
@@ -1899,9 +1921,9 @@ export async function updateAutomationProject(_automationProjectId, payload) {
     )
 
     assert payload["updatePayload"] is None
-    assert "Default Orchestration" in str(payload["modalHtml"])
+    assert "Default Orchestration" in str(payload["editorHtml"])
     assert "Preset is required in orchestration mode." in str(
-        payload["modalHtmlAfterSave"]
+        payload["editorHtmlAfterSave"]
     )
 
 
@@ -1915,7 +1937,7 @@ import {
     initializeProjectView,
     openAutomationProjectView,
 } from "./projectView.mjs";
-import { flushTasks } from "./mockDom.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
 
 initializeProjectView();
 await openAutomationProjectView({ automation_project_id: "aut_1", workspace_id: "alpha-project" });
@@ -1942,7 +1964,7 @@ document.querySelector("[data-automation-editor-session-mode]")?.onchange?.({
 await flushTasks();
 await flushTasks();
 
-const normalModeHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+const normalModeHtml = els.projectViewContent.innerHTML;
 
 document.getElementById("automation-editor-session-mode-input").value = "orchestration";
 document.querySelector("[data-automation-editor-session-mode]")?.onchange?.({
@@ -1951,7 +1973,7 @@ document.querySelector("[data-automation-editor-session-mode]")?.onchange?.({
 await flushTasks();
 await flushTasks();
 
-const orchestrationModeHtml = globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n");
+const orchestrationModeHtml = els.projectViewContent.innerHTML;
 document.querySelector("[data-automation-editor-save]")?.onclick?.();
 await flushTasks();
 await flushTasks();
@@ -2299,7 +2321,7 @@ import {
     initializeProjectView,
     openAutomationHomeView,
 } from "./projectView.mjs";
-import { flushTasks } from "./mockDom.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
 
 initializeProjectView();
 await openAutomationHomeView("aut_1");
@@ -2315,7 +2337,7 @@ await flushTasks();
 await flushTasks();
 
 console.log(JSON.stringify({
-    modalHtml: globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n"),
+    editorHtml: els.projectViewContent.innerHTML,
     updateAttempts: globalThis.__automationUpdateAttempts || 0,
 }));
 """.strip(),
@@ -2424,11 +2446,11 @@ export async function updateAutomationProject() {
     assert payload["updateAttempts"] == 1
     assert (
         "The selected Xiaoluban account is unavailable. Check the personal token or account status."
-        in str(payload["modalHtml"])
+        in str(payload["editorHtml"])
     )
     assert (
         "delivery_binding.account_id does not have usable Xiaoluban credentials"
-        not in str(payload["modalHtml"])
+        not in str(payload["editorHtml"])
     )
 
 
@@ -2616,7 +2638,7 @@ export async function updateAutomationProject(_automationProjectId, payload) {
     assert update_payload["delivery_events"] == ["started", "failed"]
 
 
-def test_project_view_renders_github_automation_section_and_access_panel(
+def test_project_view_renders_github_automation_section_without_connection_settings(
     tmp_path: Path,
 ) -> None:
     payload = _run_project_view_script(
@@ -2679,13 +2701,463 @@ console.log(JSON.stringify({
 """.strip(),
     )
 
-    assert "GitHub access panel" in str(payload["contentHtml"])
+    assert "GitHub Event Automation" in str(payload["contentHtml"])
+    assert "Connection status" in str(payload["contentHtml"])
+    assert "Bind repositories" in str(payload["contentHtml"])
+    assert "Create trigger rules" in str(payload["contentHtml"])
+    assert "Manage GitHub Connector" in str(payload["contentHtml"])
+    assert 'data-github-open-connector=""' in str(payload["contentHtml"])
+    assert "Advanced Connection Settings" not in str(payload["contentHtml"])
+    assert '<details class="github-access-advanced">' not in str(payload["contentHtml"])
+    assert 'id="feature-github-token"' not in str(payload["contentHtml"])
+    assert 'id="feature-github-webhook-base-url"' not in str(payload["contentHtml"])
+    assert "secure-input-row" not in str(payload["contentHtml"])
+    assert "proxy-inline-field" not in str(payload["contentHtml"])
+    assert "github.com/settings/tokens" not in str(payload["contentHtml"])
     assert "octocat/Hello-World" in str(payload["contentHtml"])
-    assert "Subscribed Events: pull_request" in str(payload["contentHtml"])
+    assert 'data-github-repo-create="ghta_1"' in str(payload["contentHtml"])
+    assert 'data-github-rule-create="ghrs_1"' in str(payload["contentHtml"])
     assert 'data-automation-section="github"' in str(payload["toolbarHtml"])
+    assert "data-github-account-create" not in str(payload["toolbarHtml"])
     assert payload["summary"] == "1 accounts · 1 repos · 1 rules"
-    assert payload["bindCalls"] == 1
-    assert payload["loadCalls"] == 1
+    assert payload["bindCalls"] == 0
+    assert payload["loadCalls"] == 0
+
+
+def test_project_view_github_access_empty_state_shows_disabled_workflow_steps(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationGitHubView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [];
+globalThis.__mockGitHubRepos = [];
+globalThis.__mockGitHubRules = [];
+
+initializeProjectView();
+await openAutomationGitHubView("access");
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    contentHtml: els.projectViewContent.innerHTML,
+    toolbarHtml: els.projectViewToolbarActions.innerHTML,
+}));
+""".strip(),
+    )
+
+    content_html = str(payload["contentHtml"])
+    assert "GitHub Event Automation" in content_html
+    assert "Connection status" in content_html
+    assert 'data-github-open-connector=""' in content_html
+    assert (
+        "GitHub is not connected yet. Configure a GitHub account in Connectors first."
+        in content_html
+    )
+    assert "data-github-account-create" not in content_html
+    assert "Connect a GitHub account before binding repositories." in content_html
+    assert "Bind a repository before creating trigger rules." in content_html
+    assert content_html.count("github-flow-step is-disabled") == 2
+    assert '<details class="github-access-advanced">' not in content_html
+    assert 'id="feature-github-token"' not in content_html
+    assert "secure-input-row" not in content_html
+    assert "github.com/settings/tokens" not in content_html
+    assert "data-github-account-create" not in str(payload["toolbarHtml"])
+
+
+def test_project_view_github_connector_entry_syncs_feature_navigation_state(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationGitHubView,
+} from "./projectView.mjs";
+import { state } from "./mockState.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [];
+globalThis.__mockGitHubRepos = [];
+globalThis.__mockGitHubRules = [];
+
+initializeProjectView();
+await openAutomationGitHubView("access");
+await flushTasks();
+await flushTasks();
+
+const button = document.querySelector("[data-github-open-connector]");
+button?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    buttonFound: Boolean(button),
+    featureId: state.currentFeatureViewId,
+    projectViewWorkspaceId: state.currentProjectViewWorkspaceId,
+    title: els.projectViewTitle.textContent,
+    dispatchedEvents: globalThis.__dispatchedEvents,
+}));
+""".strip(),
+    )
+
+    assert payload["buttonFound"] is True
+    assert payload["featureId"] == "connectors"
+    assert payload["projectViewWorkspaceId"] == "feature:connectors"
+    events = cast(list[dict[str, object]], payload["dispatchedEvents"])
+    feature_events = [
+        event
+        for event in events
+        if event.get("type") == "agent-teams-feature-view-changed"
+    ]
+    assert feature_events[-1]["detail"] == {"featureId": "connectors"}
+
+    sidebar_source = load_sidebar_source()
+    assert "agent-teams-feature-view-changed" in sidebar_source
+    assert "syncFeatureNavigationState(featureId)" in sidebar_source
+
+
+def test_project_view_github_connector_modal_owns_connection_settings_and_accounts(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [
+    {
+        account_id: "ghta_1",
+        name: "github-main",
+        display_name: "GitHub Main",
+        status: "enabled",
+        token_configured: true,
+        webhook_secret_configured: true,
+    },
+];
+globalThis.__mockGitHubRepos = [
+    {
+        repo_subscription_id: "ghrs_1",
+        account_id: "ghta_1",
+        owner: "octocat",
+        repo_name: "Hello-World",
+        full_name: "octocat/Hello-World",
+        enabled: true,
+    },
+];
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    modalHtml: globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n"),
+    bindCalls: globalThis.__githubSettingsBindCalls || 0,
+    loadCalls: globalThis.__githubSettingsLoadCalls || 0,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    return {
+        summary: { connected: 1, needs_config: 0, disabled: 0, error: 0, total: 1 },
+        items: [{ provider: "github", connector_id: "github", status: "connected", account_count: 1 }],
+    };
+}
+""".strip(),
+    )
+
+    modal_html = str(payload["modalHtml"])
+    assert "GitHub Connector" in modal_html
+    assert "Connection settings" in modal_html
+    assert "GitHub accounts" in modal_html
+    assert 'id="feature-github-token"' in modal_html
+    assert 'id="feature-github-webhook-base-url"' in modal_html
+    assert "secure-input-row" in modal_html
+    assert "proxy-inline-field" in modal_html
+    assert 'data-github-account-create=""' in modal_html
+    assert 'data-github-account-edit="ghta_1"' in modal_html
+    assert 'data-github-account-toggle="ghta_1"' in modal_html
+    assert 'data-github-account-delete="ghta_1"' in modal_html
+    assert cast(int, payload["bindCalls"]) >= 1
+    assert cast(int, payload["loadCalls"]) >= 1
+
+
+def test_project_view_github_connector_modal_preserves_dirty_settings_on_rerender(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [];
+globalThis.__mockGitHubSettingsToken = "ghp_saved";
+globalThis.__mockGitHubSettingsWebhookBaseUrl = "https://saved.example.com";
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+const tokenInput = document.getElementById("feature-github-token");
+const webhookInput = document.getElementById("feature-github-webhook-base-url");
+tokenInput.value = "ghp_dirty";
+tokenInput.oninput?.();
+webhookInput.value = "https://dirty.example.com";
+webhookInput.oninput?.();
+
+const searchInput = document.querySelector("[data-connectors-search]");
+searchInput.value = "git";
+searchInput.oninput?.();
+await flushTasks();
+await flushTasks();
+
+const preservedTokenValue = document.getElementById("feature-github-token")?.value || "";
+const preservedWebhookValue = document.getElementById("feature-github-webhook-base-url")?.value || "";
+
+document.querySelector("[data-connector-modal-close]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    preservedTokenValue,
+    preservedWebhookValue,
+    tokenValue: document.getElementById("feature-github-token")?.value || "",
+    webhookValue: document.getElementById("feature-github-webhook-base-url")?.value || "",
+    loadCalls: globalThis.__githubSettingsLoadCalls || 0,
+    restoreCalls: globalThis.__githubSettingsRestoreCalls || 0,
+    resetCalls: globalThis.__githubSettingsResetCalls || 0,
+    loadOptions: globalThis.__githubSettingsLoadOptions || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    return {
+        summary: { connected: 0, needs_config: 1, disabled: 0, error: 0, total: 1 },
+        items: [{ provider: "github", connector_id: "github", status: "needs_config", account_count: 0 }],
+    };
+}
+""".strip(),
+    )
+
+    assert payload["preservedTokenValue"] == "ghp_dirty"
+    assert payload["preservedWebhookValue"] == "https://dirty.example.com"
+    assert payload["tokenValue"] == "ghp_saved"
+    assert payload["webhookValue"] == "https://saved.example.com"
+    assert payload["loadCalls"] == 2
+    assert cast(int, payload["restoreCalls"]) >= 2
+    assert payload["resetCalls"] == 1
+    assert payload["loadOptions"] == [{"preserveDirty": True}, {"preserveDirty": True}]
+
+
+def test_project_view_github_connector_modal_uses_api_status(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [];
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    modalHtml: globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n"),
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    return {
+        summary: { connected: 1, needs_config: 0, disabled: 0, error: 0, total: 1 },
+        items: [{ provider: "github", connector_id: "github", status: "connected", account_count: 0 }],
+    };
+}
+""".strip(),
+    )
+
+    assert "Connected" in str(payload["modalHtml"])
+    assert "Unconnected" not in str(payload["modalHtml"])
+
+
+def test_project_view_github_account_create_refreshes_connector_status(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [];
+globalThis.__showFormDialogResult = {
+    name: "github-main",
+    display_name: "GitHub Main",
+    token: "ghp_new",
+    clear_token: false,
+    webhook_secret: "secret",
+    clear_webhook_secret: false,
+    enabled: true,
+};
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-github-account-create]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    fetchConnectorsCalls: globalThis.__fetchConnectorsCalls || 0,
+    createdPayload: globalThis.__createdGitHubAccountPayload || null,
+    modalHtml: globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n"),
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    globalThis.__fetchConnectorsCalls = (globalThis.__fetchConnectorsCalls || 0) + 1;
+    const connected = Boolean(globalThis.__createdGitHubAccountPayload);
+    return {
+        summary: connected
+            ? { connected: 1, needs_config: 0, disabled: 0, error: 0, total: 1 }
+            : { connected: 0, needs_config: 1, disabled: 0, error: 0, total: 1 },
+        items: [{
+            provider: "github",
+            connector_id: "github",
+            status: connected ? "connected" : "needs_config",
+            account_count: connected ? 1 : 0,
+        }],
+    };
+}
+""".strip(),
+    )
+
+    assert cast(int, payload["fetchConnectorsCalls"]) >= 2
+    assert payload["createdPayload"] == {
+        "name": "github-main",
+        "display_name": "GitHub Main",
+        "token": "ghp_new",
+        "webhook_secret": "secret",
+        "enabled": True,
+    }
+    assert "Connected" in str(payload["modalHtml"])
+    assert "1/1 accounts enabled" in str(payload["modalHtml"])
+
+
+def test_project_view_github_settings_save_refreshes_connector_status(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [];
+
+initializeProjectView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+await globalThis.__githubSettingsSaveHandler?.();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    savedKind: globalThis.__githubSettingsSaved || "",
+    bindCalls: globalThis.__githubSettingsBindCalls || 0,
+    fetchConnectorsCalls: globalThis.__fetchConnectorsCalls || 0,
+    modalHtml: globalThis.__bodyChildren.map(node => node.innerHTML).join("\\n"),
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    globalThis.__fetchConnectorsCalls = (globalThis.__fetchConnectorsCalls || 0) + 1;
+    const connected = Boolean(globalThis.__githubSettingsSaved);
+    return {
+        summary: connected
+            ? { connected: 1, needs_config: 0, disabled: 0, error: 0, total: 1 }
+            : { connected: 0, needs_config: 1, disabled: 0, error: 0, total: 1 },
+        items: [{
+            provider: "github",
+            connector_id: "github",
+            status: connected ? "connected" : "needs_config",
+            account_count: 0,
+        }],
+    };
+}
+""".strip(),
+    )
+
+    assert payload["savedKind"] == "token"
+    assert cast(int, payload["bindCalls"]) >= 2
+    assert cast(int, payload["fetchConnectorsCalls"]) >= 2
+    assert "Connected" in str(payload["modalHtml"])
+    assert "Unconnected" not in str(payload["modalHtml"])
 
 
 def test_project_view_repo_detail_shows_full_github_rule_configuration(
@@ -2775,7 +3247,7 @@ console.log(JSON.stringify({
     )
 
 
-def test_project_view_github_account_dialog_uses_secure_fields(
+def test_project_view_refreshes_github_repo_webhook_state_after_rule_create(
     tmp_path: Path,
 ) -> None:
     payload = _run_project_view_script(
@@ -2784,6 +3256,130 @@ def test_project_view_github_account_dialog_uses_secure_fields(
 import {
     initializeProjectView,
     openAutomationGitHubView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__mockGitHubAccounts = [
+    {
+        account_id: "ghta_1",
+        name: "github-main",
+        display_name: "GitHub Main",
+        status: "enabled",
+        token_configured: true,
+        webhook_secret_configured: true,
+    },
+];
+globalThis.__mockGitHubRepos = [
+    {
+        repo_subscription_id: "ghrs_1",
+        account_id: "ghta_1",
+        owner: "octocat",
+        repo_name: "Hello-World",
+        full_name: "octocat/Hello-World",
+        callback_url: "https://example.com/github/webhook",
+        webhook_status: "unregistered",
+        enabled: true,
+        subscribed_events: [],
+    },
+];
+globalThis.__mockGitHubRules = [];
+globalThis.__showFormDialogResult = {
+    name: "pr-opened",
+    workspace_id: "alpha-project",
+    event_name: "pull_request",
+    actions: ["opened"],
+    draft_pr: "any",
+    base_branches: "",
+    prompt_template: "Review the incoming PR.",
+    enabled: true,
+};
+
+initializeProjectView();
+await openAutomationGitHubView("repo:ghrs_1");
+await flushTasks();
+await flushTasks();
+
+const beforeHtml = els.projectViewContent.innerHTML;
+const createRuleButton = els.projectViewContent
+    .querySelectorAll("[data-github-rule-create]")
+    .find(button => button.getAttribute("data-github-rule-create") === "ghrs_1");
+createRuleButton?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    beforeHtml,
+    afterHtml: els.projectViewContent.innerHTML,
+    buttonFound: Boolean(createRuleButton),
+    repoFetchCalls: globalThis.__fetchGitHubRepoSubscriptionsCalls || 0,
+    createdRulePayload: globalThis.__createdGitHubRulePayload || null,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchWorkspaces() {
+    return [{ workspace_id: "alpha-project", name: "Alpha Project" }];
+}
+
+export async function fetchGitHubRepoSubscriptions() {
+    globalThis.__fetchGitHubRepoSubscriptionsCalls =
+        (globalThis.__fetchGitHubRepoSubscriptionsCalls || 0) + 1;
+    return globalThis.__mockGitHubRepos || [];
+}
+
+export async function createGitHubTriggerRule(payload) {
+    globalThis.__createdGitHubRulePayload = payload;
+    globalThis.__mockGitHubRules = [
+        {
+            trigger_rule_id: "trg_new",
+            provider: "github",
+            account_id: "ghta_1",
+            repo_subscription_id: "ghrs_1",
+            name: payload?.name || "rule",
+            enabled: true,
+            match_config: payload?.match_config || {},
+            dispatch_config: payload?.dispatch_config || {},
+        },
+    ];
+    globalThis.__mockGitHubRepos = [
+        {
+            repo_subscription_id: "ghrs_1",
+            account_id: "ghta_1",
+            owner: "octocat",
+            repo_name: "Hello-World",
+            full_name: "octocat/Hello-World",
+            callback_url: "https://example.com/github/webhook",
+            webhook_status: "registered",
+            enabled: true,
+            subscribed_events: ["pull_request"],
+        },
+    ];
+    return globalThis.__mockGitHubRules[0];
+}
+""".strip(),
+    )
+
+    assert "Unregistered" in str(payload["beforeHtml"])
+    assert payload["buttonFound"] is True
+    assert "Registered" in str(payload["afterHtml"])
+    assert "pull_request" in str(payload["afterHtml"])
+    assert cast(int, payload["repoFetchCalls"]) >= 2
+    assert (
+        cast(dict[str, object], payload["createdRulePayload"])["repo_subscription_id"]
+        == "ghrs_1"
+    )
+
+
+def test_project_view_github_account_dialog_uses_secure_fields(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openImFeatureView,
 } from "./projectView.mjs";
 import { flushTasks } from "./mockDom.mjs";
 
@@ -2799,7 +3395,11 @@ globalThis.__mockGitHubAccounts = [
 ];
 
 initializeProjectView();
-await openAutomationGitHubView("account:ghta_1");
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
@@ -2824,6 +3424,14 @@ console.log(JSON.stringify({
     buttonFound: Boolean(editButton),
     secureFields,
 }));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    return {
+        summary: { connected: 1, needs_config: 0, disabled: 0, error: 0, total: 1 },
+        items: [{ provider: "github", connector_id: "github", status: "connected", account_count: 1 }],
+    };
+}
 """.strip(),
     )
 
@@ -2854,14 +3462,18 @@ def test_project_view_new_github_account_dialog_allows_empty_reveal(
         runner_source="""
 import {
     initializeProjectView,
-    openAutomationGitHubView,
+    openImFeatureView,
 } from "./projectView.mjs";
 import { flushTasks } from "./mockDom.mjs";
 
 globalThis.__mockGitHubAccounts = [];
 
 initializeProjectView();
-await openAutomationGitHubView();
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
@@ -2884,6 +3496,14 @@ console.log(JSON.stringify({
     buttonFound: Boolean(createButton),
     secureFields,
 }));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    return {
+        summary: { connected: 0, needs_config: 1, disabled: 0, error: 0, total: 1 },
+        items: [{ provider: "github", connector_id: "github", status: "needs_config", account_count: 0 }],
+    };
+}
 """.strip(),
     )
 
@@ -2910,7 +3530,7 @@ def test_project_view_edits_github_account_with_inline_submit_handler(
         runner_source="""
 import {
     initializeProjectView,
-    openAutomationGitHubView,
+    openImFeatureView,
 } from "./projectView.mjs";
 import { flushTasks } from "./mockDom.mjs";
 
@@ -2935,7 +3555,11 @@ globalThis.__showFormDialogResult = {
 };
 
 initializeProjectView();
-await openAutomationGitHubView("account:ghta_1");
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-connector-open]")?.onclick?.();
 await flushTasks();
 await flushTasks();
 
@@ -2952,6 +3576,14 @@ console.log(JSON.stringify({
     updatedPayload: globalThis.__updatedGitHubAccountPayload || null,
     toastCalls: globalThis.__toastCalls || [],
 }));
+""".strip(),
+        mock_api_source="""
+export async function fetchConnectors() {
+    return {
+        summary: { connected: 1, needs_config: 0, disabled: 0, error: 0, total: 1 },
+        items: [{ provider: "github", connector_id: "github", status: "connected", account_count: 1 }],
+    };
+}
 """.strip(),
     )
 
@@ -3374,9 +4006,11 @@ def test_project_view_updates_local_github_rule_state_after_mutations() -> None:
 
     assert "function upsertGitHubRuleInState(rule)" in source
     assert "function removeGitHubRuleFromState(triggerRuleId)" in source
+    assert "async function refreshGitHubRepoSubscriptionsInState()" in source
     assert "upsertGitHubRuleInState(created);" in source
     assert "upsertGitHubRuleInState(updated);" in source
     assert "removeGitHubRuleFromState(rule.trigger_rule_id);" in source
+    assert source.count("await refreshGitHubRepoSubscriptionsInState();") >= 4
     assert "renderAutomationHomeView();" in source
 
 
@@ -3783,7 +4417,17 @@ export async function updateAutomationProject() {
 """.strip(),
     )
 
-    assert payload["dispatchedEvents"] == [
+    dispatched_events = cast(list[dict[str, object]], payload["dispatchedEvents"])
+    assert {
+        "type": "agent-teams-feature-view-changed",
+        "detail": {"featureId": "automation"},
+    } in dispatched_events
+    business_events = [
+        event
+        for event in dispatched_events
+        if event.get("type") != "agent-teams-feature-view-changed"
+    ]
+    assert business_events == [
         {
             "type": "agent-teams-session-upserted",
             "detail": {
@@ -4077,7 +4721,36 @@ export async function fetchAutomationFeishuBindings() {
 }
 
 export async function fetchAutomationProjectSessions() {
-    return [];
+    return [
+        {
+            session_id: "session-failed-1",
+            metadata: { title: "Failed scheduled run" },
+            active_run_status: "",
+            latest_terminal_run_status: "failed",
+            updated_at: "2026-05-06T23:58:00Z",
+        },
+        {
+            session_id: "session-queued-1",
+            metadata: { title: "Queued scheduled run" },
+            active_run_status: "queued",
+            latest_terminal_run_status: "",
+            updated_at: "2026-05-06T23:57:00Z",
+        },
+        {
+            session_id: "session-paused-1",
+            metadata: { title: "Paused scheduled run" },
+            active_run_status: "paused",
+            latest_terminal_run_status: "",
+            updated_at: "2026-05-06T23:56:00Z",
+        },
+        {
+            session_id: "session-stopping-1",
+            metadata: { title: "Stopping scheduled run" },
+            active_run_status: "stopping",
+            latest_terminal_run_status: "",
+            updated_at: "2026-05-06T23:55:00Z",
+        },
+    ];
 }
 
 export async function fetchAutomationProjects() {
@@ -4194,7 +4867,19 @@ export async function updateAutomationProject() {
     assert "2026-05-07 00:30 UTC" in content_html
     assert "Never" in content_html
     assert "feature-card automation-runs-card" not in content_html
-    assert "automation-flat-section automation-runs-section" in content_html
+    assert "automation-history-section" in content_html
+    assert "Failed scheduled run" in content_html
+    assert "Failed" in content_html
+    assert "is-failed" in content_html
+    assert "Queued scheduled run" in content_html
+    assert "Queued" in content_html
+    assert "is-queued" in content_html
+    assert "Paused scheduled run" in content_html
+    assert "Paused" in content_html
+    assert "is-paused" in content_html
+    assert "Stopping scheduled run" in content_html
+    assert "Stopping" in content_html
+    assert "is-stopping" in content_html
 
 
 def test_project_view_formats_automation_project_detail_times_as_utc() -> None:
@@ -4556,23 +5241,1078 @@ export async function updateAutomationProject() {
 
     content_html = str(payload["contentHtml"])
     assert "workspace-view-panel-header" not in content_html
-    assert content_html.count(">Automation<") == 0
+    assert content_html.count("data-automation-list-back") == 1
+    assert content_html.count("data-automation-home-project-id") == 0
 
     components_css = load_components_css()
 
-    assert ".automation-list-panel .feature-panel-body {" in components_css
-    assert "padding: 0.7rem 0.95rem 0.85rem;" in components_css
+    assert ".automation-directory {" in components_css
+    assert ".automation-document-layout {" in components_css
+    assert ".automation-breadcrumb button {" in components_css
+    assert (
+        "border-bottom: 1px solid color-mix(in srgb, var(--primary)" in components_css
+    )
     assert ".automation-record {" in components_css
-    assert "border-radius: 0;" in components_css
+    assert "border-radius: 8px;" in components_css
     assert "border-bottom: 1px solid" in components_css
+
+
+def test_project_view_automation_home_groups_schedule_list_by_status(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    contentHtml: els.projectViewContent.innerHTML,
+    toolbarHtml: els.projectViewToolbarActions.innerHTML,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    return [
+        {
+            automation_project_id: "aut_running",
+            display_name: "Running Report",
+            name: "running-report",
+            status: "enabled",
+            active_run_status: "running",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+        {
+            automation_project_id: "aut_active",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 10 * * *",
+        },
+        {
+            automation_project_id: "aut_paused",
+            display_name: "Nightly Sync",
+            name: "nightly-sync",
+            status: "disabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 21 * * *",
+        },
+    ];
+}
+""".strip(),
+    )
+
+    content_html = str(payload["contentHtml"])
+    toolbar_html = str(payload["toolbarHtml"])
+    assert "Running" in content_html
+    assert "Paused" in content_html
+    assert "Current" in content_html
+    assert "New Automation" in content_html
+    assert "data-feature-automation-create" in content_html
+    assert "data-feature-automation-create" not in toolbar_html
+    assert content_html.count("automation-status-column") >= 3
+    assert content_html.count("data-automation-home-project-id") == 3
+    assert content_html.count("data-automation-list-run") == 3
+    assert content_html.count("data-automation-list-edit") == 3
+    assert content_html.count("data-automation-list-more") == 3
+
+
+def test_project_view_automation_list_detail_load_error_renders_feature_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+const rowButton = document.querySelector("[data-automation-home-project-id]");
+await rowButton?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    buttonFound: Boolean(rowButton),
+    summary: els.projectViewSummary.textContent,
+    contentHtml: els.projectViewContent.innerHTML,
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+export async function fetchAutomationProject() {
+    throw new Error("detail request failed");
+}
+""".strip(),
+    )
+
+    assert payload["buttonFound"] is True
+    assert payload["summary"] == "Load failed"
+    assert "detail request failed" in str(payload["contentHtml"])
+    assert any(
+        "Failed to load automation detail: detail request failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_automation_list_edit_detail_load_error_renders_feature_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+const editButton = document.querySelector("[data-automation-list-edit]");
+editButton?.onclick?.({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    buttonFound: Boolean(editButton),
+    summary: els.projectViewSummary.textContent,
+    contentHtml: els.projectViewContent.innerHTML,
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+export async function fetchAutomationProject() {
+    throw new Error("edit detail request failed");
+}
+""".strip(),
+    )
+
+    assert payload["buttonFound"] is True
+    assert payload["summary"] == "Load failed"
+    assert "edit detail request failed" in str(payload["contentHtml"])
+    assert any(
+        "Failed to load automation detail: edit detail request failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_automation_list_run_error_shows_toast(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+const runButton = document.querySelector("[data-automation-list-run]");
+runButton?.onclick?.({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    buttonFound: Boolean(runButton),
+    contentHtml: els.projectViewContent.innerHTML,
+    toastCalls: globalThis.__toastCalls || [],
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+export async function runAutomationProject() {
+    throw new Error("manual run failed");
+}
+""".strip(),
+    )
+
+    assert payload["buttonFound"] is True
+    assert "Daily Briefing" in str(payload["contentHtml"])
+    toast_calls = cast(list[dict[str, object]], payload["toastCalls"])
+    assert toast_calls == [
+        {
+            "title": "Run now",
+            "message": "manual run failed",
+            "tone": "danger",
+        }
+    ]
+    assert any(
+        "Run now: manual run failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_automation_edit_save_refresh_error_renders_feature_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView("aut_1");
+await flushTasks();
+await flushTasks();
+
+const editButton = els.projectViewContent.querySelector("[data-automation-edit]");
+editButton?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+const promptInput = els.projectViewContent.getElementById("automation-editor-prompt-input");
+if (promptInput) {
+    promptInput.value = "Updated prompt.";
+}
+els.projectViewContent.querySelector("[data-automation-editor-save]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    editButtonFound: Boolean(editButton),
+    promptInputFound: Boolean(promptInput),
+    summary: els.projectViewSummary.textContent,
+    contentHtml: els.projectViewContent.innerHTML,
+    updatePayload: globalThis.__updatedAutomationPayload || null,
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+globalThis.__failAutomationListRefresh = false;
+
+export async function fetchAutomationProjects() {
+    if (globalThis.__failAutomationListRefresh === true) {
+        throw new Error("post-save list refresh failed");
+    }
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+export async function fetchAutomationProject() {
+    return {
+        automation_project_id: "aut_1",
+        display_name: "Daily Briefing",
+        name: "daily-briefing",
+        status: "enabled",
+        workspace_id: "alpha-project",
+        prompt: "Original prompt.",
+        schedule_mode: "cron",
+        cron_expression: "0 9 * * *",
+    };
+}
+
+export async function fetchWorkspaces() {
+    return [{ workspace_id: "alpha-project", name: "Alpha Project" }];
+}
+
+export async function updateAutomationProject(_automationProjectId, payload) {
+    globalThis.__updatedAutomationPayload = payload;
+    globalThis.__failAutomationListRefresh = true;
+    return {
+        automation_project_id: "aut_1",
+        display_name: payload?.display_name || "Daily Briefing",
+        name: "daily-briefing",
+        status: "enabled",
+        workspace_id: payload?.workspace_id || "alpha-project",
+        prompt: payload?.prompt || "Updated prompt.",
+        schedule_mode: "cron",
+        cron_expression: "0 9 * * *",
+    };
+}
+""".strip(),
+    )
+
+    assert payload["editButtonFound"] is True
+    assert payload["promptInputFound"] is True
+    assert payload["summary"] == "Load failed"
+    assert "post-save list refresh failed" in str(payload["contentHtml"])
+    assert "automation-editor-page" not in str(payload["contentHtml"])
+    assert (
+        cast(dict[str, object], payload["updatePayload"])["prompt"] == "Updated prompt."
+    )
+    assert any(
+        "Failed to load automation detail: post-save list refresh failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_automation_create_refresh_error_renders_feature_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+els.projectViewContent.querySelector("[data-feature-automation-create]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+const nameInput = els.projectViewContent.getElementById("automation-editor-display-name-input");
+const workspaceInput = els.projectViewContent.getElementById("automation-editor-workspace-id-input");
+const promptInput = els.projectViewContent.getElementById("automation-editor-prompt-input");
+if (nameInput) {
+    nameInput.value = "Created Briefing";
+}
+if (workspaceInput) {
+    workspaceInput.value = "alpha-project";
+}
+if (promptInput) {
+    promptInput.value = "Created prompt.";
+}
+els.projectViewContent.querySelector("[data-automation-editor-save]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    nameInputFound: Boolean(nameInput),
+    promptInputFound: Boolean(promptInput),
+    summary: els.projectViewSummary.textContent,
+    contentHtml: els.projectViewContent.innerHTML,
+    createPayload: globalThis.__createdAutomationPayload || null,
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+globalThis.__failAutomationListRefresh = false;
+
+export async function fetchAutomationProjects() {
+    if (globalThis.__failAutomationListRefresh === true) {
+        throw new Error("post-create list refresh failed");
+    }
+    return [];
+}
+
+export async function fetchWorkspaces() {
+    return [{ workspace_id: "alpha-project", name: "Alpha Project" }];
+}
+
+export async function createAutomationProject(payload) {
+    globalThis.__createdAutomationPayload = payload;
+    globalThis.__failAutomationListRefresh = true;
+    return {
+        automation_project_id: "aut_new",
+        display_name: payload?.display_name || "Created Briefing",
+        name: "created-briefing",
+        status: "enabled",
+        workspace_id: payload?.workspace_id || "alpha-project",
+        prompt: payload?.prompt || "Created prompt.",
+        schedule_mode: "cron",
+        cron_expression: "0 9 * * *",
+    };
+}
+""".strip(),
+    )
+
+    assert payload["nameInputFound"] is True
+    assert payload["promptInputFound"] is True
+    assert payload["summary"] == "Load failed"
+    assert "post-create list refresh failed" in str(payload["contentHtml"])
+    assert "automation-editor-page" not in str(payload["contentHtml"])
+    create_payload = cast(dict[str, object], payload["createPayload"])
+    assert create_payload["display_name"] == "Created Briefing"
+    assert create_payload["prompt"] == "Created prompt."
+    assert any(
+        "Failed to load automation detail: post-create list refresh failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_automation_delete_refresh_error_renders_feature_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView("aut_1");
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-automation-delete]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    summary: els.projectViewSummary.textContent,
+    contentHtml: els.projectViewContent.innerHTML,
+    deletedAutomationId: globalThis.__deletedAutomationId || "",
+    confirmCalls: globalThis.__showConfirmDialogCalls || [],
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+globalThis.__failAutomationListRefresh = false;
+
+export async function fetchAutomationProjects() {
+    if (globalThis.__failAutomationListRefresh === true) {
+        throw new Error("post-delete list refresh failed");
+    }
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+export async function fetchAutomationProject() {
+    return {
+        automation_project_id: "aut_1",
+        display_name: "Daily Briefing",
+        name: "daily-briefing",
+        status: "enabled",
+        workspace_id: "alpha-project",
+        prompt: "Original prompt.",
+        schedule_mode: "cron",
+        cron_expression: "0 9 * * *",
+    };
+}
+
+export async function deleteAutomationProject(automationProjectId) {
+    globalThis.__deletedAutomationId = automationProjectId;
+    globalThis.__failAutomationListRefresh = true;
+    return { status: "ok" };
+}
+""".strip(),
+    )
+
+    assert payload["summary"] == "Load failed"
+    assert "post-delete list refresh failed" in str(payload["contentHtml"])
+    assert payload["deletedAutomationId"] == "aut_1"
+    assert len(cast(list[object], payload["confirmCalls"])) == 1
+    assert any(
+        "Failed to load automation detail: post-delete list refresh failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_automation_detail_run_refresh_error_renders_feature_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView("aut_1");
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-automation-run]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    summary: els.projectViewSummary.textContent,
+    contentHtml: els.projectViewContent.innerHTML,
+    dispatchedEvents: globalThis.__dispatchedEvents,
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+globalThis.__failAutomationListRefresh = false;
+
+export async function fetchAutomationProjects() {
+    if (globalThis.__failAutomationListRefresh === true) {
+        throw new Error("post-run list refresh failed");
+    }
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+export async function fetchAutomationProject() {
+    return {
+        automation_project_id: "aut_1",
+        display_name: "Daily Briefing",
+        name: "daily-briefing",
+        status: "enabled",
+        workspace_id: "alpha-project",
+        prompt: "Original prompt.",
+        schedule_mode: "cron",
+        cron_expression: "0 9 * * *",
+    };
+}
+
+export async function runAutomationProject() {
+    globalThis.__failAutomationListRefresh = true;
+    return {
+        status: "started",
+        session_id: "session-new-1",
+    };
+}
+""".strip(),
+    )
+
+    assert payload["summary"] == "Load failed"
+    assert "post-run list refresh failed" in str(payload["contentHtml"])
+    assert any(
+        "session-new-1" in str(item) for item in cast(list[object], payload["logs"])
+    )
+    assert any(
+        "Failed to load automation detail: post-run list refresh failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+    event_types = [
+        str(item.get("type"))
+        for item in cast(list[dict[str, object]], payload["dispatchedEvents"])
+    ]
+    assert "agent-teams-session-upserted" in event_types
+    assert "agent-teams-projects-changed" in event_types
+
+
+def test_project_view_automation_detail_toggle_refresh_error_renders_feature_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView("aut_1");
+await flushTasks();
+await flushTasks();
+
+document.querySelector("[data-automation-toggle]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    summary: els.projectViewSummary.textContent,
+    contentHtml: els.projectViewContent.innerHTML,
+    disabledId: globalThis.__disabledAutomationId || "",
+    logs: globalThis.__logs,
+}));
+""".strip(),
+        mock_api_source="""
+globalThis.__failAutomationListRefresh = false;
+
+export async function fetchAutomationProjects() {
+    if (globalThis.__failAutomationListRefresh === true) {
+        throw new Error("post-toggle list refresh failed");
+    }
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "Daily Briefing",
+            name: "daily-briefing",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+export async function fetchAutomationProject() {
+    return {
+        automation_project_id: "aut_1",
+        display_name: "Daily Briefing",
+        name: "daily-briefing",
+        status: "enabled",
+        workspace_id: "alpha-project",
+        prompt: "Original prompt.",
+        schedule_mode: "cron",
+        cron_expression: "0 9 * * *",
+    };
+}
+
+export async function disableAutomationProject(projectId) {
+    globalThis.__disabledAutomationId = projectId;
+    globalThis.__failAutomationListRefresh = true;
+    return { status: "disabled" };
+}
+""".strip(),
+    )
+
+    assert payload["summary"] == "Load failed"
+    assert "post-toggle list refresh failed" in str(payload["contentHtml"])
+    assert payload["disabledId"] == "aut_1"
+    assert any(
+        "Failed to load automation detail: post-toggle list refresh failed" in str(item)
+        for item in cast(list[object], payload["logs"])
+    )
+
+
+def test_project_view_automation_list_detail_ignores_stale_responses(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+const rows = Array.from(els.projectViewContent.querySelectorAll("[data-automation-home-project-id]"));
+rows[0]?.onclick?.();
+rows[1]?.onclick?.();
+await flushTasks();
+
+globalThis.__resolveAutomationProject("aut_2");
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+const afterSecond = els.projectViewContent.innerHTML;
+
+globalThis.__resolveAutomationProject("aut_1");
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    rowCount: rows.length,
+    fetchCalls: globalThis.__fetchAutomationProjectCalls || [],
+    afterSecond,
+    afterLateFirst: els.projectViewContent.innerHTML,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "First Task",
+            name: "first-task",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+        {
+            automation_project_id: "aut_2",
+            display_name: "Second Task",
+            name: "second-task",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 10 * * *",
+        },
+    ];
+}
+
+globalThis.__automationProjectResolvers = {};
+globalThis.__resolveAutomationProject = projectId => {
+    const resolver = globalThis.__automationProjectResolvers[projectId];
+    if (resolver) {
+        resolver();
+    }
+};
+
+export async function fetchAutomationProject(projectId) {
+    globalThis.__fetchAutomationProjectCalls = globalThis.__fetchAutomationProjectCalls || [];
+    globalThis.__fetchAutomationProjectCalls.push(projectId);
+    return await new Promise(resolve => {
+        globalThis.__automationProjectResolvers[projectId] = () => {
+            resolve({
+                automation_project_id: projectId,
+                display_name: projectId === "aut_1" ? "First Task" : "Second Task",
+                name: projectId === "aut_1" ? "first-task" : "second-task",
+                status: "enabled",
+                workspace_id: "alpha-project",
+                prompt: projectId === "aut_1" ? "First prompt should stay stale." : "Second prompt should remain visible.",
+                schedule_mode: "cron",
+                cron_expression: projectId === "aut_1" ? "0 9 * * *" : "0 10 * * *",
+            });
+        };
+    });
+}
+""".strip(),
+    )
+
+    assert payload["rowCount"] == 2
+    assert payload["fetchCalls"] == ["aut_1", "aut_2"]
+    assert "Second prompt should remain visible." in str(payload["afterSecond"])
+    assert "Second prompt should remain visible." in str(payload["afterLateFirst"])
+    assert "First prompt should stay stale." not in str(payload["afterLateFirst"])
+
+
+def test_project_view_automation_list_return_invalidates_pending_detail(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+const row = els.projectViewContent.querySelector("[data-automation-home-project-id]");
+row?.onclick?.();
+await flushTasks();
+
+const scheduleButton = Array.from(
+    els.projectViewToolbarActions.querySelectorAll("[data-automation-section]"),
+).find(button => button.getAttribute("data-automation-section") === "schedules");
+scheduleButton?.onclick?.();
+await flushTasks();
+const afterReturn = els.projectViewContent.innerHTML;
+
+globalThis.__resolveAutomationProject("aut_1");
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    rowFound: Boolean(row),
+    fetchCalls: globalThis.__fetchAutomationProjectCalls || [],
+    afterReturn,
+    afterLateDetail: els.projectViewContent.innerHTML,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    return [
+        {
+            automation_project_id: "aut_1",
+            display_name: "First Task",
+            name: "first-task",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+
+globalThis.__automationProjectResolvers = {};
+globalThis.__resolveAutomationProject = projectId => {
+    const resolver = globalThis.__automationProjectResolvers[projectId];
+    if (resolver) {
+        resolver();
+    }
+};
+
+export async function fetchAutomationProject(projectId) {
+    globalThis.__fetchAutomationProjectCalls = globalThis.__fetchAutomationProjectCalls || [];
+    globalThis.__fetchAutomationProjectCalls.push(projectId);
+    return await new Promise(resolve => {
+        globalThis.__automationProjectResolvers[projectId] = () => {
+            resolve({
+                automation_project_id: projectId,
+                display_name: "First Task",
+                name: "first-task",
+                status: "enabled",
+                workspace_id: "alpha-project",
+                prompt: "Late prompt should not reopen detail.",
+                schedule_mode: "cron",
+                cron_expression: "0 9 * * *",
+            });
+        };
+    });
+}
+""".strip(),
+    )
+
+    assert payload["rowFound"] is True
+    assert payload["fetchCalls"] == ["aut_1"]
+    assert "First Task" in str(payload["afterReturn"])
+    assert "Late prompt should not reopen detail." not in str(payload["afterReturn"])
+    assert "First Task" in str(payload["afterLateDetail"])
+    assert "Late prompt should not reopen detail." not in str(
+        payload["afterLateDetail"]
+    )
+
+
+def test_project_view_automation_schedules_tab_refreshes_after_github(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+globalThis.__automationProjectsVersion = "old";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+const githubButton = Array.from(
+    els.projectViewToolbarActions.querySelectorAll("[data-automation-section]"),
+).find(button => button.getAttribute("data-automation-section") === "github");
+githubButton?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+globalThis.__automationProjectsVersion = "new";
+const scheduleButton = Array.from(
+    els.projectViewToolbarActions.querySelectorAll("[data-automation-section]"),
+).find(button => button.getAttribute("data-automation-section") === "schedules");
+scheduleButton?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+
+console.log(JSON.stringify({
+    fetchCalls: globalThis.__fetchAutomationProjectsCalls || 0,
+    contentHtml: els.projectViewContent.innerHTML,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    globalThis.__fetchAutomationProjectsCalls = (globalThis.__fetchAutomationProjectsCalls || 0) + 1;
+    const isNew = globalThis.__automationProjectsVersion === "new";
+    return [
+        {
+            automation_project_id: isNew ? "aut_new" : "aut_old",
+            display_name: isNew ? "Fresh Task" : "Cached Task",
+            name: isNew ? "fresh-task" : "cached-task",
+            status: "enabled",
+            workspace_id: "alpha-project",
+            schedule_mode: "cron",
+            cron_expression: "0 9 * * *",
+        },
+    ];
+}
+""".strip(),
+    )
+
+    assert payload["fetchCalls"] == 2
+    assert "Fresh Task" in str(payload["contentHtml"])
+    assert "Cached Task" not in str(payload["contentHtml"])
+
+
+def test_project_view_language_refresh_scopes_automation_page_editor(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openAutomationHomeView,
+    openImFeatureView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openAutomationHomeView();
+await flushTasks();
+await flushTasks();
+
+els.projectViewContent.querySelector("[data-feature-automation-create]")?.onclick?.();
+await flushTasks();
+await flushTasks();
+await new Promise(resolve => setTimeout(resolve, 10));
+await flushTasks();
+const editorBeforeLanguage = els.projectViewContent.innerHTML;
+
+document.dispatchEvent({ type: "agent-teams-language-changed" });
+await flushTasks();
+await flushTasks();
+const editorAfterAutomationLanguage = els.projectViewContent.innerHTML;
+
+await openImFeatureView();
+await flushTasks();
+await flushTasks();
+const gatewayBeforeLanguage = els.projectViewContent.innerHTML;
+
+document.dispatchEvent({ type: "agent-teams-language-changed" });
+await flushTasks();
+await flushTasks();
+const gatewayAfterLanguage = els.projectViewContent.innerHTML;
+
+console.log(JSON.stringify({
+    editorBeforeLanguage,
+    editorAfterAutomationLanguage,
+    gatewayBeforeLanguage,
+    gatewayAfterLanguage,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchAutomationProjects() {
+    return [];
+}
+
+export async function fetchWorkspaces() {
+    return [{ workspace_id: "alpha-project", name: "Alpha Project" }];
+}
+""".strip(),
+    )
+
+    assert "automation-editor-page" in str(payload["editorBeforeLanguage"])
+    assert "automation-editor-page" in str(payload["editorAfterAutomationLanguage"])
+    assert "automation-editor-page" not in str(payload["gatewayBeforeLanguage"])
+    assert "automation-editor-page" not in str(payload["gatewayAfterLanguage"])
+    assert "automation-home-page" not in str(payload["gatewayBeforeLanguage"])
+    assert "automation-home-page" not in str(payload["gatewayAfterLanguage"])
+    assert "connectors-page" in str(payload["gatewayBeforeLanguage"])
+    assert "connectors-page" in str(payload["gatewayAfterLanguage"])
 
 
 def test_project_view_automation_header_keeps_action_row_out_of_prompt_flow() -> None:
     components_css = load_components_css()
 
-    assert ".automation-detail-head {" in components_css
-    assert "grid-template-columns: minmax(0, 1fr) auto;" in components_css
-    assert ".automation-detail-head .feature-action-row {" in components_css
+    assert ".automation-document-layout {" in components_css
+    assert (
+        "grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);" in components_css
+    )
+    assert ".automation-sidebar-actions {" in components_css
     assert "justify-content: flex-end;" in components_css
 
 
@@ -6907,11 +8647,30 @@ console.log(JSON.stringify({ afterBoards, afterMemory }));
     assert after_memory["toolbarHidden"] is False
     assert "memory-view-shell" in str(after_memory["contentHtml"])
     assert "memory-toolbar-controls" in str(after_memory["toolbarHtml"])
+    assert "data-project-view-close" not in str(after_memory["toolbarHtml"])
     after_memory_unmounts = after_memory["unmountCalls"]
     after_boards_unmounts = after_boards["unmountCalls"]
     assert isinstance(after_memory_unmounts, int)
     assert isinstance(after_boards_unmounts, int)
     assert after_memory_unmounts > after_boards_unmounts
+
+    memory_css = load_memory_css()
+    assert ".memory-view-shell {" in memory_css
+    assert "height: max(360px, calc(100vh - 324px));" in memory_css
+    assert ".memory-list {" in memory_css
+    assert "max-height: 100%;" in memory_css
+    assert "scrollbar-gutter: stable;" in memory_css
+    assert "scrollbar-width: thin;" in memory_css
+    assert "::-webkit-scrollbar-button" in memory_css
+    assert "::-webkit-scrollbar-thumb" in memory_css
+
+    memory_source = load_memory_view_source()
+    assert "captureMemoryScrollState()" in memory_source
+    assert "restoreMemoryScrollState(scrollState)" in memory_source
+
+    projects_css = load_frontend_file("css", "components", "projects.css")
+    assert ".projects-workspace-scroll {" in projects_css
+    assert ".projects-workspace-scroll::-webkit-scrollbar-button" in projects_css
 
 
 def test_project_view_switches_from_memory_to_boards_without_toolbar_residue(
@@ -6958,6 +8717,7 @@ console.log(JSON.stringify({ afterMemory, afterBoards }));
     after_boards = cast(dict[str, object], payload["afterBoards"])
     assert "memory-view-shell" in str(after_memory["contentHtml"])
     assert "memory-toolbar-controls" in str(after_memory["toolbarHtml"])
+    assert "data-project-view-close" not in str(after_memory["toolbarHtml"])
     assert after_memory["toolbarHidden"] is False
     assert after_boards["contentHasBoardsClass"] is True
     assert after_boards["toolbarHidden"] is True
@@ -9222,6 +10982,7 @@ export function createDomEnvironment() {
     const toolbarElement = createBasicElement();
     const titleElement = createBasicElement();
     titleElement.closest = selector => selector === ".project-view-toolbar" ? toolbarElement : null;
+    const documentListeners = new Map();
     const elements = new Map([
         ["project-view", createBasicElement()],
         ["project-view-toolbar", toolbarElement],
@@ -9253,14 +11014,22 @@ export function createDomEnvironment() {
                 return node;
             },
         },
-        addEventListener() {
+        addEventListener(name, handler) {
+            const key = String(name || "");
+            const handlers = documentListeners.get(key) || [];
+            handlers.push(handler);
+            documentListeners.set(key, handlers);
             return undefined;
         },
         dispatchEvent(event) {
+            const eventType = String(event?.type || "");
             globalThis.__dispatchedEvents.push({
-                type: event?.type || null,
+                type: eventType || null,
                 detail: event?.detail || null,
             });
+            for (const handler of documentListeners.get(eventType) || []) {
+                handler(event);
+            }
             return undefined;
         },
         querySelector(selector) {
@@ -9286,6 +11055,16 @@ export function createDomEnvironment() {
             const element = elements.get(id);
             if (element) {
                 return element;
+            }
+            const toolbar = elements.get("project-view-toolbar-actions");
+            const toolbarMatch = toolbar?.getElementById?.(id);
+            if (toolbarMatch) {
+                return toolbarMatch;
+            }
+            const content = elements.get("project-view-content");
+            const contentMatch = content?.getElementById?.(id);
+            if (contentMatch) {
+                return contentMatch;
             }
             for (const child of appendedChildren) {
                 const match = child?.getElementById?.(id);
@@ -10451,6 +12230,31 @@ export const state = {
         "feature.automation.github_access_copy": "Shared token and connectivity checks for GitHub-triggered automation.",
         "feature.automation.github_access_status": "Shared",
         "feature.automation.github_access_detail_copy": "Shared token is reused when an account does not define its own override.",
+        "feature.automation.github_shared_settings": "Shared Connection Settings",
+        "feature.automation.github_shared_token": "Shared Token",
+        "feature.automation.github_webhook_callback": "Webhook Callback",
+        "feature.automation.github_trigger_title": "GitHub Event Automation",
+        "feature.automation.github_trigger_copy": "When a pull request or issue event happens, start a task automatically in the workspace you choose.",
+        "feature.automation.github_connection_status": "Connection status",
+        "feature.automation.github_connection_status_copy": "GitHub accounts are managed in Connectors.",
+        "feature.automation.github_connection_missing": "GitHub is not connected yet. Configure a GitHub account in Connectors first.",
+        "feature.automation.github_open_connector": "Connect GitHub",
+        "feature.automation.github_manage_connector": "Manage GitHub Connector",
+        "feature.automation.github_step_account_title": "Connect an account",
+        "feature.automation.github_step_account_copy": "Choose which GitHub identity receives events.",
+        "feature.automation.github_step_repo_title": "Bind repositories",
+        "feature.automation.github_step_repo_copy": "Pick the repositories that can trigger automation.",
+        "feature.automation.github_step_repo_disabled": "Connect a GitHub account before binding repositories.",
+        "feature.automation.github_step_rule_title": "Create trigger rules",
+        "feature.automation.github_step_rule_copy": "Decide which PR or issue events start a task.",
+        "feature.automation.github_step_rule_disabled": "Bind a repository before creating trigger rules.",
+        "feature.automation.github_connect_account": "Connect GitHub Account",
+        "feature.automation.github_bind_repo": "Bind Repository",
+        "feature.automation.github_create_rule": "Create Rule",
+        "feature.automation.github_advanced_settings": "Advanced Connection Settings",
+        "feature.automation.github_advanced_settings_copy": "Shared token and webhook settings.",
+        "feature.automation.github_repo_count": "{count} repositories",
+        "feature.automation.github_rule_count": "{count} rules",
         "feature.automation.github_summary_accounts": "Accounts",
         "feature.automation.github_summary_repos": "Repositories",
         "feature.automation.github_summary_rules": "Rules",
@@ -10520,6 +12324,15 @@ export const state = {
         "feature.connectors.action.connect_discord": "Connect Discord",
         "feature.connectors.action.connect_wechat": "Connect WeChat",
         "feature.connectors.action.connect_xiaoluban": "Connect Xiaoluban",
+        "feature.connectors.github.title": "GitHub Connector",
+        "feature.connectors.github.copy": "Configure GitHub token, webhook, and trigger accounts for GitHub-driven automation.",
+        "feature.connectors.github.connection_settings": "Connection settings",
+        "feature.connectors.github.accounts": "GitHub accounts",
+        "feature.connectors.github.account_empty": "No GitHub accounts yet.",
+        "feature.connectors.github.load_failed": "GitHub connector failed to load",
+        "feature.connectors.status.connected": "Connected",
+        "feature.connectors.status.needs_config": "Unconnected",
+        "feature.connectors.account_summary": "{enabled}/{total} accounts enabled",
         "feature.connectors.accounts.title": "Accounts",
         "feature.connectors.accounts.empty": "No accounts yet.",
         "feature.memory.title": "Memory",
@@ -10553,6 +12366,15 @@ export const state = {
         "automation.action.run_now": "Run now",
         "automation.action.disable": "Disable",
         "automation.action.enable": "Enable",
+        "automation.action.back_to_list": "Back to list",
+        "automation.action.more": "More",
+        "automation.action.quick_actions": "Quick actions",
+        "automation.home.current": "Current",
+        "automation.home.group_active": "Active",
+        "automation.home.group_attention": "Needs attention",
+        "automation.home.group_other": "Other",
+        "automation.home.group_paused": "Paused",
+        "automation.home.group_running": "Running",
         "automation.detail.configuration": "Configuration",
         "automation.detail.none": "None",
         "automation.detail.prompt": "Task Prompt",
@@ -10569,7 +12391,11 @@ export const state = {
         "automation.delivery.xiaoluban_credentials_unusable": "The selected Xiaoluban account is unavailable. Check the personal token or account status.",
         "automation.delivery.xiaoluban_account_missing": "Select a valid Xiaoluban account.",
         "automation.delivery.save_failed": "Unable to save the automation settings. Check the delivery target and try again.",
+        "automation.run_status.queued": "Queued",
+        "automation.run_status.paused": "Paused",
+        "automation.run_status.stopping": "Stopping",
         "automation.run_status.completed": "Completed",
+        "automation.run_status.failed": "Failed",
         "sidebar.log.started_bound_session": "Started automation run in bound IM session: {session_id}",
         "sidebar.log.started_automation_run": "Started automation run: {session_id}",
     };
@@ -10703,18 +12529,155 @@ export async function loadClawHubSettingsPanel() {
     )
     mock_github_settings_path.write_text(
         """
-export function bindGitHubSettingsHandlers() {
-    globalThis.__githubSettingsBindCalls =
-        (globalThis.__githubSettingsBindCalls || 0) + 1;
+function resolveGitHubFieldIds(fieldIds = {}) {
+    return {
+        tokenInputId: fieldIds.tokenInputId || "feature-github-token",
+        webhookBaseUrlInputId: fieldIds.webhookBaseUrlInputId || "feature-github-webhook-base-url",
+    };
 }
 
-export async function loadGitHubSettingsPanel() {
+function githubSettingsDraft() {
+    globalThis.__githubSettingsDraft = globalThis.__githubSettingsDraft || {
+        token: "",
+        tokenDirty: false,
+        webhookBaseUrl: "",
+        webhookDirty: false,
+    };
+    return globalThis.__githubSettingsDraft;
+}
+
+export function bindGitHubSettingsHandlers(fieldIds = {}, options = {}) {
+    globalThis.__githubSettingsBindCalls =
+        (globalThis.__githubSettingsBindCalls || 0) + 1;
+    const ids = resolveGitHubFieldIds(fieldIds);
+    globalThis.__githubSettingsSaveHandler = async () => {
+        globalThis.__githubSettingsSaved = "token";
+        if (typeof options?.onSaved === "function") {
+            await options.onSaved({ kind: "token" });
+        }
+    };
+    globalThis.__githubSettingsWebhookSaveHandler = async () => {
+        globalThis.__githubSettingsSaved = "webhook";
+        if (typeof options?.onSaved === "function") {
+            await options.onSaved({ kind: "webhook" });
+        }
+    };
+    let saveBtn = null;
+    try {
+        saveBtn = document.getElementById("feature-save-github-btn");
+    } catch (_error) {
+        saveBtn = null;
+    }
+    if (saveBtn) {
+        saveBtn.onclick = globalThis.__githubSettingsSaveHandler;
+    }
+    let webhookSaveBtn = null;
+    try {
+        webhookSaveBtn = document.getElementById("feature-save-github-webhook-btn");
+    } catch (_error) {
+        webhookSaveBtn = null;
+    }
+    if (webhookSaveBtn) {
+        webhookSaveBtn.onclick = globalThis.__githubSettingsWebhookSaveHandler;
+    }
+    const tokenInput = document.getElementById(ids.tokenInputId);
+    if (tokenInput) {
+        tokenInput.oninput = () => {
+            const draft = githubSettingsDraft();
+            draft.token = tokenInput.value || "";
+            draft.tokenDirty = true;
+        };
+    }
+    const webhookInput = document.getElementById(ids.webhookBaseUrlInputId);
+    if (webhookInput) {
+        webhookInput.oninput = () => {
+            const draft = githubSettingsDraft();
+            draft.webhookBaseUrl = webhookInput.value || "";
+            draft.webhookDirty = true;
+        };
+    }
+}
+
+export async function loadGitHubSettingsPanel(fieldIds = {}, options = {}) {
     globalThis.__githubSettingsLoadCalls =
         (globalThis.__githubSettingsLoadCalls || 0) + 1;
+    globalThis.__githubSettingsLoadOptions =
+        globalThis.__githubSettingsLoadOptions || [];
+    globalThis.__githubSettingsLoadOptions.push(options);
+    const draft = githubSettingsDraft();
+    if (!(options?.preserveDirty === true && draft.tokenDirty === true)) {
+        draft.token = globalThis.__mockGitHubSettingsToken || "";
+        draft.tokenDirty = false;
+    }
+    if (!(options?.preserveDirty === true && draft.webhookDirty === true)) {
+        draft.webhookBaseUrl = globalThis.__mockGitHubSettingsWebhookBaseUrl || "";
+        draft.webhookDirty = false;
+    }
+    restoreGitHubSettingsPanelState(fieldIds);
+}
+
+export function restoreGitHubSettingsPanelState(fieldIds = {}) {
+    globalThis.__githubSettingsRestoreCalls =
+        (globalThis.__githubSettingsRestoreCalls || 0) + 1;
+    const ids = resolveGitHubFieldIds(fieldIds);
+    const draft = githubSettingsDraft();
+    const tokenInput = document.getElementById(ids.tokenInputId);
+    if (tokenInput) {
+        tokenInput.value = draft.token;
+    }
+    const webhookInput = document.getElementById(ids.webhookBaseUrlInputId);
+    if (webhookInput) {
+        webhookInput.value = draft.webhookBaseUrl;
+    }
+}
+
+export function resetGitHubSettingsPanelState() {
+    globalThis.__githubSettingsResetCalls =
+        (globalThis.__githubSettingsResetCalls || 0) + 1;
+    globalThis.__githubSettingsDraft = {
+        token: "",
+        tokenDirty: false,
+        webhookBaseUrl: "",
+        webhookDirty: false,
+    };
 }
 
 export function renderGitHubAccessPanelMarkup() {
-    return '<div id="feature-github-access-panel">GitHub access panel</div>';
+    return `
+        <div class="proxy-editor-form" id="feature-github-access-panel">
+            <section class="proxy-form-section settings-form-section">
+                <div class="proxy-form-grid">
+                    <div class="form-group proxy-inline-field">
+                        <label for="feature-github-token">GitHub Token</label>
+                        <div class="secure-input-row">
+                            <input type="password" id="feature-github-token">
+                            <button class="secure-input-btn" id="feature-toggle-github-token-btn" type="button">Show</button>
+                        </div>
+                    </div>
+                    <div class="form-group proxy-inline-field proxy-inline-field-actions">
+                        <div class="settings-inline-action-row">
+                            <button id="feature-test-github-btn" type="button">Test</button>
+                            <button id="feature-save-github-btn" type="button">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <section class="proxy-form-section settings-form-section">
+                <div class="proxy-form-grid">
+                    <div class="form-group proxy-inline-field">
+                        <label for="feature-github-webhook-base-url">Webhook Base URL</label>
+                        <input type="url" id="feature-github-webhook-base-url">
+                    </div>
+                    <div class="form-group proxy-inline-field proxy-inline-field-actions">
+                        <div class="settings-inline-action-row">
+                            <button id="feature-test-github-webhook-btn" type="button">Test webhook</button>
+                            <button id="feature-save-github-webhook-btn" type="button">Save webhook</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    `;
 }
 """.strip(),
         encoding="utf-8",

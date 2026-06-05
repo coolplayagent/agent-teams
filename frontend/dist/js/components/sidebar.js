@@ -2654,6 +2654,14 @@ export async function loadProjects({ forceRefresh = false } = {}) {
         document.addEventListener('agent-teams-session-title-previewed', event => {
             handleSessionTitlePreviewed(event);
         });
+        document.addEventListener('agent-teams-feature-view-changed', event => {
+            const featureId = normalizeFeatureId(
+                event?.detail?.featureId || state.currentFeatureViewId,
+            );
+            clearSessionNavigationState();
+            clearProjectNavigationState();
+            syncFeatureNavigationState(featureId);
+        });
         document.addEventListener('agent-teams-draft-workspace-added', () => void loadProjects());
         languageRefreshBound = true;
     }

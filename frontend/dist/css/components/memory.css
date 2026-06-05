@@ -213,23 +213,78 @@
     display: grid;
     grid-template-columns: minmax(280px, 0.82fr) minmax(340px, 1.18fr);
     gap: 1rem;
-    min-height: max(360px, calc(100vh - 324px));
+    height: max(360px, calc(100vh - 324px));
+    min-height: 0;
+    align-items: stretch;
 }
 
 .memory-draft-shell {
     display: grid;
     grid-template-columns: minmax(300px, 0.78fr) minmax(420px, 1.22fr);
     gap: 1rem;
-    min-height: max(420px, calc(100vh - 250px));
+    height: max(420px, calc(100vh - 250px));
+    min-height: 0;
+    align-items: stretch;
 }
 
 .memory-draft-list,
 .memory-draft-detail {
     min-width: 0;
+    max-height: 100%;
     overflow: auto;
+    scrollbar-gutter: stable;
+    scrollbar-color: color-mix(in srgb, var(--text-secondary) 36%, transparent) transparent;
+    scrollbar-width: thin;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--bg-surface);
+}
+
+.memory-list::-webkit-scrollbar,
+.memory-detail::-webkit-scrollbar,
+.memory-draft-list::-webkit-scrollbar,
+.memory-draft-detail::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+}
+
+.memory-list::-webkit-scrollbar-track,
+.memory-detail::-webkit-scrollbar-track,
+.memory-draft-list::-webkit-scrollbar-track,
+.memory-draft-detail::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.memory-list::-webkit-scrollbar-button,
+.memory-detail::-webkit-scrollbar-button,
+.memory-draft-list::-webkit-scrollbar-button,
+.memory-draft-detail::-webkit-scrollbar-button,
+.memory-list::-webkit-scrollbar-corner,
+.memory-detail::-webkit-scrollbar-corner,
+.memory-draft-list::-webkit-scrollbar-corner,
+.memory-draft-detail::-webkit-scrollbar-corner {
+    display: none;
+    width: 0;
+    height: 0;
+    background: transparent;
+}
+
+.memory-list::-webkit-scrollbar-thumb,
+.memory-detail::-webkit-scrollbar-thumb,
+.memory-draft-list::-webkit-scrollbar-thumb,
+.memory-draft-detail::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text-secondary) 34%, transparent);
+    background-clip: content-box;
+}
+
+.memory-list::-webkit-scrollbar-thumb:hover,
+.memory-detail::-webkit-scrollbar-thumb:hover,
+.memory-draft-list::-webkit-scrollbar-thumb:hover,
+.memory-draft-detail::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--text-secondary) 52%, transparent);
+    background-clip: content-box;
 }
 
 .memory-draft-status-panel {
@@ -509,7 +564,11 @@
 
 .memory-list {
     min-width: 0;
+    max-height: 100%;
     overflow: auto;
+    scrollbar-gutter: stable;
+    scrollbar-color: color-mix(in srgb, var(--text-secondary) 36%, transparent) transparent;
+    scrollbar-width: thin;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--bg-surface);
@@ -600,7 +659,11 @@
 
 .memory-detail {
     min-width: 0;
+    max-height: 100%;
     overflow: auto;
+    scrollbar-gutter: stable;
+    scrollbar-color: color-mix(in srgb, var(--text-secondary) 36%, transparent) transparent;
+    scrollbar-width: thin;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--bg-surface);
@@ -721,11 +784,13 @@
 
     .memory-view-shell {
         grid-template-columns: 1fr;
+        height: auto;
         min-height: auto;
     }
 
     .memory-draft-shell {
         grid-template-columns: 1fr;
+        height: auto;
         min-height: auto;
     }
 

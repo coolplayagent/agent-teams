@@ -261,10 +261,15 @@ def test_github_settings_panel_starts_and_stops_temporary_public_url(
 import { bindGitHubSettingsHandlers, loadGitHubSettingsPanel } from "./githubSettings.mjs";
 
 const notifications = [];
+const savedEvents = [];
 const elements = createElements();
 installGlobals(elements, notifications);
 
-bindGitHubSettingsHandlers();
+bindGitHubSettingsHandlers(undefined, {
+    onSaved: event => {
+        savedEvents.push(event);
+    },
+});
 await loadGitHubSettingsPanel();
 await document.getElementById("start-github-webhook-tunnel-btn").onclick();
 
@@ -278,6 +283,7 @@ await document.getElementById("stop-github-webhook-tunnel-btn").onclick();
 
 console.log(JSON.stringify({
     notifications,
+    savedEvents,
     startTunnelPayload: globalThis.__startTunnelPayload,
     stopTunnelPayload: globalThis.__stopTunnelPayload,
     afterStart,
@@ -291,6 +297,7 @@ console.log(JSON.stringify({
     after_start = cast(dict[str, JsonValue], payload["afterStart"])
     assert payload["startTunnelPayload"] == {"auto_save_webhook_base_url": True}
     assert payload["stopTunnelPayload"] == {"clear_webhook_base_url_if_matching": True}
+    assert payload["savedEvents"] == [{"kind": "webhook"}, {"kind": "webhook"}]
     assert after_start["webhookBaseUrlValue"] == "https://demo-tunnel.lhr.life"
     assert (
         after_start["callbackPreviewText"]

@@ -38,12 +38,14 @@ let lastWebhookProbeState = null;
 let lastTunnelStatus = null;
 let languageBound = false;
 let githubTokenState = createGitHubTokenState();
+let githubWebhookBaseUrlState = createGitHubWebhookBaseUrlState();
 
-export function bindGitHubSettingsHandlers(fieldIds = DEFAULT_GITHUB_FIELD_IDS) {
+export function bindGitHubSettingsHandlers(fieldIds = DEFAULT_GITHUB_FIELD_IDS, options = {}) {
     const ids = resolveGitHubFieldIds(fieldIds);
+    const handlerOptions = resolveGitHubHandlerOptions(options);
     const saveBtn = document.getElementById(ids.saveButtonId);
     if (saveBtn) {
-        saveBtn.onclick = () => handleSaveGitHub(ids);
+        saveBtn.onclick = () => handleSaveGitHub(ids, handlerOptions);
     }
 
     const probeBtn = document.getElementById(ids.probeButtonId);
@@ -53,7 +55,7 @@ export function bindGitHubSettingsHandlers(fieldIds = DEFAULT_GITHUB_FIELD_IDS) 
 
     const webhookSaveBtn = document.getElementById(ids.webhookSaveButtonId);
     if (webhookSaveBtn) {
-        webhookSaveBtn.onclick = () => handleSaveGitHubWebhook(ids);
+        webhookSaveBtn.onclick = () => handleSaveGitHubWebhook(ids, handlerOptions);
     }
 
     const webhookProbeBtn = document.getElementById(ids.webhookProbeButtonId);
@@ -63,12 +65,12 @@ export function bindGitHubSettingsHandlers(fieldIds = DEFAULT_GITHUB_FIELD_IDS) 
 
     const tunnelStartBtn = document.getElementById(ids.tunnelStartButtonId);
     if (tunnelStartBtn) {
-        tunnelStartBtn.onclick = () => handleStartGitHubWebhookTunnel(ids);
+        tunnelStartBtn.onclick = () => handleStartGitHubWebhookTunnel(ids, handlerOptions);
     }
 
     const tunnelStopBtn = document.getElementById(ids.tunnelStopButtonId);
     if (tunnelStopBtn) {
-        tunnelStopBtn.onclick = () => handleStopGitHubWebhookTunnel(ids);
+        tunnelStopBtn.onclick = () => handleStopGitHubWebhookTunnel(ids, handlerOptions);
     }
 
     const tokenInput = document.getElementById(ids.tokenInputId);
@@ -96,10 +98,10 @@ export function bindGitHubSettingsHandlers(fieldIds = DEFAULT_GITHUB_FIELD_IDS) 
     const webhookBaseUrlInput = document.getElementById(ids.webhookBaseUrlInputId);
     if (webhookBaseUrlInput) {
         webhookBaseUrlInput.oninput = () => {
-            renderGitHubCallbackPreview(ids);
+            handleGitHubWebhookBaseUrlInput(ids);
         };
         webhookBaseUrlInput.onchange = () => {
-            renderGitHubCallbackPreview(ids);
+            handleGitHubWebhookBaseUrlInput(ids);
         };
     }
 
@@ -123,14 +125,14 @@ export function bindGitHubSettingsHandlers(fieldIds = DEFAULT_GITHUB_FIELD_IDS) 
     }
 }
 
-export async function loadGitHubSettingsPanel(fieldIds = DEFAULT_GITHUB_FIELD_IDS) {
+export async function loadGitHubSettingsPanel(fieldIds = DEFAULT_GITHUB_FIELD_IDS, options = {}) {
     const ids = resolveGitHubFieldIds(fieldIds);
     try {
         const [config, tunnelStatus] = await Promise.all([
             fetchGitHubConfig(),
             fetchGitHubWebhookTunnelStatus().catch(() => null),
         ]);
-        writeGitHubFormValues(config, ids);
+        writeGitHubFormValues(config, ids, options);
         lastTunnelStatus = tunnelStatus;
         renderGitHubTunnelHelp();
         renderGitHubProbeState(ids);
@@ -148,6 +150,28 @@ export async function loadGitHubSettingsPanel(fieldIds = DEFAULT_GITHUB_FIELD_ID
             tone: 'danger',
         });
     }
+}
+
+export function restoreGitHubSettingsPanelState(fieldIds = DEFAULT_GITHUB_FIELD_IDS) {
+    const ids = resolveGitHubFieldIds(fieldIds);
+    const webhookBaseUrlInput = document.getElementById(ids.webhookBaseUrlInputId);
+    if (webhookBaseUrlInput) {
+        webhookBaseUrlInput.value = githubWebhookBaseUrlState.draftValue;
+    }
+    renderGitHubTokenField(ids);
+    renderGitHubCallbackPreview(ids);
+    renderGitHubTunnelHelp();
+    renderGitHubProbeState(ids);
+    renderGitHubWebhookProbeState(ids);
+    renderGitHubWebhookTunnelStatus(ids);
+}
+
+export function resetGitHubSettingsPanelState() {
+    lastProbeState = null;
+    lastWebhookProbeState = null;
+    lastTunnelStatus = null;
+    githubTokenState = createGitHubTokenState();
+    githubWebhookBaseUrlState = createGitHubWebhookBaseUrlState();
 }
 
 export function renderGitHubAccessPanelMarkup(
@@ -242,7 +266,18 @@ function resolveGitHubFieldIds(fieldIds) {
     };
 }
 
-async function handleSaveGitHub(fieldIds) {
+function resolveGitHubHandlerOptions(options) {
+    return options && typeof options === 'object' ? options : {};
+}
+
+async function notifyGitHubSettingsSaved(options, kind) {
+    if (typeof options?.onSaved !== 'function') {
+        return;
+    }
+    await options.onSaved({ kind });
+}
+
+async function handleSaveGitHub(fieldIds, options = {}) {
     try {
         const payload = readGitHubTokenFormValues(fieldIds);
         await saveGitHubConfig(payload);
@@ -251,6 +286,7 @@ async function handleSaveGitHub(fieldIds) {
             hasPersistedGitHubToken() || Boolean(readGitHubTokenValue(fieldIds)),
         );
         renderGitHubTokenField(fieldIds);
+        await notifyGitHubSettingsSaved(options, 'token');
         showToast({
             title: t('settings.github.saved'),
             message: t('settings.github.saved_message'),
@@ -265,10 +301,17 @@ async function handleSaveGitHub(fieldIds) {
     }
 }
 
-async function handleSaveGitHubWebhook(fieldIds) {
+async function handleSaveGitHubWebhook(fieldIds, options = {}) {
     try {
-        await saveGitHubConfig(readGitHubWebhookFormValues(fieldIds));
+        const payload = readGitHubWebhookFormValues(fieldIds);
+        await saveGitHubConfig(payload);
+        githubWebhookBaseUrlState = createGitHubWebhookBaseUrlState(payload.webhook_base_url || '');
+        const webhookBaseUrlInput = document.getElementById(fieldIds.webhookBaseUrlInputId);
+        if (webhookBaseUrlInput) {
+            webhookBaseUrlInput.value = githubWebhookBaseUrlState.draftValue;
+        }
         renderGitHubCallbackPreview(fieldIds);
+        await notifyGitHubSettingsSaved(options, 'webhook');
         showToast({
             title: t('settings.github.webhook_saved'),
             message: t('settings.github.webhook_saved_message'),
@@ -283,7 +326,7 @@ async function handleSaveGitHubWebhook(fieldIds) {
     }
 }
 
-async function handleStartGitHubWebhookTunnel(fieldIds) {
+async function handleStartGitHubWebhookTunnel(fieldIds, options = {}) {
     lastTunnelStatus = {
         status: 'starting',
         last_message: t('settings.github.tunnel_starting'),
@@ -297,12 +340,14 @@ async function handleStartGitHubWebhookTunnel(fieldIds) {
         lastTunnelStatus = resolvedStatus;
         const publicUrl = normalizeGitHubWebhookBaseUrl(resolvedStatus?.public_url);
         if (publicUrl) {
+            githubWebhookBaseUrlState = createGitHubWebhookBaseUrlState(publicUrl);
             const webhookBaseUrlInput = document.getElementById(fieldIds.webhookBaseUrlInputId);
             if (webhookBaseUrlInput) {
                 webhookBaseUrlInput.value = publicUrl;
             }
             renderGitHubCallbackPreview(fieldIds);
             await saveGitHubConfig({ webhook_base_url: publicUrl });
+            await notifyGitHubSettingsSaved(options, 'webhook');
         }
         showToast({
             title: t('settings.github.tunnel_started'),
@@ -357,13 +402,14 @@ function waitForGitHubWebhookTunnelStatus(delayMs) {
     });
 }
 
-async function handleStopGitHubWebhookTunnel(fieldIds) {
+async function handleStopGitHubWebhookTunnel(fieldIds, options = {}) {
     try {
         const status = await stopGitHubWebhookTunnel({
             clear_webhook_base_url_if_matching: true,
         });
         lastTunnelStatus = status;
         await loadGitHubSettingsPanel(fieldIds);
+        await notifyGitHubSettingsSaved(options, 'webhook');
         showToast({
             title: t('settings.github.tunnel_stopped'),
             message: buildGitHubWebhookTunnelMessage(status),
@@ -566,14 +612,21 @@ function renderProbeState({
     probeBtn.textContent = state.status === 'probing' ? busyLabel : idleLabel;
 }
 
-function writeGitHubFormValues(config, fieldIds) {
-    githubTokenState = createGitHubTokenState(
-        null,
-        config?.token_configured === true,
-    );
+function writeGitHubFormValues(config, fieldIds, options = {}) {
+    const preserveDirty = options?.preserveDirty === true;
+    if (!(preserveDirty && githubTokenState.isDirty)) {
+        githubTokenState = createGitHubTokenState(
+            null,
+            config?.token_configured === true,
+        );
+    }
+    const loadedWebhookBaseUrl = normalizeGitHubWebhookBaseUrl(config?.webhook_base_url) || '';
+    if (!(preserveDirty && githubWebhookBaseUrlState.isDirty)) {
+        githubWebhookBaseUrlState = createGitHubWebhookBaseUrlState(loadedWebhookBaseUrl);
+    }
     const webhookBaseUrlInput = document.getElementById(fieldIds.webhookBaseUrlInputId);
     if (webhookBaseUrlInput) {
-        webhookBaseUrlInput.value = normalizeGitHubWebhookBaseUrl(config.webhook_base_url) || '';
+        webhookBaseUrlInput.value = githubWebhookBaseUrlState.draftValue;
     }
     renderGitHubTokenField(fieldIds);
     renderGitHubCallbackPreview(fieldIds);
@@ -608,6 +661,15 @@ function createGitHubTokenState(persistedValue = null, hasPersistedValue = false
     };
 }
 
+function createGitHubWebhookBaseUrlState(value = '') {
+    const normalizedValue = normalizeGitHubWebhookBaseUrl(value) || '';
+    return {
+        loadedValue: normalizedValue,
+        draftValue: normalizedValue,
+        isDirty: false,
+    };
+}
+
 function handleGitHubTokenInput(fieldIds) {
     const tokenInput = document.getElementById(fieldIds.tokenInputId);
     const nextValue = tokenInput ? tokenInput.value : '';
@@ -634,6 +696,17 @@ function handleGitHubTokenInput(fieldIds) {
         githubTokenState.revealed = false;
     }
     renderGitHubTokenField(fieldIds);
+}
+
+function handleGitHubWebhookBaseUrlInput(fieldIds) {
+    const webhookBaseUrlInput = document.getElementById(fieldIds.webhookBaseUrlInputId);
+    const nextValue = webhookBaseUrlInput ? String(webhookBaseUrlInput.value || '') : '';
+    githubWebhookBaseUrlState = {
+        ...githubWebhookBaseUrlState,
+        draftValue: nextValue,
+        isDirty: nextValue.trim() !== String(githubWebhookBaseUrlState.loadedValue || '').trim(),
+    };
+    renderGitHubCallbackPreview(fieldIds);
 }
 
 async function toggleGitHubTokenVisibility(fieldIds) {

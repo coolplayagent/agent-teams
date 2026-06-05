@@ -18,13 +18,13 @@ from relay_teams.workspace import (
     SshProfileService,
     WorkspaceRecord,
     WorkspaceFileScope,
-    WorkspaceFileContent,
     WorkspaceProfile,
     WorkspaceRepository,
     WorkspaceService,
     WorkspaceDiffChangeType,
     WorkspaceDiffFile,
     WorkspaceDiffListing,
+    WorkspaceFileContent,
     WorkspaceSnapshot,
     WorkspaceTreeListing,
     WorkspaceTreeNode,
@@ -857,6 +857,54 @@ def test_get_workspace_file_content_preserves_literal_encoded_path_text(
     assert response.status_code == 200
     assert service.captured_path == "notes%2Ftodo.txt"
     assert response.json()["path"] == "notes%2Ftodo.txt"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_status", "expected_detail"),
+    (
+        ("missing-workspace.txt", 404, "Workspace not found"),
+        ("missing-file.txt", 404, "Workspace file not found: missing-file.txt"),
+        ("directory", 400, "Workspace path is not a file: directory"),
+    ),
+)
+def test_get_workspace_file_content_maps_service_errors(
+    tmp_path: Path,
+    path: str,
+    expected_status: int,
+    expected_detail: str,
+) -> None:
+    class FileWorkspaceService(WorkspaceService):
+        async def get_workspace_file_content_async(
+            self,
+            workspace_id: str,
+            *,
+            path: str,
+            mount_name: str | None = None,
+        ) -> WorkspaceFileContent:
+            _ = (workspace_id, mount_name)
+            if path == "missing-workspace.txt":
+                raise KeyError(path)
+            if path == "missing-file.txt":
+                raise FileNotFoundError(f"Workspace file not found: {path}")
+            if path == "directory":
+                raise ValueError(f"Workspace path is not a file: {path}")
+            raise AssertionError(f"Unexpected path: {path}")
+
+    client, service = _create_test_client(
+        tmp_path,
+        service=FileWorkspaceService(
+            repository=WorkspaceRepository(tmp_path / "workspaces_router.db")
+        ),
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=tmp_path,
+    )
+
+    response = client.get(f"/api/workspaces/project-alpha/file?path={path}")
+
+    assert response.status_code == expected_status
+    assert response.json()["detail"] == expected_detail
 
 
 def test_pick_workspace_creates_workspace_for_selected_directory(

@@ -3516,11 +3516,18 @@ await flushTasks();
 
 console.log(JSON.stringify({
     openedWorkspaceIds: globalThis.__openedWorkspaceIds,
+    openedWorkspaceViews: globalThis.__openedWorkspaceViews,
 }));
 """.strip(),
     )
 
     assert payload["openedWorkspaceIds"] == ["alpha-project"]
+    assert payload["openedWorkspaceViews"] == [
+        {
+            "workspaceId": "alpha-project",
+            "options": {"originSessionId": "session-7"},
+        }
+    ]
 
 
 def test_projects_sidebar_marks_selected_project_after_title_click(
@@ -5268,8 +5275,12 @@ export function clearContextIndicators() {
         """
 import { state } from "./mockState.mjs";
 
-export async function openWorkspaceProjectView(workspace) {
+export async function openWorkspaceProjectView(workspace, options = {}) {
     globalThis.__openedWorkspaceIds.push(workspace.workspace_id);
+    globalThis.__openedWorkspaceViews.push({
+        workspaceId: workspace.workspace_id,
+        options,
+    });
     state.currentMainView = "project";
     state.currentProjectViewWorkspaceId = workspace.workspace_id;
     state.currentWorkspaceId = workspace.workspace_id;
@@ -5511,6 +5522,7 @@ globalThis.__renameCalls = [];
 globalThis.__selectedSessionIds = [];
 globalThis.__terminalViewCalls = [];
 globalThis.__openedWorkspaceIds = [];
+globalThis.__openedWorkspaceViews = [];
 globalThis.__openedAutomationProjectIds = [];
 globalThis.__hideProjectViewCalls = 0;
 globalThis.__clearNewSessionDraftCalls = 0;

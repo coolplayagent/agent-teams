@@ -4198,6 +4198,87 @@ console.log(JSON.stringify({
     assert not any("image input" in entry["message"] for entry in payload["logs"])
 
 
+def test_handle_send_waits_for_latest_pending_model_profile_save(
+    tmp_path: Path,
+) -> None:
+    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
+    runner = """
+import {
+    handleSend,
+    initializeSessionTopologyControls,
+    refreshModelProfileOptions,
+} from "./prompt.js";
+import { els, createMenuOption } from "./mockDom.mjs";
+
+globalThis.__modelProfiles = {
+    fast: {
+        model: "gpt-4.1-mini",
+        input_modalities: ["image"],
+    },
+    precise: {
+        model: "gpt-4.1",
+        input_modalities: ["image"],
+    },
+};
+globalThis.__streamCalls = [];
+globalThis.__logs = [];
+globalThis.__notifications = [];
+globalThis.__deferNormalModelProfileUpdates = true;
+
+await refreshModelProfileOptions({ refreshControls: false });
+await initializeSessionTopologyControls();
+els.normalModelMenuButton.dispatch("click");
+els.normalModelMenuList.dispatch("click", {
+    target: createMenuOption("normal-model", "fast", 1),
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+
+els.promptInput.value = "ship it";
+const sendPromise = handleSend();
+await new Promise(resolve => setTimeout(resolve, 0));
+
+els.normalModelMenuButton.dispatch("click");
+els.normalModelMenuList.dispatch("click", {
+    target: createMenuOption("normal-model", "precise", 2),
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+
+const deferredCalls = globalThis.__normalModelProfileDeferredCalls || [];
+deferredCalls[0]?.resolve?.();
+await new Promise(resolve => setTimeout(resolve, 0));
+await new Promise(resolve => setTimeout(resolve, 0));
+const streamCallsAfterFirstSave = globalThis.__streamCalls.length;
+
+deferredCalls[1]?.resolve?.();
+await sendPromise;
+
+console.log(JSON.stringify({
+    modelUpdates: globalThis.__normalModelProfileUpdates || [],
+    deferredCount: deferredCalls.length,
+    streamCallsAfterFirstSave,
+    streamCalls: globalThis.__streamCalls,
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["modelUpdates"] == [
+        {"sessionId": "session-1", "normalModelProfile": "fast"},
+        {"sessionId": "session-1", "normalModelProfile": "precise"},
+    ]
+    assert payload["deferredCount"] == 2
+    assert payload["streamCallsAfterFirstSave"] == 0
+    assert len(payload["streamCalls"]) == 1
+    assert payload["streamCalls"][0]["promptText"] == "ship it"
+
+
 def test_handle_send_blocks_image_when_selected_model_profile_rejects_it(
     tmp_path: Path,
 ) -> None:
@@ -4738,6 +4819,14 @@ export async function updateSessionNormalModelProfile(sessionId, normalModelProf
         orchestration_preset_id: null,
         can_switch_mode: true,
     };
+    if (globalThis.__deferNormalModelProfileUpdates) {
+        return new Promise(resolve => {
+            globalThis.__normalModelProfileDeferredCalls = [
+                ...(globalThis.__normalModelProfileDeferredCalls || []),
+                { sessionId, normalModelProfile, resolve: () => resolve(updated) },
+            ];
+        });
+    }
     if (globalThis.__holdNormalModelProfileSave) {
         return new Promise(resolve => {
             globalThis.__resolveNormalModelProfileSave = () => resolve(updated);

@@ -779,11 +779,9 @@ class WorkspaceRepository(SharedSqliteRepository):
             for item in json.loads(str(row["writable_paths_json"] or "[]"))
             if str(item).strip()
         )
-        capabilities_loaded = json.loads(str(row["capabilities_json"] or "{}"))
-        capabilities = (
-            WorkspaceMountCapabilities.model_validate(capabilities_loaded)
-            if isinstance(capabilities_loaded, dict) and capabilities_loaded
-            else default_mount_capabilities(provider)
+        capabilities = _normalize_mount_capabilities(
+            provider=provider,
+            capabilities_loaded=json.loads(str(row["capabilities_json"] or "{}")),
         )
         return WorkspaceMountRecord(
             mount_name=require_persisted_identifier(
@@ -802,6 +800,24 @@ class WorkspaceRepository(SharedSqliteRepository):
                 row["forked_from_workspace_id"]
             ),
         )
+
+
+def _normalize_mount_capabilities(
+    *,
+    provider: WorkspaceMountProvider,
+    capabilities_loaded: object,
+) -> WorkspaceMountCapabilities:
+    capabilities = (
+        WorkspaceMountCapabilities.model_validate(capabilities_loaded)
+        if isinstance(capabilities_loaded, dict) and capabilities_loaded
+        else default_mount_capabilities(provider)
+    )
+    if (
+        provider == WorkspaceMountProvider.SSH
+        and capabilities.can_diff != default_mount_capabilities(provider).can_diff
+    ):
+        return capabilities.model_copy(update={"can_diff": True})
+    return capabilities
 
 
 def _normalize_optional_text(value: object) -> str | None:

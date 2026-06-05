@@ -1939,13 +1939,13 @@ async function persistSessionNormalModelProfile(modelProfile) {
 }
 
 async function flushPendingNormalModelProfileSave() {
-  if (!normalModelProfileSavePromise) {
-    return;
-  }
-  const pending = normalModelProfileSavePromise;
-  const result = await pending;
-  if (normalModelProfileSavePromise === pending) {
-    normalModelProfileSavePromise = null;
+  let result = undefined;
+  while (normalModelProfileSavePromise) {
+    const pending = normalModelProfileSavePromise;
+    result = await pending;
+    if (normalModelProfileSavePromise === pending) {
+      normalModelProfileSavePromise = null;
+    }
   }
   return result;
 }

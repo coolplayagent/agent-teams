@@ -9,6 +9,7 @@ import sqlite3
 import pytest
 from relay_teams.workspace import (
     WorkspaceLocalMountConfig,
+    WorkspaceMountCapabilities,
     WorkspaceMountProvider,
     WorkspaceMountRecord,
     WorkspaceRepository,
@@ -114,6 +115,54 @@ def test_workspace_repository_persists_mounts_in_provider_then_name_order(
     assert [mount.mount_name for mount in created.mounts] == expected_order
     assert [mount.mount_name for mount in fetched.mounts] == expected_order
     assert [mount.mount_name for mount in listed.mounts] == expected_order
+
+
+def test_workspace_repository_migrates_persisted_ssh_diff_capability(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "workspace_ssh_capabilities.db"
+    repository = WorkspaceRepository(db_path)
+    _ = repository.create(
+        workspace_id="project-alpha",
+        default_mount_name="prod",
+        mounts=(
+            WorkspaceMountRecord(
+                mount_name="prod",
+                provider=WorkspaceMountProvider.SSH,
+                provider_config=WorkspaceSshMountConfig(
+                    ssh_profile_id="prod",
+                    remote_root="/srv/prod",
+                ),
+                capabilities=WorkspaceMountCapabilities(
+                    can_diff=False,
+                    can_preview=False,
+                ),
+            ),
+        ),
+    )
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE workspace_mounts
+        SET capabilities_json = ?
+        WHERE workspace_id = ? AND mount_name = ?
+        """,
+        (
+            '{"can_read": true, "can_write": true, "can_search": true, "can_shell": true, "can_diff": false, "can_preview": false}',
+            "project-alpha",
+            "prod",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    fetched = repository.get("project-alpha")
+
+    assert len(fetched.mounts) == 1
+    assert fetched.mounts[0].provider == WorkspaceMountProvider.SSH
+    assert fetched.mounts[0].capabilities is not None
+    assert fetched.mounts[0].capabilities.can_diff is True
+    assert fetched.mounts[0].capabilities.can_preview is False
 
 
 def test_workspace_repository_skips_invalid_legacy_profile_rows_on_init(

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import base64
+import binascii
 import difflib
 import mimetypes
 import posixpath
@@ -26,6 +28,7 @@ from relay_teams.paths import (
 )
 from relay_teams.workspace.directory_opener import open_workspace_directory
 from relay_teams.workspace.git_worktree import GitWorktreeClient
+from relay_teams.workspace.ssh_profile_models import SshProfileCommandResult
 from relay_teams.workspace.ssh_profile_service import SshProfileService
 from relay_teams.workspace.workspace_models import (
     WorkspaceDiffChangeType,
@@ -61,8 +64,13 @@ _DEFAULT_FORK_REMOTE_REF = "main"
 _DEFAULT_FORK_START_REF = f"{_DEFAULT_FORK_REMOTE}/{_DEFAULT_FORK_REMOTE_REF}"
 _BINARY_DIFF_MESSAGE = "Binary file changed"
 _SSH_TREE_LIST_TIMEOUT_SECONDS = 30.0
+_SSH_FILE_READ_TIMEOUT_SECONDS = 30.0
+_SSH_DIFF_TIMEOUT_SECONDS = 30.0
 _SSH_TREE_ENTRY_SEPARATOR = "\t"
 _SSH_TREE_NOT_DIRECTORY_MARKER = "relay-teams-error:not-directory"
+_SSH_FILE_NOT_FOUND_MARKER = "relay-teams-error:not-found"
+_SSH_FILE_NOT_FILE_MARKER = "relay-teams-error:not-file"
+_SSH_FILE_OUTSIDE_ROOT_MARKER = "relay-teams-error:outside-root"
 _SEARCH_MAX_VISITED = 3000
 _SEARCH_CACHE_TTL_SECONDS = 300.0
 _SEARCH_COLD_BUILD_TIMEOUT_SECONDS = 0.35
@@ -111,6 +119,35 @@ for path do
 done
 ' sh {} +
 """
+_SSH_FILE_READ_SCRIPT = """
+set -eu
+root=$1
+file=$2
+limit=$3
+if [ ! -e "$file" ]; then
+    printf '%s\\n' 'relay-teams-error:not-found' >&2
+    exit 2
+fi
+root_real=$(realpath "$root")
+file_real=$(realpath "$file")
+if [ "$root_real" != "/" ]; then
+    case "$file_real" in
+        "$root_real"|"$root_real"/*) ;;
+        *)
+            printf '%s\\n' 'relay-teams-error:outside-root' >&2
+            exit 4
+            ;;
+    esac
+fi
+if [ ! -f "$file_real" ]; then
+    printf '%s\\n' 'relay-teams-error:not-file' >&2
+    exit 3
+fi
+size=$(wc -c < "$file_real" | tr -d '[:space:]')
+printf '%s\\n' "$size"
+head -c "$limit" "$file_real" | base64 | tr -d '\\n'
+printf '\\n'
+"""
 
 
 def _is_default_fork_fetch_timeout(error: ValueError) -> bool:
@@ -123,6 +160,11 @@ def _is_default_fork_missing_remote_error(error: ValueError) -> bool:
         f"'{_DEFAULT_FORK_REMOTE}' does not appear to be a git repository" in message
         or f"no such remote '{_DEFAULT_FORK_REMOTE}'" in message
     )
+
+
+def _is_not_git_repository_error(error: ValueError) -> bool:
+    message = str(error).lower()
+    return "not a git repository" in message or "is not a git repository" in message
 
 
 _WORKSPACE_IMAGE_MEDIA_TYPES = frozenset(
@@ -1036,6 +1078,159 @@ class WorkspaceService:
             ),
         )
 
+    def _get_ssh_workspace_file_content(
+        self,
+        *,
+        record: WorkspaceRecord,
+        mount: WorkspaceMountRecord,
+        path: str,
+    ) -> WorkspaceFileContent:
+        remote_path, normalized_path = self._resolve_ssh_file_path(
+            mount=mount,
+            file_path=path,
+        )
+        remote_root = self._ssh_mount_remote_root(mount)
+        result = self._run_ssh_mount_command(
+            mount=mount,
+            command=self._build_ssh_file_read_command(remote_root, remote_path),
+            timeout_seconds=_SSH_FILE_READ_TIMEOUT_SECONDS,
+            allowed_exit_codes=(0, 2, 3, 4),
+        )
+        if result.exit_code != 0:
+            detail = (result.stderr or result.stdout).strip()
+            if _SSH_FILE_NOT_FOUND_MARKER in detail:
+                raise FileNotFoundError(f"Workspace file not found: {path}")
+            if _SSH_FILE_NOT_FILE_MARKER in detail:
+                raise ValueError(f"Workspace path is not a file: {path}")
+            if _SSH_FILE_OUTSIDE_ROOT_MARKER in detail:
+                raise ValueError(f"Workspace path escapes root: {path}")
+            raise ValueError(
+                "Failed to read workspace ssh mount "
+                f"{mount.mount_name}: {detail or f'exit code {result.exit_code}'}"
+            )
+
+        lines = result.stdout.splitlines()
+        if not lines:
+            raise ValueError(
+                f"Workspace ssh mount returned malformed file payload: {mount.mount_name}"
+            )
+        try:
+            size_bytes = int(lines[0].strip())
+            content_bytes = base64.b64decode(
+                "".join(lines[1:]).encode("ascii"),
+                validate=False,
+            )
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError(
+                f"Workspace ssh mount returned malformed file payload: {mount.mount_name}"
+            ) from exc
+
+        truncated = (
+            len(content_bytes) > _WORKSPACE_FILE_PREVIEW_MAX_BYTES
+            or size_bytes > _WORKSPACE_FILE_PREVIEW_MAX_BYTES
+        )
+        preview_bytes = self._trim_truncated_utf8_preview(content_bytes)
+        is_binary = self._is_binary_bytes(preview_bytes)
+        if is_binary:
+            return WorkspaceFileContent(
+                workspace_id=record.workspace_id,
+                mount_name=mount.mount_name,
+                path=normalized_path,
+                content="",
+                encoding="binary",
+                is_binary=True,
+                truncated=truncated,
+                size_bytes=size_bytes,
+            )
+        return WorkspaceFileContent(
+            workspace_id=record.workspace_id,
+            mount_name=mount.mount_name,
+            path=normalized_path,
+            content=preview_bytes.decode("utf-8"),
+            encoding="utf-8",
+            is_binary=False,
+            truncated=truncated,
+            size_bytes=size_bytes,
+        )
+
+    def _get_ssh_workspace_diffs(
+        self,
+        *,
+        record: WorkspaceRecord,
+        mount: WorkspaceMountRecord,
+    ) -> WorkspaceDiffListing:
+        try:
+            git_root_path = self._ssh_git_root(mount)
+            has_head = self._ssh_git_head_exists(mount)
+            candidates = self._list_ssh_diff_candidates(
+                mount=mount,
+                has_head=has_head,
+            )
+        except ValueError as exc:
+            diff_message = None if _is_not_git_repository_error(exc) else str(exc)
+            return WorkspaceDiffListing(
+                workspace_id=record.workspace_id,
+                mount_name=mount.mount_name,
+                root_path=mount.root_reference,
+                diff_files=(),
+                is_git_repository=False,
+                git_root_path=None,
+                diff_message=diff_message,
+            )
+
+        return WorkspaceDiffListing(
+            workspace_id=record.workspace_id,
+            mount_name=mount.mount_name,
+            root_path=mount.root_reference,
+            diff_files=tuple(
+                WorkspaceDiffFileSummary(
+                    path=candidate.path,
+                    change_type=candidate.change_type,
+                    previous_path=candidate.previous_path,
+                )
+                for candidate in candidates
+            ),
+            is_git_repository=True,
+            git_root_path=git_root_path,
+            diff_message=None,
+        )
+
+    def _get_ssh_workspace_diff_file(
+        self,
+        *,
+        record: WorkspaceRecord,
+        mount: WorkspaceMountRecord,
+        path: str,
+    ) -> WorkspaceDiffFile:
+        normalized_path = self._normalize_workspace_relative_path(path)
+        _ = record
+        has_head = self._ssh_git_head_exists(mount)
+        candidates = self._list_ssh_diff_candidates(mount=mount, has_head=has_head)
+        for candidate in candidates:
+            if candidate.path != normalized_path:
+                continue
+            if candidate.change_type == WorkspaceDiffChangeType.UNTRACKED:
+                diff_text = self._ssh_untracked_diff_patch(
+                    mount=mount,
+                    path=candidate.path,
+                )
+            else:
+                diff_text = self._ssh_git_diff_file_patch(
+                    mount=mount,
+                    candidate=candidate,
+                    has_head=has_head,
+                )
+            is_binary = self._is_git_binary_patch(diff_text)
+            return WorkspaceDiffFile(
+                mount_name=mount.mount_name,
+                path=candidate.path,
+                previous_path=candidate.previous_path,
+                change_type=candidate.change_type,
+                diff=_BINARY_DIFF_MESSAGE if is_binary else diff_text,
+                is_binary=is_binary,
+            )
+        raise ValueError(f"Workspace diff file not found: {path}")
+
     def get_workspace_diffs(
         self,
         workspace_id: str,
@@ -1056,6 +1251,8 @@ class WorkspaceService:
                 diff_message=f"Workspace mount does not support diff: {mount.mount_name}",
             )
         if mount.provider != WorkspaceMountProvider.LOCAL:
+            if mount.provider == WorkspaceMountProvider.SSH:
+                return self._get_ssh_workspace_diffs(record=record, mount=mount)
             return WorkspaceDiffListing(
                 workspace_id=record.workspace_id,
                 mount_name=mount.mount_name,
@@ -1069,6 +1266,7 @@ class WorkspaceService:
         try:
             git_root_path = self._resolve_git_root(root_path)
         except ValueError as exc:
+            diff_message = None if _is_not_git_repository_error(exc) else str(exc)
             return WorkspaceDiffListing(
                 workspace_id=record.workspace_id,
                 mount_name=mount.mount_name,
@@ -1076,7 +1274,7 @@ class WorkspaceService:
                 diff_files=(),
                 is_git_repository=False,
                 git_root_path=None,
-                diff_message=str(exc),
+                diff_message=diff_message,
             )
 
         has_head = self._git_head_exists(root_path)
@@ -1154,6 +1352,12 @@ class WorkspaceService:
                 f"Workspace mount does not support diff: {mount.mount_name}"
             )
         if mount.provider != WorkspaceMountProvider.LOCAL:
+            if mount.provider == WorkspaceMountProvider.SSH:
+                return self._get_ssh_workspace_diff_file(
+                    record=record,
+                    mount=mount,
+                    path=path,
+                )
             raise ValueError(
                 f"Workspace mount provider is not yet diff-enabled: {mount.mount_name}"
             )
@@ -1249,6 +1453,12 @@ class WorkspaceService:
                 f"Workspace mount does not support file read: {mount.mount_name}"
             )
         if mount.provider != WorkspaceMountProvider.LOCAL:
+            if mount.provider == WorkspaceMountProvider.SSH:
+                return self._get_ssh_workspace_file_content(
+                    record=record,
+                    mount=mount,
+                    path=path,
+                )
             raise ValueError(
                 f"Workspace mount provider is not yet file-enabled: {mount.mount_name}"
             )
@@ -1274,7 +1484,7 @@ class WorkspaceService:
             resolved_path,
         )
         truncated = len(content_bytes) > _WORKSPACE_FILE_PREVIEW_MAX_BYTES
-        preview_bytes = content_bytes[:_WORKSPACE_FILE_PREVIEW_MAX_BYTES]
+        preview_bytes = self._trim_truncated_utf8_preview(content_bytes)
         relative_path = resolved_path.relative_to(root_path).as_posix()
         is_binary = b"\0" in preview_bytes
         content = ""
@@ -1859,6 +2069,247 @@ class WorkspaceService:
             )
         )
 
+    def _resolve_ssh_file_path(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        file_path: str,
+    ) -> tuple[str, str]:
+        normalized_path = self._normalize_workspace_relative_path(file_path)
+        remote_path, normalized_remote_path = self._resolve_ssh_tree_path(
+            mount=mount,
+            directory_path=normalized_path,
+        )
+        return remote_path, normalized_remote_path
+
+    @staticmethod
+    def _build_ssh_file_read_command(remote_root: str, remote_path: str) -> str:
+        preview_limit = str(_WORKSPACE_FILE_PREVIEW_MAX_BYTES + 1)
+        return (
+            f"sh -c {shlex.quote(_SSH_FILE_READ_SCRIPT)} sh "
+            f"{shlex.quote(remote_root)} {shlex.quote(remote_path)} {preview_limit}"
+        )
+
+    def _run_ssh_mount_command(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        command: str,
+        timeout_seconds: float,
+        allowed_exit_codes: tuple[int, ...] = (0,),
+    ) -> SshProfileCommandResult:
+        if self._ssh_profile_service is None:
+            raise ValueError(
+                f"Workspace ssh mount cannot run commands without ssh profiles: {mount.mount_name}"
+            )
+        provider_config = mount.provider_config
+        if not isinstance(provider_config, WorkspaceSshMountConfig):
+            raise ValueError(
+                f"Workspace ssh mount is missing ssh config: {mount.mount_name}"
+            )
+        result = self._ssh_profile_service.run_remote_command(
+            ssh_profile_id=provider_config.ssh_profile_id,
+            command=command,
+            timeout_seconds=timeout_seconds,
+        )
+        if result.exit_code not in allowed_exit_codes:
+            detail = (result.stderr or result.stdout).strip()
+            raise ValueError(
+                "Workspace ssh mount command failed "
+                f"{mount.mount_name}: {detail or f'exit code {result.exit_code}'}"
+            )
+        return result
+
+    @staticmethod
+    def _ssh_mount_remote_root(mount: WorkspaceMountRecord) -> str:
+        provider_config = mount.provider_config
+        if not isinstance(provider_config, WorkspaceSshMountConfig):
+            raise ValueError(
+                f"Workspace ssh mount is missing ssh config: {mount.mount_name}"
+            )
+        remote_root = posixpath.normpath(provider_config.remote_root.strip())
+        if not posixpath.isabs(remote_root):
+            raise ValueError(
+                f"Workspace ssh mount remote root must be absolute: {mount.mount_name}"
+            )
+        return remote_root
+
+    def _build_ssh_git_command(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        args: tuple[str, ...],
+    ) -> str:
+        remote_root = self._ssh_mount_remote_root(mount)
+        return " ".join(shlex.quote(part) for part in ("git", "-C", remote_root, *args))
+
+    def _run_ssh_git_command(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        args: tuple[str, ...],
+        allowed_exit_codes: tuple[int, ...] = (0,),
+    ) -> str:
+        result = self._run_ssh_mount_command(
+            mount=mount,
+            command=self._build_ssh_git_command(mount=mount, args=args),
+            timeout_seconds=_SSH_DIFF_TIMEOUT_SECONDS,
+            allowed_exit_codes=allowed_exit_codes,
+        )
+        return result.stdout
+
+    def _ssh_git_root(self, mount: WorkspaceMountRecord) -> str:
+        output = self._run_ssh_git_command(
+            mount=mount,
+            args=("rev-parse", "--show-toplevel"),
+        )
+        git_root_path = output.strip()
+        if not git_root_path:
+            raise ValueError(
+                f"Workspace ssh mount is not a git repository: {mount.mount_name}"
+            )
+        return git_root_path
+
+    def _ssh_git_head_exists(self, mount: WorkspaceMountRecord) -> bool:
+        try:
+            _ = self._run_ssh_git_command(
+                mount=mount,
+                args=("rev-parse", "--verify", "HEAD"),
+            )
+        except ValueError:
+            return False
+        return True
+
+    def _ssh_tracked_diff_output(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        has_head: bool,
+    ) -> str:
+        if has_head:
+            return self._run_ssh_git_command(
+                mount=mount,
+                args=(
+                    "diff",
+                    "--relative",
+                    "--name-status",
+                    "--find-renames",
+                    "HEAD",
+                    "--",
+                    ".",
+                ),
+            )
+        return self._run_ssh_git_command(
+            mount=mount,
+            args=(
+                "diff",
+                "--relative",
+                "--cached",
+                "--name-status",
+                "--find-renames",
+                "--",
+                ".",
+            ),
+        )
+
+    def _ssh_untracked_paths(self, mount: WorkspaceMountRecord) -> tuple[str, ...]:
+        output = self._run_ssh_git_command(
+            mount=mount,
+            args=("ls-files", "--others", "--exclude-standard", "--", "."),
+        )
+        paths: list[str] = []
+        for raw_line in output.splitlines():
+            rel_path = raw_line.strip()
+            if rel_path.startswith("./"):
+                rel_path = rel_path[2:]
+            if rel_path:
+                paths.append(rel_path)
+        return tuple(paths)
+
+    def _list_ssh_diff_candidates(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        has_head: bool,
+    ) -> tuple[_WorkspaceDiffCandidate, ...]:
+        candidates_by_path: dict[str, _WorkspaceDiffCandidate] = {}
+        tracked_candidates = self._parse_name_status_output(
+            self._ssh_tracked_diff_output(mount=mount, has_head=has_head)
+        )
+        for candidate in tracked_candidates:
+            candidates_by_path[candidate.path] = candidate
+
+        for rel_path in self._ssh_untracked_paths(mount):
+            if rel_path in candidates_by_path:
+                continue
+            candidates_by_path[rel_path] = _WorkspaceDiffCandidate(
+                path=rel_path,
+                change_type=WorkspaceDiffChangeType.UNTRACKED,
+            )
+
+        return tuple(
+            sorted(
+                candidates_by_path.values(),
+                key=lambda diff_candidate: diff_candidate.path,
+            )
+        )
+
+    def _ssh_git_diff_file_patch(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        candidate: _WorkspaceDiffCandidate,
+        has_head: bool,
+    ) -> str:
+        if not has_head:
+            return self._ssh_no_head_worktree_diff_file_patch(
+                mount=mount,
+                path=candidate.path,
+            )
+        path_args = [candidate.path]
+        if candidate.previous_path:
+            path_args.insert(0, candidate.previous_path)
+        literal_path_args = tuple(
+            self._literal_git_pathspec(path_arg) for path_arg in path_args
+        )
+        diff_args = (
+            "diff",
+            "--relative",
+            "--no-ext-diff",
+            "--find-renames",
+            "HEAD",
+            "--",
+            *literal_path_args,
+        )
+        return self._run_ssh_git_command(
+            mount=mount,
+            args=diff_args,
+        )
+
+    def _ssh_no_head_worktree_diff_file_patch(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        path: str,
+    ) -> str:
+        return self._run_ssh_git_command(
+            mount=mount,
+            args=("diff", "--no-ext-diff", "--no-index", "--", "/dev/null", path),
+            allowed_exit_codes=(0, 1),
+        )
+
+    def _ssh_untracked_diff_patch(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        path: str,
+    ) -> str:
+        return self._run_ssh_git_command(
+            mount=mount,
+            args=("diff", "--no-ext-diff", "--no-index", "--", "/dev/null", path),
+            allowed_exit_codes=(0, 1),
+        )
+
     def _resolve_tree_path(self, *, root_path: Path, directory_path: str) -> Path:
         normalized_path = directory_path.strip() or "."
         candidate = Path(normalized_path)
@@ -1959,7 +2410,14 @@ class WorkspaceService:
     def _tracked_diff_output(self, *, workspace_root: Path, has_head: bool) -> str:
         if has_head:
             completed = self._run_git(
-                ("diff", "--name-status", "--find-renames", "HEAD", "--"),
+                (
+                    "diff",
+                    "--relative",
+                    "--name-status",
+                    "--find-renames",
+                    "HEAD",
+                    "--",
+                ),
                 cwd=workspace_root,
             )
             stdout = completed.stdout
@@ -1967,7 +2425,14 @@ class WorkspaceService:
                 raise ValueError("Git returned non-text diff status output")
             return stdout
         completed = self._run_git(
-            ("diff", "--cached", "--name-status", "--find-renames", "--"),
+            (
+                "diff",
+                "--relative",
+                "--cached",
+                "--name-status",
+                "--find-renames",
+                "--",
+            ),
             cwd=workspace_root,
         )
         stdout = completed.stdout
@@ -2067,16 +2532,19 @@ class WorkspaceService:
         is_binary = self._is_binary_bytes(base_bytes) or self._is_binary_bytes(
             current_bytes
         )
-        diff_text = (
-            _BINARY_DIFF_MESSAGE
-            if is_binary
-            else self._build_unified_diff(
-                before_path=base_path,
-                after_path=candidate.path,
-                before_text=self._decode_bytes(base_bytes),
-                after_text=self._decode_bytes(current_bytes),
+        if is_binary:
+            diff_text = _BINARY_DIFF_MESSAGE
+        elif candidate.change_type == WorkspaceDiffChangeType.UNTRACKED:
+            diff_text = self._build_untracked_diff(
+                path=candidate.path,
+                current_bytes=current_bytes,
             )
-        )
+        else:
+            diff_text = self._git_diff_file_patch(
+                workspace_root=workspace_root,
+                candidate=candidate,
+                has_head=has_head,
+            )
         return WorkspaceDiffFile(
             mount_name=mount_name,
             path=candidate.path,
@@ -2108,15 +2576,32 @@ class WorkspaceService:
         workspace_root: Path,
         relative_path: str,
     ) -> bytes | None:
+        blob_path = self._git_blob_relative_path(
+            workspace_root=workspace_root,
+            relative_path=relative_path,
+        )
         try:
             completed = self._run_git(
-                ("show", f"HEAD:{relative_path.replace(chr(92), '/')}"),
+                ("show", f"HEAD:{blob_path}"),
                 cwd=workspace_root,
                 text=False,
             )
         except ValueError:
             return None
         return completed.stdout if isinstance(completed.stdout, bytes) else None
+
+    def _git_blob_relative_path(
+        self, *, workspace_root: Path, relative_path: str
+    ) -> str:
+        normalized_path = relative_path.replace(chr(92), "/")
+        try:
+            git_root = self._resolve_git_root(workspace_root)
+            mount_prefix = workspace_root.resolve().relative_to(git_root).as_posix()
+        except ValueError:
+            return normalized_path
+        if not mount_prefix or mount_prefix == ".":
+            return normalized_path
+        return posixpath.join(mount_prefix, normalized_path)
 
     def _read_workspace_bytes(self, path: Path) -> bytes | None:
         if not path_exists(path) or not path_is_file(path):
@@ -2147,10 +2632,96 @@ class WorkspaceService:
             return True
         return False
 
+    @staticmethod
+    def _is_git_binary_patch(diff_text: str) -> bool:
+        return "Binary files " in diff_text or "\nGIT binary patch\n" in diff_text
+
+    @staticmethod
+    def _trim_truncated_utf8_preview(content: bytes) -> bytes:
+        preview_bytes = content[:_WORKSPACE_FILE_PREVIEW_MAX_BYTES]
+        if len(content) <= _WORKSPACE_FILE_PREVIEW_MAX_BYTES:
+            return preview_bytes
+        while preview_bytes:
+            try:
+                _ = preview_bytes.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                if exc.end >= len(preview_bytes):
+                    preview_bytes = preview_bytes[: exc.start]
+                    continue
+                return preview_bytes
+            return preview_bytes
+        return preview_bytes
+
+    @staticmethod
+    def _literal_git_pathspec(path: str) -> str:
+        return f":(literal){path}"
+
     def _decode_bytes(self, content: bytes | None) -> str:
         if content is None:
             return ""
         return content.decode("utf-8")
+
+    def _git_diff_file_patch(
+        self,
+        *,
+        workspace_root: Path,
+        candidate: _WorkspaceDiffCandidate,
+        has_head: bool,
+    ) -> str:
+        if not has_head:
+            return self._git_no_head_worktree_diff_file_patch(
+                workspace_root=workspace_root,
+                path=candidate.path,
+            )
+        path_args = [candidate.path]
+        if candidate.previous_path:
+            path_args.insert(0, candidate.previous_path)
+        literal_path_args = tuple(
+            self._literal_git_pathspec(path_arg) for path_arg in path_args
+        )
+        diff_args = [
+            "diff",
+            "--relative",
+            "--no-ext-diff",
+            "--find-renames",
+            "HEAD",
+            "--",
+            *literal_path_args,
+        ]
+        completed = self._run_git(tuple(diff_args), cwd=workspace_root)
+        stdout = completed.stdout
+        if not isinstance(stdout, str):
+            raise ValueError("Git returned non-text diff output")
+        return stdout
+
+    def _git_no_head_worktree_diff_file_patch(
+        self,
+        *,
+        workspace_root: Path,
+        path: str,
+    ) -> str:
+        completed = self._run_git(
+            ("diff", "--no-ext-diff", "--no-index", "--", "/dev/null", path),
+            cwd=workspace_root,
+            allowed_exit_codes=(0, 1),
+        )
+        stdout = completed.stdout
+        if not isinstance(stdout, str):
+            raise ValueError("Git returned non-text diff output")
+        return stdout
+
+    def _build_untracked_diff(
+        self,
+        *,
+        path: str,
+        current_bytes: bytes | None,
+    ) -> str:
+        return self._build_unified_diff(
+            before_path=path,
+            after_path=path,
+            before_text="",
+            after_text=self._decode_bytes(current_bytes),
+        )
 
     def _build_unified_diff(
         self,
@@ -2179,6 +2750,7 @@ class WorkspaceService:
         *,
         cwd: Path,
         text: bool = True,
+        allowed_exit_codes: tuple[int, ...] = (0,),
     ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
         git_binary = shutil.which("git")
         if git_binary is None:
@@ -2199,7 +2771,7 @@ class WorkspaceService:
         except subprocess.TimeoutExpired as exc:
             raise ValueError("Git command timed out") from exc
 
-        if completed.returncode != 0:
+        if completed.returncode not in allowed_exit_codes:
             stderr = (
                 completed.stderr.strip()
                 if isinstance(completed.stderr, str)

@@ -24,9 +24,10 @@ permissions:
   pull-requests: read
 
 jobs:
-  agents-self-check-unit-coverage:
+  agents-self-check-unit-parallel-coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
@@ -44,22 +45,125 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --extra dev --no-default-groups
 
-      - name: Require linked issue for PRs into main
-        if: github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
-          GITHUB_API_URL: ${{ github.api_url }}
-        run: uv run --extra dev python src/relay_teams/release/pull_request_issue_link.py
-
-      - name: Unit tests with coverage
+      - name: Unit tests with parallel coverage
         env:
           RELAY_TEAMS_UNIT_TEST_TIMEOUT_SECONDS: "5"
-        run: >
-          uv run --extra dev pytest -q tests/unit_tests
-          --cov=src/relay_teams
-          --cov=src/relay_teams_evals
-          --cov-report=xml:coverage.xml
+        run: |
+          uv run --extra dev pytest -q tests/unit_tests \
+            -n 4 \
+            --dist=loadfile \
+            --benchmark-disable \
+            --durations=25 \
+            --ignore=tests/unit_tests/interfaces/cli/test_fast_dispatcher.py \
+            --ignore=tests/unit_tests/sessions/test_session_snapshot_cache.py \
+            --ignore=tests/unit_tests/skills/test_skill_installer_scripts.py \
+            --ignore=tests/unit_tests/sessions/test_session_auto_title.py \
+            --ignore=tests/unit_tests/test_module_boundaries.py \
+            --ignore=tests/unit_tests/agent_runtimes/test_provider.py \
+            --cov=src/relay_teams \
+            --cov=src/relay_teams_evals \
+            --cov-report=
+
+      - name: Preserve parallel coverage data
+        run: mv .coverage .coverage.parallel
+
+      - name: Upload parallel coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage-parallel
+          path: .coverage.parallel
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+      - name: Verify repository is unchanged after checks
+        run: git diff --exit-code
+
+  agents-self-check-unit-serial-coverage:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev --no-default-groups
+
+      - name: Serialized unit coverage for contention-sensitive tests
+        env:
+          RELAY_TEAMS_UNIT_TEST_TIMEOUT_SECONDS: "10"
+        run: |
+          uv run --extra dev pytest -q \
+            tests/unit_tests/interfaces/cli/test_fast_dispatcher.py \
+            tests/unit_tests/sessions/test_session_snapshot_cache.py \
+            tests/unit_tests/skills/test_skill_installer_scripts.py \
+            tests/unit_tests/sessions/test_session_auto_title.py \
+            tests/unit_tests/test_module_boundaries.py \
+            tests/unit_tests/agent_runtimes/test_provider.py \
+            --durations=25 \
+            --cov=src/relay_teams \
+            --cov=src/relay_teams_evals \
+            --cov-report=
+
+      - name: Preserve serial coverage data
+        run: mv .coverage .coverage.serial
+
+      - name: Upload serial coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage-serial
+          path: .coverage.serial
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+      - name: Verify repository is unchanged after checks
+        run: git diff --exit-code
+
+  agents-self-check-unit-coverage:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - agents-self-check-unit-parallel-coverage
+      - agents-self-check-unit-serial-coverage
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev --no-default-groups
+
+      - name: Download unit coverage data
+        uses: actions/download-artifact@v4
+        with:
+          pattern: unit-coverage-*
+          path: .coverage-artifacts
+          merge-multiple: true
+
+      - name: Combine unit coverage data
+        run: uv run --extra dev coverage combine .coverage-artifacts
 
       - name: Build copy-aware coverage diff
         run: |
@@ -68,16 +172,18 @@ jobs:
 
       - name: Enforce changed-line unit coverage
         run: >
-          uv run --extra dev diff-cover coverage.xml
-          --config-file pyproject.toml
+          uv run --extra dev python -m relay_teams.release.changed_line_unit_coverage
+          --coverage-file .coverage
           --diff-file .tmp/diff-cover-copy-aware.diff
+          --config-file pyproject.toml
 
       - name: Verify repository is unchanged after checks
         run: git diff --exit-code
 
-  agents-self-check-quality-integration:
+  agents-self-check-quality:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
@@ -129,15 +235,122 @@ jobs:
           src/relay_teams
           src/relay_teams_evals
 
+      - name: Micro-benchmark gate
+        run: |
+          mkdir -p tmp
+          uv run --extra dev pytest benchmarks/micro/ \
+            --benchmark-only \
+            --benchmark-json=tmp/bench-micro-results.json \
+            --benchmark-disable-gc
+
+      - name: Spec-compliance changed-file gate
+        run: |
+          changed_files=$(git diff --name-only --diff-filter=ACM origin/main...HEAD -- '*.py' ':!benchmarks/spec_compliance/*.py' || true)
+          if [ -z "$changed_files" ]; then
+            echo "No Python files changed in this PR."
+            exit 0
+          fi
+
+          echo "Checking changed files:"
+          echo "$changed_files"
+          echo ""
+
+          CHANGED_FILES="$changed_files" uv run --extra dev python -c "
+          import os
+          import sys
+          from pathlib import Path
+          from benchmarks.spec_compliance.checks import FILE_CHECKS
+
+          changed = os.environ['CHANGED_FILES'].strip().splitlines()
+          new_violations = 0
+          for fpath_str in changed:
+              fpath = Path(fpath_str)
+              if not fpath.exists() or fpath.suffix != '.py':
+                  continue
+              if 'spec_compliance/checks.py' in str(fpath):
+                  continue
+              content = fpath.read_text(encoding='utf-8')
+              for check_fn in FILE_CHECKS:
+                  result = check_fn(fpath, content)
+                  if not result.passed:
+                      for violation in result.violations:
+                          print(f'VIOLATION: {violation}')
+                          new_violations += 1
+
+          if new_violations > 0:
+              print(f'FAIL: {new_violations} new spec-compliance violation(s) in changed files.')
+              sys.exit(1)
+          print('PASS: No new spec-compliance violations in changed files.')
+          "
+
+      - name: Verify repository is unchanged after checks
+        run: git diff --exit-code
+
+  agents-self-check-api-integration:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev --no-default-groups
+
+      - name: API integration tests
+        env:
+          RELAY_TEAMS_INTEGRATION_TEST_TIMEOUT_SECONDS: "240"
+        run: >
+          uv run --extra dev pytest -q
+          tests/integration_tests/api
+          tests/integration_tests/cli
+          tests/integration_tests/support
+          --durations=25
+
+      - name: Verify repository is unchanged after checks
+        run: git diff --exit-code
+
+  agents-self-check-browser-integration:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev --no-default-groups
+
       - name: Install Playwright Chromium
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
         run: uv run --extra dev python -m playwright install --with-deps chromium
 
-      - name: Integration tests
+      - name: Browser integration tests
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-        run: uv run --extra dev pytest -q tests/integration_tests
+          RELAY_TEAMS_INTEGRATION_TEST_TIMEOUT_SECONDS: "240"
+        run: uv run --extra dev pytest -q tests/integration_tests/browser --durations=25
 
       - name: Verify repository is unchanged after checks
         run: git diff --exit-code

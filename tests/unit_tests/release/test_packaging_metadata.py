@@ -1,13 +1,37 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
+from typing import cast
 import tomllib
 from pathlib import Path
+
+import yaml
 
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def _load_yaml_mapping(path: Path) -> Mapping[object, object]:
+    loaded = cast(object, yaml.safe_load(path.read_text(encoding="utf-8")))
+    if not isinstance(loaded, Mapping):
+        raise AssertionError(f"Expected {path} to contain a YAML mapping")
+
+    result: dict[object, object] = {}
+    for key, value in loaded.items():
+        result[key] = value
+    return result
+
+
+def _workflow_job_names(path: Path) -> set[str]:
+    workflow = _load_yaml_mapping(path)
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, Mapping):
+        raise AssertionError(f"Expected {path} to define jobs")
+
+    return {job_name for job_name in jobs if isinstance(job_name, str)}
 
 
 def test_pyproject_uses_relay_teams_distribution_name_and_scripts() -> None:
@@ -49,9 +73,8 @@ def test_release_workflow_and_runtime_wrapper_reference_relay_teams() -> None:
 
 def test_pr_checks_gate_changed_line_unit_coverage() -> None:
     project_root = _project_root()
-    pr_workflow = (project_root / ".github" / "workflows" / "pr-checks.yml").read_text(
-        encoding="utf-8"
-    )
+    pr_workflow_path = project_root / ".github" / "workflows" / "pr-checks.yml"
+    pr_workflow = pr_workflow_path.read_text(encoding="utf-8")
     pyproject_path = project_root / "pyproject.toml"
     with pyproject_path.open("rb") as handle:
         pyproject = tomllib.load(handle)
@@ -60,7 +83,6 @@ def test_pr_checks_gate_changed_line_unit_coverage() -> None:
     coverage_run = pyproject["tool"]["coverage"]["run"]
     diff_cover = pyproject["tool"]["diff_cover"]
 
-    assert "diff-cover>=9.0.0" in dev_dependencies
     assert "bandit>=1.8.0" in dev_dependencies
     assert "xenon>=0.9.3" in dev_dependencies
     assert coverage_run["source"] == ["src/relay_teams", "src/relay_teams_evals"]
@@ -70,6 +92,14 @@ def test_pr_checks_gate_changed_line_unit_coverage() -> None:
         "src/relay_teams/**/*.py",
         "src/relay_teams_evals/**/*.py",
     ]
+    assert _workflow_job_names(pr_workflow_path) == {
+        "agents-self-check-api-integration",
+        "agents-self-check-browser-integration",
+        "agents-self-check-quality",
+        "agents-self-check-unit-coverage",
+        "agents-self-check-unit-parallel-coverage",
+        "agents-self-check-unit-serial-coverage",
+    }
     assert "fetch-depth: 0" in pr_workflow
     assert "ruff check --no-cache --force-exclude ." in pr_workflow
     assert "ruff format --check --no-cache --force-exclude ." in pr_workflow
@@ -79,11 +109,49 @@ def test_pr_checks_gate_changed_line_unit_coverage() -> None:
     assert "--max-modules C" in pr_workflow
     assert "--cov=src/relay_teams" in pr_workflow
     assert "--cov=src/relay_teams_evals" in pr_workflow
-    assert "--cov-report=xml:coverage.xml" in pr_workflow
+    assert "--cov-report=" in pr_workflow
+    assert "--ignore=tests/unit_tests/skills/test_skill_installer_scripts.py" in (
+        pr_workflow
+    )
+    assert "--ignore=tests/unit_tests/sessions/test_session_auto_title.py" in (
+        pr_workflow
+    )
+    assert "--ignore=tests/unit_tests/test_module_boundaries.py" in pr_workflow
+    assert "--ignore=tests/unit_tests/agent_runtimes/test_provider.py" in pr_workflow
+    assert 'RELAY_TEAMS_UNIT_TEST_TIMEOUT_SECONDS: "10"' in pr_workflow
+    assert "agents-self-check-unit-parallel-coverage:" in pr_workflow
+    assert "agents-self-check-unit-serial-coverage:" in pr_workflow
+    assert "actions/upload-artifact@v4" in pr_workflow
+    assert "actions/download-artifact@v4" in pr_workflow
+    assert "unit-coverage-parallel" in pr_workflow
+    assert "unit-coverage-serial" in pr_workflow
+    assert "include-hidden-files: true" in pr_workflow
+    assert "coverage combine .coverage-artifacts" in pr_workflow
+    assert "Micro-benchmark gate" in pr_workflow
+    assert "Spec-compliance changed-file gate" in pr_workflow
+    assert "benchmarks/micro/" in pr_workflow
+    assert "benchmarks.spec_compliance.checks" in pr_workflow
     assert "git diff -C1% origin/main...HEAD" in pr_workflow
-    assert "diff-cover coverage.xml" in pr_workflow
+    assert "python -m relay_teams.release.changed_line_unit_coverage" in pr_workflow
+    assert "--coverage-file .coverage" in pr_workflow
     assert "--config-file pyproject.toml" in pr_workflow
     assert "--diff-file .tmp/diff-cover-copy-aware.diff" in pr_workflow
+
+
+def test_pr_quality_gates_do_not_spawn_extra_pr_workflows() -> None:
+    project_root = _project_root()
+    micro_workflow = (
+        project_root / ".github" / "workflows" / "benchmarks-micro.yml"
+    ).read_text(encoding="utf-8")
+    spec_workflow = (
+        project_root / ".github" / "workflows" / "benchmarks-spec-compliance.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "pull_request:" not in micro_workflow
+    assert "pull_request:" not in spec_workflow
+    assert "workflow_dispatch:" in micro_workflow
+    assert "workflow_dispatch:" in spec_workflow
+    assert "push:" in micro_workflow
 
 
 def test_qodana_code_quality_workflow_uses_cloud_scan() -> None:

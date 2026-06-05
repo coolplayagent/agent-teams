@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import Enum
-from typing import Literal, TypeAlias
+from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -22,6 +21,7 @@ from relay_teams.sessions.runs.enums import (
     InjectionSource,
     RunEventType,
 )
+from relay_teams.sessions.runs import run_config_models
 from relay_teams.sessions.session_models import SessionMode
 from relay_teams.validation import (
     OptionalIdentifierStr,
@@ -29,19 +29,12 @@ from relay_teams.validation import (
     normalize_identifier_tuple,
 )
 
-
-class RunKind(str, Enum):
-    CONVERSATION = "conversation"
-    GENERATE_IMAGE = "generate_image"
-    GENERATE_AUDIO = "generate_audio"
-    GENERATE_VIDEO = "generate_video"
-
-
-class RunThinkingConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    enabled: bool = False
-    effort: Literal["minimal", "low", "medium", "high"] | None = None
+AudioGenerationConfig = run_config_models.AudioGenerationConfig
+ImageGenerationConfig = run_config_models.ImageGenerationConfig
+MediaGenerationConfig = run_config_models.MediaGenerationConfig
+RunKind = run_config_models.RunKind
+RunThinkingConfig = run_config_models.RunThinkingConfig
+VideoGenerationConfig = run_config_models.VideoGenerationConfig
 
 
 class RunTopologySnapshot(BaseModel):
@@ -68,41 +61,6 @@ class RuntimePromptConversationContext(BaseModel):
     feishu_chat_type: str | None = None
     im_force_direct_send: bool = False
     im_reply_to_message_id: str | None = None
-
-
-class ImageGenerationConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal["image"] = "image"
-    count: int = Field(default=1, ge=1, le=8)
-    size: str | None = None
-    seed: int | None = None
-
-
-class AudioGenerationConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal["audio"] = "audio"
-    count: int = Field(default=1, ge=1, le=8)
-    voice: str | None = None
-    format: str | None = None
-    duration_ms: int | None = Field(default=None, ge=0)
-    seed: int | None = None
-
-
-class VideoGenerationConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal["video"] = "video"
-    count: int = Field(default=1, ge=1, le=4)
-    resolution: str | None = None
-    duration_ms: int | None = Field(default=None, ge=0)
-    seed: int | None = None
-
-
-MediaGenerationConfig: TypeAlias = (
-    ImageGenerationConfig | AudioGenerationConfig | VideoGenerationConfig
-)
 
 
 class IntentInput(BaseModel):

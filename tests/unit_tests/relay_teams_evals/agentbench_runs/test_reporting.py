@@ -43,6 +43,7 @@ from benchmarks.agentbench.run_agentbench import (
 )
 from relay_teams_evals.agentbench_runs.reporting import (
     ReportFormat,
+    _artifact_dir_name,
     build_agentbench_report as build_report,
     eval_result_from_agentbench_task,
     write_agentbench_report as write_report,
@@ -150,7 +151,9 @@ def test_write_agentbench_outputs_creates_eval_report_checkpoint_and_artifacts(
     assert (tmp_path / "report.json").exists()
     assert (tmp_path / "checkpoint.meta.json").exists()
     assert (tmp_path / "checkpoint.results.jsonl").exists()
-    assert (tmp_path / "artifacts/db:std-0/metadata.json").exists()
+    assert (
+        tmp_path / "artifacts" / _artifact_dir_name("db:std-0") / "metadata.json"
+    ).exists()
 
 
 def test_agentbench_std_os_loader_uses_official_specs(tmp_path: Path) -> None:

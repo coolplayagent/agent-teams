@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
 import logging
 from pathlib import Path
@@ -15,7 +15,10 @@ import httpx
 
 import pytest
 
-from relay_teams.interfaces.server.deps import get_session_service
+from relay_teams.interfaces.server.deps import (
+    get_model_config_service,
+    get_session_service,
+)
 from relay_teams.interfaces.server.routers import sessions, system
 from relay_teams.providers import AgentTokenSummary, RunTokenUsage, SessionTokenUsage
 from relay_teams.roles import SystemRolesUnavailableError
@@ -36,12 +39,15 @@ from relay_teams.sessions.session_read_models import (
 
 class _FakeSessionService:
     def __init__(self) -> None:
-        self.created_calls: list[tuple[str | None, str, dict[str, str] | None]] = []
+        self.created_calls: list[
+            tuple[str | None, str, str | None, dict[str, str] | None]
+        ] = []
         self.list_calls = 0
         self.get_calls: list[str] = []
         self.updated_calls: list[tuple[str, SessionMetadataPatch]] = []
         self.terminal_view_calls: list[str] = []
         self.topology_update_calls: list[tuple[str, str, str | None, str | None]] = []
+        self.normal_model_profile_update_calls: list[tuple[str, str | None]] = []
         self.delete_subagent_calls: list[tuple[str, str]] = []
         self.create_session_error: Exception | None = None
         self.raise_missing = False
@@ -66,14 +72,18 @@ class _FakeSessionService:
         *,
         session_id: str | None = None,
         workspace_id: str,
+        normal_model_profile: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> SessionRecord:
         if self.create_session_error is not None:
             raise self.create_session_error
-        self.created_calls.append((session_id, workspace_id, metadata))
+        self.created_calls.append(
+            (session_id, workspace_id, normal_model_profile, metadata)
+        )
         return SessionRecord(
             session_id=session_id or "session-created",
             workspace_id=workspace_id,
+            normal_model_profile=normal_model_profile,
             metadata={} if metadata is None else dict(metadata),
         )
 
@@ -82,11 +92,13 @@ class _FakeSessionService:
         *,
         session_id: str | None = None,
         workspace_id: str,
+        normal_model_profile: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> SessionRecord:
         return self.create_session(
             session_id=session_id,
             workspace_id=workspace_id,
+            normal_model_profile=normal_model_profile,
             metadata=metadata,
         )
 
@@ -299,6 +311,21 @@ class _FakeSessionService:
             session_mode=session_mode,
             normal_root_role_id=normal_root_role_id,
             orchestration_preset_id=orchestration_preset_id,
+        )
+
+    async def update_session_normal_model_profile_async(
+        self,
+        session_id: str,
+        *,
+        normal_model_profile: str | None,
+    ) -> SessionRecord:
+        self.normal_model_profile_update_calls.append(
+            (session_id, normal_model_profile)
+        )
+        return SessionRecord(
+            session_id=session_id,
+            workspace_id="workspace-1",
+            normal_model_profile=normal_model_profile,
         )
 
     def get_token_usage_by_session(self, session_id: str) -> SessionTokenUsage:
@@ -526,11 +553,35 @@ class _FailingTerminalViewService(_BlockingTerminalViewService):
         raise RuntimeError("terminal marker failed")
 
 
-def _create_client(fake_service: _FakeSessionService) -> TestClient:
+def _create_client(
+    fake_service: _FakeSessionService,
+    model_config_service_factory: Callable[[], SimpleNamespace] | None = None,
+) -> TestClient:
     app = FastAPI()
     app.include_router(sessions.router, prefix="/api")
     app.dependency_overrides[get_session_service] = lambda: fake_service
+    app.dependency_overrides[get_model_config_service] = (
+        model_config_service_factory or _fake_model_config_service
+    )
     return TestClient(app)
+
+
+def _fake_model_config_service() -> SimpleNamespace:
+    return SimpleNamespace(
+        runtime=SimpleNamespace(
+            default_model_profile="fast",
+            llm_profiles={"fast": object(), "precise": object()},
+        )
+    )
+
+
+def _fake_model_config_service_with_literal_default() -> SimpleNamespace:
+    return SimpleNamespace(
+        runtime=SimpleNamespace(
+            default_model_profile="fast",
+            llm_profiles={"default": object(), "fast": object()},
+        )
+    )
 
 
 def _create_sessions_and_system_app(fake_service: _FakeSessionService) -> FastAPI:
@@ -732,7 +783,7 @@ def test_create_session_route_returns_created_session() -> None:
 
     assert response.status_code == 200
     assert response.json()["session_id"] == "session-1"
-    assert fake_service.created_calls == [("session-1", "default", None)]
+    assert fake_service.created_calls == [("session-1", "default", None, None)]
 
 
 def test_create_session_route_calls_service() -> None:
@@ -745,7 +796,80 @@ def test_create_session_route_calls_service() -> None:
     )
 
     assert response.status_code == 200
-    assert fake_service.created_calls == [("session-1", "default", None)]
+    assert fake_service.created_calls == [("session-1", "default", None, None)]
+
+
+def test_create_session_route_accepts_normal_model_profile() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.post(
+        "/api/sessions",
+        json={
+            "session_id": "session-1",
+            "workspace_id": "default",
+            "normal_model_profile": "precise",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["normal_model_profile"] == "precise"
+    assert fake_service.created_calls == [("session-1", "default", "precise", None)]
+
+
+def test_create_session_route_accepts_literal_default_normal_model_profile() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(
+        fake_service,
+        model_config_service_factory=_fake_model_config_service_with_literal_default,
+    )
+
+    response = client.post(
+        "/api/sessions",
+        json={
+            "session_id": "session-1",
+            "workspace_id": "default",
+            "normal_model_profile": "default",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["normal_model_profile"] == "default"
+    assert fake_service.created_calls == [("session-1", "default", "default", None)]
+
+
+def test_create_session_route_rejects_default_alias_normal_model_profile() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.post(
+        "/api/sessions",
+        json={
+            "session_id": "session-1",
+            "workspace_id": "default",
+            "normal_model_profile": "default",
+        },
+    )
+
+    assert response.status_code == 422
+    assert fake_service.created_calls == []
+
+
+def test_create_session_route_rejects_unknown_normal_model_profile() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.post(
+        "/api/sessions",
+        json={
+            "session_id": "session-1",
+            "workspace_id": "default",
+            "normal_model_profile": "missing-profile",
+        },
+    )
+
+    assert response.status_code == 422
+    assert fake_service.created_calls == []
 
 
 def test_list_sessions_route_calls_service() -> None:
@@ -770,6 +894,10 @@ def test_session_routes_call_service() -> None:
         client.patch(
             "/api/sessions/session-1/topology",
             json={"session_mode": "orchestration"},
+        ),
+        client.patch(
+            "/api/sessions/session-1/normal-model-profile",
+            json={"normal_model_profile": "precise"},
         ),
         client.request("DELETE", "/api/sessions/session-1"),
         client.get("/api/sessions/session-1/rounds"),
@@ -901,6 +1029,7 @@ def test_create_session_route_accepts_explicit_metadata_payload() -> None:
         (
             "session-1",
             "default",
+            None,
             SessionCreateMetadata(
                 title="Customer Support",
                 source_label="Group Chat",
@@ -932,6 +1061,7 @@ def test_create_session_route_accepts_legacy_flat_metadata_payload() -> None:
         (
             "session-1",
             "default",
+            None,
             {
                 "title": "Customer Support",
                 "title_source": "manual",
@@ -967,6 +1097,7 @@ def test_create_session_route_ignores_reserved_keys_in_legacy_flat_metadata_payl
         (
             "session-1",
             "default",
+            None,
             {
                 "title": "Customer Support",
                 "title_source": "manual",
@@ -1398,6 +1529,80 @@ def test_update_session_topology_route_accepts_normal_root_role() -> None:
     assert fake_service.topology_update_calls == [
         ("session-1", "normal", "Crafter", None)
     ]
+
+
+def test_update_session_normal_model_profile_route_returns_updated_session() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.patch(
+        "/api/sessions/session-1/normal-model-profile",
+        json={"normal_model_profile": "precise"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["normal_model_profile"] == "precise"
+    assert fake_service.normal_model_profile_update_calls == [("session-1", "precise")]
+
+
+def test_update_session_normal_model_profile_route_accepts_literal_default() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(
+        fake_service,
+        model_config_service_factory=_fake_model_config_service_with_literal_default,
+    )
+
+    response = client.patch(
+        "/api/sessions/session-1/normal-model-profile",
+        json={"normal_model_profile": "default"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["normal_model_profile"] == "default"
+    assert fake_service.normal_model_profile_update_calls == [("session-1", "default")]
+
+
+def test_update_session_normal_model_profile_route_clears_profile() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.patch(
+        "/api/sessions/session-1/normal-model-profile",
+        json={"normal_model_profile": None},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["normal_model_profile"] is None
+    assert fake_service.normal_model_profile_update_calls == [("session-1", None)]
+
+
+def test_update_session_normal_model_profile_route_rejects_unknown_profile() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.patch(
+        "/api/sessions/session-1/normal-model-profile",
+        json={"normal_model_profile": "missing-profile"},
+    )
+
+    assert response.status_code == 422
+    assert fake_service.normal_model_profile_update_calls == []
+
+
+def test_update_session_normal_model_profile_route_rejects_default_alias() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.patch(
+        "/api/sessions/session-1/normal-model-profile",
+        json={"normal_model_profile": "default"},
+    )
+
+    assert response.status_code == 422
+    assert fake_service.normal_model_profile_update_calls == []
 
 
 def test_get_session_token_usage_route_returns_extended_totals() -> None:

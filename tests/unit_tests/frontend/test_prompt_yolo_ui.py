@@ -32,6 +32,10 @@ def test_chat_input_renders_yolo_and_thinking_controls() -> None:
     assert re.search(r'id="thinking-effort-field"[\s\S]*?\bhidden\b', html)
     assert 'id="thinking-effort-select"' in html
     assert 'id="prompt-mention-menu"' in html
+    assert 'id="normal-route-controls"' in html
+    assert 'id="normal-role-menu-button"' in html
+    assert 'id="normal-model-menu-button"' in html
+    assert 'data-i18n-title="composer.session_mode_title"' not in html
     assert ".composer-preset-field[hidden]," in orchestration_css
     assert ".composer-mode-inline[hidden]" in orchestration_css
     assert (
@@ -50,6 +54,47 @@ def test_bootstrap_does_not_initialize_shell_safety_policy_toggle() -> None:
 
     assert "initializeShellSafetyPolicyToggle," not in bootstrap
     assert "initializeShellSafetyPolicyToggle();" not in bootstrap
+
+
+def test_new_session_workspace_selector_uses_composer_menu_style() -> None:
+    source = Path("frontend/dist/js/components/newSessionDraft.js").read_text(
+        encoding="utf-8"
+    )
+    css = Path(
+        "frontend/dist/css/components/new-session-draft-workspace.css"
+    ).read_text(encoding="utf-8")
+
+    assert "new-session-workspace-option-check" in source
+    assert "scrollbar-width: thin;" in css
+    assert ".new-session-workspace-options::-webkit-scrollbar-thumb" in css
+    assert "box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);" in css
+
+
+def test_composer_disabled_tooltips_use_custom_reason_attribute() -> None:
+    source = Path("frontend/dist/js/app/prompt.js").read_text(encoding="utf-8")
+    css = Path("frontend/dist/css/components/interface.css").read_text(encoding="utf-8")
+
+    assert "bindComposerDisabledReasonTooltip();" in source
+    assert "elementFromPoint(event.clientX, event.clientY)" in source
+    assert "data-disabled-reason" in source
+    assert "composer-disabled-tooltip" in css
+    assert "#input-container .composer-segmented" in css
+    assert "overflow: visible;" in css
+
+
+def test_new_session_workspace_selector_closes_on_outside_click() -> None:
+    source = Path("frontend/dist/js/components/newSessionDraft.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "bindWorkspaceOutsideClick();" in source
+    assert "document.addEventListener('click', event => {" in source
+    assert "if (!draftWorkspaceMenuOpen || !isNewSessionDraftActive())" in source
+    assert "isDraftWorkspaceActionTarget(event.target)" in source
+    assert "event.stopPropagation();" in source
+    assert (
+        "draftWorkspaceMenuOpen = false;\n        renderWorkspaceSelector();" in source
+    )
 
 
 def test_send_user_prompt_includes_yolo_and_thinking(tmp_path: Path) -> None:
@@ -233,6 +278,13 @@ export async function fetchRoleConfigOptions() {
     };
 }
 
+export async function fetchModelProfiles() {
+    return {
+        fast: { model: "gpt-4.1-mini" },
+        precise: { model: "gpt-4.1" },
+    };
+}
+
 export async function fetchOrchestrationConfig() {
     return {
         default_orchestration_preset_id: "preset-1",
@@ -248,10 +300,28 @@ export async function fetchOrchestrationConfig() {
     };
 }
 
-export async function updateSessionTopology() {
+export async function updateSessionTopology(sessionId, payload) {
+    globalThis.__topologyUpdates = [
+        ...(globalThis.__topologyUpdates || []),
+        { sessionId, payload },
+    ];
+    return {
+        session_mode: payload?.session_mode || "normal",
+        normal_root_role_id: payload?.normal_root_role_id || "MainAgent",
+        orchestration_preset_id: null,
+        can_switch_mode: true,
+    };
+}
+
+export async function updateSessionNormalModelProfile(sessionId, normalModelProfile) {
+    globalThis.__normalModelProfileUpdates = [
+        ...(globalThis.__normalModelProfileUpdates || []),
+        { sessionId, normalModelProfile },
+    ];
     return {
         session_mode: "normal",
         normal_root_role_id: "MainAgent",
+        normal_model_profile: normalModelProfile,
         orchestration_preset_id: null,
         can_switch_mode: true,
     };
@@ -350,6 +420,7 @@ export const state = {
     currentSessionMode: "normal",
     currentSessionCanSwitchMode: true,
     currentNormalRootRoleId: "MainAgent",
+    currentNormalModelProfile: null,
     currentOrchestrationPresetId: "preset-1",
     mainAgentRoleId: "MainAgent",
     isGenerating: false,
@@ -368,6 +439,7 @@ let mainAgentRoleOption = null;
 export function applyCurrentSessionRecord(record) {
     state.currentSessionMode = String(record?.session_mode || "normal");
     state.currentNormalRootRoleId = String(record?.normal_root_role_id || "");
+    state.currentNormalModelProfile = String(record?.normal_model_profile || "");
     state.currentOrchestrationPresetId = String(record?.orchestration_preset_id || "");
     state.currentSessionCanSwitchMode = record?.can_switch_mode === true;
 }
@@ -453,11 +525,16 @@ function createClassList() {
         toggle(name, active) {
             this.values.set(name, active !== false);
         },
+        contains(name) {
+            return this.values.get(name) === true;
+        },
     };
 }
 
 function createElement(initial = {}) {
-    return {
+    const element = {
+        _attributes: new Map(),
+        _query: new Map(),
         hidden: false,
         disabled: false,
         value: "",
@@ -470,21 +547,101 @@ function createElement(initial = {}) {
         },
         classList: createClassList(),
         _listeners: new Map(),
+        setAttribute(name, value) {
+            this._attributes.set(name, String(value));
+        },
+        getAttribute(name) {
+            return this._attributes.has(name) ? this._attributes.get(name) : null;
+        },
+        removeAttribute(name) {
+            this._attributes.delete(name);
+        },
         addEventListener(type, listener) {
             this._listeners.set(type, listener);
         },
-        querySelectorAll() {
-            return [];
+        querySelector(selector) {
+            return this._query.get(selector) || null;
         },
-        dispatch(type) {
+        querySelectorAll(selector) {
+            if (selector !== "[data-composer-select-option]") {
+                return [];
+            }
+            return this._options || [];
+        },
+        focus() {
+            globalThis.document.activeElement = this;
+        },
+        closest(selector) {
+            if (
+                selector === "[data-composer-select-option]" &&
+                this.dataset?.composerSelectOption
+            ) {
+                return this;
+            }
+            return null;
+        },
+        contains(target) {
+            return target === this;
+        },
+        dispatch(type, event = {}) {
             const listener = this._listeners.get(type);
             if (listener) {
-                listener({ target: this });
+                listener({
+                    target: event.target || this,
+                    key: event.key,
+                    preventDefault() {
+                        return undefined;
+                    },
+                    stopPropagation() {
+                        return undefined;
+                    },
+                    ...event,
+                });
             }
         },
         ...initial,
     };
+    return element;
 }
+
+function createMenuTrigger(valueEl, metaEl) {
+    return createElement({
+        _query: new Map([
+            [".composer-select-value", valueEl],
+            [".composer-select-meta", metaEl],
+        ]),
+    });
+}
+
+function createMenuOption(kind, value, index = 0) {
+    return createElement({
+        dataset: {
+            composerSelectOption: kind,
+            value,
+            index: String(index),
+        },
+    });
+}
+
+const normalRoleMenuValue = createElement();
+const normalRoleMenuMeta = createElement();
+const normalModelMenuValue = createElement();
+const normalModelMenuMeta = createElement();
+const normalRoleMenuButton = createMenuTrigger(normalRoleMenuValue, normalRoleMenuMeta);
+const normalModelMenuButton = createMenuTrigger(normalModelMenuValue, normalModelMenuMeta);
+const normalRoleMenuList = createElement({
+    _options: [
+        createMenuOption("normal-role", "MainAgent", 0),
+        createMenuOption("normal-role", "writer", 1),
+    ],
+});
+const normalModelMenuList = createElement({
+    _options: [
+        createMenuOption("normal-model", "", 0),
+        createMenuOption("normal-model", "fast", 1),
+        createMenuOption("normal-model", "precise", 2),
+    ],
+});
 
 export const els = {
     yoloToggle: createElement({ checked: true }),
@@ -496,8 +653,21 @@ export const els = {
     sessionModeLabel: createElement(),
     sessionModeNormalBtn: createElement(),
     sessionModeOrchestrationBtn: createElement(),
+    normalRouteControls: createElement(),
     normalRoleField: createElement(),
     normalRoleSelect: createElement(),
+    normalRoleMenu: createElement(),
+    normalRoleMenuButton,
+    normalRoleMenuValue,
+    normalRoleMenuMeta,
+    normalRoleMenuList,
+    normalModelField: createElement(),
+    normalModelSelect: createElement(),
+    normalModelMenu: createElement(),
+    normalModelMenuButton,
+    normalModelMenuValue,
+    normalModelMenuMeta,
+    normalModelMenuList,
     orchestrationPresetField: createElement({ hidden: true }),
     orchestrationPresetSelect: createElement(),
     promptInput: createElement(),
@@ -505,6 +675,7 @@ export const els = {
     sendBtn: createElement(),
     stopBtn: createElement(),
 };
+export { createMenuOption };
 """.strip(),
         encoding="utf-8",
     )
@@ -519,6 +690,21 @@ export function showToast() {
     (temp_dir / "mockI18n.mjs").write_text(
         """
 export function t(key) {
+    if (key === "composer.model_role_default") {
+        return "Role default";
+    }
+    if (key === "composer.mode_normal") {
+        return "Normal Mode";
+    }
+    if (key === "composer.mode_orchestration") {
+        return "Orchestrated Mode";
+    }
+    if (key === "composer.disabled.started_session") {
+        return "Only sessions that have not started their first run can switch mode.";
+    }
+    if (key === "composer.disabled.started_session_role") {
+        return "Only sessions that have not started their first run can switch role.";
+    }
     return key;
 }
 
@@ -551,6 +737,7 @@ globalThis.localStorage = {
     },
 };
 globalThis.document = {
+    activeElement: null,
     addEventListener() {
         return undefined;
     },
@@ -558,7 +745,7 @@ globalThis.document = {
 
 const prompt = await import("./prompt.js");
 const { state } = await import("./mockState.mjs");
-const { els } = await import("./mockDom.mjs");
+const { els, createMenuOption } = await import("./mockDom.mjs");
 
 await prompt.initializeSessionTopologyControls();
 prompt.initializeThinkingControls();
@@ -566,17 +753,64 @@ prompt.initializeThinkingControls();
 state.currentSessionMode = "normal";
 prompt.refreshSessionTopologyControls();
     const normalModeSnapshot = {
+        normalRouteHidden: els.normalRouteControls.hidden,
+        normalRouteDisplay: els.normalRouteControls.style.display,
         normalRoleHidden: els.normalRoleField.hidden,
         normalRoleDisplay: els.normalRoleField.style.display,
+        normalRoleMenuText: els.normalRoleMenuValue.textContent,
+        normalRoleMenuOptions: els.normalRoleMenuList.innerHTML,
+        normalModelHidden: els.normalModelField.hidden,
+        normalModelDisplay: els.normalModelField.style.display,
+        normalModelMenuText: els.normalModelMenuValue.textContent,
+        normalModelMenuTitle: els.normalModelMenuButton.title,
+        normalModelOptions: els.normalModelSelect.innerHTML,
+        normalModelMenuOptions: els.normalModelMenuList.innerHTML,
         orchestrationPresetHidden: els.orchestrationPresetField.hidden,
         orchestrationPresetDisplay: els.orchestrationPresetField.style.display,
+        sessionModeLockTitle: els.sessionModeLock.title,
+        sessionModeNormalTitle: els.sessionModeNormalBtn.title,
+    };
+
+els.normalRoleMenuButton.dispatch("click");
+els.normalRoleMenuList.dispatch("click", {
+    target: createMenuOption("normal-role", "writer", 1),
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+
+els.normalModelMenuButton.dispatch("click");
+els.normalModelMenuList.dispatch("click", {
+    target: createMenuOption("normal-model", "precise", 2),
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+
+state.currentSessionCanSwitchMode = false;
+state.currentNormalModelProfile = "precise";
+prompt.refreshSessionTopologyControls();
+    const startedSessionSnapshot = {
+        sessionModeLockTitle: els.sessionModeLock.title,
+        sessionModeLockTitleAttr: els.sessionModeLock.getAttribute("title") || "",
+        sessionModeNormalTitle: els.sessionModeNormalBtn.title,
+        sessionModeNormalTitleAttr: els.sessionModeNormalBtn.getAttribute("title") || "",
+        sessionModeNormalReason: els.sessionModeNormalBtn.getAttribute("data-disabled-reason") || "",
+        sessionModeNormalAriaLabel: els.sessionModeNormalBtn.getAttribute("aria-label") || "",
+        normalRoleDisabled: els.normalRoleMenuButton.disabled,
+        normalRoleTitle: els.normalRoleMenuButton.title,
+        normalRoleTitleAttr: els.normalRoleMenuButton.getAttribute("title") || "",
+        normalRoleReason: els.normalRoleMenuButton.getAttribute("data-disabled-reason") || "",
+        normalModelDisabled: els.normalModelMenuButton.disabled,
+        normalModelMenuTitle: els.normalModelMenuButton.title,
+        normalModelReason: els.normalModelMenuButton.getAttribute("data-disabled-reason") || "",
     };
 
 state.currentSessionMode = "orchestration";
 prompt.refreshSessionTopologyControls();
     const orchestrationModeSnapshot = {
+        normalRouteHidden: els.normalRouteControls.hidden,
+        normalRouteDisplay: els.normalRouteControls.style.display,
         normalRoleHidden: els.normalRoleField.hidden,
         normalRoleDisplay: els.normalRoleField.style.display,
+        normalModelHidden: els.normalModelField.hidden,
+        normalModelDisplay: els.normalModelField.style.display,
         orchestrationPresetHidden: els.orchestrationPresetField.hidden,
         orchestrationPresetDisplay: els.orchestrationPresetField.style.display,
     };
@@ -605,7 +839,10 @@ els.thinkingModeToggle.dispatch("change");
 
 console.log(JSON.stringify({
     normalModeSnapshot,
+    startedSessionSnapshot,
     orchestrationModeSnapshot,
+    topologyUpdateCalls: globalThis.__topologyUpdates || [],
+    modelUpdateCalls: globalThis.__normalModelProfileUpdates || [],
     initialThinkingSnapshot,
     enabledThinkingSnapshot,
     disabledThinkingSnapshot,
@@ -621,15 +858,73 @@ console.log(JSON.stringify({
     )
 
     payload = json.loads(result.stdout)
-    assert payload["normalModeSnapshot"] == {
+    normal_mode_snapshot = dict(payload["normalModeSnapshot"])
+    normal_model_options = str(normal_mode_snapshot.pop("normalModelOptions"))
+    normal_role_menu_options = str(normal_mode_snapshot.pop("normalRoleMenuOptions"))
+    normal_model_menu_options = str(normal_mode_snapshot.pop("normalModelMenuOptions"))
+    assert normal_mode_snapshot == {
+        "normalRouteHidden": False,
+        "normalRouteDisplay": "inline-flex",
         "normalRoleHidden": False,
         "normalRoleDisplay": "inline-flex",
+        "normalRoleMenuText": "Main Agent",
+        "normalModelHidden": False,
+        "normalModelDisplay": "inline-flex",
+        "normalModelMenuText": "Role default",
+        "normalModelMenuTitle": "Role default",
         "orchestrationPresetHidden": True,
         "orchestrationPresetDisplay": "none",
+        "sessionModeLockTitle": "",
+        "sessionModeNormalTitle": "",
     }
+    assert "Role default" in normal_model_options
+    assert "fast" in normal_model_options
+    assert "Writer" in normal_role_menu_options
+    assert 'data-value="writer"' in normal_role_menu_options
+    assert "precise" in normal_model_menu_options
+    assert "gpt-4.1" in normal_model_menu_options
+    assert payload["startedSessionSnapshot"] == {
+        "sessionModeLockTitle": "",
+        "sessionModeLockTitleAttr": "",
+        "sessionModeNormalTitle": "",
+        "sessionModeNormalTitleAttr": "",
+        "sessionModeNormalReason": (
+            "Only sessions that have not started their first run can switch mode."
+        ),
+        "sessionModeNormalAriaLabel": (
+            "Normal Mode. Only sessions that have not started their first run "
+            "can switch mode."
+        ),
+        "normalRoleDisabled": True,
+        "normalRoleTitle": "",
+        "normalRoleTitleAttr": "",
+        "normalRoleReason": (
+            "Only sessions that have not started their first run can switch role."
+        ),
+        "normalModelDisabled": False,
+        "normalModelMenuTitle": "precise",
+        "normalModelReason": "",
+    }
+    assert payload["topologyUpdateCalls"] == [
+        {
+            "sessionId": "session-1",
+            "payload": {
+                "session_mode": "normal",
+                "normal_root_role_id": "writer",
+                "orchestration_preset_id": None,
+            },
+        }
+    ]
+    assert payload["modelUpdateCalls"] == [
+        {"sessionId": "session-1", "normalModelProfile": "precise"}
+    ]
     assert payload["orchestrationModeSnapshot"] == {
+        "normalRouteHidden": True,
+        "normalRouteDisplay": "none",
         "normalRoleHidden": True,
         "normalRoleDisplay": "none",
+        "normalModelHidden": True,
+        "normalModelDisplay": "none",
         "orchestrationPresetHidden": False,
         "orchestrationPresetDisplay": "inline-flex",
     }
@@ -648,6 +943,583 @@ console.log(JSON.stringify({
         "effortDisplay": "none",
         "effortDisabled": True,
     }
+
+
+def test_prompt_model_profile_ignores_stale_save_response(tmp_path: Path) -> None:
+    source = Path("frontend/dist/js/app/prompt.js").read_text(encoding="utf-8")
+    temp_dir = tmp_path / "prompt_model_stale"
+    temp_dir.mkdir()
+    _write_new_session_draft_mock(tmp_path)
+
+    (temp_dir / "prompt.js").write_text(
+        source.replace("../components/rounds/timeline.js", "./mockRounds.mjs")
+        .replace("../components/rounds.js", "./mockRounds.mjs")
+        .replace("../components/contextIndicators.js", "./mockContextIndicators.mjs")
+        .replace("../components/messageRenderer.js", "./mockMessageRenderer.mjs")
+        .replace("../components/runtimeInjectQueue.js", "./mockRuntimeInjectQueue.mjs")
+        .replace("../core/api.js", "./mockApi.mjs")
+        .replace("./recovery.js", "./mockRecovery.mjs")
+        .replace("../core/state.js", "./mockState.mjs")
+        .replace("../core/stream.js", "./mockStream.mjs")
+        .replace("../utils/dom.js", "./mockDom.mjs")
+        .replace("../utils/feedback.js", "./mockFeedback.mjs")
+        .replace("../utils/i18n.js", "./mockI18n.mjs")
+        .replace("../utils/logger.js", "./mockLogger.mjs"),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockRounds.mjs").write_text(
+        """
+export function appendRoundUserMessage() {
+    return undefined;
+}
+
+export function createLiveRound() {
+    return undefined;
+}
+
+export function showPendingRunStartPlaceholder() {
+    return undefined;
+}
+
+export function clearPendingRunStartPlaceholder() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockContextIndicators.mjs").write_text(
+        """
+export function refreshVisibleContextIndicators() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockMessageRenderer.mjs").write_text(
+        """
+export function clearAllStreamState() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockApi.mjs").write_text(
+        """
+export async function fetchRoleConfigOptions() {
+    return {
+        coordinator_role_id: "Coordinator",
+        main_agent_role_id: "MainAgent",
+        normal_mode_roles: [
+            { role_id: "MainAgent", name: "Main Agent", description: "" },
+        ],
+    };
+}
+
+export async function fetchModelProfiles() {
+    return {
+        fast: { model: "gpt-4.1-mini" },
+        precise: { model: "gpt-4.1" },
+    };
+}
+
+export async function fetchOrchestrationConfig() {
+    return {
+        default_orchestration_preset_id: "preset-1",
+        presets: [
+            {
+                preset_id: "preset-1",
+                name: "Default Preset",
+                description: "",
+                role_ids: [],
+                orchestration_prompt: "",
+            },
+        ],
+    };
+}
+
+export async function updateSessionTopology() {
+    return {
+        session_mode: "normal",
+        normal_root_role_id: "MainAgent",
+        orchestration_preset_id: null,
+        can_switch_mode: true,
+    };
+}
+
+export async function updateSessionNormalModelProfile(sessionId, normalModelProfile) {
+    globalThis.__normalModelProfileUpdates = [
+        ...(globalThis.__normalModelProfileUpdates || []),
+        { sessionId, normalModelProfile },
+    ];
+    return await new Promise((resolve, reject) => {
+        globalThis.__normalModelProfileResolvers = [
+            ...(globalThis.__normalModelProfileResolvers || []),
+            {
+                normalModelProfile,
+                resolve() {
+                    resolve({
+                        session_mode: "normal",
+                        normal_root_role_id: "MainAgent",
+                        normal_model_profile: normalModelProfile,
+                        orchestration_preset_id: null,
+                        can_switch_mode: true,
+                    });
+                },
+                reject(error) {
+                    reject(error);
+                },
+            },
+        ];
+    });
+}
+
+export async function fetchCommands() {
+    return { commands: [] };
+}
+
+export async function resolveCommandPrompt(payload) {
+    return {
+        matched: false,
+        expanded_prompt: String(payload?.raw_text || ""),
+    };
+}
+
+export async function searchWorkspacePaths() {
+    return { workspace_id: "workspace-1", query: "", results: [] };
+}
+
+export async function forceQueuedInject() {
+    return { run_id: "run-flush", session_id: "session-1", content: "" };
+}
+
+export async function injectMessage() {
+    return { status: "queued" };
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockRuntimeInjectQueue.mjs").write_text(
+        """
+export function replaceRuntimeInjectMessages() {
+    return undefined;
+}
+
+export function removeRuntimeInjectMessage() {
+    return undefined;
+}
+
+export function upsertRuntimeInjectMessage() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockRecovery.mjs").write_text(
+        """
+export async function hydrateSessionView() {
+    return null;
+}
+
+export function startSessionContinuity() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockState.mjs").write_text(
+        """
+export const state = {
+    currentSessionId: "session-1",
+    currentWorkspaceId: "workspace-1",
+    currentSessionMode: "normal",
+    currentSessionCanSwitchMode: true,
+    currentNormalRootRoleId: "MainAgent",
+    currentNormalModelProfile: null,
+    currentOrchestrationPresetId: "preset-1",
+    mainAgentRoleId: "MainAgent",
+    isGenerating: false,
+    thinking: {
+        enabled: false,
+        effort: "medium",
+    },
+};
+
+let normalModeRoles = [];
+let mainAgentRoleOption = null;
+
+export function applyCurrentSessionRecord(record) {
+    state.currentSessionMode = String(record?.session_mode || "normal");
+    state.currentNormalRootRoleId = String(record?.normal_root_role_id || "");
+    state.currentNormalModelProfile = String(record?.normal_model_profile || "");
+    state.currentOrchestrationPresetId = String(record?.orchestration_preset_id || "");
+    state.currentSessionCanSwitchMode = record?.can_switch_mode === true;
+}
+
+export function getCoordinatorRoleId() {
+    return "Coordinator";
+}
+
+export function getMainAgentRoleId() {
+    return String(state.mainAgentRoleId || "MainAgent");
+}
+
+export function getNormalModeRoles() {
+    return normalModeRoles;
+}
+
+export function getPrimaryRoleId() {
+    return String(state.mainAgentRoleId || "MainAgent");
+}
+
+export function getRoleOption(roleId) {
+    if (String(roleId || "") === String(state.mainAgentRoleId || "")) {
+        return mainAgentRoleOption;
+    }
+    return normalModeRoles.find(role => role.role_id === roleId) || null;
+}
+
+export function getRoleDisplayName(roleId, { fallback = "Agent" } = {}) {
+    if (String(roleId || "") === String(state.mainAgentRoleId || "")) {
+        return "Main Agent";
+    }
+    return normalModeRoles.find(role => role.role_id === roleId)?.name || fallback;
+}
+
+export function setCoordinatorRoleId() {
+    return undefined;
+}
+
+export function setCoordinatorRoleOption() {
+    return undefined;
+}
+
+export function setMainAgentRoleId(roleId) {
+    state.mainAgentRoleId = String(roleId || "");
+}
+
+export function setMainAgentRoleOption(roleOption) {
+    mainAgentRoleOption = roleOption;
+}
+
+export function setNormalModeRoles(roleOptions) {
+    normalModeRoles = Array.isArray(roleOptions) ? roleOptions : [];
+}
+
+export function getRoleInputModalitySupport() {
+    return true;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockStream.mjs").write_text(
+        """
+export async function startIntentStream(promptText, sessionId, onCompleted) {
+    globalThis.__streamCalls = [
+        ...(globalThis.__streamCalls || []),
+        { promptText, sessionId },
+    ];
+    return onCompleted;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockDom.mjs").write_text(
+        """
+function createClassList() {
+    return {
+        values: new Map(),
+        toggle(name, active) {
+            this.values.set(name, active !== false);
+        },
+    };
+}
+
+function createElement(initial = {}) {
+    const element = {
+        _attributes: new Map(),
+        _query: new Map(),
+        hidden: false,
+        disabled: false,
+        value: "",
+        innerHTML: "",
+        textContent: "",
+        title: "",
+        style: { display: "" },
+        classList: createClassList(),
+        _listeners: new Map(),
+        setAttribute(name, value) {
+            this._attributes.set(name, String(value));
+        },
+        getAttribute(name) {
+            return this._attributes.has(name) ? this._attributes.get(name) : null;
+        },
+        removeAttribute(name) {
+            this._attributes.delete(name);
+        },
+        addEventListener(type, listener) {
+            this._listeners.set(type, listener);
+        },
+        querySelector(selector) {
+            return this._query.get(selector) || null;
+        },
+        querySelectorAll(selector) {
+            if (selector !== "[data-composer-select-option]") {
+                return [];
+            }
+            return this._options || [];
+        },
+        focus() {
+            globalThis.document.activeElement = this;
+        },
+        closest(selector) {
+            if (
+                selector === "[data-composer-select-option]" &&
+                this.dataset?.composerSelectOption
+            ) {
+                return this;
+            }
+            return null;
+        },
+        contains(target) {
+            return target === this;
+        },
+        dispatch(type, event = {}) {
+            const listener = this._listeners.get(type);
+            if (listener) {
+                listener({
+                    target: event.target || this,
+                    key: event.key,
+                    preventDefault() {
+                        return undefined;
+                    },
+                    stopPropagation() {
+                        return undefined;
+                    },
+                    ...event,
+                });
+            }
+        },
+        ...initial,
+    };
+    return element;
+}
+
+function createMenuTrigger(valueEl, metaEl) {
+    return createElement({
+        _query: new Map([
+            [".composer-select-value", valueEl],
+            [".composer-select-meta", metaEl],
+        ]),
+    });
+}
+
+function createMenuOption(kind, value, index = 0) {
+    return createElement({
+        dataset: {
+            composerSelectOption: kind,
+            value,
+            index: String(index),
+        },
+    });
+}
+
+const normalRoleMenuValue = createElement();
+const normalRoleMenuMeta = createElement();
+const normalModelMenuValue = createElement();
+const normalModelMenuMeta = createElement();
+const normalRoleMenuButton = createMenuTrigger(normalRoleMenuValue, normalRoleMenuMeta);
+const normalModelMenuButton = createMenuTrigger(normalModelMenuValue, normalModelMenuMeta);
+const normalModelMenuList = createElement({
+    _options: [
+        createMenuOption("normal-model", "", 0),
+        createMenuOption("normal-model", "fast", 1),
+        createMenuOption("normal-model", "precise", 2),
+    ],
+});
+
+export const els = {
+    yoloToggle: createElement({ checked: true }),
+    thinkingModeToggle: createElement({ checked: false }),
+    thinkingEffortField: createElement({ hidden: true }),
+    thinkingEffortSelect: createElement({ value: "medium", disabled: true }),
+    sessionModeLock: createElement(),
+    sessionModeLabel: createElement(),
+    sessionModeNormalBtn: createElement(),
+    sessionModeOrchestrationBtn: createElement(),
+    normalRouteControls: createElement(),
+    normalRoleField: createElement(),
+    normalRoleSelect: createElement(),
+    normalRoleMenu: createElement(),
+    normalRoleMenuButton,
+    normalRoleMenuValue,
+    normalRoleMenuMeta,
+    normalRoleMenuList: createElement({
+        _options: [createMenuOption("normal-role", "MainAgent", 0)],
+    }),
+    normalModelField: createElement(),
+    normalModelSelect: createElement(),
+    normalModelMenu: createElement(),
+    normalModelMenuButton,
+    normalModelMenuValue,
+    normalModelMenuMeta,
+    normalModelMenuList,
+    orchestrationPresetField: createElement({ hidden: true }),
+    orchestrationPresetSelect: createElement(),
+    promptInput: createElement({ value: "" }),
+    promptInputStatus: createElement({ hidden: true }),
+    promptAttachments: createElement(),
+    promptMentionMenu: createElement({ hidden: true }),
+    sendBtn: createElement(),
+    stopBtn: createElement(),
+};
+export { createMenuOption };
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockFeedback.mjs").write_text(
+        """
+export function showToast(payload) {
+    globalThis.__toasts = [...(globalThis.__toasts || []), payload];
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockI18n.mjs").write_text(
+        """
+export function t(key) {
+    if (key === "composer.model_role_default") {
+        return "Role default";
+    }
+    if (key === "composer.mode_normal") {
+        return "Normal Mode";
+    }
+    if (key === "composer.mode_orchestration") {
+        return "Orchestrated Mode";
+    }
+    return key;
+}
+
+export function formatMessage(key, values = {}) {
+    return `${key}:${String(values.model || "")}`;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockLogger.mjs").write_text(
+        """
+export function sysLog(message) {
+    globalThis.__logs = [...(globalThis.__logs || []), message];
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    runner = """
+globalThis.document = {
+    activeElement: null,
+    addEventListener() {
+        return undefined;
+    },
+};
+
+const prompt = await import("./prompt.js");
+const { state } = await import("./mockState.mjs");
+const { els, createMenuOption } = await import("./mockDom.mjs");
+
+await prompt.initializeSessionTopologyControls();
+prompt.refreshSessionTopologyControls();
+
+els.normalModelMenuButton.dispatch("click");
+els.normalModelMenuList.dispatch("click", {
+    target: createMenuOption("normal-model", "fast", 1),
+});
+
+els.normalModelMenuButton.dispatch("click");
+els.normalModelMenuList.dispatch("click", {
+    target: createMenuOption("normal-model", "precise", 2),
+});
+
+globalThis.__normalModelProfileResolvers[1].resolve();
+await new Promise(resolve => setTimeout(resolve, 0));
+const afterLatestResponse = {
+    stateProfile: state.currentNormalModelProfile,
+    menuTitle: els.normalModelMenuButton.title,
+    menuText: els.normalModelMenuValue.textContent,
+};
+
+globalThis.__normalModelProfileResolvers[0].resolve();
+await new Promise(resolve => setTimeout(resolve, 0));
+const afterStaleResponse = {
+    stateProfile: state.currentNormalModelProfile,
+    menuTitle: els.normalModelMenuButton.title,
+    menuText: els.normalModelMenuValue.textContent,
+};
+
+els.normalModelMenuButton.dispatch("click");
+els.normalModelMenuList.dispatch("click", {
+    target: createMenuOption("normal-model", "fast", 1),
+});
+els.promptInput.value = "send after failed model save";
+const failedSendPromise = prompt.handleSend();
+globalThis.__normalModelProfileResolvers[2].reject(new Error("profile save failed"));
+await failedSendPromise;
+const afterFailedSaveSend = {
+    streamCalls: globalThis.__streamCalls || [],
+    promptStatusText: els.promptInputStatus.textContent,
+    promptStatusHidden: els.promptInputStatus.hidden,
+    toasts: globalThis.__toasts || [],
+};
+
+console.log(JSON.stringify({
+    updates: globalThis.__normalModelProfileUpdates || [],
+    afterLatestResponse,
+    afterStaleResponse,
+    afterFailedSaveSend,
+    logs: globalThis.__logs || [],
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["updates"] == [
+        {"sessionId": "session-1", "normalModelProfile": "fast"},
+        {"sessionId": "session-1", "normalModelProfile": "precise"},
+        {"sessionId": "session-1", "normalModelProfile": "fast"},
+    ]
+    assert payload["afterLatestResponse"] == {
+        "stateProfile": "precise",
+        "menuTitle": "precise",
+        "menuText": "precise",
+    }
+    assert payload["afterStaleResponse"] == {
+        "stateProfile": "precise",
+        "menuTitle": "precise",
+        "menuText": "precise",
+    }
+    assert payload["afterFailedSaveSend"] == {
+        "streamCalls": [],
+        "promptStatusText": "profile save failed",
+        "promptStatusHidden": False,
+        "toasts": [
+            {
+                "title": "composer.toast.model_update_failed_title",
+                "message": "profile save failed",
+                "tone": "danger",
+            }
+        ],
+    }
+    assert payload["logs"] == [
+        "composer.log.model_updated:precise",
+        "profile save failed",
+    ]
 
 
 def test_handle_send_strips_leading_role_mention_and_targets_run_role(
@@ -724,6 +1596,12 @@ export async function fetchRoleConfigOptions() {
     };
 }
 
+export async function fetchModelProfiles() {
+    return {
+        fast: { model: "gpt-4.1-mini" },
+    };
+}
+
 export async function fetchOrchestrationConfig() {
     return {
         default_orchestration_preset_id: "",
@@ -735,6 +1613,16 @@ export async function updateSessionTopology() {
     return {
         session_mode: "normal",
         normal_root_role_id: "MainAgent",
+        orchestration_preset_id: null,
+        can_switch_mode: true,
+    };
+}
+
+export async function updateSessionNormalModelProfile() {
+    return {
+        session_mode: "normal",
+        normal_root_role_id: "MainAgent",
+        normal_model_profile: "fast",
         orchestration_preset_id: null,
         can_switch_mode: true,
     };
@@ -1131,6 +2019,12 @@ export async function fetchRoleConfigOptions() {
     };
 }
 
+export async function fetchModelProfiles() {
+    return {
+        fast: { model: "gpt-4.1-mini" },
+    };
+}
+
 export async function fetchOrchestrationConfig() {
     return {
         default_orchestration_preset_id: "",
@@ -1142,6 +2036,16 @@ export async function updateSessionTopology() {
     return {
         session_mode: "normal",
         normal_root_role_id: "MainAgent",
+        orchestration_preset_id: null,
+        can_switch_mode: true,
+    };
+}
+
+export async function updateSessionNormalModelProfile() {
+    return {
+        session_mode: "normal",
+        normal_root_role_id: "MainAgent",
+        normal_model_profile: "fast",
         orchestration_preset_id: null,
         can_switch_mode: true,
     };
@@ -3115,6 +4019,272 @@ console.log(JSON.stringify({
     assert payload["promptStatusHidden"] is False
 
 
+def test_handle_send_allows_image_when_selected_model_profile_supports_it(
+    tmp_path: Path,
+) -> None:
+    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=False)
+    runner = """
+import {
+    handlePromptComposerPaste,
+    handleSend,
+    refreshModelProfileOptions,
+} from "./prompt.js";
+import { state } from "./mockState.mjs";
+
+globalThis.__modelProfiles = {
+    vision: {
+        model: "vision-profile-model",
+        input_modalities: ["image"],
+    },
+};
+state.currentNormalModelProfile = "vision";
+globalThis.__streamCalls = [];
+globalThis.__logs = [];
+globalThis.__notifications = [];
+globalThis.FileReader = class {
+    readAsDataURL(file) {
+        this.result = file.__dataUrl;
+        this.onload?.();
+    }
+};
+
+await refreshModelProfileOptions({ refreshControls: false });
+await handlePromptComposerPaste({
+    clipboardData: {
+        items: [
+            {
+                type: "image/png",
+                getAsFile() {
+                    return {
+                        name: "diagram.png",
+                        size: 4,
+                        __dataUrl: "data:image/png;base64,QUJDRA==",
+                    };
+                },
+            },
+        ],
+    },
+    preventDefault() {
+        return undefined;
+    },
+});
+
+await handleSend();
+
+console.log(JSON.stringify({
+    streamCalls: globalThis.__streamCalls,
+    logs: globalThis.__logs,
+    notifications: globalThis.__notifications,
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert len(payload["streamCalls"]) == 1
+    assert payload["streamCalls"][0]["promptText"] == "[image]"
+    assert payload["notifications"] == []
+    assert not any("image input" in entry["message"] for entry in payload["logs"])
+
+
+def test_handle_send_validates_image_after_pending_model_profile_save(
+    tmp_path: Path,
+) -> None:
+    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
+    runner = """
+import {
+    handlePromptComposerPaste,
+    handleSend,
+    initializeSessionTopologyControls,
+    refreshModelProfileOptions,
+    refreshSessionTopologyControls,
+} from "./prompt.js";
+import { els, createMenuOption } from "./mockDom.mjs";
+import { state } from "./mockState.mjs";
+
+globalThis.__modelProfiles = {
+    textOnly: {
+        model: "text-only-model",
+        input_modalities: [],
+    },
+    vision: {
+        model: "vision-profile-model",
+        input_modalities: ["image"],
+    },
+};
+globalThis.__streamCalls = [];
+globalThis.__logs = [];
+globalThis.__notifications = [];
+globalThis.__holdNormalModelProfileSave = true;
+globalThis.FileReader = class {
+    readAsDataURL(file) {
+        this.result = file.__dataUrl;
+        this.onload?.();
+    }
+};
+
+await refreshModelProfileOptions({ refreshControls: false });
+await handlePromptComposerPaste({
+    clipboardData: {
+        items: [
+            {
+                type: "image/png",
+                getAsFile() {
+                    return {
+                        name: "diagram.png",
+                        size: 4,
+                        __dataUrl: "data:image/png;base64,QUJDRA==",
+                    };
+                },
+            },
+        ],
+    },
+    preventDefault() {
+        return undefined;
+    },
+});
+
+state.currentNormalModelProfile = "textOnly";
+await initializeSessionTopologyControls();
+refreshSessionTopologyControls();
+els.normalModelMenuButton.dispatch("click");
+els.normalModelMenuList.dispatch("click", {
+    target: createMenuOption("normal-model", "vision", 2),
+});
+
+const sendPromise = handleSend();
+await new Promise(resolve => setTimeout(resolve, 0));
+const beforeResolve = {
+    streamCalls: [...globalThis.__streamCalls],
+    statusText: els.promptInputStatus.textContent,
+};
+globalThis.__resolveNormalModelProfileSave();
+await sendPromise;
+
+console.log(JSON.stringify({
+    beforeResolve,
+    streamCalls: globalThis.__streamCalls,
+    logs: globalThis.__logs,
+    notifications: globalThis.__notifications,
+    updates: globalThis.__normalModelProfileUpdates,
+    finalProfile: state.currentNormalModelProfile,
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["beforeResolve"]["streamCalls"] == []
+    assert payload["beforeResolve"]["statusText"] == ""
+    assert payload["updates"] == [
+        {"sessionId": "session-1", "normalModelProfile": "vision"}
+    ]
+    assert payload["finalProfile"] == "vision"
+    assert len(payload["streamCalls"]) == 1
+    assert payload["streamCalls"][0]["promptText"] == "[image]"
+    assert payload["notifications"] == []
+    assert not any("image input" in entry["message"] for entry in payload["logs"])
+
+
+def test_handle_send_blocks_image_when_selected_model_profile_rejects_it(
+    tmp_path: Path,
+) -> None:
+    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
+    runner = """
+import {
+    handlePromptComposerPaste,
+    handleSend,
+    refreshModelProfileOptions,
+} from "./prompt.js";
+import { els } from "./mockDom.mjs";
+import { state } from "./mockState.mjs";
+
+globalThis.__modelProfiles = {
+    textOnly: {
+        model: "text-only-model",
+        input_modalities: [],
+    },
+};
+state.currentNormalModelProfile = "textOnly";
+globalThis.__streamCalls = [];
+globalThis.__logs = [];
+globalThis.__notifications = [];
+globalThis.FileReader = class {
+    readAsDataURL(file) {
+        this.result = file.__dataUrl;
+        this.onload?.();
+    }
+};
+
+await refreshModelProfileOptions({ refreshControls: false });
+await handlePromptComposerPaste({
+    clipboardData: {
+        items: [
+            {
+                type: "image/png",
+                getAsFile() {
+                    return {
+                        name: "diagram.png",
+                        size: 4,
+                        __dataUrl: "data:image/png;base64,QUJDRA==",
+                    };
+                },
+            },
+        ],
+    },
+    preventDefault() {
+        return undefined;
+    },
+});
+
+await handleSend();
+
+console.log(JSON.stringify({
+    streamCalls: globalThis.__streamCalls,
+    logs: globalThis.__logs,
+    notifications: globalThis.__notifications,
+    promptStatusText: els.promptInputStatus.textContent,
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    expected_message = (
+        "text-only-model is currently configured as not supporting image input. "
+        "Remove the image, or go to Settings > Model and set Image Input to "
+        "Supports image input for this model."
+    )
+    assert payload["streamCalls"] == []
+    assert payload["notifications"] == [
+        {
+            "title": "Send Blocked",
+            "message": expected_message,
+            "tone": "warning",
+        }
+    ]
+    assert payload["promptStatusText"] == expected_message
+    assert any(expected_message == entry["message"] for entry in payload["logs"])
+
+
 def test_handle_send_blocks_pasted_image_when_image_support_is_unknown(
     tmp_path: Path,
 ) -> None:
@@ -3196,6 +4366,189 @@ console.log(JSON.stringify({
         "Cannot confirm whether gpt-4.1-mini supports image input. Remove the image, or go to Settings > Model and set Image Input to Supports image input for this model."
     )
     assert payload["promptStatusHidden"] is False
+
+
+def test_new_session_draft_creation_includes_selected_normal_model_profile(
+    tmp_path: Path,
+) -> None:
+    source = Path("frontend/dist/js/components/newSessionDraft.js").read_text(
+        encoding="utf-8"
+    )
+    (tmp_path / "newSessionDraft.mjs").write_text(
+        source.replace("../core/api.js", "./mockApi.mjs")
+        .replace("../core/state.js", "./mockState.mjs")
+        .replace("./agentPanel.js", "./mockNoop.mjs")
+        .replace("./contextIndicators.js", "./mockNoop.mjs")
+        .replace("./messageRenderer.js", "./mockNoop.mjs")
+        .replace("./rounds/timeline.js", "./mockNoop.mjs")
+        .replace("./sessionTokenUsage.js", "./mockNoop.mjs")
+        .replace("./subagentSessions.js", "./mockNoop.mjs")
+        .replace("./newSessionDraftView.js", "./mockView.mjs")
+        .replace("./sessionSidebarStore.js", "./mockSidebarStore.mjs")
+        .replace("../utils/dom.js", "./mockDom.mjs")
+        .replace("../utils/i18n.js", "./mockI18n.mjs")
+        .replace("../utils/feedback.js", "./mockFeedback.mjs"),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockApi.mjs").write_text(
+        """
+export async function fetchWorkspaces() {
+    return [];
+}
+
+export async function pickWorkspace() {
+    return null;
+}
+
+export async function startNewSession(workspaceId, options = {}) {
+    globalThis.__startNewSessionCalls = [
+        ...(globalThis.__startNewSessionCalls || []),
+        { workspaceId, options },
+    ];
+    return {
+        session_id: "session-created",
+        workspace_id: workspaceId,
+        normal_model_profile: options.normalModelProfile || null,
+    };
+}
+
+export async function updateSessionTopology() {
+    throw new Error("topology should not update for this draft");
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockState.mjs").write_text(
+        """
+export const state = {
+    pendingNewSessionActive: true,
+    pendingNewSessionWorkspaceId: "workspace-1",
+    currentWorkspaceId: "workspace-1",
+    currentSessionId: null,
+    currentSessionMode: "normal",
+    currentNormalRootRoleId: "",
+    currentNormalModelProfile: "fast",
+    currentOrchestrationPresetId: null,
+    currentSessionCanSwitchMode: false,
+    currentMainView: "new-session-draft",
+};
+
+export function applyCurrentSessionRecord(record) {
+    state.currentSessionId = record.session_id;
+    state.currentNormalModelProfile = record.normal_model_profile || null;
+}
+
+export function resetCurrentSessionTopology() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockNoop.mjs").write_text(
+        """
+export function clearActiveSubagentSession() { return undefined; }
+export function clearAllPanels() { return undefined; }
+export function clearAllStreamState() { return undefined; }
+export function clearContextIndicators() { return undefined; }
+export function clearSessionTimeline() { return undefined; }
+export function clearSessionTokenUsage() { return undefined; }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockView.mjs").write_text(
+        """
+export function renderNewSessionDraftView() {
+    return "";
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockSidebarStore.mjs").write_text(
+        """
+export function getSidebarDataSnapshot() {
+    return { sessions: [] };
+}
+
+export function hasSidebarDataSnapshot() {
+    return false;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockDom.mjs").write_text(
+        """
+export const els = {
+    chatMessages: { innerHTML: "", querySelector() { return null; } },
+};
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockI18n.mjs").write_text(
+        """
+export function t(key) {
+    if (key === "composer.model_role_default") {
+        return "Role default";
+    }
+    return key;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockFeedback.mjs").write_text(
+        """
+export async function showTextInputDialog() {
+    return null;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    runner = """
+globalThis.document = {
+    dispatchEvent(event) {
+        globalThis.__dispatchedEvents = [
+            ...(globalThis.__dispatchedEvents || []),
+            event.type,
+        ];
+    },
+    querySelectorAll() {
+        return [];
+    },
+};
+globalThis.CustomEvent = class CustomEvent {
+    constructor(type, init = {}) {
+        this.type = type;
+        this.detail = init.detail || {};
+    }
+};
+
+const draft = await import("./newSessionDraft.mjs");
+const sessionId = await draft.ensureSessionForNewSessionDraft({
+    shouldCommit: () => false,
+    allowDetachedRun: true,
+});
+
+console.log(JSON.stringify({
+    sessionId,
+    calls: globalThis.__startNewSessionCalls || [],
+    events: globalThis.__dispatchedEvents || [],
+}));
+""".strip()
+
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["sessionId"] == "session-created"
+    assert payload["calls"] == [
+        {"workspaceId": "workspace-1", "options": {"normalModelProfile": "fast"}}
+    ]
+    assert payload["events"] == ["agent-teams-new-session-draft-created"]
 
 
 def _write_new_session_draft_mock(tmp_path: Path) -> None:
@@ -3351,6 +4704,12 @@ export async function fetchRoleConfigOptions() {
     };
 }
 
+export async function fetchModelProfiles() {
+    return globalThis.__modelProfiles || {
+        fast: { model: "gpt-4.1-mini" },
+    };
+}
+
 export async function fetchOrchestrationConfig() {
     return {
         default_orchestration_preset_id: "",
@@ -3365,6 +4724,26 @@ export async function updateSessionTopology() {
         orchestration_preset_id: null,
         can_switch_mode: true,
     };
+}
+
+export async function updateSessionNormalModelProfile(sessionId, normalModelProfile) {
+    globalThis.__normalModelProfileUpdates = [
+        ...(globalThis.__normalModelProfileUpdates || []),
+        { sessionId, normalModelProfile },
+    ];
+    const updated = {
+        session_mode: "normal",
+        normal_root_role_id: "MainAgent",
+        normal_model_profile: normalModelProfile || null,
+        orchestration_preset_id: null,
+        can_switch_mode: true,
+    };
+    if (globalThis.__holdNormalModelProfileSave) {
+        return new Promise(resolve => {
+            globalThis.__resolveNormalModelProfileSave = () => resolve(updated);
+        });
+    }
+    return updated;
 }
 
 export async function fetchCommands() {
@@ -3449,6 +4828,7 @@ export const state = {{
     currentSessionMode: "normal",
     currentSessionCanSwitchMode: true,
     currentNormalRootRoleId: "MainAgent",
+    currentNormalModelProfile: null,
     currentOrchestrationPresetId: null,
     pausedSubagent: null,
     isGenerating: false,
@@ -3475,7 +4855,10 @@ let normalModeRoles = [
     }},
 ];
 
-export function applyCurrentSessionRecord() {{
+export function applyCurrentSessionRecord(record) {{
+    if (record && Object.prototype.hasOwnProperty.call(record, "normal_model_profile")) {{
+        state.currentNormalModelProfile = record.normal_model_profile || null;
+    }}
     return undefined;
 }}
 
@@ -3579,10 +4962,29 @@ function createElement(initial = {}) {
         selectionEnd: 0,
         scrollHeight: 36,
         style: { display: "", height: "" },
+        dataset: {},
+        _attrs: new Map(),
         _listeners: new Map(),
         querySelectorAll() { return []; },
         addEventListener(type, listener) {
             this._listeners.set(type, listener);
+        },
+        dispatch(type, event = {}) {
+            const listener = this._listeners.get(type);
+            listener?.({ ...event, target: event.target || this });
+        },
+        dispatchEvent(event) {
+            this.dispatch(event?.type || "", event || {});
+            return true;
+        },
+        getAttribute(name) {
+            return this._attrs.get(name) || "";
+        },
+        removeAttribute(name) {
+            this._attrs.delete(name);
+        },
+        setAttribute(name, value) {
+            this._attrs.set(name, String(value));
         },
         focus() { return undefined; },
         ...initial,
@@ -3603,6 +5005,35 @@ function createElement(initial = {}) {
     return element;
 }
 
+function createMenuOption(kind, value, index = 0) {
+    const option = createElement({
+        dataset: {
+            composerSelectOption: kind,
+            value,
+            index: String(index),
+        },
+    });
+    option.closest = selector => selector === "[data-composer-select-option]" ? option : null;
+    return option;
+}
+
+globalThis.document = globalThis.document || {};
+globalThis.document.activeElement = globalThis.document.activeElement || null;
+globalThis.document.addEventListener = globalThis.document.addEventListener || (() => undefined);
+
+const normalModelMenuValue = createElement();
+const normalModelMenuMeta = createElement();
+const normalModelMenuList = createElement({
+    _options: [
+        createMenuOption("normal-model", "", 0),
+        createMenuOption("normal-model", "textOnly", 1),
+        createMenuOption("normal-model", "vision", 2),
+    ],
+    querySelectorAll() {
+        return this._options;
+    },
+});
+
 export const els = {
     promptInput: createElement({ value: "" }),
     promptAttachments: createElement(),
@@ -3615,7 +5046,15 @@ export const els = {
     shellSafetyPolicyToggle: createElement({ checked: true }),
     thinkingModeToggle: createElement({ checked: false }),
     thinkingEffortSelect: createElement({ value: "medium", disabled: true }),
+    normalModelMenu: createElement(),
+    normalModelMenuButton: createElement(),
+    normalModelMenuValue,
+    normalModelMenuMeta,
+    normalModelMenuList,
+    normalModelSelect: createElement({ value: "" }),
 };
+
+export { createMenuOption };
 """.strip(),
         encoding="utf-8",
     )

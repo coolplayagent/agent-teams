@@ -47,6 +47,7 @@ from relay_teams.mcp.runtime_schema_loader import RuntimeMcpSchemaLoader
 from relay_teams.media import MediaAssetService
 from relay_teams.memory.service import MemoryBankService
 from relay_teams.persistence.shared_state_repo import SharedStateRepository
+from relay_teams.providers.model_profile_names import explicit_model_profile_reference
 from relay_teams.reminders import ReminderDecision
 from relay_teams.reminders.service import SystemReminderService
 from relay_teams.memory.event_handler import MemoryEventHandler
@@ -67,6 +68,7 @@ from relay_teams.sessions.runs.run_runtime_repo import (
     RunRuntimeRepository,
     RunRuntimeStatus,
 )
+from relay_teams.sessions.session_models import SessionMode
 from relay_teams.sessions.runs.todo_service import TodoService
 from relay_teams.skills.skill_models import SkillInstructionEntry
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
@@ -209,6 +211,7 @@ class ExecutionHarness(BaseModel):
         )
         session_mode = "normal"
         run_kind = RunKind.CONVERSATION
+        normal_model_profile = ""
         if self.run_intent_repo is not None:
             try:
                 intent = await self.run_intent_repo.get_async(
@@ -217,6 +220,10 @@ class ExecutionHarness(BaseModel):
                 )
                 session_mode = intent.session_mode.value
                 run_kind = intent.run_kind
+                if intent.session_mode == SessionMode.NORMAL:
+                    normal_model_profile = str(
+                        intent.normal_model_profile or ""
+                    ).strip()
             except KeyError:
                 LOGGER.debug(
                     "Missing run intent for trace_id=%s session_id=%s; using defaults",
@@ -226,6 +233,15 @@ class ExecutionHarness(BaseModel):
         if task.parent_task_id is not None:
             session_mode = "normal"
             run_kind = RunKind.CONVERSATION
+            normal_model_profile = ""
+        if normal_model_profile:
+            role_for_run = role_for_run.model_copy(
+                update={
+                    "model_profile": explicit_model_profile_reference(
+                        normal_model_profile
+                    )
+                }
+            )
 
         runner = SubAgentRunner(
             role=role_for_run,

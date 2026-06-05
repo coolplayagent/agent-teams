@@ -95,6 +95,7 @@ from relay_teams.sessions.runs.user_question_models import UserQuestionAnswerSub
 from relay_teams.sessions.runs.user_question_repository import UserQuestionRepository
 from relay_teams.sessions.runs.run_state_repo import RunStateRepository
 from relay_teams.sessions.session_repository import SessionRepository
+from relay_teams.sessions.session_models import SessionMode, SessionRecord
 from relay_teams.agents.tasks.task_repository import TaskRepository
 from relay_teams.tools.runtime.approval_state import ToolApprovalManager
 from relay_teams.tools.workspace_tools.shell_approval_repo import (
@@ -127,6 +128,13 @@ def _clear_current_task_cancellation_requests() -> None:
 
 def _run_event_replay_sort_key(run_event: RunEvent) -> int:
     return int(run_event.event_id or 0)
+
+
+def _normal_model_profile_for_intent(session: SessionRecord) -> str | None:
+    if session.session_mode != SessionMode.NORMAL:
+        return None
+    normalized = str(session.normal_model_profile or "").strip()
+    return normalized or None
 
 
 class SessionRunService:
@@ -484,6 +492,7 @@ class SessionRunService:
     def _prepare_intent(self, intent: IntentInput) -> IntentInput:
         session = self._session_repo.get(intent.session_id)
         target_role_id = str(intent.target_role_id or "").strip() or None
+        normal_model_profile = _normal_model_profile_for_intent(session)
         skills = tuple(str(skill or "").strip() for skill in (intent.skills or ()))
         skills = tuple(skill for skill in skills if skill) or None
         if self._orchestration_settings_service is None:
@@ -491,6 +500,7 @@ class SessionRunService:
                 update={
                     "session_mode": session.session_mode,
                     "target_role_id": target_role_id,
+                    "normal_model_profile": normal_model_profile,
                     "skills": skills,
                 }
             )
@@ -502,6 +512,7 @@ class SessionRunService:
             update={
                 "session_mode": session.session_mode,
                 "target_role_id": target_role_id,
+                "normal_model_profile": normal_model_profile,
                 "skills": skills,
                 "topology": topology,
             }
@@ -510,6 +521,7 @@ class SessionRunService:
     async def _prepare_intent_async(self, intent: IntentInput) -> IntentInput:
         session = await self._session_repo.get_async(intent.session_id)
         target_role_id = str(intent.target_role_id or "").strip() or None
+        normal_model_profile = _normal_model_profile_for_intent(session)
         skills = tuple(str(skill or "").strip() for skill in (intent.skills or ()))
         skills = tuple(skill for skill in skills if skill) or None
         if self._orchestration_settings_service is None:
@@ -517,6 +529,7 @@ class SessionRunService:
                 update={
                     "session_mode": session.session_mode,
                     "target_role_id": target_role_id,
+                    "normal_model_profile": normal_model_profile,
                     "skills": skills,
                 }
             )
@@ -528,6 +541,7 @@ class SessionRunService:
             update={
                 "session_mode": session.session_mode,
                 "target_role_id": target_role_id,
+                "normal_model_profile": normal_model_profile,
                 "skills": skills,
                 "topology": topology,
             }

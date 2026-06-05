@@ -342,6 +342,19 @@ def test_update_session_topology_persists_normal_root_role(tmp_path: Path) -> No
     assert updated.normal_root_role_id == "Crafter"
 
 
+def test_create_session_persists_normal_model_profile(tmp_path: Path) -> None:
+    db_path = tmp_path / "session_normal_model_create.db"
+    service = _build_service(db_path)
+
+    created = service.create_session(
+        session_id="session-1",
+        workspace_id="default",
+        normal_model_profile="fast",
+    )
+
+    assert created.normal_model_profile == "fast"
+
+
 def test_create_session_defaults_project_scope_to_workspace(tmp_path: Path) -> None:
     db_path = tmp_path / "session_project_scope.db"
     service = _build_service(db_path)

@@ -212,7 +212,7 @@ def refresh_eval_checkpoint(
 def write_eval_artifacts(*, results_file: Path, report: EvalReport) -> None:
     artifact_root = results_file.parent / "artifacts"
     for result in report.results:
-        artifact_dir = artifact_root / result.item_id
+        artifact_dir = artifact_root / _artifact_dir_name(result.item_id)
         artifact_dir.mkdir(parents=True, exist_ok=True)
         metadata_path = artifact_dir / "metadata.json"
         metadata_path.write_text(
@@ -251,6 +251,18 @@ def write_eval_artifacts(*, results_file: Path, report: EvalReport) -> None:
                 result.error,
                 encoding="utf-8",
             )
+
+
+def _artifact_dir_name(item_id: str) -> str:
+    safe_name = "".join(
+        char if char.isalnum() or char in {"-", "_", "."} else "_" for char in item_id
+    ).strip("._")
+    if not safe_name:
+        safe_name = "item"
+    if safe_name == item_id:
+        return safe_name
+    digest = hashlib.sha256(item_id.encode("utf-8")).hexdigest()[:8]
+    return f"{safe_name}-{digest}"
 
 
 def _load_payload(results_file: Path) -> dict[str, object]:

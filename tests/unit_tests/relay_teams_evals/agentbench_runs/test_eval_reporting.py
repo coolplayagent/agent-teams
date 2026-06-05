@@ -5,6 +5,7 @@ from pathlib import Path
 
 from relay_teams_evals.agentbench_runs.reporting import (
     ReportFormat,
+    _artifact_dir_name,
     build_relay_eval_report,
     write_agentbench_results_from_eval_report,
     write_agentbench_outputs,
@@ -52,7 +53,9 @@ def test_agentbench_reporting_writes_html_checkpoint_and_artifacts(
     assert (tmp_path / "report.html").exists()
     assert (tmp_path / "checkpoint.meta.json").exists()
     assert (tmp_path / "checkpoint.results.jsonl").exists()
-    assert (tmp_path / "artifacts" / "db:std-0" / "metadata.json").exists()
+    assert (
+        tmp_path / "artifacts" / _artifact_dir_name("db:std-0") / "metadata.json"
+    ).exists()
 
 
 def test_agentbench_results_from_exception_only_eval_marks_infra_failure(

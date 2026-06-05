@@ -29,6 +29,7 @@ from relay_teams.media import (
     content_parts_to_text,
 )
 from relay_teams.providers.provider_contracts import LLMProvider, LLMRequest
+from relay_teams.providers.model_profile_names import explicit_model_profile_reference
 from relay_teams.roles.role_models import RoleDefinition
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.runs.assistant_errors import RunCompletionReason
@@ -80,6 +81,7 @@ class MediaRunExecutor:
         role_id = self.resolve_generation_role_id(intent)
         role_registry = self._require_role_registry()
         role = role_registry.get(role_id)
+        role = _apply_normal_model_profile(role, intent.normal_model_profile)
         provider = self._provider_factory(role, intent.session_id)
         conversation_id = build_conversation_id(intent.session_id, role_id)
         instance = create_subagent_instance(
@@ -431,3 +433,15 @@ class MediaRunExecutor:
                 "SessionRunService requires role_registry for media generation"
             )
         return role_registry
+
+
+def _apply_normal_model_profile(
+    role: RoleDefinition,
+    normal_model_profile: str | None,
+) -> RoleDefinition:
+    normalized_profile = str(normal_model_profile or "").strip()
+    if not normalized_profile:
+        return role
+    return role.model_copy(
+        update={"model_profile": explicit_model_profile_reference(normalized_profile)}
+    )

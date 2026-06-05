@@ -246,6 +246,11 @@ def _main_agent_identifiers() -> tuple[str, ...]:
     return _MAIN_AGENT_IDENTIFIERS
 
 
+def _normalize_optional_identifier(value: str | None) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
 def _normalize_auto_session_title(value: str) -> str | None:
     for raw_line in str(value or "").splitlines():
         normalized = " ".join(raw_line.strip().split())
@@ -454,6 +459,7 @@ class SessionService:
         project_id: str | None = None,
         session_mode: SessionMode | None = None,
         normal_root_role_id: str | None = None,
+        normal_model_profile: str | None = None,
         orchestration_preset_id: str | None = None,
     ) -> SessionRecord:
         resolved_session_id = self._resolve_session_create_id(session_id)
@@ -483,6 +489,7 @@ class SessionService:
             project_id=project_id,
             session_mode=resolved_session_mode,
             normal_root_role_id=resolved_normal_root_role_id,
+            normal_model_profile=_normalize_optional_identifier(normal_model_profile),
             orchestration_preset_id=resolved_orchestration_preset_id,
         )
         self._invalidate_list_sessions_cache()
@@ -500,6 +507,7 @@ class SessionService:
         project_id: str | None = None,
         session_mode: SessionMode | None = None,
         normal_root_role_id: str | None = None,
+        normal_model_profile: str | None = None,
         orchestration_preset_id: str | None = None,
     ) -> SessionRecord:
         resolved_session_id = self._resolve_session_create_id(session_id)
@@ -529,6 +537,7 @@ class SessionService:
             project_id=project_id,
             session_mode=resolved_session_mode,
             normal_root_role_id=resolved_normal_root_role_id,
+            normal_model_profile=_normalize_optional_identifier(normal_model_profile),
             orchestration_preset_id=resolved_orchestration_preset_id,
         )
         self._invalidate_list_sessions_cache()
@@ -900,6 +909,22 @@ class SessionService:
             normal_root_role_id=normal_root_role_id,
             orchestration_preset_id=orchestration_preset_id,
         )
+
+    async def update_session_normal_model_profile_async(
+        self,
+        session_id: str,
+        *,
+        normal_model_profile: str | None,
+    ) -> SessionRecord:
+        await self._session_repo.update_normal_model_profile_async(
+            session_id,
+            normal_model_profile=_normalize_optional_identifier(normal_model_profile),
+        )
+        self._invalidate_list_sessions_cache()
+        updated = await self.get_session_async(session_id)
+        self._merge_session_list_cache_record(updated)
+        self._invalidate_session_read_cache(session_id)
+        return updated
 
     def rebind_session_workspace(
         self,

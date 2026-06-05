@@ -1275,7 +1275,7 @@ body.light-theme .project-session-toggle-btn {
     margin-top: 18px;
     padding: 0;
     height: 36px;
-    overflow: hidden;
+    overflow: visible;
     color: #111827;
     white-space: nowrap;
 }
@@ -1299,7 +1299,7 @@ body.light-theme .project-session-toggle-btn {
     gap: 12px;
     min-width: 0;
     min-height: 36px;
-    overflow: hidden;
+    overflow: visible;
     flex-wrap: nowrap;
 }
 
@@ -1320,16 +1320,18 @@ body.light-theme .project-session-toggle-btn {
 }
 
 #input-container .composer-segmented {
+    display: inline-flex;
     flex: 0 0 auto;
     height: 36px;
     padding: 0;
     border: 1px solid #dfe4e8;
     border-radius: 10px;
     background: #ffffff;
-    overflow: hidden;
+    overflow: visible;
 }
 
 #input-container .composer-segmented-btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1342,6 +1344,15 @@ body.light-theme .project-session-toggle-btn {
     font-size: 14px;
     font-weight: 600;
     line-height: 1;
+}
+
+#input-container .composer-segmented-btn:first-child {
+    border-radius: 9px 0 0 9px;
+}
+
+#input-container .composer-segmented-btn:last-child {
+    border-right: 0;
+    border-radius: 0 9px 9px 0;
 }
 
 #input-container .composer-segmented-btn:hover:not(:disabled) {
@@ -1365,7 +1376,16 @@ body.light-theme .project-session-toggle-btn {
     flex: 1 1 auto;
     gap: 10px;
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
+}
+
+#input-container .composer-normal-route {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 1 auto;
+    gap: 10px;
+    min-width: 0;
+    overflow: visible;
 }
 
 #input-container .composer-preset-label {
@@ -1407,6 +1427,226 @@ body.light-theme .project-session-toggle-btn {
     min-width: 0;
     max-width: 230px;
     padding: 0 34px 0 14px;
+}
+
+#input-container .composer-native-select[hidden] {
+    display: none;
+}
+
+#input-container #normal-role-field {
+    flex: 0 0 auto;
+}
+
+#input-container .composer-model-field {
+    flex: 0 1 auto;
+}
+
+#input-container .composer-select {
+    position: relative;
+    display: inline-flex;
+    width: clamp(150px, 17vw, 230px);
+    min-width: 0;
+    max-width: 230px;
+}
+
+#input-container .composer-model-select {
+    width: clamp(132px, 14vw, 210px);
+    max-width: 210px;
+}
+
+#input-container .composer-model-select-menu {
+    width: clamp(132px, 14vw, 210px);
+    max-width: 210px;
+}
+
+#input-container .composer-select-trigger {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    height: 36px;
+    min-height: 36px;
+    min-width: 0;
+    padding: 0 11px 0 13px;
+    border: 1px solid #dfe4e8;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #111827;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    outline: none;
+    cursor: pointer;
+}
+
+#input-container .composer-select-trigger:hover:not(:disabled),
+#input-container .composer-select-trigger.is-open {
+    border-color: #cbd4d2;
+    background: #f8faf9;
+}
+
+#input-container .composer-select-trigger:focus-visible {
+    border-color: #557866;
+    box-shadow: 0 0 0 1px rgba(85, 120, 102, 0.24);
+}
+
+#input-container .composer-select-trigger:disabled {
+    background: #f5f7f8;
+    color: #8c96a3;
+    cursor: not-allowed;
+}
+
+#input-container .composer-select-copy {
+    display: inline-flex;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+#input-container .composer-select-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#input-container .composer-select-meta {
+    display: none;
+}
+
+#input-container .composer-select-chevron {
+    display: inline-flex;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    color: #4f5b68;
+}
+
+#input-container .composer-select-chevron svg {
+    width: 14px;
+    height: 14px;
+}
+
+#input-container .composer-select-chevron path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+#input-container .composer-select-menu {
+    position: absolute;
+    top: auto;
+    bottom: calc(100% + 5px);
+    left: 0;
+    z-index: 35;
+    width: max(100%, 220px);
+    max-width: min(320px, calc(100vw - 32px));
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid #e1e5e9;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+    scrollbar-color: #aeb6bf transparent;
+    scrollbar-width: thin;
+}
+
+#input-container .composer-select-menu::-webkit-scrollbar {
+    width: 9px;
+}
+
+#input-container .composer-select-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#input-container .composer-select-menu::-webkit-scrollbar-thumb {
+    min-height: 36px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: #aeb6bf;
+    background-clip: content-box;
+}
+
+#input-container .composer-select-menu::-webkit-scrollbar-thumb:hover {
+    background: #8f99a5;
+    background-clip: content-box;
+}
+
+#input-container .composer-model-select-menu .composer-select-menu {
+    right: 0;
+    left: auto;
+    width: max(100%, 250px);
+}
+
+#input-container .composer-select-menu[hidden] {
+    display: none;
+}
+
+#input-container .composer-select-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 32px;
+    padding: 6px 7px 6px 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #111827;
+    text-align: left;
+    cursor: pointer;
+}
+
+#input-container .composer-select-option:hover:not(:disabled),
+#input-container .composer-select-option:focus-visible,
+#input-container .composer-select-option.is-selected {
+    background: #f1f4f3;
+    outline: none;
+}
+
+#input-container .composer-select-option-copy {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+#input-container .composer-select-option-label,
+#input-container .composer-select-option-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#input-container .composer-select-option-label {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.25;
+}
+
+#input-container .composer-select-option-meta {
+    color: #687385;
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+#input-container .composer-select-option-check {
+    width: 16px;
+    flex: 0 0 16px;
+    color: #2f6f5b;
+    font-size: 13px;
+    text-align: center;
+}
+
+#input-container .composer-select-option:disabled {
+    color: #9aa3af;
+    cursor: not-allowed;
 }
 
 #input-container .composer-mode-inline-select {
@@ -1565,6 +1805,8 @@ body:not(.light-theme) #input-container.input-container {
 
 body:not(.light-theme) #input-container .input-wrapper,
 body:not(.light-theme) #input-container .composer-segmented,
+body:not(.light-theme) #input-container .composer-select-trigger,
+body:not(.light-theme) #input-container .composer-select-menu,
 body:not(.light-theme) #input-container .composer-preset-select,
 body:not(.light-theme) #input-container .composer-mode-inline-select,
 body:not(.light-theme) #input-container .composer-usage-pill,
@@ -1597,6 +1839,35 @@ body:not(.light-theme) #input-container .runtime-inject-item.is-failed {
     color: color-mix(in srgb, var(--danger) 76%, var(--text-primary));
 }
 
+.composer-disabled-tooltip {
+    position: fixed;
+    z-index: 1000;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: 5px 8px;
+    border: 1px solid #dfe4e8;
+    border-radius: 5px;
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+    color: #26313d;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.45;
+    pointer-events: none;
+    text-align: left;
+    white-space: normal;
+}
+
+.composer-disabled-tooltip[hidden] {
+    display: none;
+}
+
+body:not(.light-theme) .composer-disabled-tooltip {
+    border-color: var(--border-color);
+    background: var(--bg-surface);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.26);
+    color: var(--text-primary);
+}
+
 body:not(.light-theme) #input-container .runtime-inject-state {
     color: var(--text-secondary);
 }
@@ -1614,6 +1885,43 @@ body:not(.light-theme) #input-container .composer-mode-inline-select:disabled {
         url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg' fill='none'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5' stroke='%23788491' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") right 12px center / 14px 14px no-repeat,
         color-mix(in srgb, var(--bg-surface) 88%, #000000 12%);
     color: var(--text-secondary);
+}
+
+body:not(.light-theme) #input-container .composer-select-trigger:hover:not(:disabled),
+body:not(.light-theme) #input-container .composer-select-trigger.is-open,
+body:not(.light-theme) #input-container .composer-select-option:hover:not(:disabled),
+body:not(.light-theme) #input-container .composer-select-option:focus-visible,
+body:not(.light-theme) #input-container .composer-select-option.is-selected {
+    background: color-mix(in srgb, var(--primary) 11%, var(--bg-surface));
+    color: var(--text-primary);
+}
+
+body:not(.light-theme) #input-container .composer-select-trigger:disabled {
+    background: color-mix(in srgb, var(--bg-surface) 88%, #000000 12%);
+    color: var(--text-secondary);
+}
+
+body:not(.light-theme) #input-container .composer-select-menu {
+    scrollbar-color: color-mix(in srgb, var(--text-secondary) 72%, transparent) transparent;
+}
+
+body:not(.light-theme) #input-container .composer-select-menu::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-secondary) 72%, transparent);
+    background-clip: content-box;
+}
+
+body:not(.light-theme) #input-container .composer-select-menu::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--text-secondary) 90%, transparent);
+    background-clip: content-box;
+}
+
+body:not(.light-theme) #input-container .composer-select-chevron,
+body:not(.light-theme) #input-container .composer-select-option-meta {
+    color: var(--text-secondary);
+}
+
+body:not(.light-theme) #input-container .composer-select-option-check {
+    color: var(--primary-hover);
 }
 
 body:not(.light-theme) #input-container #prompt-input,
@@ -1660,6 +1968,14 @@ body:not(.light-theme) #input-container .composer-segmented-btn:hover:not(:disab
 
     #input-container .composer-preset-select {
         width: clamp(128px, 16vw, 190px);
+    }
+
+    #input-container .composer-select {
+        width: clamp(128px, 15vw, 190px);
+    }
+
+    #input-container .composer-model-select-menu {
+        width: clamp(124px, 13vw, 180px);
     }
 
     #input-container .composer-mode-check {
@@ -1784,6 +2100,8 @@ body:not(.light-theme) #input-container .composer-segmented-btn:hover:not(:disab
     #input-container .input-controls {
         grid-template-columns: minmax(0, 1fr) auto auto;
         grid-template-areas: "topology yolo thinking";
+        grid-auto-rows: auto;
+        height: auto;
     }
 
     #input-container .composer-usage-strip {
@@ -1793,6 +2111,21 @@ body:not(.light-theme) #input-container .composer-segmented-btn:hover:not(:disab
     #input-container .composer-segmented,
     #input-container .composer-preset-field {
         max-width: 100%;
+    }
+
+    #input-container .composer-topology {
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
+
+    #input-container .composer-normal-route {
+        flex: 1 1 100%;
+        gap: 8px;
+    }
+
+    #input-container #normal-role-field,
+    #input-container .composer-model-field {
+        flex: 1 1 0;
     }
 
     #input-container .composer-segmented-btn {
@@ -1805,6 +2138,19 @@ body:not(.light-theme) #input-container .composer-segmented-btn:hover:not(:disab
     #input-container .composer-preset-select {
         width: 100%;
         max-width: none;
+    }
+
+    #input-container .composer-select,
+    #input-container .composer-model-select-menu {
+        width: 100%;
+        max-width: none;
+    }
+
+    #input-container .composer-select-menu,
+    #input-container .composer-model-select-menu .composer-select-menu {
+        right: auto;
+        left: 0;
+        width: min(280px, calc(100vw - 32px));
     }
 
     #input-container .composer-mode-inline-select {
@@ -1837,6 +2183,14 @@ body:not(.light-theme) #input-container .composer-segmented-btn:hover:not(:disab
 
     #input-container .composer-preset-select {
         width: clamp(128px, 16vw, 190px);
+    }
+
+    #input-container .composer-select {
+        width: clamp(128px, 15vw, 190px);
+    }
+
+    #input-container .composer-model-select-menu {
+        width: clamp(124px, 13vw, 180px);
     }
 
     #input-container .composer-mode-check {
@@ -1886,10 +2240,40 @@ body:not(.light-theme) #input-container .composer-segmented-btn:hover:not(:disab
     #input-container .input-controls {
         grid-template-columns: minmax(0, 1fr) auto auto;
         grid-template-areas: "topology yolo thinking";
+        grid-auto-rows: auto;
+        height: auto;
     }
 
     #input-container .composer-usage-strip {
         display: none;
+    }
+
+    #input-container .composer-topology {
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
+
+    #input-container .composer-normal-route {
+        flex: 1 1 100%;
+        gap: 8px;
+    }
+
+    #input-container #normal-role-field,
+    #input-container .composer-model-field {
+        flex: 1 1 0;
+    }
+
+    #input-container .composer-select,
+    #input-container .composer-model-select-menu {
+        width: 100%;
+        max-width: none;
+    }
+
+    #input-container .composer-select-menu,
+    #input-container .composer-model-select-menu .composer-select-menu {
+        right: auto;
+        left: 0;
+        width: min(280px, calc(100vw - 32px));
     }
 }
 

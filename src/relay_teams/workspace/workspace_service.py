@@ -19,6 +19,8 @@ from relay_teams.paths import (
     path_exists,
     path_is_dir,
     path_is_file,
+    path_stat,
+    open_binary_file,
     read_bytes_file,
     unlink_path,
 )
@@ -30,6 +32,7 @@ from relay_teams.workspace.workspace_models import (
     WorkspaceDiffFile,
     WorkspaceDiffFileSummary,
     WorkspaceDiffListing,
+    WorkspaceFileContent,
     WorkspaceMountProvider,
     WorkspaceMountRecord,
     WorkspaceMountCapabilities,
@@ -64,6 +67,7 @@ _SEARCH_MAX_VISITED = 3000
 _SEARCH_CACHE_TTL_SECONDS = 300.0
 _SEARCH_COLD_BUILD_TIMEOUT_SECONDS = 0.35
 _SEARCH_RIPGREP_TIMEOUT_SECONDS = 15.0
+_WORKSPACE_FILE_PREVIEW_MAX_BYTES = 512 * 1024
 _SEARCH_SKIP_DIRECTORY_NAMES = frozenset(
     {
         ".git",
@@ -132,6 +136,26 @@ _WORKSPACE_IMAGE_MEDIA_TYPES = frozenset(
     }
 )
 _logger = get_logger(__name__)
+
+
+def _read_workspace_file_preview(resolved_path: Path) -> tuple[int, bytes]:
+    size_bytes = path_stat(resolved_path).st_size
+    with open_binary_file(resolved_path) as handle:
+        preview_bytes = handle.read(_WORKSPACE_FILE_PREVIEW_MAX_BYTES + 1)
+    return size_bytes, preview_bytes
+
+
+def _decode_workspace_file_preview(preview_bytes: bytes, *, truncated: bool) -> str:
+    try:
+        return preview_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        if (
+            truncated
+            and exc.reason == "unexpected end of data"
+            and exc.start < len(preview_bytes)
+        ):
+            return preview_bytes[: exc.start].decode("utf-8")
+        raise
 
 
 class _WorkspaceDiffCandidate:
@@ -1196,6 +1220,12 @@ class WorkspaceService:
             root_path=root_path,
             file_path=path,
         )
+        self._validate_workspace_file_readable_scope(
+            mount=mount,
+            root_path=root_path,
+            resolved_path=resolved_path,
+            display_path=path,
+        )
         if not path_exists(resolved_path) or not path_is_file(resolved_path):
             raise FileNotFoundError(f"Workspace file not found: {path}")
 
@@ -1203,6 +1233,82 @@ class WorkspaceService:
         if media_type not in _WORKSPACE_IMAGE_MEDIA_TYPES:
             raise ValueError(f"Workspace file is not a supported image: {path}")
         return resolved_path, media_type
+
+    async def get_workspace_file_content_async(
+        self,
+        workspace_id: str,
+        *,
+        path: str,
+        mount_name: str | None = None,
+    ) -> WorkspaceFileContent:
+        record = await asyncio.to_thread(self._repository.get, workspace_id)
+        mount = self._resolve_mount(record, mount_name)
+        capabilities = self._mount_capabilities(mount)
+        if not capabilities.can_read:
+            raise ValueError(
+                f"Workspace mount does not support file read: {mount.mount_name}"
+            )
+        if mount.provider != WorkspaceMountProvider.LOCAL:
+            raise ValueError(
+                f"Workspace mount provider is not yet file-enabled: {mount.mount_name}"
+            )
+
+        root_path = self._resolve_local_mount_root(mount)
+        resolved_path = self._resolve_workspace_file_path(
+            root_path=root_path,
+            file_path=path,
+        )
+        self._validate_workspace_file_readable_scope(
+            mount=mount,
+            root_path=root_path,
+            resolved_path=resolved_path,
+            display_path=path,
+        )
+        if not path_exists(resolved_path):
+            raise FileNotFoundError(f"Workspace file not found: {path}")
+        if not path_is_file(resolved_path):
+            raise ValueError(f"Workspace path is not a file: {path}")
+
+        size_bytes, content_bytes = await asyncio.to_thread(
+            _read_workspace_file_preview,
+            resolved_path,
+        )
+        truncated = len(content_bytes) > _WORKSPACE_FILE_PREVIEW_MAX_BYTES
+        preview_bytes = content_bytes[:_WORKSPACE_FILE_PREVIEW_MAX_BYTES]
+        relative_path = resolved_path.relative_to(root_path).as_posix()
+        is_binary = b"\0" in preview_bytes
+        content = ""
+        if not is_binary:
+            try:
+                content = _decode_workspace_file_preview(
+                    preview_bytes,
+                    truncated=truncated,
+                )
+            except UnicodeDecodeError:
+                is_binary = True
+
+        if is_binary:
+            return WorkspaceFileContent(
+                workspace_id=record.workspace_id,
+                mount_name=mount.mount_name,
+                path=relative_path,
+                content="",
+                encoding="binary",
+                is_binary=True,
+                truncated=truncated or size_bytes > _WORKSPACE_FILE_PREVIEW_MAX_BYTES,
+                size_bytes=size_bytes,
+            )
+
+        return WorkspaceFileContent(
+            workspace_id=record.workspace_id,
+            mount_name=mount.mount_name,
+            path=relative_path,
+            content=content,
+            encoding="utf-8",
+            is_binary=False,
+            truncated=truncated or size_bytes > _WORKSPACE_FILE_PREVIEW_MAX_BYTES,
+            size_bytes=size_bytes,
+        )
 
     async def get_workspace_image_preview_file_async(
         self,
@@ -1435,12 +1541,41 @@ class WorkspaceService:
     def _validate_mount_relative_root(
         self, root_path: Path, relative_path: str
     ) -> None:
+        _ = self._resolve_mount_relative_root(root_path, relative_path)
+
+    def _validate_workspace_file_readable_scope(
+        self,
+        *,
+        mount: WorkspaceMountRecord,
+        root_path: Path,
+        resolved_path: Path,
+        display_path: str,
+    ) -> None:
+        readable_roots = tuple(
+            self._resolve_mount_relative_root(root_path, relative_path)
+            for relative_path in mount.readable_paths
+        )
+        resolved_file_path = resolved_path.resolve()
+        if any(
+            resolved_file_path == readable_root
+            or readable_root in resolved_file_path.parents
+            for readable_root in readable_roots
+        ):
+            return
+        raise ValueError(
+            "Workspace file is outside readable paths for mount "
+            f"{mount.mount_name}: {display_path}"
+        )
+
+    @staticmethod
+    def _resolve_mount_relative_root(root_path: Path, relative_path: str) -> Path:
         candidate = (root_path / relative_path).resolve()
         resolved_root = root_path.resolve()
         if candidate != resolved_root and resolved_root not in candidate.parents:
             raise ValueError(
                 f"Workspace file scope escapes mount root: {relative_path}"
             )
+        return candidate
 
     def _validate_default_mount(
         self,

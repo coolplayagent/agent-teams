@@ -1398,6 +1398,11 @@ async def test_sdk_misc_endpoint_wrappers_cover_async_primitives(monkeypatch) ->
         "status": "ok"
     }
     assert await client.get_workspace_snapshot("workspace-1") == {"status": "ok"}
+    assert await client.get_workspace_file(
+        "workspace-1",
+        path="src/app.py",
+        mount="default",
+    ) == {"status": "ok"}
     assert await client.list_automation_projects() == [
         {"automation_project_id": "auto-1"}
     ]

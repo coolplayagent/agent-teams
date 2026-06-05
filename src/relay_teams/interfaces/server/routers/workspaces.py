@@ -6,7 +6,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from urllib.parse import unquote
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from relay_teams.validation import require_force_delete
@@ -17,6 +16,7 @@ from relay_teams.workspace import (
     WorkspaceMountRecord,
     WorkspaceDiffFile,
     WorkspaceDiffListing,
+    WorkspaceFileContent,
     WorkspaceRecord,
     WorkspaceSearchResponse,
     WorkspaceService,
@@ -248,11 +248,32 @@ async def get_workspace_diff_file(
     try:
         return await service.get_workspace_diff_file_async(
             workspace_id,
-            path=unquote(path),
+            path=path,
             mount_name=mount,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Workspace not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{workspace_id}/file", response_model=WorkspaceFileContent)
+async def get_workspace_file_content(
+    workspace_id: RequiredIdentifierStr,
+    path: Annotated[str, Query(min_length=1)],
+    mount: Annotated[str | None, Query()] = None,
+    service: WorkspaceService = Depends(get_workspace_service),
+) -> WorkspaceFileContent:
+    try:
+        return await service.get_workspace_file_content_async(
+            workspace_id,
+            path=path,
+            mount_name=mount,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Workspace not found") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -270,7 +291,7 @@ async def get_workspace_preview_file(
             media_type,
         ) = await service.get_workspace_image_preview_file_async(
             workspace_id,
-            path=unquote(path),
+            path=path,
             mount_name=mount,
         )
     except KeyError as exc:

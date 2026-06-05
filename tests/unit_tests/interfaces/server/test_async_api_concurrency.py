@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 import httpx
@@ -9,6 +10,7 @@ import pytest
 from relay_teams.interfaces.server import async_call
 from relay_teams.interfaces.server.deps import (
     get_general_config_service,
+    get_model_config_service,
     get_run_service,
     get_session_service,
     get_skill_registry,
@@ -37,6 +39,13 @@ class _FakeGeneralConfigService:
         return GeneralConfig(shell_safety_policy_enabled=True)
 
 
+class _FakeModelConfigService:
+    runtime = SimpleNamespace(
+        default_model_profile="fast",
+        llm_profiles={"fast": object()},
+    )
+
+
 class _AsyncSessionService:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -47,11 +56,13 @@ class _AsyncSessionService:
         *,
         session_id: str | None = None,
         workspace_id: str,
+        normal_model_profile: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> SessionRecord:
         return await self.create_session_async(
             session_id=session_id,
             workspace_id=workspace_id,
+            normal_model_profile=normal_model_profile,
             metadata=metadata,
         )
 
@@ -60,6 +71,7 @@ class _AsyncSessionService:
         *,
         session_id: str | None = None,
         workspace_id: str,
+        normal_model_profile: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> SessionRecord:
         await asyncio.sleep(0.001)
@@ -68,6 +80,7 @@ class _AsyncSessionService:
             record = SessionRecord(
                 session_id=resolved_session_id,
                 workspace_id=workspace_id,
+                normal_model_profile=normal_model_profile,
                 metadata={} if metadata is None else dict(metadata),
             )
             self._records[resolved_session_id] = record
@@ -181,6 +194,7 @@ def _create_app(
     app.dependency_overrides[get_run_service] = lambda: run_service
     app.dependency_overrides[get_skill_registry] = _FakeSkillRegistry
     app.dependency_overrides[get_general_config_service] = _FakeGeneralConfigService
+    app.dependency_overrides[get_model_config_service] = _FakeModelConfigService
     return app
 
 

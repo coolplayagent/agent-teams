@@ -59,6 +59,7 @@ import {
     fetchWorkspaceDiffFile,
     fetchWorkspaces,
     fetchWorkspaceDiffs,
+    fetchWorkspaceFile,
     fetchWorkspaceSnapshot,
     fetchWorkspaceTree,
     openWorkspaceRoot,
@@ -157,11 +158,17 @@ let automationEditorModalRoot = null;
 let skillsModalRoot = null;
 const runtimeToolPollingJobIds = new Set();
 let selectedTreePath = null;
+let currentWorkspaceSurfaceMode = 'files';
+let currentWorkspaceSurfaceModeLocked = false;
+let currentWorkspaceTreeFilter = '';
+let currentChangeFilter = 'unstaged';
 let currentDiffState = createInitialDiffState();
+let currentFileState = createInitialFileState();
 const currentMountTrees = new Map();
 const expandedTreePaths = new Set();
 const loadingTreePaths = new Set();
 const treeLoadErrors = new Map();
+const workspaceFileCache = new Map();
 const workspaceViewCache = new Map();
 const skillsMarketCache = new Map();
 const skillsMarketDetailCache = new Map();
@@ -4475,8 +4482,10 @@ export async function openWorkspaceProjectView(workspace) {
     const restoredFromCache = restoreProjectViewState(workspaceId);
     if (restoredFromCache && currentSnapshot) {
         renderWorkspaceSnapshot(orderedWorkspace, currentSnapshot);
-        if (selectedTreePath && findDiffSummary(selectedTreePath)) {
+        if (currentWorkspaceSurfaceMode === 'changes' && selectedTreePath && findDiffSummary(selectedTreePath)) {
             void ensureDiffFileLoaded(selectedTreePath);
+        } else if (currentWorkspaceSurfaceMode === 'files' && selectedTreePath) {
+            void ensureWorkspaceFileLoaded(selectedTreePath);
         }
     } else {
         resetProjectViewState(workspaceId);
@@ -4965,7 +4974,13 @@ function resetProjectViewState(workspaceId) {
     currentSnapshotWorkspaceId = workspaceId;
     currentMountName = null;
     selectedTreePath = null;
+    currentWorkspaceSurfaceMode = 'files';
+    currentWorkspaceSurfaceModeLocked = false;
+    currentWorkspaceTreeFilter = '';
+    currentChangeFilter = 'unstaged';
     currentDiffState = createInitialDiffState();
+    currentFileState = createInitialFileState();
+    workspaceFileCache.clear();
     currentMountTrees.clear();
     expandedTreePaths.clear();
     loadingTreePaths.clear();
@@ -4986,6 +5001,16 @@ function createInitialDiffState() {
     };
 }
 
+function createInitialFileState() {
+    return {
+        status: 'idle',
+        mountName: null,
+        path: null,
+        file: null,
+        fileMessage: null,
+    };
+}
+
 function cacheProjectViewState() {
     const workspaceId = String(currentSnapshotWorkspaceId || currentWorkspace?.workspace_id || '').trim();
     if (!workspaceId) {
@@ -4998,6 +5023,15 @@ function cacheProjectViewState() {
         snapshot: cloneSnapshot(currentSnapshot),
         currentMountName,
         selectedTreePath,
+        workspaceSurfaceMode: currentWorkspaceSurfaceMode,
+        workspaceSurfaceModeLocked: currentWorkspaceSurfaceModeLocked,
+        workspaceTreeFilter: currentWorkspaceTreeFilter,
+        changeFilter: currentChangeFilter,
+        fileState: cloneFileState(currentFileState),
+        fileCache: Array.from(workspaceFileCache.entries()).map(([key, file]) => [
+            String(key || ''),
+            cloneWorkspaceFile(file),
+        ]),
         mountTrees: Array.from(currentMountTrees.entries()).map(([mountName, tree]) => [
             String(mountName || '').trim(),
             cloneTreeNode(tree),
@@ -5017,6 +5051,22 @@ function restoreProjectViewState(workspaceId) {
     currentSnapshot = cloneSnapshot(cachedState.snapshot);
     currentMountName = String(cachedState.currentMountName || '').trim() || null;
     selectedTreePath = String(cachedState.selectedTreePath || '').trim() || null;
+    currentWorkspaceSurfaceMode = resolveWorkspaceSurfaceMode(cachedState.workspaceSurfaceMode);
+    currentWorkspaceSurfaceModeLocked = cachedState.workspaceSurfaceModeLocked === true;
+    currentWorkspaceTreeFilter = String(cachedState.workspaceTreeFilter || '').trim();
+    currentChangeFilter = resolveChangeFilter(cachedState.changeFilter);
+    currentFileState = cloneFileState(cachedState.fileState);
+    workspaceFileCache.clear();
+    for (const entry of Array.isArray(cachedState.fileCache) ? cachedState.fileCache : []) {
+        if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+        }
+        const key = String(entry[0] || '').trim();
+        const file = cloneWorkspaceFile(entry[1]);
+        if (key && file) {
+            workspaceFileCache.set(key, file);
+        }
+    }
     currentDiffState = cloneDiffState(cachedState.diffState);
     currentMountTrees.clear();
     for (const entry of Array.isArray(cachedState.mountTrees) ? cachedState.mountTrees : []) {
@@ -5053,9 +5103,14 @@ async function loadWorkspaceSnapshot(workspaceId, loadToken) {
         currentSnapshotWorkspaceId = workspaceId;
         currentMountName = resolveWorkspaceMountName(currentMountName, nextSnapshot);
         primeSnapshotMountTrees(nextSnapshot);
+        workspaceFileCache.clear();
+        currentFileState = createInitialFileState();
 
         ensureActiveMountTreeLoaded(loadToken);
         cacheProjectViewState();
+        if (currentWorkspaceSurfaceMode === 'files' && selectedTreePath) {
+            void ensureWorkspaceFileLoaded(selectedTreePath);
+        }
     } catch (error) {
         if (loadToken !== currentLoadToken || workspaceId !== currentSnapshotWorkspaceId) {
             return;
@@ -5092,7 +5147,14 @@ async function loadWorkspaceDiffs(workspaceId, loadToken) {
             loadingFilePaths: new Set(),
             fileErrors: filterFileErrors(currentDiffState.fileErrors, diffFiles),
         };
-        if (!selectedTreePath && currentDiffState.diffFiles.length > 0) {
+        if (!currentWorkspaceSurfaceModeLocked) {
+            currentWorkspaceSurfaceMode = currentDiffState.diffFiles.length > 0 ? 'changes' : 'files';
+        }
+        if (
+            currentWorkspaceSurfaceMode === 'changes'
+            && !selectedTreePath
+            && currentDiffState.diffFiles.length > 0
+        ) {
             selectedTreePath = String(currentDiffState.diffFiles[0]?.path || '').trim() || null;
         }
         if (currentSnapshot) {
@@ -11322,23 +11384,19 @@ function renderLoadingState(workspace) {
     });
     if (els.projectViewContent) {
         els.projectViewContent.innerHTML = `
-            <div class="workspace-view-grid">
-                <section class="workspace-view-panel">
-                    <div class="workspace-view-panel-header">
-                        <h3>${escapeHtml(t('workspace_view.tree'))}</h3>
-                        <span class="workspace-view-panel-meta"></span>
+            <div class="workspace-workbench">
+                <div class="workspace-workbench-main">
+                    <div class="workspace-workbench-bar">
+                        <div class="workspace-mode-tabs">
+                            <button class="workspace-mode-tab is-active" type="button">${escapeHtml(t('workspace_view.files'))}</button>
+                            <button class="workspace-mode-tab" type="button">${escapeHtml(t('workspace_view.diffs'))}</button>
+                        </div>
                     </div>
-                    <div class="workspace-tree-shell">
-                        ${renderInlineState(t('workspace_view.loading_tree'))}
-                    </div>
-                </section>
-                <section class="workspace-view-panel workspace-diff-panel">
-                    <div class="workspace-view-panel-header">
-                        <h3>${escapeHtml(t('workspace_view.diffs'))}</h3>
-                        <span class="workspace-view-panel-meta"></span>
-                    </div>
-                    ${renderInlineState(t('workspace_view.loading_diffs'))}
-                </section>
+                    ${renderInlineState(t('workspace_view.loading'))}
+                </div>
+                <aside class="workspace-workbench-sidebar">
+                    ${renderInlineState(t('workspace_view.loading_tree'))}
+                </aside>
             </div>
         `;
     }
@@ -11359,7 +11417,7 @@ function renderErrorState(workspace, error) {
 }
 
 function renderWorkspaceSnapshot(workspace, snapshot) {
-    renderToolbar(workspace, { summary: summarizeDiffState() });
+    renderToolbar(workspace, { summary: summarizeWorkspaceState(snapshot) });
     if (!els.projectViewContent) {
         return;
     }
@@ -11368,28 +11426,20 @@ function renderWorkspaceSnapshot(workspace, snapshot) {
     els.projectViewContent.innerHTML = `
         <div class="workspace-view-layout">
             ${renderWorkspaceMountStrip(snapshot)}
-            <div class="workspace-view-grid">
-                <section class="workspace-view-panel">
-                    <div class="workspace-view-panel-header">
-                        <h3>${escapeHtml(t('workspace_view.tree'))}</h3>
-                        <span class="workspace-view-panel-meta">${renderWorkspaceRootMeta(snapshot)}</span>
+            <div class="workspace-workbench" data-workspace-current-mode="${escapeHtml(currentWorkspaceSurfaceMode)}">
+                <div class="workspace-workbench-main">
+                    ${renderWorkspaceWorkbenchBar(snapshot)}
+                    <div class="workspace-workbench-content">
+                        ${renderWorkspaceMainContent(activeTree)}
                     </div>
-                    <div class="workspace-tree-shell">
-                        ${renderTree(activeTree)}
-                    </div>
-                </section>
-                <section class="workspace-view-panel workspace-diff-panel">
-                    <div class="workspace-view-panel-header">
-                        <h3>${escapeHtml(t('workspace_view.diffs'))}</h3>
-                        <span class="workspace-view-panel-meta">${escapeHtml(resolveDiffPanelMeta())}</span>
-                    </div>
-                    ${renderDiffSection()}
-                </section>
+                </div>
+                ${renderWorkspaceSidebar(activeTree)}
             </div>
         </div>
     `;
 
     bindWorkspaceHeaderInteractions();
+    bindWorkspaceModeInteractions();
     bindTreeInteractions();
     bindDiffInteractions();
 }
@@ -11420,6 +11470,212 @@ function renderWorkspaceRootMeta(snapshot) {
             <span class="workspace-view-path-text">${escapeHtml(rootPath)}</span>
         </button>
     `;
+}
+
+function summarizeWorkspaceState(snapshot) {
+    const mount = resolveCurrentMount(snapshot);
+    const mountName = String(mount?.mountName || resolveActiveMountName() || '').trim();
+    const diffSummary = summarizeDiffState();
+    if (mountName && diffSummary) {
+        return `${mountName} · ${diffSummary}`;
+    }
+    return mountName || diffSummary;
+}
+
+function renderWorkspaceWorkbenchBar(snapshot) {
+    const activePath = String(selectedTreePath || currentFileState.path || '').trim();
+    return `
+        <div class="workspace-workbench-bar">
+            <div class="workspace-mode-tabs" role="tablist" aria-label="${escapeHtml(t('workspace_view.mode'))}">
+                ${renderWorkspaceModeTab('files', t('workspace_view.files'))}
+                ${renderWorkspaceModeTab('changes', t('workspace_view.diffs'), renderChangeCount())}
+            </div>
+            ${renderWorkspaceMountMenu(snapshot)}
+            <div class="workspace-workbench-path" title="${escapeHtml(activePath || renderWorkspaceRootPath(snapshot))}">
+                ${renderWorkspaceBreadcrumb(activePath)}
+            </div>
+            <div class="workspace-workbench-actions">
+                ${renderWorkspaceOpenRootButton()}
+            </div>
+        </div>
+        ${currentWorkspaceSurfaceMode === 'changes' ? renderWorkspaceChangeFilters() : ''}
+    `;
+}
+
+function renderWorkspaceModeTab(mode, label, meta = '') {
+    const isActive = currentWorkspaceSurfaceMode === mode;
+    return `
+        <button
+            type="button"
+            class="workspace-mode-tab${isActive ? ' is-active' : ''}"
+            data-workspace-mode="${escapeHtml(mode)}"
+            aria-selected="${isActive ? 'true' : 'false'}"
+        >
+            <span>${escapeHtml(label)}</span>
+            ${meta ? `<span class="workspace-mode-count">${escapeHtml(meta)}</span>` : ''}
+        </button>
+    `;
+}
+
+function renderChangeCount() {
+    if (currentDiffState.status !== 'ready' || currentDiffState.isGitRepository !== true) {
+        return '';
+    }
+    return String(currentDiffState.diffFiles.length);
+}
+
+function renderWorkspaceMountMenu(snapshot) {
+    const mounts = Array.isArray(snapshot?.mounts) ? sortWorkspaceMounts(snapshot.mounts) : [];
+    if (mounts.length <= 1) {
+        const mount = mounts[0] || resolveCurrentMount(snapshot);
+        return `
+            <div class="workspace-mount-menu">
+                <span class="workspace-mount-current">${escapeHtml(String(mount?.mountName || resolveActiveMountName() || 'default'))}</span>
+            </div>
+        `;
+    }
+    return `
+        <div class="workspace-mount-menu" aria-label="${escapeHtml(t('workspace_view.mounts'))}">
+            ${mounts.map(mount => renderWorkspaceMountMenuButton(mount)).join('')}
+        </div>
+    `;
+}
+
+function renderWorkspaceMountMenuButton(mount) {
+    const mountName = String(mount?.mountName || '').trim();
+    const isActive = resolveActiveMountName() === mountName;
+    return `
+        <button
+            type="button"
+            class="workspace-mount-menu-btn${isActive ? ' is-active' : ''}"
+            data-workspace-mount="${escapeHtml(mountName)}"
+            aria-pressed="${isActive ? 'true' : 'false'}"
+            title="${escapeHtml(resolveMountMenuTitle(mount))}"
+        >
+            ${escapeHtml(mountName)}
+        </button>
+    `;
+}
+
+function resolveMountMenuTitle(mount) {
+    const rootReference = String(mount?.rootReference || '').trim();
+    const sshProfileId = String(mount?.sshProfileId || '').trim();
+    return [
+        rootReference,
+        sshProfileId ? `${t('workspace_view.mount_profile')}: ${sshProfileId}` : '',
+    ].filter(Boolean).join(' · ') || String(mount?.mountName || '');
+}
+
+function renderWorkspaceRootPath(snapshot = currentSnapshot) {
+    const mount = resolveCurrentMount(snapshot);
+    return String(mount?.rootReference || snapshot?.root_path || '').trim();
+}
+
+function renderWorkspaceBreadcrumb(path) {
+    const normalizedPath = String(path || '').trim();
+    if (!normalizedPath) {
+        return `<span>${escapeHtml(renderWorkspaceRootPath() || t('workspace_view.root'))}</span>`;
+    }
+    const parts = normalizedPath.split('/').filter(Boolean);
+    const renderedParts = parts.map((part, index) => {
+        const partialPath = parts.slice(0, index + 1).join('/');
+        return `
+            <button type="button" class="workspace-breadcrumb-part" data-workspace-path="${escapeHtml(partialPath)}">
+                ${escapeHtml(part)}
+            </button>
+        `;
+    });
+    return renderedParts.join('<span class="workspace-breadcrumb-separator">/</span>');
+}
+
+function renderWorkspaceOpenRootButton() {
+    const mount = resolveCurrentMount();
+    if (mount?.provider !== 'local') {
+        return '';
+    }
+    const rootPath = renderWorkspaceRootPath();
+    if (!rootPath) {
+        return '';
+    }
+    const label = t('workspace_view.open_root');
+    return `
+        <button
+            type="button"
+            class="workspace-open-root-btn"
+            data-open-workspace-root
+            title="${escapeHtml(label)}"
+            aria-label="${escapeHtml(`${label}: ${rootPath}`)}"
+        >
+            <svg viewBox="0 0 24 24" class="icon" aria-hidden="true">
+                <path d="M4 6.5h6l1.5 2H20v9H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+            </svg>
+        </button>
+    `;
+}
+
+function renderWorkspaceChangeFilters() {
+    const filters = [
+        ['unstaged', t('workspace_view.change_filter.unstaged'), false],
+        ['staged', t('workspace_view.change_filter.staged'), true],
+        ['commit', t('workspace_view.change_filter.commit'), true],
+        ['branch', t('workspace_view.change_filter.branch'), true],
+        ['session', t('workspace_view.change_filter.session'), true],
+    ];
+    return `
+        <div class="workspace-change-filter-row" role="toolbar" aria-label="${escapeHtml(t('workspace_view.change_filter.label'))}">
+            ${filters.map(([filter, label, disabled]) => `
+                <button
+                    type="button"
+                    class="workspace-change-filter${currentChangeFilter === filter ? ' is-active' : ''}"
+                    data-workspace-change-filter="${escapeHtml(filter)}"
+                    ${disabled ? 'disabled' : ''}
+                >
+                    ${escapeHtml(label)}
+                    ${filter === 'unstaged' ? `<span>${escapeHtml(renderChangeCount() || '0')}</span>` : ''}
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderWorkspaceMainContent(activeTree) {
+    if (currentWorkspaceSurfaceMode === 'changes') {
+        return renderDiffSection();
+    }
+    return renderFileSection(activeTree);
+}
+
+function renderWorkspaceSidebar(activeTree) {
+    const label = currentWorkspaceSurfaceMode === 'changes'
+        ? t('workspace_view.changed_files')
+        : t('workspace_view.tree');
+    return `
+        <aside class="workspace-workbench-sidebar">
+            <div class="workspace-sidebar-search">
+                <input
+                    type="search"
+                    value="${escapeHtml(currentWorkspaceTreeFilter)}"
+                    placeholder="${escapeHtml(t('workspace_view.filter_files'))}"
+                    aria-label="${escapeHtml(t('workspace_view.filter_files'))}"
+                    data-workspace-tree-filter
+                >
+            </div>
+            <div class="workspace-sidebar-title">
+                <span>${escapeHtml(label)}</span>
+                <span>${escapeHtml(resolveSidebarMeta())}</span>
+            </div>
+            <div class="workspace-tree-shell">
+                ${currentWorkspaceSurfaceMode === 'changes' ? renderChangeTree() : renderTree(activeTree)}
+            </div>
+        </aside>
+    `;
+}
+
+function resolveSidebarMeta() {
+    if (currentWorkspaceSurfaceMode === 'changes' && currentDiffState.status === 'ready') {
+        return String(currentDiffState.diffFiles.length);
+    }
+    return '';
 }
 
 function getProjectViewToolbarElement() {
@@ -11924,7 +12180,64 @@ function renderTree(tree) {
 
     return `
         <div class="workspace-tree-root">
-            ${children.map(child => renderTreeNode(child)).join('')}
+            ${renderTreeChildrenForFilter(children)}
+        </div>
+    `;
+}
+
+function renderTreeChildrenForFilter(children) {
+    const filter = currentWorkspaceTreeFilter.toLowerCase();
+    if (!filter) {
+        return children.map(child => renderTreeNode(child)).join('');
+    }
+    const rendered = children
+        .map(child => renderFilteredTreeNode(child, filter))
+        .filter(Boolean);
+    if (rendered.length === 0) {
+        return renderTreePlaceholder(t('workspace_view.no_filter_results'));
+    }
+    return rendered.join('');
+}
+
+function renderFilteredTreeNode(node, filter) {
+    if (!node || typeof node !== 'object') {
+        return '';
+    }
+    const nodePath = String(node.path || '.').trim() || '.';
+    const nodeName = String(node.name || nodePath);
+    const selfMatches = nodeName.toLowerCase().includes(filter) || nodePath.toLowerCase().includes(filter);
+    const children = Array.isArray(node.children) ? node.children : [];
+    const childHtml = children
+        .map(child => renderFilteredTreeNode(child, filter))
+        .filter(Boolean)
+        .join('');
+    if (!selfMatches && !childHtml) {
+        return '';
+    }
+    if (node.kind !== 'directory') {
+        return renderTreeFileNode(node);
+    }
+    const scopedPath = buildTreeStateKey(nodePath);
+    const isExpanded = true;
+    const isLoading = loadingTreePaths.has(scopedPath);
+    const loadError = treeLoadErrors.get(scopedPath) || '';
+    return `
+        <div class="workspace-tree-node is-directory">
+            <button
+                type="button"
+                class="workspace-tree-toggle"
+                data-tree-toggle-path="${escapeHtml(nodePath)}"
+                aria-expanded="${isExpanded ? 'true' : 'false'}"
+            >
+                <span class="workspace-tree-chevron" aria-hidden="true">&#9662;</span>
+                ${renderFolderIcon(isExpanded)}
+                <span class="workspace-tree-label">${escapeHtml(nodeName)}</span>
+            </button>
+            <div class="workspace-tree-children">
+                ${isLoading ? renderTreePlaceholder(t('workspace_view.loading_directory')) : ''}
+                ${loadError ? renderTreePlaceholder(loadError, 'is-error') : ''}
+                ${childHtml}
+            </div>
         </div>
     `;
 }
@@ -11938,21 +12251,7 @@ function renderTreeNode(node) {
     const nodeLabel = escapeHtml(node.name || node.path || '.');
 
     if (node.kind !== 'directory') {
-        const isSelected = selectedTreePath === nodePath;
-        return `
-            <div class="workspace-tree-node is-file">
-                <button
-                    type="button"
-                    class="workspace-tree-entry workspace-tree-file${isSelected ? ' is-selected' : ''}"
-                    data-tree-file-path="${escapeHtml(nodePath)}"
-                    aria-pressed="${isSelected ? 'true' : 'false'}"
-                >
-                    <span class="workspace-tree-chevron is-placeholder" aria-hidden="true"></span>
-                    ${renderFileIcon()}
-                    <span class="workspace-tree-label">${nodeLabel}</span>
-                </button>
-            </div>
-        `;
+        return renderTreeFileNode(node);
     }
 
     const scopedPath = buildTreeStateKey(nodePath);
@@ -12013,6 +12312,243 @@ function renderTreePlaceholder(message, extraClass = '') {
     `;
 }
 
+function renderFileSection(activeTree) {
+    const path = String(selectedTreePath || currentFileState.path || '').trim();
+    if (!path) {
+        return renderWorkspaceEmptyMainState(t('workspace_view.select_file'));
+    }
+    const node = findTreeNode(activeTree, path);
+    if (node?.kind === 'directory') {
+        return renderWorkspaceEmptyMainState(t('workspace_view.select_file'));
+    }
+    if (currentFileState.status === 'loading' && currentFileState.path === path) {
+        return renderWorkspaceEmptyMainState(t('workspace_view.loading_file'));
+    }
+    if (currentFileState.status === 'error' && currentFileState.path === path) {
+        return renderWorkspaceEmptyMainState(currentFileState.fileMessage || t('workspace_view.file_load_failed'), 'is-error');
+    }
+    const file = currentFileState.path === path ? currentFileState.file : resolveCachedWorkspaceFile(path);
+    if (!file) {
+        return renderWorkspaceEmptyMainState(t('workspace_view.loading_file'));
+    }
+    if (file.is_binary === true) {
+        return renderWorkspaceEmptyMainState(t('workspace_view.binary_file'));
+    }
+    const content = String(file.content || '');
+    return `
+        <section class="workspace-file-viewer" data-workspace-file-path="${escapeHtml(path)}">
+            ${file.truncated === true ? `
+                <div class="workspace-file-notice">
+                    ${escapeHtml(formatTemplate(t('workspace_view.file_truncated'), {
+                        size: formatByteSize(file.size_bytes),
+                    }))}
+                </div>
+            ` : ''}
+            <div class="workspace-file-code-wrap">
+                ${renderHighlightedFileContent(content, path)}
+            </div>
+        </section>
+    `;
+}
+
+function renderWorkspaceEmptyMainState(message, extraClass = '') {
+    return `
+        <div class="workspace-main-empty ${extraClass}">
+            <p>${escapeHtml(message)}</p>
+        </div>
+    `;
+}
+
+function renderHighlightedFileContent(content, path) {
+    const normalized = String(content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    return `
+        <div class="workspace-file-code" role="table" aria-label="${escapeHtml(path)}">
+            ${lines.map((line, index) => `
+                <div class="workspace-file-line" role="row">
+                    <span class="workspace-file-line-number" role="cell">${escapeHtml(String(index + 1))}</span>
+                    <code class="workspace-file-line-text" role="cell">${highlightWorkspaceCode(line || ' ', path)}</code>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function highlightWorkspaceCode(source, path) {
+    const text = String(source || '');
+    const runtime = globalThis.hljs;
+    if (!runtime || typeof runtime.highlight !== 'function') {
+        return escapeHtml(text);
+    }
+    const language = resolveHighlightLanguage(path);
+    try {
+        if (language && typeof runtime.getLanguage === 'function' && runtime.getLanguage(language)) {
+            return runtime.highlight(text, { language }).value;
+        }
+    } catch (error) {
+        logWarn(`Failed to highlight workspace file line: ${error?.message || error}`);
+    }
+    return escapeHtml(text);
+}
+
+function resolveHighlightLanguage(path) {
+    const extension = String(path || '').split('.').pop()?.toLowerCase() || '';
+    const map = {
+        css: 'css',
+        html: 'xml',
+        js: 'javascript',
+        json: 'json',
+        md: 'markdown',
+        py: 'python',
+        sh: 'bash',
+        ts: 'typescript',
+        yaml: 'yaml',
+        yml: 'yaml',
+    };
+    return map[extension] || '';
+}
+
+function renderChangeTree() {
+    if (currentDiffState.status === 'loading') {
+        return renderInlineState(t('workspace_view.loading_diffs'));
+    }
+    if (currentDiffState.status !== 'ready') {
+        return renderInlineState(t('workspace_view.loading_diffs'));
+    }
+    if (currentDiffState.isGitRepository !== true) {
+        return renderInlineState(currentDiffState.diffMessage || t('workspace_view.not_git_repository'));
+    }
+    if (currentDiffState.diffFiles.length === 0) {
+        return renderInlineState(t('workspace_view.no_diffs'));
+    }
+    const tree = buildChangeTree(currentDiffState.diffFiles);
+    const children = Array.isArray(tree.children) ? tree.children : [];
+    if (children.length === 0) {
+        return renderInlineState(t('workspace_view.no_filter_results'));
+    }
+    return `
+        <div class="workspace-tree-root workspace-change-tree">
+            ${children.map(child => renderChangeTreeNode(child)).join('')}
+        </div>
+    `;
+}
+
+function buildChangeTree(diffFiles) {
+    const root = { name: '.', path: '.', kind: 'directory', children: [] };
+    const filter = currentWorkspaceTreeFilter.toLowerCase();
+    for (const file of Array.isArray(diffFiles) ? diffFiles : []) {
+        const filePath = String(file?.path || '').trim();
+        if (!filePath) {
+            continue;
+        }
+        if (filter && !filePath.toLowerCase().includes(filter)) {
+            continue;
+        }
+        const parts = filePath.split('/').filter(Boolean);
+        let parent = root;
+        let currentPath = '';
+        for (const part of parts.slice(0, -1)) {
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+            let directory = parent.children.find(child => child.kind === 'directory' && child.name === part);
+            if (!directory) {
+                directory = { name: part, path: currentPath, kind: 'directory', children: [] };
+                parent.children.push(directory);
+            }
+            parent = directory;
+        }
+        parent.children.push({
+            name: parts[parts.length - 1] || filePath,
+            path: filePath,
+            kind: 'file',
+            changeType: String(file?.change_type || 'modified'),
+            children: [],
+        });
+    }
+    sortChangeTree(root);
+    return root;
+}
+
+function sortChangeTree(node) {
+    if (!node || !Array.isArray(node.children)) {
+        return;
+    }
+    node.children.sort((left, right) => {
+        const leftRank = left.kind === 'directory' ? 0 : 1;
+        const rightRank = right.kind === 'directory' ? 0 : 1;
+        if (leftRank !== rightRank) {
+            return leftRank - rightRank;
+        }
+        return String(left.name || '').localeCompare(String(right.name || ''));
+    });
+    for (const child of node.children) {
+        sortChangeTree(child);
+    }
+}
+
+function renderChangeTreeNode(node) {
+    if (!node || typeof node !== 'object') {
+        return '';
+    }
+    if (node.kind !== 'directory') {
+        const filePath = String(node.path || '').trim();
+        const isSelected = selectedTreePath === filePath;
+        return `
+            <div class="workspace-tree-node is-file">
+                <button
+                    type="button"
+                    class="workspace-tree-entry workspace-tree-file workspace-change-file${isSelected ? ' is-selected' : ''}"
+                    data-tree-file-path="${escapeHtml(filePath)}"
+                    aria-pressed="${isSelected ? 'true' : 'false'}"
+                >
+                    <span class="workspace-tree-chevron is-placeholder" aria-hidden="true"></span>
+                    ${renderFileIcon()}
+                    <span class="workspace-tree-label">${escapeHtml(node.name || filePath)}</span>
+                    <span class="workspace-change-kind is-${escapeHtml(node.changeType || 'modified')}">${escapeHtml(renderChangeTypeShortLabel(node.changeType))}</span>
+                </button>
+            </div>
+        `;
+    }
+    const children = Array.isArray(node.children) ? node.children.map(renderChangeTreeNode).join('') : '';
+    return `
+        <div class="workspace-tree-node is-directory">
+            <div class="workspace-tree-entry workspace-change-directory">
+                <span class="workspace-tree-chevron" aria-hidden="true">&#9662;</span>
+                ${renderFolderIcon(true)}
+                <span class="workspace-tree-label">${escapeHtml(node.name || node.path || '.')}</span>
+            </div>
+            <div class="workspace-tree-children">
+                ${children}
+            </div>
+        </div>
+    `;
+}
+
+function renderChangeTypeShortLabel(changeType) {
+    const type = String(changeType || 'modified');
+    const labels = {
+        added: 'A',
+        copied: 'C',
+        deleted: 'D',
+        modified: 'M',
+        renamed: 'R',
+        untracked: 'U',
+        conflicted: '!',
+        type_changed: 'T',
+    };
+    return labels[type] || 'M';
+}
+
+function formatByteSize(sizeBytes) {
+    const size = Number(sizeBytes || 0);
+    if (size < 1024) {
+        return `${size} B`;
+    }
+    if (size < 1024 * 1024) {
+        return `${Math.round(size / 102.4) / 10} KB`;
+    }
+    return `${Math.round(size / 1024 / 102.4) / 10} MB`;
+}
+
 function renderDiffSection() {
     if (currentDiffState.status === 'loading') {
         return renderInlineState(t('workspace_view.loading_diffs'));
@@ -12046,19 +12582,42 @@ function renderDiffFile(file) {
     const filePath = String(file?.path || '').trim();
     const isSelected = filePath && selectedTreePath === filePath;
     const diffBody = renderDiffBody(filePath, isSelected);
+    const stats = resolveDiffStats(filePath);
     return `
         <article
-            class="workspace-diff-card${isSelected ? ' is-selected' : ''}${diffBody ? ' has-body' : ''}"
+            class="workspace-diff-file workspace-diff-card${isSelected ? ' is-selected' : ''}${diffBody ? ' has-body' : ''}"
             data-diff-path="${escapeHtml(filePath)}"
+            aria-expanded="${isSelected ? 'true' : 'false'}"
         >
             <div class="workspace-diff-header">
                 <span class="workspace-diff-status is-${escapeHtml(changeType)}">${escapeHtml(changeLabel)}</span>
                 <code class="workspace-diff-path">${escapeHtml(filePath)}</code>
                 ${previousPath ? `<span class="workspace-diff-previous">${escapeHtml(previousPath)} -> ${escapeHtml(filePath)}</span>` : ''}
+                <span class="workspace-diff-stats">
+                    <span class="workspace-diff-stat is-added">+${escapeHtml(String(stats.added))}</span>
+                    <span class="workspace-diff-stat is-deleted">-${escapeHtml(String(stats.deleted))}</span>
+                </span>
             </div>
             ${diffBody}
         </article>
     `;
+}
+
+function resolveDiffStats(filePath) {
+    const diffFile = currentDiffState.loadedDiffs.get(filePath);
+    if (!diffFile || diffFile.is_binary === true) {
+        return { added: 0, deleted: 0 };
+    }
+    let added = 0;
+    let deleted = 0;
+    for (const line of String(diffFile.diff || '').split('\n')) {
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+            added += 1;
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+            deleted += 1;
+        }
+    }
+    return { added, deleted };
 }
 
 function renderDiffBody(filePath, isSelected) {
@@ -12257,6 +12816,45 @@ function bindWorkspaceHeaderInteractions() {
     };
 }
 
+function bindWorkspaceModeInteractions() {
+    if (!els.projectViewContent || typeof els.projectViewContent.querySelectorAll !== 'function') {
+        return;
+    }
+    for (const modeButton of els.projectViewContent.querySelectorAll('[data-workspace-mode]')) {
+        const mode = String(modeButton.getAttribute('data-workspace-mode') || '').trim();
+        modeButton.onclick = () => {
+            switchWorkspaceSurfaceMode(mode);
+        };
+    }
+    for (const filterButton of els.projectViewContent.querySelectorAll('[data-workspace-change-filter]')) {
+        const filter = String(filterButton.getAttribute('data-workspace-change-filter') || '').trim();
+        filterButton.onclick = () => {
+            currentChangeFilter = resolveChangeFilter(filter);
+            renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+            cacheProjectViewState();
+        };
+    }
+    const treeFilter = els.projectViewContent.querySelector('[data-workspace-tree-filter]');
+    if (treeFilter) {
+        treeFilter.oninput = () => {
+            const selectionStart = Number(treeFilter.selectionStart ?? String(treeFilter.value || '').length);
+            const selectionEnd = Number(treeFilter.selectionEnd ?? selectionStart);
+            currentWorkspaceTreeFilter = String(treeFilter.value || '').trim();
+            renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+            const nextTreeFilter = els.projectViewContent?.querySelector('[data-workspace-tree-filter]');
+            nextTreeFilter?.focus?.();
+            nextTreeFilter?.setSelectionRange?.(selectionStart, selectionEnd);
+            cacheProjectViewState();
+        };
+    }
+    for (const pathButton of els.projectViewContent.querySelectorAll('[data-workspace-path]')) {
+        const path = String(pathButton.getAttribute('data-workspace-path') || '').trim();
+        pathButton.onclick = () => {
+            void revealTreePath(path);
+        };
+    }
+}
+
 function bindTreeInteractions() {
     if (!els.projectViewContent || typeof els.projectViewContent.querySelectorAll !== 'function') {
         return;
@@ -12297,6 +12895,9 @@ function bindDiffInteractions() {
     for (const diffCard of els.projectViewContent.querySelectorAll('.workspace-diff-card')) {
         const diffPath = String(diffCard.getAttribute('data-diff-path') || '').trim();
         diffCard.onclick = () => {
+            if (currentWorkspaceSurfaceMode !== 'changes') {
+                return;
+            }
             void selectTreePath(diffPath);
         };
     }
@@ -12783,6 +13384,7 @@ async function switchWorkspaceMount(mountName) {
     }
     currentMountName = nextMountName;
     selectedTreePath = null;
+    currentFileState = createInitialFileState();
     currentDiffState = {
         ...createInitialDiffState(),
         status: 'loading',
@@ -12792,6 +13394,34 @@ async function switchWorkspaceMount(mountName) {
     ensureActiveMountTreeLoaded(loadToken);
     cacheProjectViewState();
     void loadWorkspaceDiffs(String(currentWorkspace.workspace_id || '').trim(), loadToken);
+}
+
+function switchWorkspaceSurfaceMode(mode) {
+    const nextMode = resolveWorkspaceSurfaceMode(mode);
+    if (!currentWorkspace || !currentSnapshot) {
+        return;
+    }
+    if (nextMode === currentWorkspaceSurfaceMode) {
+        currentWorkspaceSurfaceModeLocked = true;
+        cacheProjectViewState();
+        return;
+    }
+    currentWorkspaceSurfaceMode = nextMode;
+    currentWorkspaceSurfaceModeLocked = true;
+    if (nextMode === 'changes') {
+        if (!selectedTreePath || !findDiffSummary(selectedTreePath)) {
+            selectedTreePath = String(currentDiffState.diffFiles[0]?.path || '').trim() || null;
+        }
+        renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+        cacheProjectViewState();
+        if (currentWorkspaceSurfaceMode === 'changes' && selectedTreePath && findDiffSummary(selectedTreePath)) {
+            void ensureDiffFileLoaded(selectedTreePath);
+        }
+        return;
+    }
+    selectedTreePath = currentFileState.path || null;
+    renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+    cacheProjectViewState();
 }
 
 async function toggleTreePath(path) {
@@ -12865,12 +13495,18 @@ async function selectTreePath(path) {
         return;
     }
 
-    await revealTreePath(path);
+    if (currentWorkspaceSurfaceMode === 'files') {
+        await revealTreePath(path);
+    }
     selectedTreePath = path;
     renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
     cacheProjectViewState();
-    if (findDiffSummary(path)) {
+    if (currentWorkspaceSurfaceMode === 'changes' && findDiffSummary(path)) {
         void ensureDiffFileLoaded(path);
+        return;
+    }
+    if (currentWorkspaceSurfaceMode === 'files') {
+        void ensureWorkspaceFileLoaded(path);
     }
 }
 
@@ -12895,6 +13531,108 @@ function ensureDiffFileLoaded(path) {
     renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
     cacheProjectViewState();
     void loadWorkspaceDiffFile(normalizedPath);
+}
+
+function resolveWorkspaceFileCacheKey(path, mountName = resolveActiveMountName()) {
+    const normalizedMountName = String(mountName || '').trim() || 'default';
+    const normalizedPath = String(path || '').trim();
+    return `${normalizedMountName}:${normalizedPath}`;
+}
+
+function resolveCachedWorkspaceFile(path) {
+    const cacheKey = resolveWorkspaceFileCacheKey(path);
+    const cached = workspaceFileCache.get(cacheKey);
+    return cached ? cloneWorkspaceFile(cached) : null;
+}
+
+function ensureWorkspaceFileLoaded(path) {
+    const normalizedPath = String(path || '').trim();
+    if (!normalizedPath || !currentWorkspace || !currentSnapshot) {
+        return;
+    }
+    const cached = resolveCachedWorkspaceFile(normalizedPath);
+    if (cached) {
+        currentFileState = {
+            status: 'ready',
+            mountName: resolveActiveMountName(),
+            path: normalizedPath,
+            file: cached,
+            fileMessage: null,
+        };
+        renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+        cacheProjectViewState();
+        return;
+    }
+    if (currentFileState.status === 'loading' && currentFileState.path === normalizedPath) {
+        return;
+    }
+    currentFileState = {
+        ...createInitialFileState(),
+        status: 'loading',
+        mountName: resolveActiveMountName(),
+        path: normalizedPath,
+    };
+    renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+    cacheProjectViewState();
+    void loadWorkspaceFile(normalizedPath);
+}
+
+function isCurrentWorkspaceFileRequest(path, mountName) {
+    return currentWorkspaceSurfaceMode === 'files'
+        && selectedTreePath === path
+        && resolveActiveMountName() === mountName;
+}
+
+async function loadWorkspaceFile(path) {
+    if (!currentWorkspace || !currentSnapshot) {
+        return;
+    }
+    const normalizedPath = String(path || '').trim();
+    const workspaceId = String(currentWorkspace.workspace_id || '').trim();
+    const mountName = resolveActiveMountName();
+    const loadToken = currentLoadToken;
+    try {
+        const file = await fetchWorkspaceFile(workspaceId, normalizedPath, mountName);
+        if (
+            loadToken !== currentLoadToken
+            || workspaceId !== currentSnapshotWorkspaceId
+            || !isCurrentWorkspaceFileRequest(normalizedPath, mountName)
+        ) {
+            return;
+        }
+        const normalizedFile = cloneWorkspaceFile(file);
+        if (!normalizedFile) {
+            throw new Error(t('workspace_view.file_load_failed'));
+        }
+        workspaceFileCache.set(resolveWorkspaceFileCacheKey(normalizedPath, mountName), normalizedFile);
+        currentFileState = {
+            status: 'ready',
+            mountName,
+            path: normalizedPath,
+            file: normalizedFile,
+            fileMessage: null,
+        };
+        renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+        cacheProjectViewState();
+    } catch (error) {
+        if (
+            loadToken !== currentLoadToken
+            || workspaceId !== currentSnapshotWorkspaceId
+            || !isCurrentWorkspaceFileRequest(normalizedPath, mountName)
+        ) {
+            return;
+        }
+        currentFileState = {
+            ...createInitialFileState(),
+            status: 'error',
+            mountName,
+            path: normalizedPath,
+            fileMessage: String(error?.message || error || t('workspace_view.file_load_failed')),
+        };
+        renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+        cacheProjectViewState();
+        sysLog(`Failed to load project file ${normalizedPath}: ${error?.message || error}`, 'log-error');
+    }
 }
 
 async function loadWorkspaceDiffFile(path) {
@@ -13099,6 +13837,55 @@ function cloneDiffState(diffState) {
     };
 }
 
+function renderTreeFileNode(node) {
+    const nodePath = String(node?.path || '.').trim() || '.';
+    const nodeLabel = escapeHtml(node?.name || nodePath);
+    const isSelected = selectedTreePath === nodePath;
+    return `
+        <div class="workspace-tree-node is-file">
+            <button
+                type="button"
+                class="workspace-tree-entry workspace-tree-file${isSelected ? ' is-selected' : ''}"
+                data-tree-file-path="${escapeHtml(nodePath)}"
+                aria-pressed="${isSelected ? 'true' : 'false'}"
+            >
+                <span class="workspace-tree-chevron is-placeholder" aria-hidden="true"></span>
+                ${renderFileIcon()}
+                <span class="workspace-tree-label">${nodeLabel}</span>
+            </button>
+        </div>
+    `;
+}
+
+function cloneFileState(fileState) {
+    if (!fileState || typeof fileState !== 'object') {
+        return createInitialFileState();
+    }
+    return {
+        status: String(fileState.status || 'idle'),
+        mountName: fileState.mountName ? String(fileState.mountName) : null,
+        path: fileState.path ? String(fileState.path) : null,
+        file: cloneWorkspaceFile(fileState.file),
+        fileMessage: fileState.fileMessage ? String(fileState.fileMessage) : null,
+    };
+}
+
+function cloneWorkspaceFile(file) {
+    if (!file || typeof file !== 'object') {
+        return null;
+    }
+    return {
+        workspace_id: String(file.workspace_id || ''),
+        mount_name: String(file.mount_name || 'default'),
+        path: String(file.path || ''),
+        content: String(file.content || ''),
+        encoding: String(file.encoding || 'utf-8'),
+        is_binary: file.is_binary === true,
+        truncated: file.truncated === true,
+        size_bytes: Number(file.size_bytes || 0),
+    };
+}
+
 function cloneDiffFile(diffFile) {
     if (!diffFile || typeof diffFile !== 'object') {
         return null;
@@ -13112,6 +13899,15 @@ function cloneDiffFile(diffFile) {
         diff: diffFile.diff ? String(diffFile.diff) : '',
         is_binary: diffFile.is_binary === true,
     };
+}
+
+function resolveWorkspaceSurfaceMode(mode) {
+    return mode === 'changes' ? 'changes' : 'files';
+}
+
+function resolveChangeFilter(filter) {
+    const normalized = String(filter || '').trim();
+    return normalized || 'unstaged';
 }
 
 

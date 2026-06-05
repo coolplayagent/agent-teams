@@ -439,6 +439,7 @@ class AsyncAgentTeamsClient:
         *,
         workspace_id: str,
         session_id: str | None = None,
+        normal_model_profile: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> dict[str, JsonValue]:
         metadata_payload: dict[str, JsonValue] | None = None
@@ -449,6 +450,9 @@ class AsyncAgentTeamsClient:
             "workspace_id": workspace_id,
             "metadata": metadata_payload,
         }
+        normalized_model_profile = str(normal_model_profile or "").strip()
+        if normalized_model_profile:
+            payload["normal_model_profile"] = normalized_model_profile
         return await self._request_json(
             "POST",
             "/api/sessions",
@@ -927,6 +931,21 @@ class AsyncAgentTeamsClient:
         return await self._request_json(
             "GET",
             f"/api/workspaces/{workspace_id}/diff?{query}",
+        )
+
+    async def get_workspace_file(
+        self,
+        workspace_id: str,
+        *,
+        path: str,
+        mount: str | None = None,
+    ) -> dict[str, JsonValue]:
+        query = f"path={quote(path, safe='')}"
+        if mount is not None:
+            query += f"&mount={quote(mount, safe='')}"
+        return await self._request_json(
+            "GET",
+            f"/api/workspaces/{workspace_id}/file?{query}",
         )
 
     async def list_ssh_profiles(self) -> list[dict[str, JsonValue]]:

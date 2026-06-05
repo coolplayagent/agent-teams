@@ -147,6 +147,28 @@ def test_list_by_workspace_filters_sessions(tmp_path: Path) -> None:
     assert records[0].metadata == {"title": "Workspace 1"}
 
 
+@pytest.mark.asyncio
+async def test_normal_model_profile_persists_and_clears(tmp_path: Path) -> None:
+    db_path = tmp_path / "session_repository_normal_model_profile.db"
+    repository = SessionRepository(db_path)
+
+    created = repository.create(
+        session_id="session-model",
+        workspace_id="default",
+        normal_model_profile="fast",
+    )
+    loaded = repository.get("session-model")
+    await repository.update_normal_model_profile_async(
+        "session-model",
+        normal_model_profile=None,
+    )
+    cleared = repository.get("session-model")
+
+    assert created.normal_model_profile == "fast"
+    assert loaded.normal_model_profile == "fast"
+    assert cleared.normal_model_profile is None
+
+
 def test_list_by_workspace_skips_invalid_rows(tmp_path: Path) -> None:
     db_path = tmp_path / "session_repository_list_by_workspace_invalid.db"
     repository = SessionRepository(db_path)
@@ -345,6 +367,7 @@ def test_repository_init_normalizes_missing_or_none_like_started_at_for_mark_sta
 
     assert record.started_at is not None
     assert record.can_switch_mode is False
+    assert record.normal_model_profile is None
 
 
 def test_mark_started_retries_transient_write_lock(tmp_path: Path) -> None:
@@ -392,6 +415,11 @@ async def test_async_methods_match_sync_session_repository_behavior(
         session_id="session-async",
         workspace_id="workspace-1",
         metadata={"title": "Async"},
+        normal_model_profile="fast",
+    )
+    await repository.update_normal_model_profile_async(
+        "session-async",
+        normal_model_profile="precise",
     )
     await repository.update_topology_async(
         "session-async",
@@ -422,6 +450,7 @@ async def test_async_methods_match_sync_session_repository_behavior(
     assert started.project_id == "project-2"
     assert started.metadata == {"title": "Updated"}
     assert started.session_mode == SessionMode.ORCHESTRATION
+    assert started.normal_model_profile == "precise"
     assert [record.session_id for record in records] == ["session-async"]
 
     with pytest.raises(RuntimeError, match="Session mode can no longer be changed"):
@@ -454,6 +483,11 @@ async def test_async_mutations_raise_key_error_for_missing_session(
         await repository.update_metadata_async(
             "missing-session",
             {"title": "Missing"},
+        )
+    with pytest.raises(KeyError):
+        await repository.update_normal_model_profile_async(
+            "missing-session",
+            normal_model_profile="fast",
         )
     with pytest.raises(KeyError):
         await repository.update_workspace_async(

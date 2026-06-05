@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import io
 import subprocess
-from pathlib import Path
+from os import pathsep
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -603,7 +604,7 @@ def test_agentbench_command_includes_optional_settings(tmp_path: Path) -> None:
     runner = AgentBenchDockerRunner(cfg)
 
     command = runner._agentbench_command(
-        container_output_dir=tmp_path / "out",
+        container_output_dir=PurePosixPath("/benchmarks/results/out"),
         selected_item_ids=("os:std-0", "db:std-1"),
         limit=2,
         concurrency=3,
@@ -643,7 +644,7 @@ def test_agentbench_manifest_command_includes_task_limits() -> None:
     )
 
     command = AgentBenchDockerRunner(cfg)._agentbench_manifest_command(
-        Path("/manifest.json")
+        PurePosixPath("/manifest.json")
     )
 
     assert "--num-os-tasks" in command
@@ -698,7 +699,7 @@ def test_task_limits_for_suites() -> None:
     )
 
     os_command = AgentBenchDockerRunner(os_cfg)._agentbench_command(
-        container_output_dir=Path("/out"),
+        container_output_dir=PurePosixPath("/out"),
         selected_item_ids=("os:std-0",),
         limit=2,
         concurrency=2,
@@ -706,7 +707,7 @@ def test_task_limits_for_suites() -> None:
         rerun=False,
     )
     db_command = AgentBenchDockerRunner(db_cfg)._agentbench_command(
-        container_output_dir=Path("/out"),
+        container_output_dir=PurePosixPath("/out"),
         selected_item_ids=("db:std-0",),
         limit=2,
         concurrency=2,
@@ -870,7 +871,7 @@ def test_docker_path_candidates_dedupe_path_entries(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     docker_dir = tmp_path / "bin"
-    monkeypatch.setenv("PATH", f"{docker_dir}:{docker_dir}:")
+    monkeypatch.setenv("PATH", f"{docker_dir}{pathsep}{docker_dir}{pathsep}")
 
     candidates = _docker_path_candidates()
 

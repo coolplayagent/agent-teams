@@ -118,6 +118,19 @@ export async function fetchWorkspaceDiffFile(workspaceId, path, mount = null) {
     );
 }
 
+export async function fetchWorkspaceFile(workspaceId, path, mount = null) {
+    const query = new URLSearchParams({ path: String(path || '').trim() });
+    const safeMount = String(mount || '').trim();
+    if (safeMount) {
+        query.set('mount', safeMount);
+    }
+    return requestJson(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/file?${query.toString()}`,
+        undefined,
+        'Failed to fetch project workspace file',
+    );
+}
+
 export async function pickWorkspace(rootPath = null) {
     const options = {
         method: 'POST',

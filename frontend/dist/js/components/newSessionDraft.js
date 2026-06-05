@@ -37,6 +37,7 @@ let draftWorkspaceLoadState = 'idle';
 let draftWorkspaceError = '';
 let draftWorkspaceBusy = false;
 let draftWorkspaceMenuOpen = false;
+let workspaceOutsideClickBound = false;
 let mentionHintInput = null;
 let draftEntryAnimationToken = 0;
 const DRAFT_ENTRY_ANIMATION_MS = 160;
@@ -53,6 +54,7 @@ export function openNewSessionDraft(workspaceId) {
     }
 
     bindLanguageRefresh();
+    bindWorkspaceOutsideClick();
     rememberComposerHome();
     draftWorkspaceError = '';
     adoptSnapshotDraftWorkspaces();
@@ -173,9 +175,12 @@ export async function ensureSessionForNewSessionDraft(options = {}) {
         ? 'orchestration'
         : 'normal';
     const normalRootRoleId = String(state.currentNormalRootRoleId || '').trim();
+    const normalModelProfile = String(state.currentNormalModelProfile || '').trim();
     const orchestrationPresetId = String(state.currentOrchestrationPresetId || '').trim();
 
-    const created = await startNewSession(workspaceId);
+    const created = await startNewSession(workspaceId, {
+        normalModelProfile: sessionMode === 'normal' ? normalModelProfile : '',
+    });
     const sessionId = String(created?.session_id || '').trim();
     if (!sessionId) {
         throw new Error('Session creation did not return a session id.');
@@ -347,12 +352,16 @@ function renderDraftComposerActionRow() {
 }
 
 function bindWorkspaceSelectorInteractions(host) {
-    host.querySelector('[data-draft-workspace-menu]')?.addEventListener('click', () => {
+    host.querySelector('[data-draft-workspace-menu]')?.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
         draftWorkspaceMenuOpen = !draftWorkspaceMenuOpen;
         renderWorkspaceSelector();
     });
     host.querySelectorAll('[data-draft-workspace-option]')?.forEach(button => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
             const workspaceId = String(button.getAttribute('data-workspace-id') || '').trim();
             if (!workspaceId) {
                 return;
@@ -367,14 +376,43 @@ function bindWorkspaceSelectorInteractions(host) {
             renderWorkspaceSelector();
         });
     });
-    host.querySelector('[data-draft-workspace-clear]')?.addEventListener('click', () => {
+    host.querySelector('[data-draft-workspace-clear]')?.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
         state.pendingNewSessionWorkspaceId = '';
         draftWorkspaceError = '';
         renderWorkspaceSelector();
     });
-    host.querySelector('[data-draft-add-workspace]')?.addEventListener('click', () => {
+    host.querySelector('[data-draft-add-workspace]')?.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
         void addDraftWorkspace();
     });
+}
+
+function bindWorkspaceOutsideClick() {
+    if (workspaceOutsideClickBound || typeof document === 'undefined') {
+        return;
+    }
+    workspaceOutsideClickBound = true;
+    document.addEventListener('click', event => {
+        if (!draftWorkspaceMenuOpen || !isNewSessionDraftActive()) {
+            return;
+        }
+        if (isDraftWorkspaceActionTarget(event.target)) {
+            return;
+        }
+        draftWorkspaceMenuOpen = false;
+        renderWorkspaceSelector();
+    });
+}
+
+function isDraftWorkspaceActionTarget(target) {
+    const host = els.inputContainer?.querySelector?.('.new-session-draft-action-row') || null;
+    if (!host || !target || typeof host.contains !== 'function') {
+        return false;
+    }
+    return target === host || host.contains(target);
 }
 
 async function addDraftWorkspace() {
@@ -713,8 +751,11 @@ function renderWorkspaceMenu(selectedWorkspaceId) {
             const selected = workspaceId === selectedWorkspaceId;
             return `
                 <button class="new-session-workspace-option${selected ? ' is-selected' : ''}" type="button" role="option" aria-selected="${selected ? 'true' : 'false'}" data-draft-workspace-option data-workspace-id="${escapeHtml(workspaceId)}">
-                    <span>${escapeHtml(formatWorkspaceDirectoryName(workspace))}</span>
-                    <span class="new-session-workspace-option-path">${escapeHtml(formatWorkspaceDescription(workspace))}</span>
+                    <span class="new-session-workspace-option-copy">
+                        <span class="new-session-workspace-option-title">${escapeHtml(formatWorkspaceDirectoryName(workspace))}</span>
+                        <span class="new-session-workspace-option-path">${escapeHtml(formatWorkspaceDescription(workspace))}</span>
+                    </span>
+                    <span class="new-session-workspace-option-check" aria-hidden="true">${selected ? '&#10003;' : ''}</span>
                 </button>
             `;
         })

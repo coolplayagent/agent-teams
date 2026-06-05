@@ -18,6 +18,7 @@ from relay_teams.workspace import (
     SshProfileService,
     WorkspaceRecord,
     WorkspaceFileScope,
+    WorkspaceFileContent,
     WorkspaceProfile,
     WorkspaceRepository,
     WorkspaceService,
@@ -789,6 +790,73 @@ def test_get_workspace_preview_file_rejects_non_image(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert "supported image" in response.json()["detail"]
+
+
+def test_get_workspace_file_content_returns_text_payload(tmp_path: Path) -> None:
+    client, service = _create_test_client(tmp_path)
+    root_path = tmp_path / "workspace-root"
+    file_path = root_path / "docker" / "eval-entrypoint.sh"
+    file_path.parent.mkdir(parents=True)
+    expected_content = '#!/bin/sh\nexec "$@"\n'
+    file_path.write_bytes(expected_content.encode("utf-8"))
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    response = client.get(
+        "/api/workspaces/project-alpha/file?path=docker%2Feval-entrypoint.sh"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "workspace_id": "project-alpha",
+        "mount_name": "default",
+        "path": "docker/eval-entrypoint.sh",
+        "content": expected_content,
+        "encoding": "utf-8",
+        "is_binary": False,
+        "truncated": False,
+        "size_bytes": len(expected_content.encode("utf-8")),
+    }
+
+
+def test_get_workspace_file_content_preserves_literal_encoded_path_text(
+    tmp_path: Path,
+) -> None:
+    class CapturingWorkspaceService(WorkspaceService):
+        captured_path: str = ""
+
+        async def get_workspace_file_content_async(
+            self,
+            workspace_id: str,
+            *,
+            path: str,
+            mount_name: str | None = None,
+        ) -> WorkspaceFileContent:
+            _ = (workspace_id, mount_name)
+            self.captured_path = path
+            return WorkspaceFileContent(
+                workspace_id="project-alpha",
+                mount_name="default",
+                path=path,
+                content="literal encoded path",
+                encoding="utf-8",
+                is_binary=False,
+                truncated=False,
+                size_bytes=len("literal encoded path".encode("utf-8")),
+            )
+
+    service = CapturingWorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspaces_router.db")
+    )
+    client, _ = _create_test_client(tmp_path, service=service)
+
+    response = client.get("/api/workspaces/project-alpha/file?path=notes%252Ftodo.txt")
+
+    assert response.status_code == 200
+    assert service.captured_path == "notes%2Ftodo.txt"
+    assert response.json()["path"] == "notes%2Ftodo.txt"
 
 
 def test_pick_workspace_creates_workspace_for_selected_directory(

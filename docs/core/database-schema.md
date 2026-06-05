@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     metadata     TEXT NOT NULL,
     session_mode TEXT NOT NULL DEFAULT 'normal',
     normal_root_role_id TEXT,
+    normal_model_profile TEXT,
     orchestration_preset_id TEXT,
     started_at   TEXT,
     last_viewed_terminal_run_id TEXT,
@@ -40,6 +41,7 @@ Purpose: session metadata, lifecycle, and bound execution workspace identity.
 Notes:
 - `session_mode` is `normal` or `orchestration`.
 - `normal_root_role_id` stores the session-selected root role for normal mode. When `NULL`, runtime falls back to the current `MainAgent`.
+- `normal_model_profile` stores the session-selected normal-mode model override. When `NULL`, the selected root role or `@Role` target uses its role default.
 - `orchestration_preset_id` stores the session-selected preset for orchestration mode.
 - `started_at` is written when the first run is created and locks further mode switching for that session.
 - `last_viewed_terminal_run_id` stores the latest terminal top-level run the user has opened, so the sidebar can distinguish newly finished runs from already-viewed sessions.
@@ -60,6 +62,8 @@ CREATE TABLE IF NOT EXISTS workspaces (
 ```
 
 Purpose: registered execution workspaces. `profile_json` stores the typed workspace profile, including Git worktree metadata such as `source_root_path`, `branch_name`, and `forked_from_workspace_id` when a workspace is created through project forking.
+
+The read-only workspace file preview API does not add persistent tables or columns; it resolves file content from the configured workspace mount at request time.
 
 ---
 
@@ -1006,6 +1010,7 @@ CREATE TABLE IF NOT EXISTS run_intents (
     thinking_enabled TEXT NOT NULL DEFAULT 'false',
     thinking_effort TEXT,
     target_role_id TEXT,
+    normal_model_profile TEXT,
     topology_json  TEXT,
     conversation_context_json TEXT,
     created_at     TEXT NOT NULL,
@@ -1023,6 +1028,7 @@ Notes:
 - `intent` remains a text summary used for previews and logs.
 - `input_json` stores the canonical typed run input array, including text and media references.
 - `run_kind` distinguishes `conversation`, `generate_image`, `generate_audio`, and `generate_video`.
+- `normal_model_profile` snapshots the nullable session-level normal-mode model override for the root role or `@Role` target. Orchestration-mode intents store `NULL`.
 - `generation_config_json` stores the typed native media-generation config for provider-native image/audio/video runs.
 - `yolo` controls whether tool approvals are skipped entirely for that run.
 - `shell_safety_policy_enabled` controls whether shell execution keeps the local shell safety deny layer enabled for that run.

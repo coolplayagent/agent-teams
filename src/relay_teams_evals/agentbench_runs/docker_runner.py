@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from os import pathsep
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Protocol
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
@@ -22,8 +22,8 @@ from relay_teams_evals.loaders.agentbench_task_loader import (
 )
 from relay_teams_evals.models import EvalItem
 
-_CONTAINER_RESULTS_ROOT = Path("/benchmarks/results")
-_CONFIG_STAGING_PATH = Path("/agent-config-host")
+_CONTAINER_RESULTS_ROOT = PurePosixPath("/benchmarks/results")
+_CONFIG_STAGING_PATH = PurePosixPath("/agent-config-host")
 _GENERIC_API_KEY_ENV_VAR = "RELAY_TEAMS_BENCH_API_KEY"
 _MODEL_PROFILE_ENV_VAR = "RELAY_TEAMS_BENCH_MODEL_PROFILE"
 _DEFAULT_MODEL_PROFILE = "deepseek"
@@ -444,12 +444,14 @@ class AgentBenchDockerRunner:
         self,
         *,
         benchmark: AgentBenchName,
-        container_manifest_path: Path,
+        container_manifest_path: PurePosixPath,
     ) -> list[str]:
         _ = benchmark
         return self._agentbench_manifest_command(container_manifest_path)
 
-    def _agentbench_manifest_command(self, container_manifest_path: Path) -> list[str]:
+    def _agentbench_manifest_command(
+        self, container_manifest_path: PurePosixPath
+    ) -> list[str]:
         cfg = self._cfg.agentbench
         command = [
             "python",
@@ -476,7 +478,7 @@ class AgentBenchDockerRunner:
         benchmark: AgentBenchName,
         benchmark_image: str,
         host_output_dir: Path,
-        container_output_dir: Path,
+        container_output_dir: PurePosixPath,
         selected_item_ids: Sequence[str],
         limit: int | None,
         concurrency: int,
@@ -510,7 +512,7 @@ class AgentBenchDockerRunner:
     def _agentbench_command(
         self,
         *,
-        container_output_dir: Path,
+        container_output_dir: PurePosixPath,
         selected_item_ids: Sequence[str],
         limit: int | None,
         concurrency: int,
@@ -744,7 +746,7 @@ def _agentbench_task_limits(
 
 def _agentbench_container_output_dir(
     *, benchmark: AgentBenchName, host_output_dir: Path
-) -> Path:
+) -> PurePosixPath:
     _ = benchmark
     return _CONTAINER_RESULTS_ROOT / host_output_dir.name
 

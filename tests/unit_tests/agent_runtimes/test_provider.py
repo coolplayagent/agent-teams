@@ -66,7 +66,10 @@ from relay_teams.sessions.runs.injection_queue import RunInjectionManager
 from relay_teams.sessions.runs.run_control_manager import RunControlManager
 from relay_teams.sessions.runs.run_intent_repo import RunIntentRepository
 from relay_teams.sessions.runs.run_models import RunEvent
-from relay_teams.sessions.runs.run_runtime_repo import RunRuntimeRepository
+from relay_teams.sessions.runs.run_runtime_repo import (
+    RunRuntimeRecord,
+    RunRuntimeRepository,
+)
 from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.gateway.im.service import ImToolService
 from relay_teams.tools.registry import ToolRegistry
@@ -76,6 +79,7 @@ from relay_teams.tools.runtime.acp_approval import (
 from relay_teams.tools.runtime.approval_state import ToolApprovalManager
 from relay_teams.tools.runtime.policy import ToolApprovalPolicy
 from relay_teams.tools.runtime.approval_ticket_repo import (
+    ApprovalTicketRecord,
     ApprovalTicketRepository,
     ApprovalTicketStatus,
 )
@@ -863,6 +867,62 @@ async def _wait_for_open_ticket(
             return open_tickets[0].tool_call_id
         await asyncio.sleep(0.01)
     raise AssertionError("Timed out waiting for open approval ticket")
+
+
+async def _wait_for_open_tool_approval(
+    repo: ApprovalTicketRepository,
+    approval_manager: ToolApprovalManager,
+    *,
+    run_id: str,
+) -> str:
+    for _ in range(100):
+        open_tickets = await repo.list_open_by_run_async(run_id)
+        for ticket in open_tickets:
+            approval = approval_manager.get_approval(
+                run_id=run_id,
+                tool_call_id=ticket.tool_call_id,
+            )
+            if approval is not None:
+                return ticket.tool_call_id
+        await asyncio.sleep(0.01)
+    raise AssertionError("Timed out waiting for open tool approval")
+
+
+async def _wait_for_runtime_state(
+    repo: RunRuntimeRepository,
+    *,
+    run_id: str,
+    status: str,
+    phase: str,
+) -> RunRuntimeRecord:
+    for _ in range(100):
+        runtime = await repo.get_async(run_id)
+        if (
+            runtime is not None
+            and runtime.status.value == status
+            and runtime.phase.value == phase
+        ):
+            return runtime
+        await asyncio.sleep(0.01)
+    raise AssertionError(
+        f"Timed out waiting for runtime {run_id} to enter {status}/{phase}"
+    )
+
+
+async def _wait_for_ticket_status(
+    repo: ApprovalTicketRepository,
+    *,
+    tool_call_id: str,
+    status: ApprovalTicketStatus,
+) -> ApprovalTicketRecord:
+    for _ in range(100):
+        ticket = await repo.get_async(tool_call_id)
+        if ticket is not None and ticket.status == status:
+            return ticket
+        await asyncio.sleep(0.01)
+    raise AssertionError(
+        f"Timed out waiting for approval ticket {tool_call_id} to enter {status.value}"
+    )
 
 
 async def _wait_for_published_event(
@@ -1792,11 +1852,17 @@ async def test_external_acp_request_permission_waits_for_selected_option(
             message_id=1,
         )
     )
-    ticket_id = await _wait_for_open_ticket(approval_repo, run_id=request.run_id)
-    runtime = await runtime_repo.get_async(request.run_id)
-    assert runtime is not None
-    assert runtime.status.value == "paused"
-    assert runtime.phase.value == "awaiting_tool_approval"
+    ticket_id = await _wait_for_open_tool_approval(
+        approval_repo,
+        approval_manager,
+        run_id=request.run_id,
+    )
+    _ = await _wait_for_runtime_state(
+        runtime_repo,
+        run_id=request.run_id,
+        status="paused",
+        phase="awaiting_tool_approval",
+    )
     _ = await _wait_for_published_event(
         published_events,
         RunEventType.NOTIFICATION_REQUESTED,
@@ -1816,10 +1882,12 @@ async def test_external_acp_request_permission_waits_for_selected_option(
     result = await pending
 
     assert result == {"outcome": {"outcome": "selected", "optionId": "allow_always"}}
-    runtime = await runtime_repo.get_async(request.run_id)
-    assert runtime is not None
-    assert runtime.status.value == "running"
-    assert runtime.phase.value == "subagent_running"
+    _ = await _wait_for_runtime_state(
+        runtime_repo,
+        run_id=request.run_id,
+        status="running",
+        phase="subagent_running",
+    )
 
 
 @pytest.mark.asyncio
@@ -1864,7 +1932,11 @@ async def test_external_acp_request_permission_denies_ticket_when_option_mapping
             message_id=1,
         )
     )
-    ticket_id = await _wait_for_open_ticket(approval_repo, run_id=request.run_id)
+    ticket_id = await _wait_for_open_tool_approval(
+        approval_repo,
+        approval_manager,
+        run_id=request.run_id,
+    )
     approval_manager.resolve_approval(
         run_id=request.run_id,
         tool_call_id=ticket_id,
@@ -1875,8 +1947,11 @@ async def test_external_acp_request_permission_denies_ticket_when_option_mapping
     result = await pending
 
     assert result == {"outcome": {"outcome": "cancelled"}}
-    ticket = await approval_repo.get_async(ticket_id)
-    assert ticket is not None
+    ticket = await _wait_for_ticket_status(
+        approval_repo,
+        tool_call_id=ticket_id,
+        status=ApprovalTicketStatus.DENIED,
+    )
     assert ticket.status == ApprovalTicketStatus.DENIED
     assert ticket.feedback == "Denied from CLI."
     assert await approval_repo.list_open_by_run_async(request.run_id) == ()
@@ -1917,7 +1992,11 @@ async def test_external_acp_request_permission_cancel_resolves_open_ticket(
             message_id=1,
         )
     )
-    ticket_id = await _wait_for_open_ticket(approval_repo, run_id=request.run_id)
+    ticket_id = await _wait_for_open_tool_approval(
+        approval_repo,
+        approval_manager,
+        run_id=request.run_id,
+    )
 
     pending.cancel()
     done, pending_tasks = await asyncio.wait({pending}, timeout=1.0)
@@ -1925,8 +2004,11 @@ async def test_external_acp_request_permission_cancel_resolves_open_ticket(
     assert not pending_tasks
     assert pending.cancelled()
 
-    ticket = await approval_repo.get_async(ticket_id)
-    assert ticket is not None
+    ticket = await _wait_for_ticket_status(
+        approval_repo,
+        tool_call_id=ticket_id,
+        status=ApprovalTicketStatus.DENIED,
+    )
     assert ticket.status == ApprovalTicketStatus.DENIED
     assert ticket.feedback == "Prompt turn was cancelled."
     assert approval_manager.list_open_approvals(run_id=request.run_id) == []

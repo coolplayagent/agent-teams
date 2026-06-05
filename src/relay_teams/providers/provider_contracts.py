@@ -6,7 +6,7 @@ from typing import override
 
 from relay_teams.media import ContentPart, MediaModality
 from relay_teams.media import content_parts_to_text
-from relay_teams.sessions.runs.run_models import (
+from relay_teams.sessions.runs.run_config_models import (
     MediaGenerationConfig,
     RunKind,
     RunThinkingConfig,

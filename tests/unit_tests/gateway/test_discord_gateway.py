@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import sqlite3
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Coroutine, Mapping
 from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -952,6 +952,34 @@ async def test_discord_service_command_response_starts_resumed_watcher(
             )
         ),
     )
+    watcher_tasks: list[asyncio.Task[None]] = []
+    background_tasks: list[asyncio.Task[None]] = []
+
+    def capture_run_watcher(
+        *,
+        account_id: str,
+        gateway_session_id: str,
+        run_id: str,
+        channel_id: str,
+        reply_to_message_id: str | None,
+    ) -> None:
+        watcher_tasks.append(
+            asyncio.create_task(
+                service._await_terminal_and_reply(
+                    account_id=account_id,
+                    gateway_session_id=gateway_session_id,
+                    run_id=run_id,
+                    channel_id=channel_id,
+                    reply_to_message_id=reply_to_message_id,
+                )
+            )
+        )
+
+    def capture_background_task(coroutine: Coroutine[object, object, None]) -> None:
+        background_tasks.append(asyncio.create_task(coroutine))
+
+    service._start_run_watcher = capture_run_watcher
+    service._run_or_schedule = capture_background_task
     await repository.upsert_account(_discord_account())
 
     await service.handle_inbound_message(
@@ -964,8 +992,8 @@ async def test_discord_service_command_response_starts_resumed_watcher(
             is_dm=True,
         ),
     )
-    for _ in range(5):
-        await asyncio.sleep(0)
+    await _wait_for_discord_tasks(watcher_tasks)
+    await _wait_for_discord_tasks(background_tasks)
 
     assert (
         _SentDiscordText(
@@ -2020,6 +2048,13 @@ async def _wait_for_discord_queue_status(
     raise AssertionError(
         f"Discord queue record {inbound_queue_id} did not reach {status.value}"
     )
+
+
+async def _wait_for_discord_tasks(tasks: list[asyncio.Task[None]]) -> None:
+    while tasks:
+        pending = tuple(tasks)
+        tasks.clear()
+        await asyncio.gather(*pending)
 
 
 def _build_service(

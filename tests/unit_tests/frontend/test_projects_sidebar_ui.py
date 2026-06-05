@@ -20,7 +20,6 @@ import {
     handleNewProjectClick,
     loadProjects,
     setSelectSessionHandler,
-    toggleProjectSortMode,
 } from "./sidebar.mjs";
 
 installGlobals(createDomEnvironment());
@@ -30,9 +29,36 @@ setSelectSessionHandler(async (sessionId) => {
 
 await loadProjects();
 const projectsList = document.getElementById("projects-list");
-const projectCards = projectsList.children.filter(child => child.className === "project-card");
-const firstProject = projectCards[0];
-const secondProject = projectCards[1];
+function projectCards() {
+    return projectsList.children.filter(child => child.className === "project-card");
+}
+
+function projectTitles() {
+    return projectCards().map(card => card.querySelector(".project-title").textContent);
+}
+
+async function openSortMenu() {
+    const sortButton = projectsList.querySelector(".projects-toolbar-sort-btn");
+    sortButton.onclick();
+    await flushTasks();
+    await flushTasks();
+    return projectsList.querySelectorAll(".project-sort-menu-btn");
+}
+
+async function selectSortMode(sortMode) {
+    const sortButtons = await openSortMenu();
+    const target = sortButtons.find(button => button.getAttribute("data-project-sort-mode") === sortMode);
+    if (!target) {
+        throw new Error(`Missing sort option: ${sortMode}`);
+    }
+    target.onclick();
+    await flushTasks();
+    await flushTasks();
+}
+
+const initialProjectCards = projectCards();
+const firstProject = initialProjectCards[0];
+const secondProject = initialProjectCards[1];
 
 const initialSessionCount = firstProject.querySelectorAll(".session-item").length;
 const initialProjectExpanded = firstProject.querySelector(".project-toggle").getAttribute("aria-expanded");
@@ -62,11 +88,26 @@ await flushTasks();
 
 await handleNewProjectClick();
 await flushTasks();
-const finalFirstProjectTitle = projectsList.children.filter(child => child.className === "project-card")[0].querySelector(".project-title").textContent;
+const defaultSortLabel = projectsList.querySelector(".projects-toolbar-sort-btn").getAttribute("aria-label");
+const finalFirstProjectTitle = projectTitles()[0];
 
-toggleProjectSortMode();
+const sortMenuButtons = await openSortMenu();
+const sortMenuLabels = sortMenuButtons.map(button => button.textContent);
+const selectedSortMode = sortMenuButtons
+    .find(button => button.getAttribute("aria-checked") === "true")
+    .getAttribute("data-project-sort-mode");
+sortMenuButtons.find(button => button.getAttribute("data-project-sort-mode") === "project_created").onclick();
 await flushTasks();
-const sortedFirstProjectTitle = projectsList.children.filter(child => child.className === "project-card")[0].querySelector(".project-title").textContent;
+await flushTasks();
+const createdSortFirstProjectTitle = projectTitles()[0];
+
+await selectSortMode("time");
+const chronologicalProjectCount = projectCards().length;
+const chronologicalToolbarTitle = projectsList.querySelector(".projects-toolbar-title").textContent;
+const chronologicalSessionIds = projectsList.querySelectorAll(".session-item").map(item => item.getAttribute("data-session-id"));
+
+await selectSortMode("project_updated");
+const updatedSortFirstProjectTitle = projectTitles()[0];
 
 console.log(JSON.stringify({
     initialProjectCount: 2,
@@ -85,7 +126,14 @@ console.log(JSON.stringify({
     initialSecondProjectTitle,
     initialFirstSessionLabel,
     finalFirstProjectTitle,
-    sortedFirstProjectTitle,
+    defaultSortLabel,
+    sortMenuLabels,
+    selectedSortMode,
+    createdSortFirstProjectTitle,
+    chronologicalProjectCount,
+    chronologicalToolbarTitle,
+    chronologicalSessionIds,
+    updatedSortFirstProjectTitle,
 }));
 """.strip(),
     )
@@ -109,7 +157,20 @@ console.log(JSON.stringify({
     assert payload["initialSecondProjectTitle"] == "Beta Project"
     assert payload["initialFirstSessionLabel"] == "New conversation"
     assert payload["finalFirstProjectTitle"] == "Gamma Project"
-    assert payload["sortedFirstProjectTitle"] == "Alpha Project"
+    assert payload["defaultSortLabel"] == "Sort by project update"
+    assert payload["sortMenuLabels"] == [
+        "Sort by project creation",
+        "Sort by project update",
+        "Chronological sessions",
+    ]
+    assert payload["selectedSortMode"] == "project_updated"
+    assert payload["createdSortFirstProjectTitle"] == "Beta Project"
+    assert payload["chronologicalProjectCount"] == 0
+    assert payload["chronologicalToolbarTitle"] == "Sessions"
+    chronological_session_ids = cast(list[str], payload["chronologicalSessionIds"])
+    assert chronological_session_ids[0] == "session-11"
+    assert chronological_session_ids[-1] == "beta-1"
+    assert payload["updatedSortFirstProjectTitle"] == "Gamma Project"
 
 
 def test_new_session_draft_event_renders_sidebar_session_without_refetch(
@@ -987,6 +1048,16 @@ console.log(JSON.stringify({
     assert sidebar_script.count("await loadProjects({ forceRefresh: true });") >= 1
     assert "scheduleSessionsRefresh(900, { forceRefresh: true });" in sidebar_script
     assert "isSessionsRefreshSuppressed() && forceRefresh !== true" in sidebar_script
+    assert "PROJECT_UPDATED: 'project_updated'" in sidebar_script
+    assert (
+        "updatedAt: sessionTimestampValue(projectSessions[0]) || workspaceUpdatedTimestampValue(workspace),"
+        in sidebar_script
+    )
+    assert "function renderChronologicalSessionList(sessions)" in sidebar_script
+    assert "function bindSessionRows(root, { projectId = '' } = {})" in sidebar_script
+    assert "projectSortMenuOpen" in sidebar_script
+    assert ".project-sort-menu" in components_base_css
+    assert ".project-flat-session-list" in components_base_css
     assert (
         "optimisticActivateSession(sessionId, { animate: true, item: button, updateState: false });"
         in sidebar_script
@@ -1763,8 +1834,7 @@ export async function runAutomationProject() {
     assert payload["toggleCount"] == 1
     assert payload["firstToggleSessionId"] == "session-1"
     assert (
-        "${renderSubagentToggle(session)}\n"
-        '                                            <span class="session-id">'
+        '${renderSubagentToggle(session)}\n                <span class="session-id">'
     ) in sidebar_script
 
 
@@ -4428,6 +4498,9 @@ function parseElements(source, selector) {
             ".home-new-session-btn": /class="([^"]*home-new-session-btn[^"]*)"[^>]*>/g,
             ".home-session-search-btn": /class="([^"]*home-session-search-btn[^"]*)"[^>]*>/g,
             ".project-toggle": /class="project-toggle"[^>]*aria-expanded="([^"]+)"[^>]*>/g,
+        ".projects-toolbar-title": /class="projects-toolbar-title"[^>]*>([\s\S]*?)<\/div>/g,
+        ".projects-toolbar-sort-btn": /class="([^"]*projects-toolbar-sort-btn[^"]*)"[^>]*title="([^"]*)"[^>]*aria-label="([^"]*)"[^>]*aria-haspopup="([^"]*)"[^>]*aria-expanded="([^"]*)"[^>]*>/g,
+        ".project-sort-menu-btn": /class="([^"]*project-sort-menu-btn[^"]*)"[^>]*aria-checked="([^"]*)"[^>]*data-project-sort-mode="([^"]*)"[^>]*>[\s\S]*?<span class="project-sort-menu-check"[^>]*>[\s\S]*?<\/span>\s*<span>([\s\S]*?)<\/span>/g,
         ".project-title-btn": /class="([^"]*project-title-btn[^"]*)"[^>]*aria-current="([^"]+)"[^>]*>/g,
         ".project-options-btn": /class="([^"]*project-options-btn[^"]*)"[^>]*>/g,
         ".project-new-session-btn": /class="([^"]*project-new-session-btn[^"]*)"[^>]*>/g,
@@ -4465,6 +4538,27 @@ function parseElements(source, selector) {
             results.push(createNode({ className: match[1] }));
         } else if (selector === ".project-toggle") {
             results.push(createNode({ attributes: { "aria-expanded": match[1] } }));
+        } else if (selector === ".projects-toolbar-title") {
+            results.push(createNode({ textContent: match[1].replace(/<[^>]+>/g, "").trim() }));
+        } else if (selector === ".projects-toolbar-sort-btn") {
+            results.push(createNode({
+                className: match[1],
+                attributes: {
+                    title: decodeHtmlAttribute(match[2]),
+                    "aria-label": decodeHtmlAttribute(match[3]),
+                    "aria-haspopup": match[4],
+                    "aria-expanded": match[5],
+                },
+            }));
+        } else if (selector === ".project-sort-menu-btn") {
+            results.push(createNode({
+                className: match[1],
+                textContent: match[4].replace(/<[^>]+>/g, "").trim(),
+                attributes: {
+                    "aria-checked": match[2],
+                    "data-project-sort-mode": decodeHtmlAttribute(match[3]),
+                },
+            }));
         } else if (selector === ".project-title-btn") {
             results.push(createNode({
                 className: match[1],
@@ -4575,6 +4669,7 @@ function createNode({ className = "", textContent = "", attributes = {} } = {}) 
         textContent,
         onclick: null,
         onkeydown: null,
+        dataset: {},
         style: {},
         addEventListener(name, handler) {
             if (name === "click") {
@@ -4826,8 +4921,11 @@ export async function showTextInputDialog(options = {}) {
         """
 const translations = {
     "sidebar.project": "Project",
-    "sidebar.sort_name": "Sort by name",
-    "sidebar.sort_recent": "Sort by recent",
+    "sidebar.sessions": "Sessions",
+    "sidebar.sort_menu": "Session sort",
+    "sidebar.sort_project_created": "Sort by project creation",
+    "sidebar.sort_project_updated": "Sort by project update",
+    "sidebar.sort_time": "Chronological sessions",
     "sidebar.new_project": "New project",
     "sidebar.new_session_primary": "New conversation",
     "sidebar.feature_navigation": "Feature navigation",
@@ -4903,7 +5001,8 @@ const workspaces = [
     {
         workspace_id: "alpha-project",
         root_path: "/work/Alpha Project",
-        updated_at: "2026-03-14T10:00:00Z",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
         profile: {
             file_scope: {
                 backend: "project",
@@ -4913,7 +5012,8 @@ const workspaces = [
     {
         workspace_id: "beta-project",
         root_path: "/work/Beta Project",
-        updated_at: "2026-03-13T10:00:00Z",
+        created_at: "2026-03-15T10:00:00Z",
+        updated_at: "2026-03-15T10:00:00Z",
         profile: {
             file_scope: {
                 backend: "project",
@@ -4985,6 +5085,7 @@ export async function pickWorkspace(rootPath = null) {
     workspaces.push({
         workspace_id: "gamma-project",
         root_path: rootPath,
+        created_at: "2026-03-09T12:00:00Z",
         updated_at: "2026-03-14T12:00:00Z",
         profile: {
             file_scope: {

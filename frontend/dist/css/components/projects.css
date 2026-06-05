@@ -442,6 +442,68 @@
     gap: 0.1rem;
 }
 
+.projects-toolbar-sort-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.projects-list .project-sort-menu {
+    position: absolute;
+    top: calc(100% + 0.24rem);
+    right: 0;
+    width: min(11.75rem, calc(100vw - 1rem));
+    max-width: calc(100vw - 1rem);
+    padding: 0.28rem;
+    border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    box-shadow: 0 2px 8px rgba(17, 19, 18, 0.1);
+    z-index: 12;
+}
+
+.projects-list .project-sort-menu.is-opening {
+    animation: projectMenuEnter 0.12s ease;
+}
+
+.projects-list .project-sort-menu-btn {
+    width: 100%;
+    min-height: 28px;
+    padding: 0.34rem 0.44rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.44rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.projects-list .project-sort-menu-btn:hover,
+.projects-list .project-sort-menu-btn.is-selected {
+    background: var(--bg-hover);
+}
+
+.projects-list .project-sort-menu-check {
+    width: 1rem;
+    flex: 0 0 1rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.projects-list .project-sort-menu-btn span:last-child,
+.projects-list .project-workspace-menu-btn span:last-child,
+.projects-list .project-run-automation-btn span:last-child,
+.projects-list .project-toggle-automation-btn span:last-child,
+.projects-list .project-remove-automation-btn span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .projects-list .project-card {
     margin: 0;
     border: none;
@@ -455,8 +517,10 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
+    width: 100%;
     border-radius: 6px;
     min-width: 0;
+    overflow: hidden;
 }
 
 .projects-list .project-toggle {
@@ -524,6 +588,8 @@
 }
 
 .projects-list .project-title {
+    display: block;
+    width: 100%;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -605,7 +671,8 @@
     position: absolute;
     top: 2rem;
     right: 0.35rem;
-    min-width: 8rem;
+    width: min(13.5rem, calc(100% - 0.7rem), calc(100vw - 1rem));
+    max-width: calc(100vw - 1rem);
     padding: 0.28rem;
     border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
     border-radius: 8px;
@@ -645,7 +712,7 @@
 
 .projects-list .project-menu-workspace,
 .projects-list .project-menu-automation {
-    min-width: 13.5rem;
+    min-width: 0;
     padding: 0.36rem;
     border-radius: 8px;
     background: var(--bg-surface);
@@ -731,6 +798,13 @@
     gap: 0.04rem;
     margin-left: 1.52rem;
     padding: 0.02rem 0 0.04rem;
+}
+
+.projects-list .project-flat-session-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.04rem;
+    padding: 0.08rem 0 0.2rem;
 }
 
 .projects-list .session-item {
@@ -1462,12 +1536,16 @@
     align-items: center;
     gap: 0;
     min-width: 0;
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    overflow: hidden;
 }
 
 .project-title-btn {
+    display: flex;
+    align-items: center;
     min-width: 0;
     flex: 1 1 auto;
+    overflow: hidden;
     border: none;
     background: transparent;
     text-align: left;

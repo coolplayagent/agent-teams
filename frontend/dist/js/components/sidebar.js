@@ -87,6 +87,16 @@ const FEATURE_IDS = Object.freeze({
     gateway: 'gateway',
     memory: 'memory',
 });
+const PROJECT_SORT_MODES = Object.freeze({
+    PROJECT_CREATED: 'project_created',
+    PROJECT_UPDATED: 'project_updated',
+    TIME: 'time',
+});
+const PROJECT_SORT_OPTIONS = Object.freeze([
+    PROJECT_SORT_MODES.PROJECT_CREATED,
+    PROJECT_SORT_MODES.PROJECT_UPDATED,
+    PROJECT_SORT_MODES.TIME,
+]);
 
 let selectSessionHandler = null;
 let refreshTimer = null;
@@ -99,8 +109,9 @@ const sessionWorkspaceMap = new Map();
 const automationBoundSessionIds = new Set();
 const renderedSubagentListExpandedState = new Map();
 const normalSubagentCountBySessionId = new Map();
-let projectSortMode = 'recent';
+let projectSortMode = PROJECT_SORT_MODES.PROJECT_UPDATED;
 let openProjectMenuId = null;
+let projectSortMenuOpen = false;
 let projectMenuDismissBound = false;
 let languageRefreshBound = false;
 let terminalSessionClickBound = false;
@@ -878,6 +889,36 @@ function timestampValue(value) {
     return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function sessionTimestampValue(session) {
+    return timestampValue(
+        session?.updated_at
+        || session?.updatedAt
+        || session?.created_at
+        || session?.createdAt
+        || '',
+    );
+}
+
+function workspaceCreatedTimestampValue(workspace) {
+    return timestampValue(
+        workspace?.created_at
+        || workspace?.createdAt
+        || workspace?.updated_at
+        || workspace?.updatedAt
+        || '',
+    );
+}
+
+function workspaceUpdatedTimestampValue(workspace) {
+    return timestampValue(
+        workspace?.updated_at
+        || workspace?.updatedAt
+        || workspace?.created_at
+        || workspace?.createdAt
+        || '',
+    );
+}
+
 function formatRelativeTime(value) {
     const timestamp = timestampValue(value);
     if (!timestamp) return '';
@@ -1025,7 +1066,10 @@ function buildProjectGroups(workspaces, sessions) {
         const id = String(workspace?.workspace_id || '').trim();
         if (!id) return;
         const key = groupKey('workspace', id);
-        const projectSessions = Array.from(sessionsByGroup.get(key) || []).sort((a, b) => timestampValue(b.updated_at) - timestampValue(a.updated_at));
+        const projectSessions = Array.from(sessionsByGroup.get(key) || []).sort((a, b) => (
+            sessionTimestampValue(b) - sessionTimestampValue(a)
+            || formatSessionLabel(a).localeCompare(formatSessionLabel(b))
+        ));
         if (!initializedProjectIds.has(key)) {
             initializedProjectIds.add(key);
             expandedProjectIds.add(key);
@@ -1039,14 +1083,29 @@ function buildProjectGroups(workspaces, sessions) {
             displayLabel: String(displayMetadata?.label || formatWorkspaceProjectLabel(workspace)).trim() || id,
             pathHint: String(displayMetadata?.pathHint || workspace?.root_path || '').trim(),
             sessions: projectSessions,
-            latestUpdatedAt: Math.max(timestampValue(workspace.updated_at), timestampValue(projectSessions[0]?.updated_at)),
+            createdAt: workspaceCreatedTimestampValue(workspace),
+            updatedAt: sessionTimestampValue(projectSessions[0]) || workspaceUpdatedTimestampValue(workspace),
         });
     });
 
-    if (projectSortMode === 'name') {
-        return groups.sort((a, b) => formatProjectLabel(a).toLowerCase().localeCompare(formatProjectLabel(b).toLowerCase()));
+    if (projectSortMode === PROJECT_SORT_MODES.PROJECT_CREATED) {
+        return groups.sort((a, b) => (
+            b.createdAt - a.createdAt
+            || formatProjectLabel(a).toLowerCase().localeCompare(formatProjectLabel(b).toLowerCase())
+        ));
     }
-    return groups.sort((a, b) => b.latestUpdatedAt - a.latestUpdatedAt);
+    return groups.sort((a, b) => (
+        b.updatedAt - a.updatedAt
+        || formatProjectLabel(a).toLowerCase().localeCompare(formatProjectLabel(b).toLowerCase())
+    ));
+}
+
+function buildChronologicalSessions(sessions) {
+    return Array.from(Array.isArray(sessions) ? sessions : []).sort((a, b) => (
+        sessionTimestampValue(b) - sessionTimestampValue(a)
+        || formatSessionLabel(a).localeCompare(formatSessionLabel(b))
+        || String(a?.session_id || '').localeCompare(String(b?.session_id || ''))
+    ));
 }
 
 function buildSessionSearchEntries(groups) {
@@ -1057,19 +1116,28 @@ function buildSessionSearchEntries(groups) {
             title: formatSessionLabel(session),
             projectLabel,
             groupKey: group.key,
-            updatedAtMs: timestampValue(
-                session?.updated_at
-                || session?.updatedAt
-                || session?.created_at
-                || session?.createdAt
-                || '',
-            ),
+            updatedAtMs: sessionTimestampValue(session),
         }));
     }).sort((left, right) => (
         right.updatedAtMs - left.updatedAtMs
         || left.title.localeCompare(right.title)
         || left.sessionId.localeCompare(right.sessionId)
     ));
+}
+
+function buildChronologicalSessionSearchEntries(workspaces, sessions) {
+    const workspaceDisplayMetadata = buildWorkspaceDisplayMetadata(workspaces);
+    return buildChronologicalSessions(sessions).map(session => {
+        const workspaceId = String(session?.workspace_id || '').trim();
+        const displayMetadata = workspaceDisplayMetadata.get(workspaceId);
+        return {
+            sessionId: String(session?.session_id || '').trim(),
+            title: formatSessionLabel(session),
+            projectLabel: String(displayMetadata?.label || workspaceId || t('sidebar.project')).trim(),
+            groupKey: workspaceId ? groupKey('workspace', workspaceId) : '',
+            updatedAtMs: sessionTimestampValue(session),
+        };
+    });
 }
 
 function ensureSessionSearchConfigured() {
@@ -1082,12 +1150,48 @@ function ensureSessionSearchConfigured() {
     sessionSearchConfigured = true;
 }
 
+function projectSortLabel(sortMode) {
+    if (sortMode === PROJECT_SORT_MODES.PROJECT_CREATED) {
+        return t('sidebar.sort_project_created');
+    }
+    if (sortMode === PROJECT_SORT_MODES.TIME) {
+        return t('sidebar.sort_time');
+    }
+    return t('sidebar.sort_project_updated');
+}
+
+function renderProjectSortMenu() {
+    if (!projectSortMenuOpen) {
+        return '';
+    }
+    return `
+        <div class="project-sort-menu is-opening" role="menu" aria-label="${escapeHtml(t('sidebar.sort_menu'))}">
+            ${PROJECT_SORT_OPTIONS.map(sortMode => {
+                const selected = sortMode === projectSortMode;
+                return `
+                    <button
+                        class="project-sort-menu-btn${selected ? ' is-selected' : ''}"
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked="${selected ? 'true' : 'false'}"
+                        data-project-sort-mode="${escapeHtml(sortMode)}"
+                    >
+                        <span class="project-sort-menu-check" aria-hidden="true">${selected ? '&#10003;' : ''}</span>
+                        <span>${escapeHtml(projectSortLabel(sortMode))}</span>
+                    </button>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
 function syncProjectSortButton() {
     const btn = els.projectsList?.querySelector('.projects-toolbar-sort-btn');
     if (!btn) return;
-    const sortLabel = projectSortMode === 'name' ? t('sidebar.sort_name') : t('sidebar.sort_recent');
+    const sortLabel = projectSortLabel(projectSortMode);
     btn.title = sortLabel;
     btn.setAttribute('aria-label', sortLabel);
+    btn.setAttribute('aria-expanded', projectSortMenuOpen ? 'true' : 'false');
     btn.dataset.sortMode = projectSortMode;
 }
 
@@ -1097,9 +1201,10 @@ function ensureProjectMenuDismissBinding() {
     }
     document.addEventListener('click', event => {
         const target = event?.target;
-        if (target?.closest?.('.project-options-btn, .project-menu')) return;
-        if (openProjectMenuId !== null) {
+        if (target?.closest?.('.project-options-btn, .project-menu, .projects-toolbar-sort-btn, .project-sort-menu')) return;
+        if (openProjectMenuId !== null || projectSortMenuOpen) {
             openProjectMenuId = null;
+            projectSortMenuOpen = false;
             void loadProjects();
         }
     });
@@ -1119,24 +1224,40 @@ function renderEmptyProjectsState() {
 function renderProjectsToolbar() {
     const toolbar = document.createElement('div');
     toolbar.className = 'projects-toolbar';
+    const sortLabel = projectSortLabel(projectSortMode);
+    const toolbarTitle = projectSortMode === PROJECT_SORT_MODES.TIME
+        ? t('sidebar.sessions')
+        : t('sidebar.workspace');
     toolbar.innerHTML = `
-        <div class="projects-toolbar-title">${escapeHtml(t('sidebar.workspace'))}</div>
+        <div class="projects-toolbar-title">${escapeHtml(toolbarTitle)}</div>
         <div class="projects-toolbar-actions">
             <button class="sidebar-header-btn projects-toolbar-new-btn" type="button" title="${escapeHtml(t('sidebar.new_project'))}" aria-label="${escapeHtml(t('sidebar.new_project'))}">
                 <svg viewBox="0 0 24 24" fill="none" class="icon" aria-hidden="true">
                     <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                 </svg>
             </button>
-            <button class="sidebar-header-btn projects-toolbar-sort-btn" type="button" title="${escapeHtml(t('sidebar.sort_recent'))}" aria-label="${escapeHtml(t('sidebar.sort_recent'))}">
-                <svg viewBox="0 0 24 24" fill="none" class="icon" aria-hidden="true">
-                    <path d="M7 6h10M7 12h7M7 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                    <path d="M17 8l2-2 2 2M19 6v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-            </button>
+            <div class="projects-toolbar-sort-wrap">
+                <button class="sidebar-header-btn projects-toolbar-sort-btn" type="button" title="${escapeHtml(sortLabel)}" aria-label="${escapeHtml(sortLabel)}" aria-haspopup="menu" aria-expanded="${projectSortMenuOpen ? 'true' : 'false'}">
+                    <svg viewBox="0 0 24 24" fill="none" class="icon" aria-hidden="true">
+                        <path d="M7 6h10M7 12h7M7 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M17 8l2-2 2 2M19 6v12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </button>
+                ${renderProjectSortMenu()}
+            </div>
         </div>
     `;
     toolbar.querySelector('.projects-toolbar-new-btn')?.addEventListener('click', () => void handleNewProjectClick());
-    toolbar.querySelector('.projects-toolbar-sort-btn')?.addEventListener('click', () => toggleProjectSortMode());
+    toolbar.querySelector('.projects-toolbar-sort-btn')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        toggleProjectSortMode();
+    });
+    toolbar.querySelectorAll('.project-sort-menu-btn').forEach(button => {
+        button.addEventListener('click', event => {
+            event?.stopPropagation?.();
+            setProjectSortMode(String(button.getAttribute('data-project-sort-mode') || '').trim());
+        });
+    });
     return toolbar;
 }
 
@@ -1165,7 +1286,25 @@ function renderNodeSignature(node) {
     return `${className}::${serializedContent}::${childSignature}`;
 }
 
-function buildProjectsRenderSignature(groups, automationProjects) {
+function buildSessionSignature(session) {
+    const sessionId = String(session?.session_id || '').trim();
+    return {
+        id: sessionId,
+        workspaceId: String(session?.workspace_id || '').trim(),
+        label: formatSessionLabel(session),
+        updatedAt: String(session?.updated_at || session?.updatedAt || '').trim(),
+        createdAt: String(session?.created_at || session?.createdAt || '').trim(),
+        mode: String(session?.session_mode || '').trim(),
+        source: getSessionSourceClassName(session),
+        indicator: getSessionRunIndicatorType(session),
+        active: isCurrentMainSession(session),
+        subagentCount: resolveSignatureSubagentCount(session),
+        subagentsExpanded: isSubagentSessionListExpanded(sessionId),
+        subagentChildren: getSignatureSubagentChildren(sessionId),
+    };
+}
+
+function buildProjectsRenderSignature(groups, automationProjects, chronologicalSessions = []) {
     const activeSubagent = getActiveSubagentSession();
     const visibleState = groups.map(group => {
         const groupKeyValue = String(group?.key || '').trim();
@@ -1187,22 +1326,7 @@ function buildProjectsRenderSignature(groups, automationProjects) {
                 && state.currentProjectViewWorkspaceId === group?.id
             ),
             totalSessions: Array.isArray(group?.sessions) ? group.sessions.length : 0,
-            visibleSessions: visibleSessions.map(session => {
-                const sessionId = String(session?.session_id || '').trim();
-                return {
-                    id: sessionId,
-                    workspaceId: String(session?.workspace_id || '').trim(),
-                    label: formatSessionLabel(session),
-                    updatedAt: String(session?.updated_at || '').trim(),
-                    mode: String(session?.session_mode || '').trim(),
-                    source: getSessionSourceClassName(session),
-                    indicator: getSessionRunIndicatorType(session),
-                    active: isCurrentMainSession(session),
-                    subagentCount: resolveSignatureSubagentCount(session),
-                    subagentsExpanded: isSubagentSessionListExpanded(sessionId),
-                    subagentChildren: getSignatureSubagentChildren(sessionId),
-                };
-            }),
+            visibleSessions: visibleSessions.map(session => buildSessionSignature(session)),
         };
     });
     return JSON.stringify({
@@ -1214,10 +1338,12 @@ function buildProjectsRenderSignature(groups, automationProjects) {
         activeAgentInstanceId: String(state.activeAgentInstanceId || '').trim(),
         activeView: String(state.activeView || '').trim(),
         openProjectMenuId,
+        projectSortMenuOpen,
         pendingAnimation: pendingSessionAnimation,
         pendingVisibilityAnimation: pendingSessionVisibilityAnimation,
         automationBindings: buildAutomationBindingSignature(automationProjects),
         groups: visibleState,
+        chronologicalSessions: chronologicalSessions.map(session => buildSessionSignature(session)),
     });
 }
 
@@ -1920,49 +2046,73 @@ function bindSubagentDeleteButtons(root) {
     });
 }
 
-function bindProjectCard(card, group) {
-    const projectId = group.id;
-    const groupKeyValue = group.key;
-    bindProjectPathHint(card);
-    card.querySelector('.project-toggle')?.addEventListener('click', () => {
-        toggleProjectExpandedState(card, groupKeyValue);
-    });
-    card.querySelector('.project-title-btn')?.addEventListener('click', async event => {
-        event?.stopPropagation?.();
-        cancelPendingSessionSelection(`workspace:${projectId}`);
-        if (state.currentSessionId || state.pendingNewSessionActive || state.activeEventSource) {
-            clearActiveSessionView();
-        }
-        state.currentFeatureViewId = null;
-        state.activeSubagentSession = null;
-        clearFeatureNavigationState();
-        clearSessionNavigationState();
-        await openWorkspaceProjectView(group.workspace);
-        await loadProjects();
-    });
-    card.querySelector('.project-new-session-btn')?.addEventListener('click', event => {
-        event?.stopPropagation?.();
-        openNewSessionDraftFromSidebar(projectId);
-    });
-    card.querySelector('.project-options-btn')?.addEventListener('click', event => {
-        event?.stopPropagation?.();
-        openProjectMenuId = openProjectMenuId === groupKeyValue ? null : groupKeyValue;
-        void loadProjects();
-    });
-    card.querySelector('.project-session-visibility-btn')?.addEventListener('click', event => {
-        event?.stopPropagation?.();
-        void toggleProjectSessionVisibility(card, groupKeyValue);
-    });
-    card.querySelector('.project-fork-btn')?.addEventListener('click', event => {
-        event?.stopPropagation?.();
-        void handleForkWorkspaceClick(group.workspace);
-    });
-    card.querySelector('.project-remove-btn')?.addEventListener('click', event => {
-        event?.stopPropagation?.();
-        void handleRemoveWorkspaceClick(group.workspace);
-    });
+function renderSessionItem(session, { workspaceId = '' } = {}) {
+    const sessionId = String(session?.session_id || '').trim();
+    const sessionMetadata = getSessionMetadata(session);
+    const sourceClassName = getSessionSourceClassName(session);
+    const runIndicatorClassName = getSessionRunIndicatorClassName(session);
+    const sessionLabel = formatSessionLabel(session);
+    const sessionTimeValue = session?.updated_at || session?.updatedAt || session?.created_at || session?.createdAt || '';
+    return `
+        <div
+            class="session-item${sourceClassName}${runIndicatorClassName}${isCurrentMainSession(session) ? ' active' : ''}"
+            tabindex="0"
+            role="button"
+            data-session-id="${escapeHtml(sessionId)}"
+            data-workspace-id="${escapeHtml(workspaceId || session?.workspace_id || '')}"
+            data-session-mode="${escapeHtml(String(session?.session_mode || ''))}"
+        >
+            <span class="session-main">
+                ${renderSubagentToggle(session)}
+                <span class="session-id">${renderSessionSourceIcon(session)}<span class="session-label-text" title="${escapeHtml(sessionLabel)}">${escapeHtml(sessionLabel)}</span></span>
+            </span>
+            <span class="session-meta">
+                ${renderSessionRunIndicator(session)}
+                <span class="session-time">${escapeHtml(formatRelativeTime(sessionTimeValue))}</span>
+                <span class="session-actions">
+                    <button class="session-rename-btn" type="button" data-session-id="${escapeHtml(sessionId)}" data-session-metadata="${escapeHtml(JSON.stringify(sessionMetadata))}" title="${escapeHtml(t('sidebar.rename_session'))}" aria-label="${escapeHtml(t('sidebar.rename_session'))}">
+                        <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                            <path d="M4 16.5V20h3.5L18 9.5 14.5 6 4 16.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                            <path d="M13 7.5 16.5 11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                            <path d="M12 20h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                    <button class="session-delete-btn" type="button" data-session-id="${escapeHtml(sessionId)}" title="${escapeHtml(t('sidebar.delete_session'))}" aria-label="${escapeHtml(t('sidebar.delete_session'))}">
+                        <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
+                            <path d="M5 7h14M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7m-8 0v10.2A1.8 1.8 0 0 0 8.8 19h6.4A1.8 1.8 0 0 0 17 17.2V7M10 10.2v5.6M14 10.2v5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </span>
+            </span>
+        </div>
+    `;
+}
 
-    card.querySelectorAll('.session-item').forEach(button => {
+function renderSessionEntry(session, {
+    sessionIndex = 0,
+    workspaceId = '',
+    enteringVisibility = false,
+    visibilityIndex = 0,
+} = {}) {
+    const sessionEntryClassName = enteringVisibility
+        ? 'session-entry session-entry-visible-entering'
+        : 'session-entry';
+    const sessionEntryStyle = enteringVisibility
+        ? ` style="--session-visibility-index: ${visibilityIndex};"`
+        : '';
+    return `
+        <div class="${sessionEntryClassName}" data-session-index="${sessionIndex}"${sessionEntryStyle}>
+            ${renderSessionItem(session, { workspaceId })}
+            ${renderSubagentChildren(session)}
+        </div>
+    `;
+}
+
+function bindSessionRows(root, { projectId = '' } = {}) {
+    if (!root?.querySelectorAll) {
+        return;
+    }
+    root.querySelectorAll('.session-item').forEach(button => {
         if (button.classList.contains('session-subagent-item')) {
             return;
         }
@@ -1972,7 +2122,7 @@ function bindProjectCard(card, group) {
             if (!sessionId) return;
             const selectionToken = nextSidebarSelectionToken();
             const forceMarkTerminalViewed = hasSessionTerminalIndicator(button);
-            state.currentWorkspaceId = targetWorkspaceId || projectId;
+            state.currentWorkspaceId = targetWorkspaceId || sessionWorkspaceMap.get(sessionId) || projectId;
             optimisticActivateSession(sessionId, { animate: true, item: button, updateState: false });
             void selectSessionById(sessionId, selectionToken, { forceMarkTerminalViewed }).catch(error => {
                 if (!isLatestSidebarSelection(selectionToken)) {
@@ -1990,7 +2140,7 @@ function bindProjectCard(card, group) {
         });
     });
 
-    card.querySelectorAll('.session-subagents-toggle').forEach(button => {
+    root.querySelectorAll('.session-subagents-toggle').forEach(button => {
         button.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
@@ -2021,7 +2171,7 @@ function bindProjectCard(card, group) {
         });
     });
 
-    card.querySelectorAll('.session-subagent-item').forEach(button => {
+    root.querySelectorAll('.session-subagent-item').forEach(button => {
         button.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
@@ -2035,7 +2185,7 @@ function bindProjectCard(card, group) {
         });
     });
 
-    card.querySelectorAll('.session-rename-btn').forEach(button => {
+    root.querySelectorAll('.session-rename-btn').forEach(button => {
         button.addEventListener('click', async event => {
             event.stopPropagation();
             const sessionId = String(button.getAttribute('data-session-id') || '').trim();
@@ -2067,7 +2217,7 @@ function bindProjectCard(card, group) {
         });
     });
 
-    card.querySelectorAll('.session-subagent-delete-btn').forEach(button => {
+    root.querySelectorAll('.session-subagent-delete-btn').forEach(button => {
         button.addEventListener('click', async event => {
             event.stopPropagation();
             const sessionId = String(button.getAttribute('data-session-id') || '').trim();
@@ -2111,7 +2261,7 @@ function bindProjectCard(card, group) {
         });
     });
 
-    card.querySelectorAll('.session-delete-btn').forEach(button => {
+    root.querySelectorAll('.session-delete-btn').forEach(button => {
         button.addEventListener('click', async event => {
             if (String(button.className || '').includes('session-subagent-delete-btn')) {
                 return;
@@ -2140,6 +2290,51 @@ function bindProjectCard(card, group) {
             scheduleSessionsRefresh(900, { forceRefresh: true });
         });
     });
+}
+
+function bindProjectCard(card, group) {
+    const projectId = group.id;
+    const groupKeyValue = group.key;
+    bindProjectPathHint(card);
+    card.querySelector('.project-toggle')?.addEventListener('click', () => {
+        toggleProjectExpandedState(card, groupKeyValue);
+    });
+    card.querySelector('.project-title-btn')?.addEventListener('click', async event => {
+        event?.stopPropagation?.();
+        cancelPendingSessionSelection(`workspace:${projectId}`);
+        if (state.currentSessionId || state.pendingNewSessionActive || state.activeEventSource) {
+            clearActiveSessionView();
+        }
+        state.currentFeatureViewId = null;
+        state.activeSubagentSession = null;
+        clearFeatureNavigationState();
+        clearSessionNavigationState();
+        await openWorkspaceProjectView(group.workspace);
+        await loadProjects();
+    });
+    card.querySelector('.project-new-session-btn')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        openNewSessionDraftFromSidebar(projectId);
+    });
+    card.querySelector('.project-options-btn')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        projectSortMenuOpen = false;
+        openProjectMenuId = openProjectMenuId === groupKeyValue ? null : groupKeyValue;
+        void loadProjects();
+    });
+    card.querySelector('.project-session-visibility-btn')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        void toggleProjectSessionVisibility(card, groupKeyValue);
+    });
+    card.querySelector('.project-fork-btn')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        void handleForkWorkspaceClick(group.workspace);
+    });
+    card.querySelector('.project-remove-btn')?.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        void handleRemoveWorkspaceClick(group.workspace);
+    });
+    bindSessionRows(card, { projectId });
 }
 
 async function markClickedSessionTerminalViewed(sessionId) {
@@ -2328,55 +2523,15 @@ function renderProjectCard(group) {
                 ${
                     visibleSessions.length > 0
                         ? visibleSessions.map((session, sessionIndex) => {
-                            const sessionMetadata = getSessionMetadata(session);
-                            const sourceClassName = getSessionSourceClassName(session);
-                            const runIndicatorClassName = getSessionRunIndicatorClassName(session);
-                            const sessionLabel = formatSessionLabel(session);
                             const enteringVisibility = visibilityDirection === 'expand'
                                 && sessionIndex >= DEFAULT_VISIBLE_SESSION_COUNT
                                 && sessionIndex < DEFAULT_VISIBLE_SESSION_COUNT + SESSION_VISIBILITY_ANIMATED_ITEM_LIMIT;
-                            const sessionEntryClassName = enteringVisibility
-                                ? 'session-entry session-entry-visible-entering'
-                                : 'session-entry';
-                            const sessionEntryStyle = enteringVisibility
-                                ? ` style="--session-visibility-index: ${sessionIndex - DEFAULT_VISIBLE_SESSION_COUNT};"`
-                                : '';
-                            return `
-                                <div class="${sessionEntryClassName}" data-session-index="${sessionIndex}"${sessionEntryStyle}>
-                                    <div
-                                        class="session-item${sourceClassName}${runIndicatorClassName}${isCurrentMainSession(session) ? ' active' : ''}"
-                                        tabindex="0"
-                                        role="button"
-                                        data-session-id="${escapeHtml(session.session_id)}"
-                                        data-workspace-id="${escapeHtml(session.workspace_id || group.workspace?.workspace_id || '')}"
-                                        data-session-mode="${escapeHtml(String(session.session_mode || ''))}"
-                                    >
-                                        <span class="session-main">
-                                            ${renderSubagentToggle(session)}
-                                            <span class="session-id">${renderSessionSourceIcon(session)}<span class="session-label-text" title="${escapeHtml(sessionLabel)}">${escapeHtml(sessionLabel)}</span></span>
-                                        </span>
-                                        <span class="session-meta">
-                                            ${renderSessionRunIndicator(session)}
-                                            <span class="session-time">${escapeHtml(formatRelativeTime(session.updated_at))}</span>
-                                            <span class="session-actions">
-                                                <button class="session-rename-btn" type="button" data-session-id="${escapeHtml(session.session_id)}" data-session-metadata="${escapeHtml(JSON.stringify(sessionMetadata))}" title="${escapeHtml(t('sidebar.rename_session'))}" aria-label="${escapeHtml(t('sidebar.rename_session'))}">
-                                                    <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
-                                                        <path d="M4 16.5V20h3.5L18 9.5 14.5 6 4 16.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-                                                        <path d="M13 7.5 16.5 11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                                                        <path d="M12 20h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                                                    </svg>
-                                                </button>
-                                                <button class="session-delete-btn" type="button" data-session-id="${escapeHtml(session.session_id)}" title="${escapeHtml(t('sidebar.delete_session'))}" aria-label="${escapeHtml(t('sidebar.delete_session'))}">
-                                                    <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
-                                                        <path d="M5 7h14M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7m-8 0v10.2A1.8 1.8 0 0 0 8.8 19h6.4A1.8 1.8 0 0 0 17 17.2V7M10 10.2v5.6M14 10.2v5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-                                                    </svg>
-                                                </button>
-                                            </span>
-                                        </span>
-                                    </div>
-                                    ${renderSubagentChildren(session)}
-                                </div>
-                            `;
+                            return renderSessionEntry(session, {
+                                sessionIndex,
+                                workspaceId: session?.workspace_id || group.workspace?.workspace_id || '',
+                                enteringVisibility,
+                                visibilityIndex: sessionIndex - DEFAULT_VISIBLE_SESSION_COUNT,
+                            });
                         }).join('')
                         : `
                             <div class="project-empty-sessions">
@@ -2390,6 +2545,23 @@ function renderProjectCard(group) {
     `;
     bindProjectCard(card, group);
     return card;
+}
+
+function renderChronologicalSessionList(sessions) {
+    const container = document.createElement('section');
+    container.className = 'project-flat-session-list';
+    container.innerHTML = Array.isArray(sessions) && sessions.length > 0
+        ? sessions.map((session, sessionIndex) => renderSessionEntry(session, {
+            sessionIndex,
+            workspaceId: session?.workspace_id || '',
+        })).join('')
+        : `
+            <div class="project-empty-sessions">
+                <p>${escapeHtml(t('sidebar.no_sessions'))}</p>
+            </div>
+        `;
+    bindSessionRows(container);
+    return container;
 }
 
 function visibleSessionsForGroup(group, { sessionsExpanded = false } = {}) {
@@ -2490,12 +2662,16 @@ function renderProjectSidebarData(
     if (syncStreams) {
         void maybeSyncBackgroundStreams(sessions);
     }
-    const groups = buildProjectGroups(
-        Array.isArray(workspaces) ? workspaces : [],
-        Array.isArray(sessions) ? mergeOptimisticSessions(sessions) : [],
-    );
-    setSessionSearchEntries(buildSessionSearchEntries(groups));
-    const nextSignature = buildProjectsRenderSignature(groups, automationProjects);
+    const safeWorkspaces = Array.isArray(workspaces) ? workspaces : [];
+    const safeSessions = Array.isArray(sessions) ? mergeOptimisticSessions(sessions) : [];
+    const groups = buildProjectGroups(safeWorkspaces, safeSessions);
+    const chronologicalSessions = projectSortMode === PROJECT_SORT_MODES.TIME
+        ? buildChronologicalSessions(safeSessions)
+        : [];
+    setSessionSearchEntries(projectSortMode === PROJECT_SORT_MODES.TIME
+        ? buildChronologicalSessionSearchEntries(safeWorkspaces, chronologicalSessions)
+        : buildSessionSearchEntries(groups));
+    const nextSignature = buildProjectsRenderSignature(groups, automationProjects, chronologicalSessions);
     if (nextSignature === lastProjectsRenderSignature) {
         syncProjectSortButton();
         syncSubagentSessionListVisualState();
@@ -2505,7 +2681,7 @@ function renderProjectSidebarData(
     const featureNode = renderFeatureNav();
     const toolbarNode = renderProjectsToolbar();
     const workspaceContentNodes = [];
-    if (groups.length === 0) {
+    if (groups.length === 0 && projectSortMode !== PROJECT_SORT_MODES.TIME) {
         openProjectMenuId = null;
         workspaceContentNodes.push(renderEmptyProjectsState());
         const nextNodes = [
@@ -2519,7 +2695,12 @@ function renderProjectSidebarData(
     if (!groups.some(group => group.key === openProjectMenuId)) {
         openProjectMenuId = null;
     }
-    groups.forEach(group => workspaceContentNodes.push(renderProjectCard(group)));
+    if (projectSortMode === PROJECT_SORT_MODES.TIME) {
+        openProjectMenuId = null;
+        workspaceContentNodes.push(renderChronologicalSessionList(chronologicalSessions));
+    } else {
+        groups.forEach(group => workspaceContentNodes.push(renderProjectCard(group)));
+    }
     const nextNodes = [
         featureNode,
         renderProjectsWorkspaceShell(toolbarNode, workspaceContentNodes),
@@ -2793,7 +2974,21 @@ async function refreshSessionsSnapshot({ forceRefresh = false } = {}) {
 }
 
 export function toggleProjectSortMode() {
-    projectSortMode = projectSortMode === 'recent' ? 'name' : 'recent';
+    projectSortMenuOpen = !projectSortMenuOpen;
+    if (projectSortMenuOpen) {
+        openProjectMenuId = null;
+    }
+    syncProjectSortButton();
+    void loadProjects();
+}
+
+function setProjectSortMode(sortMode) {
+    if (!PROJECT_SORT_OPTIONS.includes(sortMode)) {
+        return;
+    }
+    projectSortMode = sortMode;
+    projectSortMenuOpen = false;
+    openProjectMenuId = null;
     syncProjectSortButton();
     void loadProjects();
 }

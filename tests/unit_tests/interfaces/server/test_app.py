@@ -512,7 +512,158 @@ def test_bootstrap_role_options_returns_builtin_roles_before_hydration() -> None
     assert payload["main_agent_role_id"] == "MainAgent"
     assert payload["main_agent_role"]["role_id"] == "MainAgent"
     assert payload["normal_mode_roles"]
+    normal_mode_role_ids = {
+        str(role["role_id"]) for role in payload["normal_mode_roles"]
+    }
+    assert "Crafter" in normal_mode_role_ids
+    assert "DelegationPlanner" not in normal_mode_role_ids
     assert payload["subagent_roles"]
+
+
+def test_bootstrap_model_profiles_reads_config_before_hydration(tmp_path: Path) -> None:
+    (tmp_path / "model.json").write_text(
+        json.dumps(
+            {
+                "default": {
+                    "provider": "openai_compatible",
+                    "model": "gpt-4o-mini",
+                    "base_url": "https://example.test/v1",
+                    "is_default": False,
+                },
+                "fast": {
+                    "provider": "anthropic",
+                    "model": "claude-3-5-haiku",
+                    "base_url": "https://anthropic.example.test",
+                    "is_default": True,
+                    "context_window": 200000,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    request = _FakeRequest(config_dir=tmp_path)
+
+    response = asyncio.run(
+        server_app.bootstrap_model_profiles(cast(server_app.Request, request))
+    )
+
+    assert response.status_code == 200
+    payload = json.loads(bytes(response.body).decode("utf-8"))
+    assert payload["default"]["model"] == "gpt-4o-mini"
+    assert payload["default"]["is_default"] is False
+    assert payload["fast"]["provider"] == "anthropic"
+    assert payload["fast"]["model"] == "claude-3-5-haiku"
+    assert payload["fast"]["is_default"] is True
+    assert payload["fast"]["has_api_key"] is False
+    assert payload["fast"]["api_key"] == ""
+    assert payload["fast"]["context_window"] == 200000
+
+
+def test_bootstrap_model_profile_payload_resolves_input_modalities() -> None:
+    explicit_payload = server_app._bootstrap_model_profile_payload(
+        {"model": "plain-text", "input_modalities": [" Image ", "", "audio"]},
+        is_default=False,
+    )
+    vision_payload = server_app._bootstrap_model_profile_payload(
+        {
+            "provider": "openai_compatible",
+            "model": "gpt-4o-mini",
+            "base_url": "https://example.test/v1",
+        },
+        is_default=True,
+    )
+    text_payload = server_app._bootstrap_model_profile_payload(
+        {"provider": "unknown-provider", "model": "plain-text"},
+        is_default=False,
+    )
+    raw_capabilities_payload = server_app._bootstrap_model_profile_payload(
+        {
+            "capabilities": {
+                "input": {
+                    "image": True,
+                    "audio": False,
+                    "video": None,
+                }
+            }
+        },
+        is_default=False,
+    )
+
+    vision_capabilities = cast(
+        dict[str, object],
+        vision_payload["resolved_capabilities"],
+    )
+    vision_input = cast(dict[str, object], vision_capabilities["input"])
+    assert explicit_payload["input_modalities"] == ["image", "audio"]
+    assert "image" in cast(list[str], vision_payload["input_modalities"])
+    assert vision_input["image"] is True
+    assert text_payload["provider"] == "unknown-provider"
+    assert text_payload["input_modalities"] == []
+    assert raw_capabilities_payload["input_modalities"] == ["image"]
+
+
+def test_bootstrap_profile_input_modalities_returns_empty_for_text_only() -> None:
+    assert (
+        server_app._bootstrap_profile_input_modalities(
+            {},
+            resolved_capabilities={"input": {"image": False}},
+        )
+        == []
+    )
+    assert (
+        server_app._bootstrap_profile_input_modalities(
+            {},
+            resolved_capabilities={"output": {"text": True}},
+        )
+        is None
+    )
+
+
+def test_bootstrap_model_profiles_tolerates_missing_dirty_and_default_fallbacks(
+    tmp_path: Path,
+) -> None:
+    assert server_app._read_bootstrap_model_profiles(tmp_path) == {}
+
+    config_file = tmp_path / "model.json"
+    config_file.write_text("[]", encoding="utf-8")
+    assert server_app._read_bootstrap_model_profiles(tmp_path) == {}
+
+    config_file.write_text(
+        json.dumps({"": {"model": "ignored"}, "bad": [], "none": None}),
+        encoding="utf-8",
+    )
+    assert server_app._read_bootstrap_model_profiles(tmp_path) == {}
+
+    config_file.write_text(
+        json.dumps(
+            {
+                "default": {"model": "base", "provider": 7},
+                "z": {"model": "z-model"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    default_payload = server_app._read_bootstrap_model_profiles(tmp_path)
+    assert default_payload["default"]["is_default"] is True
+    assert default_payload["default"]["provider"] == "openai_compatible"
+    assert default_payload["z"]["is_default"] is False
+
+    config_file.write_text(
+        json.dumps({"solo": {"model": "solo-model"}}),
+        encoding="utf-8",
+    )
+    solo_payload = server_app._read_bootstrap_model_profiles(tmp_path)
+    assert solo_payload["solo"]["is_default"] is True
+
+    config_file.write_text(
+        json.dumps(
+            {"beta": {"model": "beta-model"}, "alpha": {"model": "alpha-model"}}
+        ),
+        encoding="utf-8",
+    )
+    sorted_payload = server_app._read_bootstrap_model_profiles(tmp_path)
+    assert sorted_payload["alpha"]["is_default"] is True
+    assert sorted_payload["beta"]["is_default"] is False
 
 
 def test_bootstrap_api_paths_include_status_probes() -> None:
@@ -522,6 +673,7 @@ def test_bootstrap_api_paths_include_status_probes() -> None:
     assert "/api/system/startup" in server_app._BOOTSTRAP_API_PATHS
     assert "/api/system/configs/ui-language" in server_app._BOOTSTRAP_API_PATHS
     assert "/api/system/configs/orchestration" in server_app._BOOTSTRAP_API_PATHS
+    assert "/api/system/configs/model/profiles" in server_app._BOOTSTRAP_API_PATHS
     assert "/api/logs/frontend" in server_app._BOOTSTRAP_API_PATHS
     assert "/api/roles:options" in server_app._BOOTSTRAP_API_PATHS
 
@@ -1108,12 +1260,14 @@ def test_env_int_parses_missing_invalid_and_valid(
 def test_bootstrap_config_readers_tolerate_invalid_json(tmp_path: Path) -> None:
     (tmp_path / "ui.json").write_text("[", encoding="utf-8")
     (tmp_path / "orchestration.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "model.json").write_text("[", encoding="utf-8")
 
     assert server_app._read_bootstrap_ui_language(tmp_path) == {"language": "zh-CN"}
     assert server_app._read_bootstrap_orchestration_config(tmp_path) == {
         "default_orchestration_preset_id": "",
         "presets": [],
     }
+    assert server_app._read_bootstrap_model_profiles(tmp_path) == {}
 
 
 def test_bootstrap_role_metadata_parses_valid_frontmatter(tmp_path: Path) -> None:

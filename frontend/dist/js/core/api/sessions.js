@@ -25,17 +25,38 @@ export async function fetchSessions(options = {}) {
     );
 }
 
-export async function startNewSession(workspaceId) {
+export async function startNewSession(workspaceId, options = {}) {
+    const normalModelProfile = String(options.normalModelProfile || '').trim();
+    const payload = { workspace_id: workspaceId };
+    if (normalModelProfile) {
+        payload.normal_model_profile = normalModelProfile;
+    }
     const result = await requestJson(
         '/api/sessions',
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workspace_id: workspaceId }),
+            body: JSON.stringify(payload),
         },
         'Failed to create session',
     );
     invalidateManagedRequestCache('sessions:');
+    return result;
+}
+
+export async function updateSessionNormalModelProfile(sessionId, normalModelProfile) {
+    const result = await requestJson(
+        `/api/sessions/${sessionId}/normal-model-profile`,
+        {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                normal_model_profile: String(normalModelProfile || '').trim() || null,
+            }),
+        },
+        'Failed to update session model',
+    );
+    invalidateManagedRequests('sessions:');
     return result;
 }
 

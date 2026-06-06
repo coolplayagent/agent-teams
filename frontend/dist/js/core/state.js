@@ -5,6 +5,7 @@ export const state = {
     currentWorkspaceId: null,
     currentSessionMode: 'normal',
     currentNormalRootRoleId: null,
+    currentNormalModelProfile: null,
     currentOrchestrationPresetId: null,
     currentSessionCanSwitchMode: false,
     currentMainView: 'session',
@@ -224,6 +225,7 @@ export function isPrimaryOrReservedRoleId(roleId, sessionMode = state.currentSes
 export function applyCurrentSessionRecord(record) {
     state.currentSessionMode = normalizeSessionMode(record?.session_mode);
     state.currentNormalRootRoleId = normalizeRoleId(record?.normal_root_role_id) || null;
+    state.currentNormalModelProfile = normalizeRoleId(record?.normal_model_profile) || null;
     state.currentOrchestrationPresetId = normalizeRoleId(record?.orchestration_preset_id) || null;
     state.currentSessionCanSwitchMode = record?.can_switch_mode === true;
     state.currentMainView = 'session';
@@ -234,6 +236,7 @@ export function applyCurrentSessionRecord(record) {
 export function resetCurrentSessionTopology() {
     state.currentSessionMode = 'normal';
     state.currentNormalRootRoleId = null;
+    state.currentNormalModelProfile = null;
     state.currentOrchestrationPresetId = null;
     state.currentSessionCanSwitchMode = false;
 }

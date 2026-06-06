@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import cast
 
@@ -304,6 +304,7 @@ def _build_service(
     provider: object,
     artifact_repo: TaskArtifactRepository | None = None,
     memory_bank_service: MemoryBankService | None = None,
+    provider_factory: Callable[[RoleDefinition, str | None], object] | None = None,
 ) -> tuple[
     TaskExecutionService,
     TaskRepository,
@@ -342,7 +343,7 @@ def _build_service(
             role_registry=role_registry,
             mcp_registry=McpRegistry(),
         ),
-        provider_factory=lambda _, __=None: provider,
+        provider_factory=provider_factory or (lambda _, __=None: provider),
         tool_registry=build_default_registry(),
         skill_registry=_StaticSkillRegistry(),
         mcp_registry=McpRegistry(),
@@ -439,6 +440,7 @@ def _seed_task(
     task_repo: TaskRepository,
     agent_repo: AgentInstanceRepository,
     message_repo: MessageRepository,
+    parent_task_id: str | None = "task-root",
 ) -> tuple[TaskEnvelope, str]:
     workspace_id = "default"
     conversation_id = build_conversation_id("session-1", "time")
@@ -450,7 +452,7 @@ def _seed_task(
     task = TaskEnvelope(
         task_id="task-1",
         session_id="session-1",
-        parent_task_id="task-root",
+        parent_task_id=parent_task_id,
         trace_id="run-1",
         objective="query time",
         verification=VerificationPlan(checklist=("non_empty_response",)),
@@ -1128,6 +1130,91 @@ async def test_execute_passes_run_thinking_config_to_provider(tmp_path: Path) ->
 
     assert provider.thinking_enabled == [True]
     assert provider.thinking_efforts == ["high"]
+
+
+@pytest.mark.asyncio
+async def test_execute_applies_normal_model_profile_to_root_task(
+    tmp_path: Path,
+) -> None:
+    provider = _CapturingProvider()
+    captured_roles: list[RoleDefinition] = []
+
+    def provider_factory(role: RoleDefinition, session_id: str | None) -> object:
+        _ = session_id
+        captured_roles.append(role)
+        return provider
+
+    service, task_repo, agent_repo, message_repo = _build_service(
+        tmp_path / "task_execution_service_normal_model_root.db",
+        provider,
+        provider_factory=provider_factory,
+    )
+    task, instance_id = _seed_task(
+        task_repo=task_repo,
+        agent_repo=agent_repo,
+        message_repo=message_repo,
+        parent_task_id=None,
+    )
+    assert service.run_intent_repo is not None
+    service.run_intent_repo.upsert(
+        run_id=task.trace_id,
+        session_id=task.session_id,
+        intent=IntentInput(
+            session_id=task.session_id,
+            input=content_parts_from_text("query time"),
+            normal_model_profile="fast",
+        ),
+    )
+
+    _ = await service.execute(
+        instance_id=instance_id,
+        role_id="time",
+        task=task,
+    )
+
+    assert captured_roles[0].model_profile == "fast"
+
+
+@pytest.mark.asyncio
+async def test_execute_does_not_apply_normal_model_profile_to_child_task(
+    tmp_path: Path,
+) -> None:
+    provider = _CapturingProvider()
+    captured_roles: list[RoleDefinition] = []
+
+    def provider_factory(role: RoleDefinition, session_id: str | None) -> object:
+        _ = session_id
+        captured_roles.append(role)
+        return provider
+
+    service, task_repo, agent_repo, message_repo = _build_service(
+        tmp_path / "task_execution_service_normal_model_child.db",
+        provider,
+        provider_factory=provider_factory,
+    )
+    task, instance_id = _seed_task(
+        task_repo=task_repo,
+        agent_repo=agent_repo,
+        message_repo=message_repo,
+    )
+    assert service.run_intent_repo is not None
+    service.run_intent_repo.upsert(
+        run_id=task.trace_id,
+        session_id=task.session_id,
+        intent=IntentInput(
+            session_id=task.session_id,
+            input=content_parts_from_text("query time"),
+            normal_model_profile="fast",
+        ),
+    )
+
+    _ = await service.execute(
+        instance_id=instance_id,
+        role_id="time",
+        task=task,
+    )
+
+    assert captured_roles[0].model_profile == "default"
 
 
 @pytest.mark.asyncio

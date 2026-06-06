@@ -1400,7 +1400,8 @@ const workspaces = [
     {
         workspace_id: "alpha-project",
         root_path: "/work/Alpha Project",
-        updated_at: "2026-03-14T10:00:00Z",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
         profile: {
             file_scope: {
                 backend: "project",

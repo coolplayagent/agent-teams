@@ -14,10 +14,14 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from relay_teams.interfaces.server.async_call import (
     call_maybe_async_in_session_fast_read_thread,
 )
-from relay_teams.interfaces.server.deps import get_session_service
+from relay_teams.interfaces.server.deps import (
+    get_model_config_service,
+    get_session_service,
+)
 from relay_teams.interfaces.server.router_error_mapping import http_exception_for
 from relay_teams.logger import get_logger, log_event
 from relay_teams.interfaces.server.write_models import DeleteRequest
+from relay_teams.providers.model_config_service import ModelConfigService
 from relay_teams.roles import SystemRolesUnavailableError
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.sessions.session_models import (
@@ -42,6 +46,7 @@ class CreateSessionRequest(BaseModel):
 
     session_id: OptionalIdentifierStr = None
     workspace_id: RequiredIdentifierStr
+    normal_model_profile: OptionalIdentifierStr = None
     metadata: SessionCreateMetadata | None = None
 
     @field_validator("metadata", mode="before")
@@ -58,15 +63,27 @@ class UpdateSessionTopologyRequest(BaseModel):
     orchestration_preset_id: OptionalIdentifierStr = None
 
 
+class UpdateSessionNormalModelProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    normal_model_profile: OptionalIdentifierStr = None
+
+
 @router.post("", response_model=SessionRecord)
 async def create_session(
     req: CreateSessionRequest,
+    model_config_service: ModelConfigService = Depends(get_model_config_service),
     service: SessionService = Depends(get_session_service),
 ) -> SessionRecord:
     try:
+        _validate_normal_model_profile(
+            req.normal_model_profile,
+            model_config_service=model_config_service,
+        )
         return await service.create_session_async(
             session_id=req.session_id,
             workspace_id=req.workspace_id,
+            normal_model_profile=req.normal_model_profile,
             metadata=None if req.metadata is None else req.metadata.to_metadata_dict(),
         )
     except (SystemRolesUnavailableError, ValueError) as exc:
@@ -192,6 +209,20 @@ def _log_deferred_terminal_view_result(
         )
 
 
+def _validate_normal_model_profile(
+    normal_model_profile: str | None,
+    *,
+    model_config_service: ModelConfigService,
+) -> None:
+    profile_name = str(normal_model_profile or "").strip()
+    if not profile_name:
+        return
+    runtime = model_config_service.runtime
+    if profile_name in runtime.llm_profiles:
+        return
+    raise ValueError(f"Unknown model profile: {profile_name}")
+
+
 @router.patch("/{session_id}/topology", response_model=SessionRecord)
 async def update_session_topology(
     session_id: RequiredIdentifierStr,
@@ -214,6 +245,28 @@ async def update_session_topology(
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch("/{session_id}/normal-model-profile", response_model=SessionRecord)
+async def update_session_normal_model_profile(
+    session_id: RequiredIdentifierStr,
+    req: UpdateSessionNormalModelProfileRequest,
+    model_config_service: ModelConfigService = Depends(get_model_config_service),
+    service: SessionService = Depends(get_session_service),
+) -> SessionRecord:
+    try:
+        _validate_normal_model_profile(
+            req.normal_model_profile,
+            model_config_service=model_config_service,
+        )
+        return await service.update_session_normal_model_profile_async(
+            session_id,
+            normal_model_profile=req.normal_model_profile,
+        )
+    except KeyError as exc:
+        raise http_exception_for(exc, key_error_detail="Session not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

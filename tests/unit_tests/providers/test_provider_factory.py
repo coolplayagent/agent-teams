@@ -26,6 +26,7 @@ from relay_teams.providers.provider_contracts import (
 )
 from relay_teams.providers.model_config import ModelEndpointConfig, ProviderType
 from relay_teams.providers.model_fallback import LlmFallbackMiddleware
+from relay_teams.providers.model_profile_names import explicit_model_profile_reference
 from relay_teams.providers.provider_factory import create_provider_factory
 from relay_teams.roles.role_models import RoleDefinition
 from relay_teams.roles.role_registry import RoleRegistry
@@ -295,6 +296,43 @@ def test_create_provider_factory_resolves_default_alias_to_explicit_default_prof
 
     assert isinstance(provider, EchoProvider)
     assert provider_registry.created_config is kimi_config
+
+
+def test_create_provider_factory_honors_explicit_default_profile_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_registry = _CapturingProviderRegistry()
+    literal_default_config = ModelEndpointConfig(
+        provider=ProviderType.OPENAI_COMPATIBLE,
+        model="literal-default-model",
+        base_url="https://literal-default.example/v1",
+        api_key="literal-default-key",
+    )
+    runtime_default_config = ModelEndpointConfig(
+        provider=ProviderType.OPENAI_COMPATIBLE,
+        model="runtime-default-model",
+        base_url="https://runtime-default.example/v1",
+        api_key="runtime-default-key",
+    )
+    factory = _build_factory(
+        monkeypatch=monkeypatch,
+        runtime=_build_runtime(
+            profiles={
+                "default": literal_default_config,
+                "runtime-default": runtime_default_config,
+            },
+            default_model_profile="runtime-default",
+        ),
+        provider_registry=provider_registry,
+    )
+
+    provider = factory(
+        _build_role(model_profile=explicit_model_profile_reference("default")),
+        None,
+    )
+
+    assert isinstance(provider, EchoProvider)
+    assert provider_registry.created_config is literal_default_config
 
 
 def test_create_provider_factory_uses_session_override_for_default_profile(

@@ -70,6 +70,25 @@ def test_run_intent_repo_round_trips_display_input(tmp_path: Path) -> None:
     assert record.skills == ("time",)
 
 
+def test_run_intent_repo_round_trips_normal_model_profile(tmp_path: Path) -> None:
+    db_path = tmp_path / "run_intent_normal_model_profile.db"
+    repo = RunIntentRepository(db_path)
+
+    repo.upsert(
+        run_id="run-1",
+        session_id="session-1",
+        intent=IntentInput(
+            session_id="session-1",
+            input=content_parts_from_text("ship it"),
+            normal_model_profile="fast",
+        ),
+    )
+
+    record = repo.get("run-1")
+
+    assert record.normal_model_profile == "fast"
+
+
 def test_run_intent_repo_lists_intents_by_session(tmp_path: Path) -> None:
     db_path = tmp_path / "run_intent_list_by_session.db"
     repo = RunIntentRepository(db_path)
@@ -373,6 +392,7 @@ def test_run_intent_repo_does_not_backfill_yolo_from_legacy_approval_mode(
     record = RunIntentRepository(db_path).get("run-1")
 
     assert record.yolo is False
+    assert record.normal_model_profile is None
 
 
 def test_run_intent_repo_uses_fallback_session_id_for_legacy_none_like_rows(

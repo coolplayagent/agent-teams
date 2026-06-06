@@ -79,9 +79,15 @@ const initialHtml = els.projectViewContent.innerHTML;
 
 await flushTasks();
 await flushTasks();
+const diffLoadedHtml = els.projectViewContent.innerHTML;
+const fileModeButton = Array.from(
+    els.projectViewContent.querySelectorAll("[data-workspace-mode]"),
+).find(node => node?.getAttribute?.("data-workspace-mode") === "files");
+fileModeButton?.onclick?.();
+await flushTasks();
 const initialToggle = els.projectViewContent.querySelector(".workspace-tree-toggle");
 const initialExpanded = initialToggle?.getAttribute("aria-expanded");
-const diffLoadedHtml = els.projectViewContent.innerHTML;
+const fileModeHtml = els.projectViewContent.innerHTML;
 
 initialToggle?.onclick?.();
 await flushTasks();
@@ -92,12 +98,23 @@ fileEntry?.onclick?.();
 await flushTasks();
 const selectedHtml = els.projectViewContent.innerHTML;
 const selectedFileEntry = els.projectViewContent.querySelector(".workspace-tree-file");
+const changesModeButton = Array.from(
+    els.projectViewContent.querySelectorAll("[data-workspace-mode]"),
+).find(node => node?.getAttribute?.("data-workspace-mode") === "changes");
+changesModeButton?.onclick?.();
+await flushTasks();
 const selectedDiffCard = els.projectViewContent.querySelector(".workspace-diff-card");
 
 hideProjectView();
 await openWorkspaceProjectView({ workspace_id: "alpha-project" });
 const reopenedHtml = els.projectViewContent.innerHTML;
 const reopenedSummary = els.projectViewSummary.textContent;
+const reopenedFilesButton = Array.from(
+    els.projectViewContent.querySelectorAll("[data-workspace-mode]"),
+).find(node => node?.getAttribute?.("data-workspace-mode") === "files");
+reopenedFilesButton?.onclick?.();
+await flushTasks();
+const reopenedFileHtml = els.projectViewContent.innerHTML;
 const reopenedToggle = els.projectViewContent.querySelector(".workspace-tree-toggle");
 reopenedToggle?.onclick?.();
 const collapsedToggle = els.projectViewContent.querySelector(".workspace-tree-toggle");
@@ -113,15 +130,15 @@ console.log(JSON.stringify({
     expandedState,
     collapsedState,
     initialHasNestedFile: initialHtml.includes('data-tree-file-path="src/main.py"'),
-    initialHasTreeIcons: diffLoadedHtml.includes("workspace-tree-icon"),
-    initialShowsDiffLoading: initialHtml.includes("Loading changes"),
+    initialHasTreeIcons: fileModeHtml.includes("workspace-tree-icon"),
+    initialShowsProjectLoading: initialHtml.includes("Loading project snapshot"),
     diffLoadedHasCard: diffLoadedHtml.includes("workspace-diff-card"),
     diffLoadedHasDetail: diffLoadedHtml.includes("changed file"),
     selectedFileEntryPressed: selectedFileEntry?.getAttribute("aria-pressed"),
     selectedDiffClassName: selectedDiffCard?.getAttribute("class"),
     expandedHasNestedFile: selectedHtml.includes('data-tree-file-path="src/main.py"'),
     collapsedHasNestedFile: collapsedHtml.includes('data-tree-file-path="src/main.py"'),
-    reopenedHasNestedFile: reopenedHtml.includes('data-tree-file-path="src/main.py"'),
+    reopenedHasNestedFile: reopenedFileHtml.includes('data-tree-file-path="src/main.py"'),
     reopenedHasDetail: reopenedHtml.includes("changed file"),
     reopenedSummary,
     snapshotRequests: globalThis.__snapshotRequests,
@@ -139,7 +156,7 @@ console.log(JSON.stringify({
     assert payload["collapsedState"] == "false"
     assert payload["initialHasNestedFile"] is False
     assert payload["initialHasTreeIcons"] is True
-    assert payload["initialShowsDiffLoading"] is True
+    assert payload["initialShowsProjectLoading"] is True
     assert payload["diffLoadedHasCard"] is True
     assert payload["diffLoadedHasDetail"] is True
     assert payload["selectedFileEntryPressed"] == "true"
@@ -148,7 +165,7 @@ console.log(JSON.stringify({
     assert payload["collapsedHasNestedFile"] is False
     assert payload["reopenedHasNestedFile"] is True
     assert payload["reopenedHasDetail"] is True
-    assert payload["reopenedSummary"] == "1 changed files"
+    assert payload["reopenedSummary"] == "default · 1 changed files"
     assert payload["snapshotRequests"] == ["alpha-project", "alpha-project"]
     assert payload["diffRequests"] == [
         {"workspaceId": "alpha-project", "mount": None},
@@ -160,6 +177,256 @@ console.log(JSON.stringify({
     assert payload["treeRequests"] == [
         {"workspaceId": "alpha-project", "path": "src", "mount": "default"},
     ]
+
+
+def test_project_view_keeps_workspace_tree_filter_focused_while_typing(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    initializeProjectView,
+    openWorkspaceProjectView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openWorkspaceProjectView({ workspace_id: "alpha-project" });
+await flushTasks();
+await flushTasks();
+
+const fileModeButton = Array.from(
+    els.projectViewContent.querySelectorAll("[data-workspace-mode]"),
+).find(node => node?.getAttribute?.("data-workspace-mode") === "files");
+fileModeButton?.onclick?.();
+await flushTasks();
+
+const treeFilter = els.projectViewContent.querySelector("[data-workspace-tree-filter]");
+treeFilter.value = "src";
+treeFilter.selectionStart = 2;
+treeFilter.selectionEnd = 3;
+treeFilter.oninput?.();
+await flushTasks();
+
+console.log(JSON.stringify({
+    activeIsFilter: globalThis.__activeElement?.getAttribute?.("data-workspace-tree-filter") !== null,
+    activeValue: globalThis.__activeElement?.value || "",
+    selectionStart: globalThis.__activeElement?.selectionStart,
+    selectionEnd: globalThis.__activeElement?.selectionEnd,
+    html: els.projectViewContent.innerHTML,
+}));
+""".strip(),
+    )
+
+    assert payload["activeIsFilter"] is True
+    assert payload["activeValue"] == "src"
+    assert payload["selectionStart"] == 2
+    assert payload["selectionEnd"] == 3
+    assert 'value="src"' in str(payload["html"])
+    assert 'data-tree-toggle-path="src"' in str(payload["html"])
+    assert 'data-tree-toggle-path="docs"' not in str(payload["html"])
+
+
+def test_project_view_refetches_selected_file_after_workspace_reload(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        mock_api_source="""
+export async function fetchWorkspaceFile(workspaceId, path, mount = null) {
+    globalThis.__fileRequests.push({ workspaceId, path, mount });
+    const content = globalThis.__fileRequests.length === 1
+        ? "old content\\n"
+        : "new content\\n";
+    return {
+        workspace_id: workspaceId,
+        mount_name: mount || "default",
+        path,
+        content,
+        encoding: "utf-8",
+        is_binary: false,
+        truncated: false,
+        size_bytes: content.length,
+    };
+}
+""".strip(),
+        runner_source="""
+import {
+    initializeProjectView,
+    openWorkspaceProjectView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+initializeProjectView();
+await openWorkspaceProjectView({ workspace_id: "alpha-project" });
+await flushTasks();
+await flushTasks();
+
+const fileModeButton = Array.from(
+    els.projectViewContent.querySelectorAll("[data-workspace-mode]"),
+).find(node => node?.getAttribute?.("data-workspace-mode") === "files");
+fileModeButton?.onclick?.();
+await flushTasks();
+
+const initialToggle = els.projectViewContent.querySelector(".workspace-tree-toggle");
+initialToggle?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+const fileEntry = els.projectViewContent.querySelector(".workspace-tree-file");
+fileEntry?.onclick?.();
+await flushTasks();
+await flushTasks();
+const initialFileHtml = els.projectViewContent.innerHTML;
+
+els.projectViewReloadBtn?.onclick?.();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+await flushTasks();
+const reloadedFileHtml = els.projectViewContent.innerHTML;
+
+console.log(JSON.stringify({
+    initialFileHtml,
+    reloadedFileHtml,
+    fileRequests: globalThis.__fileRequests,
+    snapshotRequests: globalThis.__snapshotRequests,
+}));
+""".strip(),
+    )
+
+    assert "old content" in str(payload["initialFileHtml"])
+    assert "new content" in str(payload["reloadedFileHtml"])
+    assert "old content" not in str(payload["reloadedFileHtml"])
+    assert payload["fileRequests"] == [
+        {"workspaceId": "alpha-project", "path": "src/main.py", "mount": "default"},
+        {"workspaceId": "alpha-project", "path": "src/main.py", "mount": "default"},
+    ]
+    assert payload["snapshotRequests"] == ["alpha-project", "alpha-project"]
+
+
+def test_project_view_ignores_stale_file_success_after_new_selection_error(
+    tmp_path: Path,
+) -> None:
+    payload = _run_project_view_script(
+        tmp_path=tmp_path,
+        mock_api_source="""
+globalThis.__pendingFileRequests = [];
+
+export async function fetchWorkspaceTree(workspaceId, path, mount = null) {
+    globalThis.__treeRequests.push({ workspaceId, path, mount });
+    return {
+        workspace_id: workspaceId,
+        mount_name: mount || "default",
+        directory_path: path,
+        children: [
+            {
+                name: "a.py",
+                path: "src/a.py",
+                kind: "file",
+                has_children: false,
+                children: [],
+            },
+            {
+                name: "b.py",
+                path: "src/b.py",
+                kind: "file",
+                has_children: false,
+                children: [],
+            },
+        ],
+    };
+}
+
+export async function fetchWorkspaceFile(workspaceId, path, mount = null) {
+    globalThis.__fileRequests.push({ workspaceId, path, mount });
+    return await new Promise((resolve, reject) => {
+        globalThis.__pendingFileRequests.push({
+            workspaceId,
+            path,
+            mount,
+            resolve,
+            reject,
+        });
+    });
+}
+""".strip(),
+        runner_source="""
+import {
+    initializeProjectView,
+    openWorkspaceProjectView,
+} from "./projectView.mjs";
+import { els, flushTasks } from "./mockDom.mjs";
+
+function filePayload(request, content) {
+    return {
+        workspace_id: request.workspaceId,
+        mount_name: request.mount || "default",
+        path: request.path,
+        content,
+        encoding: "utf-8",
+        is_binary: false,
+        truncated: false,
+        size_bytes: content.length,
+    };
+}
+
+initializeProjectView();
+await openWorkspaceProjectView({ workspace_id: "alpha-project" });
+await flushTasks();
+await flushTasks();
+
+const fileModeButton = Array.from(
+    els.projectViewContent.querySelectorAll("[data-workspace-mode]"),
+).find(node => node?.getAttribute?.("data-workspace-mode") === "files");
+fileModeButton?.onclick?.();
+await flushTasks();
+
+const initialToggle = els.projectViewContent.querySelector(".workspace-tree-toggle");
+initialToggle?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+let fileEntries = els.projectViewContent.querySelectorAll(".workspace-tree-file");
+fileEntries[0]?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+fileEntries = els.projectViewContent.querySelectorAll(".workspace-tree-file");
+fileEntries[1]?.onclick?.();
+await flushTasks();
+await flushTasks();
+
+globalThis.__pendingFileRequests[1]?.reject?.(new Error("B failed"));
+await flushTasks();
+await flushTasks();
+const bErrorHtml = els.projectViewContent.innerHTML;
+
+const staleRequest = globalThis.__pendingFileRequests[0];
+staleRequest?.resolve?.(filePayload(staleRequest, "A content\\n"));
+await flushTasks();
+await flushTasks();
+const finalHtml = els.projectViewContent.innerHTML;
+
+console.log(JSON.stringify({
+    fileRequests: globalThis.__fileRequests,
+    pendingCount: globalThis.__pendingFileRequests.length,
+    bErrorHtml,
+    finalHtml,
+}));
+""".strip(),
+    )
+
+    assert payload["pendingCount"] == 2
+    assert payload["fileRequests"] == [
+        {"workspaceId": "alpha-project", "path": "src/a.py", "mount": "default"},
+        {"workspaceId": "alpha-project", "path": "src/b.py", "mount": "default"},
+    ]
+    assert "B failed" in str(payload["bErrorHtml"])
+    assert "B failed" in str(payload["finalHtml"])
+    assert "A content" not in str(payload["finalHtml"])
+    assert 'data-tree-file-path="src/b.py"' in str(payload["finalHtml"])
 
 
 def test_project_view_opens_workspace_root_from_header(
@@ -357,10 +624,17 @@ await flushTasks();
 await flushTasks();
 await flushTasks();
 await flushTasks();
+const switchedFilesHtml = els.projectViewContent.innerHTML;
+const opsChangesButton = Array.from(
+    els.projectViewContent.querySelectorAll("[data-workspace-mode]"),
+).find(node => node?.getAttribute?.("data-workspace-mode") === "changes");
+opsChangesButton?.onclick?.();
+await flushTasks();
 
 const switchedHtml = els.projectViewContent.innerHTML;
 console.log(JSON.stringify({
     initialHtml,
+    switchedFilesHtml,
     switchedHtml,
     opsMountActive: /data-workspace-mount="ops"[\\s\\S]*?aria-pressed="true"/.test(switchedHtml),
     snapshotRequests: globalThis.__snapshotRequests,
@@ -381,11 +655,11 @@ console.log(JSON.stringify({
     ]
     assert payload["opsMountActive"] is True
     assert "/srv/ops" in str(payload["switchedHtml"])
-    assert "deploy.yaml" in str(payload["switchedHtml"])
+    assert "deploy.yaml" in str(payload["switchedFilesHtml"])
     assert "Workspace mount does not support diff: ops" in str(payload["switchedHtml"])
     assert (
         str(payload["switchedHtml"]).count("Workspace mount does not support diff: ops")
-        == 1
+        == 2
     )
     assert "data-open-workspace-root" not in str(payload["switchedHtml"])
     assert payload["snapshotRequests"] == ["alpha-project"]
@@ -771,8 +1045,8 @@ await flushTasks();
 await flushTasks();
 
 const mountButtons = Array.from(els.projectViewContent.querySelectorAll("[data-workspace-mount]"));
-const mountOrder = mountButtons.map(button => button.getAttribute("data-workspace-mount"));
-const defaultMountButton = mountButtons.find(button => button.getAttribute("data-mount-name") === "default") || null;
+const mountOrder = [...new Set(mountButtons.map(button => button.getAttribute("data-workspace-mount")))];
+const defaultMountButton = mountButtons.find(button => button.getAttribute("data-workspace-mount") === "default") || null;
 defaultMountButton?.click();
 await flushTasks();
 await flushTasks();
@@ -7959,6 +8233,18 @@ def test_project_view_skills_search_timer_is_guarded_when_leaving_feature() -> N
     assert "isInteractiveSkillCardEventTarget(event.target, card)" in source
 
 
+def test_project_view_unknown_file_preview_skips_auto_language_detection() -> None:
+    source = Path("frontend/dist/js/components/projectView.js").read_text(
+        encoding="utf-8"
+    )
+    start_index = source.index("function highlightWorkspaceCode")
+    end_index = source.index("function resolveHighlightLanguage")
+    highlight_source = source[start_index:end_index]
+
+    assert "highlightAuto" not in highlight_source
+    assert "return escapeHtml(text);" in highlight_source
+
+
 def test_project_view_skills_market_ignores_stale_search_response(
     tmp_path: Path,
 ) -> None:
@@ -10709,6 +10995,21 @@ function decodeHtmlAttribute(value) {
         .replaceAll("&amp;", "&");
 }
 
+function parseTagAttributes(markup) {
+    const attributes = {};
+    const attributePattern = /\s([a-zA-Z0-9_:-]+)(?:="([^"]*)")?/g;
+    let match = attributePattern.exec(String(markup || ""));
+    while (match) {
+        attributes[match[1]] = decodeHtmlAttribute(match[2] || "");
+        match = attributePattern.exec(String(markup || ""));
+    }
+    return attributes;
+}
+
+function hasOwnAttribute(attributes, name) {
+    return Object.prototype.hasOwnProperty.call(attributes, name);
+}
+
 function createBasicElement() {
     const attributeStore = new Map();
     const classSet = new Set();
@@ -10755,6 +11056,7 @@ function createTreeNode(attributes = {}) {
         oninput: null,
         value: "",
         checked: false,
+        disabled: hasOwnAttribute(attributes, "disabled"),
         selectionStart: 0,
         selectionEnd: 0,
         style: {},
@@ -10783,6 +11085,18 @@ function createTreeNode(attributes = {}) {
         focus() {
             globalThis.__activeElement = this;
         },
+        click() {
+            return this.onclick?.({
+                target: this,
+                currentTarget: this,
+                preventDefault() {
+                    return undefined;
+                },
+                stopPropagation() {
+                    return undefined;
+                },
+            });
+        },
         setSelectionRange(start, end) {
             this.selectionStart = start;
             this.selectionEnd = end;
@@ -10796,11 +11110,25 @@ function createTreeNode(attributes = {}) {
     };
 }
 
+function createNodeFromMarkup(markup, overrides = {}) {
+    const attributes = {
+        ...parseTagAttributes(markup),
+        ...overrides,
+    };
+    const node = createTreeNode(attributes);
+    if (hasOwnAttribute(attributes, "value")) {
+        node.value = attributes.value;
+    }
+    node.checked = hasOwnAttribute(attributes, "checked");
+    node.disabled = hasOwnAttribute(attributes, "disabled");
+    return node;
+}
+
 function parseNodes(source, selector) {
     const patterns = {
-        ".workspace-tree-toggle": /class="workspace-tree-toggle"[\s\S]*?data-tree-toggle-path="([^"]+)"[\s\S]*?aria-expanded="([^"]+)"/g,
-        ".workspace-tree-file": /class="([^"]*workspace-tree-file[^"]*)"[\s\S]*?data-tree-file-path="([^"]+)"[\s\S]*?aria-pressed="([^"]+)"/g,
-        ".workspace-diff-card": /class="([^"]*workspace-diff-card[^"]*)"[\s\S]*?data-diff-path="([^"]*)"/g,
+        ".workspace-tree-toggle": /<button[^>]*class="[^"]*workspace-tree-toggle[^"]*"[^>]*>/g,
+        ".workspace-tree-file": /<button[^>]*class="[^"]*workspace-tree-file[^"]*"[^>]*>/g,
+        ".workspace-diff-card": /<[^>]*class="[^"]*workspace-diff-card[^"]*"[^>]*>/g,
         "[data-automation-edit]": /data-automation-edit/g,
         "[data-automation-run]": /data-automation-run/g,
         "[data-automation-editor-save]": /data-automation-editor-save/g,
@@ -10825,15 +11153,13 @@ function parseNodes(source, selector) {
                 : new RegExp(`<[^>]*${escapedAttrName}="${escapedAttrValue}"[^>]*>`, "g");
             let dataMatch = dataPattern.exec(source);
             while (dataMatch) {
-                const attributes = {};
-                const valuePattern = new RegExp(`${escapedAttrName}="([^"]*)"`, "i");
-                const valueMatch = valuePattern.exec(dataMatch[0]);
-                attributes[attrName] = decodeHtmlAttribute(
-                    attrValue === undefined ? (valueMatch ? valueMatch[1] : "") : attrValue,
-                );
-                const node = createTreeNode(attributes);
-                const inputValueMatch = /value="([^"]*)"/i.exec(dataMatch[0]);
-                node.value = decodeHtmlAttribute(inputValueMatch ? inputValueMatch[1] : "");
+                const node = createNodeFromMarkup(dataMatch[0], {
+                    [attrName]: decodeHtmlAttribute(
+                        attrValue === undefined
+                            ? (parseTagAttributes(dataMatch[0])[attrName] || "")
+                            : attrValue,
+                    ),
+                });
                 results.push(node);
                 dataMatch = dataPattern.exec(source);
             }
@@ -10846,22 +11172,11 @@ function parseNodes(source, selector) {
     let match = pattern.exec(source);
     while (match) {
         if (selector === ".workspace-tree-toggle") {
-            results.push(createTreeNode({
-                class: "workspace-tree-toggle",
-                "data-tree-toggle-path": decodeHtmlAttribute(match[1]),
-                "aria-expanded": match[2],
-            }));
+            results.push(createNodeFromMarkup(match[0]));
         } else if (selector === ".workspace-tree-file") {
-            results.push(createTreeNode({
-                class: match[1],
-                "data-tree-file-path": decodeHtmlAttribute(match[2]),
-                "aria-pressed": match[3],
-            }));
+            results.push(createNodeFromMarkup(match[0]));
         } else if (selector === ".workspace-diff-card") {
-            results.push(createTreeNode({
-                class: match[1],
-                "data-diff-path": decodeHtmlAttribute(match[2]),
-            }));
+            results.push(createNodeFromMarkup(match[0]));
         } else if (selector === "[data-automation-edit]") {
             results.push(createTreeNode({}));
         } else if (selector === "[data-automation-run]") {
@@ -11349,6 +11664,21 @@ export async function fetchWorkspaceDiffFile(workspaceId, path, mount = null) {
     };
 }
 
+export async function fetchWorkspaceFile(workspaceId, path, mount = null) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    globalThis.__fileRequests.push({ workspaceId, path, mount });
+    return {
+        workspace_id: workspaceId,
+        mount_name: mount || "default",
+        path,
+        content: "print('hello')\\n",
+        encoding: "utf-8",
+        is_binary: false,
+        truncated: false,
+        size_bytes: 15,
+    };
+}
+
 export async function runAutomationProject() {
     return { status: "ok" };
 }
@@ -11517,6 +11847,11 @@ export async function updateWorkspace(workspaceId, payload) {
         default_mount_name: payload?.default_mount_name || "default",
         mounts: Array.isArray(payload?.mounts) ? payload.mounts : [],
     };
+}
+""".strip(),
+        "fetchWorkspaceFile": """
+export async function fetchWorkspaceFile() {
+    return { content: "", encoding: "utf-8", path: "" };
 }
 """.strip(),
         "openWorkspaceRoot": """
@@ -12807,6 +13142,7 @@ import {{ createDomEnvironment, installGlobals }} from "./mockDom.mjs";
 globalThis.__snapshotRequests = [];
 globalThis.__diffRequests = [];
 globalThis.__diffFileRequests = [];
+globalThis.__fileRequests = [];
 globalThis.__treeRequests = [];
 globalThis.__openWorkspaceRootCalls = [];
 globalThis.__updatedWorkspacePayload = null;

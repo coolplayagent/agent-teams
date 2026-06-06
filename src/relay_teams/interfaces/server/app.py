@@ -40,6 +40,8 @@ from relay_teams.interfaces.server.runtime_contracts import (
 )
 from relay_teams.logger import shutdown_logging
 from relay_teams.paths import get_app_config_dir
+from relay_teams.providers.model_capabilities import resolve_model_capabilities
+from relay_teams.providers.model_config import ProviderType
 from relay_teams.trace import bind_trace_context
 
 SERVER_VERSION = "0.1.0"
@@ -77,6 +79,7 @@ _BOOTSTRAP_API_PATHS = frozenset(
         "/api/system/control-plane",
         "/api/system/configs/ui-language",
         "/api/system/configs/orchestration",
+        "/api/system/configs/model/profiles",
         "/api/logs/frontend",
         "/api/roles:options",
     )
@@ -85,6 +88,7 @@ _RUNTIME_SHADOW_BOOTSTRAP_PATHS = frozenset(
     (
         "/api/logs/frontend",
         "/api/system/configs/orchestration",
+        "/api/system/configs/model/profiles",
         "/api/roles:options",
     )
 )
@@ -265,6 +269,11 @@ async def bootstrap_orchestration_config(request: Request) -> JSONResponse:
     return JSONResponse(_read_bootstrap_orchestration_config(config_dir))
 
 
+async def bootstrap_model_profiles(request: Request) -> JSONResponse:
+    config_dir = _request_config_dir(request)
+    return JSONResponse(_read_bootstrap_model_profiles(config_dir))
+
+
 async def bootstrap_frontend_logs(request: Request) -> JSONResponse:
     accepted = await _count_frontend_log_events(request)
     return JSONResponse({"accepted": accepted})
@@ -406,6 +415,11 @@ app.add_route(
 app.add_route(
     "/api/system/configs/orchestration",
     bootstrap_orchestration_config,
+    methods=["GET"],
+)
+app.add_route(
+    "/api/system/configs/model/profiles",
+    bootstrap_model_profiles,
     methods=["GET"],
 )
 app.add_route("/api/logs/frontend", bootstrap_frontend_logs, methods=["POST"])
@@ -715,16 +729,176 @@ def _read_bootstrap_orchestration_config(config_dir: Path) -> dict[str, object]:
     }
 
 
+def _read_bootstrap_model_profiles(config_dir: Path) -> dict[str, dict[str, object]]:
+    config_file = config_dir / "model.json"
+    if not config_file.exists():
+        return {}
+    try:
+        raw = json.loads(config_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    profiles: dict[str, dict[str, object]] = {}
+    for raw_name, raw_profile in raw.items():
+        name = str(raw_name or "").strip()
+        if not name or not isinstance(raw_profile, dict):
+            continue
+        profiles[name] = raw_profile
+
+    default_name = _resolve_bootstrap_default_model_profile_name(profiles)
+    return {
+        name: _bootstrap_model_profile_payload(
+            profile,
+            is_default=name == default_name,
+        )
+        for name, profile in profiles.items()
+    }
+
+
+def _resolve_bootstrap_default_model_profile_name(
+    profiles: dict[str, dict[str, object]],
+) -> str | None:
+    profile_names = sorted(profiles)
+    if not profile_names:
+        return None
+    explicit_defaults = sorted(
+        name for name, profile in profiles.items() if profile.get("is_default") is True
+    )
+    if explicit_defaults:
+        return explicit_defaults[0]
+    if "default" in profiles:
+        return "default"
+    if len(profile_names) == 1:
+        return profile_names[0]
+    return profile_names[0]
+
+
+def _bootstrap_model_profile_payload(
+    profile: dict[str, object],
+    *,
+    is_default: bool,
+) -> dict[str, object]:
+    provider = _bootstrap_profile_str(profile, "provider", "openai_compatible")
+    model = _bootstrap_profile_str(profile, "model", "")
+    base_url = _bootstrap_profile_str(profile, "base_url", "")
+    resolved_capabilities = _bootstrap_profile_resolved_capabilities(
+        profile,
+        provider=provider,
+        model=model,
+        base_url=base_url,
+    )
+    return {
+        "provider": provider,
+        "model": model,
+        "base_url": base_url,
+        "api_key": "",
+        "has_api_key": False,
+        "headers": [],
+        "maas_auth": None,
+        "codeagent_auth": None,
+        "ssl_verify": profile.get("ssl_verify"),
+        "temperature": profile.get("temperature", 0.7),
+        "top_p": profile.get("top_p", 1.0),
+        "max_tokens": profile.get("max_tokens"),
+        "context_window": profile.get("context_window"),
+        "fallback_policy_id": profile.get("fallback_policy_id"),
+        "fallback_priority": profile.get("fallback_priority", 0),
+        "catalog_provider_id": profile.get("catalog_provider_id"),
+        "catalog_provider_name": profile.get("catalog_provider_name"),
+        "catalog_model_name": profile.get("catalog_model_name"),
+        "is_default": is_default,
+        "connect_timeout_seconds": profile.get("connect_timeout_seconds"),
+        "capabilities": profile.get("capabilities")
+        if isinstance(profile.get("capabilities"), dict)
+        else None,
+        "speech_realtime": profile.get("speech_realtime")
+        if isinstance(profile.get("speech_realtime"), dict)
+        else None,
+        "resolved_capabilities": resolved_capabilities,
+        "input_modalities": _bootstrap_profile_input_modalities(
+            profile,
+            resolved_capabilities=resolved_capabilities,
+        ),
+    }
+
+
+def _bootstrap_profile_resolved_capabilities(
+    profile: dict[str, object],
+    *,
+    provider: str,
+    model: str,
+    base_url: str,
+) -> dict[str, object]:
+    raw_capabilities = profile.get("capabilities")
+    capabilities = resolve_model_capabilities(
+        provider=_bootstrap_provider_type(provider),
+        base_url=base_url,
+        model_name=model,
+        metadata=raw_capabilities if isinstance(raw_capabilities, dict) else None,
+    )
+    return cast(dict[str, object], capabilities.model_dump(mode="json"))
+
+
+def _bootstrap_provider_type(provider: str) -> ProviderType:
+    try:
+        return ProviderType(provider)
+    except ValueError:
+        return ProviderType.OPENAI_COMPATIBLE
+
+
+def _bootstrap_profile_input_modalities(
+    profile: dict[str, object],
+    *,
+    resolved_capabilities: dict[str, object],
+) -> list[str] | None:
+    raw_input_modalities = profile.get("input_modalities")
+    if isinstance(raw_input_modalities, list):
+        return [
+            str(modality).strip().lower()
+            for modality in raw_input_modalities
+            if str(modality).strip()
+        ]
+    raw_input = resolved_capabilities.get("input")
+    if not isinstance(raw_input, dict):
+        return None
+    modalities: list[str] = []
+    for modality in ("image", "audio", "video"):
+        flag = raw_input.get(modality)
+        if isinstance(flag, bool) and flag:
+            modalities.append(modality)
+    return modalities
+
+
+def _bootstrap_profile_str(
+    profile: dict[str, object],
+    key: str,
+    default: str,
+) -> str:
+    value = profile.get(key)
+    if isinstance(value, str):
+        return value.strip()
+    return default
+
+
 def _read_bootstrap_role_options() -> dict[str, object]:
     entries = _read_bootstrap_role_entries()
     role_options = [role for _mode, role in entries]
     coordinator_role = _find_bootstrap_role(role_options, "Coordinator")
     main_agent_role = _find_bootstrap_role(role_options, "MainAgent")
-    normal_mode_roles = [role for mode, role in entries if mode == "primary"]
-    subagent_roles = [role for mode, role in entries if mode == "subagent"]
+    coordinator_role_id = str(coordinator_role.get("role_id", "Coordinator"))
+    main_agent_role_id = str(main_agent_role.get("role_id", "MainAgent"))
+    normal_mode_roles = [
+        role
+        for _mode, role in entries
+        if str(role.get("role_id", "")).strip()
+        not in {coordinator_role_id, main_agent_role_id, "DelegationPlanner"}
+    ]
+    normal_mode_roles.insert(0, main_agent_role)
+    subagent_roles = [role for mode, role in entries if mode in {"subagent", "all"}]
     return {
-        "coordinator_role_id": str(coordinator_role.get("role_id", "Coordinator")),
-        "main_agent_role_id": str(main_agent_role.get("role_id", "MainAgent")),
+        "coordinator_role_id": coordinator_role_id,
+        "main_agent_role_id": main_agent_role_id,
         "coordinator_role": coordinator_role,
         "main_agent_role": main_agent_role,
         "normal_mode_roles": normal_mode_roles,

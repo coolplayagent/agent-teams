@@ -439,6 +439,19 @@ class WorkspaceDiffFile(BaseModel):
     is_binary: bool = False
 
 
+class WorkspaceFileContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: RequiredIdentifierStr
+    mount_name: RequiredIdentifierStr = "default"
+    path: str = Field(min_length=1)
+    content: str = ""
+    encoding: str = "utf-8"
+    is_binary: bool = False
+    truncated: bool = False
+    size_bytes: int = Field(ge=0)
+
+
 class WorkspaceDiffListing(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

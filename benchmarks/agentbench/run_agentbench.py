@@ -48,6 +48,7 @@ _RETRYABLE_INFRA_ERRORS = (
     subprocess.SubprocessError,
     TimeoutError,
 )
+_MIN_RELAY_TIMEOUT_SECONDS = 0.001
 
 
 class ShellScript(BaseModel):
@@ -944,7 +945,19 @@ def _task_timed_out(deadline: float | None) -> bool:
 def _remaining_timeout_seconds(deadline: float | None) -> float | None:
     if deadline is None:
         return None
-    return max(deadline - time.monotonic(), 0.001)
+    return max(deadline - time.monotonic(), _MIN_RELAY_TIMEOUT_SECONDS)
+
+
+def _relay_timeout_reached_task_deadline(
+    *,
+    deadline: float | None,
+    timeout_seconds: float | None,
+) -> bool:
+    return _task_timed_out(deadline) or (
+        deadline is not None
+        and timeout_seconds is not None
+        and timeout_seconds <= _MIN_RELAY_TIMEOUT_SECONDS
+    )
 
 
 def _bounded_timeout_seconds(
@@ -1141,14 +1154,18 @@ def _run_os_task_once(
                 max_steps=max_steps,
                 prompt_template=os_prompt_template,
             )
+            relay_timeout_seconds = _remaining_timeout_seconds(deadline)
             try:
                 relay_result = relay_client.run_prompt(
                     prompt,
                     session_id=session_id,
-                    timeout_seconds=_remaining_timeout_seconds(deadline),
+                    timeout_seconds=relay_timeout_seconds,
                 )
             except httpx.TimeoutException:
-                if _task_timed_out(deadline):
+                if _relay_timeout_reached_task_deadline(
+                    deadline=deadline,
+                    timeout_seconds=relay_timeout_seconds,
+                ):
                     return _task_timeout_result(
                         suite=AgentBenchSuite.OS,
                         task_id=task.task_id,
@@ -1597,14 +1614,18 @@ def _run_db_task_once(
                 max_steps=max_steps,
                 prompt_template=db_prompt_template,
             )
+            relay_timeout_seconds = _remaining_timeout_seconds(deadline)
             try:
                 relay_result = relay_client.run_prompt(
                     prompt,
                     session_id=session_id,
-                    timeout_seconds=_remaining_timeout_seconds(deadline),
+                    timeout_seconds=relay_timeout_seconds,
                 )
             except httpx.TimeoutException:
-                if _task_timed_out(deadline):
+                if _relay_timeout_reached_task_deadline(
+                    deadline=deadline,
+                    timeout_seconds=relay_timeout_seconds,
+                ):
                     return _task_timeout_result(
                         suite=AgentBenchSuite.DB,
                         task_id=task.task_id,

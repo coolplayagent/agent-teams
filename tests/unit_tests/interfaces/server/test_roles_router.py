@@ -474,6 +474,14 @@ def test_get_role_config_options() -> None:
                 model_name="gpt-4.1-mini",
                 input_modalities=(MediaModality.IMAGE,),
             ),
+            NormalModeRoleOption(
+                role_id="writer",
+                name="Writer",
+                description="Drafts user-facing content.",
+                model_profile="default",
+                model_name="gpt-4.1-mini",
+                input_modalities=(MediaModality.IMAGE,),
+            ),
         ),
         subagent_roles=(
             NormalModeRoleOption(

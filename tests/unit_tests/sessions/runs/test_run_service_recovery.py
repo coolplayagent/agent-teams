@@ -130,7 +130,12 @@ class _MetaAgent:
 
 
 class _SessionRepo:
+    def __init__(self, record: SessionRecord | None = None) -> None:
+        self._record = record
+
     def get(self, session_id: str) -> SessionRecord:
+        if self._record is not None:
+            return self._record.model_copy(update={"session_id": session_id})
         return SessionRecord(
             session_id=session_id,
             workspace_id="default",
@@ -323,6 +328,7 @@ def _build_manager(
     todo_service: TodoService | None = None,
     monitor_service: MonitorService | None = None,
     orchestration_settings_service: OrchestrationSettingsService | None = None,
+    session_repo: object | None = None,
 ) -> SessionRunService:
     control = RunControlManager()
     injection = RunInjectionManager()
@@ -354,7 +360,10 @@ def _build_manager(
         run_event_hub=hub,
         run_control_manager=control,
         tool_approval_manager=ToolApprovalManager(),
-        session_repo=cast(SessionRepository, cast(object, _SessionRepo())),
+        session_repo=cast(
+            SessionRepository,
+            session_repo if session_repo is not None else _SessionRepo(),
+        ),
         active_run_registry=active_run_registry,
         event_log=event_log if attach_manager_event_log else None,
         task_repo=task_repo,
@@ -533,6 +542,48 @@ def test_prepare_intent_resolves_topology_with_policy_override(tmp_path: Path) -
     assert prepared.skills == ("plan",)
     assert prepared.topology is not None
     assert prepared.topology.orchestration_policy == policy
+
+
+def test_prepare_intent_snapshots_normal_model_profile_for_normal_mode(
+    tmp_path: Path,
+) -> None:
+    manager = _build_manager(
+        tmp_path / "run_service_prepare_intent_normal_model.db",
+        session_repo=_SessionRepo(
+            SessionRecord(
+                session_id="session-1",
+                workspace_id="default",
+                session_mode=SessionMode.NORMAL,
+                normal_model_profile="fast",
+            )
+        ),
+    )
+
+    prepared = manager._prepare_intent(IntentInput(session_id="session-1"))
+
+    assert prepared.normal_model_profile == "fast"
+
+
+def test_prepare_intent_clears_normal_model_profile_for_orchestration_mode(
+    tmp_path: Path,
+) -> None:
+    manager = _build_manager(
+        tmp_path / "run_service_prepare_intent_orchestration_model.db",
+        session_repo=_SessionRepo(
+            SessionRecord(
+                session_id="session-1",
+                workspace_id="default",
+                session_mode=SessionMode.ORCHESTRATION,
+                normal_model_profile="fast",
+                orchestration_preset_id="default",
+            )
+        ),
+    )
+
+    prepared = manager._prepare_intent(IntentInput(session_id="session-1"))
+
+    assert prepared.session_mode == SessionMode.ORCHESTRATION
+    assert prepared.normal_model_profile is None
 
 
 @pytest.mark.asyncio

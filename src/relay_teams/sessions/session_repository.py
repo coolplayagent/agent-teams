@@ -39,6 +39,7 @@ class SessionRepository(SharedSqliteRepository):
                     metadata   TEXT NOT NULL,
                     session_mode TEXT NOT NULL DEFAULT 'normal',
                     normal_root_role_id TEXT,
+                    normal_model_profile TEXT,
                     orchestration_preset_id TEXT,
                     started_at TEXT,
                     last_viewed_terminal_run_id TEXT,
@@ -74,6 +75,10 @@ class SessionRepository(SharedSqliteRepository):
                 self._conn.execute(
                     "ALTER TABLE sessions ADD COLUMN normal_root_role_id TEXT"
                 )
+            if "normal_model_profile" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE sessions ADD COLUMN normal_model_profile TEXT"
+                )
             if "orchestration_preset_id" not in columns:
                 self._conn.execute(
                     "ALTER TABLE sessions ADD COLUMN orchestration_preset_id TEXT"
@@ -104,6 +109,7 @@ class SessionRepository(SharedSqliteRepository):
         project_id: str | None = None,
         session_mode: SessionMode = SessionMode.NORMAL,
         normal_root_role_id: str | None = None,
+        normal_model_profile: str | None = None,
         orchestration_preset_id: str | None = None,
     ) -> SessionRecord:
         now = datetime.now(tz=timezone.utc).isoformat()
@@ -117,6 +123,7 @@ class SessionRepository(SharedSqliteRepository):
             metadata=metadata_dict,
             session_mode=session_mode,
             normal_root_role_id=normal_root_role_id,
+            normal_model_profile=normal_model_profile,
             orchestration_preset_id=orchestration_preset_id,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
@@ -134,13 +141,14 @@ class SessionRepository(SharedSqliteRepository):
                     metadata,
                     session_mode,
                     normal_root_role_id,
+                    normal_model_profile,
                     orchestration_preset_id,
                     started_at,
                     last_viewed_terminal_run_id,
                     created_at,
                     updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.session_id,
@@ -150,6 +158,7 @@ class SessionRepository(SharedSqliteRepository):
                     json.dumps(record.metadata),
                     record.session_mode.value,
                     record.normal_root_role_id,
+                    record.normal_model_profile,
                     record.orchestration_preset_id,
                     None,
                     record.last_viewed_terminal_run_id,
@@ -170,6 +179,7 @@ class SessionRepository(SharedSqliteRepository):
         project_id: str | None = None,
         session_mode: SessionMode = SessionMode.NORMAL,
         normal_root_role_id: str | None = None,
+        normal_model_profile: str | None = None,
         orchestration_preset_id: str | None = None,
     ) -> SessionRecord:
         now = datetime.now(tz=timezone.utc).isoformat()
@@ -183,6 +193,7 @@ class SessionRepository(SharedSqliteRepository):
             metadata=metadata_dict,
             session_mode=session_mode,
             normal_root_role_id=normal_root_role_id,
+            normal_model_profile=normal_model_profile,
             orchestration_preset_id=orchestration_preset_id,
             created_at=datetime.fromisoformat(now),
             updated_at=datetime.fromisoformat(now),
@@ -200,12 +211,14 @@ class SessionRepository(SharedSqliteRepository):
                     metadata,
                     session_mode,
                     normal_root_role_id,
+                    normal_model_profile,
                     orchestration_preset_id,
                     started_at,
+                    last_viewed_terminal_run_id,
                     created_at,
                     updated_at
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.session_id,
@@ -215,8 +228,10 @@ class SessionRepository(SharedSqliteRepository):
                     json.dumps(record.metadata),
                     record.session_mode.value,
                     record.normal_root_role_id,
+                    record.normal_model_profile,
                     record.orchestration_preset_id,
                     None,
+                    record.last_viewed_terminal_run_id,
                     now,
                     now,
                 ),
@@ -301,6 +316,35 @@ class SessionRepository(SharedSqliteRepository):
             existing = await self.get_async(session_id)
             if existing.started_at is not None:
                 raise RuntimeError("Session mode can no longer be changed")
+            raise KeyError(f"Unknown session_id: {session_id}")
+
+    async def update_normal_model_profile_async(
+        self,
+        session_id: str,
+        *,
+        normal_model_profile: str | None,
+    ) -> None:
+        now = datetime.now(tz=timezone.utc).isoformat()
+
+        async def operation() -> int:
+            conn = await self._get_async_conn()
+            cursor = await conn.execute(
+                """
+                UPDATE sessions
+                SET normal_model_profile=?, updated_at=?
+                WHERE session_id=?
+                """,
+                (normal_model_profile, now, session_id),
+            )
+            affected_rows = cursor.rowcount
+            await cursor.close()
+            return affected_rows
+
+        updated_count = await self._run_async_write(
+            operation_name="update_normal_model_profile_async",
+            operation=lambda _conn: operation(),
+        )
+        if updated_count == 0:
             raise KeyError(f"Unknown session_id: {session_id}")
 
     def update_metadata(self, session_id: str, metadata: dict[str, str]) -> None:
@@ -744,6 +788,7 @@ class SessionRepository(SharedSqliteRepository):
             metadata=_metadata_from_json(row["metadata"], session_id=session_id),
             session_mode=SessionMode(str(row["session_mode"] or "normal")),
             normal_root_role_id=normalize_persisted_text(row["normal_root_role_id"]),
+            normal_model_profile=normalize_persisted_text(row["normal_model_profile"]),
             orchestration_preset_id=normalize_persisted_text(
                 row["orchestration_preset_id"]
             ),

@@ -12,11 +12,13 @@ import { clearAllStreamState } from "../components/messageRenderer.js";
 import {
   fetchRoleConfigOptions,
   fetchCommands,
+  fetchModelProfiles,
   fetchOrchestrationConfig,
   injectMessage,
   forceQueuedInject,
   resolveCommandPrompt,
   searchWorkspacePaths,
+  updateSessionNormalModelProfile,
   updateSessionTopology,
 } from "../core/api.js";
 import {
@@ -60,6 +62,8 @@ const YOLO_STORAGE_KEY = "agent_teams_yolo";
 const THINKING_MODE_STORAGE_KEY = "agent_teams_thinking_enabled";
 const THINKING_EFFORT_STORAGE_KEY = "agent_teams_thinking_effort";
 const DEFAULT_PROMPT_MENTION_TRIGGER = "@";
+const COMPOSER_SELECT_NORMAL_ROLE = "normal-role";
+const COMPOSER_SELECT_NORMAL_MODEL = "normal-model";
 const PROMPT_COMMAND_AUTOCOMPLETE_STATUS = Object.freeze({
   IDLE: "idle",
   LOADING: "loading",
@@ -73,7 +77,14 @@ let orchestrationConfig = {
   default_orchestration_preset_id: "",
   presets: [],
 };
+let normalModelProfiles = [];
+let normalModelProfileSavePromise = null;
+let normalModelProfileSaveRequestId = 0;
+let activeComposerSelectMenu = "";
+let activeComposerSelectIndex = -1;
 let topologyControlsBound = false;
+let composerDisabledTooltipBound = false;
+let composerDisabledTooltipEl = null;
 let promptMentionAutocompleteBound = false;
 let promptMentionOptions = [];
 let activePromptMentionIndex = -1;
@@ -153,6 +164,7 @@ export function initializeThinkingControls() {
 
 export async function initializeSessionTopologyControls() {
   await refreshRoleConfigOptions({ refreshControls: false });
+  await refreshModelProfileOptions({ refreshControls: false });
   await refreshOrchestrationConfig({ refreshControls: false });
   bindSessionTopologyControls();
   refreshSessionTopologyControls();
@@ -185,9 +197,26 @@ export function refreshSessionTopologyControls() {
     canSwitch,
     hasPresets,
   });
+  const modeSwitchDisabledReason = resolveModeSwitchDisabledReason({
+    canSwitch,
+  });
   const orchestrationDisabled = !canSwitch || !hasPresets;
+  const canChangeModel =
+    mode === "normal" &&
+    (isDraft || !!state.currentSessionId) &&
+    !state.isGenerating;
+  if (mode !== "normal") {
+    activeComposerSelectMenu = "";
+    activeComposerSelectIndex = -1;
+  }
 
-  els.sessionModeLock.title = disabledReason;
+  clearElementTitle(els.sessionModeLock);
+  syncSessionModeButtonTitles({
+    canSwitch,
+    modeSwitchDisabledReason,
+    orchestrationDisabled,
+    orchestrationDisabledReason: disabledReason,
+  });
   els.sessionModeNormalBtn.disabled = !canSwitch;
   els.sessionModeOrchestrationBtn.disabled = orchestrationDisabled;
   els.sessionModeNormalBtn.classList.toggle("active", mode === "normal");
@@ -206,12 +235,21 @@ export function refreshSessionTopologyControls() {
   syncSessionTopologyFieldVisibility(mode);
   if (els.normalRoleSelect) {
     const selectedRoleId = resolveSelectedNormalRoleId();
+    const roleDisabled = !canSwitch || mode !== "normal" || !hasNormalModeRoles;
+    const roleDisabledReason = roleDisabled
+      ? resolveNormalRoleDisabledReason({ canSwitch, hasNormalModeRoles })
+      : "";
     els.normalRoleSelect.innerHTML = buildNormalRoleOptions(selectedRoleId);
-    els.normalRoleSelect.disabled =
-      !canSwitch || mode !== "normal" || !hasNormalModeRoles;
+    els.normalRoleSelect.disabled = roleDisabled;
     if (selectedRoleId) {
       els.normalRoleSelect.value = selectedRoleId;
     }
+    syncComposerSelectControl(COMPOSER_SELECT_NORMAL_ROLE, {
+      disabled: roleDisabled,
+      disabledReason: roleDisabledReason,
+      options: getNormalRoleMenuOptions(selectedRoleId),
+      selectedValue: selectedRoleId,
+    });
   }
 
   if (els.orchestrationPresetSelect) {
@@ -223,6 +261,20 @@ export function refreshSessionTopologyControls() {
     if (selectedPresetId) {
       els.orchestrationPresetSelect.value = selectedPresetId;
     }
+  }
+
+  if (els.normalModelSelect) {
+    const selectedModelProfile = resolveSelectedNormalModelProfile();
+    els.normalModelSelect.innerHTML = buildNormalModelOptions(
+      selectedModelProfile,
+    );
+    els.normalModelSelect.disabled = !canChangeModel;
+    els.normalModelSelect.value = selectedModelProfile;
+    syncComposerSelectControl(COMPOSER_SELECT_NORMAL_MODEL, {
+      disabled: !canChangeModel,
+      options: getNormalModelMenuOptions(selectedModelProfile),
+      selectedValue: selectedModelProfile,
+    });
   }
 }
 
@@ -268,6 +320,21 @@ export async function refreshRoleConfigOptions({ refreshControls = true } = {}) 
   }
 }
 
+export async function refreshModelProfileOptions({
+  refreshControls = true,
+} = {}) {
+  try {
+    const profiles = await fetchModelProfiles();
+    normalModelProfiles = normalizeModelProfileOptions(profiles);
+  } catch (error) {
+    normalModelProfiles = [];
+    sysLog(error.message || t("composer.error.model_profiles_load_failed"), "log-error");
+  }
+  if (refreshControls) {
+    refreshSessionTopologyControls();
+  }
+}
+
 export async function handleSend(options = {}) {
   await stopActiveVoiceInputBeforeSend();
   const rawText = els.promptInput.value.trim();
@@ -308,6 +375,15 @@ export async function handleSend(options = {}) {
   const text = mention.roleId ? mention.promptText : rawText;
   if (!text && !hasAttachments) {
     sysLog(t("composer.error.empty_after_mention"), "log-error");
+    return;
+  }
+  clearPromptComposerStatus();
+  const modelProfileSaveResult = await flushPendingNormalModelProfileSave();
+  if (modelProfileSaveResult?.ok === false) {
+    const message =
+      modelProfileSaveResult.message || t("composer.error.model_update_failed");
+    setPromptComposerStatus(message, { tone: "danger" });
+    sysLog(message, "log-error");
     return;
   }
   const attachmentSnapshot = snapshotPromptAttachments();
@@ -954,14 +1030,19 @@ function resolveImageInputBlockedMessage({
   if (!resolvedTargetRoleId) {
     return "";
   }
-  const imageSupport = getRoleInputModalitySupport(
+  const selectedProfileSupport = resolveSelectedNormalModelInputModalitySupport(
+    "image",
+  );
+  const imageSupport = selectedProfileSupport.support ?? getRoleInputModalitySupport(
     resolvedTargetRoleId,
     "image",
   );
   if (imageSupport === true) {
     return "";
   }
-  const targetLabel = resolveImageInputTargetLabel(resolvedTargetRoleId);
+  const targetLabel =
+    selectedProfileSupport.label ||
+    resolveImageInputTargetLabel(resolvedTargetRoleId);
   if (imageSupport === null) {
     return formatMessage("composer.error.image_input_unknown", {
       agent: targetLabel,
@@ -983,6 +1064,31 @@ function resolveImageInputTargetLabel(roleId) {
     return modelProfile;
   }
   return getRoleDisplayName(roleId, { fallback: "Agent" });
+}
+
+function resolveSelectedNormalModelInputModalitySupport(modality) {
+  const selectedProfileName = resolveSelectedNormalModelProfile();
+  if (
+    state.currentSessionMode !== "normal" ||
+    !selectedProfileName ||
+    !modality
+  ) {
+    return { support: null, label: "" };
+  }
+  const selectedProfile = normalModelProfiles.find(
+    (profile) => profile.name === selectedProfileName,
+  );
+  if (!selectedProfile) {
+    return { support: null, label: "" };
+  }
+  const inputModalities = selectedProfile.inputModalities;
+  if (!Array.isArray(inputModalities)) {
+    return { support: null, label: "" };
+  }
+  return {
+    support: inputModalities.includes(String(modality).trim().toLowerCase()),
+    label: selectedProfile.modelName || selectedProfile.name,
+  };
 }
 
 function resolvePromptTargetRoleId(rawText) {
@@ -1134,7 +1240,22 @@ function bindSessionTopologyControls() {
       });
     });
   }
+  if (els.normalModelSelect) {
+    els.normalModelSelect.addEventListener("change", (event) => {
+      const nextModelProfile = String(event?.target?.value || "").trim();
+      void persistSessionNormalModelProfile(nextModelProfile || null);
+    });
+  }
+  bindComposerSelectControl(COMPOSER_SELECT_NORMAL_ROLE);
+  bindComposerSelectControl(COMPOSER_SELECT_NORMAL_MODEL);
+  bindComposerDisabledReasonTooltip();
   if (typeof document.addEventListener === "function") {
+    document.addEventListener("click", (event) => {
+      if (isComposerSelectEventTarget(event?.target)) {
+        return;
+      }
+      closeComposerSelectMenu();
+    });
     document.addEventListener("orchestration-settings-updated", () => {
       void refreshOrchestrationConfig({ refreshControls: true });
     });
@@ -1143,6 +1264,7 @@ function bindSessionTopologyControls() {
     });
     document.addEventListener("agent-teams-model-profiles-updated", () => {
       void refreshRoleConfigOptions({ refreshControls: true });
+      void refreshModelProfileOptions({ refreshControls: true });
     });
     document.addEventListener("agent-teams-language-changed", () => {
       refreshSessionTopologyControls();
@@ -1151,6 +1273,535 @@ function bindSessionTopologyControls() {
       refreshSessionTopologyControls();
     });
   }
+}
+
+function bindComposerSelectControl(kind) {
+  const config = getComposerSelectConfig(kind);
+  if (config.button) {
+    config.button.addEventListener("click", (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      toggleComposerSelectMenu(kind);
+    });
+    config.button.addEventListener("keydown", (event) => {
+      handleComposerSelectButtonKeydown(kind, event);
+    });
+  }
+  if (config.list) {
+    config.list.addEventListener("click", (event) => {
+      const optionEl = findComposerSelectOptionElement(event?.target);
+      if (!optionEl) {
+        return;
+      }
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      selectComposerSelectOption(kind, optionEl);
+    });
+    config.list.addEventListener("keydown", (event) => {
+      handleComposerSelectListKeydown(kind, event);
+    });
+  }
+}
+
+function toggleComposerSelectMenu(kind) {
+  const config = getComposerSelectConfig(kind);
+  if (!config.button || config.button.disabled) {
+    return;
+  }
+  if (activeComposerSelectMenu === kind) {
+    closeComposerSelectMenu();
+    return;
+  }
+  activeComposerSelectMenu = kind;
+  activeComposerSelectIndex = -1;
+  refreshSessionTopologyControls();
+  focusActiveComposerSelectOption(kind);
+}
+
+function closeComposerSelectMenu({ focusKind = "" } = {}) {
+  if (!activeComposerSelectMenu) {
+    return;
+  }
+  activeComposerSelectMenu = "";
+  activeComposerSelectIndex = -1;
+  refreshSessionTopologyControls();
+  if (focusKind) {
+    getComposerSelectConfig(focusKind).button?.focus?.();
+  }
+}
+
+function handleComposerSelectButtonKeydown(kind, event) {
+  if (!event || getComposerSelectConfig(kind).button?.disabled) {
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault?.();
+    closeComposerSelectMenu({ focusKind: kind });
+    return;
+  }
+  if (
+    event.key !== "Enter" &&
+    event.key !== " " &&
+    event.key !== "ArrowDown" &&
+    event.key !== "ArrowUp"
+  ) {
+    return;
+  }
+  event.preventDefault?.();
+  event.stopPropagation?.();
+  activeComposerSelectMenu = kind;
+  activeComposerSelectIndex =
+    event.key === "ArrowUp" ? Number.MAX_SAFE_INTEGER : -1;
+  refreshSessionTopologyControls();
+  focusActiveComposerSelectOption(kind);
+}
+
+function handleComposerSelectListKeydown(kind, event) {
+  if (!event) {
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault?.();
+    closeComposerSelectMenu({ focusKind: kind });
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault?.();
+    focusAdjacentComposerSelectOption(kind, event.key === "ArrowDown" ? 1 : -1);
+    return;
+  }
+  if (event.key === "Home" || event.key === "End") {
+    event.preventDefault?.();
+    focusComposerSelectOptionByPosition(kind, event.key === "Home" ? 0 : -1);
+    return;
+  }
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  const optionEl = findComposerSelectOptionElement(
+    globalThis.document?.activeElement || event.target,
+  );
+  if (!optionEl) {
+    return;
+  }
+  event.preventDefault?.();
+  selectComposerSelectOption(kind, optionEl);
+}
+
+function selectComposerSelectOption(kind, optionEl) {
+  const value = String(optionEl?.dataset?.value || "").trim();
+  if (optionEl?.disabled || optionEl?.dataset?.disabled === "true") {
+    return;
+  }
+  const config = getComposerSelectConfig(kind);
+  const currentValue = String(config.select?.value || "").trim();
+  activeComposerSelectMenu = "";
+  activeComposerSelectIndex = -1;
+  if (currentValue === value) {
+    refreshSessionTopologyControls();
+    config.button?.focus?.();
+    return;
+  }
+  dispatchComposerSelectChange(config.select, value);
+  config.button?.focus?.();
+}
+
+function dispatchComposerSelectChange(selectEl, value) {
+  if (!selectEl) {
+    return;
+  }
+  selectEl.value = value;
+  if (
+    typeof selectEl.dispatchEvent === "function" &&
+    typeof Event === "function"
+  ) {
+    selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  if (typeof selectEl.dispatch === "function") {
+    selectEl.dispatch("change");
+  }
+}
+
+function syncComposerSelectControl(
+  kind,
+  { disabled, disabledReason = "", options, selectedValue },
+) {
+  const config = getComposerSelectConfig(kind);
+  if (!config.button || !config.list) {
+    return;
+  }
+  const safeOptions = Array.isArray(options) ? options : [];
+  const selectedOption =
+    safeOptions.find((option) => option.value === selectedValue) ||
+    safeOptions.find((option) => option.selected) ||
+    safeOptions[0] ||
+    createComposerMenuOption("", "");
+  if (disabled && activeComposerSelectMenu === kind) {
+    activeComposerSelectMenu = "";
+    activeComposerSelectIndex = -1;
+  }
+  const isOpen = activeComposerSelectMenu === kind && !disabled;
+  config.button.disabled = disabled;
+  setElementTitle(config.button, disabled ? "" : selectedOption.label);
+  const safeDisabledReason = disabled ? String(disabledReason || "").trim() : "";
+  if (safeDisabledReason) {
+    setElementAttribute(config.button, "data-disabled-reason", safeDisabledReason);
+  } else {
+    removeElementAttribute(config.button, "data-disabled-reason");
+  }
+  setElementAttribute(config.button, "aria-expanded", isOpen ? "true" : "false");
+  setElementAttribute(config.button, "aria-disabled", disabled ? "true" : "false");
+  if (isOpen) {
+    syncActiveComposerSelectIndex(safeOptions, selectedOption.value);
+    setElementAttribute(
+      config.button,
+      "aria-activedescendant",
+      `${kind}-option-${activeComposerSelectIndex}`,
+    );
+  } else {
+    removeElementAttribute(config.button, "aria-activedescendant");
+  }
+  if (config.valueEl) {
+    config.valueEl.textContent = selectedOption.label;
+  }
+  if (config.metaEl) {
+    config.metaEl.textContent = selectedOption.meta;
+    config.metaEl.hidden = !selectedOption.meta;
+    config.metaEl.style.display = selectedOption.meta ? "" : "none";
+  }
+  config.button.classList?.toggle?.("has-meta", Boolean(selectedOption.meta));
+  config.button.classList?.toggle?.("is-open", isOpen);
+  config.list.hidden = !isOpen;
+  config.list.style.display = isOpen ? "block" : "none";
+  config.list.innerHTML = buildComposerSelectMenuItems(
+    kind,
+    safeOptions,
+    selectedOption.value,
+  );
+}
+
+function syncActiveComposerSelectIndex(options, selectedValue) {
+  if (!Array.isArray(options) || options.length === 0) {
+    activeComposerSelectIndex = -1;
+    return;
+  }
+  if (
+    activeComposerSelectIndex >= 0 &&
+    activeComposerSelectIndex < options.length &&
+    options[activeComposerSelectIndex]?.disabled !== true
+  ) {
+    return;
+  }
+  if (activeComposerSelectIndex === Number.MAX_SAFE_INTEGER) {
+    const lastEnabledIndex = findLastEnabledComposerOptionIndex(options);
+    activeComposerSelectIndex = lastEnabledIndex >= 0 ? lastEnabledIndex : 0;
+    return;
+  }
+  const selectedIndex = options.findIndex(
+    (option) => option.value === selectedValue && option.disabled !== true,
+  );
+  if (selectedIndex >= 0) {
+    activeComposerSelectIndex = selectedIndex;
+    return;
+  }
+  activeComposerSelectIndex = findFirstEnabledComposerOptionIndex(options);
+}
+
+function focusActiveComposerSelectOption(kind) {
+  focusComposerSelectOptionByIndex(kind, activeComposerSelectIndex);
+}
+
+function focusAdjacentComposerSelectOption(kind, step) {
+  const options = getComposerSelectOptionElements(kind);
+  if (options.length === 0) {
+    return;
+  }
+  const currentOption = findComposerSelectOptionElement(
+    globalThis.document?.activeElement,
+  );
+  const currentIndex = options.findIndex((option) => option === currentOption);
+  const fallbackIndex = step > 0 ? 0 : options.length - 1;
+  const nextIndex =
+    currentIndex >= 0
+      ? (currentIndex + step + options.length) % options.length
+      : fallbackIndex;
+  focusComposerSelectOptionElement(options[nextIndex]);
+}
+
+function focusComposerSelectOptionByPosition(kind, position) {
+  const options = getComposerSelectOptionElements(kind);
+  if (options.length === 0) {
+    return;
+  }
+  const option = position === 0 ? options[0] : options[options.length - 1];
+  focusComposerSelectOptionElement(option);
+}
+
+function focusComposerSelectOptionByIndex(kind, index) {
+  const options = getComposerSelectOptionElements(kind);
+  const option = options.find(
+    (element) => Number(element?.dataset?.index || -1) === index,
+  );
+  focusComposerSelectOptionElement(option || options[0]);
+}
+
+function focusComposerSelectOptionElement(optionEl) {
+  if (!optionEl) {
+    return;
+  }
+  activeComposerSelectIndex = Number(optionEl?.dataset?.index || -1);
+  optionEl.focus?.();
+}
+
+function getComposerSelectOptionElements(kind) {
+  const list = getComposerSelectConfig(kind).list;
+  if (!list || typeof list.querySelectorAll !== "function") {
+    return [];
+  }
+  return Array.from(list.querySelectorAll("[data-composer-select-option]"))
+    .filter((option) => !option.disabled && option.dataset?.disabled !== "true");
+}
+
+function findComposerSelectOptionElement(target) {
+  if (!target) {
+    return null;
+  }
+  if (target?.dataset?.composerSelectOption) {
+    return target;
+  }
+  if (typeof target.closest !== "function") {
+    return null;
+  }
+  return target.closest("[data-composer-select-option]");
+}
+
+function isComposerSelectEventTarget(target) {
+  return (
+    containsNode(els.normalRoleMenu, target) ||
+    containsNode(els.normalModelMenu, target)
+  );
+}
+
+function getComposerSelectConfig(kind) {
+  if (kind === COMPOSER_SELECT_NORMAL_ROLE) {
+    return {
+      button: els.normalRoleMenuButton,
+      list: els.normalRoleMenuList,
+      menu: els.normalRoleMenu,
+      metaEl: els.normalRoleMenuMeta,
+      select: els.normalRoleSelect,
+      valueEl: els.normalRoleMenuValue,
+    };
+  }
+  return {
+    button: els.normalModelMenuButton,
+    list: els.normalModelMenuList,
+    menu: els.normalModelMenu,
+    metaEl: els.normalModelMenuMeta,
+    select: els.normalModelSelect,
+    valueEl: els.normalModelMenuValue,
+  };
+}
+
+function buildComposerSelectMenuItems(kind, options, selectedValue) {
+  if (!Array.isArray(options) || options.length === 0) {
+    return "";
+  }
+  return options
+    .map((option, index) => {
+      const disabled = option.disabled === true;
+      const selected = option.value === selectedValue;
+      const className = [
+        "composer-select-option",
+        selected ? "is-selected" : "",
+        disabled ? "is-disabled" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const meta = option.meta
+        ? `<span class="composer-select-option-meta">${escapeHtml(option.meta)}</span>`
+        : "";
+      const disabledAttrs = disabled
+        ? ' disabled data-disabled="true"'
+        : "";
+      return `
+        <button
+          type="button"
+          class="${className}"
+          id="${escapeHtml(kind)}-option-${index}"
+          role="option"
+          aria-selected="${selected ? "true" : "false"}"
+          data-composer-select-option="${escapeHtml(kind)}"
+          data-value="${escapeHtml(option.value)}"
+          data-index="${index}"
+          ${disabledAttrs}
+        >
+          <span class="composer-select-option-copy">
+            <span class="composer-select-option-label">${escapeHtml(option.label)}</span>
+            ${meta}
+          </span>
+          <span class="composer-select-option-check" aria-hidden="true">${selected ? "&#10003;" : ""}</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function createComposerMenuOption(value, label, { meta = "", disabled = false } = {}) {
+  return {
+    disabled,
+    label: String(label || ""),
+    meta: String(meta || ""),
+    value: String(value || ""),
+  };
+}
+
+function findFirstEnabledComposerOptionIndex(options) {
+  return options.findIndex((option) => option.disabled !== true);
+}
+
+function findLastEnabledComposerOptionIndex(options) {
+  for (let index = options.length - 1; index >= 0; index -= 1) {
+    if (options[index]?.disabled !== true) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function bindComposerDisabledReasonTooltip() {
+  if (composerDisabledTooltipBound || typeof document.addEventListener !== "function") {
+    return;
+  }
+  composerDisabledTooltipBound = true;
+  document.addEventListener("mousemove", handleComposerDisabledReasonPointer, true);
+  document.addEventListener("focusin", handleComposerDisabledReasonFocus, true);
+  document.addEventListener("focusout", hideComposerDisabledReasonTooltip, true);
+  document.addEventListener("scroll", hideComposerDisabledReasonTooltip, true);
+}
+
+function handleComposerDisabledReasonPointer(event) {
+  const target = findComposerDisabledReasonTarget(event);
+  if (!target) {
+    hideComposerDisabledReasonTooltip();
+    return;
+  }
+  showComposerDisabledReasonTooltip(target);
+}
+
+function handleComposerDisabledReasonFocus(event) {
+  const target = findComposerDisabledReasonElement(event?.target);
+  if (!target) {
+    hideComposerDisabledReasonTooltip();
+    return;
+  }
+  showComposerDisabledReasonTooltip(target);
+}
+
+function findComposerDisabledReasonTarget(event) {
+  const doc = globalThis.document;
+  let target = event?.target || null;
+  if (
+    doc &&
+    typeof doc.elementFromPoint === "function" &&
+    Number.isFinite(event?.clientX) &&
+    Number.isFinite(event?.clientY)
+  ) {
+    target = doc.elementFromPoint(event.clientX, event.clientY) || target;
+  }
+  return findComposerDisabledReasonElement(target);
+}
+
+function findComposerDisabledReasonElement(target) {
+  const element = findClosestElementWithAttribute(target, "data-disabled-reason");
+  if (!element || !containsNode(els.sessionModeLock, element)) {
+    return null;
+  }
+  return element;
+}
+
+function findClosestElementWithAttribute(target, attributeName) {
+  if (!target) {
+    return null;
+  }
+  if (
+    typeof target.getAttribute === "function" &&
+    String(target.getAttribute(attributeName) || "").trim()
+  ) {
+    return target;
+  }
+  if (typeof target.closest !== "function") {
+    return null;
+  }
+  return target.closest(`[${attributeName}]`);
+}
+
+function showComposerDisabledReasonTooltip(target) {
+  const message = String(target?.getAttribute?.("data-disabled-reason") || "").trim();
+  if (!message) {
+    hideComposerDisabledReasonTooltip();
+    return;
+  }
+  const tooltip = ensureComposerDisabledReasonTooltip();
+  if (!tooltip) {
+    return;
+  }
+  tooltip.textContent = message;
+  tooltip.hidden = false;
+  tooltip.style.display = "block";
+  positionComposerDisabledReasonTooltip(tooltip, target);
+}
+
+function ensureComposerDisabledReasonTooltip() {
+  if (composerDisabledTooltipEl?.isConnected) {
+    return composerDisabledTooltipEl;
+  }
+  if (typeof document.createElement !== "function" || !document.body) {
+    return null;
+  }
+  const tooltip = document.createElement("div");
+  tooltip.className = "composer-disabled-tooltip";
+  tooltip.setAttribute("role", "tooltip");
+  tooltip.hidden = true;
+  document.body.appendChild(tooltip);
+  composerDisabledTooltipEl = tooltip;
+  return tooltip;
+}
+
+function positionComposerDisabledReasonTooltip(tooltip, target) {
+  if (
+    !tooltip ||
+    !target ||
+    typeof target.getBoundingClientRect !== "function"
+  ) {
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const viewportWidth = Number(window.innerWidth || document.documentElement?.clientWidth || 0);
+  const viewportHeight = Number(window.innerHeight || document.documentElement?.clientHeight || 0);
+  const margin = 8;
+  const gap = 8;
+  const tooltipWidth = Number(tooltip.offsetWidth || 0);
+  const tooltipHeight = Number(tooltip.offsetHeight || 0);
+  const preferredLeft = rect.left + rect.width / 2 - tooltipWidth / 2;
+  const maxLeft = Math.max(margin, viewportWidth - tooltipWidth - margin);
+  const left = Math.min(Math.max(margin, preferredLeft), maxLeft);
+  const aboveTop = rect.top - tooltipHeight - gap;
+  const belowTop = rect.bottom + gap;
+  const top = aboveTop >= margin || belowTop + tooltipHeight > viewportHeight
+    ? Math.max(margin, aboveTop)
+    : belowTop;
+  tooltip.style.left = `${Math.round(left)}px`;
+  tooltip.style.top = `${Math.round(top)}px`;
+}
+
+function hideComposerDisabledReasonTooltip() {
+  if (!composerDisabledTooltipEl) {
+    return;
+  }
+  composerDisabledTooltipEl.hidden = true;
+  composerDisabledTooltipEl.style.display = "none";
 }
 
 async function handleTopologyModeChange(nextMode) {
@@ -1229,6 +1880,174 @@ async function persistSessionTopology(
   }
 }
 
+async function persistSessionNormalModelProfile(modelProfile) {
+  const normalizedProfile = String(modelProfile || "").trim();
+  if (!state.currentSessionId) {
+    if (isNewSessionDraftActive()) {
+      state.currentNormalModelProfile = normalizedProfile || null;
+      refreshSessionTopologyControls();
+    }
+    return;
+  }
+  const sessionId = state.currentSessionId;
+  const requestId = normalModelProfileSaveRequestId + 1;
+  normalModelProfileSaveRequestId = requestId;
+  const savePromise = (async () => {
+    try {
+      const updated = await updateSessionNormalModelProfile(
+        sessionId,
+        normalizedProfile || null,
+      );
+      if (
+        state.currentSessionId !== sessionId ||
+        normalModelProfileSaveRequestId !== requestId
+      ) {
+        return { ok: true };
+      }
+      applyCurrentSessionRecord(updated);
+      refreshSessionTopologyControls();
+      sysLog(
+        normalizedProfile
+          ? formatMessage("composer.log.model_updated", {
+              model: normalizedProfile,
+            })
+          : t("composer.log.model_reset"),
+      );
+      return { ok: true };
+    } catch (error) {
+      if (
+        state.currentSessionId !== sessionId ||
+        normalModelProfileSaveRequestId !== requestId
+      ) {
+        return { ok: true };
+      }
+      const message =
+        error?.message ||
+        String(error || "").trim() ||
+        t("composer.error.model_update_failed");
+      refreshSessionTopologyControls();
+      showToast({
+        title: t("composer.toast.model_update_failed_title"),
+        message,
+        tone: "danger",
+      });
+      return { ok: false, message };
+    }
+  })();
+  normalModelProfileSavePromise = savePromise;
+  await savePromise;
+}
+
+async function flushPendingNormalModelProfileSave() {
+  if (!normalModelProfileSavePromise) {
+    return;
+  }
+  const pending = normalModelProfileSavePromise;
+  const result = await pending;
+  if (normalModelProfileSavePromise === pending) {
+    normalModelProfileSavePromise = null;
+  }
+  return result;
+}
+
+function syncSessionModeButtonTitles({
+  canSwitch,
+  modeSwitchDisabledReason,
+  orchestrationDisabled,
+  orchestrationDisabledReason,
+}) {
+  syncSessionModeButtonDescription(
+    els.sessionModeNormalBtn,
+    t("composer.mode_normal"),
+    canSwitch ? "" : modeSwitchDisabledReason,
+  );
+  syncSessionModeButtonDescription(
+    els.sessionModeOrchestrationBtn,
+    t("composer.mode_orchestration"),
+    orchestrationDisabled ? orchestrationDisabledReason : "",
+  );
+}
+
+function syncSessionModeButtonDescription(element, label, disabledReason) {
+  if (!element) {
+    return;
+  }
+  clearElementTitle(element);
+  const safeLabel = String(label || "").trim();
+  const safeReason = String(disabledReason || "").trim();
+  setElementAttribute(
+    element,
+    "aria-label",
+    safeReason ? `${safeLabel}. ${safeReason}` : safeLabel,
+  );
+  if (safeReason) {
+    setElementAttribute(element, "data-disabled-reason", safeReason);
+    return;
+  }
+  removeElementAttribute(element, "data-disabled-reason");
+}
+
+function clearElementTitle(element) {
+  setElementTitle(element, "");
+  removeElementAttribute(element, "data-i18n-title");
+}
+
+function setElementTitle(element, title) {
+  if (!element) {
+    return;
+  }
+  const safeTitle = String(title || "");
+  element.title = safeTitle;
+  if (safeTitle) {
+    setElementAttribute(element, "title", safeTitle);
+    return;
+  }
+  removeElementAttribute(element, "title");
+}
+
+function setElementAttribute(element, name, value) {
+  if (!element || typeof element.setAttribute !== "function") {
+    return;
+  }
+  element.setAttribute(name, String(value));
+}
+
+function removeElementAttribute(element, name) {
+  if (!element || typeof element.removeAttribute !== "function") {
+    return;
+  }
+  element.removeAttribute(name);
+}
+
+function resolveModeSwitchDisabledReason({ canSwitch }) {
+  if (!state.currentSessionId && !isNewSessionDraftActive()) {
+    return t("composer.session_mode_title");
+  }
+  if (state.isGenerating) {
+    return t("composer.disabled.active_run");
+  }
+  if (!canSwitch) {
+    return t("composer.disabled.started_session");
+  }
+  return "";
+}
+
+function resolveNormalRoleDisabledReason({ canSwitch, hasNormalModeRoles }) {
+  if (!hasNormalModeRoles) {
+    return t("composer.no_roles");
+  }
+  if (!state.currentSessionId && !isNewSessionDraftActive()) {
+    return t("composer.disabled.no_session_role");
+  }
+  if (state.isGenerating) {
+    return t("composer.disabled.active_run_role");
+  }
+  if (!canSwitch) {
+    return t("composer.disabled.started_session_role");
+  }
+  return "";
+}
+
 function resolveTopologyDisabledReason({ canSwitch, hasPresets }) {
   if (!state.currentSessionId && !isNewSessionDraftActive()) {
     return t("composer.session_mode_title");
@@ -1289,19 +2108,93 @@ function resolveSelectedNormalRoleId() {
   return String(roles[0]?.role_id || "").trim();
 }
 
-function buildNormalRoleOptions(selectedRoleId) {
+function resolveSelectedNormalModelProfile() {
+  return String(state.currentNormalModelProfile || "").trim();
+}
+
+function getNormalRoleMenuOptions(selectedRoleId) {
   const roles = getNormalModeRoles();
   if (roles.length === 0) {
-    return `<option value="">${escapeHtml(t("composer.no_roles"))}</option>`;
+    return [
+      createComposerMenuOption("", t("composer.no_roles"), {
+        disabled: true,
+      }),
+    ];
   }
+  const selected = String(selectedRoleId || "").trim();
   return roles
     .map((role) => {
       const roleId = String(role?.role_id || "").trim();
-      const name = String(role?.name || roleId || "Role");
-      const selected = roleId === selectedRoleId ? " selected" : "";
-      return `<option value="${escapeHtml(roleId)}"${selected}>${escapeHtml(name)}</option>`;
+      const label = String(role?.name || roleId || "Role").trim();
+      if (!roleId) {
+        return null;
+      }
+      return {
+        ...createComposerMenuOption(roleId, label || roleId, {
+          meta: roleId !== label ? roleId : "",
+        }),
+        selected: roleId === selected,
+      };
     })
+    .filter(Boolean);
+}
+
+function buildNormalRoleOptions(selectedRoleId) {
+  return getNormalRoleMenuOptions(selectedRoleId)
+    .map((option) => buildNativeSelectOption(option, selectedRoleId))
     .join("");
+}
+
+function getNormalModelMenuOptions(selectedModelProfile) {
+  const selectedProfile = String(selectedModelProfile || "").trim();
+  const profileNames = new Set(normalModelProfiles.map((profile) => profile.name));
+  const options = [
+    {
+      ...createComposerMenuOption("", t("composer.model_role_default")),
+      nativeLabel: t("composer.model_role_default"),
+      selected: selectedProfile === "",
+    },
+  ];
+  for (const profile of normalModelProfiles) {
+    options.push(
+      {
+        ...createComposerMenuOption(profile.name, profile.name, {
+          meta: profile.modelName,
+        }),
+        nativeLabel: profile.label,
+        selected: profile.name === selectedProfile,
+      },
+    );
+  }
+  if (selectedProfile && !profileNames.has(selectedProfile)) {
+    options.push(
+      {
+        ...createComposerMenuOption(
+          selectedProfile,
+          formatMessage("composer.model_missing", { model: selectedProfile }),
+        ),
+        nativeLabel: formatMessage("composer.model_missing", {
+          model: selectedProfile,
+        }),
+        selected: true,
+      },
+    );
+  }
+  return options;
+}
+
+function buildNormalModelOptions(selectedModelProfile) {
+  return getNormalModelMenuOptions(selectedModelProfile)
+    .map((option) => buildNativeSelectOption(option, selectedModelProfile))
+    .join("");
+}
+
+function buildNativeSelectOption(option, selectedValue) {
+  const selected =
+    String(option.value || "") === String(selectedValue || "") ? " selected" : "";
+  const disabled = option.disabled === true ? " disabled" : "";
+  const label = String(option.nativeLabel || option.label || "");
+  return `<option value="${escapeHtml(option.value)}"${selected}${disabled}>${escapeHtml(label)}</option>`;
 }
 
 function buildPresetOptions(selectedPresetId) {
@@ -1327,8 +2220,15 @@ function resolveMissingPresetMessage() {
 
 function syncSessionTopologyFieldVisibility(mode) {
   const safeMode = mode === "orchestration" ? "orchestration" : "normal";
+  const showNormalControls = safeMode === "normal";
+  if (els.normalRouteControls) {
+    els.normalRouteControls.hidden = !showNormalControls;
+    els.normalRouteControls.style.display = showNormalControls
+      ? "inline-flex"
+      : "none";
+  }
   if (els.normalRoleField) {
-    const showNormalRole = safeMode === "normal";
+    const showNormalRole = showNormalControls;
     els.normalRoleField.hidden = !showNormalRole;
     els.normalRoleField.style.display = showNormalRole ? "inline-flex" : "none";
   }
@@ -1339,6 +2239,68 @@ function syncSessionTopologyFieldVisibility(mode) {
       ? "inline-flex"
       : "none";
   }
+  if (els.normalModelField) {
+    const showModel = showNormalControls;
+    els.normalModelField.hidden = !showModel;
+    els.normalModelField.style.display = showModel ? "inline-flex" : "none";
+  }
+}
+
+function normalizeModelProfileOptions(profiles) {
+  const entries = profiles && typeof profiles === "object"
+    ? Object.entries(profiles)
+    : [];
+  return entries
+    .map(([name, profile]) => {
+      const profileName = String(name || "").trim();
+      const modelName = String(profile?.model || "").trim();
+      return {
+        inputModalities: normalizeModelProfileInputModalities(profile),
+        name: profileName,
+        label: modelName ? `${profileName} - ${modelName}` : profileName,
+        modelName,
+      };
+    })
+    .filter((profile) => profile.name)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function normalizeModelProfileInputModalities(profile) {
+  const rawInputModalities = profile?.input_modalities;
+  if (Array.isArray(rawInputModalities)) {
+    return normalizeInputModalities(rawInputModalities);
+  }
+  const capabilities =
+    profile?.resolved_capabilities && typeof profile.resolved_capabilities === "object"
+      ? profile.resolved_capabilities
+      : profile?.capabilities && typeof profile.capabilities === "object"
+        ? profile.capabilities
+        : null;
+  if (
+    !capabilities ||
+    !capabilities.input ||
+    typeof capabilities.input !== "object"
+  ) {
+    return null;
+  }
+  const input = capabilities.input;
+  const modalities = [];
+  let hasMediaSignal = false;
+  for (const modality of ["image", "audio", "video"]) {
+    if (input[modality] === true) {
+      modalities.push(modality);
+      hasMediaSignal = true;
+    } else if (input[modality] === false) {
+      hasMediaSignal = true;
+    }
+  }
+  return hasMediaSignal ? modalities : null;
+}
+
+function normalizeInputModalities(inputModalities) {
+  return inputModalities
+    .map((modality) => String(modality || "").trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function normalizeOrchestrationConfig(config) {

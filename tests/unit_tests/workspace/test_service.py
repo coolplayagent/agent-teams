@@ -1285,6 +1285,213 @@ def test_workspace_service_rejects_non_image_preview_file(tmp_path: Path) -> Non
         )
 
 
+@pytest.mark.asyncio
+async def test_workspace_service_returns_text_file_content(tmp_path: Path) -> None:
+    root_path = tmp_path / "workspace-root"
+    file_path = root_path / "docker" / "eval-entrypoint.sh"
+    file_path.parent.mkdir(parents=True)
+    expected_content = '#!/bin/sh\nexec "$@"\n'
+    file_path.write_bytes(expected_content.encode("utf-8"))
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    content = await service.get_workspace_file_content_async(
+        "project-alpha",
+        path="docker/eval-entrypoint.sh",
+    )
+
+    assert content.workspace_id == "project-alpha"
+    assert content.mount_name == "default"
+    assert content.path == "docker/eval-entrypoint.sh"
+    assert content.content == expected_content
+    assert content.encoding == "utf-8"
+    assert content.is_binary is False
+    assert content.truncated is False
+    assert content.size_bytes == len(expected_content.encode("utf-8"))
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_file_content_respects_readable_paths(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    allowed_file = root_path / "allowed" / "visible.txt"
+    private_file = root_path / "private" / "secret.txt"
+    allowed_file.parent.mkdir(parents=True)
+    private_file.parent.mkdir(parents=True)
+    allowed_file.write_bytes(b"visible\n")
+    private_file.write_bytes(b"secret\n")
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        mounts=(
+            build_local_workspace_mount(
+                mount_name="default",
+                root_path=root_path,
+                readable_paths=("allowed",),
+                writable_paths=("allowed",),
+            ),
+        ),
+        default_mount_name="default",
+    )
+
+    content = await service.get_workspace_file_content_async(
+        "project-alpha",
+        path="allowed/visible.txt",
+    )
+
+    assert content.content == "visible\n"
+    with pytest.raises(ValueError, match="outside readable paths"):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="private/secret.txt",
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_directory_file_content(tmp_path: Path) -> None:
+    root_path = tmp_path / "workspace-root"
+    (root_path / "src").mkdir(parents=True)
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    with pytest.raises(ValueError, match="not a file"):
+        _ = await service.get_workspace_file_content_async("project-alpha", path="src")
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_missing_file_content(tmp_path: Path) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    with pytest.raises(FileNotFoundError, match="not found"):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="missing.txt",
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_file_content_path_escape(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    outside_path = tmp_path / "outside.txt"
+    root_path.mkdir()
+    outside_path.write_text("outside\n", encoding="utf-8")
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    with pytest.raises(ValueError, match="escapes root"):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="../outside.txt",
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_returns_binary_file_content_state(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    file_path = root_path / "artifact.bin"
+    root_path.mkdir()
+    file_path.write_bytes(b"abc\0def")
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    content = await service.get_workspace_file_content_async(
+        "project-alpha",
+        path="artifact.bin",
+    )
+
+    assert content.content == ""
+    assert content.encoding == "binary"
+    assert content.is_binary is True
+    assert content.size_bytes == 7
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_truncates_large_file_content(tmp_path: Path) -> None:
+    root_path = tmp_path / "workspace-root"
+    file_path = root_path / "large.txt"
+    root_path.mkdir()
+    file_path.write_text("a" * (600 * 1024), encoding="utf-8")
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    content = await service.get_workspace_file_content_async(
+        "project-alpha",
+        path="large.txt",
+    )
+
+    assert content.truncated is True
+    assert len(content.content) == 512 * 1024
+    assert content.size_bytes == 600 * 1024
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_truncates_utf8_preview_on_character_boundary(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    file_path = root_path / "large.txt"
+    root_path.mkdir()
+    preview_limit = 512 * 1024
+    file_path.write_bytes((b"a" * (preview_limit - 1)) + "中".encode("utf-8"))
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    content = await service.get_workspace_file_content_async(
+        "project-alpha",
+        path="large.txt",
+    )
+
+    assert content.is_binary is False
+    assert content.encoding == "utf-8"
+    assert content.truncated is True
+    assert content.content == "a" * (preview_limit - 1)
+
+
 def test_workspace_service_returns_git_diffs_separately(tmp_path: Path) -> None:
     root_path = tmp_path / "workspace-root"
     (root_path / "src").mkdir(parents=True)

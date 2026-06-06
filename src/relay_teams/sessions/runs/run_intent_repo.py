@@ -52,6 +52,7 @@ _RUN_INTENT_SELECT_COLUMNS = """
     thinking_enabled,
     thinking_effort,
     target_role_id,
+    normal_model_profile,
     skills_json,
     session_mode,
     topology_json,
@@ -73,6 +74,7 @@ _RUN_INTENT_UPSERT_SQL = """
         thinking_enabled,
         thinking_effort,
         target_role_id,
+        normal_model_profile,
         skills_json,
         session_mode,
         topology_json,
@@ -80,7 +82,7 @@ _RUN_INTENT_UPSERT_SQL = """
         created_at,
         updated_at
     )
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(run_id)
     DO UPDATE SET
         session_id=excluded.session_id,
@@ -96,6 +98,7 @@ _RUN_INTENT_UPSERT_SQL = """
         thinking_enabled=excluded.thinking_enabled,
         thinking_effort=excluded.thinking_effort,
         target_role_id=excluded.target_role_id,
+        normal_model_profile=excluded.normal_model_profile,
         skills_json=excluded.skills_json,
         session_mode=excluded.session_mode,
         topology_json=excluded.topology_json,
@@ -128,6 +131,7 @@ class RunIntentRepository(SharedSqliteRepository):
                     thinking_enabled TEXT NOT NULL DEFAULT 'false',
                     thinking_effort TEXT,
                     target_role_id TEXT,
+                    normal_model_profile TEXT,
                     skills_json TEXT,
                     session_mode TEXT NOT NULL DEFAULT 'normal',
                     topology_json TEXT,
@@ -188,6 +192,10 @@ class RunIntentRepository(SharedSqliteRepository):
             if "target_role_id" not in columns:
                 self._conn.execute(
                     "ALTER TABLE run_intents ADD COLUMN target_role_id TEXT"
+                )
+            if "normal_model_profile" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE run_intents ADD COLUMN normal_model_profile TEXT"
                 )
             if "skills_json" not in columns:
                 self._conn.execute(
@@ -610,6 +618,7 @@ def _run_intent_upsert_params(
         "true" if intent.thinking.enabled else "false",
         intent.thinking.effort,
         intent.target_role_id,
+        intent.normal_model_profile,
         (
             json.dumps(tuple(intent.skills), ensure_ascii=False)
             if intent.skills is not None
@@ -657,6 +666,7 @@ def _intent_input_from_row(
             effort=_coerce_thinking_effort(row["thinking_effort"]),
         ),
         target_role_id=normalize_persisted_text(row["target_role_id"]),
+        normal_model_profile=normalize_persisted_text(row["normal_model_profile"]),
         skills=_coerce_skills(row["skills_json"]),
         session_mode=SessionMode(str(row["session_mode"] or "normal")),
         topology=_coerce_topology(row["topology_json"]),

@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from hashlib import sha256
 import json
+import logging
 from threading import Lock
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,7 @@ from relay_teams.providers.provider_contracts import (
     MisconfiguredProvider,
 )
 from relay_teams.providers.model_config import ModelEndpointConfig
+from relay_teams.providers.model_profile_names import resolve_model_profile_reference
 from relay_teams.providers.model_fallback import (
     DisabledLlmFallbackMiddleware,
     LlmFallbackMiddleware,
@@ -75,9 +77,12 @@ from relay_teams.tools.workspace_tools.shell_approval_repo import (
 )
 from relay_teams.workspace import WorkspaceManager
 from relay_teams.hooks import HookService
+from relay_teams.logger import get_logger, log_event
 
 if TYPE_CHECKING:
     from relay_teams.gateway.im.service import ImToolService
+
+LOGGER = get_logger(__name__)
 
 
 def create_provider_factory(
@@ -187,6 +192,11 @@ def create_provider_factory(
         profile_name_to_use = resolve_model_profile_name(
             runtime=runtime_to_use,
             profile_name=role.model_profile,
+        )
+        _log_missing_model_profile_fallback(
+            role=role,
+            session_id=session_id,
+            runtime=runtime_to_use,
         )
         if config_to_use is None:
             return MisconfiguredProvider(
@@ -321,7 +331,15 @@ def resolve_model_profile_config(
     runtime: RuntimeConfig,
     profile_name: str,
 ) -> ModelEndpointConfig | None:
-    normalized_name = profile_name.strip()
+    normalized_name, is_explicit_reference = resolve_model_profile_reference(
+        profile_name
+    )
+    if is_explicit_reference:
+        if normalized_name in runtime.llm_profiles:
+            return runtime.llm_profiles[normalized_name]
+        if runtime.default_model_profile is None:
+            return None
+        return runtime.llm_profiles.get(runtime.default_model_profile)
     if normalized_name == "default":
         default_profile_name = runtime.default_model_profile
         if default_profile_name is None:
@@ -339,9 +357,44 @@ def resolve_model_profile_name(
     runtime: RuntimeConfig,
     profile_name: str,
 ) -> str | None:
-    normalized_name = profile_name.strip()
+    normalized_name, is_explicit_reference = resolve_model_profile_reference(
+        profile_name
+    )
+    if is_explicit_reference:
+        if normalized_name in runtime.llm_profiles:
+            return normalized_name
+        return runtime.default_model_profile
     if normalized_name == "default":
         return runtime.default_model_profile
     if normalized_name in runtime.llm_profiles:
         return normalized_name
     return runtime.default_model_profile
+
+
+def _log_missing_model_profile_fallback(
+    *,
+    role: RoleDefinition,
+    session_id: str | None,
+    runtime: RuntimeConfig,
+) -> None:
+    requested_profile, is_explicit_reference = resolve_model_profile_reference(
+        str(role.model_profile or "")
+    )
+    if not requested_profile:
+        return
+    if requested_profile == "default" and not is_explicit_reference:
+        return
+    if requested_profile in runtime.llm_profiles:
+        return
+    log_event(
+        LOGGER,
+        logging.WARNING,
+        event="providers.model_profile_missing",
+        message="Requested model profile is missing; falling back to default model profile",
+        payload={
+            "role_id": role.role_id,
+            "session_id": session_id,
+            "requested_profile": requested_profile,
+            "fallback_profile": runtime.default_model_profile,
+        },
+    )

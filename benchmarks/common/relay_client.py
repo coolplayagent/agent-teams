@@ -151,7 +151,7 @@ class RelayTeamsHttpClient:
             return None
         response = client.post(
             "/api/workspaces/pick",
-            json={"root_path": str(self._config.workspace_path)},
+            json={"root_path": self._config.workspace_path.as_posix()},
         )
         response.raise_for_status()
         body = _json_object(response.json(), "/api/workspaces/pick")

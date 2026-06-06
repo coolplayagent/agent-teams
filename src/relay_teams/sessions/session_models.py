@@ -246,6 +246,7 @@ class SessionRecord(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
     session_mode: SessionMode = SessionMode.NORMAL
     normal_root_role_id: OptionalIdentifierStr = None
+    normal_model_profile: OptionalIdentifierStr = None
     orchestration_preset_id: OptionalIdentifierStr = None
     started_at: datetime | None = None
     can_switch_mode: bool = True

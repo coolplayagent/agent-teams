@@ -1485,6 +1485,7 @@ Request:
 {
   "session_id": null,
   "workspace_id": "default",
+  "normal_model_profile": null,
   "metadata": {
     "title": "Customer Support",
     "source_label": "Group Chat",
@@ -1497,6 +1498,7 @@ Request:
 Notes:
 - New sessions default to `session_mode = "normal"`.
 - New sessions default to `normal_root_role_id = "MainAgent"`.
+- `normal_model_profile` is optional. `null` or omission means "role default"; a non-empty value must name an existing model profile.
 - New sessions also store the current default orchestration preset id so they can be switched to orchestration before the first run.
 - Omitting `session_id` or sending `session_id = null` auto-generates a session id. Sending `"None"` or `"null"` as a string is rejected with `422`.
 - `metadata` uses the same explicit fields as session metadata updates: `title`, `title_source`, `source_label`, `source_icon`, and `custom_metadata`.
@@ -1517,6 +1519,7 @@ Gets one session.
 Response fields also include:
 - `session_mode`
 - `normal_root_role_id`
+- `normal_model_profile`
 - `orchestration_preset_id`
 - `started_at`
 - `can_switch_mode`
@@ -1568,6 +1571,24 @@ Rules:
 - `normal_root_role_id` may be `MainAgent` or any non-system role. `Coordinator` is rejected.
 - `orchestration_preset_id` is required when `session_mode = "orchestration"`.
 - `orchestration_preset_id` is ignored when `session_mode = "normal"`.
+
+### `PATCH /sessions/{session_id}/normal-model-profile`
+
+Updates the model profile override used by normal-mode runs in this session.
+
+Request:
+
+```json
+{
+  "normal_model_profile": "precise"
+}
+```
+
+Rules:
+- Sending `null` clears the override and returns to the selected role's default model.
+- A non-empty value must name an existing model profile or the endpoint returns `422`.
+- The value is only applied to normal-mode root runs and `@Role` targets. Orchestration mode and normal-mode subagents continue to use their configured role models.
+- Existing persisted values that later point at a missing profile do not block run creation; provider construction logs a warning and falls back through the existing provider defaults.
 
 ### `DELETE /sessions/{session_id}`
 
@@ -3431,6 +3452,27 @@ The response includes:
 Rules:
 - `path` must be a relative workspace path and must match one file currently reported by `/diffs`.
 - Binary files are reported with `is_binary = true` and a summary diff message instead of inline text hunks.
+
+### `GET /workspaces/{workspace_id}/file?path=...`
+
+Returns a bounded read-only text preview for one workspace file.
+
+Response fields:
+- `workspace_id`
+- `mount_name`
+- `path`
+- `content`
+- `encoding`
+- `is_binary`
+- `truncated`
+- `size_bytes`
+
+Notes:
+- `path` may be a relative workspace path or an absolute path inside the workspace root.
+- Paths that escape the workspace root are rejected.
+- Directories and missing files are rejected.
+- Local mounts return UTF-8 text content up to the preview limit. Larger text files return `truncated = true`.
+- Binary files return `is_binary = true`, `encoding = "binary"`, and empty `content`.
 
 ### `GET /workspaces/{workspace_id}/preview-file?path=...`
 

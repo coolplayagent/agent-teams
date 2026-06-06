@@ -97,7 +97,7 @@
     margin-top: 12px;
     gap: 16px;
     height: 36px;
-    overflow: hidden;
+    overflow: visible;
 }
 
 #input-container.is-new-session-draft-composer .composer-topology {
@@ -123,6 +123,18 @@
 
 #input-container.is-new-session-draft-composer .composer-preset-select {
     width: clamp(132px, 12vw, 220px);
+}
+
+#input-container.is-new-session-draft-composer .composer-model-select {
+    width: clamp(124px, 11vw, 190px);
+}
+
+#input-container.is-new-session-draft-composer .composer-select {
+    width: clamp(132px, 12vw, 220px);
+}
+
+#input-container.is-new-session-draft-composer .composer-model-select-menu {
+    width: clamp(124px, 11vw, 190px);
 }
 
 @media (min-width: 1800px) {
@@ -228,6 +240,21 @@
 
     #input-container.is-new-session-draft-composer .composer-topology {
         flex-basis: 100%;
+    }
+
+    #input-container.is-new-session-draft-composer .composer-normal-route {
+        flex: 1 1 100%;
+    }
+
+    #input-container.is-new-session-draft-composer #normal-role-field,
+    #input-container.is-new-session-draft-composer .composer-model-field {
+        flex: 1 1 0;
+    }
+
+    #input-container.is-new-session-draft-composer .composer-select,
+    #input-container.is-new-session-draft-composer .composer-model-select-menu {
+        width: 100%;
+        max-width: none;
     }
 
     #input-container.is-new-session-draft-composer .composer-mode-toggle[for="yolo-toggle"] {

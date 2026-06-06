@@ -24,6 +24,7 @@ from relay_teams.roles.role_models import RoleConfigSource, RoleDefinition, Role
 
 MAIN_AGENT_ROLE_ID = "MainAgent"
 MAIN_AGENT_IDENTIFIERS = frozenset(("mainagent", "main agent", "main_agent"))
+NORMAL_MODE_EXCLUDED_ROLE_IDS = frozenset(("DelegationPlanner",))
 LOGGER = get_logger(__name__)
 
 
@@ -427,7 +428,11 @@ def ensure_required_system_roles(registry: RoleRegistry) -> None:
 
 
 def _role_available_in_normal_mode(role: RoleDefinition) -> bool:
-    return role.mode in {RoleMode.PRIMARY, RoleMode.ALL}
+    return role.role_id not in NORMAL_MODE_EXCLUDED_ROLE_IDS and role.mode in {
+        RoleMode.PRIMARY,
+        RoleMode.SUBAGENT,
+        RoleMode.ALL,
+    }
 
 
 def _role_available_as_subagent(role: RoleDefinition) -> bool:

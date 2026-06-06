@@ -2302,6 +2302,7 @@ function bindProjectCard(card, group) {
     card.querySelector('.project-title-btn')?.addEventListener('click', async event => {
         event?.stopPropagation?.();
         cancelPendingSessionSelection(`workspace:${projectId}`);
+        const originSessionId = String(state.currentSessionId || '').trim();
         if (state.currentSessionId || state.pendingNewSessionActive || state.activeEventSource) {
             clearActiveSessionView();
         }
@@ -2309,7 +2310,7 @@ function bindProjectCard(card, group) {
         state.activeSubagentSession = null;
         clearFeatureNavigationState();
         clearSessionNavigationState();
-        await openWorkspaceProjectView(group.workspace);
+        await openWorkspaceProjectView(group.workspace, { originSessionId });
         await loadProjects();
     });
     card.querySelector('.project-new-session-btn')?.addEventListener('click', event => {

@@ -127,6 +127,7 @@ const SKILLS_MARKET_DETAIL_CACHE_MAX_ENTRIES = 20;
 let currentWorkspace = null;
 let lastKnownWorkspaceId = '';
 let currentAutomationProject = null;
+let projectViewOriginSessionId = null;
 let currentProjectViewMode = 'workspace';
 let currentFeatureViewId = '';
 let currentAutomationProjects = [];
@@ -161,15 +162,19 @@ let selectedTreePath = null;
 let currentWorkspaceSurfaceMode = 'files';
 let currentWorkspaceSurfaceModeLocked = false;
 let currentWorkspaceTreeFilter = '';
-let currentChangeFilter = 'unstaged';
 let currentDiffState = createInitialDiffState();
 let currentFileState = createInitialFileState();
 const currentMountTrees = new Map();
 const expandedTreePaths = new Set();
+const expandedDiffContextKeys = new Set();
+const diffVisibleLineCounts = new Map();
 const loadingTreePaths = new Set();
 const treeLoadErrors = new Map();
 const workspaceFileCache = new Map();
 const workspaceViewCache = new Map();
+let workspaceSidebarWidth = 300;
+const WORKSPACE_AUTO_HIGHLIGHT_MAX_LINES = 240;
+const WORKSPACE_AUTO_HIGHLIGHT_MAX_CHARS = 32 * 1024;
 const skillsMarketCache = new Map();
 const skillsMarketDetailCache = new Map();
 let skillsMarketCacheStorageLoaded = false;
@@ -218,6 +223,14 @@ const XIAOLUBAN_NO_WORKSPACES_VALUE = '__no_xiaoluban_notification_workspaces__'
 const XIAOLUBAN_ALL_WORKSPACES_VALUE = '__all_xiaoluban_notification_workspaces__';
 const DEFAULT_TRIGGER_RULE = 'mention_only';
 const DEFAULT_SESSION_MODE = 'normal';
+const DIFF_CONTEXT_COLLAPSE_THRESHOLD = 12;
+const DEFAULT_DIFF_RENDER_ROW_LIMIT = 700;
+const DIFF_RENDER_ROW_INCREMENT = 700;
+const WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY = 'agent-teams.workspace.sidebar-width';
+const WORKSPACE_SIDEBAR_DEFAULT_WIDTH = 300;
+const WORKSPACE_SIDEBAR_MIN_WIDTH = 220;
+const WORKSPACE_SIDEBAR_MAX_WIDTH = 560;
+const WORKSPACE_SIDEBAR_KEYBOARD_STEP = 24;
 const DEFAULT_THINKING_EFFORT = 'medium';
 const DEFAULT_AUTOMATION_TIMEZONE = 'Asia/Shanghai';
 const THINKING_EFFORT_OPTIONS = ['minimal', 'low', 'medium', 'high'];
@@ -231,6 +244,7 @@ const AUTOMATION_SCHEDULE_KINDS = Object.freeze({
     oneShot: 'one_shot',
     unsupported: 'unsupported',
 });
+workspaceSidebarWidth = readWorkspaceSidebarWidth();
 const AUTOMATION_INTERVAL_UNITS = Object.freeze({
     minutes: 'minutes',
     hours: 'hours',
@@ -4451,7 +4465,7 @@ function syncActionLabels() {
     }
 }
 
-export async function openWorkspaceProjectView(workspace) {
+export async function openWorkspaceProjectView(workspace, options = {}) {
     els.projectViewContent?.classList?.remove('is-boards-feature');
     const orderedWorkspace = normalizeWorkspaceRecordMountOrder(workspace);
     const workspaceId = String(orderedWorkspace?.workspace_id || '').trim();
@@ -4459,6 +4473,9 @@ export async function openWorkspaceProjectView(workspace) {
         return;
     }
 
+    if (Object.prototype.hasOwnProperty.call(options || {}, 'originSessionId')) {
+        rememberProjectViewOriginSession(options?.originSessionId);
+    }
     rememberLastKnownWorkspaceId(workspaceId);
     abortCurrentFeatureRequest();
     cancelSkillsFeatureAsyncWork();
@@ -4479,6 +4496,7 @@ export async function openWorkspaceProjectView(workspace) {
     hideRoundNavigator();
     setProjectViewVisible(true);
 
+    const loadToken = ++currentLoadToken;
     const restoredFromCache = restoreProjectViewState(workspaceId);
     if (restoredFromCache && currentSnapshot) {
         renderWorkspaceSnapshot(orderedWorkspace, currentSnapshot);
@@ -4497,7 +4515,6 @@ export async function openWorkspaceProjectView(workspace) {
         renderLoadingState(orderedWorkspace);
     }
 
-    const loadToken = ++currentLoadToken;
     void loadWorkspaceSnapshot(workspaceId, loadToken);
     void loadWorkspaceDiffs(workspaceId, loadToken);
 }
@@ -4921,6 +4938,7 @@ export function hideProjectView() {
     currentGatewayFeatureState = createInitialGatewayFeatureState();
     renderGatewayFeatureModal();
     resetProjectViewState(null);
+    projectViewOriginSessionId = null;
     state.currentMainView = 'session';
     state.currentProjectViewWorkspaceId = null;
     currentLoadToken += 1;
@@ -4969,6 +4987,37 @@ function notifyFeatureNavigationChanged(featureId) {
     }));
 }
 
+function rememberProjectViewOriginSession(sessionId) {
+    const safeSessionId = String(sessionId || '').trim();
+    projectViewOriginSessionId = safeSessionId || null;
+}
+
+function dispatchSelectSession(sessionId) {
+    const safeSessionId = String(sessionId || '').trim();
+    if (
+        !safeSessionId
+        || typeof CustomEvent !== 'function'
+        || typeof globalThis.document?.dispatchEvent !== 'function'
+    ) {
+        return false;
+    }
+    globalThis.document.dispatchEvent(
+        new CustomEvent('agent-teams-select-session', {
+            detail: { sessionId: safeSessionId },
+        }),
+    );
+    return true;
+}
+
+function handleProjectViewClose() {
+    const originSessionId = projectViewOriginSessionId;
+    if (dispatchSelectSession(originSessionId)) {
+        projectViewOriginSessionId = null;
+        return;
+    }
+    hideProjectView();
+}
+
 function resetProjectViewState(workspaceId) {
     currentSnapshot = null;
     currentSnapshotWorkspaceId = workspaceId;
@@ -4977,12 +5026,13 @@ function resetProjectViewState(workspaceId) {
     currentWorkspaceSurfaceMode = 'files';
     currentWorkspaceSurfaceModeLocked = false;
     currentWorkspaceTreeFilter = '';
-    currentChangeFilter = 'unstaged';
     currentDiffState = createInitialDiffState();
     currentFileState = createInitialFileState();
     workspaceFileCache.clear();
     currentMountTrees.clear();
     expandedTreePaths.clear();
+    expandedDiffContextKeys.clear();
+    diffVisibleLineCounts.clear();
     loadingTreePaths.clear();
     treeLoadErrors.clear();
 }
@@ -5026,17 +5076,17 @@ function cacheProjectViewState() {
         workspaceSurfaceMode: currentWorkspaceSurfaceMode,
         workspaceSurfaceModeLocked: currentWorkspaceSurfaceModeLocked,
         workspaceTreeFilter: currentWorkspaceTreeFilter,
-        changeFilter: currentChangeFilter,
-        fileState: cloneFileState(currentFileState),
-        fileCache: Array.from(workspaceFileCache.entries()).map(([key, file]) => [
-            String(key || ''),
-            cloneWorkspaceFile(file),
-        ]),
+        fileState: cloneFileSelectionState(currentFileState),
         mountTrees: Array.from(currentMountTrees.entries()).map(([mountName, tree]) => [
             String(mountName || '').trim(),
             cloneTreeNode(tree),
         ]),
         expandedTreePaths: Array.from(expandedTreePaths),
+        expandedDiffContextKeys: Array.from(expandedDiffContextKeys),
+        diffVisibleLineCounts: Array.from(diffVisibleLineCounts.entries()).map(([key, count]) => [
+            String(key || '').trim(),
+            Number(count) || DEFAULT_DIFF_RENDER_ROW_LIMIT,
+        ]),
         diffState: cloneDiffState(currentDiffState),
     });
 }
@@ -5054,19 +5104,8 @@ function restoreProjectViewState(workspaceId) {
     currentWorkspaceSurfaceMode = resolveWorkspaceSurfaceMode(cachedState.workspaceSurfaceMode);
     currentWorkspaceSurfaceModeLocked = cachedState.workspaceSurfaceModeLocked === true;
     currentWorkspaceTreeFilter = String(cachedState.workspaceTreeFilter || '').trim();
-    currentChangeFilter = resolveChangeFilter(cachedState.changeFilter);
     currentFileState = cloneFileState(cachedState.fileState);
     workspaceFileCache.clear();
-    for (const entry of Array.isArray(cachedState.fileCache) ? cachedState.fileCache : []) {
-        if (!Array.isArray(entry) || entry.length < 2) {
-            continue;
-        }
-        const key = String(entry[0] || '').trim();
-        const file = cloneWorkspaceFile(entry[1]);
-        if (key && file) {
-            workspaceFileCache.set(key, file);
-        }
-    }
     currentDiffState = cloneDiffState(cachedState.diffState);
     currentMountTrees.clear();
     for (const entry of Array.isArray(cachedState.mountTrees) ? cachedState.mountTrees : []) {
@@ -5085,6 +5124,22 @@ function restoreProjectViewState(workspaceId) {
         const normalizedPath = String(path || '').trim();
         if (normalizedPath) {
             expandedTreePaths.add(normalizedPath);
+        }
+    }
+    for (const key of Array.isArray(cachedState.expandedDiffContextKeys) ? cachedState.expandedDiffContextKeys : []) {
+        const normalizedKey = String(key || '').trim();
+        if (normalizedKey) {
+            expandedDiffContextKeys.add(normalizedKey);
+        }
+    }
+    for (const entry of Array.isArray(cachedState.diffVisibleLineCounts) ? cachedState.diffVisibleLineCounts : []) {
+        if (!Array.isArray(entry) || entry.length < 2) {
+            continue;
+        }
+        const key = String(entry[0] || '').trim();
+        const count = Number(entry[1]) || DEFAULT_DIFF_RENDER_ROW_LIMIT;
+        if (key) {
+            diffVisibleLineCounts.set(key, Math.max(DEFAULT_DIFF_RENDER_ROW_LIMIT, count));
         }
     }
 
@@ -5184,7 +5239,7 @@ async function loadWorkspaceDiffs(workspaceId, loadToken) {
 
 function setProjectViewVisible(visible) {
     if (els.projectView) {
-        els.projectView.style.display = visible ? 'block' : 'none';
+        els.projectView.style.display = visible ? 'flex' : 'none';
     }
     if (els.chatContainer) {
         els.chatContainer.style.display = visible ? 'none' : 'flex';
@@ -6470,6 +6525,47 @@ function writePersistentJson(storageKey, payload) {
     } catch {
         // Ignore storage quota and restricted-runtime failures.
     }
+}
+
+function clampWorkspaceSidebarWidth(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return WORKSPACE_SIDEBAR_DEFAULT_WIDTH;
+    }
+    return Math.min(
+        WORKSPACE_SIDEBAR_MAX_WIDTH,
+        Math.max(WORKSPACE_SIDEBAR_MIN_WIDTH, Math.round(numericValue)),
+    );
+}
+
+function readWorkspaceSidebarWidth() {
+    const payload = readPersistentJson(WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY);
+    return clampWorkspaceSidebarWidth(payload?.width);
+}
+
+function persistWorkspaceSidebarWidth(width) {
+    writePersistentJson(WORKSPACE_SIDEBAR_WIDTH_STORAGE_KEY, {
+        width: clampWorkspaceSidebarWidth(width),
+    });
+}
+
+function setElementStyleProperty(element, name, value) {
+    if (!element?.style) {
+        return;
+    }
+    if (typeof element.style.setProperty === 'function') {
+        element.style.setProperty(name, value);
+        return;
+    }
+    element.style[name] = value;
+}
+
+function applyWorkspaceSidebarWidth(workbench, width, resizer = null) {
+    const nextWidth = clampWorkspaceSidebarWidth(width);
+    workspaceSidebarWidth = nextWidth;
+    setElementStyleProperty(workbench, '--workspace-sidebar-width', `${nextWidth}px`);
+    const activeResizer = resizer || workbench?.querySelector?.('[data-workspace-sidebar-resizer]');
+    activeResizer?.setAttribute?.('aria-valuenow', String(nextWidth));
 }
 
 function removePersistentJson(storageKey) {
@@ -11384,7 +11480,7 @@ function renderLoadingState(workspace) {
     });
     if (els.projectViewContent) {
         els.projectViewContent.innerHTML = `
-            <div class="workspace-workbench">
+            <div class="workspace-workbench" style="--workspace-sidebar-width: ${escapeHtml(String(workspaceSidebarWidth))}px">
                 <div class="workspace-workbench-main">
                     <div class="workspace-workbench-bar">
                         <div class="workspace-mode-tabs">
@@ -11395,7 +11491,11 @@ function renderLoadingState(workspace) {
                     ${renderInlineState(t('workspace_view.loading'))}
                 </div>
                 <aside class="workspace-workbench-sidebar">
-                    ${renderInlineState(t('workspace_view.loading_tree'))}
+                    ${renderWorkspaceSidebarResizer()}
+                    <div class="workspace-sidebar-search" aria-hidden="true"></div>
+                    <div class="workspace-tree-shell">
+                        ${renderInlineState(t('workspace_view.loading_tree'))}
+                    </div>
                 </aside>
             </div>
         `;
@@ -11417,24 +11517,28 @@ function renderErrorState(workspace, error) {
 }
 
 function renderWorkspaceSnapshot(workspace, snapshot) {
-    renderToolbar(workspace, { summary: summarizeWorkspaceState(snapshot) });
+    renderToolbar(workspace, {
+        summary: summarizeWorkspaceState(snapshot),
+        titleActions: renderWorkspaceMountActions(snapshot),
+    });
     if (!els.projectViewContent) {
         return;
     }
     const activeTree = getCurrentMountTree();
 
     els.projectViewContent.innerHTML = `
-        <div class="workspace-view-layout">
-            ${renderWorkspaceMountStrip(snapshot)}
-            <div class="workspace-workbench" data-workspace-current-mode="${escapeHtml(currentWorkspaceSurfaceMode)}">
-                <div class="workspace-workbench-main">
-                    ${renderWorkspaceWorkbenchBar(snapshot)}
-                    <div class="workspace-workbench-content">
-                        ${renderWorkspaceMainContent(activeTree)}
-                    </div>
+        <div
+            class="workspace-workbench"
+            data-workspace-current-mode="${escapeHtml(currentWorkspaceSurfaceMode)}"
+            style="--workspace-sidebar-width: ${escapeHtml(String(workspaceSidebarWidth))}px"
+        >
+            <div class="workspace-workbench-main">
+                ${renderWorkspaceWorkbenchBar(snapshot)}
+                <div class="workspace-workbench-content">
+                    ${renderWorkspaceMainContent(activeTree)}
                 </div>
-                ${renderWorkspaceSidebar(activeTree)}
             </div>
+            ${renderWorkspaceSidebar(activeTree)}
         </div>
     `;
 
@@ -11442,6 +11546,7 @@ function renderWorkspaceSnapshot(workspace, snapshot) {
     bindWorkspaceModeInteractions();
     bindTreeInteractions();
     bindDiffInteractions();
+    bindWorkspaceSidebarResizeInteractions();
 }
 
 function renderWorkspaceRootMeta(snapshot) {
@@ -11483,7 +11588,10 @@ function summarizeWorkspaceState(snapshot) {
 }
 
 function renderWorkspaceWorkbenchBar(snapshot) {
-    const activePath = String(selectedTreePath || currentFileState.path || '').trim();
+    const activePath = currentWorkspaceSurfaceMode === 'changes'
+        ? resolveActiveDiffPath()
+        : String(selectedTreePath || currentFileState.path || '').trim();
+    const shouldRenderPath = currentWorkspaceSurfaceMode !== 'changes';
     return `
         <div class="workspace-workbench-bar">
             <div class="workspace-mode-tabs" role="tablist" aria-label="${escapeHtml(t('workspace_view.mode'))}">
@@ -11491,14 +11599,40 @@ function renderWorkspaceWorkbenchBar(snapshot) {
                 ${renderWorkspaceModeTab('changes', t('workspace_view.diffs'), renderChangeCount())}
             </div>
             ${renderWorkspaceMountMenu(snapshot)}
-            <div class="workspace-workbench-path" title="${escapeHtml(activePath || renderWorkspaceRootPath(snapshot))}">
-                ${renderWorkspaceBreadcrumb(activePath)}
-            </div>
+            ${shouldRenderPath ? `
+                <div class="workspace-workbench-path" title="${escapeHtml(activePath || renderWorkspaceRootPath(snapshot))}">
+                    ${renderWorkspaceBreadcrumb(activePath)}
+                </div>
+            ` : '<div class="workspace-workbench-spacer" aria-hidden="true"></div>'}
             <div class="workspace-workbench-actions">
                 ${renderWorkspaceOpenRootButton()}
             </div>
         </div>
-        ${currentWorkspaceSurfaceMode === 'changes' ? renderWorkspaceChangeFilters() : ''}
+    `;
+}
+
+function renderWorkspaceMountActions(snapshot) {
+    const mounts = Array.isArray(snapshot?.mounts) ? sortWorkspaceMounts(snapshot.mounts) : [];
+    const canRemoveMount = mounts.length > 1;
+    return `
+        <button type="button" class="workspace-mount-action-btn" data-workspace-add-mount title="${escapeHtml(t('workspace_view.mount_add'))}">
+            ${escapeHtml(t('workspace_view.mount_add'))}
+        </button>
+        <button type="button" class="workspace-mount-action-btn" data-workspace-edit-mount title="${escapeHtml(t('workspace_view.mount_edit'))}">
+            ${escapeHtml(t('workspace_view.mount_edit'))}
+        </button>
+        <button type="button" class="workspace-mount-action-btn" data-workspace-open-settings title="${escapeHtml(t('workspace_view.mount_profiles'))}">
+            ${escapeHtml(t('workspace_view.mount_profiles'))}
+        </button>
+        <button
+            type="button"
+            class="workspace-mount-action-btn"
+            data-workspace-delete-mount
+            title="${escapeHtml(t('workspace_view.mount_remove'))}"
+            ${canRemoveMount ? '' : 'disabled'}
+        >
+            ${escapeHtml(t('workspace_view.mount_remove'))}
+        </button>
     `;
 }
 
@@ -11613,29 +11747,12 @@ function renderWorkspaceOpenRootButton() {
     `;
 }
 
-function renderWorkspaceChangeFilters() {
-    const filters = [
-        ['unstaged', t('workspace_view.change_filter.unstaged'), false],
-        ['staged', t('workspace_view.change_filter.staged'), true],
-        ['commit', t('workspace_view.change_filter.commit'), true],
-        ['branch', t('workspace_view.change_filter.branch'), true],
-        ['session', t('workspace_view.change_filter.session'), true],
-    ];
-    return `
-        <div class="workspace-change-filter-row" role="toolbar" aria-label="${escapeHtml(t('workspace_view.change_filter.label'))}">
-            ${filters.map(([filter, label, disabled]) => `
-                <button
-                    type="button"
-                    class="workspace-change-filter${currentChangeFilter === filter ? ' is-active' : ''}"
-                    data-workspace-change-filter="${escapeHtml(filter)}"
-                    ${disabled ? 'disabled' : ''}
-                >
-                    ${escapeHtml(label)}
-                    ${filter === 'unstaged' ? `<span>${escapeHtml(renderChangeCount() || '0')}</span>` : ''}
-                </button>
-            `).join('')}
-        </div>
-    `;
+function resolveActiveDiffPath() {
+    const selectedPath = String(selectedTreePath || '').trim();
+    if (selectedPath && findDiffSummary(selectedPath)) {
+        return selectedPath;
+    }
+    return '';
 }
 
 function renderWorkspaceMainContent(activeTree) {
@@ -11646,11 +11763,9 @@ function renderWorkspaceMainContent(activeTree) {
 }
 
 function renderWorkspaceSidebar(activeTree) {
-    const label = currentWorkspaceSurfaceMode === 'changes'
-        ? t('workspace_view.changed_files')
-        : t('workspace_view.tree');
     return `
         <aside class="workspace-workbench-sidebar">
+            ${renderWorkspaceSidebarResizer()}
             <div class="workspace-sidebar-search">
                 <input
                     type="search"
@@ -11660,10 +11775,6 @@ function renderWorkspaceSidebar(activeTree) {
                     data-workspace-tree-filter
                 >
             </div>
-            <div class="workspace-sidebar-title">
-                <span>${escapeHtml(label)}</span>
-                <span>${escapeHtml(resolveSidebarMeta())}</span>
-            </div>
             <div class="workspace-tree-shell">
                 ${currentWorkspaceSurfaceMode === 'changes' ? renderChangeTree() : renderTree(activeTree)}
             </div>
@@ -11671,11 +11782,22 @@ function renderWorkspaceSidebar(activeTree) {
     `;
 }
 
-function resolveSidebarMeta() {
-    if (currentWorkspaceSurfaceMode === 'changes' && currentDiffState.status === 'ready') {
-        return String(currentDiffState.diffFiles.length);
-    }
-    return '';
+function renderWorkspaceSidebarResizer() {
+    const label = t('workspace_view.resize_sidebar');
+    return `
+        <div
+            class="workspace-workbench-resizer"
+            data-workspace-sidebar-resizer
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="${escapeHtml(label)}"
+            aria-valuemin="${WORKSPACE_SIDEBAR_MIN_WIDTH}"
+            aria-valuemax="${WORKSPACE_SIDEBAR_MAX_WIDTH}"
+            aria-valuenow="${workspaceSidebarWidth}"
+            tabindex="0"
+            title="${escapeHtml(label)}"
+        ></div>
+    `;
 }
 
 function getProjectViewToolbarElement() {
@@ -11694,6 +11816,9 @@ function hideProjectViewToolbar() {
     if (els.projectViewToolbarActions) {
         els.projectViewToolbarActions.innerHTML = '';
     }
+    if (els.projectViewTitleActions) {
+        els.projectViewTitleActions.innerHTML = '';
+    }
     els.projectViewReloadBtn = null;
     els.projectViewCloseBtn = null;
 }
@@ -11706,6 +11831,9 @@ function resetFeatureSurface({ clearContent = true } = {}) {
     if (els.projectViewToolbarActions) {
         els.projectViewToolbarActions.innerHTML = '';
     }
+    if (els.projectViewTitleActions) {
+        els.projectViewTitleActions.innerHTML = '';
+    }
     if (clearContent && els.projectViewContent) {
         els.projectViewContent.innerHTML = '';
     }
@@ -11713,7 +11841,10 @@ function resetFeatureSurface({ clearContent = true } = {}) {
     els.projectViewCloseBtn = null;
 }
 
-function renderToolbar(projectOrWorkspace, { title = '', summary = '', mode = 'workspace', actions = '', showClose = true } = {}) {
+function renderToolbar(
+    projectOrWorkspace,
+    { title = '', summary = '', mode = 'workspace', actions = '', titleActions = '', showClose = true } = {},
+) {
     const toolbar = getProjectViewToolbarElement();
     toolbar?.classList?.remove('is-hidden');
     if (els.projectViewTitle) {
@@ -11726,7 +11857,10 @@ function renderToolbar(projectOrWorkspace, { title = '', summary = '', mode = 'w
         }
     }
     if (els.projectViewSummary) {
-        els.projectViewSummary.textContent = summary;
+        els.projectViewSummary.textContent = mode === 'workspace' ? '' : summary;
+    }
+    if (els.projectViewTitleActions) {
+        els.projectViewTitleActions.innerHTML = titleActions || '';
     }
     if (els.projectViewToolbarActions) {
         const reloadAction = mode === 'feature'
@@ -11755,7 +11889,7 @@ function renderToolbar(projectOrWorkspace, { title = '', summary = '', mode = 'w
         }
         if (els.projectViewCloseBtn) {
             els.projectViewCloseBtn.onclick = () => {
-                hideProjectView();
+                handleProjectViewClose();
             };
         }
     }
@@ -11937,62 +12071,6 @@ function normalizeWorkspaceMount(mount, defaultMountName, rootPath) {
         isDefault: mountName === defaultMountName,
         hasChildren: mount?.has_children === true || mount?.hasChildren === true,
     };
-}
-
-function renderWorkspaceMountStrip(snapshot) {
-    const mounts = Array.isArray(snapshot?.mounts) ? sortWorkspaceMounts(snapshot.mounts) : [];
-    if (!shouldRenderWorkspaceMountStrip(snapshot)) {
-        return '';
-    }
-    return `
-        <section class="workspace-mount-strip workspace-view-panel">
-            <div class="workspace-view-panel-header">
-                <div class="workspace-view-panel-header-copy">
-                    <h3>${escapeHtml(t('workspace_view.mounts'))}</h3>
-                    <span class="workspace-view-panel-meta">${escapeHtml(String(mounts.length))}</span>
-                </div>
-                <div class="workspace-panel-header-actions">
-                    <button class="secondary-btn project-view-toolbar-btn workspace-panel-action-btn" type="button" data-workspace-add-mount>${escapeHtml(t('workspace_view.mount_add'))}</button>
-                    <button class="secondary-btn project-view-toolbar-btn workspace-panel-action-btn" type="button" data-workspace-edit-mount>${escapeHtml(t('workspace_view.mount_edit'))}</button>
-                    <button class="secondary-btn project-view-toolbar-btn workspace-panel-action-btn" type="button" data-workspace-open-settings>${escapeHtml(t('workspace_view.mount_profiles'))}</button>
-                    <button class="secondary-btn project-view-toolbar-btn workspace-panel-action-btn" type="button" data-workspace-delete-mount ${mounts.length <= 1 ? 'disabled' : ''}>${escapeHtml(t('workspace_view.mount_remove'))}</button>
-                </div>
-            </div>
-            <div class="workspace-mount-list">
-                ${mounts.map(mount => renderWorkspaceMountCard(mount)).join('')}
-            </div>
-        </section>
-    `;
-}
-
-function shouldRenderWorkspaceMountStrip(snapshot) {
-    const mounts = Array.isArray(snapshot?.mounts) ? snapshot.mounts : [];
-    return mounts.length > 0;
-}
-
-function renderWorkspaceMountCard(mount) {
-    const mountName = String(mount?.mountName || '').trim();
-    const rootReference = String(mount?.rootReference || '').trim();
-    const sshProfileId = String(mount?.sshProfileId || '').trim();
-    const isActive = resolveActiveMountName() === mountName;
-    return `
-        <button
-            type="button"
-            class="workspace-mount-card${isActive ? ' is-active' : ''}"
-            data-workspace-mount="${escapeHtml(mountName)}"
-            aria-pressed="${isActive ? 'true' : 'false'}"
-        >
-            <span class="workspace-mount-card-head">
-                <strong>${escapeHtml(mountName)}</strong>
-                <span class="workspace-mount-card-badges">
-                    <span class="workspace-view-provider-badge">${escapeHtml(renderMountProviderLabel(mount))}</span>
-                    ${mount?.isDefault ? `<span class="workspace-view-provider-badge is-default">${escapeHtml(t('workspace_view.mount_default'))}</span>` : ''}
-                </span>
-            </span>
-            ${rootReference ? `<span class="workspace-mount-card-path">${escapeHtml(rootReference)}</span>` : ''}
-            ${sshProfileId ? `<span class="workspace-mount-card-meta">${escapeHtml(`${t('workspace_view.mount_profile')}: ${sshProfileId}`)}</span>` : ''}
-        </button>
-    `;
 }
 
 function renderMountProviderLabel(mount) {
@@ -12228,6 +12306,7 @@ function renderFilteredTreeNode(node, filter) {
                 class="workspace-tree-toggle"
                 data-tree-toggle-path="${escapeHtml(nodePath)}"
                 aria-expanded="${isExpanded ? 'true' : 'false'}"
+                title="${escapeHtml(nodePath)}"
             >
                 <span class="workspace-tree-chevron" aria-hidden="true">&#9662;</span>
                 ${renderFolderIcon(isExpanded)}
@@ -12265,6 +12344,7 @@ function renderTreeNode(node) {
                 class="workspace-tree-toggle"
                 data-tree-toggle-path="${escapeHtml(nodePath)}"
                 aria-expanded="${isExpanded ? 'true' : 'false'}"
+                title="${escapeHtml(nodePath)}"
             >
                 <span class="workspace-tree-chevron" aria-hidden="true">${isExpanded ? '&#9662;' : '&#9656;'}</span>
                 ${renderFolderIcon(isExpanded)}
@@ -12362,25 +12442,28 @@ function renderWorkspaceEmptyMainState(message, extraClass = '') {
 function renderHighlightedFileContent(content, path) {
     const normalized = String(content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const lines = normalized.split('\n');
+    const language = resolveHighlightLanguage(path);
+    const allowAutoHighlight = !language
+        && lines.length <= WORKSPACE_AUTO_HIGHLIGHT_MAX_LINES
+        && normalized.length <= WORKSPACE_AUTO_HIGHLIGHT_MAX_CHARS;
     return `
         <div class="workspace-file-code" role="table" aria-label="${escapeHtml(path)}">
             ${lines.map((line, index) => `
                 <div class="workspace-file-line" role="row">
                     <span class="workspace-file-line-number" role="cell">${escapeHtml(String(index + 1))}</span>
-                    <code class="workspace-file-line-text" role="cell">${highlightWorkspaceCode(line || ' ', path)}</code>
+                    <code class="workspace-file-line-text" role="cell">${highlightWorkspaceCode(line || ' ', { language, allowAutoHighlight })}</code>
                 </div>
             `).join('')}
         </div>
     `;
 }
 
-function highlightWorkspaceCode(source, path) {
+function highlightWorkspaceCode(source, { language = '', allowAutoHighlight = false } = {}) {
     const text = String(source || '');
     const runtime = globalThis.hljs;
     if (!runtime || typeof runtime.highlight !== 'function') {
         return escapeHtml(text);
     }
-    const language = resolveHighlightLanguage(path);
     try {
         if (language && typeof runtime.getLanguage === 'function' && runtime.getLanguage(language)) {
             return runtime.highlight(text, { language }).value;
@@ -12416,7 +12499,7 @@ function renderChangeTree() {
         return renderInlineState(t('workspace_view.loading_diffs'));
     }
     if (currentDiffState.isGitRepository !== true) {
-        return renderInlineState(currentDiffState.diffMessage || t('workspace_view.not_git_repository'));
+        return renderInlineState(t('workspace_view.no_diffs'));
     }
     if (currentDiffState.diffFiles.length === 0) {
         return renderInlineState(t('workspace_view.no_diffs'));
@@ -12499,9 +12582,10 @@ function renderChangeTreeNode(node) {
                     class="workspace-tree-entry workspace-tree-file workspace-change-file${isSelected ? ' is-selected' : ''}"
                     data-tree-file-path="${escapeHtml(filePath)}"
                     aria-pressed="${isSelected ? 'true' : 'false'}"
+                    title="${escapeHtml(filePath)}"
                 >
                     <span class="workspace-tree-chevron is-placeholder" aria-hidden="true"></span>
-                    ${renderFileIcon()}
+                    ${renderFileIcon(filePath)}
                     <span class="workspace-tree-label">${escapeHtml(node.name || filePath)}</span>
                     <span class="workspace-change-kind is-${escapeHtml(node.changeType || 'modified')}">${escapeHtml(renderChangeTypeShortLabel(node.changeType))}</span>
                 </button>
@@ -12509,9 +12593,10 @@ function renderChangeTreeNode(node) {
         `;
     }
     const children = Array.isArray(node.children) ? node.children.map(renderChangeTreeNode).join('') : '';
+    const directoryPath = String(node.path || node.name || '.');
     return `
         <div class="workspace-tree-node is-directory">
-            <div class="workspace-tree-entry workspace-change-directory">
+            <div class="workspace-tree-entry workspace-change-directory" title="${escapeHtml(directoryPath)}">
                 <span class="workspace-tree-chevron" aria-hidden="true">&#9662;</span>
                 ${renderFolderIcon(true)}
                 <span class="workspace-tree-label">${escapeHtml(node.name || node.path || '.')}</span>
@@ -12559,11 +12644,11 @@ function renderDiffSection() {
     if (currentDiffState.status !== 'ready') {
         return renderInlineState(t('workspace_view.loading_diffs'));
     }
-    if (currentDiffState.isGitRepository !== true) {
-        return renderInlineState(currentDiffState.diffMessage || t('workspace_view.not_git_repository'));
-    }
     if (currentDiffState.diffMessage) {
         return renderInlineState(currentDiffState.diffMessage, 'is-error');
+    }
+    if (currentDiffState.isGitRepository !== true) {
+        return renderInlineState(t('workspace_view.not_git_repository'));
     }
     if (currentDiffState.diffFiles.length === 0) {
         return renderInlineState(t('workspace_view.no_diffs'));
@@ -12590,6 +12675,17 @@ function renderDiffFile(file) {
             aria-expanded="${isSelected ? 'true' : 'false'}"
         >
             <div class="workspace-diff-header">
+                <button
+                    type="button"
+                    class="workspace-diff-file-toggle"
+                    data-diff-toggle-path="${escapeHtml(filePath)}"
+                    aria-expanded="${isSelected ? 'true' : 'false'}"
+                    aria-label="${escapeHtml(isSelected ? t('workspace_view.collapse_diff_file') : t('workspace_view.expand_diff_file'))}"
+                >
+                    <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
+                        <path d="${isSelected ? 'M4 6l4 4 4-4' : 'M6 4l4 4-4 4'}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                </button>
                 <span class="workspace-diff-status is-${escapeHtml(changeType)}">${escapeHtml(changeLabel)}</span>
                 <code class="workspace-diff-path">${escapeHtml(filePath)}</code>
                 ${previousPath ? `<span class="workspace-diff-previous">${escapeHtml(previousPath)} -> ${escapeHtml(filePath)}</span>` : ''}
@@ -12642,21 +12738,45 @@ function renderDiffBody(filePath, isSelected) {
     if (!diffText.trim()) {
         return renderDiffBodyState(t('workspace_view.empty_diff'));
     }
-    return renderStructuredDiff(diffText);
+    return renderStructuredDiff(diffText, filePath);
 }
 
-function renderStructuredDiff(diffText) {
+function renderStructuredDiff(diffText, filePath) {
     const segments = parseDiffSegments(diffText);
     if (segments.length === 0) {
         return `
             <pre class="workspace-diff-pre"><code>${escapeHtml(diffText)}</code></pre>
         `;
     }
+    const budget = {
+        remaining: resolveDiffVisibleLineCount(filePath),
+        hasMore: false,
+    };
+    const renderedSegments = [];
+    for (let index = 0; index < segments.length; index += 1) {
+        if (budget.remaining <= 0) {
+            budget.hasMore = true;
+            break;
+        }
+        const segmentHtml = renderDiffSegment(segments[index], index, filePath, budget);
+        if (segmentHtml) {
+            renderedSegments.push(segmentHtml);
+        }
+    }
     return `
         <div class="workspace-diff-view">
-            ${segments.map(renderDiffSegment).join('')}
+            ${renderedSegments.join('')}
+            ${budget.hasMore ? renderDiffShowMore(filePath) : ''}
         </div>
     `;
+}
+
+function resolveDiffVisibleLineCount(filePath) {
+    const key = String(filePath || '').trim();
+    return Math.max(
+        DEFAULT_DIFF_RENDER_ROW_LIMIT,
+        Number(diffVisibleLineCounts.get(key)) || DEFAULT_DIFF_RENDER_ROW_LIMIT,
+    );
 }
 
 function parseDiffSegments(diffText) {
@@ -12718,6 +12838,10 @@ function parseDiffSegments(diffText) {
             marker = '\\';
         }
 
+        if (kind === 'meta' && !String(content || '').trim()) {
+            continue;
+        }
+
         currentSegment.rows.push({
             kind,
             marker,
@@ -12730,11 +12854,17 @@ function parseDiffSegments(diffText) {
     return segments;
 }
 
-function renderDiffSegment(segment) {
+function renderDiffSegment(segment, segmentIndex, filePath, budget) {
+    if (!segment || budget.remaining <= 0) {
+        return '';
+    }
     const header = segment?.header
         ? `<div class="workspace-diff-hunk-header">${escapeHtml(segment.header)}</div>`
         : '';
-    const rows = Array.isArray(segment?.rows) ? segment.rows.map(renderDiffRow).join('') : '';
+    const rows = renderDiffRows(segment, segmentIndex, filePath, budget);
+    if (!rows && !header) {
+        return '';
+    }
     return `
         <section class="workspace-diff-hunk">
             ${header}
@@ -12745,16 +12875,130 @@ function renderDiffSegment(segment) {
     `;
 }
 
+function renderDiffRows(segment, segmentIndex, filePath, budget) {
+    const rows = Array.isArray(segment?.rows) ? segment.rows : [];
+    const output = [];
+    let index = 0;
+    let contextRunIndex = 0;
+    while (index < rows.length) {
+        if (budget.remaining <= 0) {
+            budget.hasMore = true;
+            break;
+        }
+        const row = rows[index];
+        if (String(row?.kind || '') !== 'context') {
+            output.push(renderDiffRow(row));
+            budget.remaining -= 1;
+            index += 1;
+            continue;
+        }
+        const runStart = index;
+        while (index < rows.length && String(rows[index]?.kind || '') === 'context') {
+            index += 1;
+        }
+        const runRows = rows.slice(runStart, index);
+        if (runRows.length < DIFF_CONTEXT_COLLAPSE_THRESHOLD) {
+            for (const runRow of runRows) {
+                if (budget.remaining <= 0) {
+                    budget.hasMore = true;
+                    break;
+                }
+                output.push(renderDiffRow(runRow));
+                budget.remaining -= 1;
+            }
+            contextRunIndex += 1;
+            continue;
+        }
+        const contextKey = resolveDiffContextKey(filePath, segmentIndex, contextRunIndex, runRows);
+        const isExpanded = expandedDiffContextKeys.has(contextKey);
+        output.push(renderDiffContextToggleRow(contextKey, runRows.length, isExpanded));
+        budget.remaining -= 1;
+        if (isExpanded) {
+            for (const runRow of runRows) {
+                if (budget.remaining <= 0) {
+                    budget.hasMore = true;
+                    break;
+                }
+                output.push(renderDiffRow(runRow));
+                budget.remaining -= 1;
+            }
+        }
+        contextRunIndex += 1;
+    }
+    return output.join('');
+}
+
+function renderDiffShowMore(filePath) {
+    return `
+        <div class="workspace-diff-more-row">
+            <button type="button" class="workspace-diff-more-btn" data-diff-show-more-path="${escapeHtml(filePath)}">
+                ${escapeHtml(t('workspace_view.show_more_diff'))}
+            </button>
+        </div>
+    `;
+}
+
+function resolveDiffContextKey(filePath, segmentIndex, contextRunIndex, rows) {
+    const firstRow = rows[0] || {};
+    const lastRow = rows[rows.length - 1] || {};
+    return [
+        String(filePath || '').trim(),
+        String(segmentIndex),
+        String(contextRunIndex),
+        String(firstRow.oldNumber || ''),
+        String(firstRow.newNumber || ''),
+        String(lastRow.oldNumber || ''),
+        String(lastRow.newNumber || ''),
+    ].join('|');
+}
+
+function renderDiffContextToggleRow(contextKey, count, isExpanded) {
+    const label = formatTemplate(t('workspace_view.unchanged_lines'), {
+        count: String(count),
+    });
+    const actionLabel = isExpanded
+        ? t('workspace_view.collapse_unchanged')
+        : t('workspace_view.expand_unchanged');
+    return `
+        <div class="workspace-diff-context-row${isExpanded ? ' is-expanded' : ''}" role="row">
+            <button
+                type="button"
+                class="workspace-diff-context-toggle"
+                data-diff-context-key="${escapeHtml(contextKey)}"
+                aria-expanded="${isExpanded ? 'true' : 'false'}"
+                aria-label="${escapeHtml(actionLabel)}"
+            >
+                <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
+                    <path d="${isExpanded ? 'M4 10l4-4 4 4' : 'M6 4l4 4-4 4'}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+            </button>
+            <span class="workspace-diff-context-label">${escapeHtml(label)}</span>
+        </div>
+    `;
+}
+
 function renderDiffRow(row) {
     const kind = String(row?.kind || 'context');
+    const lineNumber = resolveDiffDisplayLineNumber(row, kind);
     return `
         <div class="workspace-diff-row is-${escapeHtml(kind)}" role="row">
-            <span class="workspace-diff-line-number" role="cell">${escapeHtml(row?.oldNumber || '')}</span>
-            <span class="workspace-diff-line-number" role="cell">${escapeHtml(row?.newNumber || '')}</span>
+            <span class="workspace-diff-line-number" role="cell">${escapeHtml(lineNumber)}</span>
             <span class="workspace-diff-line-marker" role="cell">${escapeHtml(row?.marker || '')}</span>
             <code class="workspace-diff-line-text" role="cell">${escapeHtml(row?.content || '')}</code>
         </div>
     `;
+}
+
+function resolveDiffDisplayLineNumber(row, kind) {
+    const oldNumber = String(row?.oldNumber || '');
+    const newNumber = String(row?.newNumber || '');
+    if (kind === 'deleted') {
+        return oldNumber;
+    }
+    if (kind === 'added') {
+        return newNumber;
+    }
+    return newNumber || oldNumber;
 }
 
 function renderDiffBodyState(message, extraClass = '') {
@@ -12777,43 +13021,141 @@ function bindWorkspaceHeaderInteractions() {
     if (!els.projectViewContent) {
         return;
     }
+    const headerRoots = [
+        els.projectViewTitleActions,
+        els.projectViewContent,
+    ].filter(root => root && typeof root.querySelector === 'function');
     for (const mountButton of els.projectViewContent.querySelectorAll('[data-workspace-mount]')) {
         const mountName = String(mountButton.getAttribute('data-workspace-mount') || '').trim();
         mountButton.onclick = () => {
             void switchWorkspaceMount(mountName);
         };
     }
-    const addMountButton = els.projectViewContent?.querySelector('[data-workspace-add-mount]');
-    if (addMountButton) {
-        addMountButton.onclick = () => {
-            void handleAddWorkspaceMount();
+    for (const root of headerRoots) {
+        const addMountButton = root.querySelector('[data-workspace-add-mount]');
+        if (addMountButton) {
+            addMountButton.onclick = () => {
+                void handleAddWorkspaceMount();
+            };
+        }
+        const editMountButton = root.querySelector('[data-workspace-edit-mount]');
+        if (editMountButton) {
+            editMountButton.onclick = () => {
+                void handleEditWorkspaceMount();
+            };
+        }
+        const deleteMountButton = root.querySelector('[data-workspace-delete-mount]');
+        if (deleteMountButton) {
+            deleteMountButton.onclick = () => {
+                void handleDeleteWorkspaceMount();
+            };
+        }
+        const openSettingsButton = root.querySelector('[data-workspace-open-settings]');
+        if (openSettingsButton) {
+            openSettingsButton.onclick = () => {
+                handleOpenWorkspaceSettings();
+            };
+        }
+    }
+    for (const openRootButton of els.projectViewContent.querySelectorAll('[data-open-workspace-root]')) {
+        openRootButton.onclick = () => {
+            void handleOpenWorkspaceRoot();
         };
     }
-    const editMountButton = els.projectViewContent?.querySelector('[data-workspace-edit-mount]');
-    if (editMountButton) {
-        editMountButton.onclick = () => {
-            void handleEditWorkspaceMount();
-        };
-    }
-    const deleteMountButton = els.projectViewContent?.querySelector('[data-workspace-delete-mount]');
-    if (deleteMountButton) {
-        deleteMountButton.onclick = () => {
-            void handleDeleteWorkspaceMount();
-        };
-    }
-    const openSettingsButton = els.projectViewContent?.querySelector('[data-workspace-open-settings]');
-    if (openSettingsButton) {
-        openSettingsButton.onclick = () => {
-            handleOpenWorkspaceSettings();
-        };
-    }
-    const openRootButton = els.projectViewContent?.querySelector('[data-open-workspace-root]');
-    if (!openRootButton) {
+}
+
+function bindWorkspaceSidebarResizeInteractions() {
+    if (!els.projectViewContent || typeof els.projectViewContent.querySelector !== 'function') {
         return;
     }
-    openRootButton.onclick = () => {
-        void handleOpenWorkspaceRoot();
+    const resizer = els.projectViewContent.querySelector('[data-workspace-sidebar-resizer]');
+    const workbench = els.projectViewContent.querySelector('.workspace-workbench');
+    if (!resizer || !workbench) {
+        return;
+    }
+
+    applyWorkspaceSidebarWidth(workbench, workspaceSidebarWidth, resizer);
+    resizer.onkeydown = event => {
+        const key = String(event?.key || '');
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) {
+            return;
+        }
+        event?.preventDefault?.();
+        if (key === 'Home') {
+            updateWorkspaceSidebarWidth(workbench, WORKSPACE_SIDEBAR_MIN_WIDTH, resizer);
+            return;
+        }
+        if (key === 'End') {
+            updateWorkspaceSidebarWidth(workbench, WORKSPACE_SIDEBAR_MAX_WIDTH, resizer);
+            return;
+        }
+        const direction = key === 'ArrowLeft' ? 1 : -1;
+        updateWorkspaceSidebarWidth(
+            workbench,
+            workspaceSidebarWidth + (direction * WORKSPACE_SIDEBAR_KEYBOARD_STEP),
+            resizer,
+        );
     };
+    resizer.onpointerdown = event => {
+        const startX = Number(event?.clientX);
+        if (!Number.isFinite(startX)) {
+            return;
+        }
+        event?.preventDefault?.();
+        resizer.setPointerCapture?.(event.pointerId);
+        const startWidth = workspaceSidebarWidth;
+        let pendingWidth = startWidth;
+        let pendingFrameId = 0;
+        const flushResize = () => {
+            pendingFrameId = 0;
+            updateWorkspaceSidebarWidth(workbench, pendingWidth, resizer);
+        };
+        const scheduleResize = width => {
+            pendingWidth = width;
+            if (pendingFrameId) {
+                return;
+            }
+            if (typeof globalThis.requestAnimationFrame === 'function') {
+                pendingFrameId = globalThis.requestAnimationFrame(flushResize);
+                return;
+            }
+            pendingFrameId = globalThis.setTimeout?.(flushResize, 0) || 0;
+        };
+        workbench.classList?.add?.('is-resizing');
+        globalThis.document?.body?.classList?.add?.('workspace-sidebar-resizing');
+
+        const handlePointerMove = moveEvent => {
+            const clientX = Number(moveEvent?.clientX);
+            if (!Number.isFinite(clientX)) {
+                return;
+            }
+            scheduleResize(startWidth + startX - clientX);
+        };
+        const stopResize = () => {
+            if (pendingFrameId) {
+                if (typeof globalThis.cancelAnimationFrame === 'function') {
+                    globalThis.cancelAnimationFrame(pendingFrameId);
+                } else {
+                    globalThis.clearTimeout?.(pendingFrameId);
+                }
+                pendingFrameId = 0;
+            }
+            updateWorkspaceSidebarWidth(workbench, pendingWidth, resizer);
+            workbench.classList?.remove?.('is-resizing');
+            globalThis.document?.body?.classList?.remove?.('workspace-sidebar-resizing');
+            globalThis.document?.removeEventListener?.('pointermove', handlePointerMove);
+            globalThis.document?.removeEventListener?.('pointerup', stopResize);
+            globalThis.document?.removeEventListener?.('pointercancel', stopResize);
+        };
+        globalThis.document?.addEventListener?.('pointermove', handlePointerMove);
+        globalThis.document?.addEventListener?.('pointerup', stopResize, { once: true });
+        globalThis.document?.addEventListener?.('pointercancel', stopResize, { once: true });
+    };
+}
+
+function updateWorkspaceSidebarWidth(workbench, width, resizer = null) {
+    applyWorkspaceSidebarWidth(workbench, width, resizer);
+    persistWorkspaceSidebarWidth(workspaceSidebarWidth);
 }
 
 function bindWorkspaceModeInteractions() {
@@ -12824,14 +13166,6 @@ function bindWorkspaceModeInteractions() {
         const mode = String(modeButton.getAttribute('data-workspace-mode') || '').trim();
         modeButton.onclick = () => {
             switchWorkspaceSurfaceMode(mode);
-        };
-    }
-    for (const filterButton of els.projectViewContent.querySelectorAll('[data-workspace-change-filter]')) {
-        const filter = String(filterButton.getAttribute('data-workspace-change-filter') || '').trim();
-        filterButton.onclick = () => {
-            currentChangeFilter = resolveChangeFilter(filter);
-            renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
-            cacheProjectViewState();
         };
     }
     const treeFilter = els.projectViewContent.querySelector('[data-workspace-tree-filter]');
@@ -12901,6 +13235,66 @@ function bindDiffInteractions() {
             void selectTreePath(diffPath);
         };
     }
+    for (const toggle of els.projectViewContent.querySelectorAll('.workspace-diff-file-toggle')) {
+        const diffPath = String(toggle.getAttribute('data-diff-toggle-path') || '').trim();
+        toggle.onclick = (event) => {
+            event?.stopPropagation?.();
+            void toggleDiffFile(diffPath);
+        };
+    }
+    for (const toggle of els.projectViewContent.querySelectorAll('.workspace-diff-context-toggle')) {
+        const contextKey = String(toggle.getAttribute('data-diff-context-key') || '').trim();
+        toggle.onclick = (event) => {
+            event?.stopPropagation?.();
+            toggleDiffContext(contextKey);
+        };
+    }
+    for (const button of els.projectViewContent.querySelectorAll('.workspace-diff-more-btn')) {
+        const diffPath = String(button.getAttribute('data-diff-show-more-path') || '').trim();
+        button.onclick = (event) => {
+            event?.stopPropagation?.();
+            showMoreDiffRows(diffPath);
+        };
+    }
+}
+
+async function toggleDiffFile(path) {
+    const normalizedPath = String(path || '').trim();
+    if (!normalizedPath || !currentWorkspace || !currentSnapshot || currentWorkspaceSurfaceMode !== 'changes') {
+        return;
+    }
+    if (selectedTreePath === normalizedPath) {
+        selectedTreePath = null;
+        renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+        cacheProjectViewState();
+        return;
+    }
+    await selectTreePath(normalizedPath);
+}
+
+function toggleDiffContext(contextKey) {
+    const normalizedKey = String(contextKey || '').trim();
+    if (!normalizedKey || !currentWorkspace || !currentSnapshot) {
+        return;
+    }
+    if (expandedDiffContextKeys.has(normalizedKey)) {
+        expandedDiffContextKeys.delete(normalizedKey);
+    } else {
+        expandedDiffContextKeys.add(normalizedKey);
+    }
+    renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+    cacheProjectViewState();
+}
+
+function showMoreDiffRows(path) {
+    const normalizedPath = String(path || '').trim();
+    if (!normalizedPath || !currentWorkspace || !currentSnapshot) {
+        return;
+    }
+    const nextCount = resolveDiffVisibleLineCount(normalizedPath) + DIFF_RENDER_ROW_INCREMENT;
+    diffVisibleLineCounts.set(normalizedPath, nextCount);
+    renderWorkspaceSnapshot(currentWorkspace, currentSnapshot);
+    cacheProjectViewState();
 }
 
 async function handleOpenWorkspaceRoot() {
@@ -13322,7 +13716,7 @@ function resolveUpdatedDefaultMountName({
         .map(mount => String(mount?.mount_name || '').trim())
         .filter(Boolean);
     const requestedMount = findWorkspaceMountByName(orderedMounts, normalizedRequested);
-    if (requestedMount && isLocalWorkspaceMount(requestedMount)) {
+    if (requestedMount) {
         return normalizedRequested;
     }
     const replacementMount = findWorkspaceMountByName(orderedMounts, normalizedReplacement);
@@ -13331,7 +13725,6 @@ function resolveUpdatedDefaultMountName({
         && normalizedRemoved
         && normalizedRequested === normalizedRemoved
         && replacementMount
-        && isLocalWorkspaceMount(replacementMount)
     ) {
         return normalizedReplacement;
     }
@@ -13848,9 +14241,10 @@ function renderTreeFileNode(node) {
                 class="workspace-tree-entry workspace-tree-file${isSelected ? ' is-selected' : ''}"
                 data-tree-file-path="${escapeHtml(nodePath)}"
                 aria-pressed="${isSelected ? 'true' : 'false'}"
+                title="${escapeHtml(nodePath)}"
             >
                 <span class="workspace-tree-chevron is-placeholder" aria-hidden="true"></span>
-                ${renderFileIcon()}
+                ${renderFileIcon(nodePath)}
                 <span class="workspace-tree-label">${nodeLabel}</span>
             </button>
         </div>
@@ -13867,6 +14261,16 @@ function cloneFileState(fileState) {
         path: fileState.path ? String(fileState.path) : null,
         file: cloneWorkspaceFile(fileState.file),
         fileMessage: fileState.fileMessage ? String(fileState.fileMessage) : null,
+    };
+}
+
+function cloneFileSelectionState(fileState) {
+    const cloned = cloneFileState(fileState);
+    return {
+        ...cloned,
+        status: 'idle',
+        file: null,
+        fileMessage: null,
     };
 }
 
@@ -13904,12 +14308,6 @@ function cloneDiffFile(diffFile) {
 function resolveWorkspaceSurfaceMode(mode) {
     return mode === 'changes' ? 'changes' : 'files';
 }
-
-function resolveChangeFilter(filter) {
-    const normalized = String(filter || '').trim();
-    return normalized || 'unstaged';
-}
-
 
 function describeCronExpression(expression) {
     const cron = String(expression || '').trim();
@@ -13996,15 +14394,157 @@ function renderFolderIcon(isExpanded) {
     `;
 }
 
-function renderFileIcon() {
+function renderFileIcon(path = '') {
+    const icon = resolveFileIcon(path);
     return `
-        <span class="workspace-tree-icon is-file" aria-hidden="true">
+        <span class="workspace-tree-icon is-file is-${escapeHtml(icon.kind)}" aria-hidden="true">
             <svg viewBox="0 0 16 16" focusable="false">
-                <path d="M4 1.5h5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z" />
-                <path d="M9 1.5v3h3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                ${icon.svg}
             </svg>
         </span>
     `;
+}
+
+function resolveFileIcon(path) {
+    const fileName = String(path || '').split('/').pop()?.toLowerCase() || '';
+    const extension = fileName.includes('.') ? fileName.split('.').pop() : '';
+    if ([
+        'cargo.lock',
+        'cargo.toml',
+        'composer.json',
+        'gemfile',
+        'gemfile.lock',
+        'go.mod',
+        'go.sum',
+        'package.json',
+        'package-lock.json',
+        'pnpm-lock.yaml',
+        'poetry.lock',
+        'pyproject.toml',
+        'requirements.txt',
+        'uv.lock',
+        'yarn.lock',
+    ].includes(fileName)) {
+        return namedFileIcon('package');
+    }
+    if (['dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'containerfile'].includes(fileName) || fileName.startsWith('dockerfile.') || fileName.endsWith('.dockerfile')) {
+        return namedFileIcon('container');
+    }
+    if (['makefile', 'justfile', 'rakefile'].includes(fileName)) {
+        return namedFileIcon('script');
+    }
+    if (['readme', 'readme.md', 'license', 'license.md', 'security.md', 'agents.md'].includes(fileName)) {
+        return namedFileIcon('document');
+    }
+    if ([
+        '.babelrc',
+        '.dockerignore',
+        '.editorconfig',
+        '.env',
+        '.eslintrc',
+        '.gitattributes',
+        '.gitignore',
+        '.npmrc',
+        '.prettierrc',
+        '.python-version',
+        '.tool-versions',
+        'tsconfig.json',
+    ].includes(fileName)) {
+        return namedFileIcon('config');
+    }
+    const iconByExtension = {
+        py: 'python',
+        pyw: 'python',
+        js: 'javascript',
+        mjs: 'javascript',
+        cjs: 'javascript',
+        jsx: 'javascript',
+        ts: 'typescript',
+        tsx: 'typescript',
+        c: 'code',
+        cc: 'code',
+        cpp: 'code',
+        cs: 'code',
+        go: 'code',
+        h: 'code',
+        hpp: 'code',
+        java: 'code',
+        kt: 'code',
+        lua: 'code',
+        php: 'code',
+        rb: 'code',
+        rs: 'code',
+        swift: 'code',
+        css: 'css',
+        scss: 'css',
+        sass: 'css',
+        less: 'css',
+        html: 'html',
+        htm: 'html',
+        md: 'document',
+        markdown: 'document',
+        pdf: 'document',
+        txt: 'document',
+        rst: 'document',
+        json: 'config',
+        jsonl: 'data',
+        yaml: 'config',
+        yml: 'config',
+        toml: 'config',
+        ini: 'config',
+        env: 'config',
+        xml: 'config',
+        sh: 'script',
+        bash: 'script',
+        zsh: 'script',
+        ps1: 'script',
+        bat: 'script',
+        cmd: 'script',
+        sql: 'data',
+        csv: 'data',
+        tsv: 'data',
+        db: 'data',
+        sqlite: 'data',
+        png: 'image',
+        jpg: 'image',
+        jpeg: 'image',
+        gif: 'image',
+        webp: 'image',
+        svg: 'image',
+        ico: 'image',
+        zip: 'archive',
+        gz: 'archive',
+        tgz: 'archive',
+        rar: 'archive',
+        '7z': 'archive',
+        lock: 'lock',
+    };
+    return namedFileIcon(iconByExtension[extension] || 'generic');
+}
+
+function namedFileIcon(kind) {
+    const icons = {
+        archive: '<rect x="4" y="2" width="8" height="12" rx="1.2"></rect><path d="M5.5 4h5M5.5 6h5M5.5 8h5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"></path><rect x="6.2" y="10.5" width="3.6" height="1.8" rx=".4"></rect>',
+        code: '<rect x="3" y="3" width="10" height="10" rx="1.2"></rect><path d="M7 5.8 4.8 8 7 10.2M9 5.8 11.2 8 9 10.2" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"></path>',
+        config: '<rect x="4" y="2" width="8" height="12" rx="1.2"></rect><path d="M6 5h4M6 8h4M6 11h4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"></path><path d="M5.2 5h.1M5.2 8h.1M5.2 11h.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>',
+        container: '<rect x="2.2" y="6.2" width="11.6" height="5.4" rx=".8"></rect><path d="M4.2 4.4h2v1.8h-2zM7 4.4h2v1.8H7zM9.8 4.4h2v1.8h-2z" opacity=".62"></path><path d="M4 8h8M4 10h8" fill="none" stroke="currentColor" stroke-width="1" opacity=".72"></path>',
+        css: '<rect x="4" y="2" width="8" height="12" rx="1.2"></rect><text x="8" y="10.6" text-anchor="middle" font-size="5.2" font-family="monospace" fill="currentColor">CSS</text>',
+        data: '<path d="M3 4c0-1 2.2-1.8 5-1.8s5 .8 5 1.8v7.8c0 1-2.2 1.8-5 1.8s-5-.8-5-1.8z"></path><path d="M3 4c0 1 2.2 1.8 5 1.8s5-.8 5-1.8M3 7.7c0 1 2.2 1.8 5 1.8s5-.8 5-1.8" fill="none" stroke="currentColor" stroke-width="1"></path>',
+        document: '<path d="M4 1.8h5.2L12 4.6V14H4z"></path><path d="M9.2 1.8v3H12M5.7 7h4.6M5.7 9h4.6M5.7 11h3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"></path>',
+        generic: '<path d="M4 1.8h5.2L12 4.6V14H4z"></path><path d="M9.2 1.8v3H12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"></path>',
+        html: '<path d="M3 3h10l-.9 9.2L8 13.8l-4.1-1.6z"></path><path d="M6 6h4M5.7 8.2H10l-.2 2-1.8.7-1.8-.7" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"></path>',
+        image: '<rect x="3" y="3" width="10" height="10" rx="1.2"></rect><path d="M5 10l2-2 1.5 1.5L10.5 7 13 10.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="6" cy="6" r="1"></circle>',
+        javascript: '<rect x="3" y="3" width="10" height="10" rx="1.2"></rect><text x="8" y="10.5" text-anchor="middle" font-size="5.2" font-family="monospace" fill="currentColor">JS</text>',
+        lock: '<rect x="4.2" y="7" width="7.6" height="6" rx="1"></rect><path d="M5.8 7V5.4a2.2 2.2 0 0 1 4.4 0V7" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"></path>',
+        package: '<path d="M8 2.2l5 2.4v6.8l-5 2.4-5-2.4V4.6z"></path><path d="M3.3 4.8L8 7.1l4.7-2.3M8 7.1v6.2" fill="none" stroke="currentColor" stroke-width="1"></path>',
+        python: '<path d="M4 3.2h5.5c1 0 1.8.8 1.8 1.8v2H6.5A2.5 2.5 0 0 0 4 9.5V12H3.2A1.8 1.8 0 0 1 1.4 10.2V7A3.8 3.8 0 0 1 5.2 3.2"></path><path d="M12 12.8H6.5A1.8 1.8 0 0 1 4.7 11V9h4.8A2.5 2.5 0 0 0 12 6.5V4h.8a1.8 1.8 0 0 1 1.8 1.8V9a3.8 3.8 0 0 1-3.8 3.8"></path><circle cx="6" cy="4.8" r=".55"></circle><circle cx="10" cy="11.2" r=".55"></circle>',
+        script: '<rect x="3" y="3" width="10" height="10" rx="1.2"></rect><path d="M5.1 6l2 2-2 2M8.2 10h2.8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>',
+        typescript: '<rect x="3" y="3" width="10" height="10" rx="1.2"></rect><text x="8" y="10.5" text-anchor="middle" font-size="5.2" font-family="monospace" fill="currentColor">TS</text>',
+    };
+    return {
+        kind,
+        svg: icons[kind] || icons.generic,
+    };
 }
 
 function formatAutomationTitle(project) {
@@ -14017,7 +14557,7 @@ function formatAutomationTitle(project) {
 function formatWorkspaceTitle(workspace) {
     const workspaceId = String(workspace?.workspace_id || '').trim();
     if (workspaceId) {
-        return formatTemplate(t('workspace_view.title'), { workspace: workspaceId });
+        return workspaceId;
     }
     return t('workspace_view.title');
 }

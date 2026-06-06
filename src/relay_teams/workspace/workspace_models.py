@@ -85,7 +85,7 @@ def default_mount_capabilities(
             can_write=True,
             can_search=True,
             can_shell=True,
-            can_diff=False,
+            can_diff=True,
             can_preview=False,
         )
     return WorkspaceMountCapabilities()

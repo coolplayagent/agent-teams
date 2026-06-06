@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -51,6 +51,34 @@ async def test_get_session_rounds_async_delegates() -> None:
     method = SessionService.get_session_rounds_async
     await method(mock_self, cast(Any, ""))
     getattr(mock_self, "get_session_rounds").assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_session_normal_model_profile_async_uses_async_repository() -> (
+    None
+):
+    mock_self = MagicMock()
+    updated = SimpleNamespace(normal_model_profile="precise")
+    mock_self._session_repo.update_normal_model_profile_async = AsyncMock()
+    mock_self.get_session_async = AsyncMock(return_value=updated)
+
+    method = SessionService.update_session_normal_model_profile_async
+    result = await method(
+        mock_self,
+        "session-1",
+        normal_model_profile=" precise ",
+    )
+
+    mock_self._session_repo.update_normal_model_profile_async.assert_awaited_once_with(
+        "session-1",
+        normal_model_profile="precise",
+    )
+    mock_self._invalidate_list_sessions_cache.assert_called_once_with()
+    mock_self.get_session_async.assert_awaited_once_with("session-1")
+    mock_self._merge_session_list_cache_record.assert_called_once_with(updated)
+    mock_self._invalidate_session_read_cache.assert_called_once_with("session-1")
+    mock_self.update_session_normal_model_profile.assert_not_called()
+    assert result is updated
 
 
 @pytest.mark.asyncio

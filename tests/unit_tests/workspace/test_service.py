@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import base64
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,8 @@ from relay_teams.workspace import (
     SshProfileRepository,
     SshProfileSecretStore,
     SshProfileService,
+    WorkspaceMountCapabilities,
+    WorkspaceDiffChangeType,
     WorkspaceFileScope,
     WorkspaceMountProvider,
     WorkspaceMountRecord,
@@ -107,6 +110,55 @@ class FakeGitWorktreeClient(GitWorktreeClient):
 class _FileOnlySecretStore(AppSecretStore):
     def has_usable_keyring_backend(self) -> bool:
         return False
+
+
+def _build_ssh_workspace_service(
+    tmp_path: Path,
+    *,
+    process_runner: Callable[..., subprocess.CompletedProcess[str]],
+    remote_root: str = "/srv/app",
+    ssh_profile_id: str = "container",
+    mount_record: WorkspaceMountRecord | None = None,
+) -> WorkspaceService:
+    local_root = tmp_path / "local-root"
+    local_root.mkdir(exist_ok=True)
+    ssh_profile_service = SshProfileService(
+        repository=SshProfileRepository(tmp_path / "ssh_profiles.db"),
+        config_dir=tmp_path,
+        secret_store=SshProfileSecretStore(secret_store=_FileOnlySecretStore()),
+        ssh_path_lookup=lambda _name: "/usr/bin/ssh",
+        process_runner=process_runner,
+    )
+    _ = ssh_profile_service.save_profile(
+        ssh_profile_id=ssh_profile_id,
+        config=SshProfileConfig(
+            host="127.0.0.1",
+            username="root",
+            port=2222,
+            password="secret",
+        ),
+    )
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db"),
+        ssh_profile_service=ssh_profile_service,
+    )
+    ssh_mount = mount_record or WorkspaceMountRecord(
+        mount_name="container",
+        provider=WorkspaceMountProvider.SSH,
+        provider_config=WorkspaceSshMountConfig(
+            ssh_profile_id=ssh_profile_id,
+            remote_root=remote_root,
+        ),
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        mounts=(
+            build_local_workspace_mount(mount_name="default", root_path=local_root),
+            ssh_mount,
+        ),
+        default_mount_name="default",
+    )
+    return service
 
 
 def test_workspace_service_creates_and_lists_workspace(tmp_path: Path) -> None:
@@ -1221,6 +1273,550 @@ def test_workspace_service_lists_ssh_mount_tree_with_saved_profile(
     assert "/srv/app/src" in captured_commands[1][-1]
 
 
+@pytest.mark.asyncio
+async def test_workspace_service_reads_ssh_mount_file_content(
+    tmp_path: Path,
+) -> None:
+    captured_commands: list[tuple[str, ...]] = []
+    content = b"# README\n\nhello from ssh\n"
+
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        captured_commands.append(command_tuple)
+        encoded = base64.b64encode(content).decode("ascii")
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=0,
+            stdout=f"{len(content)}\n{encoded}\n",
+            stderr="",
+        )
+
+    local_root = tmp_path / "local-root"
+    local_root.mkdir()
+    ssh_profile_service = SshProfileService(
+        repository=SshProfileRepository(tmp_path / "ssh_profiles.db"),
+        config_dir=tmp_path,
+        secret_store=SshProfileSecretStore(secret_store=_FileOnlySecretStore()),
+        ssh_path_lookup=lambda _name: "/usr/bin/ssh",
+        process_runner=run_ssh_command,
+    )
+    _ = ssh_profile_service.save_profile(
+        ssh_profile_id="container",
+        config=SshProfileConfig(
+            host="127.0.0.1",
+            username="root",
+            port=2222,
+            password="secret",
+        ),
+    )
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db"),
+        ssh_profile_service=ssh_profile_service,
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        mounts=(
+            build_local_workspace_mount(mount_name="default", root_path=local_root),
+            WorkspaceMountRecord(
+                mount_name="container",
+                provider=WorkspaceMountProvider.SSH,
+                provider_config=WorkspaceSshMountConfig(
+                    ssh_profile_id="container",
+                    remote_root="/srv/app",
+                ),
+            ),
+        ),
+        default_mount_name="default",
+    )
+
+    file_content = await service.get_workspace_file_content_async(
+        "project-alpha",
+        path="docs/readme.md",
+        mount_name="container",
+    )
+
+    assert file_content.mount_name == "container"
+    assert file_content.path == "docs/readme.md"
+    assert file_content.content == content.decode("utf-8")
+    assert file_content.encoding == "utf-8"
+    assert file_content.size_bytes == len(content)
+    assert file_content.is_binary is False
+    assert " /srv/app " in captured_commands[0][-1]
+    assert "/srv/app/docs/readme.md" in captured_commands[0][-1]
+
+
+@pytest.mark.parametrize(
+    ("stdout", "returncode", "expected_error", "match"),
+    (
+        ("relay-teams-error:not-found\n", 2, FileNotFoundError, "not found"),
+        ("relay-teams-error:not-file\n", 3, ValueError, "not a file"),
+        ("relay-teams-error:outside-root\n", 4, ValueError, "escapes root"),
+        ("permission denied\n", 1, ValueError, "Workspace ssh mount command failed"),
+    ),
+)
+@pytest.mark.asyncio
+async def test_workspace_service_handles_ssh_mount_file_read_errors(
+    tmp_path: Path,
+    stdout: str,
+    returncode: int,
+    expected_error: type[Exception],
+    match: str,
+) -> None:
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=returncode,
+            stdout=stdout,
+            stderr="",
+        )
+
+    service = _build_ssh_workspace_service(
+        tmp_path,
+        process_runner=run_ssh_command,
+    )
+
+    with pytest.raises(expected_error, match=match):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="docs/readme.md",
+            mount_name="container",
+        )
+
+
+@pytest.mark.parametrize("stdout", ("", "not-a-size\n"))
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_malformed_ssh_mount_file_payload(
+    tmp_path: Path,
+    stdout: str,
+) -> None:
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=0,
+            stdout=stdout,
+            stderr="",
+        )
+
+    service = _build_ssh_workspace_service(
+        tmp_path,
+        process_runner=run_ssh_command,
+    )
+
+    with pytest.raises(ValueError, match="malformed file payload"):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="docs/readme.md",
+            mount_name="container",
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_returns_ssh_mount_binary_file_state(
+    tmp_path: Path,
+) -> None:
+    content = b"abc\0def"
+
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        encoded = base64.b64encode(content).decode("ascii")
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=0,
+            stdout=f"{len(content)}\n{encoded}\n",
+            stderr="",
+        )
+
+    service = _build_ssh_workspace_service(
+        tmp_path,
+        process_runner=run_ssh_command,
+    )
+
+    file_content = await service.get_workspace_file_content_async(
+        "project-alpha",
+        path="artifacts/blob.bin",
+        mount_name="container",
+    )
+
+    assert file_content.content == ""
+    assert file_content.encoding == "binary"
+    assert file_content.is_binary is True
+    assert file_content.size_bytes == len(content)
+
+
+def test_workspace_service_returns_ssh_mount_git_diff(
+    tmp_path: Path,
+) -> None:
+    captured_remote_commands: list[str] = []
+    patch = (
+        "diff --git a/src/app.py b/src/app.py\n"
+        "--- a/src/app.py\n"
+        "+++ b/src/app.py\n"
+        "@@ -1 +1 @@\n"
+        "-print('old')\n"
+        "+print('new')\n"
+    )
+
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        remote_command = command_tuple[-1]
+        captured_remote_commands.append(remote_command)
+        stdout = ""
+        if "rev-parse --show-toplevel" in remote_command:
+            stdout = "/srv/app\n"
+        elif "rev-parse --verify HEAD" in remote_command:
+            stdout = "abc123\n"
+        elif "diff --relative --name-status --find-renames HEAD -- ." in remote_command:
+            stdout = "M\tsrc/app.py\n"
+        elif "ls-files --others --exclude-standard -- ." in remote_command:
+            stdout = "notes/todo.txt\n"
+        elif (
+            "diff --relative --no-ext-diff --find-renames HEAD -- ':(literal)src/app.py'"
+            in remote_command
+        ):
+            stdout = patch
+        else:
+            raise AssertionError(f"unexpected remote command: {remote_command}")
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=0,
+            stdout=stdout,
+            stderr="",
+        )
+
+    local_root = tmp_path / "local-root"
+    local_root.mkdir()
+    ssh_profile_service = SshProfileService(
+        repository=SshProfileRepository(tmp_path / "ssh_profiles.db"),
+        config_dir=tmp_path,
+        secret_store=SshProfileSecretStore(secret_store=_FileOnlySecretStore()),
+        ssh_path_lookup=lambda _name: "/usr/bin/ssh",
+        process_runner=run_ssh_command,
+    )
+    _ = ssh_profile_service.save_profile(
+        ssh_profile_id="container",
+        config=SshProfileConfig(
+            host="127.0.0.1",
+            username="root",
+            port=2222,
+            password="secret",
+        ),
+    )
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db"),
+        ssh_profile_service=ssh_profile_service,
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        mounts=(
+            build_local_workspace_mount(mount_name="default", root_path=local_root),
+            WorkspaceMountRecord(
+                mount_name="container",
+                provider=WorkspaceMountProvider.SSH,
+                provider_config=WorkspaceSshMountConfig(
+                    ssh_profile_id="container",
+                    remote_root="/srv/app",
+                ),
+            ),
+        ),
+        default_mount_name="default",
+    )
+
+    listing = service.get_workspace_diffs("project-alpha", mount_name="container")
+    diff_file = service.get_workspace_diff_file(
+        "project-alpha",
+        path="src/app.py",
+        mount_name="container",
+    )
+
+    assert listing.mount_name == "container"
+    assert listing.is_git_repository is True
+    assert listing.git_root_path == "/srv/app"
+    assert [item.path for item in listing.diff_files] == [
+        "notes/todo.txt",
+        "src/app.py",
+    ]
+    assert listing.diff_files[0].change_type == WorkspaceDiffChangeType.UNTRACKED
+    assert listing.diff_files[1].change_type == WorkspaceDiffChangeType.MODIFIED
+    assert diff_file.mount_name == "container"
+    assert diff_file.diff == patch
+    assert diff_file.is_binary is False
+    assert any(
+        command.startswith("git -C /srv/app ") for command in captured_remote_commands
+    )
+
+
+def test_workspace_service_hides_non_git_ssh_mount_diff_stderr(
+    tmp_path: Path,
+) -> None:
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=1,
+            stdout="",
+            stderr="fatal: not a git repository (or any of the parent directories): .git",
+        )
+
+    service = _build_ssh_workspace_service(
+        tmp_path,
+        process_runner=run_ssh_command,
+    )
+
+    diffs = service.get_workspace_diffs("project-alpha", mount_name="container")
+
+    assert diffs.is_git_repository is False
+    assert diffs.diff_message is None
+    assert diffs.diff_files == ()
+
+
+def test_workspace_service_uses_cached_ssh_diff_without_head_and_untracked_patch(
+    tmp_path: Path,
+) -> None:
+    rename_patch = (
+        "diff --git a/old.py b/new.py\n"
+        "similarity index 100%\n"
+        "rename from old.py\n"
+        "rename to new.py\n"
+    )
+    untracked_patch = (
+        "diff --git a/notes/new.txt b/notes/new.txt\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        "+++ b/notes/new.txt\n"
+        "@@ -0,0 +1 @@\n"
+        "+new\n"
+    )
+
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        remote_command = command_tuple[-1]
+        stdout = ""
+        stderr = ""
+        returncode = 0
+        if "rev-parse --show-toplevel" in remote_command:
+            stdout = "/srv/app\n"
+        elif "rev-parse --verify HEAD" in remote_command:
+            returncode = 1
+            stderr = "fatal: Needed a single revision"
+        elif (
+            "diff --relative --cached --name-status --find-renames -- ."
+            in remote_command
+        ):
+            stdout = "R100\told.py\tnew.py\nM\tsrc/app.py\n"
+        elif "ls-files --others --exclude-standard -- ." in remote_command:
+            stdout = "./src/app.py\nnotes/new.txt\n"
+        elif "diff --no-ext-diff --no-index -- /dev/null new.py" in remote_command:
+            stdout = rename_patch
+            returncode = 1
+        elif (
+            "diff --no-ext-diff --no-index -- /dev/null notes/new.txt" in remote_command
+        ):
+            stdout = untracked_patch
+            returncode = 1
+        else:
+            raise AssertionError(f"unexpected remote command: {remote_command}")
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+    service = _build_ssh_workspace_service(
+        tmp_path,
+        process_runner=run_ssh_command,
+    )
+
+    listing = service.get_workspace_diffs("project-alpha", mount_name="container")
+    renamed_diff = service.get_workspace_diff_file(
+        "project-alpha",
+        path="new.py",
+        mount_name="container",
+    )
+    untracked_diff = service.get_workspace_diff_file(
+        "project-alpha",
+        path="notes/new.txt",
+        mount_name="container",
+    )
+
+    assert [item.path for item in listing.diff_files] == [
+        "new.py",
+        "notes/new.txt",
+        "src/app.py",
+    ]
+    assert listing.diff_files[0].previous_path == "old.py"
+    assert renamed_diff.diff == rename_patch
+    assert untracked_diff.diff == untracked_patch
+
+
+def test_workspace_service_returns_ssh_diff_paths_relative_to_mount_root(
+    tmp_path: Path,
+) -> None:
+    patch = (
+        "diff --git a/f.txt b/f.txt\n"
+        "--- a/f.txt\n"
+        "+++ b/f.txt\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        remote_command = command_tuple[-1]
+        stdout = ""
+        if "rev-parse --show-toplevel" in remote_command:
+            stdout = "/srv/app\n"
+        elif "rev-parse --verify HEAD" in remote_command:
+            stdout = "abc123\n"
+        elif "diff --relative --name-status --find-renames HEAD -- ." in remote_command:
+            stdout = "M\tf.txt\n"
+        elif "ls-files --others --exclude-standard -- ." in remote_command:
+            stdout = ""
+        elif (
+            "diff --relative --no-ext-diff --find-renames HEAD -- ':(literal)f.txt'"
+            in remote_command
+        ):
+            stdout = patch
+        else:
+            raise AssertionError(f"unexpected remote command: {remote_command}")
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=0,
+            stdout=stdout,
+            stderr="",
+        )
+
+    service = _build_ssh_workspace_service(
+        tmp_path,
+        process_runner=run_ssh_command,
+        remote_root="/srv/app/sub",
+    )
+
+    listing = service.get_workspace_diffs("project-alpha", mount_name="container")
+    diff_file = service.get_workspace_diff_file(
+        "project-alpha",
+        path="f.txt",
+        mount_name="container",
+    )
+
+    assert [item.path for item in listing.diff_files] == ["f.txt"]
+    assert diff_file.diff == patch
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_unreadable_file_mount(tmp_path: Path) -> None:
+    local_root = tmp_path / "local-root"
+    local_root.mkdir()
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    readonly_mount = build_local_workspace_mount(
+        mount_name="readonly",
+        root_path=local_root,
+    ).model_copy(update={"capabilities": WorkspaceMountCapabilities(can_read=False)})
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        mounts=(readonly_mount,),
+        default_mount_name="readonly",
+    )
+
+    with pytest.raises(ValueError, match="does not support file read"):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="README.md",
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_ssh_mount_without_profile_service(
+    tmp_path: Path,
+) -> None:
+    local_root = tmp_path / "local-root"
+    local_root.mkdir()
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        mounts=(
+            build_local_workspace_mount(mount_name="default", root_path=local_root),
+            WorkspaceMountRecord(
+                mount_name="container",
+                provider=WorkspaceMountProvider.SSH,
+                provider_config=WorkspaceSshMountConfig(
+                    ssh_profile_id="container",
+                    remote_root="/srv/app",
+                ),
+            ),
+        ),
+        default_mount_name="default",
+    )
+
+    with pytest.raises(ValueError, match="without ssh profiles"):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="README.md",
+            mount_name="container",
+        )
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_relative_ssh_mount_root(
+    tmp_path: Path,
+) -> None:
+    def run_ssh_command(
+        command: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        command_tuple = tuple(command)
+        return subprocess.CompletedProcess(
+            args=command_tuple,
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+    service = _build_ssh_workspace_service(
+        tmp_path,
+        process_runner=run_ssh_command,
+        remote_root="srv/app",
+    )
+
+    with pytest.raises(ValueError, match="remote root must be absolute"):
+        _ = await service.get_workspace_file_content_async(
+            "project-alpha",
+            path="README.md",
+            mount_name="container",
+        )
+
+
 def test_workspace_service_rejects_tree_path_that_escapes_workspace_root(
     tmp_path: Path,
 ) -> None:
@@ -1511,8 +2107,9 @@ def test_workspace_service_returns_git_diffs_separately(tmp_path: Path) -> None:
             *,
             cwd: Path,
             text: bool = True,
+            allowed_exit_codes: tuple[int, ...] = (0,),
         ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
-            _ = cwd
+            _ = (cwd, allowed_exit_codes)
             if args == ("rev-parse", "--show-toplevel"):
                 return subprocess.CompletedProcess(
                     args=["git", *args],
@@ -1527,7 +2124,14 @@ def test_workspace_service_returns_git_diffs_separately(tmp_path: Path) -> None:
                     stdout="abc123\n",
                     stderr="",
                 )
-            if args == ("diff", "--name-status", "--find-renames", "HEAD", "--"):
+            if args == (
+                "diff",
+                "--relative",
+                "--name-status",
+                "--find-renames",
+                "HEAD",
+                "--",
+            ):
                 return subprocess.CompletedProcess(
                     args=["git", *args],
                     returncode=0,
@@ -1569,6 +2173,49 @@ def test_workspace_service_returns_git_diffs_separately(tmp_path: Path) -> None:
                     stdout=b'print("old")\n',
                     stderr=b"",
                 )
+            if args == (
+                "diff",
+                "--relative",
+                "--no-ext-diff",
+                "--find-renames",
+                "HEAD",
+                "--",
+                ":(literal)src/app.py",
+            ):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout=(
+                        "diff --git a/src/app.py b/src/app.py\n"
+                        "--- a/src/app.py\n"
+                        "+++ b/src/app.py\n"
+                        "@@ -1 +1 @@\n"
+                        '-print("old")\n'
+                        '+print("new")\n'
+                    ),
+                    stderr="",
+                )
+            if args == (
+                "diff",
+                "--relative",
+                "--no-ext-diff",
+                "--find-renames",
+                "HEAD",
+                "--",
+                ":(literal)README.md",
+                ":(literal)docs/README.md",
+            ):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout=(
+                        "diff --git a/README.md b/docs/README.md\n"
+                        "similarity index 100%\n"
+                        "rename from README.md\n"
+                        "rename to docs/README.md\n"
+                    ),
+                    stderr="",
+                )
             raise AssertionError(f"Unexpected git command: {args}")
 
     service = SnapshotWorkspaceService(
@@ -1583,6 +2230,14 @@ def test_workspace_service_returns_git_diffs_separately(tmp_path: Path) -> None:
     diff_file = service.get_workspace_diff_file(
         "project-alpha",
         path="src/app.py",
+    )
+    renamed_diff_file = service.get_workspace_diff_file(
+        "project-alpha",
+        path="docs/README.md",
+    )
+    untracked_diff_file = service.get_workspace_diff_file(
+        "project-alpha",
+        path="notes/todo.txt",
     )
 
     assert diffs.workspace_id == "project-alpha"
@@ -1603,6 +2258,48 @@ def test_workspace_service_returns_git_diffs_separately(tmp_path: Path) -> None:
     assert diff_file.change_type.value == "modified"
     assert '-print("old")' in diff_file.diff
     assert '+print("new")' in diff_file.diff
+    assert renamed_diff_file.previous_path == "README.md"
+    assert "rename from README.md" in renamed_diff_file.diff
+    assert untracked_diff_file.change_type.value == "untracked"
+    assert "+todo" in untracked_diff_file.diff
+
+
+def test_workspace_service_non_git_diff_listing_hides_git_stderr(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+
+    class NonGitWorkspaceService(WorkspaceService):
+        def _run_git(
+            self,
+            args: tuple[str, ...],
+            *,
+            cwd: Path,
+            text: bool = True,
+            allowed_exit_codes: tuple[int, ...] = (0,),
+        ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+            _ = (cwd, text, allowed_exit_codes)
+            if args == ("rev-parse", "--show-toplevel"):
+                raise ValueError(
+                    "Git command failed: fatal: not a git repository "
+                    "(or any of the parent directories): .git"
+                )
+            raise AssertionError(f"Unexpected git command: {args}")
+
+    service = NonGitWorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    diffs = service.get_workspace_diffs("project-alpha")
+
+    assert diffs.is_git_repository is False
+    assert diffs.diff_message is None
+    assert diffs.diff_files == ()
 
 
 def test_workspace_service_rejects_missing_diff_file(tmp_path: Path) -> None:
@@ -1618,8 +2315,9 @@ def test_workspace_service_rejects_missing_diff_file(tmp_path: Path) -> None:
             *,
             cwd: Path,
             text: bool = True,
+            allowed_exit_codes: tuple[int, ...] = (0,),
         ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
-            _ = cwd
+            _ = (cwd, allowed_exit_codes)
             if args == ("rev-parse", "--show-toplevel"):
                 return subprocess.CompletedProcess(
                     args=["git", *args],
@@ -1634,7 +2332,14 @@ def test_workspace_service_rejects_missing_diff_file(tmp_path: Path) -> None:
                     stdout="abc123\n",
                     stderr="",
                 )
-            if args == ("diff", "--name-status", "--find-renames", "HEAD", "--"):
+            if args == (
+                "diff",
+                "--relative",
+                "--name-status",
+                "--find-renames",
+                "HEAD",
+                "--",
+            ):
                 return subprocess.CompletedProcess(
                     args=["git", *args],
                     returncode=0,
@@ -1677,6 +2382,289 @@ def test_workspace_service_rejects_missing_diff_file(tmp_path: Path) -> None:
             "project-alpha",
             path="missing.py",
         )
+
+
+def test_workspace_service_uses_cached_git_diff_without_head(tmp_path: Path) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+    (root_path / "src").mkdir()
+    (root_path / "src" / "app.py").write_text('print("new")\n', encoding="utf-8")
+
+    class SnapshotWorkspaceService(WorkspaceService):
+        def _run_git(
+            self,
+            args: tuple[str, ...],
+            *,
+            cwd: Path,
+            text: bool = True,
+            allowed_exit_codes: tuple[int, ...] = (0,),
+        ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+            _ = (cwd, text, allowed_exit_codes)
+            if args == ("rev-parse", "--show-toplevel"):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout=f"{root_path.resolve()}\n",
+                    stderr="",
+                )
+            if args == ("rev-parse", "--verify", "HEAD"):
+                raise ValueError("Git command failed: fatal: Needed a single revision")
+            if args == (
+                "diff",
+                "--relative",
+                "--cached",
+                "--name-status",
+                "--find-renames",
+                "--",
+            ):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout="M\tsrc/app.py\n",
+                    stderr="",
+                )
+            if args == ("ls-files", "--others", "--exclude-standard"):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+            if args == (
+                "diff",
+                "--no-ext-diff",
+                "--no-index",
+                "--",
+                "/dev/null",
+                "src/app.py",
+            ):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout='+print("new")\n',
+                    stderr="",
+                )
+            raise AssertionError(f"Unexpected git command: {args}")
+
+    service = SnapshotWorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    diffs = service.get_workspace_diffs("project-alpha")
+    diff_file = service.get_workspace_diff_file("project-alpha", path="src/app.py")
+
+    assert diffs.diff_files[0].path == "src/app.py"
+    assert diff_file.diff == '+print("new")\n'
+
+
+def test_workspace_service_returns_binary_git_diff_state(tmp_path: Path) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+    (root_path / "artifact.bin").write_bytes(b"abc\0new")
+
+    class SnapshotWorkspaceService(WorkspaceService):
+        def _run_git(
+            self,
+            args: tuple[str, ...],
+            *,
+            cwd: Path,
+            text: bool = True,
+            allowed_exit_codes: tuple[int, ...] = (0,),
+        ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+            _ = (cwd, allowed_exit_codes)
+            if args == ("rev-parse", "--show-toplevel"):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout=f"{root_path.resolve()}\n",
+                    stderr="",
+                )
+            if args == ("rev-parse", "--verify", "HEAD"):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout="abc123\n",
+                    stderr="",
+                )
+            if args == (
+                "diff",
+                "--relative",
+                "--name-status",
+                "--find-renames",
+                "HEAD",
+                "--",
+            ):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout="M\tartifact.bin\n",
+                    stderr="",
+                )
+            if args == ("ls-files", "--others", "--exclude-standard"):
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+            if args == ("show", "HEAD:artifact.bin"):
+                if text:
+                    return subprocess.CompletedProcess(
+                        args=["git", *args],
+                        returncode=0,
+                        stdout="abc",
+                        stderr="",
+                    )
+                return subprocess.CompletedProcess(
+                    args=["git", *args],
+                    returncode=0,
+                    stdout=b"abc\0old",
+                    stderr=b"",
+                )
+            raise AssertionError(f"Unexpected git command: {args}")
+
+    service = SnapshotWorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    diff_file = service.get_workspace_diff_file("project-alpha", path="artifact.bin")
+
+    assert diff_file.is_binary is True
+    assert diff_file.diff == "Binary file changed"
+
+
+def test_workspace_service_binary_diff_uses_git_root_path_for_subdirectory_mount(
+    tmp_path: Path,
+) -> None:
+    repository_root = tmp_path / "repo"
+    mount_root = repository_root / "sub"
+    mount_root.mkdir(parents=True)
+    _run_git_command(repository_root, "init")
+    _run_git_command(repository_root, "config", "user.email", "tests@example.com")
+    _run_git_command(repository_root, "config", "user.name", "Tests")
+    artifact_path = mount_root / "artifact.bin"
+    artifact_path.write_bytes(b"abc\0old")
+    _run_git_command(repository_root, "add", "sub/artifact.bin")
+    _run_git_command(repository_root, "commit", "-m", "initial")
+    artifact_path.unlink()
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=mount_root,
+    )
+
+    diffs = service.get_workspace_diffs("project-alpha")
+    diff_file = service.get_workspace_diff_file("project-alpha", path="artifact.bin")
+
+    assert diffs.git_root_path == repository_root.resolve()
+    assert [item.path for item in diffs.diff_files] == ["artifact.bin"]
+    assert diff_file.change_type.value == "deleted"
+    assert diff_file.is_binary is True
+    assert diff_file.diff == "Binary file changed"
+
+
+def test_workspace_service_diff_uses_git_eol_normalization(tmp_path: Path) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+    _run_git_command(root_path, "init")
+    _run_git_command(root_path, "config", "user.email", "tests@example.com")
+    _run_git_command(root_path, "config", "user.name", "Tests")
+    _run_git_command(root_path, "config", "core.autocrlf", "true")
+    (root_path / "src").mkdir()
+    file_path = root_path / "src" / "app.py"
+    file_path.write_bytes(b"one\ntwo\nthree\n")
+    _run_git_command(root_path, "add", "src/app.py")
+    _run_git_command(root_path, "commit", "-m", "initial")
+
+    file_path.write_bytes(b"one\r\nTWO\r\nthree\r\n")
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    diff_file = service.get_workspace_diff_file("project-alpha", path="src/app.py")
+    changed_lines = [
+        line
+        for line in diff_file.diff.splitlines()
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+    ]
+
+    assert diff_file.change_type.value == "modified"
+    assert changed_lines == ["-two", "+TWO"]
+    assert "-one" not in diff_file.diff
+    assert "+one" not in diff_file.diff
+    assert "-three" not in diff_file.diff
+    assert "+three" not in diff_file.diff
+
+
+def test_workspace_service_no_head_diff_uses_worktree_file_content(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+    _run_git_command(root_path, "init")
+    file_path = root_path / "new.txt"
+    file_path.write_text("staged\n", encoding="utf-8")
+    _run_git_command(root_path, "add", "new.txt")
+    file_path.write_text("edited\n", encoding="utf-8")
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    diff_file = service.get_workspace_diff_file("project-alpha", path="new.txt")
+
+    assert diff_file.change_type.value == "added"
+    assert "+edited" in diff_file.diff
+    assert "+staged" not in diff_file.diff
+
+
+def test_workspace_service_diff_treats_selected_path_as_literal(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+    _run_git_command(root_path, "init")
+    _run_git_command(root_path, "config", "user.email", "tests@example.com")
+    _run_git_command(root_path, "config", "user.name", "Tests")
+    literal_path = root_path / "a[bc].txt"
+    glob_match_path = root_path / "ab.txt"
+    literal_path.write_text("old literal\n", encoding="utf-8")
+    glob_match_path.write_text("old glob\n", encoding="utf-8")
+    _run_git_command(root_path, "add", "a[bc].txt", "ab.txt")
+    _run_git_command(root_path, "commit", "-m", "initial")
+    literal_path.write_text("new literal\n", encoding="utf-8")
+    glob_match_path.write_text("new glob\n", encoding="utf-8")
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspace.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+
+    diff_file = service.get_workspace_diff_file("project-alpha", path="a[bc].txt")
+
+    assert "a[bc].txt" in diff_file.diff
+    assert "ab.txt" not in diff_file.diff
+    assert "+new literal" in diff_file.diff
+    assert "+new glob" not in diff_file.diff
 
 
 def _run_git_command(workspace_root: Path, *args: str) -> None:

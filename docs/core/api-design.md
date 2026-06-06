@@ -3395,8 +3395,13 @@ Returns one registered execution workspace.
 Opens the workspace root directory in the native file manager on the machine
 running the backend.
 
+Query:
+- `mount`: optional mount name. Frontends should pass the currently active mount.
+  When omitted, the service opens the primary local mount.
+
 Rules:
-- The workspace must exist and its `root_path` must still exist on disk.
+- The workspace and selected mount must exist, and the selected local root must
+  still exist on disk.
 - The action is best-effort and returns `503` when the runtime cannot launch a
   native file manager.
 - This endpoint performs a local side effect and is intended for local desktop
@@ -3407,6 +3412,8 @@ Rules:
 Returns the fast project snapshot used for initial project-view rendering.
 The response includes:
 - workspace metadata such as `workspace_id` and `root_path`
+- `mounts[]` and `default_mount_name` so clients can switch tree, file, and diff
+  requests without reloading the workspace
 - the root tree node plus only the first visible level of children under `root_path`
 - per-node `has_children` so the frontend can lazy-load deeper folders on demand
 
@@ -3418,44 +3425,71 @@ Rules:
 ### `GET /workspaces/{workspace_id}/tree?path=...`
 
 Returns one directory listing for a relative workspace path.
+
+Query:
+- `path`: relative directory path, default `.`
+- `mount`: optional mount name. When omitted, the workspace default mount is used.
+
 The response includes:
 - `directory_path`
+- `mount_name`
 - one level of `children[]`
 - per-node `has_children` to support further lazy expansion
 
 Rules:
-- `path` must be relative to the workspace root.
-- Paths that escape the workspace root are rejected.
+- `path` must be relative to the selected mount root.
+- Paths that escape the selected mount root are rejected.
 - Non-directory paths are rejected.
 - The listing excludes `.git`.
+- Local and SSH mounts are supported. SSH listings are lazy one-directory reads
+  through the saved SSH profile.
 
 ### `GET /workspaces/{workspace_id}/diffs`
 
 Returns the workspace diff summary used for initial change-list rendering.
+
+Query:
+- `mount`: optional mount name. When omitted, the workspace default mount is used.
+
 The response includes:
+- `mount_name`
 - per-file summary entries for modified, added, deleted, renamed, copied, and untracked files
 - Git metadata such as `git_root_path` and a `diff_message` when diff inspection is unavailable
 
 Rules:
-- The workspace must exist and its `root_path` must still exist on disk.
+- The workspace and selected mount must exist.
 - Diff inspection is best-effort. Non-Git directories return `is_git_repository = false` with a `diff_message`.
 - The response intentionally excludes inline patch text so the project view can render quickly even for large workspaces.
+- Local and SSH mounts use Git-native diff commands. Tracked files use Git
+  patch output; untracked text files are reported as full additions.
 
 ### `GET /workspaces/{workspace_id}/diff?path=...`
 
 Returns the full diff payload for one changed file.
+
+Query:
+- `path`: relative file path from `/diffs`
+- `mount`: optional mount name. When omitted, the workspace default mount is used.
+
 The response includes:
+- `mount_name`
 - the changed file `path` and `change_type`
 - optional `previous_path` for renames and copies
 - the inline `diff` text or a binary marker
 
 Rules:
-- `path` must be a relative workspace path and must match one file currently reported by `/diffs`.
+- `path` must be a relative selected-mount path and must match one file currently reported by `/diffs`.
 - Binary files are reported with `is_binary = true` and a summary diff message instead of inline text hunks.
+- Local and SSH tracked file diffs are Git-native patch output, preserving Git's
+  EOL normalization semantics instead of comparing raw file bytes.
 
 ### `GET /workspaces/{workspace_id}/file?path=...`
 
 Returns a bounded read-only text preview for one workspace file.
+
+Query:
+- `path`: relative file path inside the selected mount
+- `mount`: optional mount name. When omitted, the workspace default mount is used.
 
 Response fields:
 - `workspace_id`
@@ -3468,10 +3502,10 @@ Response fields:
 - `size_bytes`
 
 Notes:
-- `path` may be a relative workspace path or an absolute path inside the workspace root.
-- Paths that escape the workspace root are rejected.
+- `path` must be relative to the selected mount root.
+- Paths that escape the selected mount root are rejected.
 - Directories and missing files are rejected.
-- Local mounts return UTF-8 text content up to the preview limit. Larger text files return `truncated = true`.
+- Local and SSH mounts return UTF-8 text content up to the preview limit. Larger text files return `truncated = true`.
 - Binary files return `is_binary = true`, `encoding = "binary"`, and empty `content`.
 
 ### `GET /workspaces/{workspace_id}/preview-file?path=...`

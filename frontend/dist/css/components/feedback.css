@@ -31,6 +31,7 @@
 }
 
 .feedback-toast-body {
+    flex: 1 1 auto;
     min-width: 0;
 }
 
@@ -49,12 +50,17 @@
 }
 
 .feedback-toast-close {
+    flex: 0 0 auto;
+    min-width: 2.4rem;
     border: 1px solid var(--border-color);
     background: var(--bg-surface-muted);
     color: var(--text-secondary);
     border-radius: 8px;
     padding: 0.2rem 0.45rem;
     font-size: 0.7rem;
+    line-height: 1.4;
+    text-align: center;
+    white-space: nowrap;
     cursor: pointer;
     transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }

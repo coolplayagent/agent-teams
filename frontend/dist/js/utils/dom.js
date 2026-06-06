@@ -23,6 +23,7 @@ export const els = {
   inputContainer: qs("#input-container"),
   projectView: qs("#project-view"),
   projectViewTitle: qs("#project-view-title"),
+  projectViewTitleActions: qs("#project-view-title-actions"),
   projectViewSummary: qs("#project-view-summary"),
   projectViewToolbarActions: qs(".project-view-toolbar-actions"),
   projectViewContent: qs("#project-view-content"),

@@ -17,7 +17,11 @@ from relay_teams.agents.orchestration.task_contracts import TaskExecutionResult
 from relay_teams.agent_runtimes.instances.enums import InstanceStatus
 from relay_teams.agents.tasks.enums import TaskStatus, TaskTimeoutAction
 from relay_teams.agents.tasks.events import EventType
-from relay_teams.agents.tasks.models import TaskHandoff, TaskLifecyclePolicy
+from relay_teams.agents.tasks.models import (
+    TaskEnvelope,
+    TaskHandoff,
+    TaskLifecyclePolicy,
+)
 from relay_teams.persistence import close_live_sqlite_repositories_async
 from relay_teams.sessions.runs.recoverable_pause import RecoverableRunPauseError
 from relay_teams.sessions.runs.run_runtime_repo import (
@@ -400,11 +404,6 @@ async def test_execute_applies_timeout_when_worker_cancel_wait_expires(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        task_execution_module,
-        "TIMEOUT_WORKER_CANCEL_GRACE_SECONDS",
-        0.01,
-    )
     provider = _CancellationResistantProvider()
     service, task_repo, agent_repo, message_repo = _build_service(
         tmp_path / "task_execution_cancel_wait_timeout.db",
@@ -417,8 +416,52 @@ async def test_execute_applies_timeout_when_worker_cancel_wait_expires(
     )
     task = task_repo.update_envelope(
         task.task_id,
-        task.model_copy(update={"lifecycle": TaskLifecyclePolicy(timeout_seconds=2.0)}),
+        task.model_copy(
+            update={"lifecycle": TaskLifecyclePolicy(timeout_seconds=0.01)}
+        ),
     ).envelope
+    original_cancel_and_wait = task_execution_module._cancel_and_wait
+
+    async def fake_wait_for_timeout(
+        *,
+        task: TaskEnvelope,
+        instance_id: str,
+        role_id: str,
+        worker: asyncio.Task[TaskExecutionResult],
+        timeout_seconds: float,
+    ) -> bool:
+        del task, instance_id, role_id, timeout_seconds
+        await provider.started.wait()
+        assert worker.done() is False
+        return False
+
+    async def fake_cancel_and_wait(
+        task_obj: asyncio.Task[object],
+        *,
+        suppress_exceptions: bool = False,
+        task_name: str = "task",
+        timeout_seconds: float | None = None,
+        context: Mapping[str, JsonValue] | None = None,
+    ) -> object | None:
+        if task_name == "task_worker":
+            del suppress_exceptions, timeout_seconds, context
+            task_obj.cancel()
+            await provider.cancelled.wait()
+            return None
+        return await original_cancel_and_wait(
+            task_obj,
+            suppress_exceptions=suppress_exceptions,
+            task_name=task_name,
+            timeout_seconds=timeout_seconds,
+            context=context,
+        )
+
+    monkeypatch.setattr(
+        service,
+        "_wait_for_worker_with_progress_timeout_async",
+        fake_wait_for_timeout,
+    )
+    monkeypatch.setattr(task_execution_module, "_cancel_and_wait", fake_cancel_and_wait)
 
     execution = asyncio.create_task(
         service.execute(
@@ -439,7 +482,7 @@ async def test_execute_applies_timeout_when_worker_cancel_wait_expires(
     assert "Task timed out after" in record.error_message
     provider.release.set()
     await asyncio.wait_for(provider.finished.wait(), timeout=1.0)
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0)
     assert task_repo.get(task.task_id).status == TaskStatus.TIMEOUT
 
 
@@ -494,7 +537,7 @@ async def test_timeout_finalizer_applies_timeout_when_worker_cancel_wait_expires
     await asyncio.wait_for(provider.finished.wait(), timeout=1.0)
     late_result = await asyncio.wait_for(worker, timeout=1.0)
     assert late_result.output == "late"
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0)
     assert task_repo.get(task.task_id).status == TaskStatus.TIMEOUT
 
 

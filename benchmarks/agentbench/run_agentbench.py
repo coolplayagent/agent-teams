@@ -49,6 +49,7 @@ _RETRYABLE_INFRA_ERRORS = (
     TimeoutError,
 )
 _MIN_RELAY_TIMEOUT_SECONDS = 0.001
+_MIN_RELAY_TIMEOUT_EPSILON_SECONDS = 0.001
 
 
 class ShellScript(BaseModel):
@@ -956,7 +957,8 @@ def _relay_timeout_reached_task_deadline(
     return _task_timed_out(deadline) or (
         deadline is not None
         and timeout_seconds is not None
-        and timeout_seconds <= _MIN_RELAY_TIMEOUT_SECONDS
+        and timeout_seconds
+        <= _MIN_RELAY_TIMEOUT_SECONDS + _MIN_RELAY_TIMEOUT_EPSILON_SECONDS
     )
 
 
@@ -1176,6 +1178,16 @@ def _run_os_task_once(
                         usage=usage,
                     )
                 raise
+            if _task_timed_out(deadline):
+                return _task_timeout_result(
+                    suite=AgentBenchSuite.OS,
+                    task_id=task.task_id,
+                    started=started,
+                    answer=answer,
+                    expected=task.evaluation.match_answer,
+                    steps=tuple(steps),
+                    usage=usage,
+                )
             _ensure_relay_completed(relay_result.terminal_event_type)
             _add_relay_usage(usage, relay_result.token_usage)
             session_id = relay_result.session_id
@@ -1636,6 +1648,16 @@ def _run_db_task_once(
                         usage=usage,
                     )
                 raise
+            if _task_timed_out(deadline):
+                return _task_timeout_result(
+                    suite=AgentBenchSuite.DB,
+                    task_id=task.task_id,
+                    started=started,
+                    answer=None,
+                    expected=task.label,
+                    steps=tuple(steps),
+                    usage=usage,
+                )
             _ensure_relay_completed(relay_result.terminal_event_type)
             _add_relay_usage(usage, relay_result.token_usage)
             session_id = relay_result.session_id

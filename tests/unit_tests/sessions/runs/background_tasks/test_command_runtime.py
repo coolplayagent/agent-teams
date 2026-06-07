@@ -767,6 +767,35 @@ async def test_kill_process_tree_by_pid_async_delegates_to_thread(
 
 
 @pytest.mark.asyncio
+async def test_kill_process_tree_windows_kills_tree_before_root_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _WindowsTreeProcess(_FakePipeProcess):
+        killed = False
+
+        def kill(self) -> None:
+            self.killed = True
+            super().kill()
+
+    process = _WindowsTreeProcess()
+    killed_pids: list[int] = []
+
+    async def fake_kill_tree(pid: int) -> bool:
+        killed_pids.append(pid)
+        process.returncode = -9
+        return True
+
+    monkeypatch.setattr(runtime_module, "_is_windows", lambda: True)
+    monkeypatch.setattr(runtime_module, "_kill_process_tree_by_pid", fake_kill_tree)
+
+    await runtime_module._kill_process_tree(process)
+
+    assert killed_pids == [1234]
+    assert process.killed is False
+    assert process.returncode == -9
+
+
+@pytest.mark.asyncio
 async def test_threaded_process_writer_defers_blocking_write_to_drain() -> None:
     writes: list[bytes] = []
     flush_count = 0

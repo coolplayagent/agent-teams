@@ -255,6 +255,7 @@ def test_agent_runtimes_test_supports_table_output(monkeypatch) -> None:
 
 def test_agent_runtimes_test_watch_polls_job(monkeypatch) -> None:
     calls: list[tuple[str, str, dict[str, object] | None]] = []
+    sleep_calls: list[float] = []
 
     def fake_autostart(
         base_url: str, autostart: bool, daemon: bool = False, force: bool = False
@@ -297,6 +298,7 @@ def test_agent_runtimes_test_watch_polls_job(monkeypatch) -> None:
 
     monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
     monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+    monkeypatch.setattr(agent_cli_module.time, "sleep", sleep_calls.append)
 
     result = runner.invoke(
         cli_app.app,
@@ -310,6 +312,7 @@ def test_agent_runtimes_test_watch_polls_job(monkeypatch) -> None:
         ("POST", "/api/system/configs/agent-runtimes/codex_local:test-job", None),
         ("GET", "/api/system/configs/agent-runtime-test-jobs/job-1", None),
     ]
+    assert sleep_calls == [0.6]
 
 
 def test_agent_runtimes_test_watch_exits_nonzero_when_job_fails(monkeypatch) -> None:

@@ -314,6 +314,8 @@ jobs:
           uv run --extra dev pytest -q
           tests/integration_tests/api
           tests/integration_tests/cli
+          tests/integration_tests/frontend
+          tests/integration_tests/runtime
           tests/integration_tests/support
           --durations=25
 

@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import sys
@@ -87,6 +86,43 @@ class _FailingSetSecretStore(_FileOnlySecretStore):
             field_name=field_name,
             value=value,
         )
+
+
+@pytest.fixture(autouse=True)
+def _lightweight_plugin_manager_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_init = PluginConfigManager.__init__
+
+    def init_with_test_defaults(
+        self: PluginConfigManager,
+        *,
+        app_config_dir: Path,
+        plugin_dirs: tuple[Path, ...] = (),
+        project_root: Path | None = None,
+        project_start_dir: Path | None = None,
+        user_config_secret_store: PluginUserConfigSecretStore | None = None,
+    ) -> None:
+        resolved_project_root = project_root
+        if resolved_project_root is None:
+            resolved_project_root = tmp_path / "project-root"
+            resolved_project_root.mkdir(exist_ok=True)
+        resolved_secret_store = user_config_secret_store
+        if resolved_secret_store is None:
+            resolved_secret_store = PluginUserConfigSecretStore(
+                secret_store=_FileOnlySecretStore()
+            )
+        original_init(
+            self,
+            app_config_dir=app_config_dir,
+            plugin_dirs=plugin_dirs,
+            project_root=resolved_project_root,
+            project_start_dir=project_start_dir,
+            user_config_secret_store=resolved_secret_store,
+        )
+
+    monkeypatch.setattr(PluginConfigManager, "__init__", init_with_test_defaults)
 
 
 class _FakeResolvedPath:
@@ -1181,102 +1217,6 @@ def test_uninstall_prune_aborts_before_state_change_on_invalid_state_file(
     assert tuple(record.name for record in records) == ("quality",)
     assert records[0].root_dir == installed.root_dir
     assert installed.root_dir.exists()
-
-
-def test_git_install_clones_source_into_installed_copy(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        return
-    app_config_dir = tmp_path / "app"
-    git_root = tmp_path / "quality-git"
-    _write_plugin_manifest(git_root, name="quality", version="1.0.0")
-    subprocess.run(["git", "init"], cwd=git_root, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "tests@example.invalid"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Tests"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(["git", "add", "."], cwd=git_root, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "initial"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-    )
-
-    installed = PluginConfigManager(app_config_dir=app_config_dir).install_git_plugin(
-        source=str(git_root),
-        scope=PluginScope.USER,
-    )
-
-    assert installed.name == "quality"
-    assert installed.source.kind.value == "git"
-    assert installed.root_dir.exists()
-    assert (installed.root_dir / "app" / "plugin.json").exists()
-
-
-def test_git_install_checks_out_requested_commit_ref(tmp_path: Path) -> None:
-    if shutil.which("git") is None:
-        return
-    app_config_dir = tmp_path / "app"
-    git_root = tmp_path / "quality-git"
-    _write_plugin_manifest(git_root, name="quality", version="1.0.0")
-    subprocess.run(["git", "init"], cwd=git_root, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "tests@example.invalid"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Tests"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(["git", "add", "."], cwd=git_root, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "v1"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-    )
-    commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    _write_plugin_manifest(git_root, name="quality", version="2.0.0")
-    subprocess.run(["git", "add", "."], cwd=git_root, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "v2"],
-        cwd=git_root,
-        check=True,
-        capture_output=True,
-    )
-
-    installed = PluginConfigManager(app_config_dir=app_config_dir).install_git_plugin(
-        source=str(git_root),
-        ref=commit,
-        scope=PluginScope.USER,
-    )
-
-    assert installed.version == "1.0.0"
-    assert installed.source.ref == commit
-    assert (
-        json.loads(
-            (installed.root_dir / "app" / "plugin.json").read_text(encoding="utf-8")
-        )["version"]
-        == "1.0.0"
-    )
 
 
 def test_marketplace_install_resolves_local_source(tmp_path: Path) -> None:

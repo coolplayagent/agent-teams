@@ -783,7 +783,6 @@ async def test_session_service_background_task_event_marks_session_list_dirty(
     _ = service.create_session(session_id="session-1", workspace_id="default")
     _ = await service.list_sessions_async()
 
-    await asyncio.sleep(0.55)
     runner.block_next = True
     service.mark_run_event_dirty(
         RunEvent(
@@ -887,7 +886,6 @@ async def test_session_service_run_event_marks_session_snapshot_dirty(
         status=RunRuntimeStatus.RUNNING,
         phase=RunRuntimePhase.COORDINATOR_RUNNING,
     )
-    await asyncio.sleep(0.55)
     runner.block_next = True
     service.mark_run_event_dirty(
         RunEvent(
@@ -960,7 +958,6 @@ async def test_session_service_tool_call_event_marks_session_snapshot_dirty(
         conversation_id="conversation-writer",
         status=InstanceStatus.IDLE,
     )
-    await asyncio.sleep(0.55)
     runner.block_next = True
     service.mark_run_event_dirty(
         RunEvent(
@@ -1005,7 +1002,6 @@ async def test_session_service_subagent_status_event_marks_session_snapshot_dirt
         conversation_id="conversation-writer",
         status=InstanceStatus.IDLE,
     )
-    await asyncio.sleep(0.55)
     runner.block_next = True
     service.mark_run_event_dirty(
         RunEvent(
@@ -1103,7 +1099,6 @@ async def test_session_service_round_projection_event_marks_snapshot_dirty(
     first = await service.get_session_rounds_async("session-1")
     assert first["items"] == []
 
-    await asyncio.sleep(0.55)
     runner.block_next = True
     service.mark_run_event_dirty(
         RunEvent(
@@ -1136,7 +1131,6 @@ async def test_session_service_text_chunk_event_dirties_only_detailed_rounds(
     _ = await service.get_session_rounds_async("session-1", timeline=True)
     _ = await service.list_agents_in_session_async("session-1")
 
-    await asyncio.sleep(0.55)
     runner.block_next = True
     service.mark_run_event_dirty(
         RunEvent(
@@ -1236,7 +1230,7 @@ async def test_session_service_update_merges_enriched_session_list_row(
 
 
 def _build_service(db_path: Path, *, runner: _CountingRunner) -> SessionService:
-    return SessionService(
+    service = SessionService(
         session_repo=SessionRepository(db_path),
         task_repo=TaskRepository(db_path),
         agent_repo=AgentInstanceRepository(db_path),
@@ -1248,6 +1242,15 @@ def _build_service(db_path: Path, *, runner: _CountingRunner) -> SessionService:
         event_log=EventLog(db_path),
         projection_refresh_runner=runner,
     )
+    service._session_list_cache = SessionListCache(
+        refresh_runner=runner,
+        refresh_min_interval_seconds=0,
+    )
+    service._session_snapshot_cache = SessionSnapshotCache(
+        refresh_runner=runner,
+        refresh_min_interval_seconds=0,
+    )
+    return service
 
 
 def _seed_root_task(db_path: Path, *, run_id: str, session_id: str) -> None:

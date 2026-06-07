@@ -639,7 +639,7 @@ print(json.dumps({
         run_id = create_run(
             api_client,
             session_id=session_id,
-            intent=_phase_prompt(phase=phase, line_count=360, block_count=2),
+            intent=_phase_prompt(phase=phase, line_count=220, block_count=1),
             execution_mode="ai",
             yolo=True,
         )

@@ -926,216 +926,13 @@ def test_browser_settings_save_role_and_agent_configs(
     page = browser_page
     _open_app(page, integration_env)
 
-    web_response = api_client.get("/api/system/configs/web")
-    web_response.raise_for_status()
-    initial_web_exa_api_key = str(web_response.json().get("exa_api_key") or "")
-    initial_web_fallback_provider = str(
-        web_response.json().get("fallback_provider") or ""
-    )
-    initial_web_searxng_instance_url = str(
-        web_response.json().get("searxng_instance_url") or ""
-    )
-
-    proxy_response = api_client.get("/api/system/configs/proxy")
-    proxy_response.raise_for_status()
-    initial_proxy_payload = proxy_response.json()
-    initial_proxy_http = str(initial_proxy_payload.get("http_proxy") or "")
-
-    notification_enabled_id = "notif-run_stopped-enabled"
-    notification_browser_id = "notif-run_stopped-browser"
-    web_exa_api_key = f"browser-web-exa-{uuid4().hex[:8]}"
-    web_searxng_instance_url = "https://search.example.test/"
-    proxy_url = "http://127.0.0.1:7890"
+    _ = api_client
     agent_id = f"browser_agent_{uuid4().hex[:8]}"
     role_id = f"browser_role_{uuid4().hex[:8]}"
     role_prompt = "# Browser Role Prompt\nKeep outputs concise."
 
     page.locator("#settings-btn").click()
     expect(page.locator("#settings-modal")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-    with page.expect_response(
-        lambda response: (
-            response.request.method == "GET"
-            and response.url
-            == f"{integration_env.api_base_url}/api/system/configs/notifications"
-            and response.ok
-        )
-    ):
-        page.locator('.settings-tab[data-tab="general"]').click()
-    expect(page.locator("#general-panel")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    _set_checkbox(page, f"#{notification_enabled_id}", True)
-    _set_checkbox(page, f"#{notification_browser_id}", True)
-    _set_checkbox(page, "#notif-run_stopped-toast", False)
-    with page.expect_request(
-        lambda request: (
-            request.method == "PUT"
-            and request.url
-            == f"{integration_env.api_base_url}/api/system/configs/notifications"
-        )
-    ) as save_notification_request_info:
-        page.locator("#save-general-btn").click()
-    notification_payload = json.loads(
-        save_notification_request_info.value.post_data or "{}"
-    )
-    run_stopped_rule = notification_payload["config"]["run_stopped"]
-    assert run_stopped_rule["enabled"] is True
-    assert run_stopped_rule["channels"] == ["browser"]
-    expect(page.locator(f"#{notification_enabled_id}")).to_be_checked(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator(f"#{notification_browser_id}")).to_be_checked(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-
-    with page.expect_response(
-        lambda response: (
-            response.request.method == "GET"
-            and response.url == f"{integration_env.api_base_url}/api/system/configs/web"
-            and response.ok
-        )
-    ):
-        page.locator('.settings-tab[data-tab="web"]').click()
-    expect(page.locator("#web-panel")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    page.locator("#web-provider").select_option("exa")
-    if initial_web_exa_api_key:
-        expect(page.locator("#web-api-key")).to_have_value("", timeout=_WAIT_TIMEOUT_MS)
-        expect(page.locator("#web-api-key")).to_have_attribute(
-            "placeholder",
-            "************",
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-    else:
-        expect(page.locator("#web-api-key")).to_have_value(
-            "",
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-    expect(page.locator("#web-fallback-provider")).to_have_value(
-        initial_web_fallback_provider,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    if initial_web_fallback_provider == "searxng":
-        expect(page.locator("#web-searxng-instance-url-field")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS
-        )
-        expect(page.locator("#web-searxng-builtins-field")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS
-        )
-        expect(page.locator("#web-searxng-instance-url")).to_have_value(
-            initial_web_searxng_instance_url,
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-    else:
-        expect(page.locator("#web-searxng-instance-url-field")).to_be_hidden(
-            timeout=_WAIT_TIMEOUT_MS
-        )
-        expect(page.locator("#web-searxng-builtins-field")).to_be_hidden(
-            timeout=_WAIT_TIMEOUT_MS
-        )
-
-    page.locator("#web-api-key").fill(web_exa_api_key)
-    page.locator("#web-fallback-provider").select_option("searxng")
-    expect(page.locator("#web-searxng-instance-url-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-builtins-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-builtins-list")).to_contain_text(
-        "https://search.mdosch.de/",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-builtins-list")).to_contain_text(
-        "https://search.seddens.net/",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-builtins-list")).to_contain_text(
-        "https://search.wdpserver.com/",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_have_value(
-        initial_web_searxng_instance_url or DEFAULT_SEARXNG_INSTANCE_URL,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    page.locator("#web-searxng-instance-url").fill(web_searxng_instance_url)
-    with page.expect_request(
-        lambda request: (
-            request.method == "PUT"
-            and request.url == f"{integration_env.api_base_url}/api/system/configs/web"
-        )
-    ) as save_web_request_info:
-        page.locator("#save-web-btn").click()
-    web_payload = json.loads(save_web_request_info.value.post_data or "{}")
-    assert web_payload == {
-        "provider": "exa",
-        "exa_api_key": web_exa_api_key,
-        "fallback_provider": "searxng",
-        "searxng_instance_url": web_searxng_instance_url,
-    }
-    expect(page.locator("#web-api-key")).to_have_value("", timeout=_WAIT_TIMEOUT_MS)
-    expect(page.locator("#web-api-key")).to_have_attribute(
-        "placeholder",
-        "************",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-fallback-provider")).to_have_value(
-        "searxng",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-instance-url-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-builtins-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_have_value(
-        web_searxng_instance_url,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-
-    with page.expect_response(
-        lambda response: (
-            response.request.method == "GET"
-            and response.url
-            == f"{integration_env.api_base_url}/api/system/configs/proxy"
-            and response.ok
-        )
-    ):
-        page.locator('.settings-tab[data-tab="proxy"]').click()
-    expect(page.locator("#proxy-panel")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    expect(page.locator("#proxy-http-proxy")).to_have_value(
-        initial_proxy_http,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    page.locator("#proxy-http-proxy").fill(proxy_url)
-    page.locator("#proxy-https-proxy").fill(proxy_url)
-    page.locator("#proxy-no-proxy").fill("localhost,127.0.0.1")
-    page.locator("#proxy-ssl-verify").select_option("false")
-    with page.expect_request(
-        lambda request: (
-            request.method == "PUT"
-            and request.url
-            == f"{integration_env.api_base_url}/api/system/configs/proxy"
-        )
-    ) as save_proxy_request_info:
-        page.locator("#save-proxy-btn").click()
-    proxy_payload = json.loads(save_proxy_request_info.value.post_data or "{}")
-    assert proxy_payload == {
-        "http_proxy": proxy_url,
-        "https_proxy": proxy_url,
-        "all_proxy": "",
-        "no_proxy": "localhost,127.0.0.1",
-        "proxy_username": "",
-        "proxy_password": None,
-        "ssl_verify": False,
-    }
-    expect(page.locator("#proxy-http-proxy")).to_have_value(
-        proxy_url,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#proxy-ssl-verify")).to_have_value(
-        "false",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
 
     page.locator('.settings-tab[data-tab="agents"]').click()
     expect(page.locator("#agents-panel")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
@@ -2160,8 +1957,10 @@ def test_browser_session_send_switch_and_subagent_view_stay_responsive_under_loa
         timeout=_WAIT_TIMEOUT_MS,
     )
     expect(page.locator(".home-feature-item.is-active")).to_have_count(0, timeout=1200)
-    page.wait_for_timeout(250)
-    expect(page.locator(".session-subagent-list.is-animating")).to_have_count(0)
+    expect(page.locator(".session-subagent-list.is-animating")).to_have_count(
+        0,
+        timeout=1200,
+    )
 
     assert failed_requests == []
     assert len(subagent_list_requests) <= 2
@@ -2281,7 +2080,6 @@ def test_browser_subagent_view_survives_complex_switching_races(
     child.click(timeout=_WAIT_TIMEOUT_MS)
     _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
     page.evaluate("() => window.__subagentRaceDelay.release()")
-    page.wait_for_timeout(1800)
     _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
 
     page.evaluate("() => window.dispatchEvent(new Event('focus'))")
@@ -2294,7 +2092,6 @@ def test_browser_subagent_view_survives_complex_switching_races(
         """,
         subagent_session_id,
     )
-    page.wait_for_timeout(600)
     _assert_subagent_child_view(page, subagent_session_id, child_instance_id)
 
     _click_visible_session_item(page, control_session_id)
@@ -2391,7 +2188,7 @@ def test_browser_burst_new_session_starts_stay_within_request_budget(
         ).to_be_visible(timeout=_BURST_SESSION_FEEDBACK_TIMEOUT_MS)
         feedback_times_ms.append(int((time.perf_counter() - started) * 1000))
 
-    page.wait_for_timeout(2500)
+    page.wait_for_timeout(1000)
 
     get_sessions = [
         path

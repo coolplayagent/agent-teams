@@ -4,10 +4,8 @@ from __future__ import annotations
 import ast
 import http.client
 import json
-import os
 import subprocess
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -252,36 +250,6 @@ def _fast_cli_perf_cases() -> list[tuple[str, list[str]]]:
     return cases
 
 
-def test_fast_cli_import_boundary_excludes_heavy_modules() -> None:
-    blocked_modules = [
-        "relay_teams.interfaces.cli.app_full",
-        "relay_teams.env.proxy_env",
-        "relay_teams.env.runtime_env",
-        "relay_teams.interfaces.server.runtime_identity",
-        "pydantic_ai",
-        "lark_oapi",
-    ]
-    probe = (
-        "import json, sys\n"
-        "import relay_teams.interfaces.cli.app\n"
-        f"blocked = {blocked_modules!r}\n"
-        "print(json.dumps({name: name in sys.modules for name in blocked}))\n"
-    )
-
-    completed = subprocess.run(
-        [sys.executable, "-c", probe],
-        check=False,
-        capture_output=True,
-        cwd=_repo_root(),
-        text=True,
-        timeout=5.0,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    loaded = json.loads(completed.stdout)
-    assert loaded == {name: False for name in blocked_modules}
-
-
 def test_fast_cli_app_keeps_relay_team_imports_at_module_boundary() -> None:
     app_path = _repo_root() / "src" / "relay_teams" / "interfaces" / "cli" / "app.py"
     tree = ast.parse(app_path.read_text(encoding="utf-8"), filename=str(app_path))
@@ -323,28 +291,25 @@ def test_fast_cli_app_keeps_relay_team_imports_at_module_boundary() -> None:
 
 
 @pytest.mark.parametrize(("label", "args"), _fast_cli_perf_cases())
-def test_all_fast_cli_command_surface_returns_under_one_second(
+def test_fast_cli_command_surface_is_recognized_in_process(
     label: str,
     args: list[str],
-    tmp_path: Path,
 ) -> None:
-    env = os.environ.copy()
-    env["RELAY_TEAMS_CONFIG_DIR"] = str(tmp_path / "config")
-    start = time.perf_counter()
+    if _IS_HELP(args):
+        assert cli_app._print_fast_help(args) is True
+        return
 
-    completed = subprocess.run(
-        [sys.executable, "-m", "relay_teams.interfaces.cli.app", *args],
-        check=False,
-        capture_output=True,
-        cwd=_repo_root(),
-        env=env,
-        text=True,
-        timeout=3.0,
-    )
+    parsed = cli_app._parse_fast_command(args)
+    if label.startswith("unknown") or label.endswith(" invalid"):
+        assert parsed.invalid_token
+        return
 
-    elapsed = time.perf_counter() - start
-    assert completed.returncode in {0, 1, 2}, completed.stderr
-    assert elapsed < 1.0, f"{label} took {elapsed:.3f}s"
+    assert parsed.invalid_token == ""
+    if _FAST_SERVER_JSON_CANDIDATE(args):
+        try:
+            cli_app._raise_unknown_fast_options_for_server_json(args)
+        except SystemExit as exc:
+            assert exc.code == 2
 
 
 class _FakeForegroundProcess:
@@ -4532,7 +4497,12 @@ def test_resolve_fast_workspace_id_uses_literal_id_for_non_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def fail_http_request(**_kwargs: object) -> object:
+        raise AssertionError("literal workspace id should not call workspace pick")
+
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_app, "_fast_workspace_id_exists", lambda **_kwargs: False)
+    monkeypatch.setattr(cli_app, "_http_request_json", fail_http_request)
 
     assert _RESOLVE_FAST_WORKSPACE_ID(["--workspace", "workspace-id"]) == (
         "workspace-id"

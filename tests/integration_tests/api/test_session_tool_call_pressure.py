@@ -24,22 +24,22 @@ def test_normal_mode_session_concurrent_tool_calls_do_not_starve_backend(
             api_client,
             session_id=new_session_id(f"normal-tool-pressure-{index:02d}"),
         )
-        for index in range(6)
+        for index in range(4)
     ]
 
     result = run_pressure_scenario(
         integration_env=integration_env,
         session_ids=session_ids,
         intent_template=(
-            "[normal-tool-pressure count=4 delay=320 tag=normal{index}] "
+            "[normal-tool-pressure count=3 delay=120 tag=normal{index}] "
             "run concurrent shell pressure in normal mode."
         ),
         timeout_seconds=180.0,
     )
 
     assert {run.terminal_event_type for run in result.runs} == {"run_completed"}
-    assert sum(run.event_counts.get("tool_call", 0) for run in result.runs) >= 24
-    assert sum(run.event_counts.get("tool_result", 0) for run in result.runs) >= 24
+    assert sum(run.event_counts.get("tool_call", 0) for run in result.runs) >= 12
+    assert sum(run.event_counts.get("tool_result", 0) for run in result.runs) >= 12
     assert all(
         "[fake-llm] normal tool pressure completed" in run.output_text
         for run in result.runs

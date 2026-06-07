@@ -7,6 +7,7 @@ import importlib
 import inspect
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple, cast
@@ -534,8 +535,8 @@ def test_source_tree_has_no_legacy_sync_bridge_symbol() -> None:
     source_root = project_root / "src" / "relay_teams"
     matches = [
         str(path.relative_to(source_root.parent))
-        for path in sorted(source_root.rglob("*.py"))
-        if _LEGACY_SYNC_BRIDGE_NAME in path.read_text(encoding="utf-8")
+        for path in _python_files(source_root)
+        if _LEGACY_SYNC_BRIDGE_NAME in _read_source(path)
     ]
 
     assert matches == []
@@ -560,13 +561,27 @@ def _async_sync_lifecycle_calls() -> tuple[str, ...]:
     )
     violations: list[str] = []
     for scoped_root in scoped_roots:
-        for path in sorted(scoped_root.rglob("*.py")):
-            source = path.read_text(encoding="utf-8")
-            tree = ast.parse(source)
+        for path in _python_files(scoped_root):
+            tree = _parsed_tree(path)
             visitor = _AsyncSyncLifecycleVisitor(path=path, source_root=source_root)
             visitor.visit(tree)
             violations.extend(visitor.violations)
     return tuple(violations)
+
+
+@lru_cache(maxsize=None)
+def _python_files(root: Path) -> tuple[Path, ...]:
+    return tuple(sorted(root.rglob("*.py")))
+
+
+@lru_cache(maxsize=None)
+def _read_source(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+@lru_cache(maxsize=None)
+def _parsed_tree(path: Path) -> ast.Module:
+    return ast.parse(_read_source(path), filename=str(path))
 
 
 class _AsyncSyncLifecycleVisitor(ast.NodeVisitor):

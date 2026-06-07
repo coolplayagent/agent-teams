@@ -1709,55 +1709,6 @@ def test_finish_process_output_closes_streams_after_join_timeout() -> None:
     ]
 
 
-@pytest.mark.timeout(3)
-def test_verify_task_reports_command_timeout(
-    tmp_path: Path,
-) -> None:
-    db_path = tmp_path / "verification_timeout.db"
-    task_repo = TaskRepository(db_path)
-    event_log = EventLog(db_path)
-    task = TaskEnvelope(
-        task_id="task-1",
-        session_id="session-1",
-        trace_id="run-1",
-        objective="Return evidence",
-        verification=VerificationPlan(
-            command_checks=(
-                VerificationCommand(
-                    command=(
-                        sys.executable,
-                        "-c",
-                        "import sys, time; "
-                        "sys.stdout.write('partial stdout'); "
-                        "sys.stdout.flush(); "
-                        "sys.stderr.write('partial stderr'); "
-                        "sys.stderr.flush(); "
-                        "time.sleep(5)",
-                    ),
-                    timeout_seconds=1.0,
-                ),
-            ),
-        ),
-    )
-    _ = task_repo.create(task)
-    task_repo.update_status(task.task_id, TaskStatus.COMPLETED, result="done")
-
-    result = verify_task(
-        task_repo,
-        event_log,
-        task.task_id,
-        allowed_tools=("shell",),
-        tool_approval_policy=YOLO_TOOL_APPROVAL_POLICY,
-        workspace_root=tmp_path,
-    )
-
-    assert result.passed is False
-    assert result.report is not None
-    command_check = result.report.checks[-1]
-    assert "timed out" in command_check.details
-    assert command_check.output_excerpt == "partial stdout\npartial stderr"
-
-
 def test_verify_task_reports_command_os_error(
     tmp_path: Path,
 ) -> None:

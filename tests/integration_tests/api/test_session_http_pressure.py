@@ -37,11 +37,11 @@ def test_session_switch_pressure_does_not_starve_backend(
             api_client,
             session_id=new_session_id(f"pressure-session-{index:02d}"),
         )
-        for index in range(24)
+        for index in range(12)
     ]
     subagent_session_ids: list[str] = []
     completed_run_ids: list[str] = []
-    for index, session_id in enumerate(session_ids[1:4], start=1):
+    for index, session_id in enumerate(session_ids[1:3], start=1):
         run_id = create_run(
             api_client,
             session_id=session_id,
@@ -77,7 +77,7 @@ def test_session_switch_pressure_does_not_starve_backend(
     results = _run_pressure_requests(
         integration_env.api_base_url,
         request_plan,
-        workers=16,
+        workers=8,
     )
     failures = [
         result

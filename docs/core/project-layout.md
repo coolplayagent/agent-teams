@@ -56,4 +56,6 @@
 - `tests/integration_tests/api/`: HTTP/SSE integration flows
 - `tests/integration_tests/browser/`: browser scenarios
 - `tests/integration_tests/cli/`: CLI integration coverage
+- `tests/integration_tests/frontend/`: frontend tests that execute Node/jsdom runtime scenarios
+- `tests/integration_tests/runtime/`: real process, shell, import-boundary, server-container lifecycle, and concurrency integration coverage
 - `tests/integration_tests/support/`: shared integration helpers

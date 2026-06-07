@@ -286,7 +286,7 @@ jobs:
       - name: Verify repository is unchanged after checks
         run: git diff --exit-code
 
-  agents-self-check-api-integration:
+  agents-self-check-integration:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -307,7 +307,7 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --extra dev --no-default-groups
 
-      - name: API integration tests
+      - name: Non-browser integration tests
         env:
           RELAY_TEAMS_INTEGRATION_TEST_TIMEOUT_SECONDS: "240"
         run: >

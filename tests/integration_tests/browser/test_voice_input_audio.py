@@ -33,6 +33,11 @@ def test_voice_input_sends_pcm_bytes_and_stops_after_silence() -> None:
                 viewport={"width": _VIEWPORT_WIDTH, "height": _VIEWPORT_HEIGHT},
                 permissions=["microphone"],
             )
+            context.add_init_script(
+                "window.__relayTeamsVoiceInputTestConfig = { "
+                "silenceAutoStopMs: 200, speechStopGraceMs: 100 "
+                "};"
+            )
             context.add_init_script(_voice_audio_probe_script())
             page = context.new_page()
             _route_speech_config(page)
@@ -102,7 +107,7 @@ def test_voice_space_hold_focuses_prompt_and_suppresses_silence_stop() -> None:
                 "() => document.querySelector('#voice-input-btn')?.dataset.voiceState === 'listening'",
                 timeout=_WAIT_TIMEOUT_MS,
             )
-            page.wait_for_timeout(2500)
+            page.wait_for_timeout(450)
             held = page.evaluate(
                 "() => ({"
                 "state: document.querySelector('#voice-input-btn')?.dataset.voiceState,"
@@ -192,6 +197,9 @@ def test_voice_input_closes_websocket_when_finalize_times_out() -> None:
                 viewport={"width": _VIEWPORT_WIDTH, "height": _VIEWPORT_HEIGHT},
                 permissions=["microphone"],
             )
+            context.add_init_script(
+                "window.__relayTeamsVoiceInputTestConfig = { finalizeTimeoutMs: 150 };"
+            )
             context.add_init_script(_voice_audio_probe_script(close_on_stop=False))
             page = context.new_page()
             _route_speech_config(page)
@@ -211,7 +219,7 @@ def test_voice_input_closes_websocket_when_finalize_times_out() -> None:
             )
             page.wait_for_function(
                 "() => document.querySelector('#voice-input-btn')?.dataset.voiceState === 'idle'",
-                timeout=12_000,
+                timeout=_WAIT_TIMEOUT_MS,
             )
             result = page.evaluate(
                 "() => ({"

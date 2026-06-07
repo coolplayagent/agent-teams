@@ -40,6 +40,7 @@ _PROXY_ENV_KEYS: tuple[str, ...] = (
     "SSL_VERIFY",
 )
 _PYTHONPATH_SEPARATOR = ";" if os.name == "nt" else ":"
+_API_INTEGRATION_TESTS_ROOT = _INTEGRATION_TESTS_ROOT / "api"
 
 
 def pytest_collection_modifyitems(
@@ -225,7 +226,16 @@ def api_client(integration_env: IntegrationEnvironment) -> Iterator[httpx.Client
 
 
 @pytest.fixture(autouse=True)
-def reset_fake_llm_state(integration_env: IntegrationEnvironment) -> None:
+def reset_fake_llm_state(request: pytest.FixtureRequest) -> None:
+    item_path = Path(str(request.node.fspath)).resolve()
+    if (
+        item_path != _API_INTEGRATION_TESTS_ROOT
+        and _API_INTEGRATION_TESTS_ROOT not in item_path.parents
+    ):
+        return
+    integration_env = request.getfixturevalue("integration_env")
+    if not isinstance(integration_env, IntegrationEnvironment):
+        raise TypeError("integration_env fixture returned an unexpected value")
     response = httpx.post(
         f"{integration_env.fake_llm_admin_url}/admin/reset",
         timeout=5.0,

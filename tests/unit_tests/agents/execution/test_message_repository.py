@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
-import time
+import threading
 from typing import cast
 
 import pytest
@@ -175,33 +174,24 @@ async def test_async_history_replay_validation_does_not_block_event_loop(
             for index in range(message_count)
         ],
     )
+    main_thread_id = threading.get_ident()
+    validator_thread_ids: set[int] = set()
 
-    def slow_validate_message_row(_row: sqlite3.Row) -> list[ModelMessage]:
-        time.sleep(0.01)
+    def validate_message_row(_row: sqlite3.Row) -> list[ModelMessage]:
+        validator_thread_ids.add(threading.get_ident())
         return [ModelRequest(parts=[UserPromptPart(content="validated")])]
 
     monkeypatch.setattr(
         message_repo_module,
         "_validate_message_row",
-        slow_validate_message_row,
+        validate_message_row,
     )
 
-    samples: list[float] = []
-    previous = time.perf_counter()
-    replay_task = asyncio.create_task(
-        repo.get_history_for_conversation_async("conversation-1")
-    )
-    while not replay_task.done():
-        await asyncio.sleep(0.02)
-        now = time.perf_counter()
-        samples.append(now - previous)
-        previous = now
-
-    history = await replay_task
+    history = await repo.get_history_for_conversation_async("conversation-1")
 
     assert len(history) == message_count
-    assert samples
-    assert max(samples) < 0.2
+    assert validator_thread_ids
+    assert main_thread_id not in validator_thread_ids
 
 
 def test_message_repo_hides_duplicate_task_objective_messages(tmp_path: Path) -> None:

@@ -50,8 +50,16 @@ def test_voice_input_button_and_assets_are_linked() -> None:
     assert "VOICE_WORKLET_MODULE_URL" in voice_input
     assert "AudioWorkletNode" in voice_input
     assert "VOICE_SPACE_HOLD_MS = 350" in voice_input
-    assert "VOICE_NO_SPEECH_TIMEOUT_MS = 5000" in voice_input
-    assert "VOICE_SILENCE_AUTO_STOP_MS = 1600" in voice_input
+    assert "VOICE_NO_SPEECH_TIMEOUT_MS = voiceTestTimeoutOverride" in voice_input
+    assert "'noSpeechTimeoutMs'," in voice_input
+    assert "5000," in voice_input
+    assert "VOICE_SILENCE_AUTO_STOP_MS = voiceTestTimeoutOverride" in voice_input
+    assert "'silenceAutoStopMs'," in voice_input
+    assert "1600," in voice_input
+    assert "'speechStopGraceMs'," in voice_input
+    assert "900," in voice_input
+    assert "'finalizeTimeoutMs'," in voice_input
+    assert "8000," in voice_input
     assert "VOICE_AUDIO_FRAME_TIMEOUT_MS = 1800" in voice_input
     assert "VOICE_BUFFER_MAX_BYTES = 512000" in voice_input
     assert "VOICE_SOCKET_BACKPRESSURE_SOFT_BYTES = 512000" in voice_input

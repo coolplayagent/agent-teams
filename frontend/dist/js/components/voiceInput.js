@@ -18,10 +18,22 @@ const VOICE_READY_TIMEOUT_MS = 12000;
 const VOICE_WORKLET_MODULE_URL = '/js/components/voiceInputWorklet.js';
 const VOICE_WORKLET_PROCESSOR_NAME = 'relay-teams-voice-input';
 const VOICE_SILENCE_LEVEL_THRESHOLD = 0.035;
-const VOICE_NO_SPEECH_TIMEOUT_MS = 5000;
-const VOICE_SILENCE_AUTO_STOP_MS = 1600;
-const VOICE_SPEECH_STOP_GRACE_MS = 900;
-const VOICE_FINALIZE_TIMEOUT_MS = 8000;
+const VOICE_NO_SPEECH_TIMEOUT_MS = voiceTestTimeoutOverride(
+    'noSpeechTimeoutMs',
+    5000,
+);
+const VOICE_SILENCE_AUTO_STOP_MS = voiceTestTimeoutOverride(
+    'silenceAutoStopMs',
+    1600,
+);
+const VOICE_SPEECH_STOP_GRACE_MS = voiceTestTimeoutOverride(
+    'speechStopGraceMs',
+    900,
+);
+const VOICE_FINALIZE_TIMEOUT_MS = voiceTestTimeoutOverride(
+    'finalizeTimeoutMs',
+    8000,
+);
 const VOICE_SPACE_HOLD_MS = 350;
 const VOICE_LEVEL_UI_MIN_INTERVAL_MS = 80;
 const VOICE_AUDIO_FRAME_TIMEOUT_MS = 1800;
@@ -30,6 +42,14 @@ const VOICE_SOCKET_BACKPRESSURE_SOFT_BYTES = 512000;
 const VOICE_SOCKET_BACKPRESSURE_HARD_BYTES = 2097152;
 const VOICE_SOCKET_BACKPRESSURE_TIMEOUT_MS = 2500;
 const COMPOSER_RUN_ACTION_ACTIVE_CLASS = 'has-run-composer-action';
+
+function voiceTestTimeoutOverride(key, fallbackMs) {
+    const overrides = globalThis.__relayTeamsVoiceInputTestConfig;
+    if (!overrides || typeof overrides !== 'object') return fallbackMs;
+    const value = Number(overrides[key]);
+    if (!Number.isFinite(value) || value < 0) return fallbackMs;
+    return value;
+}
 
 const VOICE_STATES = Object.freeze({
     IDLE: 'idle',

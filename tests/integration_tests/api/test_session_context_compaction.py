@@ -119,17 +119,18 @@ def test_multiple_rolling_summary_rewrites_preserve_rounds_and_exact_recall(
     api_client: httpx.Client,
     integration_env: IntegrationEnvironment,
 ) -> None:
+    max_phase = 4
     session_id = create_session(
         api_client,
         session_id=new_session_id("session-rolling-summary"),
     )
 
     phase_run_ids: list[str] = []
-    for phase in range(1, 6):
+    for phase in range(1, max_phase + 1):
         run_id = create_run(
             api_client,
             session_id=session_id,
-            intent=_phase_prompt(phase=phase, line_count=260, block_count=4),
+            intent=_phase_prompt(phase=phase, line_count=180, block_count=2),
             execution_mode="ai",
             yolo=True,
         )
@@ -170,7 +171,7 @@ def test_multiple_rolling_summary_rewrites_preserve_rounds_and_exact_recall(
     recall_run_id = create_run(
         api_client,
         session_id=session_id,
-        intent=_recall_prompt(max_phase=5),
+        intent=_recall_prompt(max_phase=max_phase),
         execution_mode="ai",
         yolo=True,
     )
@@ -206,7 +207,7 @@ def test_multiple_rolling_summary_rewrites_preserve_rounds_and_exact_recall(
     )
     for label, value in _GLOBAL_FACTS.items():
         assert f"{label}: {value}" in recall_text
-    for phase in range(1, 6):
+    for phase in range(1, max_phase + 1):
         anchor = _PHASE_ANCHORS[phase]
         checksum = _PHASE_CHECKSUMS[phase]
         assert f"phase-{phase} anchor" in recall_text

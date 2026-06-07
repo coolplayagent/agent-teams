@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -73,8 +74,8 @@ def test_package_exports_do_not_use_implicit_lazy_imports() -> None:
     for path in _iter_python_files(SRC_ROOT):
         if path.name != "__init__.py":
             continue
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(path))
+        source = _read_source(path)
+        tree = _parsed_tree(path)
         for node in tree.body:
             if isinstance(node, ast.FunctionDef) and node.name == "__getattr__":
                 violations.append(f"{path.relative_to(REPO_ROOT)} defines __getattr__")
@@ -108,10 +109,10 @@ def test_source_modules_do_not_bypass_net_http_clients() -> None:
         relative_path = path.relative_to(SRC_ROOT)
         if relative_path.parts[0] == "net":
             continue
-        source = path.read_text(encoding="utf-8")
+        source = _read_source(path)
         if not any(token in source for token in _HTTP_CLIENT_SCAN_TOKENS):
             continue
-        tree = ast.parse(source, filename=str(path))
+        tree = _parsed_tree(path)
         import_aliases = _http_import_aliases(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -151,9 +152,7 @@ def _assert_no_forbidden_imports_in_files(
 ) -> None:
     violations: list[str] = []
     for path in files:
-        if candidate_text is not None and candidate_text not in path.read_text(
-            encoding="utf-8"
-        ):
+        if candidate_text is not None and candidate_text not in _read_source(path):
             continue
         for module in _imported_modules(path):
             if is_forbidden(module):
@@ -161,14 +160,25 @@ def _assert_no_forbidden_imports_in_files(
     assert not violations, f"{message}:\n" + "\n".join(sorted(violations))
 
 
+@lru_cache(maxsize=None)
 def _iter_python_files(scope: Path) -> tuple[Path, ...]:
     return tuple(
         sorted(path for path in scope.rglob("*.py") if "__pycache__" not in path.parts)
     )
 
 
+@lru_cache(maxsize=None)
+def _read_source(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+@lru_cache(maxsize=None)
+def _parsed_tree(path: Path) -> ast.Module:
+    return ast.parse(_read_source(path), filename=str(path))
+
+
 def _imported_modules(path: Path) -> tuple[str, ...]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = _parsed_tree(path)
     modules: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

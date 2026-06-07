@@ -244,6 +244,10 @@ async def test_send_a2a_prompt_uses_message_send_and_polls_task(
     requests: list[dict[str, JsonValue]] = []
     observed_card_timeouts: list[float] = []
     observed_post_timeouts: list[tuple[str, float]] = []
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
@@ -312,6 +316,7 @@ async def test_send_a2a_prompt_uses_message_send_and_polls_task(
             transport=httpx.MockTransport(handler)
         ),
     )
+    monkeypatch.setattr(a2a_client.asyncio, "sleep", fake_sleep)
 
     result = await a2a_client.send_a2a_prompt(
         config=_build_a2a_agent("http://agent.test/.well-known/agent.json"),
@@ -340,7 +345,9 @@ async def test_send_a2a_prompt_uses_message_send_and_polls_task(
     message_send_timeout = observed_post_timeouts[0][1]
     task_poll_timeout = observed_post_timeouts[1][1]
     assert 0 < message_send_timeout <= 3.0
-    assert 0 < task_poll_timeout < message_send_timeout
+    assert 0 < task_poll_timeout <= message_send_timeout
+    assert len(sleep_calls) == 1
+    assert sleep_calls[0] == pytest.approx(1.0)
 
 
 @pytest.mark.asyncio

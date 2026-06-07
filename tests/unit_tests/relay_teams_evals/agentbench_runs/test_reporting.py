@@ -297,7 +297,18 @@ def test_agentbench_db_relay_call_uses_remaining_task_deadline() -> None:
     assert 0.0 < timeout_seconds <= 30.0
 
 
-def test_agentbench_db_sql_timeout_uses_task_deadline() -> None:
+def test_agentbench_db_sql_timeout_uses_task_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeTime:
+        def __init__(self) -> None:
+            self._ticks = iter((100.0, 100.0, 100.01, 100.04, 100.06))
+            self._last = 100.06
+
+        def monotonic(self) -> float:
+            self._last = next(self._ticks, self._last)
+            return self._last
+
     class SlowRelayClient:
         def run_prompt(
             self,
@@ -307,7 +318,6 @@ def test_agentbench_db_sql_timeout_uses_task_deadline() -> None:
             timeout_seconds: float | None = None,
         ) -> RelayRunResult:
             _ = (prompt, session_id, timeout_seconds)
-            time.sleep(0.01)
             return RelayRunResult(
                 text='{"name":"execute_sql","arguments":{"query":"SELECT value FROM T"}}',
                 run_id="run-1",
@@ -328,11 +338,12 @@ def test_agentbench_db_sql_timeout_uses_task_deadline() -> None:
         },
     )
 
+    monkeypatch.setitem(_run_db_task_once.__globals__, "time", FakeTime())
     result = _run_db_task_once(
         task=task,
         relay_client=cast(RelayTeamsHttpClient, SlowRelayClient()),
         max_steps=1,
-        task_timeout_seconds=0.001,
+        task_timeout_seconds=0.05,
         db_prompt_template=None,
     )
 

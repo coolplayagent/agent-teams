@@ -22,6 +22,7 @@ class SessionListCache:
         refresh_runner: ProjectionRefreshRunner[object] | None = None,
         max_age_seconds: float | None = None,
         cold_miss_timeout_seconds: float = DEFAULT_SESSION_COLD_MISS_TIMEOUT_SECONDS,
+        refresh_min_interval_seconds: float | None = None,
     ) -> None:
         typed_refresh_runner: ProjectionRefreshRunner[tuple[SessionRecord, ...]] | None
         typed_refresh_runner = None
@@ -50,6 +51,7 @@ class SessionListCache:
                 / 1000
             ),
             cold_miss_timeout_seconds=cold_miss_timeout_seconds,
+            refresh_min_interval_seconds=refresh_min_interval_seconds,
         )
 
     def mark_dirty(self, *, requires_fresh_read: bool = False) -> None:

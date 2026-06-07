@@ -93,8 +93,8 @@ def test_pr_checks_gate_changed_line_unit_coverage() -> None:
         "src/relay_teams_evals/**/*.py",
     ]
     assert _workflow_job_names(pr_workflow_path) == {
-        "agents-self-check-api-integration",
         "agents-self-check-browser-integration",
+        "agents-self-check-integration",
         "agents-self-check-quality",
         "agents-self-check-unit-coverage",
         "agents-self-check-unit-parallel-coverage",

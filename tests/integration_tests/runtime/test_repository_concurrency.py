@@ -27,7 +27,7 @@ def test_run_runtime_repo_handles_concurrent_reads_and_writes(
         root_task_id="task-1",
     )
 
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
     start_barrier = Barrier(5)
 
     def writer(worker_id: int) -> None:
@@ -44,7 +44,7 @@ def test_run_runtime_repo_handles_concurrent_reads_and_writes(
                     phase=RunRuntimePhase.COORDINATOR_RUNNING,
                     active_instance_id=f"inst-{worker_id}-{iteration}",
                 )
-        except BaseException as exc:  # pragma: no cover - regression capture
+        except Exception as exc:  # pragma: no cover - regression capture
             errors.append(exc)
 
     def reader() -> None:
@@ -54,7 +54,7 @@ def test_run_runtime_repo_handles_concurrent_reads_and_writes(
                 records = repo.list_by_session("session-1")
                 assert len(records) == 1
                 assert records[0].run_id == "run-1"
-        except BaseException as exc:  # pragma: no cover - regression capture
+        except Exception as exc:  # pragma: no cover - regression capture
             errors.append(exc)
 
     with ThreadPoolExecutor(max_workers=5) as executor:

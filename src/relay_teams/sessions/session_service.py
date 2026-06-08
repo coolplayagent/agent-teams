@@ -1330,7 +1330,7 @@ class SessionService:
         )
 
     async def get_session_async(self, session_id: str) -> SessionRecord:
-        return self._with_terminal_run_projection(
+        return await self._with_terminal_run_projection_async(
             self._with_auto_session_title(
                 await self._session_repo.get_async(session_id)
             )
@@ -1389,15 +1389,27 @@ class SessionService:
         )
         subagent_counts = self._count_subagents_by_session(sessions)
         selected_by_session: dict[str, tuple[str, RunRuntimeRecord]] = {}
+        latest_terminal_by_session: dict[str, RunRuntimeRecord] = {}
         for session_id in session_ids:
+            runtimes = runtimes_by_session.get(session_id, ())
+            excluded_run_ids = excluded_run_ids_by_session.get(session_id, set())
             selected = self._select_active_run_from_preloaded(
                 session_id=session_id,
-                runtimes=runtimes_by_session.get(session_id, ()),
-                excluded_run_ids=excluded_run_ids_by_session.get(session_id, set()),
+                runtimes=runtimes,
+                excluded_run_ids=excluded_run_ids,
                 active_background_run_ids=active_background_run_ids,
             )
             if selected is not None:
                 selected_by_session[session_id] = selected
+            latest_terminal = self._latest_terminal_run_from_preloaded(
+                runtimes,
+                excluded_run_ids,
+            )
+            if latest_terminal is not None:
+                latest_terminal_by_session[session_id] = latest_terminal
+        verification_status_by_run_id = self._runtime_verification_statuses_by_run_id(
+            tuple(runtime.run_id for runtime in latest_terminal_by_session.values())
+        )
         selected_run_ids = tuple(
             dict.fromkeys(run_id for run_id, _runtime in selected_by_session.values())
         )
@@ -1433,6 +1445,7 @@ class SessionService:
                         ),
                         runtimes=runtimes,
                         excluded_run_ids=excluded_run_ids,
+                        verification_status_by_run_id=verification_status_by_run_id,
                     )
                 )
                 continue
@@ -1457,6 +1470,7 @@ class SessionService:
                     ),
                     runtimes=runtimes,
                     excluded_run_ids=excluded_run_ids,
+                    verification_status_by_run_id=verification_status_by_run_id,
                 )
             )
         return tuple(enriched)
@@ -2618,6 +2632,29 @@ class SessionService:
             update={
                 "latest_terminal_run_id": latest_terminal.run_id,
                 "latest_terminal_run_status": latest_terminal.status.value,
+                "latest_terminal_run_verification_status": self._runtime_verification_status(
+                    latest_terminal
+                ),
+                "latest_terminal_run_updated_at": latest_terminal.updated_at,
+                "has_unread_terminal_run": last_viewed_run_id != latest_terminal.run_id,
+            }
+        )
+
+    async def _with_terminal_run_projection_async(
+        self,
+        record: SessionRecord,
+    ) -> SessionRecord:
+        latest_terminal = await self._latest_terminal_run_async(record.session_id)
+        if latest_terminal is None:
+            return record
+        last_viewed_run_id = str(record.last_viewed_terminal_run_id or "").strip()
+        return record.model_copy(
+            update={
+                "latest_terminal_run_id": latest_terminal.run_id,
+                "latest_terminal_run_status": latest_terminal.status.value,
+                "latest_terminal_run_verification_status": await self._runtime_verification_status_async(
+                    latest_terminal
+                ),
                 "latest_terminal_run_updated_at": latest_terminal.updated_at,
                 "has_unread_terminal_run": last_viewed_run_id != latest_terminal.run_id,
             }
@@ -2629,6 +2666,7 @@ class SessionService:
         *,
         runtimes: tuple[RunRuntimeRecord, ...],
         excluded_run_ids: set[str],
+        verification_status_by_run_id: Mapping[str, str] | None = None,
     ) -> SessionRecord:
         latest_terminal = self._latest_terminal_run_from_preloaded(
             runtimes,
@@ -2641,10 +2679,86 @@ class SessionService:
             update={
                 "latest_terminal_run_id": latest_terminal.run_id,
                 "latest_terminal_run_status": latest_terminal.status.value,
+                "latest_terminal_run_verification_status": (
+                    verification_status_by_run_id.get(latest_terminal.run_id)
+                    if verification_status_by_run_id is not None
+                    else self._runtime_verification_status(latest_terminal)
+                ),
                 "latest_terminal_run_updated_at": latest_terminal.updated_at,
                 "has_unread_terminal_run": last_viewed_run_id != latest_terminal.run_id,
             }
         )
+
+    def _runtime_verification_status(self, runtime: RunRuntimeRecord) -> str | None:
+        if self._event_log is None:
+            return None
+        events = self._event_log.list_by_session_run_ids_event_types(
+            runtime.session_id,
+            (runtime.run_id,),
+            (
+                RunEventType.RUN_COMPLETED.value,
+                RunEventType.RUN_FAILED.value,
+            ),
+        )
+        for event in reversed(events):
+            if self._event_has_verification_failed_error_code(event):
+                return "failed"
+        return None
+
+    def _runtime_verification_statuses_by_run_id(
+        self,
+        run_ids: tuple[str, ...],
+    ) -> dict[str, str]:
+        if self._event_log is None:
+            return {}
+        events = self._event_log.list_by_run_ids_event_types(
+            run_ids,
+            (
+                RunEventType.RUN_COMPLETED.value,
+                RunEventType.RUN_FAILED.value,
+            ),
+        )
+        statuses: dict[str, str] = {}
+        for event in reversed(events):
+            run_id = str(event.get("trace_id") or "").strip()
+            if not run_id or run_id in statuses:
+                continue
+            if self._event_has_verification_failed_error_code(event):
+                statuses[run_id] = "failed"
+        return statuses
+
+    async def _runtime_verification_status_async(
+        self,
+        runtime: RunRuntimeRecord,
+    ) -> str | None:
+        if self._event_log is None:
+            return None
+        events = await self._event_log.list_by_session_run_ids_event_types_async(
+            runtime.session_id,
+            (runtime.run_id,),
+            (
+                RunEventType.RUN_COMPLETED.value,
+                RunEventType.RUN_FAILED.value,
+            ),
+        )
+        for event in reversed(events):
+            if self._event_has_verification_failed_error_code(event):
+                return "failed"
+        return None
+
+    @staticmethod
+    def _event_has_verification_failed_error_code(event: Mapping[str, object]) -> bool:
+        payload_json = event.get("payload_json")
+        if not isinstance(payload_json, str):
+            return False
+        try:
+            payload = json.loads(payload_json)
+        except ValueError:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        error_code = str(payload.get("error_code") or "").strip().lower()
+        return error_code == "verification_failed"
 
     def _latest_terminal_run(self, session_id: str) -> RunRuntimeRecord | None:
         excluded_run_ids = self._subagent_run_ids(session_id)
@@ -2654,6 +2768,25 @@ class SessionService:
             if runtime.status in TERMINAL_RUN_STATUSES:
                 return runtime
         return None
+
+    async def _latest_terminal_run_async(
+        self,
+        session_id: str,
+    ) -> RunRuntimeRecord | None:
+        runtimes = await self._run_runtime_repo.list_by_session_async(session_id)
+        background_tasks = (
+            await self._background_task_repository.list_by_session_async(session_id)
+            if self._background_task_repository is not None
+            else ()
+        )
+        excluded_run_ids = self._subagent_run_ids_from_records(
+            runtimes=runtimes,
+            background_tasks=background_tasks,
+        )
+        return self._latest_terminal_run_from_preloaded(
+            runtimes,
+            excluded_run_ids,
+        )
 
     @staticmethod
     def _latest_terminal_run_from_preloaded(

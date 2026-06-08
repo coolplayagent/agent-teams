@@ -267,6 +267,7 @@ class AutomationProjectRecord(BaseModel):
     last_run_started_at: datetime | None = None
     active_run_status: str | None = None
     latest_terminal_run_status: str | None = None
+    latest_terminal_run_verification_status: str | None = None
     last_error: str | None = None
     next_run_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))

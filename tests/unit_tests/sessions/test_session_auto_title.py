@@ -20,8 +20,11 @@ from relay_teams.reminders import render_system_reminder
 from relay_teams.roles.role_models import RoleDefinition
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.runs.enums import ExecutionMode
+from relay_teams.sessions.runs.enums import RunEventType
+from relay_teams.sessions.runs.assistant_errors import RunCompletionReason
+from relay_teams.sessions.runs.event_log import EventLog
 from relay_teams.sessions.runs.run_intent_repo import RunIntentRepository
-from relay_teams.sessions.runs.run_models import IntentInput
+from relay_teams.sessions.runs.run_models import IntentInput, RunEvent, RunResult
 from relay_teams.sessions.runs.run_runtime_repo import (
     RunRuntimeRecord,
     RunRuntimeRepository,
@@ -44,6 +47,7 @@ def _build_service(
     db_path: Path,
     *,
     run_intent_repo: RunIntentRepository | None = None,
+    event_log: EventLog | None = None,
 ) -> SessionService:
     role_registry = RoleRegistry()
     role_registry.register(
@@ -77,6 +81,7 @@ def _build_service(
         todo_service=TodoService(repository=TodoRepository(db_path)),
         role_registry=role_registry,
         run_intent_repo=run_intent_repo,
+        event_log=event_log,
     )
 
 
@@ -346,6 +351,198 @@ def test_list_sessions_projects_latest_terminal_run_status(
     assert session.latest_terminal_run_status == terminal_status.value
     assert session.latest_terminal_run_updated_at == updated_at
     assert session.has_unread_terminal_run is True
+
+
+def test_list_sessions_projects_latest_terminal_verification_status(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_terminal_verification_failed.db"
+    event_log = EventLog(db_path)
+    service = _build_service(db_path, event_log=event_log)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _ = RunRuntimeRepository(db_path).upsert(
+        RunRuntimeRecord(
+            run_id="run-1",
+            session_id="session-1",
+            status=RunRuntimeStatus.FAILED,
+        )
+    )
+    _ = event_log.emit_run_event(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            task_id="task-1",
+            event_type=RunEventType.RUN_FAILED,
+            payload_json=RunResult(
+                trace_id="run-1",
+                root_task_id="task-1",
+                status="failed",
+                completion_reason=RunCompletionReason.ASSISTANT_ERROR,
+                error_code="verification_failed",
+                error_message="runtime_guardrail:pre_execution_boundary",
+                output=content_parts_from_text("verification failed"),
+            ).model_dump_json(),
+        )
+    )
+
+    session = service.list_sessions()[0]
+
+    assert session.latest_terminal_run_status == "failed"
+    assert session.latest_terminal_run_verification_status == "failed"
+
+
+def test_list_sessions_batches_latest_terminal_verification_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "session_terminal_verification_batched.db"
+    event_log = EventLog(db_path)
+    service = _build_service(db_path, event_log=event_log)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _ = service.create_session(session_id="session-2", workspace_id="default")
+    run_runtime_repo = RunRuntimeRepository(db_path)
+    _ = run_runtime_repo.upsert(
+        RunRuntimeRecord(
+            run_id="run-1",
+            session_id="session-1",
+            status=RunRuntimeStatus.COMPLETED,
+            updated_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc),
+        )
+    )
+    _ = run_runtime_repo.upsert(
+        RunRuntimeRecord(
+            run_id="run-2",
+            session_id="session-2",
+            status=RunRuntimeStatus.COMPLETED,
+            updated_at=datetime(2026, 1, 2, 3, 4, 6, tzinfo=timezone.utc),
+        )
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def list_by_run_ids_event_types(
+        run_ids: tuple[str, ...],
+        _event_types: tuple[str, ...],
+    ) -> tuple[dict[str, object], ...]:
+        calls.append(run_ids)
+        return (
+            {
+                "trace_id": "run-1",
+                "payload_json": json.dumps({"error_code": "verification_failed"}),
+            },
+        )
+
+    def list_by_session_run_ids_event_types(
+        _session_id: str,
+        _run_ids: tuple[str, ...],
+        _event_types: tuple[str, ...],
+    ) -> tuple[dict[str, object], ...]:
+        pytest.fail("list_sessions should use the batched run-id lookup")
+
+    monkeypatch.setattr(
+        event_log,
+        "list_by_run_ids_event_types",
+        list_by_run_ids_event_types,
+    )
+    monkeypatch.setattr(
+        event_log,
+        "list_by_session_run_ids_event_types",
+        list_by_session_run_ids_event_types,
+    )
+
+    sessions = service.list_sessions()
+
+    by_id = {session.session_id: session for session in sessions}
+    assert by_id["session-1"].latest_terminal_run_verification_status == "failed"
+    assert by_id["session-2"].latest_terminal_run_verification_status is None
+    assert len(calls) == 1
+    assert set(calls[0]) == {"run-1", "run-2"}
+
+
+def test_get_session_async_uses_async_terminal_verification_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "session_terminal_verification_async.db"
+    event_log = EventLog(db_path)
+    service = _build_service(db_path, event_log=event_log)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _ = RunRuntimeRepository(db_path).upsert(
+        RunRuntimeRecord(
+            run_id="run-1",
+            session_id="session-1",
+            status=RunRuntimeStatus.COMPLETED,
+        )
+    )
+
+    def list_by_session_run_ids_event_types(
+        _session_id: str,
+        _run_ids: tuple[str, ...],
+        _event_types: tuple[str, ...],
+    ) -> tuple[dict[str, object], ...]:
+        pytest.fail("get_session_async should use async event-log lookup")
+
+    async def list_by_session_run_ids_event_types_async(
+        _session_id: str,
+        _run_ids: tuple[str, ...],
+        _event_types: tuple[str, ...],
+    ) -> tuple[dict[str, object], ...]:
+        return (
+            {
+                "trace_id": "run-1",
+                "payload_json": json.dumps({"error_code": "verification_failed"}),
+            },
+        )
+
+    monkeypatch.setattr(
+        event_log,
+        "list_by_session_run_ids_event_types",
+        list_by_session_run_ids_event_types,
+    )
+    monkeypatch.setattr(
+        event_log,
+        "list_by_session_run_ids_event_types_async",
+        list_by_session_run_ids_event_types_async,
+    )
+
+    session = asyncio.run(service.get_session_async("session-1"))
+
+    assert session.latest_terminal_run_status == "completed"
+    assert session.latest_terminal_run_verification_status == "failed"
+
+
+def test_runtime_verification_status_ignores_malformed_terminal_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "session_terminal_verification_malformed_events.db"
+    service = _build_service(db_path, event_log=EventLog(db_path))
+    runtime = RunRuntimeRecord(
+        run_id="run-1",
+        session_id="session-1",
+        status=RunRuntimeStatus.COMPLETED,
+    )
+    rows: list[dict[str, object]] = [
+        {"payload_json": None},
+        {"payload_json": "{"},
+        {"payload_json": "[]"},
+        {"payload_json": json.dumps({"error_code": "model_error"})},
+    ]
+
+    def list_by_session_run_ids_event_types(
+        _session_id: str,
+        _run_ids: tuple[str, ...],
+        _event_types: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        return rows
+
+    monkeypatch.setattr(
+        service._event_log,
+        "list_by_session_run_ids_event_types",
+        list_by_session_run_ids_event_types,
+    )
+
+    assert service._runtime_verification_status(runtime) is None
 
 
 def test_mark_latest_terminal_run_viewed_clears_unread_without_touching_session_time(

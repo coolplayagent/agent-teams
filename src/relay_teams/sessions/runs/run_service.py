@@ -1387,7 +1387,11 @@ class SessionRunService:
                 output_text=output_text,
                 root_task_id=result.root_task_id,
             )
-            if not failed and self._board_todo_service is not None:
+            if (
+                not failed
+                and result.error_code != "verification_failed"
+                and self._board_todo_service is not None
+            ):
                 try:
                     await self._board_todo_service.mark_run_completed_async(
                         run_id=run_id

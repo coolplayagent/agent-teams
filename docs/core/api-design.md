@@ -1512,6 +1512,13 @@ Lists sessions.
 Query:
 - `force_refresh`: optional boolean, default `false`. When `true`, bypasses any stale list snapshot and waits for a fresh projection before returning.
 
+Session records include terminal run projections for list badges:
+- `latest_terminal_run_id`
+- `latest_terminal_run_status`: terminal run main status (`completed`, `failed`, or `stopped`)
+- `latest_terminal_run_verification_status`: `failed` when the latest terminal run completed or historically failed because verification did not pass; otherwise `null`
+- `latest_terminal_run_updated_at`
+- `has_unread_terminal_run`
+
 ### `GET /sessions/{session_id}`
 
 Gets one session.
@@ -1653,6 +1660,11 @@ Response shape:
       "pending_tool_approval_count": 0,
       "run_status": "running",
       "run_phase": "idle",
+      "verification_status": null,
+      "run_error_code": null,
+      "run_user_message": null,
+      "run_diagnostic_message": null,
+      "has_diagnostics": false,
       "is_recoverable": true,
       "microcompact": {
         "applied": true,
@@ -2673,6 +2685,15 @@ Request:
   "spec_source_task_id": "task-2"
 }
 ```
+
+Round terminal verification fields:
+- `verification_status`: `failed` when a run ended with `error_code = "verification_failed"`; this is a warning projection and does not imply `run_status = "failed"`.
+- `run_error_code`: structured terminal diagnostic code such as `verification_failed`.
+- `run_user_message`: human-readable terminal warning or error text for normal UI.
+- `run_diagnostic_message`: raw diagnostic detail for logs/debug UI.
+- `has_diagnostics`: whether diagnostic fields are available.
+
+Verification failures are projected as `run_status = "completed"` for new runs and `verification_status = "failed"`. Historical `run_failed` events with `error_code = "verification_failed"` also receive `verification_status = "failed"` so clients can render them as verification warnings instead of ordinary execution failures.
 
 Rules:
 - Only `created` delegated tasks can be updated.
@@ -4443,6 +4464,7 @@ Each record includes:
 - `last_run_started_at`
 - `active_run_status`: current active session run status when the project has one
 - `latest_terminal_run_status`: most recent terminal session run status when known
+- `latest_terminal_run_verification_status`: latest terminal run verification warning status when known; verification failures are still treated as completed runs for automation status branching
 - `last_error`
 - `next_run_at`
 

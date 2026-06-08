@@ -4,6 +4,7 @@
  */
 import { getPrimaryRoleLabel, isCoordinatorRoleId, isMainAgentRoleId } from '../../../core/state.js';
 import { t } from '../../../utils/i18n.js';
+import { buildDiagnosticPresentation } from '../../../utils/diagnostics.js';
 import {
     applyToolReturn,
     buildToolBlock,
@@ -75,11 +76,21 @@ export function renderParts(contentEl, parts, pendingToolBlocks, options = {}) {
     let combinedText = '';
 
     const flushText = () => {
-        if (combinedText.trim()) {
+        const source = combinedText.trim();
+        if (source) {
+            const diagnosticPresentation = buildDiagnosticPresentation(source, {
+                suppressUserMessage: options.suppressDiagnosticUserMessage === true,
+            });
+            if (!diagnosticPresentation.text.trim() && diagnosticPresentation.hasDetails !== true) {
+                combinedText = '';
+                return;
+            }
             if (options.collapseUserPrompt === true) {
-                appendUserPromptText(contentEl, combinedText.trim());
+                appendUserPromptText(contentEl, source);
             } else {
-                appendMessageText(contentEl, combinedText.trim());
+                appendMessageText(contentEl, source, {
+                    suppressDiagnosticUserMessage: options.suppressDiagnosticUserMessage === true,
+                });
             }
             combinedText = '';
         }
@@ -262,19 +273,45 @@ export function appendThinkingText(contentEl, text, options = {}) {
 }
 
 export function updateMessageText(textEl, text, options = {}) {
-    const source = String(text || '');
+    const diagnosticPresentation = buildDiagnosticPresentation(text, {
+        suppressUserMessage: options.suppressDiagnosticUserMessage === true,
+    });
+    const source = diagnosticPresentation.text;
     if (shouldRenderPlainText(textEl, source, options)) {
         renderPlainTextContent(textEl, source, options);
+        appendDiagnosticDetails(textEl, diagnosticPresentation);
         syncStreamingCursor(textEl, options.streaming === true);
         return textEl;
     }
     clearPlainTextRenderState(textEl);
-    renderRichContent(textEl, String(text || ''), {
+    renderRichContent(textEl, source, {
         enableWorkspaceImagePreview: options.enableWorkspaceImagePreview !== false,
         preserveBoundaryWhitespace: options.preserveBoundaryWhitespace === true,
     });
+    appendDiagnosticDetails(textEl, diagnosticPresentation);
     syncStreamingCursor(textEl, options.streaming === true);
     return textEl;
+}
+
+function appendDiagnosticDetails(textEl, presentation) {
+    if (!textEl || presentation?.hasDetails !== true) {
+        return;
+    }
+    textEl.classList.add('msg-verification-notice');
+    const detailsEl = document.createElement('details');
+    detailsEl.className = 'msg-verification-details';
+
+    const summaryEl = document.createElement('summary');
+    summaryEl.textContent = t('rounds.verification.details');
+    detailsEl.appendChild(summaryEl);
+
+    const detailEl = document.createElement('pre');
+    detailEl.className = presentation.detailMode === 'raw'
+        ? 'msg-verification-details-raw'
+        : 'msg-verification-details-summary';
+    detailEl.textContent = String(presentation.detail || '');
+    detailsEl.appendChild(detailEl);
+    textEl.appendChild(detailsEl);
 }
 
 export function updateUserPromptText(promptEl, text) {

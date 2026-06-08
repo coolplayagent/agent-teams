@@ -1399,10 +1399,17 @@ def _first_session_status(
     key: str,
 ) -> str | None:
     for session in sessions:
-        status = str(session.get(key) or "").strip()
-        if status:
+        status = _coerce_optional_status(session.get(key))
+        if status is not None:
             return status
     return None
+
+
+def _coerce_optional_status(value: object) -> str | None:
+    status = str(value or "").strip()
+    if not status:
+        return None
+    return status
 
 
 def _automation_session_payloads_by_project(
@@ -1458,13 +1465,18 @@ def _with_project_run_status_from_sessions(
     sessions: tuple[dict[str, object], ...],
 ) -> AutomationProjectRecord:
     active_status = _first_session_status(sessions, "active_run_status")
-    terminal_status = _first_session_status(sessions, "latest_terminal_run_status")
-    if active_status is None and terminal_status is None:
+    terminal_status, verification_status = _latest_terminal_session_statuses(sessions)
+    if (
+        active_status is None
+        and terminal_status is None
+        and verification_status is None
+    ):
         return project
     return project.model_copy(
         update={
             "active_run_status": active_status,
             "latest_terminal_run_status": terminal_status,
+            "latest_terminal_run_verification_status": verification_status,
         },
     )
 
@@ -1487,6 +1499,30 @@ def _with_project_run_statuses_from_sessions(
         )
         for project in projects
     )
+
+
+def _latest_terminal_session_statuses(
+    sessions: tuple[dict[str, object], ...],
+) -> tuple[str | None, str | None]:
+    terminal_sessions = tuple(
+        session
+        for session in sessions
+        if _coerce_optional_status(session.get("latest_terminal_run_status"))
+        is not None
+    )
+    for session in sorted(
+        terminal_sessions,
+        key=lambda item: str(item.get("latest_terminal_run_updated_at") or "").strip(),
+        reverse=True,
+    ):
+        terminal_status = _coerce_optional_status(
+            session.get("latest_terminal_run_status")
+        )
+        verification_status = _coerce_optional_status(
+            session.get("latest_terminal_run_verification_status")
+        )
+        return terminal_status, verification_status
+    return None, None
 
 
 def next_cron_occurrence(

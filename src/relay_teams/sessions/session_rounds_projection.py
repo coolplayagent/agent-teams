@@ -22,7 +22,10 @@ from relay_teams.media import text_part
 from relay_teams.media import user_prompt_content_to_text
 from relay_teams.tools.runtime.acp_approval import acp_options_projection
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRecord
-from relay_teams.sessions.runs.assistant_errors import RunCompletionReason
+from relay_teams.sessions.runs.assistant_errors import (
+    RunCompletionReason,
+    build_assistant_error_message,
+)
 from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.runs.run_runtime_repo import RunRuntimeRecord
 from relay_teams.sessions.runs.run_runtime_repo import RunRuntimeRepository
@@ -154,6 +157,7 @@ def build_session_rounds(
     text_messages_by_run = _project_text_messages_from_events(session_events)
     tool_messages_by_run = _project_tool_messages_from_events(session_events)
     final_output_by_run = _project_terminal_final_outputs(session_events)
+    run_diagnostics_by_run = _project_terminal_run_diagnostics(session_events)
     microcompact_by_run: dict[str, dict[str, object]] = {}
     retry_clear_events = {
         RunEventType.MODEL_STEP_STARTED.value,
@@ -355,6 +359,7 @@ def build_session_rounds(
         run_started_at = runtime.created_at.isoformat() if runtime is not None else None
         run_updated_at = runtime.updated_at.isoformat() if runtime is not None else None
         pending_approvals = list(approval_tickets_by_run.get(run_id, []))
+        run_diagnostics = run_diagnostics_by_run.get(run_id, {})
         intent_parts = _round_intent_parts(
             root_task,
             run_messages,
@@ -381,6 +386,11 @@ def build_session_rounds(
             "run_updated_at": run_updated_at,
             "run_status": runtime.status.value if runtime is not None else None,
             "run_phase": runtime.phase.value if runtime is not None else None,
+            "verification_status": run_diagnostics.get("verification_status"),
+            "run_error_code": run_diagnostics.get("run_error_code"),
+            "run_user_message": run_diagnostics.get("run_user_message"),
+            "run_diagnostic_message": run_diagnostics.get("run_diagnostic_message"),
+            "has_diagnostics": bool(run_diagnostics.get("has_diagnostics")),
             "has_final_output": run_id in final_output_by_run,
             "is_recoverable": runtime.is_recoverable if runtime is not None else False,
             "clear_marker_before": None,
@@ -434,6 +444,7 @@ def build_session_timeline_rounds(
     )
     injection_messages_by_run = _project_injection_messages(session_events)
     final_output_by_run = _project_terminal_final_outputs(session_events)
+    run_diagnostics_by_run = _project_terminal_run_diagnostics(session_events)
 
     root_task_by_run: dict[str, object] = {}
     primary_role_by_run: dict[str, str] = {}
@@ -478,6 +489,7 @@ def build_session_timeline_rounds(
         run_started_at = runtime.created_at.isoformat() if runtime is not None else None
         run_updated_at = runtime.updated_at.isoformat() if runtime is not None else None
         pending_approvals = list(approval_tickets_by_run.get(run_id, []))
+        run_diagnostics = run_diagnostics_by_run.get(run_id, {})
         rounds.append(
             {
                 "run_id": run_id,
@@ -495,6 +507,11 @@ def build_session_timeline_rounds(
                 "run_updated_at": run_updated_at,
                 "run_status": runtime.status.value if runtime is not None else None,
                 "run_phase": runtime.phase.value if runtime is not None else None,
+                "verification_status": run_diagnostics.get("verification_status"),
+                "run_error_code": run_diagnostics.get("run_error_code"),
+                "run_user_message": run_diagnostics.get("run_user_message"),
+                "run_diagnostic_message": run_diagnostics.get("run_diagnostic_message"),
+                "has_diagnostics": bool(run_diagnostics.get("has_diagnostics")),
                 "has_final_output": run_id in final_output_by_run,
                 "is_recoverable": (
                     runtime.is_recoverable if runtime is not None else False
@@ -1427,6 +1444,43 @@ def _project_terminal_final_outputs(
     return final_output_by_run
 
 
+def _project_terminal_run_diagnostics(
+    session_events: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    diagnostics_by_run: dict[str, dict[str, object]] = {}
+    sorted_session_events = sorted(
+        session_events,
+        key=lambda item: str(item.get("occurred_at") or ""),
+    )
+    for event in sorted_session_events:
+        event_type = str(event.get("event_type") or "")
+        if event_type not in {
+            RunEventType.RUN_COMPLETED.value,
+            RunEventType.RUN_FAILED.value,
+        }:
+            continue
+        run_id = str(event.get("trace_id") or "")
+        if not run_id:
+            continue
+        payload = _parse_event_payload(event.get("payload_json"))
+        error_code = str(payload.get("error_code") or "").strip().lower()
+        if error_code != "verification_failed":
+            continue
+        diagnostic_message = str(payload.get("error_message") or "").strip()
+        user_message = build_assistant_error_message(
+            error_code=error_code,
+            error_message=diagnostic_message,
+        )
+        diagnostics_by_run[run_id] = {
+            "verification_status": "failed",
+            "run_error_code": error_code,
+            "run_user_message": user_message,
+            "run_diagnostic_message": diagnostic_message,
+            "has_diagnostics": bool(error_code or diagnostic_message),
+        }
+    return diagnostics_by_run
+
+
 def _event_has_final_output(
     *,
     event_type: str,
@@ -1470,6 +1524,11 @@ _TIMELINE_ROUND_KEYS = (
     "run_updated_at",
     "run_status",
     "run_phase",
+    "verification_status",
+    "run_error_code",
+    "run_user_message",
+    "run_diagnostic_message",
+    "has_diagnostics",
     "has_final_output",
     "is_recoverable",
     "clear_marker_before",

@@ -59,6 +59,11 @@ import {
 import { errorToPayload, logError } from '../../utils/logger.js';
 import { formatMessage, t } from '../../utils/i18n.js';
 import {
+    DIAGNOSTICS_VISIBILITY_EVENT,
+    areDiagnosticsVisible,
+    extractLegacyVerificationReport,
+} from '../../utils/diagnostics.js';
+import {
     canRenderMainSessionView,
     hasActiveSubagentSessionFor,
 } from '../../core/viewGuards.js';
@@ -1704,6 +1709,12 @@ export function renderCurrentSessionTimeline(opts = {}) {
     return true;
 }
 
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener(DIAGNOSTICS_VISIBILITY_EVENT, () => {
+        renderCurrentSessionTimeline({ scrollPolicy: 'preserve-anchor' });
+    });
+}
+
 function bindScrollSync() {
     const container = els.chatMessages;
     if (!container) return;
@@ -1927,6 +1938,10 @@ export function renderRoundSection(round, index, options = {}) {
     const stateLabel = roundStateLabel(round);
     const stateTone = roundStateTone(round);
     const approvalCount = Number(round.pending_tool_approval_count || 0);
+    const mainMessages = mergeRoundMessagesAndInjectionMessages(
+        round.coordinator_messages || [],
+        round.injection_messages || [],
+    );
     const header = document.createElement('div');
     header.className = 'round-detail-header';
     header.innerHTML = `
@@ -1941,6 +1956,8 @@ export function renderRoundSection(round, index, options = {}) {
             <div class="round-detail-badges">${renderRoundBadges(round, stateLabel, stateTone, approvalCount)}</div>
         </div>`;
     header.appendChild(buildRoundIntentBlock(round.run_id, round.intent, round.intent_parts));
+    const verificationNotice = renderVerificationNotice(round, mainMessages);
+    const suppressDiagnosticUserMessage = String(round?.verification_status || '').trim().toLowerCase() === 'failed';
     section.appendChild(header);
     renderRoundRetryEvents(section, round.retry_events || []);
     if (round.compaction_marker_before) {
@@ -1956,10 +1973,6 @@ export function renderRoundSection(round, index, options = {}) {
         ? options.isLatestRound === true
         : index === roundsState.currentRounds.length - 1;
 
-    const mainMessages = mergeRoundMessagesAndInjectionMessages(
-        round.coordinator_messages || [],
-        round.injection_messages || [],
-    );
     if (mainMessages.length > 0) {
         renderHistoricalMessageList(section, mainMessages, {
             collapsibleUserPrompts: true,
@@ -1973,6 +1986,7 @@ export function renderRoundSection(round, index, options = {}) {
             streamOverlayEntry: coordinatorOverlay,
             timelineView: 'main',
             canonicalStreamKey: 'primary',
+            suppressDiagnosticUserMessage,
         });
     } else if (pendingCoordinatorApprovals.length > 0 || coordinatorOverlay) {
         renderHistoricalMessageList(section, [], {
@@ -1987,6 +2001,7 @@ export function renderRoundSection(round, index, options = {}) {
             streamOverlayEntry: coordinatorOverlay,
             timelineView: 'main',
             canonicalStreamKey: 'primary',
+            suppressDiagnosticUserMessage,
         });
     } else if (!round.has_user_messages) {
         const empty = document.createElement('div');
@@ -1995,6 +2010,9 @@ export function renderRoundSection(round, index, options = {}) {
             role: primaryRoleLabel.toLowerCase(),
         });
         section.appendChild(empty);
+    }
+    if (verificationNotice) {
+        section.insertAdjacentHTML('beforeend', verificationNotice);
     }
 
     if (state.currentSessionId) {
@@ -3098,6 +3116,67 @@ function renderRoundBadges(round, stateLabel, stateTone, approvalCount) {
         ${approvalCount > 0 ? `<span class="round-state-pill round-state-warning">${esc(t('rounds.pending_approvals').replace('{count}', String(approvalCount)))}</span>` : ''}
         ${microcompactBadge}
     `;
+}
+
+function renderVerificationNotice(round, messages = []) {
+    if (String(round?.verification_status || '').trim().toLowerCase() !== 'failed') {
+        return '';
+    }
+    if (!areDiagnosticsVisible()) {
+        return '';
+    }
+    const userMessage = t('rounds.verification.user_message');
+    const errorCode = String(round?.run_error_code || '').trim();
+    const diagnosticMessage = collectVerificationDiagnosticMessage(round, messages);
+    const detailText = errorCode
+        ? [
+            `${t('rounds.diagnostics.error_code')}: ${errorCode}`,
+            diagnosticMessage,
+        ].filter(Boolean).join('\n\n')
+        : diagnosticMessage;
+    const detailMarkup = detailText
+        ? `
+            <details class="round-verification-details">
+                <summary>${esc(t('rounds.verification.details'))}</summary>
+                <pre class="round-verification-details-raw">${esc(detailText)}</pre>
+            </details>
+        `
+        : '';
+    return `
+        <div class="round-verification-notice">
+            <div class="round-verification-message">${esc(userMessage)}</div>
+            ${detailMarkup}
+        </div>
+    `;
+}
+
+function collectVerificationDiagnosticMessage(round, messages = []) {
+    const reports = [];
+    const seen = new Set();
+    const addReport = (value) => {
+        const report = String(value || '').trim();
+        if (!report || seen.has(report)) {
+            return;
+        }
+        seen.add(report);
+        reports.push(report);
+    };
+    addReport(round?.run_diagnostic_message);
+    const items = Array.isArray(messages) ? messages : [];
+    items.forEach(item => {
+        const parts = Array.isArray(item?.message?.parts) ? item.message.parts : [];
+        parts.forEach(part => {
+            const content = typeof part?.content === 'string' ? part.content : '';
+            if (!content) {
+                return;
+            }
+            const legacyReport = extractLegacyVerificationReport(content);
+            if (legacyReport.found) {
+                addReport(legacyReport.report);
+            }
+        });
+    });
+    return reports.join('\n\n');
 }
 
 function renderMicrocompactBadge(microcompact) {

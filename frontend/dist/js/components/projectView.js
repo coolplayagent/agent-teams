@@ -8345,17 +8345,24 @@ function renderAutomationRunHistory(sessions) {
     return `
         <div class="automation-run-list">
             ${safeSessions.map(session => {
-                const sessionStatus = String(
-                    session?.active_run_status
-                    || session?.latest_terminal_run_status
-                    || 'completed',
-                ).trim() || 'completed';
-                const sessionStatusLabel = formatAutomationRunStatusLabel(sessionStatus);
+                const activeRunStatus = String(session?.active_run_status || '').trim();
+                const sessionStatus = activeRunStatus
+                    || String(session?.latest_terminal_run_status || 'completed').trim()
+                    || 'completed';
+                const verificationStatus = String(
+                    session?.latest_terminal_run_verification_status || '',
+                ).trim().toLowerCase();
+                const displayStatus = !activeRunStatus && verificationStatus === 'failed'
+                    ? 'warning'
+                    : sessionStatus;
+                const sessionStatusLabel = !activeRunStatus && verificationStatus === 'failed'
+                    ? t('rounds.state.verification_failed')
+                    : formatAutomationRunStatusLabel(sessionStatus);
                 const sessionTitle = String(session?.metadata?.title || session?.session_id || '').trim();
                 return `
                     <article class="automation-run-card" data-automation-session-id="${escapeHtml(String(session?.session_id || ''))}">
                         <div class="automation-run-card-header">
-                            <span class="automation-status-dot is-${escapeHtml(sessionStatus)}" aria-hidden="true"></span>
+                            <span class="automation-status-dot is-${escapeHtml(displayStatus)}" aria-hidden="true"></span>
                             <strong>${escapeHtml(sessionTitle)}</strong>
                         </div>
                         <div class="automation-run-card-meta">

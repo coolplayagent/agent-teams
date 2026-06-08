@@ -118,8 +118,9 @@ def test_build_assistant_error_message_uses_verification_failed_guidance() -> No
     )
 
     assert "verification did not pass" in message
-    assert "Review the task spec and evidence expectations" in message
-    assert "Contract check failed" in message
+    assert "Review the result" in message
+    assert "Contract check failed" not in message
+    assert "Details:" not in message
     assert "API or execution error" not in message
 
 
@@ -130,8 +131,19 @@ def test_build_assistant_error_message_verification_failed_without_detail() -> N
     )
 
     assert "verification did not pass" in message
-    assert "Review the task spec and evidence expectations" in message
+    assert "Review the result" in message
     assert "API or execution error" not in message
+
+
+def test_build_error_presentation_keeps_verification_failed_diagnostics() -> None:
+    presentation = build_error_presentation(
+        error_code="verification_failed",
+        error_message="runtime_guardrail:pre_execution_boundary",
+    )
+
+    assert "verification did not pass" in presentation.user_message
+    assert "runtime_guardrail" not in presentation.user_message
+    assert presentation.diagnostic_message == "runtime_guardrail:pre_execution_boundary"
 
 
 def test_build_error_presentation_separates_user_recovery_and_diagnostics() -> None:

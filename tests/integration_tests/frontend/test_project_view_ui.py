@@ -35,6 +35,25 @@ def load_projects_css() -> str:
     return load_frontend_file("css", "components", "projects.css")
 
 
+def test_project_view_surfaces_automation_verification_warnings() -> None:
+    project_view_source = load_project_view_source()
+    automation_css = load_frontend_file("css", "components", "automation.css")
+
+    assert "latest_terminal_run_verification_status" in project_view_source
+    assert "const activeRunStatus = String(session?.active_run_status || '')" in (
+        project_view_source
+    )
+    assert (
+        "const displayStatus = !activeRunStatus && verificationStatus === 'failed'"
+        in project_view_source
+    )
+    assert "t('rounds.state.verification_failed')" in project_view_source
+    assert (
+        "automation-status-dot is-${escapeHtml(displayStatus)}" in project_view_source
+    )
+    assert ".automation-status-dot.is-warning" in automation_css
+
+
 def _merge_mock_api_source(base_source: str, override_source: str) -> str:
     merged_source = base_source
     for block in re.split(

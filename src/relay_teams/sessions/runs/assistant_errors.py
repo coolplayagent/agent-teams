@@ -108,10 +108,9 @@ def _build_user_error_message(
             "Check the current model profile credentials and try again."
         )
     if error_code == "verification_failed":
-        return _append_error_detail(
-            "The task verification did not pass. "
-            "Review the task spec and evidence expectations, then continue with corrected output.",
-            detail,
+        return (
+            "The task finished, but verification did not pass. "
+            "Review the result and continue with corrections if needed."
         )
     if error_code == "incomplete_todos":
         return (

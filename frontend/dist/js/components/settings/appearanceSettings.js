@@ -3,6 +3,7 @@
  * Appearance settings with real-time CSS variable updates.
  * Uses event delegation on the panel root for robustness.
  */
+import { applyDiagnosticsVisibility } from '../../utils/diagnostics.js';
 
 const STORAGE_KEY = 'agent_teams_appearance';
 
@@ -16,6 +17,7 @@ const DEFAULTS = {
     codeFontSize: 0,
     lineHeight: 0,
     messageDensity: 0,
+    showDiagnostics: false,
 };
 
 function load() {
@@ -119,6 +121,8 @@ function applyToCSS(config) {
     } else {
         removeVar('--msg-gap');
     }
+
+    applyDiagnosticsVisibility(config.showDiagnostics === true);
 }
 
 function lighten(hex, amount) {
@@ -133,7 +137,7 @@ function lighten(hex, amount) {
 
 /** Read all control values from the panel DOM. */
 function collectFromPanel() {
-    var config = Object.assign({}, DEFAULTS);
+    var config = load();
     var panel = document.getElementById('appearance-panel');
     if (!panel) return config;
 
@@ -175,9 +179,17 @@ function collectFromPanel() {
     return config;
 }
 
+function diagnosticsToggle() {
+    return document.getElementById('settings-show-diagnostics')
+        || document.getElementById('appearance-show-diagnostics');
+}
+
 function applyToPanel(config) {
     var panel = document.getElementById('appearance-panel');
-    if (!panel) return;
+    if (!panel) {
+        syncDiagnosticsToggle(config);
+        return;
+    }
 
     // Color fields
     var colorFields = ['accent', 'background', 'foreground'];
@@ -212,6 +224,13 @@ function applyToPanel(config) {
         el.value = config[key] || def;
         syncRangeDisplay(el, key);
     }
+
+    syncDiagnosticsToggle(config);
+}
+
+function syncDiagnosticsToggle(config) {
+    var diagnosticsEl = diagnosticsToggle();
+    if (diagnosticsEl) diagnosticsEl.checked = config.showDiagnostics === true;
 }
 
 function syncRangeDisplay(rangeEl, key) {
@@ -230,6 +249,13 @@ function syncRangeDisplay(rangeEl, key) {
 function handlePanelEvent(e) {
     var target = e.target;
     if (!target || !target.closest) return;
+    if (target.id === 'settings-show-diagnostics') {
+        var config = load();
+        config.showDiagnostics = target.checked === true;
+        save(config);
+        applyToCSS(config);
+        return;
+    }
     var panel = target.closest('#appearance-panel');
     if (!panel) return;
 
@@ -265,6 +291,11 @@ function handlePanelEvent(e) {
                 clr.value = target.value.trim();
             }
         }
+        flushToCSS();
+        return;
+    }
+
+    if (target.type === 'checkbox') {
         flushToCSS();
         return;
     }

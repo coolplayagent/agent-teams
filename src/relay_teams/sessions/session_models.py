@@ -257,6 +257,7 @@ class SessionRecord(BaseModel):
     last_viewed_terminal_run_id: OptionalIdentifierStr = None
     latest_terminal_run_id: OptionalIdentifierStr = None
     latest_terminal_run_status: str | None = None
+    latest_terminal_run_verification_status: str | None = None
     latest_terminal_run_updated_at: datetime | None = None
     has_unread_terminal_run: bool = False
     pending_tool_approval_count: int = 0

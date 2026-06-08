@@ -55,6 +55,15 @@ let draftImageCapabilityManualOverride = false;
 const DEFAULT_MAAS_BASE_URL = 'http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/';
 const DEFAULT_CODEAGENT_BASE_URL = 'https://codeagentcli.rnd.huawei.com/codeAgentPro';
 const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
+const MASKED_PASSWORD_PLACEHOLDER = '••••••••••••';
+
+function isMaskedPasswordPlaceholderValue(value) {
+    return String(value || '').trim() === MASKED_PASSWORD_PLACEHOLDER;
+}
+
+function stripMaskedPasswordPlaceholderValue(value) {
+    return String(value || '').split(MASKED_PASSWORD_PLACEHOLDER).join('');
+}
 
 const PROVIDER_DEFAULT_BASE_URLS = {
     maas: DEFAULT_MAAS_BASE_URL,
@@ -233,16 +242,6 @@ export function bindModelProfileHandlers() {
     const toggleApiKeyBtn = document.getElementById('toggle-profile-api-key-btn');
     if (toggleApiKeyBtn) {
         toggleApiKeyBtn.onclick = toggleDraftApiKeyVisibility;
-    }
-
-    const toggleMaasPasswordBtn = document.getElementById('toggle-profile-maas-password-btn');
-    if (toggleMaasPasswordBtn) {
-        toggleMaasPasswordBtn.onclick = toggleDraftMaasPasswordVisibility;
-    }
-
-    const toggleCodeAgentPasswordBtn = document.getElementById('toggle-profile-codeagent-password-btn');
-    if (toggleCodeAgentPasswordBtn) {
-        toggleCodeAgentPasswordBtn.onclick = toggleDraftCodeAgentPasswordVisibility;
     }
 
     const sslVerifyInput = document.getElementById('profile-ssl-verify');
@@ -1065,10 +1064,11 @@ function handleEditProfile(name) {
         revealed: false,
     };
     draftMaasPasswordState = {
-        persistedValue: typeof profile.maas_auth?.password === 'string' ? profile.maas_auth.password : '',
+        persistedValue: '',
         draftValue: '',
         hasPersistedValue: Boolean(profile.maas_auth?.has_password),
         isDirty: false,
+        hasClearedPersistedValue: false,
         armedForInput: false,
         revealed: false,
     };
@@ -1080,10 +1080,11 @@ function handleEditProfile(name) {
         codeagentAuth.auth_method || CODEAGENT_AUTH_METHODS.SSO,
     ).trim() || CODEAGENT_AUTH_METHODS.SSO;
     draftCodeAgentPasswordState = {
-        persistedValue: typeof codeagentAuth.password === 'string' ? codeagentAuth.password : '',
+        persistedValue: '',
         draftValue: '',
         hasPersistedValue: Boolean(codeagentAuth.has_password),
         isDirty: false,
+        hasClearedPersistedValue: false,
         hasExplicitEntry: false,
         armedForInput: false,
         revealed: false,
@@ -2259,21 +2260,36 @@ function handleDraftMaasPasswordInput() {
     }
     if (
         draftMaasPasswordState.hasPersistedValue
-        && !draftMaasPasswordState.revealed
         && !canAcceptDraftMaasPasswordInput(maasPasswordInput)
     ) {
         draftMaasPasswordState.draftValue = '';
         draftMaasPasswordState.isDirty = false;
+        draftMaasPasswordState.hasClearedPersistedValue = false;
         draftMaasPasswordState.armedForInput = false;
-        draftMaasPasswordState.revealed = false;
         renderDraftMaaSPasswordField();
         return;
     }
 
-    draftMaasPasswordState.draftValue = maasPasswordInput.value;
+    if (
+        draftMaasPasswordState.hasPersistedValue
+        && isMaskedPasswordPlaceholderValue(maasPasswordInput.value)
+    ) {
+        draftMaasPasswordState.draftValue = '';
+        draftMaasPasswordState.isDirty = false;
+        draftMaasPasswordState.hasClearedPersistedValue = false;
+        handleDraftEndpointChanged();
+        return;
+    }
+
+    const nextPasswordValue = stripMaskedPasswordPlaceholderValue(maasPasswordInput.value);
+    if (nextPasswordValue !== maasPasswordInput.value) {
+        maasPasswordInput.value = nextPasswordValue;
+    }
+    draftMaasPasswordState.draftValue = nextPasswordValue;
     draftMaasPasswordState.isDirty = draftMaasPasswordState.draftValue !== draftMaasPasswordState.persistedValue;
+    draftMaasPasswordState.hasClearedPersistedValue = draftMaasPasswordState.hasPersistedValue
+        && !draftMaasPasswordState.isDirty;
     handleDraftEndpointChanged();
-    renderDraftMaaSPasswordToggle();
 }
 
 function handleDraftCodeAgentAuthMethodChanged() {
@@ -2303,25 +2319,41 @@ function handleDraftCodeAgentPasswordInput() {
     }
     if (
         draftCodeAgentPasswordState.hasPersistedValue
-        && !draftCodeAgentPasswordState.revealed
         && !canAcceptDraftCodeAgentPasswordInput(codeagentPasswordInput)
     ) {
         draftCodeAgentPasswordState.draftValue = '';
         draftCodeAgentPasswordState.isDirty = false;
+        draftCodeAgentPasswordState.hasClearedPersistedValue = false;
         draftCodeAgentPasswordState.hasExplicitEntry = false;
         draftCodeAgentPasswordState.armedForInput = false;
-        draftCodeAgentPasswordState.revealed = false;
         renderDraftCodeAgentPasswordField();
         return;
     }
 
-    draftCodeAgentPasswordState.draftValue = codeagentPasswordInput.value;
+    if (
+        draftCodeAgentPasswordState.hasPersistedValue
+        && isMaskedPasswordPlaceholderValue(codeagentPasswordInput.value)
+    ) {
+        draftCodeAgentPasswordState.draftValue = '';
+        draftCodeAgentPasswordState.isDirty = false;
+        draftCodeAgentPasswordState.hasClearedPersistedValue = false;
+        draftCodeAgentPasswordState.hasExplicitEntry = false;
+        handleDraftEndpointChanged();
+        return;
+    }
+
+    const nextPasswordValue = stripMaskedPasswordPlaceholderValue(codeagentPasswordInput.value);
+    if (nextPasswordValue !== codeagentPasswordInput.value) {
+        codeagentPasswordInput.value = nextPasswordValue;
+    }
+    draftCodeAgentPasswordState.draftValue = nextPasswordValue;
     draftCodeAgentPasswordState.isDirty = draftCodeAgentPasswordState.draftValue !== draftCodeAgentPasswordState.persistedValue;
+    draftCodeAgentPasswordState.hasClearedPersistedValue = draftCodeAgentPasswordState.hasPersistedValue
+        && !draftCodeAgentPasswordState.isDirty;
     draftCodeAgentPasswordState.hasExplicitEntry = Boolean(
-        codeagentPasswordInput.value.trim(),
+        nextPasswordValue.trim(),
     );
     handleDraftEndpointChanged();
-    renderDraftCodeAgentPasswordToggle();
 }
 
 function toggleDraftApiKeyVisibility() {
@@ -2330,22 +2362,6 @@ function toggleDraftApiKeyVisibility() {
     }
     draftApiKeyState.revealed = !draftApiKeyState.revealed;
     renderDraftApiKeyField();
-}
-
-function toggleDraftMaasPasswordVisibility() {
-    if (!draftMaasPasswordState.hasPersistedValue && !draftMaasPasswordState.draftValue.trim()) {
-        return;
-    }
-    draftMaasPasswordState.revealed = !draftMaasPasswordState.revealed;
-    renderDraftMaaSPasswordField();
-}
-
-function toggleDraftCodeAgentPasswordVisibility() {
-    if (!draftCodeAgentPasswordState.hasPersistedValue && !draftCodeAgentPasswordState.draftValue.trim()) {
-        return;
-    }
-    draftCodeAgentPasswordState.revealed = !draftCodeAgentPasswordState.revealed;
-    renderDraftCodeAgentPasswordField();
 }
 
 function applyDiscoveredModelSelection() {
@@ -3574,12 +3590,17 @@ function renderDraftProviderFields() {
 
 function readDraftMaasPasswordValue() {
     const maasPasswordInput = document.getElementById('profile-maas-password');
-    const inputValue = maasPasswordInput ? maasPasswordInput.value.trim() : '';
+    const inputValue = maasPasswordInput
+        ? stripMaskedPasswordPlaceholderValue(maasPasswordInput.value).trim()
+        : '';
+    const draftValue = stripMaskedPasswordPlaceholderValue(
+        draftMaasPasswordState.draftValue,
+    ).trim();
     if (!draftMaasPasswordState.hasPersistedValue) {
-        return inputValue || draftMaasPasswordState.draftValue.trim();
+        return inputValue || draftValue;
     }
     if (draftMaasPasswordState.isDirty) {
-        return inputValue || draftMaasPasswordState.draftValue.trim();
+        return inputValue || draftValue;
     }
     return '';
 }
@@ -3590,54 +3611,36 @@ function renderDraftMaaSPasswordField() {
         return;
     }
 
-    if (draftMaasPasswordState.revealed) {
-        maasPasswordInput.type = 'text';
-        maasPasswordInput.value = draftMaasPasswordState.isDirty
-            ? draftMaasPasswordState.draftValue
-            : draftMaasPasswordState.persistedValue;
-        maasPasswordInput.placeholder = '';
-    } else if (draftMaasPasswordState.hasPersistedValue && !draftMaasPasswordState.isDirty) {
+    if (
+        draftMaasPasswordState.hasPersistedValue
+        && !draftMaasPasswordState.isDirty
+        && !draftMaasPasswordState.hasClearedPersistedValue
+    ) {
         maasPasswordInput.type = 'password';
-        maasPasswordInput.value = '';
-        maasPasswordInput.placeholder = '************';
+        maasPasswordInput.value = MASKED_PASSWORD_PLACEHOLDER;
+        maasPasswordInput.placeholder = '';
     } else {
         maasPasswordInput.type = 'password';
         maasPasswordInput.value = draftMaasPasswordState.draftValue;
-        maasPasswordInput.placeholder = t('settings.model.password_placeholder');
-    }
-
-    renderDraftMaaSPasswordToggle();
-}
-
-function renderDraftMaaSPasswordToggle() {
-    const toggleMaasPasswordBtn = document.getElementById('toggle-profile-maas-password-btn');
-    const maasPasswordInput = document.getElementById('profile-maas-password');
-    if (!toggleMaasPasswordBtn) {
-        return;
-    }
-
-    const inputValue = maasPasswordInput ? maasPasswordInput.value.trim() : '';
-    const hasValue = draftMaasPasswordState.hasPersistedValue || Boolean(draftMaasPasswordState.draftValue.trim()) || Boolean(inputValue);
-    toggleMaasPasswordBtn.style.display = hasValue ? 'inline-flex' : 'none';
-    toggleMaasPasswordBtn.className = draftMaasPasswordState.revealed ? 'secure-input-btn is-active' : 'secure-input-btn';
-    toggleMaasPasswordBtn.title = draftMaasPasswordState.revealed
-        ? t('settings.model.hide_password')
-        : t('settings.model.show_password');
-    if (typeof toggleMaasPasswordBtn.setAttribute === 'function') {
-        toggleMaasPasswordBtn.setAttribute('aria-label', toggleMaasPasswordBtn.title);
-    } else {
-        toggleMaasPasswordBtn.ariaLabel = toggleMaasPasswordBtn.title;
+        maasPasswordInput.placeholder = draftMaasPasswordState.hasClearedPersistedValue
+            ? ''
+            : t('settings.model.password_placeholder');
     }
 }
 
 function readDraftCodeAgentPasswordValue() {
     const codeagentPasswordInput = document.getElementById('profile-codeagent-password');
-    const inputValue = codeagentPasswordInput ? codeagentPasswordInput.value.trim() : '';
+    const inputValue = codeagentPasswordInput
+        ? stripMaskedPasswordPlaceholderValue(codeagentPasswordInput.value).trim()
+        : '';
+    const draftValue = stripMaskedPasswordPlaceholderValue(
+        draftCodeAgentPasswordState.draftValue,
+    ).trim();
     if (!draftCodeAgentPasswordState.hasPersistedValue) {
-        return inputValue || draftCodeAgentPasswordState.draftValue.trim();
+        return inputValue || draftValue;
     }
     if (draftCodeAgentPasswordState.isDirty || draftCodeAgentPasswordState.hasExplicitEntry) {
-        return inputValue || draftCodeAgentPasswordState.draftValue.trim();
+        return inputValue || draftValue;
     }
     return '';
 }
@@ -3648,45 +3651,20 @@ function renderDraftCodeAgentPasswordField() {
         return;
     }
 
-    if (draftCodeAgentPasswordState.revealed) {
-        codeagentPasswordInput.type = 'text';
-        codeagentPasswordInput.value = draftCodeAgentPasswordState.isDirty
-            ? draftCodeAgentPasswordState.draftValue
-            : draftCodeAgentPasswordState.persistedValue;
-        codeagentPasswordInput.placeholder = '';
-    } else if (draftCodeAgentPasswordState.hasPersistedValue && !draftCodeAgentPasswordState.isDirty) {
+    if (
+        draftCodeAgentPasswordState.hasPersistedValue
+        && !draftCodeAgentPasswordState.isDirty
+        && !draftCodeAgentPasswordState.hasClearedPersistedValue
+    ) {
         codeagentPasswordInput.type = 'password';
-        codeagentPasswordInput.value = '';
-        codeagentPasswordInput.placeholder = '************';
+        codeagentPasswordInput.value = MASKED_PASSWORD_PLACEHOLDER;
+        codeagentPasswordInput.placeholder = '';
     } else {
         codeagentPasswordInput.type = 'password';
         codeagentPasswordInput.value = draftCodeAgentPasswordState.draftValue;
-        codeagentPasswordInput.placeholder = t('settings.model.codeagent_password_placeholder');
-    }
-
-    renderDraftCodeAgentPasswordToggle();
-}
-
-function renderDraftCodeAgentPasswordToggle() {
-    const toggleCodeAgentPasswordBtn = document.getElementById('toggle-profile-codeagent-password-btn');
-    const codeagentPasswordInput = document.getElementById('profile-codeagent-password');
-    if (!toggleCodeAgentPasswordBtn) {
-        return;
-    }
-
-    const inputValue = codeagentPasswordInput ? codeagentPasswordInput.value.trim() : '';
-    const hasValue = draftCodeAgentPasswordState.hasPersistedValue
-        || Boolean(draftCodeAgentPasswordState.draftValue.trim())
-        || Boolean(inputValue);
-    toggleCodeAgentPasswordBtn.style.display = hasValue ? 'inline-flex' : 'none';
-    toggleCodeAgentPasswordBtn.className = draftCodeAgentPasswordState.revealed ? 'secure-input-btn is-active' : 'secure-input-btn';
-    toggleCodeAgentPasswordBtn.title = draftCodeAgentPasswordState.revealed
-        ? t('settings.model.hide_password')
-        : t('settings.model.show_password');
-    if (typeof toggleCodeAgentPasswordBtn.setAttribute === 'function') {
-        toggleCodeAgentPasswordBtn.setAttribute('aria-label', toggleCodeAgentPasswordBtn.title);
-    } else {
-        toggleCodeAgentPasswordBtn.ariaLabel = toggleCodeAgentPasswordBtn.title;
+        codeagentPasswordInput.placeholder = draftCodeAgentPasswordState.hasClearedPersistedValue
+            ? ''
+            : t('settings.model.codeagent_password_placeholder');
     }
 }
 
@@ -3696,6 +3674,7 @@ function createDraftSecretState() {
         draftValue: '',
         hasPersistedValue: false,
         isDirty: false,
+        hasClearedPersistedValue: false,
         hasExplicitEntry: false,
         armedForInput: false,
         revealed: false,

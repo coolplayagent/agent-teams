@@ -3374,7 +3374,7 @@ await document.getElementById("save-profile-btn").onclick();
 console.log(JSON.stringify({
     passwordValue: document.getElementById("profile-maas-password").value,
     passwordPlaceholder: document.getElementById("profile-maas-password").placeholder,
-    toggleDisplay: document.getElementById("toggle-profile-maas-password-btn").style.display,
+    hasPasswordToggle: elements.has("toggle-profile-maas-password-btn"),
     savedProfile: globalThis.__savedProfile,
 }));
 """.strip(),
@@ -3387,7 +3387,7 @@ export async function fetchModelProfiles() {
             base_url: "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
             maas_auth: {
                 username: "saved-user",
-                password: "saved-password",
+                password: "••••••••••••",
                 has_password: true,
             },
             is_default: false,
@@ -3425,9 +3425,9 @@ export async function deleteModelProfile(name) {
     saved_profile = cast(dict[str, JsonValue], payload["savedProfile"])
     saved_profile_body = cast(dict[str, JsonValue], saved_profile["profile"])
     saved_maas_auth = cast(dict[str, JsonValue], saved_profile_body["maas_auth"])
-    assert payload["passwordValue"] == ""
-    assert payload["passwordPlaceholder"] == "************"
-    assert payload["toggleDisplay"] == "inline-flex"
+    assert payload["passwordValue"] == "••••••••••••"
+    assert payload["passwordPlaceholder"] == ""
+    assert payload["hasPasswordToggle"] is False
     assert saved_maas_auth == {
         "auth_source": "profile",
         "username": "saved-user",
@@ -3540,7 +3540,7 @@ await loadModelProfilesPanel();
 document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "maas-profile").onclick();
 document.activeElement = null;
 document.getElementById("profile-maas-password").onfocus();
-document.getElementById("profile-maas-password").value = "replacement-maas-password";
+document.getElementById("profile-maas-password").value = "••••••••••••replacement-maas-password";
 document.getElementById("profile-maas-password").oninput();
 
 await document.getElementById("save-profile-btn").onclick();
@@ -3548,7 +3548,7 @@ await document.getElementById("save-profile-btn").onclick();
 console.log(JSON.stringify({
     passwordValue: document.getElementById("profile-maas-password").value,
     passwordPlaceholder: document.getElementById("profile-maas-password").placeholder,
-    toggleDisplay: document.getElementById("toggle-profile-maas-password-btn").style.display,
+    hasPasswordToggle: elements.has("toggle-profile-maas-password-btn"),
     savedProfile: globalThis.__savedProfile,
 }));
 """.strip(),
@@ -3561,7 +3561,7 @@ export async function fetchModelProfiles() {
             base_url: "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
             maas_auth: {
                 username: "saved-user",
-                password: "saved-password",
+                password: "••••••••••••",
                 has_password: true,
             },
             is_default: false,
@@ -3599,7 +3599,8 @@ export async function deleteModelProfile(name) {
     saved_profile = cast(dict[str, JsonValue], payload["savedProfile"])
     saved_profile_body = cast(dict[str, JsonValue], saved_profile["profile"])
     saved_maas_auth = cast(dict[str, JsonValue], saved_profile_body["maas_auth"])
-    assert payload["toggleDisplay"] == "inline-flex"
+    assert payload["passwordValue"] == "replacement-maas-password"
+    assert payload["hasPasswordToggle"] is False
     assert saved_maas_auth == {
         "auth_source": "profile",
         "username": "saved-user",
@@ -3607,7 +3608,133 @@ export async function deleteModelProfile(name) {
     }
 
 
-def test_maas_password_toggle_reveals_and_masks_draft_value(tmp_path: Path) -> None:
+def test_edit_maas_profile_keeps_cleared_saved_password_field_empty(
+    tmp_path: Path,
+) -> None:
+    payload = _run_model_profiles_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindModelProfileHandlers, loadModelProfilesPanel } from "./modelProfiles.mjs";
+
+const notifications = [];
+
+const elements = createElements();
+installGlobals(elements, notifications);
+bindModelProfileHandlers();
+await loadModelProfilesPanel();
+
+document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "maas-profile").onclick();
+const firstPasswordInput = document.getElementById("profile-maas-password");
+const initial = {
+    passwordValue: firstPasswordInput.value,
+    passwordPlaceholder: firstPasswordInput.placeholder,
+};
+firstPasswordInput.onfocus();
+firstPasswordInput.value = "";
+firstPasswordInput.oninput();
+const cleared = {
+    passwordValue: firstPasswordInput.value,
+    passwordPlaceholder: firstPasswordInput.placeholder,
+};
+await document.getElementById("save-profile-btn").onclick();
+await Promise.resolve();
+await Promise.resolve();
+
+document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "maas-profile").onclick();
+const secondPasswordInput = document.getElementById("profile-maas-password");
+secondPasswordInput.onfocus();
+secondPasswordInput.value = "replacement-maas-password";
+secondPasswordInput.oninput();
+secondPasswordInput.value = "";
+secondPasswordInput.oninput();
+const deletedReplacement = {
+    passwordValue: secondPasswordInput.value,
+    passwordPlaceholder: secondPasswordInput.placeholder,
+};
+await document.getElementById("save-profile-btn").onclick();
+
+console.log(JSON.stringify({
+    initial,
+    cleared,
+    deletedReplacement,
+    saves: globalThis.__savedProfiles || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchModelProfiles() {
+    return {
+        "maas-profile": {
+            provider: "maas",
+            model: "maas-chat",
+            base_url: "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
+            maas_auth: {
+                username: "saved-user",
+                password: "••••••••••••",
+                has_password: true,
+            },
+            is_default: false,
+            temperature: 0.7,
+            top_p: 1.0,
+            connect_timeout_seconds: 15,
+        },
+    };
+}
+
+export async function probeModelConnection(payload) {
+    globalThis.__probePayload = payload;
+    return { ok: true, latency_ms: 42, token_usage: { total_tokens: 9 } };
+}
+
+export async function discoverModelCatalog(payload) {
+    globalThis.__discoverPayload = payload;
+    return { ok: true, latency_ms: 37, models: ["maas-chat"] };
+}
+
+export async function saveModelProfile(name, profile) {
+    globalThis.__savedProfiles = globalThis.__savedProfiles || [];
+    globalThis.__savedProfiles.push({ name, profile });
+}
+
+export async function reloadModelConfig() {
+    globalThis.__reloadCalled = true;
+}
+
+export async function deleteModelProfile(name) {
+    globalThis.__deletedProfileName = name;
+}
+""".strip(),
+    )
+
+    initial = cast(dict[str, JsonValue], payload["initial"])
+    cleared = cast(dict[str, JsonValue], payload["cleared"])
+    deleted_replacement = cast(dict[str, JsonValue], payload["deletedReplacement"])
+    saves = cast(list[dict[str, JsonValue]], payload["saves"])
+
+    assert initial == {
+        "passwordValue": "••••••••••••",
+        "passwordPlaceholder": "",
+    }
+    assert cleared == {
+        "passwordValue": "",
+        "passwordPlaceholder": "",
+    }
+    assert deleted_replacement == {
+        "passwordValue": "",
+        "passwordPlaceholder": "",
+    }
+    assert len(saves) == 2
+    for save in saves:
+        saved_profile_body = cast(dict[str, JsonValue], save["profile"])
+        saved_maas_auth = cast(dict[str, JsonValue], saved_profile_body["maas_auth"])
+        assert saved_maas_auth == {
+            "auth_source": "profile",
+            "username": "saved-user",
+        }
+
+
+def test_maas_password_has_no_reveal_toggle_and_keeps_password_type(
+    tmp_path: Path,
+) -> None:
     payload = _run_model_profiles_script(
         tmp_path=tmp_path,
         runner_source="""
@@ -3624,45 +3751,23 @@ document.getElementById("profile-provider").value = "maas";
 document.getElementById("profile-provider").onchange();
 document.getElementById("profile-maas-password").value = "relay-password";
 document.getElementById("profile-maas-password").oninput();
-const beforeToggle = {
-    passwordType: document.getElementById("profile-maas-password").type,
-    toggleDisplay: document.getElementById("toggle-profile-maas-password-btn").style.display,
-    toggleTitle: document.getElementById("toggle-profile-maas-password-btn").title,
-};
-document.getElementById("toggle-profile-maas-password-btn").onclick();
-const revealed = {
-    passwordType: document.getElementById("profile-maas-password").type,
-    passwordValue: document.getElementById("profile-maas-password").value,
-    toggleTitle: document.getElementById("toggle-profile-maas-password-btn").title,
-    toggleClassName: document.getElementById("toggle-profile-maas-password-btn").className,
-};
-document.getElementById("toggle-profile-maas-password-btn").onclick();
 
 console.log(JSON.stringify({
-    beforeToggle,
-    revealed,
-    finalType: document.getElementById("profile-maas-password").type,
-    finalValue: document.getElementById("profile-maas-password").value,
-    finalToggleTitle: document.getElementById("toggle-profile-maas-password-btn").title,
+    hasPasswordToggle: elements.has("toggle-profile-maas-password-btn"),
+    passwordType: document.getElementById("profile-maas-password").type,
+    passwordValue: document.getElementById("profile-maas-password").value,
 }));
 """.strip(),
     )
 
-    before_toggle = cast(dict[str, JsonValue], payload["beforeToggle"])
-    revealed = cast(dict[str, JsonValue], payload["revealed"])
-    assert before_toggle["passwordType"] == "password"
-    assert before_toggle["toggleDisplay"] == "inline-flex"
-    assert before_toggle["toggleTitle"] == "Show password"
-    assert revealed["passwordType"] == "text"
-    assert revealed["passwordValue"] == "relay-password"
-    assert revealed["toggleTitle"] == "Hide password"
-    assert revealed["toggleClassName"] == "secure-input-btn is-active"
-    assert payload["finalType"] == "password"
-    assert payload["finalValue"] == "relay-password"
-    assert payload["finalToggleTitle"] == "Show password"
+    assert payload["hasPasswordToggle"] is False
+    assert payload["passwordType"] == "password"
+    assert payload["passwordValue"] == "relay-password"
 
 
-def test_edit_maas_profile_toggle_reveals_saved_password(tmp_path: Path) -> None:
+def test_edit_maas_profile_masks_saved_password_without_reveal_toggle(
+    tmp_path: Path,
+) -> None:
     payload = _run_model_profiles_script(
         tmp_path=tmp_path,
         runner_source="""
@@ -3678,18 +3783,13 @@ await loadModelProfilesPanel();
 document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn")[0].onclick();
 const beforeToggle = {
     passwordType: document.getElementById("profile-maas-password").type,
+    passwordValue: document.getElementById("profile-maas-password").value,
     passwordPlaceholder: document.getElementById("profile-maas-password").placeholder,
-    toggleDisplay: document.getElementById("toggle-profile-maas-password-btn").style.display,
-    toggleTitle: document.getElementById("toggle-profile-maas-password-btn").title,
+    hasPasswordToggle: elements.has("toggle-profile-maas-password-btn"),
 };
-document.getElementById("toggle-profile-maas-password-btn").onclick();
 
 console.log(JSON.stringify({
     beforeToggle,
-    revealedType: document.getElementById("profile-maas-password").type,
-    revealedValue: document.getElementById("profile-maas-password").value,
-    toggleTitle: document.getElementById("toggle-profile-maas-password-btn").title,
-    toggleClassName: document.getElementById("toggle-profile-maas-password-btn").className,
 }));
 """.strip(),
         mock_api_source="""
@@ -3701,7 +3801,7 @@ export async function fetchModelProfiles() {
             base_url: "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
             maas_auth: {
                 username: "relay-user",
-                password: "relay-password",
+                password: "••••••••••••",
                 has_password: true,
             },
             is_default: true,
@@ -3738,13 +3838,9 @@ export async function deleteModelProfile(name) {
 
     before_toggle = cast(dict[str, JsonValue], payload["beforeToggle"])
     assert before_toggle["passwordType"] == "password"
-    assert before_toggle["passwordPlaceholder"] == "************"
-    assert before_toggle["toggleDisplay"] == "inline-flex"
-    assert before_toggle["toggleTitle"] == "Show password"
-    assert payload["revealedType"] == "text"
-    assert payload["revealedValue"] == "relay-password"
-    assert payload["toggleTitle"] == "Hide password"
-    assert payload["toggleClassName"] == "secure-input-btn is-active"
+    assert before_toggle["passwordValue"] == "••••••••••••"
+    assert before_toggle["passwordPlaceholder"] == ""
+    assert before_toggle["hasPasswordToggle"] is False
 
 
 def test_edit_profile_allows_renaming_and_sends_source_name(tmp_path: Path) -> None:
@@ -4770,6 +4866,155 @@ export async function discoverModelCatalog(payload) {
     assert payload["authStatus"] == "Credentials ready"
 
 
+def test_edit_codeagent_profile_keeps_cleared_saved_password_field_empty(
+    tmp_path: Path,
+) -> None:
+    payload = _run_model_profiles_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindModelProfileHandlers, loadModelProfilesPanel } from "./modelProfiles.mjs";
+
+const notifications = [];
+const elements = createElements();
+installGlobals(elements, notifications);
+bindModelProfileHandlers();
+
+await loadModelProfilesPanel();
+document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "codeagent-profile").onclick();
+await Promise.resolve();
+await Promise.resolve();
+const firstPasswordInput = document.getElementById("profile-codeagent-password");
+const initial = {
+    passwordValue: firstPasswordInput.value,
+    passwordPlaceholder: firstPasswordInput.placeholder,
+};
+firstPasswordInput.onfocus();
+firstPasswordInput.value = "";
+firstPasswordInput.oninput();
+const cleared = {
+    passwordValue: firstPasswordInput.value,
+    passwordPlaceholder: firstPasswordInput.placeholder,
+};
+await document.getElementById("save-profile-btn").onclick();
+await Promise.resolve();
+await Promise.resolve();
+
+document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "codeagent-profile").onclick();
+await Promise.resolve();
+await Promise.resolve();
+const secondPasswordInput = document.getElementById("profile-codeagent-password");
+secondPasswordInput.onfocus();
+secondPasswordInput.value = "replacement-codeagent-password";
+secondPasswordInput.oninput();
+secondPasswordInput.value = "";
+secondPasswordInput.oninput();
+const deletedReplacement = {
+    passwordValue: secondPasswordInput.value,
+    passwordPlaceholder: secondPasswordInput.placeholder,
+};
+await document.getElementById("save-profile-btn").onclick();
+await Promise.resolve();
+await Promise.resolve();
+
+document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "codeagent-profile").onclick();
+await Promise.resolve();
+await Promise.resolve();
+const thirdPasswordInput = document.getElementById("profile-codeagent-password");
+thirdPasswordInput.onfocus();
+thirdPasswordInput.value = "••••••••••••replacement-codeagent-password";
+thirdPasswordInput.oninput();
+const appendedReplacement = {
+    passwordValue: thirdPasswordInput.value,
+    passwordPlaceholder: thirdPasswordInput.placeholder,
+};
+await document.getElementById("save-profile-btn").onclick();
+
+console.log(JSON.stringify({
+    initial,
+    cleared,
+    deletedReplacement,
+    appendedReplacement,
+    saves: globalThis.__savedProfiles || [],
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchModelProfiles() {
+    return {
+        "codeagent-profile": {
+            provider: "codeagent",
+            model: "codeagent-chat",
+            base_url: "https://codeagentcli.rnd.huawei.com/codeAgentPro",
+            codeagent_auth: {
+                auth_method: "password",
+                username: "saved-user",
+                has_password: true,
+            },
+            is_default: false,
+            temperature: 0.7,
+            top_p: 1.0,
+            connect_timeout_seconds: 15,
+        },
+    };
+}
+
+export async function fetchModelFallbackConfig() {
+    return { policies: [] };
+}
+
+export async function saveModelProfile(name, profile) {
+    globalThis.__savedProfiles = globalThis.__savedProfiles || [];
+    globalThis.__savedProfiles.push({ name, profile });
+}
+""".strip(),
+    )
+
+    initial = cast(dict[str, JsonValue], payload["initial"])
+    cleared = cast(dict[str, JsonValue], payload["cleared"])
+    deleted_replacement = cast(dict[str, JsonValue], payload["deletedReplacement"])
+    appended_replacement = cast(dict[str, JsonValue], payload["appendedReplacement"])
+    saves = cast(list[dict[str, JsonValue]], payload["saves"])
+
+    assert initial == {
+        "passwordValue": "••••••••••••",
+        "passwordPlaceholder": "",
+    }
+    assert cleared == {
+        "passwordValue": "",
+        "passwordPlaceholder": "",
+    }
+    assert deleted_replacement == {
+        "passwordValue": "",
+        "passwordPlaceholder": "",
+    }
+    assert appended_replacement == {
+        "passwordValue": "replacement-codeagent-password",
+        "passwordPlaceholder": "password",
+    }
+    assert len(saves) == 3
+    for save in saves[:2]:
+        saved_profile_body = cast(dict[str, JsonValue], save["profile"])
+        saved_codeagent_auth = cast(
+            dict[str, JsonValue],
+            saved_profile_body["codeagent_auth"],
+        )
+        assert saved_codeagent_auth == {
+            "auth_method": "password",
+            "auth_source": "profile",
+            "username": "saved-user",
+        }
+    replacement_profile_body = cast(dict[str, JsonValue], saves[2]["profile"])
+    replacement_codeagent_auth = cast(
+        dict[str, JsonValue],
+        replacement_profile_body["codeagent_auth"],
+    )
+    assert replacement_codeagent_auth == {
+        "auth_method": "password",
+        "auth_source": "profile",
+        "username": "saved-user",
+        "password": "replacement-codeagent-password",
+    }
+
+
 def test_codeagent_w3_auth_source_bypasses_stale_reauth_required_state(
     tmp_path: Path,
 ) -> None:
@@ -5232,7 +5477,7 @@ export async function fetchModelProfiles() {
             base_url: "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
             maas_auth: {
                 username: "saved-user",
-                password: "saved-password",
+                password: "••••••••••••",
                 has_password: true,
             },
             is_default: false,
@@ -5729,10 +5974,8 @@ function createElements() {{
             ["profile-codeagent-username", createElement("block", "profile-codeagent-username")],
             ["profile-codeagent-password-group", createElement("none", "profile-codeagent-password-group")],
             ["profile-codeagent-password", createElement("block", "profile-codeagent-password")],
-            ["toggle-profile-codeagent-password-btn", createElement("none", "toggle-profile-codeagent-password-btn")],
             ["profile-maas-username", createElement("block", "profile-maas-username")],
             ["profile-maas-password", createElement("block", "profile-maas-password")],
-            ["toggle-profile-maas-password-btn", createElement("none", "toggle-profile-maas-password-btn")],
             ["profile-temperature", createElement("block", "profile-temperature")],
             ["profile-top-p", createElement("block", "profile-top-p")],
             ["profile-max-tokens", createElement("block", "profile-max-tokens")],
@@ -5774,7 +6017,6 @@ function createElements() {{
         elements.get("profile-codeagent-sso-group")?.appendChild(elements.get("profile-codeagent-login-status-message"));
         elements.get("profile-codeagent-username-group")?.appendChild(elements.get("profile-codeagent-username"));
         elements.get("profile-codeagent-password-group")?.appendChild(elements.get("profile-codeagent-password"));
-        elements.get("profile-codeagent-password-group")?.appendChild(elements.get("toggle-profile-codeagent-password-btn"));
         elements.get("profile-base-url").closestElements = {{ ".form-group": baseUrlGroup }};
         return elements;
     }}

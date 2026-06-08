@@ -78,6 +78,15 @@ DEFAULT_CODEAGENT_CLIENT_ID = "com.huawei.devmind.codebot.apibot"
 DEFAULT_CODEAGENT_SCOPE = "1000:1002"
 DEFAULT_CODEAGENT_SCOPE_RESOURCE = "devuc"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+MASKED_MODEL_PASSWORD = "••••••••••••"
+_LEGACY_MASKED_MODEL_PASSWORD = "***"
+
+
+def is_masked_model_password(value: object) -> bool:
+    return isinstance(value, str) and value.strip() in {
+        MASKED_MODEL_PASSWORD,
+        _LEGACY_MASKED_MODEL_PASSWORD,
+    }
 
 
 class CodeAgentAuthConfig(BaseModel):

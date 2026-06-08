@@ -47,6 +47,7 @@ from relay_teams.providers.model_config import (
     ModelRequestHeader,
     ProviderType,
     SamplingConfig,
+    is_masked_model_password,
 )
 from relay_teams.providers.anthropic_support import (
     anthropic_api_endpoint,
@@ -489,9 +490,11 @@ class ModelConnectivityProbeService:
                 base_url=override_base_url,
                 api_key=override.api_key,
                 headers=override.headers,
-                maas_auth=self._resolve_maas_auth_source(override.maas_auth),
+                maas_auth=self._resolve_maas_auth_source(
+                    self._without_masked_maas_password(override.maas_auth)
+                ),
                 codeagent_auth=self._resolve_codeagent_auth_source(
-                    override.codeagent_auth
+                    self._without_masked_codeagent_password(override.codeagent_auth)
                 ),
                 ssl_verify=override.ssl_verify,
                 capabilities=resolve_model_capabilities(
@@ -580,9 +583,11 @@ class ModelConnectivityProbeService:
                     ),
                     api_key=override.api_key,
                     headers=override.headers,
-                    maas_auth=self._resolve_maas_auth_source(override.maas_auth),
+                    maas_auth=self._resolve_maas_auth_source(
+                        self._without_masked_maas_password(override.maas_auth)
+                    ),
                     codeagent_auth=self._resolve_codeagent_auth_source(
-                        override.codeagent_auth
+                        self._without_masked_codeagent_password(override.codeagent_auth)
                     ),
                     ssl_verify=override.ssl_verify,
                     connect_timeout_seconds=DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
@@ -721,7 +726,12 @@ class ModelConnectivityProbeService:
     ) -> MaaSAuthConfig | None:
         if override_maas_auth is None:
             return base_maas_auth
-        override_maas_auth = self._resolve_maas_auth_source(override_maas_auth)
+        cleaned_override_maas_auth = self._without_masked_maas_password(
+            override_maas_auth
+        )
+        if cleaned_override_maas_auth is None:
+            return base_maas_auth
+        override_maas_auth = self._resolve_maas_auth_source(cleaned_override_maas_auth)
         if base_maas_auth is None:
             return override_maas_auth
         return MaaSAuthConfig(
@@ -741,8 +751,13 @@ class ModelConnectivityProbeService:
     ) -> CodeAgentAuthConfig | None:
         if override_codeagent_auth is None:
             return base_codeagent_auth
-        override_codeagent_auth = self._resolve_codeagent_auth_source(
+        cleaned_override_codeagent_auth = self._without_masked_codeagent_password(
             override_codeagent_auth
+        )
+        if cleaned_override_codeagent_auth is None:
+            return base_codeagent_auth
+        override_codeagent_auth = self._resolve_codeagent_auth_source(
+            cleaned_override_codeagent_auth
         )
         if base_codeagent_auth is None:
             return override_codeagent_auth
@@ -826,6 +841,27 @@ class ModelConnectivityProbeService:
             merged_auth,
             preferred=override_codeagent_auth,
             fallback=base_codeagent_auth,
+        )
+
+    @staticmethod
+    def _without_masked_maas_password(
+        auth_config: MaaSAuthConfig | None,
+    ) -> MaaSAuthConfig | None:
+        if auth_config is None or not is_masked_model_password(auth_config.password):
+            return auth_config
+        return auth_config.model_copy(update={"password": None})
+
+    @staticmethod
+    def _without_masked_codeagent_password(
+        auth_config: CodeAgentAuthConfig | None,
+    ) -> CodeAgentAuthConfig | None:
+        if auth_config is None or not is_masked_model_password(auth_config.password):
+            return auth_config
+        return auth_config.model_copy(
+            update={
+                "password": None,
+                "has_password": False,
+            }
         )
 
     def _with_codeagent_secret_owner(

@@ -123,6 +123,7 @@ exclude = [
   ".venv",
   ".claude",
   ".agent_teams",
+  ".codemate",
   ".pytest-tmp",
   "**/__pycache__",
   "**/node_modules",

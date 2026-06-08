@@ -23,10 +23,12 @@ from relay_teams.providers.model_config import (
     DEFAULT_CODEAGENT_BASE_URL,
     DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
     DEFAULT_MAAS_BASE_URL,
+    MASKED_MODEL_PASSWORD,
     MaaSAuthConfig,
     ModelAuthSource,
     ModelRequestHeader,
     ProviderType,
+    is_masked_model_password,
 )
 from relay_teams.providers.model_header_utils import (
     model_header_secret_field_name,
@@ -519,10 +521,12 @@ class ModelConfigManager:
                 ]
             maas_auth = self._resolve_maas_auth(name, profile)
             if maas_auth is not None:
-                next_profile["maas_auth"] = maas_auth.model_dump(mode="json")
+                next_profile["maas_auth"] = _build_maas_auth_config_payload(maas_auth)
             codeagent_auth = self._resolve_codeagent_auth(name, profile)
             if codeagent_auth is not None:
-                next_profile["codeagent_auth"] = codeagent_auth.model_dump(mode="json")
+                next_profile["codeagent_auth"] = _build_codeagent_auth_config_payload(
+                    codeagent_auth
+                )
             hydrated[name] = next_profile
         return hydrated
 
@@ -584,14 +588,22 @@ class ModelConfigManager:
             resolved_payload["username"] = username.strip()
         if auth_source == ModelAuthSource.PROFILE:
             password = raw_maas_auth.get("password")
-            if not isinstance(password, str) or not password.strip():
+            if (
+                not isinstance(password, str)
+                or not password.strip()
+                or is_masked_model_password(password)
+            ):
                 password = self._secret_store.get_secret(
                     self._config_dir,
                     namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
                     owner_id=profile_name,
                     field_name=_MODEL_PROFILE_MAAS_PASSWORD_FIELD,
                 )
-            if isinstance(password, str) and password.strip():
+            if (
+                isinstance(password, str)
+                and password.strip()
+                and not is_masked_model_password(password)
+            ):
                 resolved_payload["password"] = password.strip()
         return MaaSAuthConfig.model_validate(resolved_payload)
 
@@ -628,7 +640,11 @@ class ModelConfigManager:
         if resolved_auth_method == CodeAgentAuthMethod.PASSWORD:
             password = raw_codeagent_auth.get("password")
             if auth_source == ModelAuthSource.PROFILE:
-                if isinstance(password, str) and password.strip():
+                if (
+                    isinstance(password, str)
+                    and password.strip()
+                    and not is_masked_model_password(password)
+                ):
                     resolved_payload["password"] = password.strip()
                 else:
                     secret_value = self._secret_store.get_secret(
@@ -637,7 +653,9 @@ class ModelConfigManager:
                         owner_id=profile_name,
                         field_name=_MODEL_PROFILE_CODEAGENT_PASSWORD_FIELD,
                     )
-                    if secret_value is not None:
+                    if secret_value is not None and not is_masked_model_password(
+                        secret_value
+                    ):
                         resolved_payload["password"] = secret_value
             if raw_codeagent_auth.get("has_password"):
                 resolved_payload["has_password"] = True
@@ -960,12 +978,20 @@ class ModelConfigManager:
             else None
         )
         password = raw_maas_auth.get("password")
-        if isinstance(password, str) and password.strip():
+        if (
+            isinstance(password, str)
+            and password.strip()
+            and not is_masked_model_password(password)
+        ):
             next_password = password.strip()
             preserve_password = False
         elif existing_maas_auth is not None and existing_maas_auth.password is not None:
-            next_password = None
-            preserve_password = True
+            if current_password is not None:
+                next_password = None
+                preserve_password = True
+            else:
+                next_password = existing_maas_auth.password
+                preserve_password = False
         elif current_password is not None:
             next_password = None
             preserve_password = True
@@ -1128,7 +1154,11 @@ class ModelConfigManager:
             password = raw_codeagent_auth.get("password")
             next_password = (
                 password.strip()
-                if isinstance(password, str) and password.strip()
+                if (
+                    isinstance(password, str)
+                    and password.strip()
+                    and not is_masked_model_password(password)
+                )
                 else None
             )
             next_username = raw_codeagent_auth.get("username")
@@ -1823,8 +1853,20 @@ def _build_maas_auth_profile_payload(
     return {
         "auth_source": maas_auth.auth_source.value,
         "username": maas_auth.username,
-        "password": maas_auth.password or "",
+        "password": MASKED_MODEL_PASSWORD if maas_auth.password is not None else "",
         "has_password": maas_auth.password is not None,
+    }
+
+
+def _build_maas_auth_config_payload(
+    maas_auth: MaaSAuthConfig,
+) -> dict[str, JsonValue]:
+    if maas_auth.auth_source == ModelAuthSource.W3:
+        return {"auth_source": maas_auth.auth_source.value}
+    return {
+        "auth_source": maas_auth.auth_source.value,
+        "username": maas_auth.username,
+        "password": MASKED_MODEL_PASSWORD if maas_auth.password is not None else "",
     }
 
 
@@ -1832,16 +1874,17 @@ def _build_codeagent_auth_profile_payload(
     codeagent_auth: CodeAgentAuthConfig,
 ) -> dict[str, JsonValue]:
     if codeagent_auth.auth_method == CodeAgentAuthMethod.PASSWORD:
+        has_password = (
+            False
+            if codeagent_auth.auth_source == ModelAuthSource.W3
+            else codeagent_auth.password is not None or codeagent_auth.has_password
+        )
         return {
             "auth_method": codeagent_auth.auth_method.value,
             "auth_source": codeagent_auth.auth_source.value,
             "username": codeagent_auth.username or "",
-            "password": codeagent_auth.password or "",
-            "has_password": (
-                False
-                if codeagent_auth.auth_source == ModelAuthSource.W3
-                else codeagent_auth.password is not None or codeagent_auth.has_password
-            ),
+            "password": MASKED_MODEL_PASSWORD if has_password else "",
+            "has_password": has_password,
             "has_access_token": False,
             "has_refresh_token": False,
         }
@@ -1853,6 +1896,14 @@ def _build_codeagent_auth_profile_payload(
         "has_refresh_token": codeagent_auth.refresh_token is not None
         or codeagent_auth.has_refresh_token,
     }
+
+
+def _build_codeagent_auth_config_payload(
+    codeagent_auth: CodeAgentAuthConfig,
+) -> dict[str, JsonValue]:
+    if codeagent_auth.auth_method == CodeAgentAuthMethod.PASSWORD:
+        return _build_codeagent_auth_profile_payload(codeagent_auth)
+    return codeagent_auth.model_dump(mode="json", exclude_none=True)
 
 
 def _build_header_secret_sync_profile(

@@ -121,6 +121,7 @@ from relay_teams.providers.model_config import (
     DEFAULT_CODEAGENT_BASE_URL,
     DEFAULT_CODEAGENT_CLIENT_ID,
     DEFAULT_MAAS_BASE_URL,
+    MASKED_MODEL_PASSWORD,
     ModelConfigPayload,
     ModelFallbackConfig,
     ModelFallbackPolicy,
@@ -3242,7 +3243,7 @@ def test_get_model_profiles_returns_api_key() -> None:
     assert payload["default"]["capabilities"]["input"]["image"] is True
 
 
-def test_get_model_profiles_returns_maas_password() -> None:
+def test_get_model_profiles_returns_masked_maas_password() -> None:
     class _FakeMaaSSystemService(_FakeSystemService):
         def get_model_profiles(self) -> dict[str, object]:
             return {
@@ -3255,7 +3256,7 @@ def test_get_model_profiles_returns_maas_password() -> None:
                     "headers": [],
                     "maas_auth": {
                         "username": "relay-user",
-                        "password": "relay-password",
+                        "password": MASKED_MODEL_PASSWORD,
                         "has_password": True,
                     },
                     "is_default": True,
@@ -3286,7 +3287,7 @@ def test_get_model_profiles_returns_maas_password() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["maas"]["maas_auth"]["username"] == "relay-user"
-    assert payload["maas"]["maas_auth"]["password"] == "relay-password"
+    assert payload["maas"]["maas_auth"]["password"] == MASKED_MODEL_PASSWORD
     assert payload["maas"]["maas_auth"]["has_password"] is True
     assert payload["maas"]["capabilities"]["input"]["image"] is None
 

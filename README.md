@@ -9,19 +9,22 @@ Recent SWE-bench snapshots are archived under [`docs/evaluations/swebench/`](doc
 AgentBench OS/DB snapshots are archived under [`docs/evaluations/agentbench/`](docs/evaluations/agentbench/README.md).
 Current SWE-bench snapshots cover only the first `100` items from `SWE-bench Verified`, not the full benchmark.
 
-SWE-bench uses glm-5, Temperature: 0.7, Top P: 0.95. AgentBench uses the archived deepseek-v4-flash run from `2026-05-26__00-38-21`.
+SWE-bench snapshots include the previously archived `glm-5` runs and the newer `deepseek-v4-flash` runs from `2026-06-08`. AgentBench uses the archived `deepseek-v4-flash` run from `2026-05-26__00-38-21`.
 
-| Mode | Benchmark | Pass Rate | Passed | Failed | Mean Duration | Input Tokens | Cached Input | Output Tokens | Requests | Tool Calls | Report |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Normal | SWE-bench Verified 100 | 72.0% | 72 | 28 | 369.2s | 60,265,198 | 58,214,976 | 451,537 | 2,432 | 2,484 | [HTML](docs/evaluations/swebench/normal-swebench-verified-100-report.html) |
-| Orchestration | SWE-bench Verified 100 | 73.0% | 73 | 27 | 704.2s | 103,016,077 | 95,659,776 | 1,886,195 | 6,026 | 7,171 | [HTML](docs/evaluations/swebench/orchestration-swebench-verified-100-report.html) |
-| Normal | AgentBench OS | 41.0% | 59 | 85 | 23.9s | 5,665,302 | 5,220,736 | 254,361 | 1,217 | 249 | [HTML](docs/evaluations/agentbench/agentbench-os-report.html) |
-| Normal | AgentBench DB | 73.7% | 221 | 79 | 21.1s | 8,850,453 | 7,550,080 | 469,910 | 1,906 | 65 | [HTML](docs/evaluations/agentbench/agentbench-db-report.html) |
+| Model | Mode | Benchmark | Pass Rate | Passed | Failed | Mean Duration | Input Tokens | Cached Input | Output Tokens | Requests | Tool Calls | Report |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| glm-5 | Normal | SWE-bench Verified 100 | 72.0% | 72 | 28 | 369.2s | 60,265,198 | 58,214,976 | 451,537 | 2,432 | 2,484 | [HTML](docs/evaluations/swebench/normal-swebench-verified-100-report.html) |
+| glm-5 | Orchestration | SWE-bench Verified 100 | 73.0% | 73 | 27 | 704.2s | 103,016,077 | 95,659,776 | 1,886,195 | 6,026 | 7,171 | [HTML](docs/evaluations/swebench/orchestration-swebench-verified-100-report.html) |
+| deepseek-v4-flash | Normal | SWE-bench Verified 100 | 71.0% | 71 | 29 | 316.1s | 97,209,524 | 94,190,336 | 864,680 | 1,900 | 968 | [HTML](docs/evaluations/swebench/deepseek-v4-flash-normal-swebench-verified-100-report.html) |
+| deepseek-v4-flash | Orchestration | SWE-bench Verified 100 | 72.0% | 72 | 28 | 379.4s | 201,439,841 | 179,946,112 | 3,054,858 | 7,729 | 4,416 | [HTML](docs/evaluations/swebench/deepseek-v4-flash-orchestration-swebench-verified-100-report.html) |
+| deepseek-v4-flash | Normal | AgentBench OS | 41.0% | 59 | 85 | 23.9s | 5,665,302 | 5,220,736 | 254,361 | 1,217 | 249 | [HTML](docs/evaluations/agentbench/agentbench-os-report.html) |
+| deepseek-v4-flash | Normal | AgentBench DB | 73.7% | 221 | 79 | 21.1s | 8,850,453 | 7,550,080 | 469,910 | 1,906 | 65 | [HTML](docs/evaluations/agentbench/agentbench-db-report.html) |
 
 Highlights:
 
-- `Orchestration` currently reaches `73/100` on `SWE-bench Verified 100`, with `96` runs finishing in `completed` state and `4` ending in `failed`.
-- `Normal` mode currently reaches `72/100` on `SWE-bench Verified 100`, with `97` runs finishing in `completed` state and `3` ending in `failed`.
+- The archived `glm-5` SWE-bench snapshots remain available under their original report filenames.
+- `deepseek-v4-flash` reaches `71/100` in normal mode and `72/100` in orchestration mode on the same SWE-bench Verified 100 subset.
+- In orchestration mode, `outcome` is the agent lifecycle status and can be `failed` even when the SWE-bench Docker scorer marks the patch as resolved.
 - AgentBench is reported as separate OS and DB suites from the archived 444-item run.
 - Token usage is reported directly in the table so model IO and tool activity can be compared without deriving cost assumptions.
 

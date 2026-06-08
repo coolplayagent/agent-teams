@@ -62,5 +62,12 @@ def get_effective_role_for_skill_tool(ctx: ToolContext) -> RoleDefinition:
 
 def skill_team_role_summary_to_json(
     summary: SkillTeamRoleSummary,
+    *,
+    include_effective_role_id: bool = True,
 ) -> dict[str, JsonValue]:
-    return cast(dict[str, JsonValue], summary.model_dump(mode="json"))
+    payload = (
+        summary.model_dump(mode="json")
+        if include_effective_role_id
+        else summary.model_dump(mode="json", exclude={"effective_role_id"})
+    )
+    return cast(dict[str, JsonValue], payload)

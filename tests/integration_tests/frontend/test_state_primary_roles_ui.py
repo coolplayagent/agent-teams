@@ -62,3 +62,48 @@ console.log(JSON.stringify({
         "mainAgentAlias": True,
         "workerPrimary": False,
     }
+
+
+def test_role_display_name_preserves_skill_team_prefix_without_options(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (repo_root / "frontend" / "dist" / "js" / "core" / "state.js").read_text(
+        encoding="utf-8"
+    )
+    (tmp_path / "state.mjs").write_text(source, encoding="utf-8")
+    (tmp_path / "runner.mjs").write_text(
+        """
+globalThis.document = {
+  getElementById() { return null; },
+  querySelector() { return null; },
+};
+
+const { getRoleDisplayName } = await import('./state.mjs');
+
+console.log(JSON.stringify({
+  skillTeam: getRoleDisplayName(
+    'skill_team_codehub_mr_review_reviewer_b2c2b735',
+    { fallback: 'Agent' },
+  ),
+  subagentRole: getRoleDisplayName('subagent_role', { fallback: 'Agent' }),
+}));
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", "runner.mjs"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=3,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "skillTeam": "Skill Team Codehub Mr Review Reviewer B2c2b735",
+        "subagentRole": "Subagent Role",
+    }

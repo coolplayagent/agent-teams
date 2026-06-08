@@ -43,7 +43,7 @@ This directory is organized by documentation purpose and runtime module.
 
 - [Integrations](integrations/)
 - [Operations](operations/)
-- [Evaluations](evaluations/README.md)
+- [Evaluations](evaluations/README.md) - SWE-bench and AgentBench report snapshots.
 - [Assets](assets/)
 
 ## Research

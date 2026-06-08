@@ -696,7 +696,7 @@ console.log(JSON.stringify({
         in modal_html
     )
     assert 'id="profile-maas-model-slot"' in modal_html
-    assert 'id="toggle-profile-maas-password-btn"' in modal_html
+    assert 'id="toggle-profile-maas-password-btn"' not in modal_html
     assert 'id="profile-provider-codeagent-btn"' in modal_html
     assert 'data-i18n="settings.model.provider_codeagent"' in modal_html
     assert 'data-i18n="settings.model.provider_codeagent_copy"' in modal_html
@@ -706,6 +706,7 @@ console.log(JSON.stringify({
     assert 'id="profile-codeagent-login-status"' in modal_html
     assert 'id="profile-codeagent-login-status-message"' in modal_html
     assert 'id="profile-codeagent-model-slot"' in modal_html
+    assert 'id="toggle-profile-codeagent-password-btn"' not in modal_html
     assert 'id="toggle-web-api-key-btn"' in modal_html
     assert (
         'id="toggle-web-api-key-btn" type="button" title="Show API key" aria-label="Show API key"'

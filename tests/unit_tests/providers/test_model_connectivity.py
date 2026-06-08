@@ -21,6 +21,7 @@ from relay_teams.providers.model_config import (
     CodeAgentAuthMethod,
     CodeAgentAuthConfig,
     DEFAULT_CODEAGENT_BASE_URL,
+    MASKED_MODEL_PASSWORD,
     MaaSAuthConfig,
     ModelEndpointConfig,
     ModelRequestHeader,
@@ -1133,6 +1134,58 @@ async def test_probe_merges_saved_maas_password_when_override_omits_it(
             profile_name="maas-profile",
             override=ModelConnectivityProbeOverride(
                 maas_auth=MaaSAuthConfig(username="edited-user"),
+            ),
+        )
+    )
+
+    assert result.ok is True
+    token_calls = cast(list[dict[str, object]], captured["maas_token_calls"])
+    assert token_calls[0]["username"] == "edited-user"
+    assert token_calls[0]["password"] == "saved-password"
+
+
+@pytest.mark.asyncio
+async def test_probe_merges_saved_maas_password_when_override_contains_mask(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    service = ModelConnectivityProbeService(
+        get_runtime=lambda: _runtime_config(
+            profile_name="maas-profile",
+            provider=ProviderType.MAAS,
+            model="maas-chat",
+            base_url="https://maas.example/api/v2",
+            api_key=None,
+            maas_auth=MaaSAuthConfig(
+                username="saved-user",
+                password="saved-password",
+            ),
+        )
+    )
+
+    monkeypatch.setattr(
+        "relay_teams.providers.model_connectivity.get_maas_token_service",
+        lambda: _FakeMaaSTokenService(["maas-token"], captured),
+    )
+    monkeypatch.setattr(
+        "relay_teams.providers.model_connectivity.create_async_http_client",
+        lambda **kwargs: (
+            captured.update(kwargs)
+            or _FakeHttpClient(
+                captured=captured,
+                response=httpx.Response(200, json={"usage": {"total_tokens": 2}}),
+            )
+        ),
+    )
+
+    result = await service.probe_async(
+        ModelConnectivityProbeRequest(
+            profile_name="maas-profile",
+            override=ModelConnectivityProbeOverride(
+                maas_auth=MaaSAuthConfig(
+                    username="edited-user",
+                    password=MASKED_MODEL_PASSWORD,
+                ),
             ),
         )
     )
@@ -2816,6 +2869,54 @@ def test_merge_codeagent_auth_rejects_username_change_without_new_password() -> 
         )
 
 
+def test_merge_codeagent_auth_uses_saved_password_when_override_contains_mask() -> None:
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+    base_auth = CodeAgentAuthConfig(
+        auth_method=CodeAgentAuthMethod.PASSWORD,
+        username="relay-user",
+        password="saved-password",
+    )
+    override_auth = CodeAgentAuthConfig(
+        auth_method=CodeAgentAuthMethod.PASSWORD,
+        username="relay-user",
+        password=MASKED_MODEL_PASSWORD,
+    )
+
+    merged = service._merge_codeagent_auth(
+        base_codeagent_auth=base_auth,
+        override_codeagent_auth=override_auth,
+    )
+
+    assert merged is not None
+    assert merged.auth_method == CodeAgentAuthMethod.PASSWORD
+    assert merged.username == "relay-user"
+    assert merged.password == "saved-password"
+    assert merged.has_password is True
+
+
+def test_merge_codeagent_auth_rejects_username_change_with_masked_password() -> None:
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+    base_auth = CodeAgentAuthConfig(
+        auth_method=CodeAgentAuthMethod.PASSWORD,
+        username="old-user",
+        password="saved-password",
+    )
+    override_auth = CodeAgentAuthConfig(
+        auth_method=CodeAgentAuthMethod.PASSWORD,
+        username="new-user",
+        password=MASKED_MODEL_PASSWORD,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent password must be re-entered after changing the username.",
+    ):
+        service._merge_codeagent_auth(
+            base_codeagent_auth=base_auth,
+            override_codeagent_auth=override_auth,
+        )
+
+
 def test_build_maas_login_error_result_without_http_status_returns_invalid_response() -> (
     None
 ):
@@ -2975,6 +3076,61 @@ async def test_discover_models_merges_saved_maas_password_when_override_omits_it
             profile_name="maas-profile",
             override=ModelConnectivityProbeOverride(
                 maas_auth=MaaSAuthConfig(username="edited-user"),
+            ),
+        )
+    )
+
+    assert result.ok is True
+    token_calls = cast(list[dict[str, object]], captured["maas_token_calls"])
+    assert token_calls[0]["username"] == "edited-user"
+    assert token_calls[0]["password"] == "saved-password"
+
+
+@pytest.mark.asyncio
+async def test_discover_models_merges_saved_maas_password_when_override_contains_mask(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    service = ModelConnectivityProbeService(
+        get_runtime=lambda: _runtime_config(
+            profile_name="maas-profile",
+            provider=ProviderType.MAAS,
+            model="maas-chat",
+            base_url="https://maas.example/api/v2",
+            api_key=None,
+            maas_auth=MaaSAuthConfig(
+                username="saved-user",
+                password="saved-password",
+            ),
+        )
+    )
+
+    monkeypatch.setattr(
+        "relay_teams.providers.model_connectivity.get_maas_token_service",
+        lambda: _FakeMaaSTokenService(["maas-token"], captured),
+    )
+    monkeypatch.setattr(
+        "relay_teams.providers.model_connectivity.create_async_http_client",
+        lambda **kwargs: (
+            captured.update(kwargs)
+            or _FakeHttpClient(
+                captured=captured,
+                response=httpx.Response(
+                    200,
+                    json={"user_model_list": [{"model_id": "maas-chat"}]},
+                ),
+            )
+        ),
+    )
+
+    result = await service.discover_models_async(
+        ModelDiscoveryRequest(
+            profile_name="maas-profile",
+            override=ModelConnectivityProbeOverride(
+                maas_auth=MaaSAuthConfig(
+                    username="edited-user",
+                    password=MASKED_MODEL_PASSWORD,
+                ),
             ),
         )
     )

@@ -25,6 +25,7 @@ from relay_teams.providers.model_config import (
     DEFAULT_CODEAGENT_BASE_URL,
     DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
     DEFAULT_MAAS_BASE_URL,
+    MASKED_MODEL_PASSWORD,
 )
 from relay_teams.providers.maas_auth import maas_password_secret_field_name
 from relay_teams.providers.model_config_manager import ModelConfigManager
@@ -731,7 +732,7 @@ def test_save_model_profile_stores_maas_password_in_secret_store(
 
     assert cast(str, profiles["maas-profile"]["base_url"]) == DEFAULT_MAAS_BASE_URL
     assert maas_auth["username"] == "relay-user"
-    assert maas_auth["password"] == "relay-password"
+    assert maas_auth["password"] == MASKED_MODEL_PASSWORD
     assert maas_auth["has_password"] is True
     assert model_payload["maas-profile"]["base_url"] == DEFAULT_MAAS_BASE_URL
     assert model_payload["maas-profile"]["maas_auth"] == {
@@ -884,9 +885,10 @@ def test_save_model_profile_defaults_anthropic_base_url_when_blank(
 def test_save_model_profile_preserves_existing_maas_password_when_blank(
     tmp_path: Path,
 ) -> None:
+    secret_store = _FileOnlySecretStore()
     manager = ModelConfigManager(
         config_dir=tmp_path,
-        secret_store=_FileOnlySecretStore(),
+        secret_store=secret_store,
     )
     manager.save_model_profile(
         "maas-profile",
@@ -919,8 +921,197 @@ def test_save_model_profile_preserves_existing_maas_password_when_blank(
 
     assert saved_profile["model"] == "maas-chat-v2"
     assert saved_profile["base_url"] == DEFAULT_MAAS_BASE_URL
-    assert saved_maas_auth["password"] == "relay-password"
+    assert saved_maas_auth["password"] == MASKED_MODEL_PASSWORD
     assert saved_maas_auth["username"] == "relay-user-2"
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="maas-profile",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "relay-password"
+    )
+
+
+def test_save_model_profile_preserves_existing_maas_password_when_masked(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileOnlySecretStore()
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+    )
+    manager.save_model_profile(
+        "maas-profile",
+        {
+            "provider": "maas",
+            "model": "maas-chat",
+            "base_url": "https://maas.example/api/v2",
+            "maas_auth": {
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+
+    manager.save_model_profile(
+        "maas-profile",
+        {
+            "provider": "maas",
+            "model": "maas-chat-v2",
+            "base_url": "https://maas.example/api/v2",
+            "maas_auth": {
+                "username": "relay-user-2",
+                "password": MASKED_MODEL_PASSWORD,
+            },
+        },
+    )
+
+    config = manager.get_model_config()
+    saved_profile = cast(dict[str, JsonValue], config["maas-profile"])
+    saved_maas_auth = cast(dict[str, JsonValue], saved_profile["maas_auth"])
+
+    assert saved_profile["model"] == "maas-chat-v2"
+    assert saved_maas_auth["username"] == "relay-user-2"
+    assert saved_maas_auth["password"] == MASKED_MODEL_PASSWORD
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="maas-profile",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "relay-password"
+    )
+
+
+def test_get_model_config_returns_put_compatible_masked_maas_auth(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileOnlySecretStore()
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+    )
+    manager.save_model_profile(
+        "maas-profile",
+        {
+            "provider": "maas",
+            "model": "maas-chat",
+            "base_url": "https://maas.example/api/v2",
+            "maas_auth": {
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+
+    config = manager.get_model_config()
+    saved_profile = cast(dict[str, JsonValue], config["maas-profile"])
+    saved_maas_auth = cast(dict[str, JsonValue], saved_profile["maas_auth"])
+
+    assert saved_maas_auth["password"] == MASKED_MODEL_PASSWORD
+    assert "has_password" not in saved_maas_auth
+
+    manager.save_model_config(config)
+
+    profiles = manager.get_model_profiles()
+    saved_profile = cast(dict[str, JsonValue], profiles["maas-profile"])
+    saved_maas_auth = cast(dict[str, JsonValue], saved_profile["maas_auth"])
+
+    assert saved_maas_auth["password"] == MASKED_MODEL_PASSWORD
+    assert saved_maas_auth["has_password"] is True
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="maas-profile",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "relay-password"
+    )
+
+
+def test_save_model_config_migrates_inline_maas_password_into_secret_store(
+    tmp_path: Path,
+) -> None:
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+    (tmp_path / "model.json").write_text(
+        json.dumps(
+            {
+                "maas-profile": {
+                    "provider": "maas",
+                    "model": "maas-chat",
+                    "base_url": DEFAULT_MAAS_BASE_URL,
+                    "maas_auth": {
+                        "username": "relay-user",
+                        "password": "inline-password",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = manager.get_model_config()
+    saved_profile = cast(dict[str, JsonValue], config["maas-profile"])
+    saved_maas_auth = cast(dict[str, JsonValue], saved_profile["maas_auth"])
+    assert saved_maas_auth["password"] == MASKED_MODEL_PASSWORD
+
+    manager.save_model_config(config)
+
+    profiles = manager.get_model_profiles()
+    saved_profile = cast(dict[str, JsonValue], profiles["maas-profile"])
+    saved_maas_auth = cast(dict[str, JsonValue], saved_profile["maas_auth"])
+    raw_config = json.loads((tmp_path / "model.json").read_text(encoding="utf-8"))
+    secrets_payload = json.loads(
+        (tmp_path / "secrets.json").read_text(encoding="utf-8")
+    )
+
+    assert saved_maas_auth["username"] == "relay-user"
+    assert saved_maas_auth["password"] == MASKED_MODEL_PASSWORD
+    assert saved_maas_auth["has_password"] is True
+    assert raw_config["maas-profile"]["maas_auth"] == {
+        "auth_source": "profile",
+        "username": "relay-user",
+    }
+    assert {
+        "namespace": "model_profile",
+        "owner_id": "maas-profile",
+        "field_name": maas_password_secret_field_name(),
+        "storage": "file",
+        "value": "inline-password",
+    } in secrets_payload["entries"]
+
+
+def test_save_model_profile_rejects_first_maas_password_when_masked(
+    tmp_path: Path,
+) -> None:
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="MAAS auth password requires a value the first time it is configured.",
+    ):
+        manager.save_model_profile(
+            "maas-profile",
+            {
+                "provider": "maas",
+                "model": "maas-chat",
+                "base_url": "https://maas.example/api/v2",
+                "maas_auth": {
+                    "username": "relay-user",
+                    "password": MASKED_MODEL_PASSWORD,
+                },
+            },
+        )
 
 
 def test_save_model_profile_stores_codeagent_tokens_from_oauth_session(
@@ -1814,6 +2005,7 @@ def test_save_model_profile_stores_codeagent_password_in_secret_store(
 
     assert saved_auth["auth_method"] == "password"
     assert saved_auth["username"] == "relay-user"
+    assert saved_auth["password"] == MASKED_MODEL_PASSWORD
     assert saved_auth["has_password"] is True
     assert raw_config["codeagent-password"]["codeagent_auth"] == {
         "auth_method": "password",
@@ -1830,6 +2022,88 @@ def test_save_model_profile_stores_codeagent_password_in_secret_store(
         )
         == "relay-password"
     )
+
+
+def test_save_model_profile_preserves_existing_codeagent_password_when_masked(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileOnlySecretStore()
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+    )
+    manager.save_model_profile(
+        "codeagent-password",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat",
+            "base_url": DEFAULT_CODEAGENT_BASE_URL,
+            "codeagent_auth": {
+                "auth_method": "password",
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+
+    manager.save_model_profile(
+        "codeagent-password",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat-v2",
+            "base_url": DEFAULT_CODEAGENT_BASE_URL,
+            "codeagent_auth": {
+                "auth_method": "password",
+                "username": "relay-user",
+                "password": MASKED_MODEL_PASSWORD,
+            },
+        },
+    )
+
+    config = manager.get_model_config()
+    saved_profile = cast(dict[str, JsonValue], config["codeagent-password"])
+    saved_auth = cast(dict[str, JsonValue], saved_profile["codeagent_auth"])
+
+    assert saved_profile["model"] == "codeagent-chat-v2"
+    assert saved_auth["auth_method"] == "password"
+    assert saved_auth["username"] == "relay-user"
+    assert saved_auth["password"] == MASKED_MODEL_PASSWORD
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="codeagent-password",
+            field_name=codeagent_password_secret_field_name(),
+        )
+        == "relay-password"
+    )
+
+
+def test_save_model_profile_rejects_first_codeagent_password_when_masked(
+    tmp_path: Path,
+) -> None:
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent auth password requires a value the first time it is configured.",
+    ):
+        manager.save_model_profile(
+            "codeagent-password",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": DEFAULT_CODEAGENT_BASE_URL,
+                "codeagent_auth": {
+                    "auth_method": "password",
+                    "username": "relay-user",
+                    "password": MASKED_MODEL_PASSWORD,
+                },
+            },
+        )
 
 
 def test_save_codeagent_password_profile_can_use_w3_auth_source(
@@ -2030,6 +2304,47 @@ def test_save_model_profile_rejects_codeagent_username_change_without_new_passwo
         )
 
 
+def test_save_model_profile_rejects_codeagent_username_change_with_masked_password(
+    tmp_path: Path,
+) -> None:
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    manager.save_model_profile(
+        "codeagent-password",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat",
+            "base_url": DEFAULT_CODEAGENT_BASE_URL,
+            "codeagent_auth": {
+                "auth_method": "password",
+                "username": "old-user",
+                "password": "relay-password",
+            },
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent auth password must be re-entered after changing the username.",
+    ):
+        manager.save_model_profile(
+            "codeagent-password",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": DEFAULT_CODEAGENT_BASE_URL,
+                "codeagent_auth": {
+                    "auth_method": "password",
+                    "username": "new-user",
+                    "password": MASKED_MODEL_PASSWORD,
+                },
+            },
+        )
+
+
 def test_save_model_profile_rejects_codeagent_password_auth_without_username(
     tmp_path: Path,
 ) -> None:
@@ -2131,7 +2446,7 @@ def test_save_model_profile_migrates_inline_codeagent_password_into_secret_store
 
     assert saved_auth["auth_method"] == "password"
     assert saved_auth["username"] == "relay-user"
-    assert saved_auth["password"] == "inline-password"
+    assert saved_auth["password"] == MASKED_MODEL_PASSWORD
     assert saved_auth["has_password"] is True
     assert raw_config["codeagent-profile"]["codeagent_auth"] == {
         "auth_method": "password",

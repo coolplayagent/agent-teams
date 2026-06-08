@@ -8,10 +8,12 @@ from relay_teams.providers.model_config import (
     CodeAgentAuthMethod,
     CodeAgentAuthConfig,
     MaaSAuthConfig,
+    MASKED_MODEL_PASSWORD,
     ModelAuthSource,
     ModelEndpointConfig,
     ProviderType,
     SpeechRealtimeConfig,
+    is_masked_model_password,
 )
 
 
@@ -28,6 +30,12 @@ def test_codeagent_auth_with_secret_owner_copies_private_metadata() -> None:
     assert copied._secret_owner_id == "codeagent-profile"
     assert auth_config._secret_config_dir is None
     assert auth_config._secret_owner_id is None
+
+
+def test_is_masked_model_password_accepts_current_and_legacy_masks() -> None:
+    assert is_masked_model_password(MASKED_MODEL_PASSWORD) is True
+    assert is_masked_model_password("***") is True
+    assert is_masked_model_password("relay-password") is False
 
 
 def test_model_endpoint_config_requires_maas_auth() -> None:

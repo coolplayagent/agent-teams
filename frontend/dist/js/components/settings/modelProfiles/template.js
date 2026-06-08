@@ -183,12 +183,6 @@ export function renderModelProfilesPanelMarkup() {
                                             <label for="profile-maas-password" data-i18n="settings.model.password">Password</label>
                                             <div class="secure-input-row">
                                                 <input type="password" id="profile-maas-password" placeholder="password" data-i18n-placeholder="settings.model.password_placeholder" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
-                                                <button class="secure-input-btn" id="toggle-profile-maas-password-btn" type="button" title="Show password" aria-label="Show password" style="display:none;">
-                                                    <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
-                                                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
-                                                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"></circle>
-                                                    </svg>
-                                                </button>
                                             </div>
                                         </div>
                                         <div class="form-group-span-2" id="profile-maas-model-slot"></div>
@@ -224,12 +218,6 @@ export function renderModelProfilesPanelMarkup() {
                                                 <label for="profile-codeagent-password" data-i18n="settings.model.codeagent_password">CodeAgent Password</label>
                                                 <div class="secure-input-row">
                                                     <input type="password" id="profile-codeagent-password" placeholder="password" data-i18n-placeholder="settings.model.codeagent_password_placeholder" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
-                                                    <button class="secure-input-btn" id="toggle-profile-codeagent-password-btn" type="button" title="Show password" aria-label="Show password" style="display:none;">
-                                                    <svg viewBox="0 0 24 24" fill="none" class="icon-sm" aria-hidden="true">
-                                                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
-                                                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"></circle>
-                                                    </svg>
-                                                    </button>
                                                 </div>
                                             </div>
                                         </div>

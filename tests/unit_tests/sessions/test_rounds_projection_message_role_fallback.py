@@ -36,7 +36,11 @@ from relay_teams.media import content_parts_from_text
 from relay_teams.sessions.runs.assistant_errors import RunCompletionReason
 from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.runs.run_models import RunResult
-from relay_teams.sessions.runs.run_runtime_repo import RunRuntimeRepository
+from relay_teams.sessions.runs.run_runtime_repo import (
+    RunRuntimeRecord,
+    RunRuntimeRepository,
+    RunRuntimeStatus,
+)
 from relay_teams.agents.tasks.task_repository import TaskRepository
 from relay_teams.agents.tasks.models import TaskEnvelope, VerificationPlan
 from relay_teams.workspace import build_conversation_id
@@ -2443,6 +2447,107 @@ def test_build_session_rounds_projects_failed_assistant_response_output_as_final
     assert timeline_item["has_final_output"] is True
     assert coordinator_messages[0]["reconstructed"] is True
     assert parts[0]["content"] == "failed final output"
+
+
+@pytest.mark.parametrize(
+    ("event_type", "runtime_status"),
+    [
+        (RunEventType.RUN_COMPLETED, RunRuntimeStatus.COMPLETED),
+        (RunEventType.RUN_FAILED, RunRuntimeStatus.FAILED),
+    ],
+)
+def test_build_session_rounds_projects_verification_failed_warning(
+    tmp_path: Path,
+    event_type: RunEventType,
+    runtime_status: RunRuntimeStatus,
+) -> None:
+    db_path = tmp_path / f"rounds_projection_verification_{event_type.value}.db"
+    session_id = "session-1"
+    run_id = "run-verification-warning"
+    task_id = "task-root-verification-warning"
+    diagnostic = "runtime_guardrail:pre_execution_boundary"
+
+    task_repo = TaskRepository(db_path)
+    agent_repo = AgentInstanceRepository(db_path)
+    run_runtime_repo = RunRuntimeRepository(db_path)
+    _ = task_repo.create(
+        TaskEnvelope(
+            task_id=task_id,
+            session_id=session_id,
+            parent_task_id=None,
+            trace_id=run_id,
+            role_id="Coordinator",
+            objective="new objective",
+            verification=VerificationPlan(checklist=("non_empty_response",)),
+        )
+    )
+    _ = run_runtime_repo.upsert(
+        RunRuntimeRecord(
+            run_id=run_id,
+            session_id=session_id,
+            root_task_id=task_id,
+            status=runtime_status,
+        )
+    )
+    event: dict[str, object] = {
+        "event_type": event_type.value,
+        "trace_id": run_id,
+        "payload_json": RunResult(
+            trace_id=run_id,
+            root_task_id=task_id,
+            status=(
+                "completed"
+                if runtime_status == RunRuntimeStatus.COMPLETED
+                else "failed"
+            ),
+            completion_reason=(
+                RunCompletionReason.ASSISTANT_RESPONSE
+                if event_type == RunEventType.RUN_COMPLETED
+                else RunCompletionReason.ASSISTANT_ERROR
+            ),
+            error_code="verification_failed",
+            error_message=diagnostic,
+            output=content_parts_from_text(
+                "verification_failedruntime_guardrail:pre_execution_boundary"
+            ),
+        ).model_dump_json(),
+        "occurred_at": "2026-03-25T09:31:00+00:00",
+    }
+    missing_trace_event: dict[str, object] = {
+        "event_type": event_type.value,
+        "payload_json": event["payload_json"],
+        "occurred_at": "2026-03-25T09:30:00+00:00",
+    }
+
+    rounds = build_session_rounds(
+        session_id=session_id,
+        agent_repo=agent_repo,
+        task_repo=task_repo,
+        approval_tickets_by_run={},
+        run_runtime_repo=run_runtime_repo,
+        get_session_messages=lambda _sid: [],
+        get_session_events=lambda _sid: [missing_trace_event, event],
+    )
+    timeline_items = build_session_timeline_rounds(
+        session_id=session_id,
+        task_repo=task_repo,
+        approval_tickets_by_run={},
+        run_runtime_repo=run_runtime_repo,
+        get_session_user_messages=lambda _sid: [],
+        get_session_events=lambda _sid: [missing_trace_event, event],
+    )
+
+    round_item = next(item for item in rounds if item["run_id"] == run_id)
+    timeline_item = next(item for item in timeline_items if item["run_id"] == run_id)
+
+    assert round_item["verification_status"] == "failed"
+    assert round_item["run_error_code"] == "verification_failed"
+    assert round_item["run_diagnostic_message"] == diagnostic
+    assert round_item["has_diagnostics"] is True
+    assert "verification did not pass" in str(round_item["run_user_message"])
+    assert "runtime_guardrail" not in str(round_item["run_user_message"])
+    assert timeline_item["verification_status"] == "failed"
+    assert timeline_item["run_diagnostic_message"] == diagnostic
 
 
 def test_build_session_rounds_appends_failed_assistant_response_to_history(

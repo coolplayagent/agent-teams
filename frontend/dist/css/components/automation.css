@@ -270,6 +270,10 @@
     background: var(--danger);
 }
 
+.automation-status-dot.is-warning {
+    background: var(--warning);
+}
+
 .automation-status-dot.is-disabled,
 .automation-status-dot.is-stopped,
 .automation-status-dot.is-idle,

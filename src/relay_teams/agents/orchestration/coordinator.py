@@ -2510,16 +2510,12 @@ class CoordinatorGraph(BaseModel):
         if passed:
             return TaskExecutionResult(output=output)
 
-        details = tuple(
-            str(item) for item in getattr(verification, "details", ()) if str(item)
-        )
-        failure_message = (
-            "; ".join(details)
-            if details
-            else (output.strip() if output.strip() else "Verification failed")
-        )
+        failure_message = _format_verification_failure(verification)
         current = await self.task_repo.get_async(root_task.task_id)
-        assistant_message = _format_verification_failure(verification)
+        assistant_message = build_assistant_error_message(
+            error_code="verification_failed",
+            error_message=failure_message,
+        )
         await self.task_repo.update_status_async(
             root_task.task_id,
             TaskStatus.COMPLETED,
@@ -2559,7 +2555,7 @@ class CoordinatorGraph(BaseModel):
                 )
         return TaskExecutionResult(
             output=assistant_message,
-            completion_reason=RunCompletionReason.ASSISTANT_ERROR,
+            completion_reason=RunCompletionReason.ASSISTANT_RESPONSE,
             error_code="verification_failed",
             error_message=failure_message,
         )

@@ -199,6 +199,24 @@ function renderGeneralSettingsPanelMarkup() {
                     <section class="proxy-form-section settings-form-section general-setting-card">
                         <div class="proxy-form-section-header settings-form-section-header general-setting-card-head">
                             <div class="general-setting-card-copy-block">
+                                <h5 class="settings-form-section-title" data-i18n="settings.appearance.diagnostics">Diagnostics</h5>
+                            </div>
+                            <label class="notification-toggle general-setting-toggle">
+                                <input type="checkbox" id="settings-show-diagnostics">
+                                <span class="notification-toggle-check" aria-hidden="true"></span>
+                                <span class="notification-toggle-label" data-i18n="settings.field.enabled">Enabled</span>
+                            </label>
+                        </div>
+                        <div class="appearance-grid settings-field-grid general-setting-card-body">
+                            <div class="appearance-row settings-field-row">
+                                <label for="settings-show-diagnostics" data-i18n="settings.appearance.show_diagnostics">Show diagnostic information</label>
+                                <span class="general-setting-inline-note" data-i18n="settings.appearance.show_diagnostics_note">Shows raw error codes and guardrail details in failed or verification-warning runs.</span>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="proxy-form-section settings-form-section general-setting-card">
+                        <div class="proxy-form-section-header settings-form-section-header general-setting-card-head">
+                            <div class="general-setting-card-copy-block">
                                 <h5 data-i18n="settings.general.shell_policy_title">Shell Policy</h5>
                             </div>
                             <label class="notification-toggle general-setting-toggle">
@@ -1217,6 +1235,7 @@ async function loadSettingsPanel(tab) {
         await loadModelProfilesPanel();
     } else if (tab === 'general') {
         await loadGeneralSettingsPanel();
+        loadAppearancePanel();
     } else if (tab === 'hooks') {
         await loadHooksSettingsPanel();
     } else if (tab === 'agents') {

@@ -354,6 +354,51 @@ body.light-theme .round-todo-status[data-status="pending"] {
     background: rgba(245, 158, 11, 0.12);
 }
 
+.round-verification-notice {
+    margin-top: 0.65rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid rgba(245, 158, 11, 0.32);
+    border-radius: var(--radius-sm);
+    background: rgba(245, 158, 11, 0.08);
+    color: var(--text-primary);
+}
+
+.round-verification-message {
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.round-verification-details {
+    margin-top: 0.55rem;
+}
+
+.round-verification-details > summary {
+    cursor: pointer;
+    color: var(--warning);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.round-verification-details > summary:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.round-verification-details > pre {
+    margin: 0.5rem 0 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-base);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .round-state-success,
 .round-nav-state-success,
 .recovery-status-success {

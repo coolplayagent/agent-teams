@@ -206,6 +206,7 @@ def _run_block_helper_script(tmp_path: Path, runner_source: str) -> dict[str, ob
         source_path.read_text(encoding="utf-8")
         .replace("../../../core/state.js", "./mockState.mjs")
         .replace("../../../utils/i18n.js", "./mockI18n.mjs")
+        .replace("../../../utils/diagnostics.js", "./mockDiagnostics.mjs")
         .replace("./toolBlocks.js", "./mockToolBlocks.mjs")
         .replace("./content.js", "./mockContent.mjs")
         .replace("./prompt.js", "./mockPrompt.mjs")
@@ -222,6 +223,19 @@ export function isMainAgentRoleId() { return false; }
     (tmp_path / "mockI18n.mjs").write_text(
         """
 export function t(key) { return String(key || ''); }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockDiagnostics.mjs").write_text(
+        """
+export function buildDiagnosticPresentation(text) {
+    return {
+        text: String(text || ''),
+        hasDetails: false,
+        detail: '',
+        detailMode: '',
+    };
+}
 """.strip(),
         encoding="utf-8",
     )

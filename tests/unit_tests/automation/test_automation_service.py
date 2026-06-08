@@ -455,6 +455,7 @@ def test_project_list_records_include_session_run_status(
         metadata={"title": "Automation Run"},
         active_run_status="running",
         latest_terminal_run_status="failed",
+        latest_terminal_run_verification_status="failed",
         updated_at=datetime(2026, 6, 4, 12, 0, tzinfo=UTC),
     )
     ignored_session_record = SessionRecord(
@@ -505,6 +506,12 @@ def test_project_list_records_include_session_run_status(
         records_by_id[created.automation_project_id].latest_terminal_run_status
         == "failed"
     )
+    assert (
+        records_by_id[
+            created.automation_project_id
+        ].latest_terminal_run_verification_status
+        == "failed"
+    )
     assert records_by_id[ignored.automation_project_id].active_run_status is None
     assert (
         records_by_id[ignored.automation_project_id].latest_terminal_run_status
@@ -528,8 +535,134 @@ def test_project_list_records_include_session_run_status(
             ].latest_terminal_run_status
             == "failed"
         )
+        assert (
+            async_records_by_id[
+                created.automation_project_id
+            ].latest_terminal_run_verification_status
+            == "failed"
+        )
 
     asyncio.run(exercise())
+
+
+def test_project_latest_terminal_verification_status_matches_latest_terminal_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, session_service = _build_service(tmp_path)
+    created = service.create_project(
+        AutomationProjectCreateInput(
+            name="verification-report",
+            workspace_id="default",
+            prompt="Draft a verification report.",
+            schedule_mode=AutomationScheduleMode.CRON,
+            cron_expression="0 1 * * *",
+            timezone="UTC",
+        )
+    )
+    newer_clean_session = SessionRecord(
+        session_id="session-new-clean",
+        workspace_id="default",
+        project_kind=ProjectKind.AUTOMATION,
+        project_id=created.automation_project_id,
+        metadata={"title": "New clean automation run"},
+        latest_terminal_run_status="completed",
+        updated_at=datetime(2026, 6, 4, 12, 0, tzinfo=UTC),
+    )
+    older_verification_session = SessionRecord(
+        session_id="session-old-verification",
+        workspace_id="default",
+        project_kind=ProjectKind.AUTOMATION,
+        project_id=created.automation_project_id,
+        metadata={"title": "Old verification warning"},
+        latest_terminal_run_status="completed",
+        latest_terminal_run_verification_status="failed",
+        updated_at=datetime(2026, 6, 4, 11, 0, tzinfo=UTC),
+    )
+
+    def list_sessions() -> tuple[SessionRecord, ...]:
+        return (older_verification_session, newer_clean_session)
+
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions",
+        list_sessions,
+    )
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions_by_project",
+        pytest.fail,
+    )
+
+    records = service.list_projects()
+
+    records_by_id = {record.automation_project_id: record for record in records}
+    projected = records_by_id[created.automation_project_id]
+    assert projected.latest_terminal_run_status == "completed"
+    assert projected.latest_terminal_run_verification_status is None
+
+
+def test_project_latest_terminal_verification_status_uses_terminal_updated_at(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, session_service = _build_service(tmp_path)
+    created = service.create_project(
+        AutomationProjectCreateInput(
+            name="terminal-timestamp-report",
+            workspace_id="default",
+            prompt="Draft a terminal timestamp report.",
+            schedule_mode=AutomationScheduleMode.CRON,
+            cron_expression="0 1 * * *",
+            timezone="UTC",
+        )
+    )
+    newer_session_with_older_terminal = SessionRecord(
+        session_id="session-newer-old-terminal",
+        workspace_id="default",
+        project_kind=ProjectKind.AUTOMATION,
+        project_id=created.automation_project_id,
+        metadata={"title": "Newer session, older terminal"},
+        latest_terminal_run_status="completed",
+        latest_terminal_run_updated_at=datetime(2026, 6, 4, 10, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 4, 12, 0, tzinfo=UTC),
+    )
+    older_session_with_newer_terminal = SessionRecord(
+        session_id="session-older-new-terminal",
+        workspace_id="default",
+        project_kind=ProjectKind.AUTOMATION,
+        project_id=created.automation_project_id,
+        metadata={"title": "Older session, newer terminal warning"},
+        latest_terminal_run_status="completed",
+        latest_terminal_run_verification_status="failed",
+        latest_terminal_run_updated_at=datetime(2026, 6, 4, 13, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 4, 11, 0, tzinfo=UTC),
+    )
+
+    def list_sessions() -> tuple[SessionRecord, ...]:
+        return (
+            newer_session_with_older_terminal,
+            older_session_with_newer_terminal,
+        )
+
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions",
+        list_sessions,
+    )
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions_by_project",
+        pytest.fail,
+    )
+
+    records = service.list_projects()
+
+    projected = {record.automation_project_id: record for record in records}[
+        created.automation_project_id
+    ]
+    assert projected.latest_terminal_run_status == "completed"
+    assert projected.latest_terminal_run_verification_status == "failed"
 
 
 def test_async_run_now_offloads_delivery_registration(

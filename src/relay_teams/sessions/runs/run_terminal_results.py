@@ -133,8 +133,12 @@ class RunTerminalResultService:
         return RunResult(
             trace_id=run_id,
             root_task_id=resolved_root_task_id,
-            status="failed",
-            completion_reason=RunCompletionReason.ASSISTANT_ERROR,
+            status="completed" if error_code == "verification_failed" else "failed",
+            completion_reason=(
+                RunCompletionReason.ASSISTANT_RESPONSE
+                if error_code == "verification_failed"
+                else RunCompletionReason.ASSISTANT_ERROR
+            ),
             error_code=error_code,
             error_message=error_message,
             output=content_parts_from_text(assistant_message),
@@ -144,6 +148,21 @@ class RunTerminalResultService:
     def normalize_terminal_run_result(result: RunResult) -> RunResult:
         error_text = str(result.error_message or result.output_text or "").strip()
         output = result.output
+        if result.error_code == "verification_failed":
+            if not output:
+                output = content_parts_from_text(
+                    build_assistant_error_message(
+                        error_code=result.error_code,
+                        error_message=error_text,
+                    )
+                )
+            return result.model_copy(
+                update={
+                    "status": "completed",
+                    "completion_reason": RunCompletionReason.ASSISTANT_RESPONSE,
+                    "output": output,
+                }
+            )
         if not output and error_text:
             output = content_parts_from_text(error_text)
         if (

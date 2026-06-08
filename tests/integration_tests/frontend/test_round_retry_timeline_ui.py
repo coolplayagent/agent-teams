@@ -886,6 +886,7 @@ def _run_round_timeline_script(tmp_path: Path, runner_source: str) -> dict[str, 
         "../../utils/promptTokens.js": "./mockPromptTokens.mjs",
         "../../utils/logger.js": "./mockLogger.mjs",
         "../../utils/i18n.js": "./mockI18n.mjs",
+        "../../utils/diagnostics.js": "./mockDiagnostics.mjs",
     }
     source_text = source_path.read_text(encoding="utf-8")
     for original, replacement in replacements.items():
@@ -905,6 +906,24 @@ export const els = {
         scrollTop: 0,
     },
 };
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockDiagnostics.mjs").write_text(
+        """
+export const DIAGNOSTICS_VISIBILITY_EVENT = "diagnostics-visibility-changed";
+
+export function areDiagnosticsVisible() {
+    return false;
+}
+
+export function extractLegacyVerificationReport() {
+    return {
+        found: false,
+        prefix: "",
+        report: "",
+    };
+}
 """.strip(),
         encoding="utf-8",
     )

@@ -5,6 +5,7 @@
 @import url("./messages/thinking.css");
 @import url("./messages/streaming.css");
 @import url("./messages/blocks.css");
+@import url("./messages/diagnostics.css");
 @import url("./messages/prompt.css");
 @import url("./messages/actions.css");
 @import url("./messages/export.css");

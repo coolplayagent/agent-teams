@@ -187,6 +187,67 @@ async def test_event_log_lists_session_run_events_by_type(
 
 
 @pytest.mark.asyncio
+async def test_event_log_lists_run_events_by_type_across_sessions(
+    tmp_path: Path,
+) -> None:
+    event_log = EventLog(tmp_path / "event_log_run_event_types.db")
+    run_one_id = event_log.emit_run_event(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            task_id="task-1",
+            instance_id="instance-1",
+            event_type=RunEventType.RUN_COMPLETED,
+            payload_json='{"ok": true}',
+        )
+    )
+    _ = event_log.emit_run_event(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-2",
+            trace_id="run-2",
+            task_id="task-2",
+            instance_id="instance-2",
+            event_type=RunEventType.RUN_STARTED,
+            payload_json="{}",
+        )
+    )
+    run_three_id = event_log.emit_run_event(
+        RunEvent(
+            session_id="session-2",
+            run_id="run-3",
+            trace_id="run-3",
+            task_id="task-3",
+            instance_id="instance-3",
+            event_type=RunEventType.RUN_COMPLETED,
+            payload_json='{"ok": true}',
+        )
+    )
+
+    try:
+        empty = event_log.list_by_run_ids_event_types(
+            (),
+            (RunEventType.RUN_COMPLETED.value,),
+        )
+        rows = event_log.list_by_run_ids_event_types(
+            ("run-3", "run-1", "run-3"),
+            (RunEventType.RUN_COMPLETED.value,),
+        )
+        async_rows = await event_log.list_by_run_ids_event_types_async(
+            ("run-1", "run-3"),
+            (RunEventType.RUN_COMPLETED.value,),
+        )
+    finally:
+        await event_log.close_async()
+
+    assert empty == ()
+    assert tuple(row["id"] for row in rows) == (run_one_id, run_three_id)
+    assert tuple(row["trace_id"] for row in rows) == ("run-1", "run-3")
+    assert tuple(row["id"] for row in async_rows) == (run_one_id, run_three_id)
+
+
+@pytest.mark.asyncio
 async def test_event_log_lists_session_events_after_id_and_filters_subagent_runs(
     tmp_path: Path,
 ) -> None:

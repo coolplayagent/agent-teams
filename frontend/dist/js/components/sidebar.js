@@ -462,12 +462,26 @@ function getSessionTerminalStatus(session) {
     return TERMINAL_RUN_STATUSES.has(activeStatus) ? activeStatus : '';
 }
 
+function getSessionTerminalVerificationStatus(session) {
+    return String(
+        session?.latest_terminal_run_verification_status
+        || session?.latestTerminalRunVerificationStatus
+        || '',
+    ).trim().toLowerCase();
+}
+
 function getSessionRunIndicatorType(session) {
     if (isSessionRunActive(session)) {
         return 'running';
     }
     if (hasUnreadTerminalRun(session)) {
         const terminalStatus = getSessionTerminalStatus(session);
+        if (
+            terminalStatus === 'failed'
+            && getSessionTerminalVerificationStatus(session) === 'failed'
+        ) {
+            return 'unread';
+        }
         return TERMINAL_RUN_INDICATOR_STATUSES.has(terminalStatus)
             ? terminalStatus
             : 'unread';

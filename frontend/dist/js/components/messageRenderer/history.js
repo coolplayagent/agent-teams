@@ -121,7 +121,13 @@ export function renderHistoricalMessageList(container, messages, options = {}) {
             collapseUserPrompt: role === 'user'
                 && entryType !== 'injection'
                 && options.collapsibleUserPrompts === true,
+            suppressDiagnosticUserMessage: options.suppressDiagnosticUserMessage === true,
         });
+        if (!hasRenderedMessageContent(contentEl)) {
+            wrapper.remove?.();
+            lastRenderedMessage = null;
+            return;
+        }
         lastRenderedMessage = {
             role,
             label,
@@ -199,6 +205,19 @@ export function renderHistoricalMessageList(container, messages, options = {}) {
     }
     syncLastAnswerCopyButton(container);
     forceScrollBottom(container);
+}
+
+function hasRenderedMessageContent(contentEl) {
+    if (!contentEl) {
+        return false;
+    }
+    if (contentEl.children === undefined && contentEl.childNodes === undefined) {
+        return true;
+    }
+    if (contentEl.children?.length > 0) {
+        return true;
+    }
+    return String(contentEl.textContent || '').trim() !== '';
 }
 
 function decorateHistoryMessageWrapper(wrapper, { entryType, status }) {

@@ -18,6 +18,9 @@ export function esc(text) {
 
 export function roundStateTone(round) {
     const phase = String(round?.run_phase || '');
+    if (roundVerificationFailed(round)) {
+        return 'warning';
+    }
     const status = effectiveRoundStatus(round);
     if (
         phase === 'awaiting_tool_approval'
@@ -42,6 +45,9 @@ export function roundStateTone(round) {
 
 export function roundStateLabel(round) {
     const phase = String(round?.run_phase || '');
+    if (roundVerificationFailed(round)) {
+        return t('rounds.state.verification_failed');
+    }
     const status = effectiveRoundStatus(round);
     if (phase === 'awaiting_tool_approval') return t('rounds.state.awaiting_approval');
     if (phase === 'awaiting_manual_action') return t('rounds.state.awaiting_manual_action');
@@ -73,6 +79,10 @@ export function effectiveRoundStatus(round) {
         return 'running';
     }
     return String(round?.run_status || '');
+}
+
+export function roundVerificationFailed(round) {
+    return String(round?.verification_status || '').trim().toLowerCase() === 'failed';
 }
 
 function hasRunningDelegatedTask(round) {

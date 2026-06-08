@@ -642,7 +642,7 @@ async def test_verify_task_async_includes_delegated_role_contracts(
 
 
 @pytest.mark.asyncio
-async def test_terminal_status_from_verification_completes_with_assistant_error(
+async def test_terminal_status_from_verification_completes_with_verification_warning(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "coordinator_terminal_status.db"
@@ -680,14 +680,22 @@ async def test_terminal_status_from_verification_completes_with_assistant_error(
         root_role_id="Coordinator",
     )
 
-    assert result.completion_reason == RunCompletionReason.ASSISTANT_ERROR
+    assert result.completion_reason == RunCompletionReason.ASSISTANT_RESPONSE
     assert result.error_code == "verification_failed"
-    assert result.error_message == "Task not completed yet"
+    assert result.error_message is not None
+    assert "Verification failed." in result.error_message
+    assert "Task not completed yet" in result.error_message
+    assert "Review the task spec" in result.error_message
+    assert result.output == (
+        "The task finished, but verification did not pass. "
+        "Review the result and continue with corrections if needed."
+    )
     record = task_repo.get(root_task.task_id)
     assert record.status == TaskStatus.COMPLETED
     assert record.assigned_instance_id == "inst-1"
-    assert record.error_message == "Task not completed yet"
-    assert "Task not completed yet" in (record.result or "")
+    assert record.error_message == result.error_message
+    assert "Task not completed yet" not in (record.result or "")
+    assert "verification did not pass" in (record.result or "")
 
     events = event_log.list_by_session("session-1")
     assert events == ()

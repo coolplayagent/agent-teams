@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.settings import ModelSettings
 
 from relay_teams.logger import get_logger, log_event
 from relay_teams.agents.execution.tool_call_history import normalize_replayed_messages
@@ -31,10 +32,13 @@ class RecoverableOpenAIChatModel(OpenAIChatModel):
         self,
         messages: Sequence[ModelMessage],
         model_request_parameters: ModelRequestParameters,
+        *,
+        model_settings: ModelSettings | None = None,
     ) -> list[chat.ChatCompletionMessageParam]:
         mapped = await super()._map_messages(
             self._sanitize_replayed_messages(messages),
             model_request_parameters,
+            model_settings=model_settings,
         )
         for message in mapped:
             if not isinstance(message, dict):

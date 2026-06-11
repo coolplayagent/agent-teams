@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 
 
 def test_map_tool_call_keeps_valid_json_arguments() -> None:
@@ -216,7 +217,12 @@ async def test_map_messages_replays_deepseek_reasoning_content() -> None:
             ),
         ]
 
-        mapped = await model._map_messages(messages, ModelRequestParameters())
+        model_settings: ModelSettings = {"temperature": 0.2}
+        mapped = await model._map_messages(
+            messages,
+            ModelRequestParameters(),
+            model_settings=model_settings,
+        )
     finally:
         await http_client.aclose()
 

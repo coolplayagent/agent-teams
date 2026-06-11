@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Protocol, cast
 
 from openai.types import chat
 from openai.types.chat.chat_completion_message_function_tool_call_param import (
@@ -24,9 +25,37 @@ from relay_teams.agents.execution.tool_call_history import normalize_replayed_me
 from relay_teams.agents.execution.tool_args_repair import repair_tool_args
 
 LOGGER = get_logger(__name__)
-_OPENAI_MAP_MESSAGES_ACCEPTS_MODEL_SETTINGS = (
-    "model_settings" in inspect.signature(OpenAIChatModel._map_messages).parameters
-)
+
+
+class _OpenAIMapMessagesWithSettings(Protocol):
+    async def __call__(
+        self,
+        messages: Sequence[ModelMessage],
+        model_request_parameters: ModelRequestParameters,
+        *,
+        model_settings: ModelSettings | None = None,
+    ) -> list[chat.ChatCompletionMessageParam]:
+        raise NotImplementedError
+
+
+def _map_messages_accepts_model_settings(
+    map_messages: Callable[..., object],
+) -> bool:
+    return "model_settings" in inspect.signature(map_messages).parameters
+
+
+async def _call_map_messages_with_settings(
+    map_messages: Callable[..., object],
+    messages: Sequence[ModelMessage],
+    model_request_parameters: ModelRequestParameters,
+    model_settings: ModelSettings | None,
+) -> list[chat.ChatCompletionMessageParam]:
+    typed_map_messages = cast(_OpenAIMapMessagesWithSettings, map_messages)
+    return await typed_map_messages(
+        messages,
+        model_request_parameters,
+        model_settings=model_settings,
+    )
 
 
 class RecoverableOpenAIChatModel(OpenAIChatModel):
@@ -40,14 +69,19 @@ class RecoverableOpenAIChatModel(OpenAIChatModel):
         model_settings: ModelSettings | None = None,
     ) -> list[chat.ChatCompletionMessageParam]:
         sanitized_messages = self._sanitize_replayed_messages(messages)
-        map_kwargs: dict[str, ModelSettings | None] = {}
-        if _OPENAI_MAP_MESSAGES_ACCEPTS_MODEL_SETTINGS:
-            map_kwargs["model_settings"] = model_settings
-        mapped = await super()._map_messages(
-            sanitized_messages,
-            model_request_parameters,
-            **map_kwargs,
-        )
+        super_map_messages = super()._map_messages
+        if _map_messages_accepts_model_settings(super_map_messages):
+            mapped = await _call_map_messages_with_settings(
+                super_map_messages,
+                sanitized_messages,
+                model_request_parameters,
+                model_settings,
+            )
+        else:
+            mapped = await super_map_messages(
+                sanitized_messages,
+                model_request_parameters,
+            )
         for message in mapped:
             if not isinstance(message, dict):
                 continue

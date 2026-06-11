@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import logging
 import inspect
+import logging
 from collections.abc import Sequence
-from typing import Protocol, cast
 
 from openai.types import chat
 from openai.types.chat.chat_completion_message_function_tool_call_param import (
@@ -30,16 +29,6 @@ _OPENAI_MAP_MESSAGES_ACCEPTS_MODEL_SETTINGS = (
 )
 
 
-class _OpenAIMapMessagesWithSettings(Protocol):
-    async def __call__(
-        self,
-        messages: Sequence[ModelMessage],
-        model_request_parameters: ModelRequestParameters,
-        *,
-        model_settings: ModelSettings | None = None,
-    ) -> list[chat.ChatCompletionMessageParam]: ...
-
-
 class RecoverableOpenAIChatModel(OpenAIChatModel):
     """OpenAI chat model that sanitizes malformed historical tool args on replay."""
 
@@ -51,21 +40,14 @@ class RecoverableOpenAIChatModel(OpenAIChatModel):
         model_settings: ModelSettings | None = None,
     ) -> list[chat.ChatCompletionMessageParam]:
         sanitized_messages = self._sanitize_replayed_messages(messages)
+        map_kwargs: dict[str, ModelSettings | None] = {}
         if _OPENAI_MAP_MESSAGES_ACCEPTS_MODEL_SETTINGS:
-            map_messages = cast(
-                _OpenAIMapMessagesWithSettings,
-                super()._map_messages,
-            )
-            mapped = await map_messages(
-                sanitized_messages,
-                model_request_parameters,
-                model_settings=model_settings,
-            )
-        else:
-            mapped = await super()._map_messages(
-                sanitized_messages,
-                model_request_parameters,
-            )
+            map_kwargs["model_settings"] = model_settings
+        mapped = await super()._map_messages(
+            sanitized_messages,
+            model_request_parameters,
+            **map_kwargs,
+        )
         for message in mapped:
             if not isinstance(message, dict):
                 continue

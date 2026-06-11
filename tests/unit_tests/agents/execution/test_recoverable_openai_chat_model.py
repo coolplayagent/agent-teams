@@ -9,7 +9,6 @@ import httpx
 import pytest
 from openai.types import chat
 
-import relay_teams.agents.execution.recoverable_openai_chat_model as recoverable_model_module
 from relay_teams.agents.execution.recoverable_openai_chat_model import (
     RecoverableOpenAIChatModel,
     _call_map_messages_with_settings,
@@ -281,12 +280,12 @@ async def test_map_messages_uses_model_settings_branch_when_supported(
         return [assistant_message]
 
     monkeypatch.setattr(
-        recoverable_model_module,
+        "relay_teams.agents.execution.recoverable_openai_chat_model."
         "_map_messages_accepts_model_settings",
         accepts_model_settings,
     )
     monkeypatch.setattr(
-        recoverable_model_module,
+        "relay_teams.agents.execution.recoverable_openai_chat_model."
         "_call_map_messages_with_settings",
         call_with_settings,
     )

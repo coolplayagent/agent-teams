@@ -2,14 +2,21 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Sequence
+from typing import cast
+
 import httpx
 import pytest
+from openai.types import chat
 
 from relay_teams.agents.execution.recoverable_openai_chat_model import (
     RecoverableOpenAIChatModel,
+    _call_map_messages_with_settings,
+    _map_messages_accepts_model_settings,
 )
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.messages import (
+    ModelMessage,
     ModelRequest,
     ModelResponse,
     ThinkingPart,
@@ -18,6 +25,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 
 
 def test_map_tool_call_keeps_valid_json_arguments() -> None:
@@ -191,6 +199,120 @@ def test_sanitize_replayed_messages_keeps_thinking_only_response() -> None:
     assert isinstance(sanitized[2].parts[0], ToolCallPart)
 
 
+def test_map_messages_accepts_model_settings_detects_optional_keyword() -> None:
+    async def map_messages_with_settings(
+        messages: Sequence[ModelMessage],
+        model_request_parameters: ModelRequestParameters,
+        *,
+        model_settings: ModelSettings | None = None,
+    ) -> list[chat.ChatCompletionMessageParam]:
+        del messages, model_request_parameters, model_settings
+        return []
+
+    async def map_messages_without_settings(
+        messages: Sequence[ModelMessage],
+        model_request_parameters: ModelRequestParameters,
+    ) -> list[chat.ChatCompletionMessageParam]:
+        del messages, model_request_parameters
+        return []
+
+    assert _map_messages_accepts_model_settings(map_messages_with_settings)
+    assert not _map_messages_accepts_model_settings(map_messages_without_settings)
+
+
+@pytest.mark.asyncio
+async def test_call_map_messages_with_settings_forwards_settings() -> None:
+    seen_model_settings: ModelSettings | None = None
+    user_message = cast(
+        chat.ChatCompletionMessageParam,
+        {"role": "user", "content": "ok"},
+    )
+
+    async def map_messages(
+        messages: Sequence[ModelMessage],
+        model_request_parameters: ModelRequestParameters,
+        *,
+        model_settings: ModelSettings | None = None,
+    ) -> list[chat.ChatCompletionMessageParam]:
+        nonlocal seen_model_settings
+        del messages, model_request_parameters
+        seen_model_settings = model_settings
+        return [user_message]
+
+    settings: ModelSettings = {"temperature": 0.2}
+
+    mapped = await _call_map_messages_with_settings(
+        map_messages,
+        [],
+        ModelRequestParameters(),
+        settings,
+    )
+
+    assert mapped == [user_message]
+    assert seen_model_settings == settings
+
+
+@pytest.mark.asyncio
+async def test_map_messages_uses_model_settings_branch_when_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assistant_message = cast(
+        chat.ChatCompletionMessageParam,
+        {"role": "assistant", "content": None},
+    )
+    seen_model_settings: ModelSettings | None = None
+
+    def accepts_model_settings(
+        map_messages: Callable[..., object],
+    ) -> bool:
+        del map_messages
+        return True
+
+    async def call_with_settings(
+        map_messages: Callable[..., object],
+        messages: Sequence[ModelMessage],
+        model_request_parameters: ModelRequestParameters,
+        model_settings: ModelSettings | None,
+    ) -> list[chat.ChatCompletionMessageParam]:
+        nonlocal seen_model_settings
+        del map_messages, messages, model_request_parameters
+        seen_model_settings = model_settings
+        return [assistant_message]
+
+    monkeypatch.setattr(
+        "relay_teams.agents.execution.recoverable_openai_chat_model."
+        "_map_messages_accepts_model_settings",
+        accepts_model_settings,
+    )
+    monkeypatch.setattr(
+        "relay_teams.agents.execution.recoverable_openai_chat_model."
+        "_call_map_messages_with_settings",
+        call_with_settings,
+    )
+    http_client = httpx.AsyncClient(trust_env=False)
+    try:
+        model = RecoverableOpenAIChatModel(
+            "gpt-5.4",
+            provider=OpenAIProvider(
+                base_url="https://example.test/v1",
+                api_key="test",
+                http_client=http_client,
+            ),
+        )
+        settings: ModelSettings = {"temperature": 0.2}
+
+        mapped = await model._map_messages(
+            [ModelRequest(parts=[UserPromptPart(content="continue")])],
+            ModelRequestParameters(),
+            model_settings=settings,
+        )
+    finally:
+        await http_client.aclose()
+
+    assert seen_model_settings == settings
+    assert mapped == [{"role": "assistant", "content": ""}]
+
+
 @pytest.mark.asyncio
 async def test_map_messages_replays_deepseek_reasoning_content() -> None:
     http_client = httpx.AsyncClient(trust_env=False)
@@ -216,7 +338,12 @@ async def test_map_messages_replays_deepseek_reasoning_content() -> None:
             ),
         ]
 
-        mapped = await model._map_messages(messages, ModelRequestParameters())
+        model_settings: ModelSettings = {"temperature": 0.2}
+        mapped = await model._map_messages(
+            messages,
+            ModelRequestParameters(),
+            model_settings=model_settings,
+        )
     finally:
         await http_client.aclose()
 

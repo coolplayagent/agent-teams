@@ -49,7 +49,7 @@ from relay_teams.sessions.runs.background_tasks.manager import (
     BackgroundTaskManager,
 )
 from relay_teams.sessions.runs.run_recovery import AutoRecoveryReason
-from relay_teams.sessions.runs.run_service import SessionRunService
+import relay_teams.sessions.runs.run_service as run_service_module
 from relay_teams.sessions.runs.run_models import (
     AudioGenerationConfig,
     ImageGenerationConfig,
@@ -329,7 +329,7 @@ def _build_manager(
     monitor_service: MonitorService | None = None,
     orchestration_settings_service: OrchestrationSettingsService | None = None,
     session_repo: object | None = None,
-) -> SessionRunService:
+) -> run_service_module.SessionRunService:
     control = RunControlManager()
     injection = RunInjectionManager()
     agent_repo = AgentInstanceRepository(db_path)
@@ -352,7 +352,7 @@ def _build_manager(
         event_bus=cast(EventLog, cast(object, _EventBus())),
         run_runtime_repo=run_runtime_repo,
     )
-    return SessionRunService(
+    return run_service_module.SessionRunService(
         meta_agent=cast(MetaAgent, meta_agent or cast(object, _MetaAgent())),
         provider_factory=provider_factory,
         role_registry=role_registry,
@@ -1711,8 +1711,8 @@ def test_manager_hydrates_recoverable_run_from_runtime_repo(tmp_path: Path) -> N
     )
     runtime_repo.update(
         "run-existing",
-        status=RunRuntimeStatus.STOPPED,
-        phase=RunRuntimePhase.IDLE,
+        status=RunRuntimeStatus.RUNNING,
+        phase=RunRuntimePhase.COORDINATOR_RUNNING,
     )
 
     manager = _build_manager(db_path)
@@ -4943,6 +4943,229 @@ async def test_ensure_run_started_local_async_validates_recoverable_state(
     manager._resume_requested_runs.add("run-invalid-status")
     with pytest.raises(RuntimeError, match="cannot be resumed from status running"):
         await manager._ensure_run_started_local_async("run-invalid-status")
+
+    runtime_repo.ensure(
+        run_id="run-terminal",
+        session_id="session-1",
+        status=RunRuntimeStatus.COMPLETED,
+        phase=RunRuntimePhase.TERMINAL,
+    )
+    await manager._ensure_run_started_local_async("run-terminal")
+
+
+def test_log_slow_run_worker_stage_emits_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, int]] = []
+
+    def capture_log_event(*args: object, **kwargs: object) -> None:
+        _ = args
+        duration_ms = kwargs["duration_ms"]
+        assert isinstance(duration_ms, int)
+        events.append((str(kwargs["event"]), duration_ms))
+
+    monkeypatch.setattr(run_service_module.time, "perf_counter", lambda: 12.5)
+    monkeypatch.setattr(run_service_module, "log_event", capture_log_event)
+
+    run_service_module._log_slow_run_worker_stage(
+        run_id="run-1",
+        session_id="session-1",
+        stage="worker-start",
+        started=10.0,
+        payload={"queued": True},
+    )
+
+    assert events == [("run.worker.stage_slow", 2500)]
+
+
+@pytest.mark.asyncio
+async def test_schedule_run_start_tracks_detached_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _build_manager(tmp_path / "run_schedule_detached.db")
+    release = asyncio.Event()
+    calls: list[tuple[str, str]] = []
+
+    async def fake_queued_start(*, run_id: str, session_id: str) -> None:
+        calls.append((run_id, session_id))
+        await release.wait()
+
+    monkeypatch.setattr(
+        manager,
+        "_ensure_run_started_detached_queued_async",
+        fake_queued_start,
+    )
+
+    manager.schedule_run_start("run-1", "session-1")
+    await asyncio.sleep(0)
+
+    assert len(manager._detached_start_tasks) == 1
+    assert calls == [("run-1", "session-1")]
+
+    release.set()
+    await asyncio.gather(*tuple(manager._detached_start_tasks))
+    await asyncio.sleep(0)
+
+    assert manager._detached_start_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_detached_run_start_logs_queue_wait(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _build_manager(tmp_path / "run_detached_queue_wait.db")
+    calls: list[tuple[str, str]] = []
+    events: list[tuple[str, int]] = []
+    perf_values = iter((10.0, 10.375))
+
+    async def fake_detached_start(*, run_id: str, session_id: str) -> None:
+        calls.append((run_id, session_id))
+
+    def capture_log_event(*args: object, **kwargs: object) -> None:
+        _ = args
+        duration_ms = kwargs["duration_ms"]
+        assert isinstance(duration_ms, int)
+        events.append((str(kwargs["event"]), duration_ms))
+
+    monkeypatch.setattr(
+        manager,
+        "_ensure_run_started_detached_async",
+        fake_detached_start,
+    )
+    monkeypatch.setattr(
+        run_service_module.time,
+        "perf_counter",
+        lambda: next(perf_values),
+    )
+    monkeypatch.setattr(run_service_module, "log_event", capture_log_event)
+
+    await manager._ensure_run_started_detached_queued_async(
+        run_id="run-1",
+        session_id="session-1",
+    )
+
+    assert calls == [("run-1", "session-1")]
+    assert events == [("run.start.queue_wait", 375)]
+
+
+@pytest.mark.asyncio
+async def test_detached_run_start_logs_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _build_manager(tmp_path / "run_detached_start_success.db")
+    started: list[str] = []
+    events: list[tuple[str, int | None]] = []
+    perf_values = iter((20.0, 20.5))
+
+    async def fake_ensure_run_started(run_id: str) -> None:
+        started.append(run_id)
+
+    def capture_log_event(*args: object, **kwargs: object) -> None:
+        _ = args
+        duration = kwargs.get("duration_ms")
+        events.append(
+            (
+                str(kwargs["event"]),
+                int(duration) if isinstance(duration, int) else None,
+            )
+        )
+
+    monkeypatch.setattr(manager, "ensure_run_started_async", fake_ensure_run_started)
+    monkeypatch.setattr(
+        run_service_module.time,
+        "perf_counter",
+        lambda: next(perf_values),
+    )
+    monkeypatch.setattr(run_service_module, "log_event", capture_log_event)
+
+    await manager._ensure_run_started_detached_async(
+        run_id="run-1",
+        session_id="session-1",
+    )
+
+    assert started == ["run-1"]
+    assert events == [
+        ("run.start.scheduled", None),
+        ("run.start.worker_started", 500),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_detached_run_start_failure_delegates_terminal_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _build_manager(tmp_path / "run_detached_start_failure.db")
+    handled: list[tuple[str, str, str]] = []
+
+    async def fake_ensure_run_started(run_id: str) -> None:
+        raise RuntimeError(f"cannot start {run_id}")
+
+    async def fake_handle_failure(
+        *,
+        run_id: str,
+        session_id: str,
+        error: Exception,
+    ) -> None:
+        handled.append((run_id, session_id, str(error)))
+
+    monkeypatch.setattr(manager, "ensure_run_started_async", fake_ensure_run_started)
+    monkeypatch.setattr(
+        manager,
+        "_handle_run_start_failed_async",
+        fake_handle_failure,
+    )
+
+    await manager._ensure_run_started_detached_async(
+        run_id="run-1",
+        session_id="session-1",
+    )
+
+    assert handled == [("run-1", "session-1", "cannot start run-1")]
+
+
+@pytest.mark.asyncio
+async def test_handle_run_start_failed_marks_runtime_failed_and_publishes_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "run_start_failure_marks_terminal.db"
+    manager = _build_manager(db_path)
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-1",
+        session_id="session-1",
+        status=RunRuntimeStatus.QUEUED,
+        phase=RunRuntimePhase.IDLE,
+    )
+    events: list[RunEvent] = []
+    finalized: list[tuple[str, str]] = []
+
+    async def capture_publish(event: RunEvent) -> None:
+        events.append(event)
+
+    async def capture_finalize(*, run_id: str, session_id: str) -> None:
+        finalized.append((run_id, session_id))
+
+    monkeypatch.setattr(manager._run_event_hub, "publish_async", capture_publish)
+    monkeypatch.setattr(manager, "_safe_finalize_run_async", capture_finalize)
+
+    await manager._handle_run_start_failed_async(
+        run_id="run-1",
+        session_id="session-1",
+        error=RuntimeError("worker refused"),
+    )
+
+    runtime = runtime_repo.get("run-1")
+    assert runtime is not None
+    assert runtime.status == RunRuntimeStatus.FAILED
+    assert runtime.phase == RunRuntimePhase.TERMINAL
+    assert runtime.last_error == "worker refused"
+    assert [event.event_type for event in events] == [RunEventType.RUN_FAILED]
+    assert finalized == [("run-1", "session-1")]
 
 
 @pytest.mark.asyncio

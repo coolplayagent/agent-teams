@@ -308,3 +308,396 @@ console.log(JSON.stringify({ afterStaleSnapshot }));
     assert json.loads(result.stdout) == {
         "afterStaleSnapshot": [{"sessionId": "session-1", "title": "keep"}],
     }
+
+
+def test_optimistic_running_session_survives_stale_server_snapshot(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source_path = (
+        repo_root / "frontend" / "dist" / "js" / "components" / "sessionSidebarStore.js"
+    )
+    module_path = tmp_path / "sessionSidebarStore.mjs"
+    module_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    runner_path = tmp_path / "runner-optimistic-run.mjs"
+    runner_path.write_text(
+        """
+const {
+    getSidebarDataSnapshot,
+    markSidebarSessionRunStarted,
+    rememberSidebarDataSnapshot,
+} = await import('./sessionSidebarStore.mjs');
+
+rememberSidebarDataSnapshot({
+    sessions: [
+        {
+            session_id: 'session-1',
+            workspace_id: 'workspace-1',
+            metadata: { title: 'Prompt' },
+            has_active_run: false,
+            updated_at: '2026-01-01T00:00:00.000Z',
+        },
+    ],
+});
+markSidebarSessionRunStarted('session-1', { run_id: 'run-1' });
+const optimistic = getSidebarDataSnapshot().sessions[0];
+
+rememberSidebarDataSnapshot({
+    sessions: [
+        {
+            session_id: 'session-1',
+            workspace_id: 'workspace-1',
+            metadata: { title: 'Prompt' },
+            has_active_run: false,
+            updated_at: '2026-01-01T00:00:00.000Z',
+        },
+    ],
+});
+const afterStale = getSidebarDataSnapshot().sessions[0];
+
+rememberSidebarDataSnapshot({
+    sessions: [
+        {
+            session_id: 'session-1',
+            workspace_id: 'workspace-1',
+            metadata: { title: 'Prompt' },
+            has_active_run: false,
+            active_run_id: '',
+            latest_terminal_run_id: 'run-1',
+            latest_terminal_run_status: 'completed',
+            updated_at: '2026-01-01T00:00:00.000Z',
+        },
+    ],
+});
+const afterFresh = getSidebarDataSnapshot().sessions[0];
+
+console.log(JSON.stringify({
+    optimistic: {
+        hasActiveRun: optimistic.has_active_run,
+        activeRunId: optimistic.active_run_id,
+        status: optimistic.active_run_status,
+    },
+    afterStale: {
+        hasActiveRun: afterStale.has_active_run,
+        activeRunId: afterStale.active_run_id,
+        status: afterStale.active_run_status,
+    },
+    afterFresh: {
+        hasActiveRun: afterFresh.has_active_run,
+        activeRunId: afterFresh.active_run_id,
+        latestTerminalRunId: afterFresh.latest_terminal_run_id,
+    },
+}));
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=3,
+    )
+
+    assert json.loads(result.stdout) == {
+        "optimistic": {
+            "hasActiveRun": True,
+            "activeRunId": "run-1",
+            "status": "running",
+        },
+        "afterStale": {
+            "hasActiveRun": True,
+            "activeRunId": "run-1",
+            "status": "running",
+        },
+        "afterFresh": {
+            "hasActiveRun": False,
+            "activeRunId": "",
+            "latestTerminalRunId": "run-1",
+        },
+    }
+
+
+def test_terminal_run_event_clears_optimistic_running_session(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source_path = (
+        repo_root / "frontend" / "dist" / "js" / "components" / "sessionSidebarStore.js"
+    )
+    module_path = tmp_path / "sessionSidebarStore.mjs"
+    module_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    runner_path = tmp_path / "runner-terminal-run.mjs"
+    runner_path.write_text(
+        """
+const {
+    getSidebarDataSnapshot,
+    markSidebarSessionRunStarted,
+    markSidebarSessionRunTerminal,
+    rememberSidebarDataSnapshot,
+} = await import('./sessionSidebarStore.mjs');
+
+rememberSidebarDataSnapshot({
+    sessions: [
+        {
+            session_id: 'session-1',
+            workspace_id: 'workspace-1',
+            metadata: { title: 'Prompt' },
+            has_active_run: false,
+            updated_at: '2026-01-01T00:00:00.000Z',
+        },
+    ],
+});
+markSidebarSessionRunStarted('session-1', { run_id: 'run-1' });
+markSidebarSessionRunTerminal('session-1', {
+    run_id: 'run-1',
+    event_type: 'run_completed',
+    updated_at: '2026-01-01T00:00:01.000Z',
+});
+const afterTerminal = getSidebarDataSnapshot().sessions[0];
+
+console.log(JSON.stringify({
+    hasActiveRun: afterTerminal.has_active_run,
+    activeRunId: afterTerminal.active_run_id,
+    activeRunStatus: afterTerminal.active_run_status,
+    latestTerminalRunId: afterTerminal.latest_terminal_run_id,
+    latestTerminalRunStatus: afterTerminal.latest_terminal_run_status,
+    hasUnreadTerminalRun: afterTerminal.has_unread_terminal_run,
+}));
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=3,
+    )
+
+    assert json.loads(result.stdout) == {
+        "hasActiveRun": False,
+        "activeRunId": "",
+        "activeRunStatus": "",
+        "latestTerminalRunId": "run-1",
+        "latestTerminalRunStatus": "completed",
+        "hasUnreadTerminalRun": True,
+    }
+
+
+def test_stopped_run_event_keeps_recoverable_active_session(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source_path = (
+        repo_root / "frontend" / "dist" / "js" / "components" / "sessionSidebarStore.js"
+    )
+    module_path = tmp_path / "sessionSidebarStore.mjs"
+    module_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    runner_path = tmp_path / "runner-stopped-run.mjs"
+    runner_path.write_text(
+        """
+const {
+    getSidebarDataSnapshot,
+    markSidebarSessionRunStarted,
+    markSidebarSessionRunTerminal,
+    rememberSidebarDataSnapshot,
+} = await import('./sessionSidebarStore.mjs');
+
+rememberSidebarDataSnapshot({
+    sessions: [
+        {
+            session_id: 'session-1',
+            workspace_id: 'workspace-1',
+            metadata: { title: 'Prompt' },
+            has_active_run: false,
+            updated_at: '2026-01-01T00:00:00.000Z',
+        },
+    ],
+});
+markSidebarSessionRunStarted('session-1', { run_id: 'run-1' });
+markSidebarSessionRunTerminal('session-1', {
+    run_id: 'run-1',
+    event_type: 'run_stopped',
+    updated_at: '2026-01-01T00:00:01.000Z',
+});
+const afterTerminal = getSidebarDataSnapshot().sessions[0];
+
+console.log(JSON.stringify({
+    hasActiveRun: afterTerminal.has_active_run,
+    activeRunId: afterTerminal.active_run_id,
+    activeRunStatus: afterTerminal.active_run_status,
+    activeRunPhase: afterTerminal.active_run_phase,
+    latestTerminalRunId: afterTerminal.latest_terminal_run_id,
+    latestTerminalRunStatus: afterTerminal.latest_terminal_run_status,
+    hasUnreadTerminalRun: afterTerminal.has_unread_terminal_run,
+}));
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=3,
+    )
+
+    assert json.loads(result.stdout) == {
+        "hasActiveRun": True,
+        "activeRunId": "run-1",
+        "activeRunStatus": "stopped",
+        "activeRunPhase": "stopped",
+        "latestTerminalRunId": "run-1",
+        "latestTerminalRunStatus": "stopped",
+        "hasUnreadTerminalRun": True,
+    }
+
+
+def test_viewed_terminal_run_event_clears_optimistic_running_without_unread_dot(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source_path = (
+        repo_root / "frontend" / "dist" / "js" / "components" / "sessionSidebarStore.js"
+    )
+    module_path = tmp_path / "sessionSidebarStore.mjs"
+    module_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    runner_path = tmp_path / "runner-viewed-terminal-run.mjs"
+    runner_path.write_text(
+        """
+const {
+    getSidebarDataSnapshot,
+    markSidebarSessionRunStarted,
+    markSidebarSessionRunTerminal,
+    rememberSidebarDataSnapshot,
+} = await import('./sessionSidebarStore.mjs');
+
+rememberSidebarDataSnapshot({
+    sessions: [
+        {
+            session_id: 'session-1',
+            workspace_id: 'workspace-1',
+            metadata: { title: 'Prompt' },
+            has_active_run: false,
+            updated_at: '2026-01-01T00:00:00.000Z',
+        },
+    ],
+});
+markSidebarSessionRunStarted('session-1', { run_id: 'run-1' });
+markSidebarSessionRunTerminal('session-1', {
+    run_id: 'run-1',
+    event_type: 'run_completed',
+    updated_at: '2026-01-01T00:00:01.000Z',
+}, { viewed: true });
+const afterTerminal = getSidebarDataSnapshot().sessions[0];
+
+console.log(JSON.stringify({
+    hasActiveRun: afterTerminal.has_active_run,
+    activeRunId: afterTerminal.active_run_id,
+    activeRunStatus: afterTerminal.active_run_status,
+    latestTerminalRunId: afterTerminal.latest_terminal_run_id,
+    latestTerminalRunStatus: afterTerminal.latest_terminal_run_status,
+    hasUnreadTerminalRun: afterTerminal.has_unread_terminal_run,
+}));
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=3,
+    )
+
+    assert json.loads(result.stdout) == {
+        "hasActiveRun": False,
+        "activeRunId": "",
+        "activeRunStatus": "",
+        "latestTerminalRunId": "run-1",
+        "latestTerminalRunStatus": "completed",
+        "hasUnreadTerminalRun": False,
+    }
+
+
+def test_terminal_run_event_preserves_newer_optimistic_running_session(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source_path = (
+        repo_root / "frontend" / "dist" / "js" / "components" / "sessionSidebarStore.js"
+    )
+    module_path = tmp_path / "sessionSidebarStore.mjs"
+    module_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    runner_path = tmp_path / "runner-terminal-old-run.mjs"
+    runner_path.write_text(
+        """
+const {
+    getSidebarDataSnapshot,
+    markSidebarSessionRunStarted,
+    markSidebarSessionRunTerminal,
+    rememberSidebarDataSnapshot,
+} = await import('./sessionSidebarStore.mjs');
+
+rememberSidebarDataSnapshot({
+    sessions: [
+        {
+            session_id: 'session-1',
+            workspace_id: 'workspace-1',
+            metadata: { title: 'Prompt' },
+            has_active_run: false,
+            updated_at: '2026-01-01T00:00:00.000Z',
+        },
+    ],
+});
+markSidebarSessionRunStarted('session-1', { run_id: 'run-new' });
+markSidebarSessionRunTerminal('session-1', {
+    run_id: 'run-old',
+    event_type: 'run_completed',
+    updated_at: '2026-01-01T00:00:01.000Z',
+});
+const afterTerminal = getSidebarDataSnapshot().sessions[0];
+
+console.log(JSON.stringify({
+    hasActiveRun: afterTerminal.has_active_run,
+    activeRunId: afterTerminal.active_run_id,
+    activeRunStatus: afterTerminal.active_run_status,
+    latestTerminalRunId: afterTerminal.latest_terminal_run_id,
+    latestTerminalRunStatus: afterTerminal.latest_terminal_run_status,
+    hasUnreadTerminalRun: afterTerminal.has_unread_terminal_run,
+}));
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=3,
+    )
+
+    assert json.loads(result.stdout) == {
+        "hasActiveRun": True,
+        "activeRunId": "run-new",
+        "activeRunStatus": "running",
+        "latestTerminalRunId": "run-old",
+        "latestTerminalRunStatus": "completed",
+        "hasUnreadTerminalRun": False,
+    }

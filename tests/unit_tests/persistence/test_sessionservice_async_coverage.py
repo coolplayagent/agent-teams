@@ -13,6 +13,10 @@ from relay_teams.sessions.session_service import SessionService
 
 
 class _ReadThroughCache:
+    def seed_if_empty(self, **kwargs: object) -> bool:
+        _ = kwargs
+        return True
+
     async def read(
         self,
         refresh: Callable[[], object] | None = None,
@@ -24,7 +28,13 @@ class _ReadThroughCache:
             if not callable(candidate):
                 raise AssertionError("refresh callback is required")
             refresh_fn = candidate
-        return SimpleNamespace(value=refresh_fn())
+        diagnostics = SimpleNamespace(
+            cache_hit=False,
+            stale=False,
+            dirty=False,
+            refresh_in_progress=False,
+        )
+        return SimpleNamespace(value=refresh_fn(), diagnostics=diagnostics)
 
 
 @pytest.mark.asyncio

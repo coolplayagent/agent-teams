@@ -54,13 +54,13 @@ router = APIRouter(prefix="/runs", tags=["Runs"])
 MAX_MULTIPLEX_RUN_STREAMS = 32
 
 
-async def _create_and_start_run(
+async def _create_and_schedule_run_start(
     service: SessionRunService,
     intent_input: IntentInput,
 ) -> tuple[str, str]:
     async def operation() -> tuple[str, str]:
         run_id, session_id = await service.create_run_async(intent_input)
-        await service.ensure_run_started_async(run_id)
+        service.schedule_run_start(run_id, session_id)
         return run_id, session_id
 
     task = asyncio.create_task(operation())
@@ -370,14 +370,17 @@ async def create_run(
             orchestration_policy=req.orchestration_policy,
         )
 
-        run_id, session_id = await _create_and_start_run(service, intent_input)
+        run_id, session_id = await _create_and_schedule_run_start(
+            service,
+            intent_input,
+        )
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         with bind_trace_context(trace_id=run_id, run_id=run_id, session_id=session_id):
             log_event(
                 logger,
                 logging.INFO,
-                event="run.created",
-                message="Run created",
+                event="run.create.persisted",
+                message="Run queued and start scheduled",
                 duration_ms=elapsed_ms,
                 payload={
                     "execution_mode": req.execution_mode.value,

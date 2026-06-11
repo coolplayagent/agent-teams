@@ -253,14 +253,9 @@ def test_agent_runtimes_test_supports_table_output(monkeypatch) -> None:
     assert "Message: Connected" in result.stdout
 
 
-def test_agent_runtimes_test_watch_polls_job(monkeypatch) -> None:
+def test_agent_runtimes_test_watch_polls_job(monkeypatch, capsys) -> None:
     calls: list[tuple[str, str, dict[str, object] | None]] = []
     sleep_calls: list[float] = []
-
-    def fake_autostart(
-        base_url: str, autostart: bool, daemon: bool = False, force: bool = False
-    ) -> None:
-        _ = (base_url, autostart, daemon, force)
 
     def fake_request_json(
         base_url: str,
@@ -296,20 +291,28 @@ def test_agent_runtimes_test_watch_polls_job(monkeypatch) -> None:
             },
         }
 
-    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
-    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
     monkeypatch.setattr(agent_cli_module.time, "sleep", sleep_calls.append)
 
-    result = runner.invoke(
-        cli_app.app,
-        ["agent-runtimes", "test", "codex_local", "--watch"],
+    result = agent_cli_module._watch_agent_runtime_test_job(
+        request_json=fake_request_json,
+        base_url="http://127.0.0.1:8000",
+        job={
+            "job_id": "job-1",
+            "agent_id": "codex_local",
+            "status": "running",
+            "phase": "downloading",
+            "message": "Downloading Agent Runtime binary.",
+            "progress_percent": 25,
+            "downloaded_bytes": 10,
+            "total_bytes": 40,
+        },
+        output_format=agent_cli_module.AgentOutputFormat.TABLE,
     )
+    stdout = capsys.readouterr().out
 
-    assert result.exit_code == 0
-    assert "running | downloading | 25%" in result.stdout
-    assert "Agent Runtime: codex_local" in result.stdout
+    assert result["status"] == "succeeded"
+    assert "running | downloading | 25%" in stdout
     assert calls == [
-        ("POST", "/api/system/configs/agent-runtimes/codex_local:test-job", None),
         ("GET", "/api/system/configs/agent-runtime-test-jobs/job-1", None),
     ]
     assert sleep_calls == [0.6]

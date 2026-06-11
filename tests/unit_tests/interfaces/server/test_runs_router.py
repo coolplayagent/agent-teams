@@ -34,6 +34,7 @@ class _FakeRunService:
     def __init__(self) -> None:
         self.resumed_run_ids: list[str] = []
         self.started_run_ids: list[str] = []
+        self.scheduled_start_runs: list[tuple[str, str]] = []
         self.resolved_tool_approvals: list[tuple[str, str, str, str, str]] = []
         self.raise_on_tool_approval = False
         self.raise_on_tool_approval_value_error = False
@@ -132,6 +133,9 @@ class _FakeRunService:
 
     async def ensure_run_started_async(self, run_id: str) -> None:
         self.ensure_run_started(run_id)
+
+    def schedule_run_start(self, run_id: str, session_id: str) -> None:
+        self.scheduled_start_runs.append((run_id, session_id))
 
     def inject_message(
         self,
@@ -426,6 +430,7 @@ class _CancellationAwareRunService(_FakeRunService):
         super().__init__()
         self.create_entered = asyncio.Event()
         self.release_create = asyncio.Event()
+        self.schedule_entered = asyncio.Event()
         self.run_started = asyncio.Event()
 
     async def create_run_async(self, intent_input) -> tuple[str, str]:
@@ -433,6 +438,10 @@ class _CancellationAwareRunService(_FakeRunService):
         self.create_entered.set()
         await self.release_create.wait()
         return ("run-1", "session-1")
+
+    def schedule_run_start(self, run_id: str, session_id: str) -> None:
+        self.scheduled_start_runs.append((run_id, session_id))
+        self.schedule_entered.set()
 
     async def ensure_run_started_async(self, run_id: str) -> None:
         self.started_run_ids.append(run_id)
@@ -551,7 +560,25 @@ def test_resume_route_marks_run_for_resume_and_starts_worker() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_and_start_run_finishes_startup_after_cancellation() -> None:
+async def test_create_and_schedule_run_start_does_not_wait_for_worker_start() -> None:
+    fake_service = _FakeRunService()
+    intent_input = IntentInput(
+        session_id="session-1",
+        input=content_parts_from_text("hello"),
+    )
+
+    result = await runs._create_and_schedule_run_start(
+        cast(SessionRunService, fake_service),
+        intent_input,
+    )
+
+    assert result == ("run-1", "session-1")
+    assert fake_service.scheduled_start_runs == [("run-1", "session-1")]
+    assert fake_service.started_run_ids == []
+
+
+@pytest.mark.asyncio
+async def test_create_and_schedule_run_start_schedules_after_caller_cancel() -> None:
     fake_service = _CancellationAwareRunService()
     intent_input = IntentInput(
         session_id="session-1",
@@ -559,7 +586,10 @@ async def test_create_and_start_run_finishes_startup_after_cancellation() -> Non
     )
 
     task = asyncio.create_task(
-        runs._create_and_start_run(cast(SessionRunService, fake_service), intent_input)
+        runs._create_and_schedule_run_start(
+            cast(SessionRunService, fake_service),
+            intent_input,
+        )
     )
     await fake_service.create_entered.wait()
     task.cancel()
@@ -567,9 +597,8 @@ async def test_create_and_start_run_finishes_startup_after_cancellation() -> Non
 
     with pytest.raises(asyncio.CancelledError):
         await task
-    await asyncio.wait_for(fake_service.run_started.wait(), timeout=1)
 
-    assert fake_service.started_run_ids == ["run-1"]
+    assert fake_service.scheduled_start_runs == [("run-1", "session-1")]
 
 
 def test_multiplex_run_events_route_streams_multiple_runs() -> None:
@@ -663,7 +692,8 @@ def test_create_run_route_accepts_yolo() -> None:
     created = fake_service.created_run_inputs[0]
     assert created.intent == "hello"
     assert created.yolo is True
-    assert fake_service.started_run_ids == ["run-1"]
+    assert fake_service.scheduled_start_runs == [("run-1", "session-1")]
+    assert fake_service.started_run_ids == []
 
 
 def test_create_run_route_uses_saved_general_shell_policy_by_default() -> None:
@@ -853,7 +883,8 @@ def test_create_run_route_accepts_thinking_config() -> None:
     created = fake_service.created_run_inputs[0]
     assert created.thinking.enabled is True
     assert created.thinking.effort == "high"
-    assert fake_service.started_run_ids == ["run-1"]
+    assert fake_service.scheduled_start_runs == [("run-1", "session-1")]
+    assert fake_service.started_run_ids == []
 
 
 def test_create_run_route_accepts_target_role_id() -> None:
@@ -879,7 +910,8 @@ def test_create_run_route_accepts_target_role_id() -> None:
     created = fake_service.created_run_inputs[0]
     assert created.intent == "hello"
     assert created.target_role_id == "writer"
-    assert fake_service.started_run_ids == ["run-1"]
+    assert fake_service.scheduled_start_runs == [("run-1", "session-1")]
+    assert fake_service.started_run_ids == []
 
 
 def test_inject_message_route_rejects_whitespace_only_content() -> None:

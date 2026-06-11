@@ -16,6 +16,7 @@ export const state = {
     activeSubagentSession: null,
     isGenerating: false,
     activeEventSource: null,
+    activeRunStreamCount: 0,
     agentViews: {},
     activeView: 'main',
     activeAgentRoleId: null,

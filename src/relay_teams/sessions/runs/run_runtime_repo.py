@@ -72,6 +72,14 @@ class RunRuntimeRecord(BaseModel):
             RunRuntimeStatus.STOPPED,
         }
 
+    @property
+    def is_live_active(self) -> bool:
+        return self.status in {
+            RunRuntimeStatus.QUEUED,
+            RunRuntimeStatus.RUNNING,
+            RunRuntimeStatus.STOPPING,
+        }
+
 
 class RunRuntimeRepository(SharedSqliteRepository):
     def __init__(self, db_path: Path) -> None:

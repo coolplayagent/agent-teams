@@ -7,6 +7,7 @@ import { showToast } from './feedback.js';
 
 const FRONTEND_LOG_ENDPOINT = '/api/logs/frontend';
 const FLUSH_INTERVAL_MS = 1000;
+const BUSY_FLUSH_DEFER_MS = 3500;
 const MAX_BATCH_SIZE = 20;
 const MAX_PENDING_EVENTS = 200;
 const MAX_PENDING_WHEN_BACKED_UP = 80;
@@ -68,6 +69,24 @@ function scheduleFlush() {
     }, FLUSH_INTERVAL_MS);
 }
 
+function scheduleDeferredFlush() {
+    if (flushTimer !== null) {
+        return;
+    }
+    flushTimer = globalThis.setTimeout(() => {
+        flushTimer = null;
+        void flushFrontendLogs();
+    }, BUSY_FLUSH_DEFER_MS);
+}
+
+function shouldDeferFrontendLogFlush() {
+    return (
+        state.isGenerating === true
+        || !!state.activeEventSource
+        || Number(state.activeRunStreamCount || 0) > 0
+    );
+}
+
 function enqueueEvent(event) {
     if (
         pendingEvents.length >= MAX_PENDING_WHEN_BACKED_UP
@@ -80,6 +99,10 @@ function enqueueEvent(event) {
         pendingEvents = pendingEvents.slice(-MAX_PENDING_EVENTS);
     }
     if (pendingEvents.length >= MAX_BATCH_SIZE) {
+        if (shouldDeferFrontendLogFlush()) {
+            scheduleDeferredFlush();
+            return;
+        }
         void flushFrontendLogs();
         return;
     }
@@ -132,8 +155,15 @@ async function postLogBatch(events, useKeepalive = false) {
     });
 }
 
-export async function flushFrontendLogs({ useKeepalive = false } = {}) {
+export async function flushFrontendLogs({
+    useKeepalive = false,
+    allowDefer = true,
+} = {}) {
     if (!pendingEvents.length) {
+        return;
+    }
+    if (allowDefer && useKeepalive && shouldDeferFrontendLogFlush()) {
+        scheduleDeferredFlush();
         return;
     }
     if (flushTimer !== null) {
@@ -226,6 +256,6 @@ export function installGlobalErrorLogging() {
     });
 
     globalThis.addEventListener('beforeunload', () => {
-        void flushFrontendLogs({ useKeepalive: true });
+        void flushFrontendLogs({ useKeepalive: true, allowDefer: false });
     });
 }

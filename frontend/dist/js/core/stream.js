@@ -15,6 +15,7 @@ import {
 } from '../components/subagentSessions.js';
 import { refreshSessionTopologyControls } from '../app/prompt.js';
 import { scheduleSessionsRefresh } from '../components/sidebar.js';
+import * as backendStatus from '../utils/backendStatus.js';
 import { els } from '../utils/dom.js';
 import { t } from '../utils/i18n.js';
 import {
@@ -58,6 +59,7 @@ let backgroundDiscoveryTimer = null;
 let backgroundDiscoveryPromise = null;
 let backgroundDiscoveryQueued = false;
 let backgroundDiscoveryPausedUntil = 0;
+let backgroundDiscoveryLastFetchAt = 0;
 let foregroundNavigationStreamToken = 0;
 let normalModeSubagentDiscoveryTimer = null;
 let normalModeSubagentDiscoveryPromise = null;
@@ -66,15 +68,49 @@ const unavailableSessionCooldownUntil = new Map();
 const SESSION_NOT_FOUND_COOLDOWN_MS = 30000;
 const unavailableRunCooldownUntil = new Map();
 const RUN_NOT_FOUND_COOLDOWN_MS = 30000;
+const terminalRunCooldownUntil = new Map();
+const TERMINAL_RUN_DISCOVERY_COOLDOWN_MS = 60000;
 const MAX_MULTIPLEX_RUN_STREAMS = 32;
 const MULTIPLEX_RECONNECT_MAX_DELAY_MS = 5000;
 const FOREGROUND_NAVIGATION_STREAM_PAUSE_MS = 1200;
+const BACKGROUND_DISCOVERY_IDLE_DELAY_MS = 2500;
+const BACKGROUND_DISCOVERY_BUSY_DELAY_MS = 8000;
+const BACKGROUND_DISCOVERY_BUSY_STALE_MS = 30000;
 const NORMAL_MODE_SUBAGENT_DISCOVERY_DELAY_MS = 2500;
 const NORMAL_MODE_SUBAGENT_RECONNECT_DELAY_MS = 900;
 const RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS = 360;
 
+function isLiveRunStreamConnection(connection) {
+    return !!(connection && !connection.closed && !connection.terminal);
+}
+
+export function getActiveRunStreamCount() {
+    let count = isLiveRunStreamConnection(activeConnection) ? 1 : 0;
+    backgroundStreams.forEach(connection => {
+        if (isLiveRunStreamConnection(connection)) {
+            count += 1;
+        }
+    });
+    if (isLiveRunStreamConnection(normalModeSubagentConnection)) {
+        count += 1;
+    }
+    normalModeSubagentStreams.forEach(connection => {
+        if (isLiveRunStreamConnection(connection)) {
+            count += 1;
+        }
+    });
+    return count;
+}
+
+function syncRunStreamActivityState() {
+    state.activeRunStreamCount = getActiveRunStreamCount();
+}
+
 function setStreamUiBusy(isBusy, { focusPrompt = true } = {}) {
     state.isGenerating = isBusy;
+    if (isBusy) {
+        backendStatus.markBackendBusy?.();
+    }
     const runtimeInjectEnabled = isBusy && !!String(state.activeRunId || '').trim();
     renderRuntimeInjectQueue(runtimeInjectEnabled ? state.activeRunId : '');
     if (els.sendBtn) {
@@ -176,7 +212,8 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
                 clearStopRequest: true,
                 releaseUi: false,
             });
-            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: true });
+            notifyCurrentSessionRunStarted(safeSessionId, run);
+            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: false });
             attachRunStreamAsBackground(runId, safeSessionId, {
                 reason: 'start-background',
             });
@@ -184,10 +221,11 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
         }
         state.activeRunId = runId;
         setStreamUiBusy(true, { focusPrompt: false });
+        notifyCurrentSessionRunStarted(safeSessionId, run);
         if (typeof options.onRunCreated === 'function') {
             options.onRunCreated(run);
         }
-        scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: true });
+        scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: false });
     } catch (err) {
         logError(
             'frontend.run.create_failed',
@@ -199,7 +237,7 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
                 clearStopRequest: true,
                 releaseUi: false,
             });
-            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: true });
+            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: false });
             return;
         }
         finishPendingRunStart(runStart, {
@@ -272,9 +310,57 @@ async function startDetachedIntentStream(promptText, sessionId, options) {
             errorToPayload(err, { session_id: sessionId, detached: true }),
         );
         scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {
-            forceRefresh: true,
+            forceRefresh: false,
         });
     }
+}
+
+function notifyCurrentSessionRunStarted(sessionId, run) {
+    const safeSessionId = String(sessionId || run?.session_id || run?.sessionId || '').trim();
+    if (!safeSessionId || typeof document === 'undefined') {
+        return;
+    }
+    const safeRunId = String(run?.run_id || run?.runId || '').trim();
+    forgetLocallyTerminalRun(safeRunId);
+    document.dispatchEvent(new CustomEvent('agent-teams-current-session-run-started', {
+        detail: {
+            sessionId: safeSessionId,
+            run: run && typeof run === 'object' ? run : {},
+        },
+    }));
+}
+
+function notifySessionRunTerminal(sessionId, runId, evType, payload = {}, eventMeta = {}) {
+    const safeSessionId = String(
+        sessionId || payload?.session_id || payload?.sessionId || '',
+    ).trim();
+    const safeRunId = String(
+        runId
+        || payload?.run_id
+        || payload?.runId
+        || eventMeta?.run_id
+        || eventMeta?.trace_id
+        || '',
+    ).trim();
+    if (!safeSessionId || !safeRunId || typeof document === 'undefined') {
+        return;
+    }
+    rememberLocallyTerminalRun(safeRunId);
+    document.dispatchEvent(new CustomEvent('agent-teams-session-run-terminal', {
+        detail: {
+            sessionId: safeSessionId,
+            run: {
+                ...(payload && typeof payload === 'object' ? payload : {}),
+                run_id: safeRunId,
+                session_id: safeSessionId,
+                status: normalizeTerminalEventStatus(evType),
+                event_type: evType,
+                updated_at: eventMeta?.created_at
+                    || eventMeta?.timestamp
+                    || new Date().toISOString(),
+            },
+        },
+    }));
 }
 
 export function endStream(options = {}) {
@@ -358,6 +444,7 @@ export function detachActiveStreamForSessionSwitch(options = {}) {
     activeConnection = null;
     state.activeEventSource = null;
     activeStreamSessionId = '';
+    syncRunStreamActivityState();
     setStreamUiBusy(false, { focusPrompt: options.focusPrompt !== false });
     ensureBackgroundDiscoveryLoop();
     return true;
@@ -615,8 +702,10 @@ async function refreshRoundsAfterCompletion(sessionId, runId = '', options = {})
             const recoveryModule = await import('../app/recovery.js');
             if (typeof recoveryModule.hydrateSessionView === 'function' && state.currentSessionId === sessionId) {
                 await recoveryModule.hydrateSessionView(sessionId, {
-                    includeRounds: true,
-                    forceRefresh: true,
+                    includeRecovery: false,
+                    includeRounds: false,
+                    includeSubagents: false,
+                    forceRefresh: false,
                     quiet: true,
                     roundsScrollPolicy: 'completion-auto',
                 });
@@ -654,6 +743,7 @@ function releaseActiveStreamHandle(options = {}) {
     }
     state.activeEventSource = null;
     activeStreamSessionId = '';
+    syncRunStreamActivityState();
     requestMultiplexRunConnection('release-active');
     return activeRunId;
 }
@@ -674,6 +764,7 @@ function promoteBackgroundStream(connection, options = {}) {
     state.activeEventSource = multiplexEventSource;
     activeStreamSessionId = connection.sessionId;
     touchRunStreamAttention(connection.runId);
+    syncRunStreamActivityState();
     if (options.makeUiBusy !== false) {
         setStreamUiBusy(true);
     }
@@ -706,6 +797,7 @@ function openRunStreamConnection(connection, { reason, afterEventId = null } = {
     } else {
         backgroundStreams.set(connection.runId, connection);
     }
+    syncRunStreamActivityState();
     enforceMultiplexRunBudget(connection.runId);
     requestMultiplexRunConnection(reason || connection.mode || 'run');
     ensureBackgroundDiscoveryLoop();
@@ -815,6 +907,12 @@ function applyMultiplexRunEvent(data) {
     }
     const evType = data.event_type;
     const payload = JSON.parse(data.payload_json || '{}');
+    if (evType === 'run_started' || evType === 'run_resumed') {
+        forgetLocallyTerminalRun(runId);
+    }
+    if (isSidebarTerminalRunEvent(evType)) {
+        notifySessionRunTerminal(connection.sessionId, runId, evType, payload, data);
+    }
     if (connection.mode === 'active') {
         routeEvent(evType, payload, data);
     } else {
@@ -829,7 +927,9 @@ function applyMultiplexRunEvent(data) {
         });
         connection.terminal = true;
         if (connection.mode === 'active') {
-            finishActiveConnection(connection);
+            finishActiveConnection(connection, {
+                clearActiveRunId: evType === 'run_completed' || evType === 'run_failed',
+            });
         } else {
             finishBackgroundConnection(connection);
         }
@@ -995,7 +1095,14 @@ function finishActiveConnection(connection, finishOptions = {}) {
     if (String(state.activeRunId || '').trim() === connection.runId) {
         activeStreamSessionId = '';
     }
+    syncRunStreamActivityState();
     endStream(finishOptions);
+    if (
+        finishOptions.clearActiveRunId === true
+        && String(state.activeRunId || '').trim() === connection.runId
+    ) {
+        state.activeRunId = null;
+    }
     requestMultiplexRunConnection('finish-active');
     ensureNormalModeSubagentDiscoveryLoop();
     if (typeof connection.onCompleted === 'function') {
@@ -1058,6 +1165,7 @@ function finishBackgroundConnection(connection, { rediscover = true, refreshSide
     }
     connection.eventSource = null;
     backgroundStreams.delete(connection.runId);
+    syncRunStreamActivityState();
     requestMultiplexRunConnection('finish-background');
     if (refreshSidebar) {
         scheduleSessionsRefresh();
@@ -1132,6 +1240,44 @@ function isTerminalRunEvent(evType) {
     );
 }
 
+function isSidebarTerminalRunEvent(evType) {
+    return (
+        evType === 'run_completed'
+        || evType === 'run_failed'
+        || evType === 'run_stopped'
+    );
+}
+
+function normalizeTerminalEventStatus(evType) {
+    const eventType = String(evType || '').trim();
+    if (!isTerminalRunEvent(eventType)) {
+        return '';
+    }
+    return eventType.replace(/^run_/, '');
+}
+
+function isRecordRunTerminal(record, runId) {
+    const safeRunId = String(runId || '').trim();
+    if (isRunLocallyTerminal(safeRunId)) {
+        return true;
+    }
+    const terminalRunId = String(
+        record?.latest_terminal_run_id || record?.latestTerminalRunId || '',
+    ).trim();
+    if (!safeRunId || !terminalRunId || safeRunId !== terminalRunId) {
+        return false;
+    }
+    const status = String(
+        record?.latest_terminal_run_status || record?.latestTerminalRunStatus || '',
+    ).trim();
+    return (
+        status === 'completed'
+        || status === 'failed'
+        || status === 'stopped'
+        || status === 'paused'
+    );
+}
+
 function ensureBackgroundDiscoveryLoop() {
     if (!shouldRunBackgroundDiscovery()) {
         if (backgroundDiscoveryTimer) {
@@ -1150,7 +1296,7 @@ function ensureBackgroundDiscoveryLoop() {
     backgroundDiscoveryTimer = setTimeout(() => {
         backgroundDiscoveryTimer = null;
         void runBackgroundDiscovery();
-    }, 2500);
+    }, resolveBackgroundDiscoveryDelayMs());
     backgroundDiscoveryTimer.unref?.();
 }
 
@@ -1174,8 +1320,50 @@ function rescheduleBackgroundDiscoveryAfterPause() {
     backgroundDiscoveryTimer.unref?.();
 }
 
+function resolveBackgroundDiscoveryDelayMs() {
+    return hasBackgroundDiscoveryRunPressure()
+        ? BACKGROUND_DISCOVERY_BUSY_DELAY_MS
+        : BACKGROUND_DISCOVERY_IDLE_DELAY_MS;
+}
+
+function hasBackgroundDiscoveryRunPressure() {
+    return !!(
+        state.isGenerating
+        || pendingRunStart
+        || getActiveRunStreamCount() > 0
+        || desiredMultiplexRunConnections().length > 0
+    );
+}
+
+function shouldDeferBackgroundDiscoveryFetch(now = Date.now()) {
+    if (!hasBackgroundDiscoveryRunPressure()) {
+        return false;
+    }
+    if (backgroundDiscoveryLastFetchAt <= 0) {
+        return false;
+    }
+    if (
+        backgroundDiscoveryLastFetchAt > 0
+        && now - backgroundDiscoveryLastFetchAt >= BACKGROUND_DISCOVERY_BUSY_STALE_MS
+    ) {
+        return false;
+    }
+    return true;
+}
+
 function ensureNormalModeSubagentDiscoveryLoop() {
     if (!shouldRunNormalModeSubagentDiscovery()) {
+        clearNormalModeSubagentDiscoveryTimer();
+        if (
+            normalModeSubagentConnection
+            && !state.activeSubagentSession
+            && normalModeSubagentStreams.size === 0
+        ) {
+            finishNormalModeSubagentSessionConnection(normalModeSubagentConnection);
+        }
+        return;
+    }
+    if (!shouldPollNormalModeSubagentDiscovery()) {
         clearNormalModeSubagentDiscoveryTimer();
         return;
     }
@@ -1196,6 +1384,20 @@ function clearNormalModeSubagentDiscoveryTimer() {
 }
 
 function shouldRunNormalModeSubagentDiscovery() {
+    return !!(
+        String(state.currentSessionId || '').trim()
+        && String(state.currentSessionMode || '').trim().toLowerCase() === 'normal'
+        && (
+            isCurrentSessionParentRunActive()
+            || isCurrentSessionRunStarting()
+            || normalModeSubagentConnection
+            || normalModeSubagentStreams.size > 0
+            || state.activeSubagentSession
+        )
+    );
+}
+
+function shouldPollNormalModeSubagentDiscovery() {
     return !!(
         String(state.currentSessionId || '').trim()
         && String(state.currentSessionMode || '').trim().toLowerCase() === 'normal'
@@ -1288,7 +1490,13 @@ async function runBackgroundDiscovery() {
             if (isBackgroundDiscoveryPaused()) {
                 return;
             }
-            const sessions = await fetchSessions();
+            const now = Date.now();
+            if (shouldDeferBackgroundDiscoveryFetch(now)) {
+                return;
+            }
+            backgroundDiscoveryLastFetchAt = now;
+            const sessions = await fetchSessions({ sidebar: true });
+            backgroundDiscoveryLastFetchAt = Date.now();
             if (isBackgroundDiscoveryPaused()) {
                 return;
             }
@@ -1301,11 +1509,7 @@ async function runBackgroundDiscovery() {
             backgroundDiscoveryPromise = null;
             if (backgroundDiscoveryQueued) {
                 backgroundDiscoveryQueued = false;
-                if (isBackgroundDiscoveryPaused()) {
-                    ensureBackgroundDiscoveryLoop();
-                    return;
-                }
-                void runBackgroundDiscovery();
+                ensureBackgroundDiscoveryLoop();
                 return;
             }
             ensureBackgroundDiscoveryLoop();
@@ -1347,6 +1551,9 @@ async function reconcileBackgroundStreams(sessionRecords = []) {
                 continue;
             }
             if (isRunUnavailable(runId)) {
+                continue;
+            }
+            if (isRecordRunTerminal(record, runId)) {
                 continue;
             }
             if (status !== 'running' && status !== 'queued') {
@@ -1558,6 +1765,7 @@ function openNormalModeSubagentSessionStreamConnection(connection, { afterEventI
     connection.terminal = false;
     clearReconnectTimer(connection);
     normalModeSubagentConnection = connection;
+    syncRunStreamActivityState();
 
     es.onmessage = (event) => {
         try {
@@ -1649,6 +1857,7 @@ function finishNormalModeSubagentSessionConnection(connection) {
     if (normalModeSubagentConnection === connection) {
         normalModeSubagentConnection = null;
     }
+    syncRunStreamActivityState();
 }
 
 function openNormalModeSubagentRunStream(record, sessionId) {
@@ -1689,6 +1898,7 @@ function openNormalModeSubagentRunStreamConnection(connection, { afterEventId = 
     connection.terminal = false;
     clearReconnectTimer(connection);
     normalModeSubagentStreams.set(connection.runId, connection);
+    syncRunStreamActivityState();
 
     es.onmessage = (event) => {
         try {
@@ -1776,6 +1986,7 @@ function finishNormalModeSubagentConnection(connection) {
         connection.eventSource = null;
     }
     normalModeSubagentStreams.delete(connection.runId);
+    syncRunStreamActivityState();
     ensureNormalModeSubagentDiscoveryLoop();
 }
 
@@ -1821,6 +2032,41 @@ function isRunUnavailable(runId) {
         return true;
     }
     unavailableRunCooldownUntil.delete(safeRunId);
+    return false;
+}
+
+function rememberLocallyTerminalRun(runId) {
+    const safeRunId = String(runId || '').trim();
+    if (!safeRunId) {
+        return;
+    }
+    terminalRunCooldownUntil.set(
+        safeRunId,
+        Date.now() + TERMINAL_RUN_DISCOVERY_COOLDOWN_MS,
+    );
+}
+
+function forgetLocallyTerminalRun(runId) {
+    const safeRunId = String(runId || '').trim();
+    if (!safeRunId) {
+        return;
+    }
+    terminalRunCooldownUntil.delete(safeRunId);
+}
+
+function isRunLocallyTerminal(runId) {
+    const safeRunId = String(runId || '').trim();
+    if (!safeRunId) {
+        return false;
+    }
+    const cooldownUntil = terminalRunCooldownUntil.get(safeRunId);
+    if (typeof cooldownUntil !== 'number') {
+        return false;
+    }
+    if (cooldownUntil > Date.now()) {
+        return true;
+    }
+    terminalRunCooldownUntil.delete(safeRunId);
     return false;
 }
 

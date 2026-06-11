@@ -166,9 +166,10 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     assert "confirm(" not in model_profiles_script
     assert "alert(" not in system_status_script
     assert "confirm(" not in sidebar_script
+    assert "const shouldForceRefreshSessions = forceRefresh === true;" in sidebar_script
     assert (
         "const shouldForceRefreshSessions = forceRefresh === true || !hasSidebarDataSnapshot();"
-        in sidebar_script
+        not in sidebar_script
     )
     assert "forceRefresh: shouldForceRefreshSessions," in sidebar_script
     assert "function markProjectsReady() {" in sidebar_script
@@ -255,7 +256,8 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     )
     assert "markBackendOnline" not in request_script
     assert "markBackendOffline" not in request_script
-    assert "../utils/backendStatus.js" not in stream_script
+    assert "../utils/backendStatus.js" in stream_script
+    assert "markBackendBusy" in stream_script
     assert "markBackendOnline" not in stream_script
     assert "refreshBackendStatus" not in stream_script
     assert ".status-indicator > span:last-child" in components_css

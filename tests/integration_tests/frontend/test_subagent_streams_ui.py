@@ -18,6 +18,74 @@ def test_background_discovery_does_not_poll_for_idle_selected_session() -> None:
     assert "currentSessionId" not in block
     assert "pendingBackgroundAttachRunIds.size > 0" in block
     assert "pendingRunStart" in block
+    assert "const BACKGROUND_DISCOVERY_BUSY_DELAY_MS = 8000;" in source
+    assert "const BACKGROUND_DISCOVERY_BUSY_STALE_MS = 30000;" in source
+    assert "function shouldDeferBackgroundDiscoveryFetch" in source
+    assert "const sessions = await fetchSessions({ sidebar: true });" in source
+    discovery_block = source.split("async function runBackgroundDiscovery()", 1)[
+        1
+    ].split(
+        "\n}\n\nasync function reconcileBackgroundStreams",
+        1,
+    )[0]
+    assert "if (shouldDeferBackgroundDiscoveryFetch(now))" in discovery_block
+    assert "void runBackgroundDiscovery();" not in discovery_block
+
+
+def test_multiplex_terminal_event_notifies_session_sidebar_store() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (repo_root / "frontend" / "dist" / "js" / "core" / "stream.js").read_text(
+        encoding="utf-8"
+    )
+    block = source.split("function applyMultiplexRunEvent(data)", 1)[1].split(
+        "\n}\n\nfunction scheduleMultiplexReconnect",
+        1,
+    )[0]
+
+    assert (
+        "notifySessionRunTerminal(connection.sessionId, runId, evType, payload, data)"
+        in block
+    )
+    assert "if (isSidebarTerminalRunEvent(evType))" in block
+    sidebar_terminal_block = source.split(
+        "function isSidebarTerminalRunEvent(evType)", 1
+    )[1].split("\n}\n", 1)[0]
+    assert "run_completed" in sidebar_terminal_block
+    assert "run_failed" in sidebar_terminal_block
+    assert "run_stopped" in sidebar_terminal_block
+    assert "run_paused" not in sidebar_terminal_block
+
+
+def test_background_discovery_skips_terminal_active_run_candidates() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (repo_root / "frontend" / "dist" / "js" / "core" / "stream.js").read_text(
+        encoding="utf-8"
+    )
+    block = source.split("async function reconcileBackgroundStreams", 1)[1].split(
+        "\n\nfunction stopBackgroundStreams",
+        1,
+    )[0]
+
+    assert "isRecordRunTerminal(record, runId)" in block
+    assert "latest_terminal_run_id" in source
+
+
+def test_normal_mode_subagent_discovery_polls_while_parent_run_active() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (repo_root / "frontend" / "dist" / "js" / "core" / "stream.js").read_text(
+        encoding="utf-8"
+    )
+    block = source.split("function shouldPollNormalModeSubagentDiscovery()", 1)[
+        1
+    ].split(
+        "\n}\n",
+        1,
+    )[0]
+
+    assert "isCurrentSessionParentRunActive()" in block
+    assert "isCurrentSessionRunStarting()" in block
+    assert "normalModeSubagentConnection" in block
+    assert "normalModeSubagentStreams.size > 0" in block
 
 
 def _write_stream_runtime_inject_mocks(tmp_path: Path) -> None:
@@ -389,6 +457,7 @@ def test_stop_request_applies_local_stopped_subagent_snapshot(tmp_path: Path) ->
         .replace("../components/sidebar.js", "./mockSidebar.mjs")
         .replace("../app/recovery.js", "./mockRecovery.mjs")
         .replace("../utils/dom.js", "./mockDom.mjs")
+        .replace("../utils/backendStatus.js", "./mockBackendStatus.mjs")
         .replace("../utils/logger.js", "./mockLogger.mjs")
         .replace("./eventRouter.js", "./mockEventRouter.mjs")
         .replace("../components/messageRenderer.js", "./mockMessageRenderer.mjs")
@@ -490,6 +559,14 @@ export const els = {
     thinkingEffortSelect: { disabled: false },
     stopBtn: { style: {}, disabled: false },
 };
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockBackendStatus.mjs").write_text(
+        """
+export function markBackendBusy() {
+    return undefined;
+}
 """.strip(),
         encoding="utf-8",
     )
@@ -626,7 +703,7 @@ console.log(JSON.stringify({
     assert payload["clearedRunStreamStates"] == ["run-1", "run-1"]
 
 
-def test_active_parent_run_keeps_normal_subagent_discovery_polling(
+def test_active_parent_run_polls_normal_subagent_discovery_until_children_visible(
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[3]
@@ -905,7 +982,7 @@ console.log(JSON.stringify({
     assert payload["eventSourceUrls"] == [
         "/api/runs/events?run_id=run-1&after_event_id=0"
     ]
-    assert 2500 in payload["scheduledDelays"]
+    assert 8000 in payload["scheduledDelays"]
     assert payload["fetchSubagentCalls"] == ["session-1"]
 
 
@@ -991,7 +1068,9 @@ export function refreshSessionTopologyControls() {
 export async function hydrateSessionView(sessionId, options = {}) {
     globalThis.__hydrateCalls.push({
         sessionId,
+        includeRecovery: options.includeRecovery === true,
         includeRounds: options.includeRounds === true,
+        includeSubagents: options.includeSubagents === true,
         forceRefresh: options.forceRefresh === true,
         roundsScrollPolicy: options.roundsScrollPolicy || "",
     });
@@ -1254,8 +1333,10 @@ console.log(JSON.stringify({
     assert payload["hydrateCalls"] == [
         {
             "sessionId": "session-1",
-            "includeRounds": True,
-            "forceRefresh": True,
+            "includeRecovery": False,
+            "includeRounds": False,
+            "includeSubagents": False,
+            "forceRefresh": False,
             "roundsScrollPolicy": "completion-auto",
         }
     ]
@@ -2178,7 +2259,26 @@ globalThis.__eventSources = [];
 globalThis.__routeEventCalls = [];
 globalThis.__clearRunStreamStateCalls = [];
 globalThis.__scheduleSessionsRefreshCalls = [];
+globalThis.__currentSessionRunStartedEvents = [];
 globalThis.__focusCalls = 0;
+globalThis.CustomEvent = class {
+    constructor(type, init = {}) {
+        this.type = type;
+        this.detail = init.detail || null;
+    }
+};
+globalThis.document = {
+    listeners: new Map(),
+    addEventListener(type, listener) {
+        this.listeners.set(type, listener);
+    },
+    dispatchEvent(event) {
+        this.listeners.get(event.type)?.(event);
+    },
+};
+document.addEventListener('agent-teams-current-session-run-started', event => {
+    globalThis.__currentSessionRunStartedEvents.push(event.detail);
+});
 
 class MockEventSource {
     constructor(url) {
@@ -2240,6 +2340,8 @@ console.log(JSON.stringify({
     completed,
     routeEventCalls: globalThis.__routeEventCalls,
     clearRunStreamStateCalls: globalThis.__clearRunStreamStateCalls,
+    currentSessionRunStartedEvents: globalThis.__currentSessionRunStartedEvents,
+    scheduleSessionsRefreshCalls: globalThis.__scheduleSessionsRefreshCalls,
     focusCalls: globalThis.__focusCalls,
 }));
 """.strip(),
@@ -2280,6 +2382,15 @@ console.log(JSON.stringify({
     }
     assert payload["completed"] == ["session-a"]
     assert payload["clearRunStreamStateCalls"] == ["run-paused"]
+    assert payload["currentSessionRunStartedEvents"] == [
+        {
+            "sessionId": "session-a",
+            "run": {"run_id": "run-paused", "target_role_id": "MainAgent"},
+        },
+    ]
+    assert payload["scheduleSessionsRefreshCalls"] == [
+        {"delay": 360, "options": {"forceRefresh": False}},
+    ]
     assert payload["focusCalls"] == 1
     assert [call["evType"] for call in payload["routeEventCalls"]] == ["run_paused"]
 

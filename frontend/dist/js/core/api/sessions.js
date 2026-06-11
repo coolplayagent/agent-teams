@@ -10,15 +10,18 @@ import {
 } from './request.js';
 
 export async function fetchSessions(options = {}) {
+    const sidebar = options.sidebar === true;
+    const requestKey = sidebar ? 'sessions:sidebar' : 'sessions:list';
+    const endpoint = sidebar ? '/api/sessions/sidebar' : '/api/sessions';
     const params = new URLSearchParams();
     if (options.forceRefresh === true) {
         params.set('force_refresh', 'true');
-        invalidateManagedRequests('sessions:list');
+        invalidateManagedRequests(requestKey);
     }
     const query = params.toString();
     return requestJsonManaged(
-        'sessions:list',
-        `/api/sessions${query ? `?${query}` : ''}`,
+        requestKey,
+        `${endpoint}${query ? `?${query}` : ''}`,
         { signal: options.signal },
         'Failed to fetch sessions',
         { ttlMs: 500 },
@@ -85,6 +88,7 @@ export async function markSessionTerminalRunViewed(sessionId, options = {}) {
         'Failed to mark session run viewed',
     );
     invalidateManagedRequestCache('sessions:list');
+    invalidateManagedRequestCache('sessions:sidebar');
     invalidateManagedRequestCache(`sessions:${safeSessionId}:record`);
     return result;
 }

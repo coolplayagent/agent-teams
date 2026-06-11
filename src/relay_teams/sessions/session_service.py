@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import shutil
 import sqlite3
 import uuid
@@ -10,7 +11,7 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from relay_teams.agent_runtimes.instances.models import AgentRuntimeRecord
-from relay_teams.logger import get_logger
+from relay_teams.logger import get_logger, log_event
 from relay_teams.media import ContentPart
 from relay_teams.media import content_parts_to_text
 from relay_teams.media import user_prompt_content_to_text
@@ -81,6 +82,7 @@ from relay_teams.sessions.session_models import (
     SessionMetadataPatch,
     SessionMode,
     SessionRecord,
+    SessionSidebarRecord,
 )
 from relay_teams.sessions.session_history_marker_repository import (
     SessionHistoryMarkerRepository,
@@ -213,9 +215,6 @@ _TERMINAL_RUN_EVENT_TYPES = frozenset(
 )
 _FRESH_READ_EVENT_TYPES = frozenset(
     {
-        RunEventType.RUN_COMPLETED,
-        RunEventType.RUN_FAILED,
-        RunEventType.RUN_STOPPED,
         RunEventType.TODO_UPDATED,
         RunEventType.USER_QUESTION_REQUESTED,
         RunEventType.USER_QUESTION_ANSWERED,
@@ -224,7 +223,6 @@ _FRESH_READ_EVENT_TYPES = frozenset(
 )
 _LIST_FRESH_READ_EVENT_TYPES = frozenset(
     {
-        *_TERMINAL_RUN_EVENT_TYPES,
         RunEventType.TOOL_APPROVAL_REQUESTED,
         RunEventType.TOOL_APPROVAL_RESOLVED,
         RunEventType.USER_QUESTION_REQUESTED,
@@ -259,6 +257,16 @@ def _normalize_auto_session_title(value: str) -> str | None:
         if len(normalized) <= _AUTO_SESSION_TITLE_MAX_CHARS:
             return normalized
         return f"{normalized[: _AUTO_SESSION_TITLE_MAX_CHARS - 3].rstrip()}..."
+    return None
+
+
+def _terminal_run_status_for_event_type(event_type: RunEventType) -> str | None:
+    if event_type == RunEventType.RUN_COMPLETED:
+        return RunRuntimeStatus.COMPLETED.value
+    if event_type == RunEventType.RUN_FAILED:
+        return RunRuntimeStatus.FAILED.value
+    if event_type == RunEventType.RUN_STOPPED:
+        return RunRuntimeStatus.STOPPED.value
     return None
 
 
@@ -299,7 +307,7 @@ class SessionService:
         run_intent_repo: RunIntentRepository | None = None,
         memory_event_handler: MemoryEventHandler | None = None,
         get_runtime: Callable[[], RuntimeConfig] | None = None,
-        projection_refresh_runner: ProjectionRefreshRunner[object] | None = None,
+        projection_refresh_runner: ProjectionRefreshRunner | None = None,
     ) -> None:
         self._session_repo = session_repo
         self._task_repo = task_repo
@@ -382,15 +390,32 @@ class SessionService:
         if not safe_session_id:
             return
         spawn_subagent_dirty = self._event_is_spawn_subagent_tool_event(event)
+        terminal_run_event = event.event_type in _TERMINAL_RUN_EVENT_TYPES
+        subagent_run_dirty = terminal_run_event and self._event_is_subagent_run_event(
+            event,
+            session_id=safe_session_id,
+        )
+        subagent_list_dirty = (
+            spawn_subagent_dirty
+            or subagent_run_dirty
+            or event.event_type
+            in {
+                RunEventType.SUBAGENT_SESSION_STATUS_CHANGED,
+                RunEventType.SUBAGENT_STOPPED,
+                RunEventType.SUBAGENT_RESUMED,
+            }
+        )
         if event.event_type in _LIST_DIRTY_EVENT_TYPES or spawn_subagent_dirty:
             self._invalidate_list_sessions_cache(
                 requires_fresh_read=event.event_type in _LIST_FRESH_READ_EVENT_TYPES,
             )
-            if (
-                event.event_type in _TERMINAL_RUN_EVENT_TYPES
-                and not self._is_running_async_publish_listener()
-            ):
-                self._merge_terminal_session_projection_into_list_cache(safe_session_id)
+            if subagent_list_dirty:
+                self._schedule_subagent_count_cache_merge(safe_session_id)
+            if terminal_run_event and not subagent_run_dirty:
+                self._merge_terminal_event_into_list_cache(event)
+        elif subagent_list_dirty:
+            self._invalidate_list_sessions_cache()
+            self._schedule_subagent_count_cache_merge(safe_session_id)
         if event.event_type in _DETAILED_ROUND_DIRTY_EVENT_TYPES:
             self._session_snapshot_cache.mark_session_dirty(
                 safe_session_id,
@@ -421,6 +446,16 @@ class SessionService:
         tool_name = payload.get("tool_name")
         return isinstance(tool_name, str) and tool_name.strip() == "spawn_subagent"
 
+    def _event_is_subagent_run_event(self, event: RunEvent, *, session_id: str) -> bool:
+        safe_run_id = str(event.run_id or event.trace_id or "").strip()
+        return bool(
+            safe_run_id
+            and (
+                self._is_subagent_run_id(safe_run_id)
+                or safe_run_id in self._subagent_run_ids(session_id)
+            )
+        )
+
     @staticmethod
     def _is_detailed_rounds_cache_key(cache_key: str) -> bool:
         return "timeline=False" in cache_key and "summary=False" in cache_key
@@ -431,6 +466,100 @@ class SessionService:
     ) -> None:
         with contextlib.suppress(KeyError):
             self._merge_session_list_cache_record(self.get_session(session_id))
+
+    def _schedule_subagent_count_cache_merge(self, session_id: str) -> None:
+        if not self._is_running_async_publish_listener():
+            return
+        task = asyncio.create_task(
+            self._merge_subagent_count_into_list_cache_async(session_id)
+        )
+        task.add_done_callback(self._log_subagent_count_cache_merge_error)
+
+    @staticmethod
+    def _log_subagent_count_cache_merge_error(task: asyncio.Task[None]) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                event="session.subagent_count_cache_merge_failed",
+                message="Failed to merge subagent count into session list cache",
+                payload={"error": str(exc)},
+            )
+
+    async def _merge_subagent_count_into_list_cache_async(
+        self, session_id: str
+    ) -> None:
+        await asyncio.to_thread(self._merge_subagent_count_into_list_cache, session_id)
+
+    def _merge_subagent_count_into_list_cache(self, session_id: str) -> None:
+        safe_session_id = str(session_id or "").strip()
+        if not safe_session_id:
+            return
+        subagent_count = len(self.list_session_subagents(safe_session_id))
+
+        def mark_subagent_count(record: SessionRecord) -> SessionRecord:
+            return record.model_copy(
+                update={"subagent_session_count": subagent_count},
+            )
+
+        self._session_list_cache.update_record(
+            safe_session_id,
+            mark_subagent_count,
+        )
+
+    def _merge_terminal_event_into_list_cache(self, event: RunEvent) -> None:
+        terminal_status = _terminal_run_status_for_event_type(event.event_type)
+        if terminal_status is None:
+            return
+        safe_session_id = str(event.session_id or "").strip()
+        safe_run_id = str(event.run_id or event.trace_id or "").strip()
+        if not safe_session_id or not safe_run_id:
+            return
+        if self._is_subagent_run_id(
+            safe_run_id
+        ) or safe_run_id in self._subagent_run_ids(safe_session_id):
+            return
+
+        def mark_terminal(record: SessionRecord) -> SessionRecord:
+            active_run_id = str(record.active_run_id or "").strip()
+            updates: dict[str, object] = {
+                "latest_terminal_run_id": safe_run_id,
+                "latest_terminal_run_status": terminal_status,
+                "latest_terminal_run_updated_at": event.occurred_at,
+                "latest_terminal_run_verification_status": None,
+                "has_unread_terminal_run": (
+                    record.last_viewed_terminal_run_id != safe_run_id
+                ),
+            }
+            if terminal_status == RunRuntimeStatus.STOPPED.value and (
+                not active_run_id or active_run_id == safe_run_id
+            ):
+                updates.update(
+                    {
+                        "has_active_run": True,
+                        "active_run_id": safe_run_id,
+                        "active_run_status": terminal_status,
+                        "active_run_phase": "stopped",
+                        "pending_tool_approval_count": 0,
+                    }
+                )
+            elif not active_run_id or active_run_id == safe_run_id:
+                updates.update(
+                    {
+                        "has_active_run": False,
+                        "active_run_id": None,
+                        "active_run_status": None,
+                        "active_run_phase": None,
+                        "pending_tool_approval_count": 0,
+                    }
+                )
+            return record.model_copy(update=updates)
+
+        self._session_list_cache.update_record(safe_session_id, mark_terminal)
 
     @staticmethod
     def _is_running_async_publish_listener() -> bool:
@@ -1393,7 +1522,7 @@ class SessionService:
         for session_id in session_ids:
             runtimes = runtimes_by_session.get(session_id, ())
             excluded_run_ids = excluded_run_ids_by_session.get(session_id, set())
-            selected = self._select_active_run_from_preloaded(
+            selected = self._select_list_active_run_from_preloaded(
                 session_id=session_id,
                 runtimes=runtimes,
                 excluded_run_ids=excluded_run_ids,
@@ -1485,6 +1614,16 @@ class SessionService:
             force_refresh=force_refresh,
         )
         return result.value
+
+    async def list_sidebar_sessions_async(
+        self,
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[SessionSidebarRecord, ...]:
+        records = await self.list_sessions_async(force_refresh=force_refresh)
+        return tuple(
+            SessionSidebarRecord.from_session_record(record) for record in records
+        )
 
     def mark_latest_terminal_run_viewed(self, session_id: str) -> None:
         _ = self._session_repo.get(session_id)
@@ -2313,6 +2452,20 @@ class SessionService:
             refresh=lambda: self.get_recovery_snapshot(session_id),
             force_refresh=force_refresh,
         )
+        log_event(
+            LOGGER,
+            logging.DEBUG,
+            event="session.recovery.seeded_or_refreshed",
+            message="Read session recovery snapshot",
+            payload={
+                "session_id": session_id,
+                "force_refresh": force_refresh,
+                "cache_hit": result.diagnostics.cache_hit,
+                "stale": result.diagnostics.stale,
+                "dirty": result.diagnostics.dirty,
+                "refresh_in_progress": result.diagnostics.refresh_in_progress,
+            },
+        )
         return result.value
 
     def get_token_usage_by_run(self, run_id: str) -> RunTokenUsage:
@@ -2840,6 +2993,68 @@ class SessionService:
             if self._has_background_tasks(runtime.run_id):
                 return runtime.run_id, runtime
         return None
+
+    def _select_list_active_run_from_preloaded(
+        self,
+        *,
+        session_id: str,
+        runtimes: tuple[RunRuntimeRecord, ...],
+        excluded_run_ids: set[str],
+        active_background_run_ids: set[str],
+    ) -> tuple[str, RunRuntimeRecord] | None:
+        hinted_run_id = (
+            self._active_run_registry.get_active_run_id(session_id)
+            if self._active_run_registry is not None
+            else None
+        )
+        sorted_runtimes = sorted(
+            runtimes, key=lambda item: item.updated_at, reverse=True
+        )
+        if hinted_run_id and hinted_run_id not in excluded_run_ids:
+            hinted_runtime = next(
+                (
+                    runtime
+                    for runtime in sorted_runtimes
+                    if runtime.run_id == hinted_run_id
+                ),
+                None,
+            )
+            if hinted_runtime is not None and (
+                self._is_list_active_runtime(hinted_runtime, allow_stopped=True)
+                or (
+                    hinted_runtime.status
+                    in {RunRuntimeStatus.COMPLETED, RunRuntimeStatus.FAILED}
+                    and hinted_runtime.run_id in active_background_run_ids
+                )
+            ):
+                return hinted_run_id, hinted_runtime
+
+        for runtime in sorted_runtimes:
+            if runtime.run_id in excluded_run_ids:
+                continue
+            if self._is_list_active_runtime(runtime):
+                return runtime.run_id, runtime
+        for runtime in sorted_runtimes:
+            if runtime.run_id in excluded_run_ids:
+                continue
+            if runtime.status not in {
+                RunRuntimeStatus.COMPLETED,
+                RunRuntimeStatus.FAILED,
+            }:
+                continue
+            if runtime.run_id in active_background_run_ids:
+                return runtime.run_id, runtime
+        return None
+
+    @staticmethod
+    def _is_list_active_runtime(
+        runtime: RunRuntimeRecord,
+        *,
+        allow_stopped: bool = False,
+    ) -> bool:
+        if runtime.is_live_active or runtime.status == RunRuntimeStatus.PAUSED:
+            return True
+        return allow_stopped and runtime.status == RunRuntimeStatus.STOPPED
 
     def _select_active_run_from_preloaded(
         self,

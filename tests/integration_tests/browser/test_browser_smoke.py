@@ -282,7 +282,10 @@ def test_browser_ask_question_recovery_card_submits_answers(
         lambda response: (
             response.request.method == "GET"
             and response.url
-            == f"{integration_env.api_base_url}/api/sessions/{session_id}/recovery"
+            == (
+                f"{integration_env.api_base_url}/api/sessions/{session_id}/recovery"
+                "?force_refresh=true"
+            )
         )
     ):
         page.evaluate("window.dispatchEvent(new Event('focus'))")

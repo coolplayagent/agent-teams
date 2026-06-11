@@ -10,10 +10,13 @@ const DISCOVERY_TIMEOUT_MS = 1500;
 const CONTROL_PLANE_TIMEOUT_MS = 1500;
 const MAIN_LIVE_TIMEOUT_MS = 1500;
 const CONTROL_PLANE_FALLBACK_PORT_RANGE = 50;
+const CONTROL_PLANE_FALLBACK_BATCH_SIZE = 4;
+const CONTROL_PLANE_FALLBACK_TIMEOUT_MS = 350;
 const CONTROL_PLANE_CACHE_KEY = 'relayTeams.controlPlaneLiveUrl';
 const BACKEND_STATUS_HINT_EVENT = 'agent-teams-backend-status-hint';
 const LANGUAGE_CHANGED_EVENT = 'agent-teams-language-changed';
 const RUNTIME_LOADING_BANNER_ID = 'runtime-loading-banner';
+const BUSY_HEALTH_PROBE_DEFER_MS = 5000;
 
 let healthPollTimer = null;
 let inFlightHealthCheck = null;
@@ -25,6 +28,8 @@ let controlPlaneDiscoveryAttempted = false;
 let backendStatusHintBound = false;
 let languageChangedBound = false;
 let runtimeLoadingBanner = null;
+let consecutiveHealthMisses = 0;
+let lastHealthProbeAt = 0;
 
 export function initBackendStatusMonitor() {
     bindBackendStatusHintListener();
@@ -41,6 +46,7 @@ bindBackendStatusHintListener();
 bindLanguageChangedListener();
 
 export function markBackendOnline(label = null) {
+    consecutiveHealthMisses = 0;
     applyBackendStatus('online', label);
 }
 
@@ -57,14 +63,24 @@ export function markBackendInitializing(label = null) {
 }
 
 export async function refreshBackendStatus({ force = false } = {}) {
+    if (!force && shouldDeferBackendHealthProbe()) {
+        markBackendBusy();
+        return true;
+    }
     if (inFlightHealthCheck && !force) {
         return inFlightHealthCheck;
     }
+    lastHealthProbeAt = Date.now();
     inFlightHealthCheck = probeBackendHealth()
         .finally(() => {
             inFlightHealthCheck = null;
         });
     return inFlightHealthCheck;
+}
+
+function shouldDeferBackendHealthProbe() {
+    return backendStatus === 'busy'
+        && Date.now() - lastHealthProbeAt < BUSY_HEALTH_PROBE_DEFER_MS;
 }
 
 async function probeBackendHealth() {
@@ -102,17 +118,30 @@ async function probeBackendHealth() {
         return true;
     }
 
-    markBackendOffline();
+    markBackendUnavailableAfterProbeMiss();
     return false;
 }
 
 async function confirmMainBackendOnline() {
     const mainProbe = await probeJson('/api/system/live', MAIN_LIVE_TIMEOUT_MS);
     if (mainProbe.ok && isLivePayload(mainProbe.payload)) {
+        consecutiveHealthMisses = 0;
         markBackendOnline();
         return true;
     }
     return false;
+}
+
+function markBackendUnavailableAfterProbeMiss() {
+    consecutiveHealthMisses += 1;
+    if (
+        consecutiveHealthMisses === 1
+        && (backendStatus === 'busy' || backendStatus === 'online')
+    ) {
+        markBackendBusy();
+        return;
+    }
+    markBackendOffline();
 }
 
 async function resolveControlPlaneLiveUrl() {
@@ -168,13 +197,22 @@ async function probeJson(url, timeoutMs) {
 async function probeFallbackControlPlaneUrls(controlUrl) {
     const fallbackUrls = inferControlPlaneLiveUrls()
         .filter(fallbackUrl => fallbackUrl !== controlUrl);
-    const probes = await Promise.all(fallbackUrls.map(async liveUrl => ({
-        liveUrl,
-        result: await probeJson(liveUrl, CONTROL_PLANE_TIMEOUT_MS),
-    })));
-    return probes.find(({ result }) => (
-        result.ok && isControlPlaneLivePayload(result.payload)
-    )) || null;
+    for (
+        let index = 0;
+        index < fallbackUrls.length;
+        index += CONTROL_PLANE_FALLBACK_BATCH_SIZE
+    ) {
+        const batch = fallbackUrls.slice(index, index + CONTROL_PLANE_FALLBACK_BATCH_SIZE);
+        const results = await Promise.all(batch.map(async liveUrl => ({
+            liveUrl,
+            result: await probeJson(liveUrl, CONTROL_PLANE_FALLBACK_TIMEOUT_MS),
+        })));
+        const match = results.find(({ result }) => (
+            result.ok && isControlPlaneLivePayload(result.payload)
+        ));
+        if (match) return match;
+    }
+    return null;
 }
 
 function applyBackendStatus(nextStatus, label = null) {
@@ -357,16 +395,13 @@ function inferControlPlaneLiveUrls() {
         if (!Number.isInteger(currentPort) || currentPort < 1 || currentPort > 65535) {
             return [];
         }
-        const urls = [];
-        const maxPort = Math.min(65535, currentPort + CONTROL_PLANE_FALLBACK_PORT_RANGE);
-        for (let port = currentPort + 1; port <= maxPort; port += 1) {
-            urls.push(buildControlPlaneLiveUrl(currentOrigin, port));
+        const ports = [];
+        for (let offset = 1; offset <= CONTROL_PLANE_FALLBACK_PORT_RANGE; offset += 1) {
+            ports.push(currentPort + offset, currentPort - offset);
         }
-        const minPort = Math.max(1, currentPort - CONTROL_PLANE_FALLBACK_PORT_RANGE);
-        for (let port = currentPort - 1; port >= minPort; port -= 1) {
-            urls.push(buildControlPlaneLiveUrl(currentOrigin, port));
-        }
-        return urls;
+        return ports
+            .filter(port => Number.isInteger(port) && port >= 1 && port <= 65535)
+            .map(port => buildControlPlaneLiveUrl(currentOrigin, port));
     } catch (_) {
         return [];
     }

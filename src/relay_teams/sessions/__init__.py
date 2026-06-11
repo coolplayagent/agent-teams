@@ -24,11 +24,13 @@ from relay_teams.sessions.session_models import (
     ProjectKind,
     SessionMode,
     SessionRecord,
+    SessionSidebarRecord,
 )
 
 __all__ = [
     "ProjectKind",
     "SessionRecord",
+    "SessionSidebarRecord",
     "SessionMode",
     "ExternalSessionBinding",
     "SessionHistoryMarkerRecord",

@@ -23,6 +23,35 @@ def test_recovery_continuity_polling_excludes_terminal_recoverable_runs() -> Non
     assert "if (isTerminalRecoveryRun(activeRun)) return false;" in source
 
 
+def test_hydrate_session_view_loads_requested_rounds_under_run_pressure() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (repo_root / "frontend" / "dist" / "js" / "app" / "recovery.js").read_text(
+        encoding="utf-8"
+    )
+    block = source.split("export async function hydrateSessionView", 1)[1].split(
+        "    const snapshot = await recoveryPromise;",
+        1,
+    )[0]
+
+    assert "shouldSkipRoundsReload" not in block
+    assert "if (includeRounds) {" in block
+    assert "await loadSessionRounds(safeSessionId" in block
+
+
+def test_window_focus_recovery_refresh_bypasses_managed_cache() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (repo_root / "frontend" / "dist" / "js" / "app" / "recovery.js").read_text(
+        encoding="utf-8"
+    )
+    block = source.split("function handleContinuityFocus()", 1)[1].split(
+        "\n}\n",
+        1,
+    )[0]
+
+    assert "forceRefresh: true" in block
+    assert "reason: 'window-focus'" in block
+
+
 def test_recovery_ui_tracks_background_tasks_in_banner_and_events() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     recovery_script = (
@@ -44,14 +73,19 @@ def test_recovery_ui_tracks_background_tasks_in_banner_and_events() -> None:
     assert "handleBackgroundTaskAction" in recovery_script
     assert "forceRefresh: forceRefresh === true" in recovery_script
     assert (
-        "await refreshSubagentRail(safeSessionId, {\n"
-        "        preserveSelection: true,\n"
-        "        priority,\n"
-        "        forceRefresh: forceRefresh === true,\n"
-        "        signal,\n"
-        "    });\n"
-        "    throwIfAborted(signal);\n"
-        "    syncSessionContinuity();" in recovery_script
+        "syncSessionContinuity();\n"
+        "    if (includeSubagents) {\n"
+        "        try {\n"
+        "            await refreshSubagentRail(safeSessionId, {\n"
+        "                preserveSelection: true,\n"
+        "                priority,\n"
+        "                forceRefresh: forceRefresh === true,\n"
+        "                signal,\n"
+        "            });" in recovery_script
+    )
+    assert "if (error?.name === 'AbortError') throw error;" in recovery_script
+    assert (
+        "    throwIfAborted(signal);\n    syncSessionContinuity();" in recovery_script
     )
     assert "export function applyBackgroundTaskEvent" in recovery_script
     assert "normalizeBackgroundTaskEventStatus(payload, eventType)" in recovery_script

@@ -381,7 +381,7 @@ function scheduleContinuityRefreshForEvent(evType) {
         scheduleRecoveryContinuityRefresh({
             sessionId,
             delayMs: 300,
-            forceRefresh: true,
+            forceRefresh: false,
             includeRounds: false,
             quiet: true,
             reason: evType,
@@ -393,7 +393,7 @@ function scheduleContinuityRefreshForEvent(evType) {
         scheduleRecoveryContinuityRefresh({
             sessionId,
             delayMs: 500,
-            forceRefresh: true,
+            forceRefresh: false,
             includeRounds: false,
             quiet: true,
             reason: evType,
@@ -405,7 +405,7 @@ function scheduleContinuityRefreshForEvent(evType) {
         scheduleRecoveryContinuityRefresh({
             sessionId,
             delayMs: BACKGROUND_TASK_UPDATE_REFRESH_DELAY_MS,
-            forceRefresh: true,
+            forceRefresh: false,
             includeRounds: false,
             quiet: true,
             reason: evType,
@@ -431,7 +431,7 @@ function scheduleContinuityRefreshForEvent(evType) {
         scheduleRecoveryContinuityRefresh({
             sessionId,
             delayMs: 350,
-            forceRefresh: true,
+            forceRefresh: requiresFreshContinuitySnapshot(evType),
             includeRounds: false,
             quiet: true,
             reason: evType,
@@ -447,7 +447,7 @@ function scheduleContinuityRefreshForEvent(evType) {
         scheduleRecoveryContinuityRefresh({
             sessionId,
             delayMs: BACKGROUND_TASK_STATUS_REFRESH_DELAY_MS,
-            forceRefresh: true,
+            forceRefresh: false,
             includeRounds: false,
             quiet: true,
             reason: evType,
@@ -455,16 +455,37 @@ function scheduleContinuityRefreshForEvent(evType) {
         return;
     }
 
-    if (evType === 'run_completed' || evType === 'run_failed' || evType === 'run_stopped') {
+    if (evType === 'run_completed' || evType === 'run_failed') {
         scheduleRecoveryContinuityRefresh({
             sessionId,
             delayMs: 650,
-            forceRefresh: true,
+            forceRefresh: false,
+            includeRounds: false,
+            quiet: true,
+            reason: evType,
+        });
+        return;
+    }
+
+    if (evType === 'run_stopped') {
+        scheduleRecoveryContinuityRefresh({
+            sessionId,
+            delayMs: 650,
+            forceRefresh: false,
             includeRounds: false,
             quiet: true,
             reason: evType,
         });
     }
+}
+
+function requiresFreshContinuitySnapshot(evType) {
+    return (
+        evType === 'tool_approval_requested'
+        || evType === 'tool_approval_resolved'
+        || evType === 'user_question_requested'
+        || evType === 'user_question_answered'
+    );
 }
 
 function statusFromEventType(evType) {

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from concurrent.futures import Future as ThreadFuture
 from json import dumps
 from typing import Awaitable, Callable, Coroutine, Protocol, TypeVar
@@ -107,6 +108,8 @@ from relay_teams.hooks import HookService
 
 logger = get_logger(__name__)
 _T = TypeVar("_T")
+SLOW_RUN_WORKER_STAGE_SECONDS = 1.0
+RUN_START_SCHEDULER_CONCURRENCY = 2
 
 
 class BoardTodoLifecycleServiceLike(Protocol):
@@ -116,6 +119,31 @@ class BoardTodoLifecycleServiceLike(Protocol):
 
 def _is_run_already_running_conflict(*, run_id: str, error: RuntimeError) -> bool:
     return str(error) == f"Run {run_id} is already running"
+
+
+def _log_slow_run_worker_stage(
+    *,
+    run_id: str,
+    session_id: str,
+    stage: str,
+    started: float,
+    payload: dict[str, JsonValue] | None = None,
+) -> None:
+    elapsed_seconds = time.perf_counter() - started
+    if elapsed_seconds < SLOW_RUN_WORKER_STAGE_SECONDS:
+        return
+    with bind_trace_context(trace_id=run_id, run_id=run_id, session_id=session_id):
+        log_event(
+            logger,
+            logging.WARNING,
+            event="run.worker.stage_slow",
+            message="Run worker stage was slow",
+            duration_ms=int(elapsed_seconds * 1000),
+            payload={
+                "stage": stage,
+                **(payload or {}),
+            },
+        )
 
 
 def _clear_current_task_cancellation_requests() -> None:
@@ -332,7 +360,9 @@ class SessionRunService:
         self._running_run_ids: set[str] = set()
         self._resume_requested_runs: set[str] = set()
         self._detached_notification_tasks: set[asyncio.Task[None]] = set()
+        self._detached_start_tasks: set[asyncio.Task[None]] = set()
         self._run_creation_lock = asyncio.Lock()
+        self._run_start_semaphore = asyncio.Semaphore(RUN_START_SCHEDULER_CONCURRENCY)
         self._event_loop: asyncio.AbstractEventLoop | None = None
         self._scheduler = RunScheduler(
             meta_agent=self._meta_agent,
@@ -987,6 +1017,42 @@ class SessionRunService:
             return
         await self._ensure_run_started_local_async(run_id)
 
+    def schedule_run_start(self, run_id: str, session_id: str) -> None:
+        task = asyncio.create_task(
+            self._ensure_run_started_detached_queued_async(
+                run_id=run_id, session_id=session_id
+            )
+        )
+        self._detached_start_tasks.add(task)
+        task.add_done_callback(self._detached_start_tasks.discard)
+
+    async def _ensure_run_started_detached_queued_async(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+    ) -> None:
+        scheduled_at = time.perf_counter()
+        async with self._run_start_semaphore:
+            queue_wait_ms = int((time.perf_counter() - scheduled_at) * 1000)
+            if queue_wait_ms > 0:
+                with bind_trace_context(
+                    trace_id=run_id,
+                    run_id=run_id,
+                    session_id=session_id,
+                ):
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        event="run.start.queue_wait",
+                        message="Run worker startup waited behind earlier starts",
+                        duration_ms=queue_wait_ms,
+                    )
+            await self._ensure_run_started_detached_async(
+                run_id=run_id,
+                session_id=session_id,
+            )
+
     def _ensure_run_started_local(self, run_id: str) -> None:
         self._scheduler.ensure_run_started_local(run_id)
 
@@ -1010,7 +1076,101 @@ class SessionRunService:
                 )
             await self._start_resume_worker_async(run_id)
             return
+        runtime = await self._runtime_for_run_async(run_id)
+        if runtime is not None and runtime.status in {
+            RunRuntimeStatus.COMPLETED,
+            RunRuntimeStatus.FAILED,
+            RunRuntimeStatus.STOPPED,
+        }:
+            return
         raise KeyError(f"Run {run_id} not found")
+
+    async def _ensure_run_started_detached_async(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+    ) -> None:
+        started = time.perf_counter()
+        with bind_trace_context(trace_id=run_id, run_id=run_id, session_id=session_id):
+            log_event(
+                logger,
+                logging.INFO,
+                event="run.start.scheduled",
+                message="Run start scheduled after create response",
+            )
+        try:
+            await self.ensure_run_started_async(run_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await self._handle_run_start_failed_async(
+                run_id=run_id,
+                session_id=session_id,
+                error=exc,
+            )
+            return
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        with bind_trace_context(trace_id=run_id, run_id=run_id, session_id=session_id):
+            log_event(
+                logger,
+                logging.INFO,
+                event="run.start.worker_started",
+                message="Run worker startup task completed",
+                duration_ms=elapsed_ms,
+            )
+
+    async def _handle_run_start_failed_async(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+        error: Exception,
+    ) -> None:
+        error_message = str(error) or type(error).__name__
+        with bind_trace_context(trace_id=run_id, run_id=run_id, session_id=session_id):
+            log_event(
+                logger,
+                logging.ERROR,
+                event="run.start.failed",
+                message="Run failed before worker startup completed",
+                payload={"error_type": type(error).__name__},
+                exc_info=error,
+            )
+        runtime = await self._runtime_for_run_async(run_id)
+        if runtime is not None and runtime.status not in {
+            RunRuntimeStatus.COMPLETED,
+            RunRuntimeStatus.FAILED,
+            RunRuntimeStatus.STOPPED,
+        }:
+            if self._run_runtime_repo is not None:
+                await self._run_runtime_repo.update_async(
+                    run_id,
+                    status=RunRuntimeStatus.FAILED,
+                    phase=RunRuntimePhase.TERMINAL,
+                    active_instance_id=None,
+                    active_task_id=None,
+                    active_role_id=None,
+                    active_subagent_instance_id=None,
+                    last_error=error_message,
+                )
+            await self._run_event_hub.publish_async(
+                RunEvent(
+                    session_id=session_id,
+                    run_id=run_id,
+                    trace_id=run_id,
+                    task_id=None,
+                    event_type=RunEventType.RUN_FAILED,
+                    payload_json=dumps(
+                        {
+                            "session_id": session_id,
+                            "status": RunRuntimeStatus.FAILED.value,
+                            "error": error_message,
+                        }
+                    ),
+                )
+            )
+        await self._safe_finalize_run_async(run_id=run_id, session_id=session_id)
 
     def _start_new_run_worker(self, run_id: str) -> None:
         self._scheduler.start_new_run_worker(run_id)
@@ -1274,6 +1434,7 @@ class SessionRunService:
             )
         runtime_intent = None
         try:
+            stage_started = time.perf_counter()
             if self._run_intent_repo is not None:
                 try:
                     runtime_intent = self._run_intent_repo.get(
@@ -1282,20 +1443,57 @@ class SessionRunService:
                     )
                 except KeyError:
                     runtime_intent = None
+            _log_slow_run_worker_stage(
+                run_id=run_id,
+                session_id=session_id,
+                stage="load_intent",
+                started=stage_started,
+                payload={"intent_found": runtime_intent is not None},
+            )
             if runtime_intent is not None:
+                stage_started = time.perf_counter()
                 await self._hook_pipeline.execute_session_start_hooks(
                     run_id=run_id,
                     session_id=session_id,
                     intent=runtime_intent,
                 )
+                _log_slow_run_worker_stage(
+                    run_id=run_id,
+                    session_id=session_id,
+                    stage="session_start_hooks",
+                    started=stage_started,
+                )
+            stage_started = time.perf_counter()
+            recovered_result = await self._recovery_service.run_with_auto_recovery(
+                run_id=run_id,
+                session_id=session_id,
+                runner=runner,
+            )
+            _log_slow_run_worker_stage(
+                run_id=run_id,
+                session_id=session_id,
+                stage="runner",
+                started=stage_started,
+                payload={
+                    "status": recovered_result.status,
+                    "completion_reason": recovered_result.completion_reason.value,
+                },
+            )
+            stage_started = time.perf_counter()
             result = await self._run_result_through_stop_hooks(
                 run_id=run_id,
                 session_id=session_id,
-                result=await self._recovery_service.run_with_auto_recovery(
-                    run_id=run_id,
-                    session_id=session_id,
-                    runner=runner,
-                ),
+                result=recovered_result,
+            )
+            _log_slow_run_worker_stage(
+                run_id=run_id,
+                session_id=session_id,
+                stage="stop_hooks",
+                started=stage_started,
+                payload={
+                    "status": result.status,
+                    "completion_reason": result.completion_reason.value,
+                },
             )
             completion_reason = result.completion_reason
             failed = result.status == "failed"

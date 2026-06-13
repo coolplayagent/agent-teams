@@ -616,6 +616,9 @@ globalThis.fetch = async url => {
             }),
         };
     }
+    if (safeUrl.startsWith('http://127.0.0.1:')) {
+        return { ok: false, json: async () => ({}) };
+    }
     if (safeUrl === '/api/system/live') {
         return { ok: false, json: async () => ({}) };
     }
@@ -658,7 +661,7 @@ console.log(JSON.stringify({
     assert payload["calls"][-1] == "/api/system/live"
 
 
-def test_backend_status_rejects_fallback_without_main_base_url(
+def test_backend_status_fallback_reaches_non_adjacent_control_plane_port(
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[3]
@@ -718,7 +721,7 @@ globalThis.fetch = async url => {
             json: async () => ({ status: 'alive' }),
         };
     }
-    if (safeUrl === 'http://127.0.0.1:8002/live') {
+    if (safeUrl === 'http://127.0.0.1:7999/live') {
         return {
             ok: true,
             json: async () => ({
@@ -726,6 +729,18 @@ globalThis.fetch = async url => {
                 main_base_url: 'not-a-url',
             }),
         };
+    }
+    if (safeUrl === 'http://127.0.0.1:8002/live') {
+        return {
+            ok: true,
+            json: async () => ({
+                status: 'alive',
+                main_base_url: 'http://127.0.0.1:8000',
+            }),
+        };
+    }
+    if (safeUrl.startsWith('http://127.0.0.1:')) {
+        return { ok: false, json: async () => ({}) };
     }
     if (safeUrl === '/api/system/live') {
         return { ok: false, json: async () => ({}) };
@@ -756,14 +771,311 @@ console.log(JSON.stringify({
     )
     payload = json.loads(result.stdout)
 
-    assert payload["result"] is False
-    assert payload["status"] == "offline"
-    assert payload["classNames"] == ["offline"]
-    assert payload["label"] == "backend.status.offline"
-    assert payload["storedUrl"] is None
+    assert payload["result"] is True
+    assert payload["status"] == "busy"
+    assert payload["classNames"] == ["busy"]
+    assert payload["label"] == "backend.status.busy"
+    assert payload["storedUrl"] == "http://127.0.0.1:8002/live"
     assert payload["calls"][:2] == [
         "/api/system/control-plane",
         "/api/system/live",
     ]
     assert "http://127.0.0.1:8001/live" in payload["calls"]
+    assert "http://127.0.0.1:7999/live" in payload["calls"]
     assert "http://127.0.0.1:8002/live" in payload["calls"]
+    assert sum(call.startswith("http://127.0.0.1:") for call in payload["calls"]) == 4
+
+
+def test_backend_status_limits_fallback_probe_fanout(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    backend_status_source = (
+        repo_root / "frontend" / "dist" / "js" / "utils" / "backendStatus.js"
+    ).read_text(encoding="utf-8")
+    module_source = backend_status_source.replace(
+        "import { els } from './dom.js';",
+        "const els = globalThis.__backendStatusEls;",
+    ).replace(
+        "import { t } from './i18n.js';",
+        "const t = key => key;",
+    )
+    module_path = tmp_path / "backendStatus.test.mjs"
+    module_path.write_text(module_source, encoding="utf-8")
+    runner_path = tmp_path / "runner-limited-fallback.mjs"
+    runner_path.write_text(
+        """
+const classNames = new Set();
+const backendStatusEl = {
+    classList: {
+        remove: (...names) => names.forEach(name => classNames.delete(name)),
+        add: name => classNames.add(name),
+    },
+    dataset: {},
+    title: '',
+    textContent: '',
+};
+const backendStatusLabel = { textContent: '' };
+const storage = new Map();
+const calls = [];
+
+globalThis.__backendStatusEls = {
+    backendStatus: backendStatusEl,
+    backendStatusLabel,
+};
+globalThis.window = {
+    location: new URL('http://127.0.0.1:8000/'),
+    localStorage: {
+        getItem: key => storage.get(key) || null,
+        setItem: (key, value) => storage.set(key, value),
+        removeItem: key => storage.delete(key),
+    },
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    setInterval: globalThis.setInterval.bind(globalThis),
+};
+globalThis.fetch = async url => {
+    const safeUrl = String(url);
+    calls.push(safeUrl);
+    if (safeUrl === '/api/system/control-plane') {
+        return { ok: false, json: async () => ({}) };
+    }
+    if (safeUrl === '/api/system/live') {
+        return { ok: false, json: async () => ({}) };
+    }
+    if (safeUrl === 'http://127.0.0.1:8002/live') {
+        return {
+            ok: true,
+            json: async () => ({
+                status: 'alive',
+                main_base_url: 'http://127.0.0.1:8000',
+            }),
+        };
+    }
+    if (safeUrl.startsWith('http://127.0.0.1:')) {
+        return { ok: false, json: async () => ({}) };
+    }
+    throw new Error(`unexpected fetch: ${safeUrl}`);
+};
+
+const backendStatus = await import('./backendStatus.test.mjs');
+const result = await backendStatus.refreshBackendStatus({ force: true });
+
+console.log(JSON.stringify({
+    fallbackCalls: calls.filter(call => call.startsWith('http://127.0.0.1:')),
+    result,
+    status: backendStatus.getBackendStatus(),
+}));
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload == {
+        "fallbackCalls": [
+            "http://127.0.0.1:8001/live",
+            "http://127.0.0.1:7999/live",
+            "http://127.0.0.1:8002/live",
+            "http://127.0.0.1:7998/live",
+        ],
+        "result": True,
+        "status": "busy",
+    }
+
+
+def test_backend_status_first_busy_miss_stays_pending(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    backend_status_source = (
+        repo_root / "frontend" / "dist" / "js" / "utils" / "backendStatus.js"
+    ).read_text(encoding="utf-8")
+    module_source = backend_status_source.replace(
+        "import { els } from './dom.js';",
+        "const els = globalThis.__backendStatusEls;",
+    ).replace(
+        "import { t } from './i18n.js';",
+        "const t = key => key;",
+    )
+    module_path = tmp_path / "backendStatus.test.mjs"
+    module_path.write_text(module_source, encoding="utf-8")
+    runner_path = tmp_path / "runner-busy-miss.mjs"
+    runner_path.write_text(
+        """
+const classNames = new Set();
+const backendStatusEl = {
+    classList: {
+        remove: (...names) => names.forEach(name => classNames.delete(name)),
+        add: name => classNames.add(name),
+    },
+    dataset: {},
+    title: '',
+    textContent: '',
+};
+const backendStatusLabel = { textContent: '' };
+const storage = new Map();
+
+globalThis.__backendStatusEls = {
+    backendStatus: backendStatusEl,
+    backendStatusLabel,
+};
+globalThis.window = {
+    location: new URL('http://127.0.0.1:8000/'),
+    localStorage: {
+        getItem: key => storage.get(key) || null,
+        setItem: (key, value) => storage.set(key, value),
+        removeItem: key => storage.delete(key),
+    },
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    setInterval: globalThis.setInterval.bind(globalThis),
+};
+globalThis.fetch = async url => {
+    const safeUrl = String(url);
+    if (
+        safeUrl === '/api/system/control-plane'
+        || safeUrl === '/api/system/live'
+        || safeUrl === 'http://127.0.0.1:8001/live'
+        || safeUrl === 'http://127.0.0.1:7999/live'
+    ) {
+        return { ok: false, json: async () => ({}) };
+    }
+    throw new Error(`unexpected fetch: ${safeUrl}`);
+};
+
+const backendStatus = await import('./backendStatus.test.mjs');
+backendStatus.markBackendBusy();
+const firstResult = await backendStatus.refreshBackendStatus({ force: true });
+const firstSnapshot = {
+    result: firstResult,
+    classNames: Array.from(classNames).sort(),
+    status: backendStatus.getBackendStatus(),
+};
+const secondResult = await backendStatus.refreshBackendStatus({ force: true });
+
+console.log(JSON.stringify({
+    firstSnapshot,
+    secondSnapshot: {
+        result: secondResult,
+        classNames: Array.from(classNames).sort(),
+        status: backendStatus.getBackendStatus(),
+    },
+}));
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload == {
+        "firstSnapshot": {
+            "result": False,
+            "classNames": ["busy"],
+            "status": "busy",
+        },
+        "secondSnapshot": {
+            "result": False,
+            "classNames": ["offline"],
+            "status": "offline",
+        },
+    }
+
+
+def test_backend_status_busy_state_eventually_probes_health(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    backend_status_source = (
+        repo_root / "frontend" / "dist" / "js" / "utils" / "backendStatus.js"
+    ).read_text(encoding="utf-8")
+    module_source = backend_status_source.replace(
+        "import { els } from './dom.js';",
+        "const els = globalThis.__backendStatusEls;",
+    ).replace(
+        "import { t } from './i18n.js';",
+        "const t = key => key;",
+    )
+    module_path = tmp_path / "backendStatus.test.mjs"
+    module_path.write_text(module_source, encoding="utf-8")
+    runner_path = tmp_path / "runner-busy-probe-window.mjs"
+    runner_path.write_text(
+        """
+const classNames = new Set();
+const backendStatusEl = {
+    classList: {
+        remove: (...names) => names.forEach(name => classNames.delete(name)),
+        add: name => classNames.add(name),
+    },
+    dataset: {},
+    title: '',
+    textContent: '',
+    setAttribute(name, value) {
+        this[name] = value;
+    },
+};
+const backendStatusLabel = { textContent: '' };
+const storage = new Map();
+let now = 1000;
+const fetchUrls = [];
+
+Date.now = () => now;
+globalThis.__backendStatusEls = {
+    backendStatus: backendStatusEl,
+    backendStatusLabel,
+};
+globalThis.window = {
+    location: new URL('http://127.0.0.1:8000/'),
+    localStorage: {
+        getItem: key => storage.get(key) || null,
+        setItem: (key, value) => storage.set(key, value),
+        removeItem: key => storage.delete(key),
+    },
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    setInterval: globalThis.setInterval.bind(globalThis),
+};
+globalThis.fetch = async url => {
+    fetchUrls.push(String(url));
+    if (String(url) === '/api/system/live') {
+        return { ok: true, json: async () => ({ status: 'alive' }) };
+    }
+    return { ok: false, json: async () => ({}) };
+};
+
+const backendStatus = await import('./backendStatus.test.mjs');
+backendStatus.markBackendBusy();
+const skipped = await backendStatus.refreshBackendStatus();
+now += 6000;
+const probed = await backendStatus.refreshBackendStatus();
+
+console.log(JSON.stringify({
+    skipped,
+    probed,
+    fetchUrls,
+    status: backendStatus.getBackendStatus(),
+}));
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["node", str(runner_path)],
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload == {
+        "skipped": True,
+        "probed": True,
+        "fetchUrls": ["/api/system/control-plane", "/api/system/live"],
+        "status": "online",
+    }

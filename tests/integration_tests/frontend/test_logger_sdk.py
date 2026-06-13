@@ -37,6 +37,44 @@ console.log(JSON.stringify(globalThis.__capturedBatches));
     assert browser_session_id.startswith("browser_")
 
 
+def test_frontend_logger_auto_flushes_full_batches_without_beacon(
+    tmp_path: Path,
+) -> None:
+    payload = _run_frontend_logger_script(
+        tmp_path=tmp_path,
+        runner_source="""
+Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+        userAgent: "node-test",
+        sendBeacon(url) {
+            globalThis.__capturedBeacons.push(url);
+            return true;
+        },
+    },
+});
+import { logInfo } from "./logger.mjs";
+
+for (let i = 0; i < 20; i += 1) {
+    logInfo("frontend.test.batch", `batch ${i}`);
+}
+await Promise.resolve();
+
+console.log(JSON.stringify([{
+    batches: globalThis.__capturedBatches,
+    beacons: globalThis.__capturedBeacons,
+}]));
+""".strip(),
+    )
+
+    result = cast(dict[str, JsonValue], payload[0])
+    batches = cast(list[dict[str, JsonValue]], result["batches"])
+    assert len(batches) == 1
+    events = cast(list[dict[str, JsonValue]], batches[0]["events"])
+    assert len(events) == 20
+    assert result["beacons"] == []
+
+
 def test_frontend_logger_uses_null_trace_id_without_active_run(tmp_path: Path) -> None:
     payload = _run_frontend_logger_script(
         tmp_path=tmp_path,
@@ -98,6 +136,58 @@ console.log(JSON.stringify([{
     assert [event["level"] for event in events] == ["error", "info"]
 
 
+def test_frontend_logger_beforeunload_keepalive_bypasses_busy_defer(
+    tmp_path: Path,
+) -> None:
+    payload = _run_frontend_logger_script(
+        tmp_path=tmp_path,
+        state_source="""
+export const state = {
+    currentSessionId: "session-ui",
+    activeRunId: "run-ui",
+    activeRunStreamCount: 1,
+};
+""".strip(),
+        runner_source="""
+Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+        userAgent: "node-test",
+        sendBeacon(url) {
+            globalThis.__capturedBeacons.push(url);
+            return true;
+        },
+    },
+});
+const listeners = [];
+globalThis.addEventListener = (eventName, callback) => {
+    if (eventName === "beforeunload") {
+        listeners.push(callback);
+    }
+};
+
+const { installGlobalErrorLogging, logError } = await import("./logger.mjs");
+installGlobalErrorLogging();
+logError("frontend.test.unload", "flush during unload");
+for (const callback of listeners) {
+    callback();
+}
+await Promise.resolve();
+
+console.log(JSON.stringify([{
+    batches: globalThis.__capturedBatches,
+    beacons: globalThis.__capturedBeacons,
+    timers: globalThis.__scheduledTimers,
+}]));
+""".strip(),
+    )
+
+    result = cast(dict[str, JsonValue], payload[0])
+    assert result["beacons"] == ["/api/logs/frontend"]
+    assert result["batches"] == []
+    assert 3500 not in cast(list[int], result["timers"])
+
+
 def _run_frontend_logger_script(
     tmp_path: Path,
     runner_source: str,
@@ -137,7 +227,9 @@ export function showToast(payload) {
     runner_path.write_text(
         f"""
 globalThis.__capturedBatches = [];
+globalThis.__capturedBeacons = [];
 globalThis.__feedbackToasts = [];
+globalThis.__scheduledTimers = [];
 globalThis.location = {{ pathname: "/chat" }};
 globalThis.document = {{ title: "agent-teams" }};
 Object.defineProperty(globalThis, "navigator", {{
@@ -149,6 +241,11 @@ Object.defineProperty(globalThis, "navigator", {{
         }},
     }},
 }});
+globalThis.setTimeout = (callback, delay) => {{
+    globalThis.__scheduledTimers.push(delay);
+    return {{ callback, delay }};
+}};
+globalThis.clearTimeout = () => {{}};
 globalThis.addEventListener = () => {{}};
 globalThis.fetch = async (_url, options) => {{
     globalThis.__capturedBatches.push(JSON.parse(options.body));

@@ -138,6 +138,10 @@ class _AsyncRunService:
                 raise RuntimeError("session id is required")
             return run_id, intent_input.session_id
 
+    def schedule_run_start(self, run_id: str, session_id: str) -> None:
+        _ = session_id
+        self.started_run_ids.append(run_id)
+
     async def ensure_run_started_async(self, run_id: str) -> None:
         await asyncio.sleep(0.001)
         async with self._lock:

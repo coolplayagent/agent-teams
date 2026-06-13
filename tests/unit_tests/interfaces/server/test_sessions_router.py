@@ -29,6 +29,7 @@ from relay_teams.sessions.session_models import (
     SessionMetadataPatch,
     SessionMode,
     SessionRecord,
+    SessionSidebarRecord,
 )
 from relay_teams.sessions.session_read_models import (
     SessionSnapshotCacheDiagnostics,
@@ -131,6 +132,17 @@ class _FakeSessionService:
     ) -> tuple[SessionRecord, ...]:
         self.sessions_force_refresh_calls.append(force_refresh)
         return self.list_sessions()
+
+    async def list_sidebar_sessions_async(
+        self,
+        *,
+        force_refresh: bool = False,
+    ) -> tuple[SessionSidebarRecord, ...]:
+        self.sessions_force_refresh_calls.append(force_refresh)
+        return tuple(
+            SessionSidebarRecord.from_session_record(record)
+            for record in self.list_sessions()
+        )
 
     def list_normal_mode_subagents(
         self, session_id: str
@@ -881,6 +893,19 @@ def test_list_sessions_route_calls_service() -> None:
     assert response.status_code == 200
     assert response.json()[0]["session_id"] == "session-listed"
     assert fake_service.list_calls == 1
+
+
+def test_list_sidebar_sessions_route_uses_lightweight_projection() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.get("/api/sessions/sidebar")
+
+    assert response.status_code == 200
+    payload = response.json()[0]
+    assert payload["session_id"] == "session-listed"
+    assert "normal_model_profile" not in payload
+    assert fake_service.sessions_force_refresh_calls == [False]
 
 
 def test_session_routes_call_service() -> None:

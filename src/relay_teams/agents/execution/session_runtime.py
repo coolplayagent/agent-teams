@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from collections.abc import AsyncIterable, AsyncIterator, Sequence
@@ -82,6 +83,37 @@ from relay_teams.agents.execution.spec_drift_evaluator import evaluate_spec_drif
 from relay_teams.workspace import build_conversation_id
 
 LOGGER = get_logger(__name__)
+SLOW_LLM_PREP_STAGE_SECONDS = 1.0
+
+
+def _log_slow_llm_prep_stage(
+    *,
+    request: LLMRequest,
+    stage: str,
+    started: float,
+    payload: dict[str, JsonValue] | None = None,
+) -> None:
+    elapsed_seconds = time.perf_counter() - started
+    if elapsed_seconds < SLOW_LLM_PREP_STAGE_SECONDS:
+        return
+    log_event(
+        LOGGER,
+        logging.WARNING,
+        event="llm.prep.stage_slow",
+        message="LLM preparation stage was slow",
+        duration_ms=int(elapsed_seconds * 1000),
+        payload={
+            "stage": stage,
+            "run_id": request.run_id,
+            "trace_id": request.trace_id,
+            "session_id": request.session_id,
+            "role_id": request.role_id,
+            "instance_id": request.instance_id,
+            **(payload or {}),
+        },
+    )
+
+
 LLM_REQUEST_LIMIT = 500
 _LLM_CLIENT_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 _ABANDONED_LLM_STREAM_CONTEXT_CLEANUP_TASKS: set[asyncio.Task[None]] = set()
@@ -289,6 +321,58 @@ def model_step_payload(
 
 
 class SessionRuntimeMixin(AgentLlmSessionMixinBase):
+    async def _timed_build_agent_iteration_context(
+        self,
+        *,
+        request: LLMRequest,
+        conversation_id: str,
+        system_prompt: str,
+        reserve_user_prompt_tokens: bool,
+        allowed_tools: tuple[str, ...],
+        allowed_mcp_servers: tuple[str, ...],
+        allowed_skills: tuple[str, ...],
+    ) -> tuple[
+        PreparedPromptContext,
+        list[ModelRequest | ModelResponse],
+        str,
+        object,
+    ]:
+        started = time.perf_counter()
+        result = await self._build_agent_iteration_context(
+            request=request,
+            conversation_id=conversation_id,
+            system_prompt=system_prompt,
+            reserve_user_prompt_tokens=reserve_user_prompt_tokens,
+            allowed_tools=allowed_tools,
+            allowed_mcp_servers=allowed_mcp_servers,
+            allowed_skills=allowed_skills,
+        )
+        prepared_prompt = result[0]
+        if isinstance(prepared_prompt, PreparedPromptContext):
+            microcompact_compacted_message_count = (
+                prepared_prompt.microcompact_compacted_message_count
+            )
+            microcompact_compacted_part_count = (
+                prepared_prompt.microcompact_compacted_part_count
+            )
+        else:
+            microcompact_compacted_message_count = 0
+            microcompact_compacted_part_count = 0
+        _log_slow_llm_prep_stage(
+            request=request,
+            stage="build_agent_iteration_context",
+            started=started,
+            payload={
+                "history_message_count": len(result[1]),
+                "system_prompt_length": len(result[2]),
+                "microcompact_compacted_message_count": (
+                    microcompact_compacted_message_count
+                ),
+                "microcompact_compacted_part_count": microcompact_compacted_part_count,
+            },
+        )
+        return result
+
     def _schedule_run_scoped_llm_http_client_close(
         self,
         *,
@@ -384,14 +468,29 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
             hook_service.get_run_env(request.run_id) if hook_service is not None else {}
         )
         if not skip_initial_user_prompt_persist:
+            stage_started = time.perf_counter()
             request, hook_system_contexts = await self._apply_user_prompt_hooks(request)
+            _log_slow_llm_prep_stage(
+                request=request,
+                stage="user_prompt_hooks",
+                started=stage_started,
+                payload={"hook_context_count": len(hook_system_contexts)},
+            )
             if hook_system_contexts:
+                stage_started = time.perf_counter()
                 await self._persist_hook_system_context_if_needed_async(
                     request=request,
                     contexts=hook_system_contexts,
                 )
+                _log_slow_llm_prep_stage(
+                    request=request,
+                    stage="persist_hook_context",
+                    started=stage_started,
+                    payload={"hook_context_count": len(hook_system_contexts)},
+                )
         self._validate_request_input_capabilities(request)
         if self._metric_recorder is not None:
+            stage_started = time.perf_counter()
             await record_session_step_async(
                 self._metric_recorder,
                 workspace_id=resolved_workspace_id,
@@ -400,10 +499,22 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 instance_id=request.instance_id,
                 role_id=request.role_id,
             )
+            _log_slow_llm_prep_stage(
+                request=request,
+                stage="record_session_step",
+                started=stage_started,
+            )
+        stage_started = time.perf_counter()
         allowed_tools = resolve_allowed_tools(
             self._tool_registry,
             self._allowed_tools,
             session_id=request.session_id,
+        )
+        _log_slow_llm_prep_stage(
+            request=request,
+            stage="resolve_allowed_tools",
+            started=stage_started,
+            payload={"allowed_tool_count": len(allowed_tools)},
         )
         await publish_run_event_async(
             self._run_event_hub,
@@ -429,7 +540,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 history,
                 agent_system_prompt,
                 agent,
-            ) = await self._build_agent_iteration_context(
+            ) = await self._timed_build_agent_iteration_context(
                 request=request,
                 conversation_id=resolved_conversation_id,
                 system_prompt=agent_system_prompt,
@@ -441,12 +552,28 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 allowed_skills=self._allowed_skills,
             )
             coordination_agent = cast(CoordinationAgent, agent)
+            stage_started = time.perf_counter()
             workspace = await self._workspace_manager.resolve_async(
                 session_id=request.session_id,
                 role_id=request.role_id,
                 instance_id=request.instance_id,
                 workspace_id=resolved_workspace_id,
                 conversation_id=resolved_conversation_id,
+            )
+            _log_slow_llm_prep_stage(
+                request=request,
+                stage="resolve_workspace",
+                started=stage_started,
+                payload={"workspace_id": resolved_workspace_id},
+            )
+            stage_started = time.perf_counter()
+            tool_approval_policy = await self._resolve_tool_approval_policy_async(
+                request.run_id
+            )
+            _log_slow_llm_prep_stage(
+                request=request,
+                stage="resolve_tool_approval_policy",
+                started=stage_started,
             )
             deps = ToolDeps(
                 task_repo=self._task_repo,
@@ -486,9 +613,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 run_control_manager=self._run_control_manager,
                 tool_approval_manager=self._tool_approval_manager,
                 user_question_manager=self._user_question_manager,
-                tool_approval_policy=await self._resolve_tool_approval_policy_async(
-                    request.run_id
-                ),
+                tool_approval_policy=tool_approval_policy,
                 shell_approval_repo=self._shell_approval_repo,
                 metric_recorder=self._metric_recorder,
                 notification_service=self._notification_service,

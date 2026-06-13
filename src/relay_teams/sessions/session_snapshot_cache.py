@@ -7,7 +7,7 @@ import logging
 import os
 from threading import RLock
 from time import monotonic
-from typing import Generic, TypeVar, cast
+from typing import Generic, Protocol, TypeVar, cast
 
 from relay_teams.logger import get_logger, log_event
 from relay_teams.sessions.session_read_models import (
@@ -20,10 +20,18 @@ from relay_teams.sessions.session_read_models import (
 
 ResultT = TypeVar("ResultT")
 LOGGER = get_logger(__name__)
-ProjectionRefreshRunner = Callable[
-    [str, Callable[[], ResultT]],
-    Awaitable[ResultT],
-]
+
+
+class ProjectionRefreshRunner(Protocol):
+    def __call__(
+        self,
+        operation: str,
+        refresh: Callable[[], ResultT],
+        /,
+    ) -> Awaitable[ResultT]:
+        raise NotImplementedError
+
+
 SnapshotCacheKey = tuple[str, str, str]
 DEFAULT_SESSION_SNAPSHOT_CACHE_MAX_AGE_SECONDS = 0.75
 DEFAULT_SESSION_SNAPSHOT_CACHE_MS = 1000
@@ -114,13 +122,17 @@ class StaleFirstCache(Generic[ResultT]):
         self,
         *,
         operation_name: str,
-        refresh_runner: ProjectionRefreshRunner[ResultT] | None = None,
+        refresh_runner: ProjectionRefreshRunner | None = None,
         max_age_seconds: float | None = None,
         cold_miss_timeout_seconds: float = DEFAULT_SESSION_COLD_MISS_TIMEOUT_SECONDS,
         refresh_min_interval_seconds: float | None = None,
     ) -> None:
         self._operation_name = operation_name
-        self._refresh_runner = refresh_runner or default_projection_refresh_runner
+        self._refresh_runner: ProjectionRefreshRunner = (
+            refresh_runner
+            if refresh_runner is not None
+            else default_projection_refresh_runner
+        )
         self._max_age_seconds = (
             max_age_seconds
             if max_age_seconds is not None
@@ -164,6 +176,17 @@ class StaleFirstCache(Generic[ResultT]):
             self._entry.value = update(value)
             self._entry.generated_at = utc_now()
             self._entry.generated_monotonic = monotonic()
+            return True
+
+    def seed_if_empty(self, value: ResultT, *, dirty: bool = True) -> bool:
+        with self._sync_lock:
+            if self._entry.value is not None:
+                return False
+            self._entry.value = value
+            self._entry.generated_at = utc_now()
+            self._entry.generated_monotonic = monotonic()
+            self._entry.dirty = dirty
+            self._entry.generation += 1
             return True
 
     async def read(
@@ -488,7 +511,7 @@ class SessionSnapshotCache:
     def __init__(
         self,
         *,
-        refresh_runner: ProjectionRefreshRunner[object] | None = None,
+        refresh_runner: ProjectionRefreshRunner | None = None,
         max_age_seconds: float | None = None,
         cold_miss_timeout_seconds: float = DEFAULT_SESSION_COLD_MISS_TIMEOUT_SECONDS,
         refresh_min_interval_seconds: float | None = None,
@@ -547,6 +570,22 @@ class SessionSnapshotCache:
         for cache in caches:
             cache.clear()
 
+    def seed_if_empty(
+        self,
+        *,
+        session_id: str,
+        section: SessionSnapshotSection,
+        value: object,
+        rounds_key: SessionRoundsQueryKey | None = None,
+        dirty: bool = True,
+    ) -> bool:
+        cache = self._get_or_create_cache(
+            session_id=session_id,
+            section=section,
+            rounds_key=rounds_key,
+        )
+        return cache.seed_if_empty(value, dirty=dirty)
+
     def mark_all_dirty(self) -> None:
         with self._entries_lock:
             caches = tuple(
@@ -568,6 +607,25 @@ class SessionSnapshotCache:
         failure_fallback: Callable[[], ResultT] | None = None,
         rounds_key: SessionRoundsQueryKey | None = None,
     ) -> CachedReadResult[ResultT]:
+        cache = self._get_or_create_cache(
+            session_id=session_id,
+            section=section,
+            rounds_key=rounds_key,
+        )
+        return await cache.read(
+            refresh,
+            force_refresh=force_refresh,
+            fallback=fallback,
+            failure_fallback=failure_fallback or fallback,
+        )
+
+    def _get_or_create_cache(
+        self,
+        *,
+        session_id: str,
+        section: SessionSnapshotSection,
+        rounds_key: SessionRoundsQueryKey | None,
+    ) -> StaleFirstCache[ResultT]:
         cache_key = self._cache_key(
             session_id=session_id,
             section=section,
@@ -575,31 +633,23 @@ class SessionSnapshotCache:
         )
         with self._entries_lock:
             cache = self._entries.get(cache_key)
-            if cache is None:
-                operation = self._operation_name(
-                    session_id=session_id,
-                    section=section,
-                    rounds_key=rounds_key,
-                )
-                raw_cache = StaleFirstCache[object](
-                    operation_name=operation,
-                    refresh_runner=self._refresh_runner,
-                    max_age_seconds=self._max_age_seconds,
-                    cold_miss_timeout_seconds=self._cold_miss_timeout_seconds,
-                    refresh_min_interval_seconds=self._refresh_min_interval_seconds,
-                )
-                self._entries[cache_key] = raw_cache
-                self._prune_entries_locked(protected_key=cache_key)
-                # noinspection PyUnnecessaryCast
-                cache = cast(StaleFirstCache[ResultT], raw_cache)
-            else:
-                cache = cast(StaleFirstCache[ResultT], cache)
-        return await cache.read(
-            refresh,
-            force_refresh=force_refresh,
-            fallback=fallback,
-            failure_fallback=failure_fallback or fallback,
-        )
+            if cache is not None:
+                return cast(StaleFirstCache[ResultT], cache)
+            operation = self._operation_name(
+                session_id=session_id,
+                section=section,
+                rounds_key=rounds_key,
+            )
+            raw_cache = StaleFirstCache[ResultT](
+                operation_name=operation,
+                refresh_runner=self._refresh_runner,
+                max_age_seconds=self._max_age_seconds,
+                cold_miss_timeout_seconds=self._cold_miss_timeout_seconds,
+                refresh_min_interval_seconds=self._refresh_min_interval_seconds,
+            )
+            self._entries[cache_key] = raw_cache
+            self._prune_entries_locked(protected_key=cache_key)
+            return raw_cache
 
     def _prune_entries_locked(self, *, protected_key: SnapshotCacheKey) -> None:
         while len(self._entries) > self._max_entries:

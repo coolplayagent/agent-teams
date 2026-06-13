@@ -70,6 +70,8 @@ import {
     hasSidebarDataSnapshot,
     mergeOptimisticSessions,
     markSidebarSessionTerminalViewed,
+    markSidebarSessionRunStarted,
+    markSidebarSessionRunTerminal,
     rememberSidebarDataSnapshot,
     removeSidebarSession,
     updateOptimisticSessionTitle,
@@ -122,6 +124,7 @@ let loadProjectsRequestId = 0;
 let loadProjectsController = null;
 let sessionsRefreshPromise = null;
 let suppressSessionsRefreshUntil = 0;
+let deferSessionsRefreshUntil = 0;
 let lastProjectsRenderSignature = '';
 let sidebarSelectionToken = 0;
 let sessionAnimationTokenSeed = 0;
@@ -131,6 +134,8 @@ const subagentListAnimationTokens = new WeakMap();
 let sidebarCollapsibleAnimationTokenSeed = 0;
 let subagentListVisualSyncToken = 0;
 const SIDEBAR_INTERACTION_REFRESH_DELAY_MS = 240;
+const SIDEBAR_ACTIVE_RUN_REFRESH_DELAY_MS = 2600;
+const SIDEBAR_TERMINAL_SETTLE_REFRESH_DELAY_MS = 2200;
 const SESSION_DELETE_REFRESH_SUPPRESSION_MS = 20000;
 
 const SESSION_ANIMATION_ENTER_MS = 220;
@@ -2162,11 +2167,20 @@ function bindSessionRows(root, { projectId = '' } = {}) {
             if (!sessionId) return;
             const willExpand = !isSubagentSessionListExpanded(sessionId);
             let subagentsLoadPromise = null;
+            const displayedCount = Number.parseInt(
+                button.querySelector?.('.session-subagents-toggle-count')?.textContent || '0',
+                10,
+            ) || 0;
+            const cachedCount = getSessionSubagentSessions(sessionId).length;
+            const shouldRefreshChildren = displayedCount > cachedCount;
             toggleSubagentSessionList(sessionId, { emitChange: false, load: false });
-            if (willExpand && !hasLoadedSessionSubagents(sessionId)) {
+            if (
+                willExpand
+                && (!hasLoadedSessionSubagents(sessionId) || shouldRefreshChildren)
+            ) {
                 subagentsLoadPromise = ensureSessionSubagents(sessionId, {
                     emitLoadingEvents: false,
-                    force: false,
+                    force: shouldRefreshChildren,
                 });
             }
             syncSubagentSessionListVisualState({
@@ -2218,13 +2232,12 @@ function bindSessionRows(root, { projectId = '' } = {}) {
             });
             if (nextTitle === null) return;
             const normalizedTitle = String(nextTitle || '').trim();
-            const nextMetadata = { ...metadata };
+            const nextMetadata = {};
             if (normalizedTitle) {
                 nextMetadata.title = normalizedTitle;
                 nextMetadata.title_source = 'manual';
             } else {
-                delete nextMetadata.title;
-                delete nextMetadata.title_source;
+                nextMetadata.title = null;
             }
             await updateSession(sessionId, nextMetadata);
             await loadProjects();
@@ -2730,13 +2743,13 @@ function renderProjectSidebarData(
 function handleNewSessionDraftCreated(event) {
     const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
     if (detail.detached === true) {
-        scheduleSessionsRefresh(900, { forceRefresh: true });
+        scheduleSessionsRefresh(900, { forceRefresh: false });
         return;
     }
     const sessionId = String(detail.sessionId || detail.session?.session_id || '').trim();
     const workspaceId = String(detail.workspaceId || detail.session?.workspace_id || state.currentWorkspaceId || '').trim();
     if (!sessionId || !workspaceId) {
-        scheduleSessionsRefresh(320, { forceRefresh: true });
+        scheduleSessionsRefresh(320, { forceRefresh: false });
         return;
     }
     const now = new Date().toISOString();
@@ -2756,14 +2769,67 @@ function handleNewSessionDraftCreated(event) {
     });
     setPendingSessionAnimation(sessionId, 'entering');
     if (!renderProjectsFromSnapshot({ syncStreams: false })) {
-        scheduleSessionsRefresh(120, { forceRefresh: true });
+        scheduleSessionsRefresh(120, { forceRefresh: false });
         return;
     }
-    scheduleSessionsRefresh(900, { forceRefresh: true });
+    scheduleSessionsRefresh(900, { forceRefresh: false });
 }
 
 function handleSessionUpserted(event) {
     handleNewSessionDraftCreated(event);
+}
+
+function handleCurrentSessionRunStarted(event) {
+    const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
+    const sessionId = String(detail.sessionId || detail.session_id || state.currentSessionId || '').trim();
+    if (!sessionId) {
+        return;
+    }
+    deferSessionsRefreshUntil = Math.max(
+        deferSessionsRefreshUntil,
+        Date.now() + SIDEBAR_ACTIVE_RUN_REFRESH_DELAY_MS,
+    );
+    markSidebarSessionRunStarted(sessionId, detail.run || detail);
+    if (!renderProjectsFromSnapshot({ syncStreams: false })) {
+        scheduleSessionsRefresh(120, { forceRefresh: false });
+        return;
+    }
+    syncActivatedSessionFromEvent({ detail: { sessionId } });
+}
+
+function handleSessionRunTerminal(event) {
+    const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
+    const sessionId = String(detail.sessionId || detail.session_id || '').trim();
+    if (!sessionId) {
+        return;
+    }
+    deferSessionsRefreshUntil = Math.max(
+        deferSessionsRefreshUntil,
+        Date.now() + SIDEBAR_TERMINAL_SETTLE_REFRESH_DELAY_MS,
+    );
+    const run = detail.run || detail;
+    const rawTerminalStatus = String(
+        run?.status
+        || run?.run_status
+        || run?.runStatus
+        || run?.event_type
+        || run?.eventType
+        || '',
+    ).trim().toLowerCase();
+    const terminalStatus = rawTerminalStatus.startsWith('run_')
+        ? rawTerminalStatus.slice(4)
+        : rawTerminalStatus;
+    const isViewedInCurrentSession = (
+        sessionId === String(state.currentSessionId || '').trim()
+        && !state.activeSubagentSession
+        && (terminalStatus === 'completed' || terminalStatus === 'failed')
+    );
+    markSidebarSessionRunTerminal(sessionId, run, {
+        viewed: isViewedInCurrentSession,
+    });
+    if (!renderProjectsFromSnapshot({ syncStreams: false })) {
+        scheduleSessionsRefresh(120, { forceRefresh: false });
+    }
 }
 
 function handleSessionTitlePreviewed(event) {
@@ -2847,6 +2913,12 @@ export async function loadProjects({ forceRefresh = false } = {}) {
         document.addEventListener('agent-teams-session-upserted', event => {
             handleSessionUpserted(event);
         });
+        document.addEventListener('agent-teams-current-session-run-started', event => {
+            handleCurrentSessionRunStarted(event);
+        });
+        document.addEventListener('agent-teams-session-run-terminal', event => {
+            handleSessionRunTerminal(event);
+        });
         document.addEventListener('agent-teams-session-title-previewed', event => {
             handleSessionTitlePreviewed(event);
         });
@@ -2871,10 +2943,11 @@ export async function loadProjects({ forceRefresh = false } = {}) {
     loadProjectsController = controller;
     try {
         ensureProjectMenuDismissBinding();
-        const shouldForceRefreshSessions = forceRefresh === true || !hasSidebarDataSnapshot();
+        const shouldForceRefreshSessions = forceRefresh === true;
         const [workspaces, sessions, automationProjects] = await Promise.all([
             fetchWorkspaces({ signal: controller?.signal }),
             fetchSessions({
+                sidebar: true,
                 forceRefresh: shouldForceRefreshSessions,
                 signal: controller?.signal,
             }),
@@ -2922,10 +2995,24 @@ export function scheduleSessionsRefresh(delayMs = 120, { forceRefresh = false } 
     }
     pendingSessionsRefreshForce = pendingSessionsRefreshForce || forceRefresh === true;
     if (refreshTimer) clearTimeout(refreshTimer);
-    const safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    let safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    if (
+        forceRefresh !== true
+        && (state.isGenerating || state.activeEventSource || Number(state.activeRunStreamCount || 0) > 0)
+    ) {
+        safeDelayMs = Math.max(safeDelayMs, SIDEBAR_ACTIVE_RUN_REFRESH_DELAY_MS);
+    }
+    if (forceRefresh !== true) {
+        safeDelayMs = Math.max(safeDelayMs, getDeferredSessionsRefreshDelayMs());
+    }
     refreshTimer = setTimeout(() => {
         refreshTimer = null;
         const forceNow = pendingSessionsRefreshForce === true;
+        const deferredDelayMs = forceNow ? 0 : getDeferredSessionsRefreshDelayMs();
+        if (deferredDelayMs > 0) {
+            scheduleSessionsRefresh(deferredDelayMs, { forceRefresh: false });
+            return;
+        }
         if (!forceNow && isProjectsListInteracting()) {
             scheduleSessionsRefresh(Math.max(safeDelayMs, SIDEBAR_INTERACTION_REFRESH_DELAY_MS));
             return;
@@ -2933,6 +3020,19 @@ export function scheduleSessionsRefresh(delayMs = 120, { forceRefresh = false } 
         pendingSessionsRefreshForce = false;
         void refreshSessionsSnapshot({ forceRefresh: forceNow });
     }, safeDelayMs);
+}
+
+function getDeferredSessionsRefreshDelayMs() {
+    const runBusy = (
+        state.isGenerating
+        || state.activeEventSource
+        || Number(state.activeRunStreamCount || 0) > 0
+    );
+    if (runBusy) {
+        return SIDEBAR_ACTIVE_RUN_REFRESH_DELAY_MS;
+    }
+    const remainingSettleDelayMs = deferSessionsRefreshUntil - Date.now();
+    return remainingSettleDelayMs > 0 ? remainingSettleDelayMs : 0;
 }
 
 async function refreshSessionsSnapshot({ forceRefresh = false } = {}) {
@@ -2954,7 +3054,10 @@ async function refreshSessionsSnapshot({ forceRefresh = false } = {}) {
     }
     sessionsRefreshPromise = (async () => {
         try {
-            const sessions = await fetchSessions({ forceRefresh: forceRefresh === true });
+            const sessions = await fetchSessions({
+                sidebar: true,
+                forceRefresh: forceRefresh === true,
+            });
             if (isSessionsRefreshSuppressed() && forceRefresh !== true) {
                 renderProjectsFromSnapshot({ syncStreams: false });
                 return;

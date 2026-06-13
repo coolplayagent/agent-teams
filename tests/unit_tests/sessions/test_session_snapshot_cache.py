@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 from unittest.mock import patch
 
 import pytest
@@ -31,7 +32,10 @@ from relay_teams.sessions.session_read_models import SessionSnapshotSection
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
 from relay_teams.sessions.session_snapshot_cache import SessionSnapshotCache
+from relay_teams.sessions.session_snapshot_cache import StaleFirstCache
 from relay_teams.sessions.session_snapshot_cache import resolve_positive_int_env
+
+RunnerResultT = TypeVar("RunnerResultT")
 
 
 class _CountingRunner:
@@ -45,8 +49,8 @@ class _CountingRunner:
     async def __call__(
         self,
         operation: str,
-        refresh: Callable[[], object],
-    ) -> object:
+        refresh: Callable[[], RunnerResultT],
+    ) -> RunnerResultT:
         _ = operation
         self.calls += 1
         if self.block_next:
@@ -69,8 +73,8 @@ class _SelectiveBlockingRunner:
     async def __call__(
         self,
         operation: str,
-        refresh: Callable[[], object],
-    ) -> object:
+        refresh: Callable[[], RunnerResultT],
+    ) -> RunnerResultT:
         _ = operation
         self.calls += 1
         call_number = self.calls
@@ -95,10 +99,11 @@ def test_session_snapshot_cache_env_resolver_ignores_invalid_overrides() -> None
 async def test_session_list_cache_rejects_invalid_runner_result() -> None:
     async def invalid_runner(
         operation: str,
-        refresh: Callable[[], object],
-    ) -> object:
+        refresh: Callable[[], RunnerResultT],
+        /,
+    ) -> RunnerResultT:
         _ = (operation, refresh)
-        return ["not", "a", "tuple"]
+        raise TypeError("Session list refresh returned an invalid result")
 
     cache = SessionListCache(refresh_runner=invalid_runner)
 
@@ -745,14 +750,33 @@ async def test_session_service_delete_clears_session_list_cache(
 
 
 @pytest.mark.asyncio
-async def test_session_service_terminal_event_requires_fresh_session_list(
+async def test_session_service_terminal_event_patches_stale_session_list(
     tmp_path: Path,
 ) -> None:
     runner = _CountingRunner()
-    service = _build_service(tmp_path / "session-list-terminal-cache.db", runner=runner)
+    db_path = tmp_path / "session-list-terminal-cache.db"
+    service = _build_service(db_path, runner=runner)
     _ = service.create_session(session_id="session-1", workspace_id="default")
-    _ = await service.list_sessions_async()
+    _seed_root_task(db_path, run_id="run-1", session_id="session-1")
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-1",
+        session_id="session-1",
+        root_task_id="task-root-1",
+    )
+    runtime_repo.update(
+        "run-1",
+        status=RunRuntimeStatus.RUNNING,
+        phase=RunRuntimePhase.COORDINATOR_RUNNING,
+    )
+    first = await service.list_sessions_async(force_refresh=True)
+    assert first[0].has_active_run is True
 
+    runtime_repo.update(
+        "run-1",
+        status=RunRuntimeStatus.COMPLETED,
+        phase=RunRuntimePhase.TERMINAL,
+    )
     runner.block_next = True
     service.mark_run_event_dirty(
         RunEvent(
@@ -763,13 +787,173 @@ async def test_session_service_terminal_event_requires_fresh_session_list(
             event_type=RunEventType.RUN_COMPLETED,
         )
     )
-    read_task = asyncio.create_task(service.list_sessions_async())
+    sessions = await service.list_sessions_async()
 
+    assert sessions[0].has_active_run is False
+    assert sessions[0].active_run_id is None
+    assert sessions[0].latest_terminal_run_id == "run-1"
+    assert sessions[0].latest_terminal_run_status == "completed"
     assert await _wait_for_event(runner.started)
-    assert read_task.done() is False
     runner.release.set()
-    sessions = await read_task
-    assert [session.session_id for session in sessions] == ["session-1"]
+
+
+@pytest.mark.asyncio
+async def test_session_service_subagent_terminal_event_keeps_parent_active_run(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    db_path = tmp_path / "session-list-subagent-terminal-cache.db"
+    service = _build_service(db_path, runner=runner)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _seed_root_task(db_path, run_id="run-parent", session_id="session-1")
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-parent",
+        session_id="session-1",
+        root_task_id="task-root-parent",
+    )
+    runtime_repo.update(
+        "run-parent",
+        status=RunRuntimeStatus.RUNNING,
+        phase=RunRuntimePhase.COORDINATOR_RUNNING,
+    )
+    runtime_repo.ensure(
+        run_id="subagent_run_1",
+        session_id="session-1",
+        root_task_id="task-root-subagent",
+    )
+    AgentInstanceRepository(db_path).upsert_instance(
+        run_id="subagent_run_1",
+        trace_id="subagent_run_1",
+        session_id="session-1",
+        instance_id="inst-subagent",
+        role_id="Explorer",
+        workspace_id="default",
+        conversation_id="conv-session-1-explorer",
+        status=InstanceStatus.STOPPED,
+    )
+    first = await service.list_sessions_async(force_refresh=True)
+    assert first[0].active_run_id == "run-parent"
+
+    runner.block_next = True
+    service.mark_run_event_dirty(
+        RunEvent(
+            session_id="session-1",
+            run_id="subagent_run_1",
+            trace_id="subagent_run_1",
+            instance_id="inst-subagent",
+            event_type=RunEventType.RUN_COMPLETED,
+        )
+    )
+    sessions = await service.list_sessions_async()
+
+    assert sessions[0].has_active_run is True
+    assert sessions[0].active_run_id == "run-parent"
+    assert sessions[0].latest_terminal_run_id is None
+    assert await _wait_for_event(runner.started)
+    runner.release.set()
+
+
+def test_session_service_subagent_dirty_event_does_not_read_subagents_sync(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    service = _build_service(
+        tmp_path / "session-subagent-dirty-no-sync-read.db",
+        runner=runner,
+    )
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+
+    with patch.object(service, "list_session_subagents") as list_subagents:
+        service.mark_run_event_dirty(
+            RunEvent(
+                session_id="session-1",
+                run_id="run-1",
+                trace_id="run-1",
+                instance_id="inst-1",
+                event_type=RunEventType.TOOL_CALL,
+                payload_json='{"tool_name":"spawn_subagent"}',
+            )
+        )
+
+    list_subagents.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_session_service_terminal_event_preserves_newer_active_run(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    db_path = tmp_path / "session-list-terminal-preserves-new-active.db"
+    service = _build_service(db_path, runner=runner)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _seed_root_task(
+        db_path,
+        run_id="run-old",
+        session_id="session-1",
+        task_id="task-root-old",
+    )
+    _seed_root_task(
+        db_path,
+        run_id="run-new",
+        session_id="session-1",
+        task_id="task-root-new",
+    )
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-new",
+        session_id="session-1",
+        root_task_id="task-root-new",
+    )
+    runtime_repo.update(
+        "run-new",
+        status=RunRuntimeStatus.RUNNING,
+        phase=RunRuntimePhase.COORDINATOR_RUNNING,
+    )
+    first = await service.list_sessions_async(force_refresh=True)
+    assert first[0].active_run_id == "run-new"
+
+    runner.block_next = True
+    service.mark_run_event_dirty(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-old",
+            trace_id="run-old",
+            instance_id="inst-1",
+            event_type=RunEventType.RUN_COMPLETED,
+        )
+    )
+    sessions = await service.list_sessions_async()
+
+    assert sessions[0].has_active_run is True
+    assert sessions[0].active_run_id == "run-new"
+    assert sessions[0].latest_terminal_run_id == "run-old"
+    assert sessions[0].latest_terminal_run_status == "completed"
+    assert await _wait_for_event(runner.started)
+    runner.release.set()
+
+
+@pytest.mark.asyncio
+async def test_session_service_create_merges_session_list_cache_without_waiting(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    service = _build_service(tmp_path / "session-list-create-cache.db", runner=runner)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    first = await service.list_sessions_async(force_refresh=True)
+    assert [record.session_id for record in first] == ["session-1"]
+
+    runner.block_next = True
+    created = await service.create_session_async(
+        session_id="session-2",
+        workspace_id="default",
+    )
+    sessions = await service.list_sessions_async()
+
+    assert created.session_id == "session-2"
+    assert [record.session_id for record in sessions] == ["session-2", "session-1"]
+    assert await _wait_for_event(runner.started)
+    runner.release.set()
 
 
 @pytest.mark.asyncio
@@ -912,7 +1096,45 @@ async def test_session_service_run_event_marks_session_snapshot_dirty(
 
 
 @pytest.mark.asyncio
-async def test_session_service_terminal_event_skips_sync_merge_in_async_listener(
+async def test_session_service_recovery_cold_read_waits_for_first_snapshot(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    service = _build_service(tmp_path / "session-recovery-cold-read.db", runner=runner)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+
+    runner.block_next = True
+    read_task = asyncio.create_task(service.get_recovery_snapshot_async("session-1"))
+
+    assert await _wait_for_event(runner.started)
+    assert read_task.done() is False
+    runner.release.set()
+    snapshot = await read_task
+
+    assert snapshot["active_run"] is None
+
+
+@pytest.mark.asyncio
+async def test_session_service_subagents_cold_read_waits_for_first_snapshot(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    service = _build_service(tmp_path / "session-subagents-cold-read.db", runner=runner)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+
+    runner.block_next = True
+    read_task = asyncio.create_task(service.list_session_subagents_async("session-1"))
+
+    assert await _wait_for_event(runner.started)
+    assert read_task.done() is False
+    runner.release.set()
+    subagents = await read_task
+
+    assert subagents == ()
+
+
+@pytest.mark.asyncio
+async def test_session_service_terminal_event_skips_sync_projection_merge(
     tmp_path: Path,
 ) -> None:
     runner = _CountingRunner()
@@ -935,6 +1157,32 @@ async def test_session_service_terminal_event_skips_sync_merge_in_async_listener
         )
 
     merge_terminal.assert_not_called()
+
+
+def test_session_service_nonterminal_list_event_skips_subagent_run_lookup(
+    tmp_path: Path,
+) -> None:
+    service = _build_service(
+        tmp_path / "session-nonterminal-list-event.db",
+        runner=_CountingRunner(),
+    )
+
+    with patch.object(
+        service,
+        "_subagent_run_ids",
+        side_effect=AssertionError("subagent run lookup should be gated"),
+    ) as subagent_run_ids:
+        service.mark_run_event_dirty(
+            RunEvent(
+                session_id="session-1",
+                run_id="run-1",
+                trace_id="run-1",
+                instance_id="inst-1",
+                event_type=RunEventType.TOOL_APPROVAL_REQUESTED,
+            )
+        )
+
+    subagent_run_ids.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1042,7 +1290,7 @@ async def test_session_service_pending_action_event_requires_fresh_session_list(
     )
     runtime_repo.update(
         "run-1",
-        status=RunRuntimeStatus.PAUSED,
+        status=RunRuntimeStatus.RUNNING,
         phase=RunRuntimePhase.COORDINATOR_RUNNING,
     )
     first = await service.list_sessions_async(force_refresh=True)
@@ -1229,6 +1477,57 @@ async def test_session_service_update_merges_enriched_session_list_row(
     assert stale[0].active_run_id == "run-1"
 
 
+@pytest.mark.asyncio
+async def test_stale_first_cache_seed_if_empty_returns_seed_without_refresh() -> None:
+    cache = StaleFirstCache[tuple[str, ...]](
+        operation_name="seeded",
+        refresh_min_interval_seconds=0,
+    )
+
+    assert cache.seed_if_empty(("seeded",), dirty=False) is True
+    assert cache.seed_if_empty(("replacement",), dirty=False) is False
+    result = await cache.read(lambda: ("refreshed",))
+
+    assert result.value == ("seeded",)
+
+
+@pytest.mark.asyncio
+async def test_session_snapshot_cache_seed_if_empty_is_scoped_by_section() -> None:
+    cache = SessionSnapshotCache(refresh_min_interval_seconds=0)
+
+    assert (
+        cache.seed_if_empty(
+            session_id="session-1",
+            section=SessionSnapshotSection.RECOVERY,
+            value={"run": "seeded"},
+            dirty=False,
+        )
+        is True
+    )
+    assert (
+        cache.seed_if_empty(
+            session_id="session-1",
+            section=SessionSnapshotSection.RECOVERY,
+            value={"run": "replacement"},
+            dirty=False,
+        )
+        is False
+    )
+    result = await cache.read(
+        session_id="session-1",
+        section=SessionSnapshotSection.RECOVERY,
+        refresh=lambda: {"run": "refreshed"},
+    )
+    token_result = await cache.read(
+        session_id="session-1",
+        section=SessionSnapshotSection.TOKEN_USAGE,
+        refresh=lambda: {"tokens": 10},
+    )
+
+    assert result.value == {"run": "seeded"}
+    assert token_result.value == {"tokens": 10}
+
+
 def _build_service(db_path: Path, *, runner: _CountingRunner) -> SessionService:
     service = SessionService(
         session_repo=SessionRepository(db_path),
@@ -1253,10 +1552,16 @@ def _build_service(db_path: Path, *, runner: _CountingRunner) -> SessionService:
     return service
 
 
-def _seed_root_task(db_path: Path, *, run_id: str, session_id: str) -> None:
+def _seed_root_task(
+    db_path: Path,
+    *,
+    run_id: str,
+    session_id: str,
+    task_id: str = "task-root-1",
+) -> None:
     _ = TaskRepository(db_path).create(
         TaskEnvelope(
-            task_id="task-root-1",
+            task_id=task_id,
             session_id=session_id,
             parent_task_id=None,
             trace_id=run_id,

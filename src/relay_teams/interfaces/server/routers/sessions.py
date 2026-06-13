@@ -29,6 +29,7 @@ from relay_teams.sessions.session_models import (
     SessionMetadataPatch,
     SessionMode,
     SessionRecord,
+    SessionSidebarRecord,
     normalize_session_create_metadata_input,
 )
 from relay_teams.sessions.session_read_models import SessionSubagentsSnapshotResponse
@@ -102,6 +103,34 @@ async def list_sessions(
         "session.list",
         service.list_sessions_async,
         force_refresh=force_refresh,
+    )
+    return list(records)
+
+
+@router.get(
+    "/sidebar",
+    response_model=list[SessionSidebarRecord],
+    response_model_exclude_defaults=True,
+    response_model_exclude_none=True,
+)
+async def list_sidebar_sessions(
+    force_refresh: bool = False,
+    service: SessionService = Depends(get_session_service),
+) -> list[SessionSidebarRecord]:
+    started = time.perf_counter()
+    records = await call_maybe_async_in_session_fast_read_thread(
+        "session.list.sidebar",
+        service.list_sidebar_sessions_async,
+        force_refresh=force_refresh,
+    )
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    log_event(
+        logger,
+        logging.DEBUG,
+        event="session.list.sidebar",
+        message="Listed sidebar sessions",
+        duration_ms=elapsed_ms,
+        payload={"count": len(records), "force_refresh": force_refresh},
     )
     return list(records)
 

@@ -619,6 +619,40 @@ console.log(JSON.stringify({
     assert last_args[0] == {"text": "new lifecycle"}
 
 
+def test_route_event_refreshes_recovery_after_terminal_run_event(
+    tmp_path: Path,
+) -> None:
+    payload = _run_event_router_script(
+        tmp_path=tmp_path,
+        runner_source="""
+const { routeEvent } = await import('./eventRouterIndex.mjs');
+
+routeEvent('run_completed', {}, {
+    run_id: 'run-1',
+    trace_id: 'run-1',
+    event_id: 'evt-terminal',
+});
+
+await Promise.resolve();
+
+console.log(JSON.stringify({
+    recoveryCalls: globalThis.__scheduleRecoveryContinuityRefreshCalls,
+}));
+""".strip(),
+    )
+
+    assert payload["recoveryCalls"] == [
+        {
+            "sessionId": "session-1",
+            "delayMs": 650,
+            "forceRefresh": False,
+            "includeRounds": False,
+            "quiet": True,
+            "reason": "run_completed",
+        }
+    ]
+
+
 def test_route_event_refreshes_recovery_for_subagent_user_question_events(
     tmp_path: Path,
 ) -> None:
@@ -662,6 +696,40 @@ console.log(JSON.stringify({
     assert payload["runEventCalls"] == []
 
 
+def test_route_event_force_refreshes_recovery_after_approval_resolved(
+    tmp_path: Path,
+) -> None:
+    payload = _run_event_router_script(
+        tmp_path=tmp_path,
+        runner_source="""
+const { routeEvent } = await import('./eventRouterIndex.mjs');
+
+routeEvent(
+    'tool_approval_resolved',
+    { approval_id: 'approval-1' },
+    { run_id: 'run-1', trace_id: 'run-1' },
+);
+
+await Promise.resolve();
+
+console.log(JSON.stringify({
+    recoveryCalls: globalThis.__scheduleRecoveryContinuityRefreshCalls,
+}));
+""".strip(),
+    )
+
+    assert payload["recoveryCalls"] == [
+        {
+            "sessionId": "session-1",
+            "delayMs": 350,
+            "forceRefresh": True,
+            "includeRounds": False,
+            "quiet": True,
+            "reason": "tool_approval_resolved",
+        }
+    ]
+
+
 def test_route_event_routes_fallback_events(tmp_path: Path) -> None:
     payload = _run_event_router_script(
         tmp_path=tmp_path,
@@ -684,7 +752,7 @@ console.log(JSON.stringify({
         {
             "sessionId": "session-1",
             "delayMs": 350,
-            "forceRefresh": True,
+            "forceRefresh": False,
             "includeRounds": False,
             "quiet": True,
             "reason": "llm_fallback_activated",
@@ -692,7 +760,7 @@ console.log(JSON.stringify({
         {
             "sessionId": "session-1",
             "delayMs": 350,
-            "forceRefresh": True,
+            "forceRefresh": False,
             "includeRounds": False,
             "quiet": True,
             "reason": "llm_fallback_exhausted",

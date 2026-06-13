@@ -78,6 +78,7 @@ let orchestrationConfig = {
   presets: [],
 };
 let normalModelProfiles = [];
+let normalModelProfilesLoaded = false;
 let normalModelProfileSavePromise = null;
 let normalModelProfileSaveRequestId = 0;
 let activeComposerSelectMenu = "";
@@ -323,11 +324,23 @@ export async function refreshRoleConfigOptions({ refreshControls = true } = {}) 
 export async function refreshModelProfileOptions({
   refreshControls = true,
 } = {}) {
+  if (
+    normalModelProfilesLoaded
+    && (state.isGenerating || String(state.activeRunId || "").trim())
+  ) {
+    if (refreshControls) {
+      refreshSessionTopologyControls();
+    }
+    return;
+  }
   try {
     const profiles = await fetchModelProfiles();
     normalModelProfiles = normalizeModelProfileOptions(profiles);
+    normalModelProfilesLoaded = true;
   } catch (error) {
-    normalModelProfiles = [];
+    if (!normalModelProfilesLoaded) {
+      normalModelProfiles = [];
+    }
     sysLog(error.message || t("composer.error.model_profiles_load_failed"), "log-error");
   }
   if (refreshControls) {
@@ -549,7 +562,9 @@ export async function handleSend(options = {}) {
       runSessionId,
       async (sid) =>
         hydrateSessionView(sid, {
-          includeRounds: true,
+          includeRecovery: false,
+          includeRounds: false,
+          includeSubagents: false,
           quiet: true,
           roundsScrollPolicy: "completion-auto",
         }),

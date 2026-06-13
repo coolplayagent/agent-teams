@@ -55,6 +55,46 @@ async def _none_workspace_async(_self: object, **_kwargs: object) -> object:
     return cast(object, None)
 
 
+def test_log_slow_llm_prep_stage_emits_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, int, dict[str, object]]] = []
+
+    def capture_log_event(*args: object, **kwargs: object) -> None:
+        _ = args
+        payload = kwargs["payload"]
+        duration_ms = kwargs["duration_ms"]
+        assert isinstance(payload, dict)
+        assert isinstance(duration_ms, int)
+        events.append(
+            (
+                str(kwargs["event"]),
+                duration_ms,
+                payload,
+            )
+        )
+
+    monkeypatch.setattr(session_runtime_module.time, "perf_counter", lambda: 7.5)
+    monkeypatch.setattr(session_runtime_module, "log_event", capture_log_event)
+
+    session_runtime_module._log_slow_llm_prep_stage(
+        request=_build_request(),
+        stage="build-messages",
+        started=5.0,
+        payload={"message_count": 3},
+    )
+
+    assert len(events) == 1
+    event, duration_ms, payload = events[0]
+    assert event == "llm.prep.stage_slow"
+    assert duration_ms == 2500
+    assert payload["stage"] == "build-messages"
+    assert payload["run_id"] == "run-1"
+    assert payload["trace_id"] == "trace-1"
+    assert payload["session_id"] == "session-1"
+    assert payload["message_count"] == 3
+
+
 class _OpenAIRawStreamWithoutFinish:
     finish_reason = None
 

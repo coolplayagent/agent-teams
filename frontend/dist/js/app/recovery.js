@@ -53,6 +53,8 @@ let recoveryBannerRenderSignature = '';
 let activeUserQuestionSupplementState = null;
 const CONTINUITY_POLL_ACTIVE_MS = 1500;
 const CONTINUITY_POLL_IDLE_MS = 4000;
+const RECOVERY_REFRESH_BUSY_DEFER_MS = 2800;
+const LOCAL_TERMINAL_RUN_STATE_TTL_MS = 30000;
 const USER_QUESTION_NONE_OPTION_LABEL = '__none_of_the_above__';
 const continuity = {
     sessionId: '',
@@ -62,6 +64,9 @@ const continuity = {
     pendingRefresh: null,
     listenersBound: false,
 };
+let recoveryRefreshPromise = null;
+let recoveryRefreshSessionId = '';
+const localTerminalRunStates = new Map();
 
 function isPrimaryOrReservedRoleId(roleId) {
     return isPrimaryRoleId(roleId) || isReservedSystemRoleId(roleId);
@@ -96,7 +101,9 @@ function handleBackgroundTaskPanelToggle(runId) {
 export async function hydrateSessionView(
     sessionId = state.currentSessionId,
     {
+        includeRecovery = true,
         includeRounds = true,
+        includeSubagents = true,
         forceRefresh = false,
         priority = '',
         quiet = true,
@@ -113,20 +120,16 @@ export async function hydrateSessionView(
     throwIfAborted(signal);
 
     startSessionContinuity(safeSessionId);
-    const shouldSkipRoundsReload = !!(
-        includeRounds
-        && state.currentSessionId === safeSessionId
-        && state.activeEventSource
-        && state.isGenerating
-    );
-    const recoveryPromise = refreshSessionRecovery(safeSessionId, {
-        forceRefresh: forceRefresh === true,
-        priority,
-        quiet,
-        signal,
-    });
+    const recoveryPromise = includeRecovery
+        ? refreshSessionRecovery(safeSessionId, {
+            forceRefresh: forceRefresh === true,
+            priority,
+            quiet,
+            signal,
+        })
+        : Promise.resolve(null);
     recoveryPromise.catch(() => null);
-    if (includeRounds && !shouldSkipRoundsReload) {
+    if (includeRounds) {
         await loadSessionRounds(safeSessionId, {
             forceRefresh: forceRefresh === true,
             priority,
@@ -143,12 +146,23 @@ export async function hydrateSessionView(
         sessionId: safeSessionId,
         reason: 'hydrate-session',
     });
-    await refreshSubagentRail(safeSessionId, {
-        preserveSelection: true,
-        priority,
-        forceRefresh: forceRefresh === true,
-        signal,
-    });
+    syncSessionContinuity();
+    if (includeSubagents) {
+        try {
+            await refreshSubagentRail(safeSessionId, {
+                preserveSelection: true,
+                priority,
+                forceRefresh: forceRefresh === true,
+                signal,
+            });
+        } catch (error) {
+            if (error?.name === 'AbortError') throw error;
+            sysLog(
+                `Failed to refresh subagent rail: ${error?.message || error}`,
+                'log-error',
+            );
+        }
+    }
     throwIfAborted(signal);
     syncSessionContinuity();
     return snapshot;
@@ -318,8 +332,25 @@ export function applyRecoverySnapshot(snapshot) {
 
 function reconcileTerminalRecoverySnapshot(snapshot) {
     const activeRun = snapshot?.activeRun || null;
-    if (activeRun?.run_id && isTerminalRecoveryRun(activeRun)) {
-        reconcileTerminalRunStreamState(activeRun.run_id);
+    if (activeRun?.run_id) {
+        const terminalState = getLocalTerminalRunState(activeRun.run_id);
+        if (terminalState && !isTerminalRecoveryRun(activeRun)) {
+            if (terminalState.recoverable === false) {
+                snapshot.activeRun = null;
+            } else {
+                snapshot.activeRun = {
+                    ...activeRun,
+                    status: terminalState.status || 'stopped',
+                    phase: terminalState.phase || 'stopped',
+                    stream_connected: false,
+                    should_show_recover: true,
+                };
+            }
+        }
+    }
+    const reconciledActiveRun = snapshot?.activeRun || null;
+    if (reconciledActiveRun?.run_id && isTerminalRecoveryRun(reconciledActiveRun)) {
+        reconcileTerminalRunStreamState(reconciledActiveRun.run_id);
     }
     const roundSnapshot = snapshot?.roundSnapshot || null;
     const roundRunId = String(roundSnapshot?.run_id || '').trim();
@@ -463,7 +494,36 @@ export async function refreshSessionRecovery(sessionId = state.currentSessionId,
         clearSessionRecovery();
         return null;
     }
+    const canCoalesce = !!(
+        options.forceRefresh !== true
+        && !options.signal
+        && !isCriticalContinuityRefreshReason(options.reason)
+    );
+    if (
+        canCoalesce
+        && recoveryRefreshPromise
+        && recoveryRefreshSessionId === safeSessionId
+    ) {
+        return await recoveryRefreshPromise;
+    }
 
+    const refreshPromise = runSessionRecoveryRefresh(safeSessionId, options);
+    if (!canCoalesce) {
+        return await refreshPromise;
+    }
+    recoveryRefreshPromise = refreshPromise;
+    recoveryRefreshSessionId = safeSessionId;
+    try {
+        return await refreshPromise;
+    } finally {
+        if (recoveryRefreshPromise === refreshPromise) {
+            recoveryRefreshPromise = null;
+            recoveryRefreshSessionId = '';
+        }
+    }
+}
+
+async function runSessionRecoveryRefresh(safeSessionId, options = {}) {
     try {
         const previousActiveRunId = String(
             state.currentRecoverySnapshot?.activeRun?.run_id || state.activeRunId || '',
@@ -566,6 +626,7 @@ export async function resumeRecoverableRun(
 export function markRunStreamConnected(runId, { phase = 'running' } = {}) {
     const activeRun = getActiveRecoveryRun();
     if (!runId) return;
+    localTerminalRunStates.delete(runId);
     state.pausedSubagent = null;
     approvalActionErrors.clear();
     if (!activeRun || activeRun.run_id !== runId) {
@@ -614,6 +675,11 @@ export function markRunTerminalState(runId, { status, phase, recoverable } = {})
     const isRecoverable = recoverable !== false;
     const terminalStatus = status || activeRun?.status || (isRecoverable ? 'stopped' : 'completed');
     const terminalPhase = phase || activeRun?.phase || (isRecoverable ? 'stopped' : 'terminal');
+    rememberLocalTerminalRunState(safeRunId, {
+        status: terminalStatus,
+        phase: terminalPhase,
+        recoverable: isRecoverable,
+    });
     const terminalOverlay = {
         run_status: terminalStatus,
         run_phase: terminalPhase,
@@ -1038,6 +1104,7 @@ function handleContinuityFocus() {
     scheduleRecoveryContinuityRefresh({
         sessionId: continuity.sessionId,
         delayMs: 0,
+        forceRefresh: true,
         includeRounds: false,
         quiet: true,
         reason: 'window-focus',
@@ -1118,7 +1185,7 @@ function isContinuityPollableRun(activeRun) {
 }
 
 function nextContinuityPollDelay() {
-    if (state.isGenerating || state.activeEventSource) {
+    if (hasRunRefreshPressure()) {
         return CONTINUITY_POLL_ACTIVE_MS;
     }
     return CONTINUITY_POLL_IDLE_MS;
@@ -1150,7 +1217,7 @@ async function flushScheduledContinuityRefresh() {
         .finally(() => {
             continuity.refreshPromise = null;
             syncSessionContinuity();
-            if (continuity.pendingRefresh) {
+            if (continuity.pendingRefresh && !continuity.refreshTimer) {
                 void flushScheduledContinuityRefresh();
             }
         });
@@ -1160,8 +1227,19 @@ async function flushScheduledContinuityRefresh() {
 async function runScheduledContinuityRefresh(request) {
     const safeSessionId = typeof request?.sessionId === 'string' ? request.sessionId.trim() : '';
     if (!safeSessionId || state.currentSessionId !== safeSessionId) return null;
+    if (
+        request.forceRefresh !== true
+        && hasRunRefreshPressure()
+        && !isCriticalContinuityRefreshReason(request.reason)
+    ) {
+        scheduleRecoveryContinuityRefresh({
+            ...request,
+            delayMs: RECOVERY_REFRESH_BUSY_DEFER_MS,
+        });
+        return null;
+    }
 
-    const canRefreshRounds = request.includeRounds && !state.isGenerating && !state.activeEventSource;
+    const canRefreshRounds = request.includeRounds && !hasRunRefreshPressure();
     if (canRefreshRounds) {
         await loadSessionRounds(safeSessionId, {
             forceRefresh: request.forceRefresh === true,
@@ -1169,18 +1247,95 @@ async function runScheduledContinuityRefresh(request) {
         });
         if (state.currentSessionId !== safeSessionId) return null;
     }
-    if (request.forceRefresh === true) {
+    const forceRecoveryRefresh = request.forceRefresh === true
+        || requiresFreshContinuitySnapshot(request.reason);
+    if (forceRecoveryRefresh) {
         invalidateSessionRecovery(safeSessionId);
     }
     const snapshot = await refreshSessionRecovery(safeSessionId, {
-        forceRefresh: request.forceRefresh === true,
+        forceRefresh: forceRecoveryRefresh,
         quiet: request.quiet !== false,
+        reason: request.reason || 'continuity-refresh',
     });
     await ensureAutomaticRecoveryStream(snapshot, {
         sessionId: safeSessionId,
         reason: request.reason || 'continuity-refresh',
     });
     return snapshot;
+}
+
+function hasRunRefreshPressure() {
+    return !!(
+        state.isGenerating
+        || state.activeEventSource
+        || Number(state.activeRunStreamCount || 0) > 0
+    );
+}
+
+function isCriticalContinuityRefreshReason(reason) {
+    const safeReason = String(reason || '').trim();
+    return [
+        'tool_approval_requested',
+        'tool_approval_resolved',
+        'user_question_requested',
+        'user_question_answered',
+        'subagent_stopped',
+        'subagent_resumed',
+        'subagent_session_status_changed',
+        'notification_requested',
+        'gate_resolved',
+        'background_task_started',
+        'background_task_updated',
+        'background_task_completed',
+        'background_task_stopped',
+        'recovery-action',
+        'question-action',
+        'approval-action',
+        'window-focus',
+    ].includes(safeReason);
+}
+
+function requiresFreshContinuitySnapshot(reason) {
+    const safeReason = String(reason || '').trim();
+    return [
+        'tool_approval_requested',
+        'tool_approval_resolved',
+        'user_question_requested',
+        'user_question_answered',
+    ].includes(safeReason);
+}
+
+function rememberLocalTerminalRunState(runId, terminalState = {}) {
+    const safeRunId = String(runId || '').trim();
+    if (!safeRunId) return;
+    pruneLocalTerminalRunStates();
+    localTerminalRunStates.set(safeRunId, {
+        status: String(terminalState.status || '').trim(),
+        phase: String(terminalState.phase || '').trim(),
+        recoverable: terminalState.recoverable !== false,
+        expiresAt: Date.now() + LOCAL_TERMINAL_RUN_STATE_TTL_MS,
+    });
+}
+
+function getLocalTerminalRunState(runId) {
+    const safeRunId = String(runId || '').trim();
+    if (!safeRunId) return null;
+    const terminalState = localTerminalRunStates.get(safeRunId) || null;
+    if (!terminalState) return null;
+    if (Date.now() > Number(terminalState.expiresAt || 0)) {
+        localTerminalRunStates.delete(safeRunId);
+        return null;
+    }
+    return terminalState;
+}
+
+function pruneLocalTerminalRunStates() {
+    const now = Date.now();
+    localTerminalRunStates.forEach((terminalState, runId) => {
+        if (now > Number(terminalState?.expiresAt || 0)) {
+            localTerminalRunStates.delete(runId);
+        }
+    });
 }
 
 async function ensureAutomaticRecoveryStream(

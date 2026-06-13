@@ -48,6 +48,16 @@ _SESSION_PATCH_METADATA_FIELDS = {
     "custom_metadata",
 }
 
+_SIDEBAR_METADATA_KEYS = {
+    "title",
+    "name",
+    "label",
+    "source_label",
+    "source_icon",
+    "source_kind",
+    "source_provider",
+}
+
 
 def _validate_session_custom_metadata(
     value: dict[str, str] | None,
@@ -270,3 +280,67 @@ class SessionRecord(BaseModel):
         if self.project_id is None or not self.project_id.strip():
             self.project_id = self.workspace_id
         return self
+
+
+class SessionSidebarRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: RequiredIdentifierStr
+    workspace_id: RequiredIdentifierStr
+    project_kind: ProjectKind = ProjectKind.WORKSPACE
+    project_id: OptionalIdentifierStr = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    session_mode: SessionMode = SessionMode.NORMAL
+    can_switch_mode: bool = True
+    has_active_run: bool = False
+    active_run_id: OptionalIdentifierStr = None
+    active_run_status: str | None = None
+    active_run_phase: str | None = None
+    last_viewed_terminal_run_id: OptionalIdentifierStr = None
+    latest_terminal_run_id: OptionalIdentifierStr = None
+    latest_terminal_run_status: str | None = None
+    latest_terminal_run_verification_status: str | None = None
+    latest_terminal_run_updated_at: datetime | None = None
+    has_unread_terminal_run: bool = False
+    pending_tool_approval_count: int = 0
+    subagent_session_count: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+    @classmethod
+    def from_session_record(cls, record: SessionRecord) -> SessionSidebarRecord:
+        project_id = record.project_id
+        if (
+            record.project_kind == ProjectKind.WORKSPACE
+            and project_id == record.workspace_id
+        ):
+            project_id = None
+        return cls(
+            session_id=record.session_id,
+            workspace_id=record.workspace_id,
+            project_kind=record.project_kind,
+            project_id=project_id,
+            metadata={
+                key: value
+                for key, value in record.metadata.items()
+                if key in _SIDEBAR_METADATA_KEYS
+            },
+            session_mode=record.session_mode,
+            can_switch_mode=record.can_switch_mode,
+            has_active_run=record.has_active_run,
+            active_run_id=record.active_run_id,
+            active_run_status=record.active_run_status,
+            active_run_phase=record.active_run_phase,
+            last_viewed_terminal_run_id=record.last_viewed_terminal_run_id,
+            latest_terminal_run_id=record.latest_terminal_run_id,
+            latest_terminal_run_status=record.latest_terminal_run_status,
+            latest_terminal_run_verification_status=(
+                record.latest_terminal_run_verification_status
+            ),
+            latest_terminal_run_updated_at=record.latest_terminal_run_updated_at,
+            has_unread_terminal_run=record.has_unread_terminal_run,
+            pending_tool_approval_count=record.pending_tool_approval_count,
+            subagent_session_count=record.subagent_session_count,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+        )

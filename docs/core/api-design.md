@@ -1520,6 +1520,20 @@ Session records include terminal run projections for list badges:
 - `latest_terminal_run_updated_at`
 - `has_unread_terminal_run`
 
+### `GET /sessions/sidebar`
+
+Lists the lightweight session projection used by the frontend sidebar and background
+run discovery.
+
+Query:
+- `force_refresh`: optional boolean, default `false`. Normal sidebar reads should omit it so the backend can return a stale list snapshot immediately and refresh projections in the background.
+
+Response rows include the fields needed for sidebar grouping, titles, active-run
+badges, terminal-run badges, pending approval counts, and subagent counts. Heavier
+session topology details such as `normal_model_profile`, `normal_root_role_id`,
+and `orchestration_preset_id` remain available through `GET /sessions` or
+`GET /sessions/{session_id}`.
+
 ### `GET /sessions/{session_id}`
 
 Gets one session.

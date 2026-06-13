@@ -1046,7 +1046,7 @@ console.log(JSON.stringify({
     assert "if (state.currentFeatureViewId === safeFeatureId) {" in sidebar_script
     assert "animateSessionItem(sessionItem, 'removing');" in sidebar_script
     assert sidebar_script.count("await loadProjects({ forceRefresh: true });") >= 1
-    assert "scheduleSessionsRefresh(900, { forceRefresh: true });" in sidebar_script
+    assert "scheduleSessionsRefresh(900, { forceRefresh: false });" in sidebar_script
     assert "isSessionsRefreshSuppressed() && forceRefresh !== true" in sidebar_script
     assert "PROJECT_UPDATED: 'project_updated'" in sidebar_script
     assert (
@@ -3878,7 +3878,7 @@ export async function runAutomationProject() {
         "sessions": 2,
         "automationProjects": 1,
     }
-    assert payload["sessionForceRefreshes"] == [True, True]
+    assert payload["sessionForceRefreshes"] == [False, True]
 
 
 def test_projects_sidebar_preserves_forced_refresh_across_debounce(
@@ -4005,7 +4005,7 @@ export async function runAutomationProject() {
         "sessions": 2,
         "automationProjects": 1,
     }
-    assert payload["sessionForceRefreshes"] == [True, True]
+    assert payload["sessionForceRefreshes"] == [False, True]
 
 
 def test_projects_sidebar_coalesces_session_refresh_while_request_is_in_flight(
@@ -4152,7 +4152,7 @@ export async function runAutomationProject() {
         "sessions": 2,
         "automationProjects": 1,
     }
-    assert payload["forceRefreshesWhileInFlight"] == [True, False]
+    assert payload["forceRefreshesWhileInFlight"] == [False, False]
     assert payload["countsBeforeTrailingResolve"] == {
         "workspaces": 1,
         "sessions": 3,
@@ -4163,7 +4163,7 @@ export async function runAutomationProject() {
         "sessions": 3,
         "automationProjects": 1,
     }
-    assert payload["sessionForceRefreshes"] == [True, False, True]
+    assert payload["sessionForceRefreshes"] == [False, False, True]
 
 
 def test_projects_sidebar_defers_subagent_events_without_force_refresh_while_hovering(

@@ -202,7 +202,11 @@ export function invalidateManagedRequestCache(prefix) {
             }
         ],
         "invalidatedPrefixes": [],
-        "invalidatedCachePrefixes": ["sessions:list", "sessions:session-a:record"],
+        "invalidatedCachePrefixes": [
+            "sessions:list",
+            "sessions:sidebar",
+            "sessions:session-a:record",
+        ],
     }
 
 
@@ -262,7 +266,9 @@ export function invalidateManagedRequestCache() {
                 "globalThis.__invalidatedPrefixes = []; "
                 f"const mod = await import({module_under_test_path.as_uri()!r}); "
                 "await mod.fetchSessions(); "
+                "await mod.fetchSessions({ sidebar: true }); "
                 "await mod.fetchSessions({ forceRefresh: true }); "
+                "await mod.fetchSessions({ sidebar: true, forceRefresh: true }); "
                 "console.log(JSON.stringify({"
                 "managedRequests: globalThis.__capturedManagedRequests,"
                 "invalidatedPrefixes: globalThis.__invalidatedPrefixes"
@@ -284,7 +290,7 @@ export function invalidateManagedRequestCache() {
         )
 
     payload = json.loads(completed.stdout.strip())
-    assert payload["invalidatedPrefixes"] == ["sessions:list"]
+    assert payload["invalidatedPrefixes"] == ["sessions:list", "sessions:sidebar"]
     assert payload["managedRequests"] == [
         {
             "key": "sessions:list",
@@ -294,8 +300,22 @@ export function invalidateManagedRequestCache() {
             "config": {"ttlMs": 500},
         },
         {
+            "key": "sessions:sidebar",
+            "url": "/api/sessions/sidebar",
+            "options": {},
+            "errorMessage": "Failed to fetch sessions",
+            "config": {"ttlMs": 500},
+        },
+        {
             "key": "sessions:list",
             "url": "/api/sessions?force_refresh=true",
+            "options": {},
+            "errorMessage": "Failed to fetch sessions",
+            "config": {"ttlMs": 500},
+        },
+        {
+            "key": "sessions:sidebar",
+            "url": "/api/sessions/sidebar?force_refresh=true",
             "options": {},
             "errorMessage": "Failed to fetch sessions",
             "config": {"ttlMs": 500},

@@ -101,6 +101,16 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
     assert "resumeRunStream(activeRun.run_id, safeSessionId, null," in recovery_script
     assert "await reconcileMissingActiveRun(normalized, {" in recovery_script
     assert "const previousActiveRunId = String(" in recovery_script
+    assert "!isCriticalContinuityRefreshReason(options.reason)" in recovery_script
+    assert "function requiresFreshContinuitySnapshot(reason)" in recovery_script
+    assert "'tool_approval_resolved'," in recovery_script
+    assert "'user_question_answered'," in recovery_script
+    assert "localTerminalRunStates.delete(runId);" in recovery_script
+    assert (
+        "const forceRecoveryRefresh = request.forceRefresh === true" in recovery_script
+    )
+    assert "forceRefresh: forceRecoveryRefresh," in recovery_script
+    assert "reason: request.reason || 'continuity-refresh'," in recovery_script
     assert (
         "endStream({ preserveRunStreamState: true, focusPrompt: false });"
         in recovery_script
@@ -160,7 +170,7 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
         "export function syncBackgroundStreamsForSessions(sessionRecords = []) {"
         in stream_script
     )
-    assert "const sessions = await fetchSessions();" in stream_script
+    assert "const sessions = await fetchSessions({ sidebar: true });" in stream_script
     assert "reason: 'background-discovery'," in stream_script
     assert "function attachBackgroundStreamForSession(record) {" in stream_script
     assert (
@@ -181,6 +191,9 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
     assert "requestMultiplexRunConnection('finish-active');" in stream_script
     assert "const unavailableRunCooldownUntil = new Map();" in stream_script
     assert "const RUN_NOT_FOUND_COOLDOWN_MS = 30000;" in stream_script
+    assert "function forgetLocallyTerminalRun(runId)" in stream_script
+    assert "evType === 'run_started' || evType === 'run_resumed'" in stream_script
+    assert "forgetLocallyTerminalRun(runId);" in stream_script
     assert "status: 'stopped'," in stream_script
     assert "phase: 'stopped'," in stream_script
     assert "should_show_recover: true," in stream_script
@@ -190,6 +203,9 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
     assert "markSessionUnavailable(connection.sessionId);" in stream_script
     assert "if (isSessionUnavailable(sessionId)) {" in stream_script
     assert "if (!ignoreUnavailable && isRunUnavailable(safeRunId)) {" in stream_script
+    assert "const nextMetadata = {};" in sidebar_script
+    assert "const nextMetadata = { ...metadata };" not in sidebar_script
+    assert "nextMetadata.title = null;" in sidebar_script
     assert "const streamCore = await import('../core/stream.js');" in sidebar_script
     assert "streamCore.syncBackgroundStreamsForSessions(sessions);" in sidebar_script
     assert "export function clearRenderedStreamState()" in renderer_stream_script
@@ -320,3 +336,61 @@ def test_recovery_ui_uses_automatic_stream_reconnect_without_connect_button() ->
     assert 'id="resume-run-btn"' in index_html
     assert 'recoveryApprovalHost: qs("#recovery-approval-host")' in dom_script
     assert 'resumeRunBtn: qs("#resume-run-btn")' in dom_script
+
+
+def test_user_question_answered_forces_fresh_event_router_recovery() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    event_router_script = (
+        repo_root / "frontend" / "dist" / "js" / "core" / "eventRouter" / "index.js"
+    ).read_text(encoding="utf-8")
+    fresh_block_start = event_router_script.index(
+        "function requiresFreshContinuitySnapshot(evType)"
+    )
+    fresh_block = event_router_script[fresh_block_start : fresh_block_start + 320]
+
+    assert "evType === 'user_question_answered'" in fresh_block
+
+
+def test_background_discovery_fetches_once_before_busy_deferral() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    stream_script = (
+        repo_root / "frontend" / "dist" / "js" / "core" / "stream.js"
+    ).read_text(encoding="utf-8")
+    defer_block_start = stream_script.index(
+        "function shouldDeferBackgroundDiscoveryFetch"
+    )
+    defer_block = stream_script[defer_block_start : defer_block_start + 520]
+
+    assert (
+        "if (backgroundDiscoveryLastFetchAt <= 0) {\n        return false;\n    }"
+        in defer_block
+    )
+    assert (
+        "backgroundDiscoveryLastFetchAt = now;\n        return true;" not in defer_block
+    )
+
+
+def test_frontend_logs_use_keepalive_only_for_unload_flush() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    logger_script = (
+        repo_root / "frontend" / "dist" / "js" / "utils" / "logger.js"
+    ).read_text(encoding="utf-8")
+
+    assert logger_script.count("flushFrontendLogs({ useKeepalive: true") == 1
+    assert "beforeunload" in logger_script
+    assert "void flushFrontendLogs();" in logger_script
+
+
+def test_detached_run_creation_forces_sidebar_refresh() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    stream_script = (
+        repo_root / "frontend" / "dist" / "js" / "core" / "stream.js"
+    ).read_text(encoding="utf-8")
+    detached_start = stream_script.index("async function startDetachedIntentStream")
+    detached_block = stream_script[detached_start : detached_start + 1500]
+
+    assert (
+        "scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {\n"
+        "            forceRefresh: true,\n"
+        "        });" in detached_block
+    )

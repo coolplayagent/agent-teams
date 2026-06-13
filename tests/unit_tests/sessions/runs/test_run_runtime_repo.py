@@ -7,6 +7,7 @@ import sqlite3
 
 import pytest
 
+from relay_teams.sessions.runs.active_run_registry import ActiveSessionRunRegistry
 from relay_teams.sessions.runs.run_runtime_repo import (
     RunRuntimePhase,
     RunRuntimeRepository,
@@ -122,6 +123,32 @@ def test_run_runtime_repo_upsert_recovers_existing_dirty_rows(tmp_path: Path) ->
 
     assert updated.status == RunRuntimeStatus.PAUSED
     assert updated.phase == RunRuntimePhase.AWAITING_TOOL_APPROVAL
+
+
+def test_active_run_registry_hydrate_preserves_paused_and_stopped_runs(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "run_runtime_active_hydrate.db"
+    repo = RunRuntimeRepository(db_path)
+    repo.ensure(
+        run_id="run-stopped",
+        session_id="session-stopped",
+        root_task_id="task-stopped",
+        status=RunRuntimeStatus.STOPPED,
+        phase=RunRuntimePhase.IDLE,
+    )
+    repo.ensure(
+        run_id="run-paused",
+        session_id="session-paused",
+        root_task_id="task-paused",
+        status=RunRuntimeStatus.PAUSED,
+        phase=RunRuntimePhase.AWAITING_RECOVERY,
+    )
+
+    registry = ActiveSessionRunRegistry(run_runtime_repo=repo)
+
+    assert registry.get_active_run_id("session-stopped") == "run-stopped"
+    assert registry.get_active_run_id("session-paused") == "run-paused"
 
 
 @pytest.mark.asyncio

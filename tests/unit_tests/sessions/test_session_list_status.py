@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
 from relay_teams.sessions.session_service import SessionService
+from relay_teams.sessions.session_service import _terminal_run_status_for_event_type
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
 )
 from relay_teams.sessions.session_models import SessionMode
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
 from relay_teams.sessions.runs.event_log import EventLog
+from relay_teams.sessions.runs.enums import RunEventType
+from relay_teams.sessions.runs.run_models import RunEvent
+from relay_teams.sessions.runs.active_run_registry import ActiveSessionRunRegistry
 from relay_teams.agents.execution.message_repository import MessageRepository
 from relay_teams.sessions.runs.run_runtime_repo import (
     RunRuntimePhase,
@@ -23,7 +28,11 @@ from relay_teams.providers.token_usage_repo import TokenUsageRepository
 from relay_teams.agents.tasks.models import TaskEnvelope, VerificationPlan
 
 
-def _build_service(db_path: Path) -> SessionService:
+def _build_service(
+    db_path: Path,
+    *,
+    active_run_registry: ActiveSessionRunRegistry | None = None,
+) -> SessionService:
     return SessionService(
         session_repo=SessionRepository(db_path),
         task_repo=TaskRepository(db_path),
@@ -33,6 +42,7 @@ def _build_service(db_path: Path) -> SessionService:
         run_runtime_repo=RunRuntimeRepository(db_path),
         token_usage_repo=TokenUsageRepository(db_path),
         run_event_hub=None,
+        active_run_registry=active_run_registry,
         event_log=EventLog(db_path),
     )
 
@@ -65,7 +75,7 @@ def test_list_sessions_includes_active_run_overlay(tmp_path: Path) -> None:
     )
     runtime_repo.update(
         "run-active",
-        status=RunRuntimeStatus.PAUSED,
+        status=RunRuntimeStatus.RUNNING,
         phase=RunRuntimePhase.COORDINATOR_RUNNING,
     )
     ApprovalTicketRepository(db_path).upsert_requested(
@@ -85,7 +95,7 @@ def test_list_sessions_includes_active_run_overlay(tmp_path: Path) -> None:
     active = by_id["session-active"]
     assert active.has_active_run is True
     assert active.active_run_id == "run-active"
-    assert active.active_run_status == "paused"
+    assert active.active_run_status == "running"
     assert active.active_run_phase == "awaiting_tool_approval"
     assert active.pending_tool_approval_count == 1
 
@@ -95,6 +105,97 @@ def test_list_sessions_includes_active_run_overlay(tmp_path: Path) -> None:
     assert idle.active_run_status is None
     assert idle.active_run_phase is None
     assert idle.pending_tool_approval_count == 0
+
+
+def test_list_sessions_projects_stopped_run_as_terminal_only(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_list_stopped_terminal.db"
+    service = _build_service(db_path)
+    _ = service.create_session(session_id="session-stopped", workspace_id="default")
+
+    _seed_root_task(db_path, run_id="run-stopped", session_id="session-stopped")
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-stopped",
+        session_id="session-stopped",
+        root_task_id="task-root-1",
+    )
+    runtime_repo.update(
+        "run-stopped",
+        status=RunRuntimeStatus.STOPPED,
+        phase=RunRuntimePhase.IDLE,
+    )
+
+    session = service.list_sessions()[0]
+
+    assert session.has_active_run is False
+    assert session.active_run_id is None
+    assert session.active_run_status is None
+    assert session.active_run_phase is None
+    assert session.latest_terminal_run_id == "run-stopped"
+    assert session.latest_terminal_run_status == "stopped"
+    assert session.latest_terminal_run_updated_at is not None
+
+
+def test_list_sessions_projects_registry_stopped_run_as_recoverable_active(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_list_registry_stopped_active.db"
+    service = _build_service(db_path)
+    _ = service.create_session(session_id="session-stopped", workspace_id="default")
+
+    _seed_root_task(db_path, run_id="run-stopped", session_id="session-stopped")
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-stopped",
+        session_id="session-stopped",
+        root_task_id="task-root-1",
+    )
+    runtime_repo.update(
+        "run-stopped",
+        status=RunRuntimeStatus.STOPPED,
+        phase=RunRuntimePhase.IDLE,
+    )
+    registry = ActiveSessionRunRegistry(run_runtime_repo=runtime_repo)
+    service = _build_service(db_path, active_run_registry=registry)
+
+    session = service.list_sessions()[0]
+
+    assert session.has_active_run is True
+    assert session.active_run_id == "run-stopped"
+    assert session.active_run_status == "stopped"
+    assert session.latest_terminal_run_id == "run-stopped"
+    assert session.latest_terminal_run_status == "stopped"
+
+
+def test_list_sessions_projects_paused_run_as_active(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_list_paused_active.db"
+    service = _build_service(db_path)
+    _ = service.create_session(session_id="session-paused", workspace_id="default")
+
+    _seed_root_task(db_path, run_id="run-paused", session_id="session-paused")
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-paused",
+        session_id="session-paused",
+        root_task_id="task-root-1",
+    )
+    runtime_repo.update(
+        "run-paused",
+        status=RunRuntimeStatus.PAUSED,
+        phase=RunRuntimePhase.AWAITING_RECOVERY,
+    )
+
+    session = service.list_sessions()[0]
+
+    assert session.has_active_run is True
+    assert session.active_run_id == "run-paused"
+    assert session.active_run_status == "paused"
+    assert session.active_run_phase == "awaiting_recovery"
+    assert session.latest_terminal_run_id is None
 
 
 def test_list_sessions_by_workspace_filters_sessions(tmp_path: Path) -> None:
@@ -130,7 +231,7 @@ def test_list_sessions_uses_runtime_overlay_for_running_subagent(
     )
     runtime_repo.update(
         "run-active",
-        status=RunRuntimeStatus.PAUSED,
+        status=RunRuntimeStatus.RUNNING,
         phase=RunRuntimePhase.AWAITING_SUBAGENT_FOLLOWUP,
         active_instance_id="inst-sub-1",
         active_task_id="task-root-1",
@@ -143,7 +244,7 @@ def test_list_sessions_uses_runtime_overlay_for_running_subagent(
 
     assert active.has_active_run is True
     assert active.active_run_id == "run-active"
-    assert active.active_run_status == "paused"
+    assert active.active_run_status == "running"
     assert active.active_run_phase == "awaiting_subagent_followup"
     assert active.pending_tool_approval_count == 0
 
@@ -197,7 +298,7 @@ def test_list_sessions_skips_invalid_persisted_approval_ticket_rows(
     )
     runtime_repo.update(
         "run-active",
-        status=RunRuntimeStatus.PAUSED,
+        status=RunRuntimeStatus.RUNNING,
         phase=RunRuntimePhase.COORDINATOR_RUNNING,
     )
     approval_repo = ApprovalTicketRepository(db_path)
@@ -475,3 +576,235 @@ def test_list_session_subagents_returns_orchestration_projection(
     assert subagents[0]["interactive"] is True
     assert subagents[0]["deletable"] is False
     assert subagents[0]["run_status"] == "running"
+
+
+def test_terminal_run_status_maps_only_terminal_events() -> None:
+    assert (
+        _terminal_run_status_for_event_type(RunEventType.RUN_COMPLETED) == "completed"
+    )
+    assert _terminal_run_status_for_event_type(RunEventType.RUN_FAILED) == "failed"
+    assert _terminal_run_status_for_event_type(RunEventType.RUN_STOPPED) == "stopped"
+    assert _terminal_run_status_for_event_type(RunEventType.RUN_STARTED) is None
+
+
+def test_merge_subagent_count_ignores_empty_session_id(tmp_path: Path) -> None:
+    service = _build_service(tmp_path / "session_subagent_empty_merge.db")
+
+    service._merge_subagent_count_into_list_cache("  ")
+
+
+def test_log_subagent_count_cache_merge_error_ignores_cancelled_task() -> None:
+    async def wait_forever() -> None:
+        await asyncio.Event().wait()
+
+    async def run_task() -> None:
+        task = asyncio.create_task(wait_forever())
+        await asyncio.sleep(0)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            # The cancelled task is the expected input for this callback path.
+            pass
+        SessionService._log_subagent_count_cache_merge_error(task)
+
+    asyncio.run(run_task())
+
+
+def test_merge_terminal_event_ignores_nonterminal_or_missing_ids(
+    tmp_path: Path,
+) -> None:
+    service = _build_service(tmp_path / "session_terminal_event_early_return.db")
+
+    service._merge_terminal_event_into_list_cache(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.RUN_STARTED,
+            payload_json="{}",
+        )
+    )
+    service._merge_terminal_event_into_list_cache(
+        RunEvent.model_construct(
+            session_id="",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.RUN_COMPLETED,
+            payload_json="{}",
+        )
+    )
+
+
+def test_merge_terminal_event_clears_matching_active_cache_record(
+    tmp_path: Path,
+) -> None:
+    service = _build_service(tmp_path / "session_terminal_event_cache_merge.db")
+    record = service.create_session(session_id="session-1", workspace_id="default")
+    _ = asyncio.run(service.list_sessions_async(force_refresh=True))
+    service._merge_session_list_cache_record(
+        record.model_copy(
+            update={
+                "has_active_run": True,
+                "active_run_id": "run-1",
+                "active_run_status": "running",
+                "active_run_phase": "coordinator_running",
+                "pending_tool_approval_count": 2,
+            }
+        )
+    )
+
+    service._merge_terminal_event_into_list_cache(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.RUN_COMPLETED,
+            payload_json="{}",
+        )
+    )
+
+    cached = asyncio.run(service.list_sessions_async())
+    assert len(cached) == 1
+    assert cached[0].latest_terminal_run_id == "run-1"
+    assert cached[0].latest_terminal_run_status == "completed"
+    assert cached[0].has_active_run is False
+    assert cached[0].active_run_id is None
+    assert cached[0].pending_tool_approval_count == 0
+
+
+def test_merge_stopped_event_preserves_recoverable_active_cache_record(
+    tmp_path: Path,
+) -> None:
+    service = _build_service(tmp_path / "session_stopped_event_cache_merge.db")
+    record = service.create_session(session_id="session-1", workspace_id="default")
+    _ = asyncio.run(service.list_sessions_async(force_refresh=True))
+    service._merge_session_list_cache_record(
+        record.model_copy(
+            update={
+                "has_active_run": True,
+                "active_run_id": "run-1",
+                "active_run_status": "running",
+                "active_run_phase": "coordinator_running",
+                "pending_tool_approval_count": 2,
+            }
+        )
+    )
+
+    service._merge_terminal_event_into_list_cache(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.RUN_STOPPED,
+            payload_json="{}",
+        )
+    )
+
+    cached = asyncio.run(service.list_sessions_async())
+    assert len(cached) == 1
+    assert cached[0].latest_terminal_run_id == "run-1"
+    assert cached[0].latest_terminal_run_status == "stopped"
+    assert cached[0].has_active_run is True
+    assert cached[0].active_run_id == "run-1"
+    assert cached[0].active_run_status == "stopped"
+    assert cached[0].active_run_phase == "stopped"
+    assert cached[0].pending_tool_approval_count == 0
+
+
+def test_merge_stopped_event_keeps_newer_active_cache_record(
+    tmp_path: Path,
+) -> None:
+    service = _build_service(tmp_path / "session_stopped_event_newer_active.db")
+    record = service.create_session(session_id="session-1", workspace_id="default")
+    _ = asyncio.run(service.list_sessions_async(force_refresh=True))
+    service._merge_session_list_cache_record(
+        record.model_copy(
+            update={
+                "has_active_run": True,
+                "active_run_id": "run-new",
+                "active_run_status": "running",
+                "active_run_phase": "coordinator_running",
+                "pending_tool_approval_count": 2,
+            }
+        )
+    )
+
+    service._merge_terminal_event_into_list_cache(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-old",
+            trace_id="run-old",
+            event_type=RunEventType.RUN_STOPPED,
+            payload_json="{}",
+        )
+    )
+
+    cached = asyncio.run(service.list_sessions_async())
+    assert len(cached) == 1
+    assert cached[0].latest_terminal_run_id == "run-old"
+    assert cached[0].latest_terminal_run_status == "stopped"
+    assert cached[0].has_active_run is True
+    assert cached[0].active_run_id == "run-new"
+    assert cached[0].active_run_status == "running"
+    assert cached[0].active_run_phase == "coordinator_running"
+    assert cached[0].pending_tool_approval_count == 2
+
+
+def test_merge_terminal_event_clears_stale_verification_status(
+    tmp_path: Path,
+) -> None:
+    service = _build_service(tmp_path / "session_terminal_event_verification.db")
+    record = service.create_session(session_id="session-1", workspace_id="default")
+    _ = asyncio.run(service.list_sessions_async(force_refresh=True))
+    service._merge_session_list_cache_record(
+        record.model_copy(
+            update={
+                "latest_terminal_run_id": "run-old",
+                "latest_terminal_run_status": "completed",
+                "latest_terminal_run_verification_status": "failed",
+            }
+        )
+    )
+
+    service._merge_terminal_event_into_list_cache(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-new",
+            trace_id="run-new",
+            event_type=RunEventType.RUN_COMPLETED,
+            payload_json="{}",
+        )
+    )
+
+    cached = asyncio.run(service.list_sessions_async())
+    assert len(cached) == 1
+    assert cached[0].latest_terminal_run_id == "run-new"
+    assert cached[0].latest_terminal_run_status == "completed"
+    assert cached[0].latest_terminal_run_verification_status is None
+
+
+def test_select_list_active_run_keeps_active_background_terminal_runtime(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_active_background_terminal.db"
+    service = _build_service(db_path)
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-background",
+        session_id="session-1",
+        status=RunRuntimeStatus.COMPLETED,
+        phase=RunRuntimePhase.TERMINAL,
+    )
+    runtime = runtime_repo.get("run-background")
+    assert runtime is not None
+
+    selected = service._select_list_active_run_from_preloaded(
+        session_id="session-1",
+        runtimes=(runtime,),
+        excluded_run_ids=set(),
+        active_background_run_ids={"run-background"},
+    )
+
+    assert selected is not None
+    assert selected[0] == "run-background"

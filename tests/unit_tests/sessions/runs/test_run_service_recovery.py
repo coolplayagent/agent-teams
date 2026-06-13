@@ -29,6 +29,7 @@ from relay_teams.monitors import (
     MonitorSourceKind,
     MonitorSubscriptionRecord,
 )
+from relay_teams.persistence import close_live_sqlite_repositories_async
 from relay_teams.sessions.runs.active_run_registry import ActiveSessionRunRegistry
 from relay_teams.sessions.runs.run_control_manager import RunControlManager
 from relay_teams.sessions.runs.enums import (
@@ -3866,9 +3867,8 @@ async def test_stream_run_events_does_not_start_pending_run_worker(
         phase=RunRuntimePhase.IDLE,
     )
 
-    task = asyncio.create_task(
-        anext(manager.stream_run_events("run-existing", after_event_id=0))
-    )
+    stream = manager.stream_run_events("run-existing", after_event_id=0)
+    task = asyncio.create_task(anext(stream))
     await asyncio.sleep(0)
 
     assert "run-existing" not in manager._running_run_ids
@@ -3876,6 +3876,8 @@ async def test_stream_run_events_does_not_start_pending_run_worker(
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+    await stream.aclose()
+    await close_live_sqlite_repositories_async()
 
 
 def test_answer_user_question_validates_payload_and_auto_resumes_stopped_run(

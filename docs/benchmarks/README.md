@@ -286,6 +286,69 @@ converted into eval-style `evaluation.json`, `report.json`, `report.html`,
 checkpoint files, and per-task artifacts under the configured eval
 `output_dir`.
 
+## Rust Performance Self-Iteration
+
+**Location:** `tools/performance_self_iteration/`
+
+The performance self-iteration harness is an independent Rust tool for local
+high-concurrency improvement loops. It generates candidate patches through
+Codex, runs quality gates plus an async HTTP/SSE pressure workload, records
+backend warnings/errors as improvement items, and accepts or rejects the
+candidate using a stability-first score.
+
+Stable entrypoint:
+
+```bash
+./self-iterate-performance.sh once --profile pressure-fast --yolo
+./self-iterate-performance.sh evaluate --use-current-candidate --profile smoke
+./self-iterate-performance.sh chart
+```
+
+Profiles:
+
+| Profile | Purpose |
+|---|---|
+| `smoke` | Validates the Rust harness and report flow without backend pressure; smoke runs cannot accept or commit candidates. |
+| `pressure-fast` | Default local pressure profile: configurable 64-100+ async concurrency against a managed backend restarted from the current workspace. |
+| `pressure-full` | Longer local pressure profile with higher minimum concurrency and duration. |
+
+For non-smoke profiles, the harness restarts a managed `relay-teams server`
+from the current workspace before scoring, stops it gracefully after pressure,
+and uses forced cleanup only if graceful teardown fails. Use a loopback
+`--base-url` matching the managed server host and port:
+
+```bash
+./self-iterate-performance.sh evaluate \
+  --use-current-candidate \
+  --profile pressure-fast \
+  --base-url http://127.0.0.1:8000 \
+  --concurrency 100 \
+  --duration-seconds 120 \
+  --sessions 20 \
+  --log-files /path/to/backend.log
+```
+
+State is stored under `.git/relay-teams-performance-iteration/`:
+
+| Path | Purpose |
+|---|---|
+| `patches/` | Candidate diffs captured with `git diff --binary`. |
+| `reports/` | Full JSON reports with pressure metrics and log findings. |
+| `runs.jsonl` | Score history, reject reasons, and accepted status. |
+| `memory/` | Per-run records injected into future Codex prompts. |
+| `score.csv` | Exported trend data from `chart` mode. |
+
+Failure policy:
+
+- `Server is busy`, HTTP `503`, `429`, or other `5xx` responses reject a candidate.
+- SSE streams that do not reach a terminal event reject a candidate.
+- New `ERROR` log findings reject a candidate.
+- `WARNING` log findings do not automatically fail the run, but they are
+  recorded in `log_findings` and passed into the next self-iteration prompt as
+  improvement items.
+- By default accepted candidates are left in the working tree for review; pass
+  `--commit-accepted` to let the harness create the commit.
+
 ## Design Principles
 
 1. **Micro-benchmarks** validate individual component performance; they should complete in under 60 seconds total

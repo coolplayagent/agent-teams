@@ -1058,6 +1058,7 @@ async def test_discord_service_start_queued_record_failure_paths(
         run_service=fake_run_service,
         gateway_session_service=fake_gateway_sessions,
     )
+    service._start_run_watcher = lambda **kwargs: None
     missing_account_record, _ = await inbound_queue_repo.create_or_get(
         _queue_record(
             inbound_queue_id="queue-missing-account",
@@ -1286,6 +1287,7 @@ async def test_discord_service_watcher_and_future_edges(tmp_path: Path) -> None:
         ),
         im_tool_service=fake_im_tool,
     )
+    pause_background_tasks = _capture_discord_background_tasks(pause_service)
     await pause_service._await_terminal_and_reply(
         account_id="bot-1",
         gateway_session_id="gws-1",
@@ -1293,6 +1295,7 @@ async def test_discord_service_watcher_and_future_edges(tmp_path: Path) -> None:
         channel_id="channel-1",
         reply_to_message_id="message-1",
     )
+    await _wait_for_discord_tasks(pause_background_tasks)
     empty_service = _build_service(tmp_path, run_service=_FakeRunService(()))
     with pytest.raises(RuntimeError, match="ended before a stop event"):
         await empty_service._await_terminal_and_reply(
@@ -1314,6 +1317,7 @@ async def test_discord_service_watcher_and_future_edges(tmp_path: Path) -> None:
         ),
         session_ingress_service=_FakeIngressService(run_id=None, active_run_id=None),
     )
+    background_tasks = _capture_discord_background_tasks(drain_service)
     await drain_service._await_run_completion_for_queue_drain(
         session_id="session-1",
         run_id="run-drain",
@@ -1344,7 +1348,7 @@ async def test_discord_service_watcher_and_future_edges(tmp_path: Path) -> None:
         run_id="run-drain",
         future=queue_future,
     )
-    await asyncio.sleep(0)
+    await _wait_for_discord_tasks(background_tasks)
 
     assert (
         _SentDiscordText(
@@ -1402,6 +1406,7 @@ async def test_discord_watcher_sends_user_question_notice(tmp_path: Path) -> Non
         run_service=run_service,
         im_tool_service=fake_im_tool,
     )
+    background_tasks = _capture_discord_background_tasks(service)
 
     await service._await_terminal_and_reply(
         account_id="bot-1",
@@ -1410,6 +1415,7 @@ async def test_discord_watcher_sends_user_question_notice(tmp_path: Path) -> Non
         channel_id="channel-1",
         reply_to_message_id="message-1",
     )
+    await _wait_for_discord_tasks(background_tasks)
 
     assert "Pick a target" in fake_im_tool.sent_texts[0].text
     assert fake_im_tool.sent_texts[1].text == "Completed."
@@ -1472,6 +1478,7 @@ async def test_discord_watcher_uses_live_stream_after_question_pause_without_eve
         run_service=run_service,
         im_tool_service=fake_im_tool,
     )
+    background_tasks = _capture_discord_background_tasks(service)
 
     await service._await_terminal_and_reply(
         account_id="bot-1",
@@ -1480,6 +1487,7 @@ async def test_discord_watcher_uses_live_stream_after_question_pause_without_eve
         channel_id="channel-1",
         reply_to_message_id="message-1",
     )
+    await _wait_for_discord_tasks(background_tasks)
 
     assert run_service.offsets == [0]
     assert run_service.stop_on_pause_values == [False]
@@ -1528,6 +1536,7 @@ async def test_discord_watcher_sends_later_pause_after_user_question_pause(
         run_service=run_service,
         im_tool_service=fake_im_tool,
     )
+    background_tasks = _capture_discord_background_tasks(service)
 
     await service._await_terminal_and_reply(
         account_id="bot-1",
@@ -1536,6 +1545,7 @@ async def test_discord_watcher_sends_later_pause_after_user_question_pause(
         channel_id="channel-1",
         reply_to_message_id="message-1",
     )
+    await _wait_for_discord_tasks(background_tasks)
 
     assert "Pick a target" in fake_im_tool.sent_texts[0].text
     assert (
@@ -1765,6 +1775,7 @@ async def test_discord_reply_watcher_completes_queue_after_pause(
         ),
         im_tool_service=fake_im_tool,
     )
+    background_tasks = _capture_discord_background_tasks(service)
 
     await service._await_terminal_and_reply(
         account_id="bot-1",
@@ -1773,6 +1784,7 @@ async def test_discord_reply_watcher_completes_queue_after_pause(
         channel_id="channel-1",
         reply_to_message_id="message-1",
     )
+    await _wait_for_discord_tasks(background_tasks)
     completed = await _wait_for_discord_queue_status(
         inbound_queue_repo,
         queue_record.inbound_queue_id,
@@ -2055,6 +2067,18 @@ async def _wait_for_discord_tasks(tasks: list[asyncio.Task[None]]) -> None:
         pending = tuple(tasks)
         tasks.clear()
         await asyncio.gather(*pending)
+
+
+def _capture_discord_background_tasks(
+    service: DiscordGatewayService,
+) -> list[asyncio.Task[None]]:
+    tasks: list[asyncio.Task[None]] = []
+
+    def capture_background_task(coroutine: Coroutine[object, object, None]) -> None:
+        tasks.append(asyncio.create_task(coroutine))
+
+    service._run_or_schedule = capture_background_task
+    return tasks
 
 
 def _build_service(

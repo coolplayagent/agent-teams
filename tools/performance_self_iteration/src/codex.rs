@@ -76,6 +76,7 @@ Constraints:
 - Do not create commits; the Rust harness owns accepted commits.
 - Prefer general queueing, isolation, timeout, logging, or benchmark improvements over fixture-specific behavior.
 - For repo inspection, prefer `rg`.
+- In the final notes, include a section named `Algorithm architecture improvements:` with 1-3 bullets. Each bullet should record the candidate's algorithm or architecture change, the affected subsystem, and why it should improve stability, latency, or pressure behavior.
 
 Workspace: {workspace}
 Evaluation profile: {profile}
@@ -84,7 +85,7 @@ Pressure target: base_url={base_url}, concurrency={concurrency}, duration_second
 Recent performance self-iteration memory:
 {memory}
 
-Make one concrete candidate change now. If you change performance behavior, add or update focused tests or benchmark coverage. In the final notes, state which warning/error or latency/busy failure the change addresses.
+Make one concrete candidate change now. If you change performance behavior, add or update focused tests or benchmark coverage. In the final notes, state which warning/error or latency/busy failure the change addresses and include the required algorithm architecture improvement bullets.
 "#,
         workspace = cli.workspace.display(),
         profile = cli.profile,
@@ -150,6 +151,7 @@ mod tests {
             memory: root.join("memory"),
             runs_jsonl: root.join("runs.jsonl"),
             score_csv: root.join("score.csv"),
+            algorithm_architecture_markdown: root.join("algorithm-architecture-improvements.md"),
             root,
         };
         let cli = Cli {
@@ -185,5 +187,6 @@ mod tests {
         assert!(prompt.contains("duration_seconds=300"));
         assert!(prompt.contains("sessions=24"));
         assert!(prompt.contains("base_url=http://127.0.0.1:8000"));
+        assert!(prompt.contains("Algorithm architecture improvements:"));
     }
 }

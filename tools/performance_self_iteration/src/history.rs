@@ -9,6 +9,7 @@ use std::{
 use serde_json::Value;
 
 use crate::{
+    architecture_notes::AlgorithmArchitectureImprovement,
     git_ops::PatchSnapshot,
     scoring::{EvaluationObservation, ScoreBreakdown},
 };
@@ -21,6 +22,7 @@ pub struct HistoryPaths {
     pub memory: PathBuf,
     pub runs_jsonl: PathBuf,
     pub score_csv: PathBuf,
+    pub algorithm_architecture_markdown: PathBuf,
 }
 
 impl HistoryPaths {
@@ -49,6 +51,7 @@ impl HistoryPaths {
             memory: root.join("memory"),
             runs_jsonl: root.join("runs.jsonl"),
             score_csv: root.join("score.csv"),
+            algorithm_architecture_markdown: root.join("algorithm-architecture-improvements.md"),
             root,
         })
     }
@@ -70,6 +73,7 @@ pub struct RunRecordInput<'a> {
     pub report_path: &'a Path,
     pub score: &'a ScoreBreakdown,
     pub observation: &'a EvaluationObservation,
+    pub algorithm_architecture_improvements: &'a [AlgorithmArchitectureImprovement],
     pub commit: Option<&'a str>,
 }
 
@@ -125,6 +129,7 @@ pub fn make_run_record(input: RunRecordInput<'_>) -> Value {
         "reject_reasons": input.score.reject_reasons,
         "improvements": input.score.improvements,
         "degradations": input.score.degradations,
+        "algorithm_architecture_improvements": input.algorithm_architecture_improvements,
         "generated_diff": input.observation.generated_diff,
         "patch": input.patch.serializable(),
         "report": input.report_path.display().to_string(),
@@ -186,6 +191,69 @@ pub fn write_memory(paths: &HistoryPaths, record: &Value) -> Result<(), String> 
     .map_err(|error| format!("failed to write memory: {error}"))
 }
 
+pub fn append_algorithm_architecture_markdown(
+    paths: &HistoryPaths,
+    record: &Value,
+) -> Result<(), String> {
+    let Some(improvements) = record
+        .get("algorithm_architecture_improvements")
+        .and_then(Value::as_array)
+    else {
+        return Ok(());
+    };
+    if improvements.is_empty() {
+        return Ok(());
+    }
+    paths.ensure()?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&paths.algorithm_architecture_markdown)
+        .map_err(|error| {
+            format!(
+                "failed to open {}: {error}",
+                paths.algorithm_architecture_markdown.display()
+            )
+        })?;
+    writeln!(
+        file,
+        "\n## {}\n\n- profile: {}\n- accepted: {}\n- score: {}\n- patch: `{}`\n",
+        text(record, "run_id"),
+        text(record, "profile"),
+        record
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        record
+            .get("score")
+            .map(Value::to_string)
+            .unwrap_or_default(),
+        record
+            .get("patch")
+            .and_then(|patch| patch.get("path"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+    )
+    .map_err(|error| format!("failed to append architecture markdown: {error}"))?;
+    for improvement in improvements {
+        let area = improvement
+            .get("area")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let summary = improvement
+            .get("improvement")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let evidence = improvement
+            .get("evidence")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        writeln!(file, "- `{area}`: {summary} Evidence: {evidence}")
+            .map_err(|error| format!("failed to append architecture markdown: {error}"))?;
+    }
+    Ok(())
+}
+
 pub fn recent_memory(paths: &HistoryPaths, limit: usize) -> String {
     let Ok(runs) = load_runs(paths) else {
         return "No prior performance self-iteration memory.".to_owned();
@@ -193,7 +261,7 @@ pub fn recent_memory(paths: &HistoryPaths, limit: usize) -> String {
     let mut lines = Vec::new();
     for run in runs.into_iter().rev().take(limit) {
         lines.push(format!(
-            "- run_id={} accepted={} score={} reasons={} findings={}",
+            "- run_id={} accepted={} score={} reasons={} architecture={} findings={}",
             text(&run, "run_id"),
             run.get("accepted")
                 .and_then(Value::as_bool)
@@ -202,6 +270,7 @@ pub fn recent_memory(paths: &HistoryPaths, limit: usize) -> String {
             run.get("reject_reasons")
                 .map(Value::to_string)
                 .unwrap_or_default(),
+            architecture_improvement_summary(&run),
             log_finding_summary(&run)
         ));
     }
@@ -210,6 +279,34 @@ pub fn recent_memory(paths: &HistoryPaths, limit: usize) -> String {
     } else {
         lines.join("\n")
     }
+}
+
+fn architecture_improvement_summary(run: &Value) -> String {
+    let Some(items) = run
+        .get("algorithm_architecture_improvements")
+        .and_then(Value::as_array)
+    else {
+        return "[]".to_owned();
+    };
+    let entries = items
+        .iter()
+        .take(4)
+        .map(|item| {
+            let area = item
+                .get("area")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let improvement = item
+                .get("improvement")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .chars()
+                .take(180)
+                .collect::<String>();
+            format!("{area}:{improvement}")
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_owned())
 }
 
 pub fn export_score_csv(paths: &HistoryPaths) -> Result<PathBuf, String> {
@@ -325,6 +422,7 @@ mod tests {
             memory: root.join("memory"),
             runs_jsonl: root.join("runs.jsonl"),
             score_csv: root.join("score.csv"),
+            algorithm_architecture_markdown: root.join("algorithm-architecture-improvements.md"),
             root,
         };
         paths.ensure().unwrap();
@@ -355,6 +453,52 @@ mod tests {
     }
 
     #[test]
+    fn algorithm_architecture_improvements_are_logged_and_recalled() {
+        let root = std::env::temp_dir().join(format!(
+            "relay-teams-history-architecture-{}",
+            std::process::id()
+        ));
+        let paths = HistoryPaths {
+            patches: root.join("patches"),
+            reports: root.join("reports"),
+            memory: root.join("memory"),
+            runs_jsonl: root.join("runs.jsonl"),
+            score_csv: root.join("score.csv"),
+            algorithm_architecture_markdown: root.join("algorithm-architecture-improvements.md"),
+            root,
+        };
+        paths.ensure().unwrap();
+        let record = serde_json::json!({
+            "run_id": "run-architecture",
+            "timestamp": 1,
+            "profile": "pressure-fast",
+            "accepted": false,
+            "score": 0.42,
+            "reject_reasons": ["latency_p95_ms above budget"],
+            "patch": {"path": "/tmp/candidate.patch"},
+            "algorithm_architecture_improvements": [{
+                "area": "src",
+                "improvement": "Separated queue admission from SSE stream draining.",
+                "evidence": "codex final notes"
+            }],
+            "log_findings": []
+        });
+
+        append_run(&paths, &record).unwrap();
+        write_memory(&paths, &record).unwrap();
+        append_algorithm_architecture_markdown(&paths, &record).unwrap();
+        let memory = recent_memory(&paths, 1);
+        let markdown = fs::read_to_string(&paths.algorithm_architecture_markdown).unwrap();
+        let memory_json = fs::read_to_string(paths.memory.join("run-architecture.json")).unwrap();
+        let _ = fs::remove_dir_all(&paths.root);
+
+        assert!(memory.contains("Separated queue admission"));
+        assert!(markdown.contains("run-architecture"));
+        assert!(markdown.contains("Separated queue admission"));
+        assert!(memory_json.contains("algorithm_architecture_improvements"));
+    }
+
+    #[test]
     fn previous_scored_run_uses_latest_accepted_run() {
         let root = std::env::temp_dir().join(format!(
             "relay-teams-history-baseline-{}",
@@ -366,6 +510,7 @@ mod tests {
             memory: root.join("memory"),
             runs_jsonl: root.join("runs.jsonl"),
             score_csv: root.join("score.csv"),
+            algorithm_architecture_markdown: root.join("algorithm-architecture-improvements.md"),
             root,
         };
         paths.ensure().unwrap();
@@ -411,6 +556,7 @@ mod tests {
             memory: root.join("memory"),
             runs_jsonl: root.join("runs.jsonl"),
             score_csv: root.join("score.csv"),
+            algorithm_architecture_markdown: root.join("algorithm-architecture-improvements.md"),
             root,
         };
         paths.ensure().unwrap();

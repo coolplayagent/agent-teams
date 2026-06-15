@@ -336,6 +336,7 @@ State is stored under `.git/relay-teams-performance-iteration/`:
 | `reports/` | Full JSON reports with pressure metrics and log findings. |
 | `runs.jsonl` | Score history, reject reasons, and accepted status. |
 | `memory/` | Per-run records injected into future Codex prompts. |
+| `algorithm-architecture-improvements.md` | Human-readable candidate algorithm and architecture improvement notes, including rejected candidates with diffs. |
 | `score.csv` | Exported trend data from `chart` mode. |
 
 Failure policy:
@@ -346,6 +347,11 @@ Failure policy:
 - `WARNING` log findings do not automatically fail the run, but they are
   recorded in `log_findings` and passed into the next self-iteration prompt as
   improvement items.
+- Candidate runs with diffs also record `algorithm_architecture_improvements`
+  in `runs.jsonl`, per-run memory JSON, reports, and the Markdown improvement
+  log. Generated candidates are prompted to provide explicit algorithm and
+  architecture bullets; current-candidate evaluation falls back to patch and
+  score evidence when no Codex notes exist.
 - By default accepted candidates are left in the working tree for review; pass
   `--commit-accepted` to let the harness create the commit.
 

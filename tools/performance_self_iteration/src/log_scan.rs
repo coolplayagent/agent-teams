@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
@@ -119,10 +119,7 @@ fn scan_one(
     Ok(())
 }
 
-fn record_log_scan_truncated(
-    path: &PathBuf,
-    findings: &mut BTreeMap<(String, String), LogFinding>,
-) {
+fn record_log_scan_truncated(path: &Path, findings: &mut BTreeMap<(String, String), LogFinding>) {
     let severity = "ERROR".to_owned();
     let signature = format!("log scan exceeded {} byte cap", MAX_LOG_SCAN_BYTES);
     findings

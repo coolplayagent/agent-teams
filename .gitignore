@@ -4,10 +4,13 @@ __pycache__/
 .pytest-tmp/
 .venv/
 .tmp/
+.tmp-localappdata/
+.uv-cache/
 tmp/
 *.egg-info/
 .idea/
 coverage.json
+nul
 
 tmp.db
 tmp.db-journal
@@ -38,6 +41,7 @@ package.json
 !.agent_teams/evals/datasets/manifests/
 .agent_teams/evals/datasets/manifests/*
 logs/
+output/
 src/relay_teams/builtin/skills/pptx-craft/designer/lib/html-to-pptx/dist/
 src/relay_teams/builtin/skills/pptx-craft/designer/lib/html-to-pptx/node/dist/
 .coverage

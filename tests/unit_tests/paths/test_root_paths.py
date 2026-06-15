@@ -28,6 +28,13 @@ def test_get_project_root_or_none_returns_git_root(
         assert capture_output is True
         assert text is True
         assert timeout == 5.0
+        if cwd != str(tmp_path.resolve()):
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=1,
+                stdout="",
+                stderr="fatal: not a git repository",
+            )
         assert cwd == str(tmp_path.resolve())
         return subprocess.CompletedProcess(
             args=command,
@@ -451,6 +458,79 @@ def test_find_git_marker_root_uses_parent_for_file_path(
     monkeypatch.setattr(root_paths.subprocess, "run", fake_run)
 
     assert root_paths._find_git_marker_root(file_path) == repo_dir.resolve()
+
+
+def test_find_git_marker_root_ignores_configured_pytest_temp_dir(
+    tmp_path: Path,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    pytest_dir = repo_dir / ".tmp" / "pytest" / "test-case"
+    pytest_dir.mkdir(parents=True)
+    (repo_dir / ".git").mkdir()
+
+    assert root_paths._find_git_marker_root(pytest_dir) is None
+
+
+def test_get_project_root_or_none_ignores_configured_pytest_temp_dir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    pytest_dir = repo_dir / ".tmp" / "pytest" / "test-case"
+    pytest_dir.mkdir(parents=True)
+    (repo_dir / ".git").mkdir()
+
+    def fake_run(
+        command: list[str],
+        *,
+        cwd: str,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        timeout: float,
+    ) -> subprocess.CompletedProcess[str]:
+        _ = (command, cwd, check, capture_output, text, timeout)
+        raise AssertionError("pytest temp directories must not fall back to git")
+
+    monkeypatch.setattr(root_paths.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        root_paths,
+        "_is_valid_git_worktree_root",
+        lambda candidate: candidate.resolve() == repo_dir.resolve(),
+    )
+
+    assert root_paths.get_project_root_or_none(pytest_dir) is None
+
+
+def test_get_project_root_or_none_keeps_nested_repo_inside_pytest_temp_dir(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    nested_repo_dir = repo_dir / ".tmp" / "pytest" / "test-case" / "fixture-repo"
+    start_dir = nested_repo_dir / "src"
+    start_dir.mkdir(parents=True)
+    (repo_dir / ".git").mkdir()
+    (nested_repo_dir / ".git").mkdir()
+
+    monkeypatch.setattr(
+        root_paths,
+        "_is_valid_git_worktree_root",
+        lambda candidate: candidate.resolve() == nested_repo_dir.resolve(),
+    )
+
+    assert root_paths.get_project_root_or_none(start_dir) == nested_repo_dir.resolve()
+
+
+def test_find_git_marker_root_ignores_legacy_pytest_temp_dir(
+    tmp_path: Path,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    pytest_dir = repo_dir / ".pytest-tmp" / "test-case"
+    pytest_dir.mkdir(parents=True)
+    (repo_dir / ".git").mkdir()
+
+    assert root_paths._find_git_marker_root(pytest_dir) is None
 
 
 def test_find_git_marker_root_rejects_invalid_git_marker(

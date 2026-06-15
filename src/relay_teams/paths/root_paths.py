@@ -10,6 +10,9 @@ _APP_CONFIG_DIR_ENV_VAR = "RELAY_TEAMS_CONFIG_DIR"
 _APP_CONFIG_DIR_NAME = ".relay-teams"
 _GIT_TOPLEVEL_CMD: tuple[str, str, str] = ("git", "rev-parse", "--show-toplevel")
 _GIT_TIMEOUT_SECONDS = 5.0
+_LEGACY_PYTEST_TEMP_DIR_NAME = ".pytest-tmp"
+_PYTEST_TEMP_PARENT_DIR_NAME = ".tmp"
+_PYTEST_TEMP_DIR_NAME = "pytest"
 
 
 def get_user_home_dir() -> Path:
@@ -62,6 +65,8 @@ def get_project_root_or_none(start_dir: Path | None = None) -> Path | None:
     marker_root = _find_git_marker_root(command_cwd)
     if marker_root is not None:
         return marker_root
+    if _is_inside_repo_pytest_temp_dir(command_cwd):
+        return None
     try:
         completed = subprocess.run(
             list(_GIT_TOPLEVEL_CMD),
@@ -91,11 +96,34 @@ def _find_git_marker_root(start_dir: Path) -> Path | None:
         current = current.parent
     candidates = (current, *current.parents)
     for candidate in candidates:
-        if candidate.name == ".pytest-tmp":
+        if _is_pytest_temp_dir(candidate):
             return None
         if (candidate / ".git").exists() and _is_valid_git_worktree_root(candidate):
             return candidate.resolve()
     return None
+
+
+def _is_pytest_temp_dir(candidate: Path) -> bool:
+    if candidate.name == _LEGACY_PYTEST_TEMP_DIR_NAME:
+        return True
+    return (
+        candidate.name == _PYTEST_TEMP_DIR_NAME
+        and candidate.parent.name == _PYTEST_TEMP_PARENT_DIR_NAME
+    )
+
+
+def _is_inside_repo_pytest_temp_dir(candidate: Path) -> bool:
+    current = candidate.expanduser()
+    if current.exists() and current.is_file():
+        current = current.parent
+    for path in (current, *current.parents):
+        if not _is_pytest_temp_dir(path):
+            continue
+        return any(
+            (parent / ".git").exists() and _is_valid_git_worktree_root(parent)
+            for parent in path.parents
+        )
+    return False
 
 
 def _is_valid_git_worktree_root(candidate: Path) -> bool:

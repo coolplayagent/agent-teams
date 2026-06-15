@@ -91,7 +91,7 @@ if %errorlevel% neq 0 (
 )
 
 echo install git hooks....
-%UV_CMD% run pre-commit install
+%UV_CMD% run --no-sync pre-commit install
 if %errorlevel% neq 0 (
     echo.
     echo [WARNING] Git Hooks install failed

@@ -99,7 +99,7 @@ if ! run_uv pip install -e . --no-deps; then
 fi
 
 echo "install git hooks...."
-if run_uv run pre-commit install; then
+if run_uv run --no-sync pre-commit install; then
   echo "Git Hooks install successful"
 else
   echo ""

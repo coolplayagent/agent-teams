@@ -996,6 +996,7 @@ mod tests {
             stop_after_accepted: None,
             sleep_seconds: 1,
             yolo: false,
+            no_yolo: false,
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,

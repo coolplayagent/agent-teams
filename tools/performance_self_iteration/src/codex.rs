@@ -29,7 +29,7 @@ pub fn run_codex(cli: &Cli, prompt: &str) -> Result<CommandResult, String> {
 
 pub fn build_codex_command(cli: &Cli) -> Vec<String> {
     let mut command = vec![cli.codex_path.clone()];
-    if cli.yolo {
+    if cli.effective_yolo() {
         command.extend(["-a".to_owned(), "never".to_owned()]);
     }
     command.extend([
@@ -37,7 +37,7 @@ pub fn build_codex_command(cli: &Cli) -> Vec<String> {
         "-C".to_owned(),
         cli.workspace.display().to_string(),
     ]);
-    if cli.yolo {
+    if cli.effective_yolo() {
         command.extend([
             "--dangerously-bypass-approvals-and-sandbox".to_owned(),
             "-s".to_owned(),
@@ -120,6 +120,7 @@ mod tests {
             stop_after_accepted: None,
             sleep_seconds: 1,
             yolo: true,
+            no_yolo: false,
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
@@ -136,6 +137,44 @@ mod tests {
         assert!(command.iter().any(|item| item == "-a"));
         assert!(
             command
+                .iter()
+                .any(|item| item == "--dangerously-bypass-approvals-and-sandbox")
+        );
+    }
+
+    #[test]
+    fn no_yolo_omits_noninteractive_flags() {
+        let cli = Cli {
+            mode: Mode::Once,
+            workspace: PathBuf::from("."),
+            profile: "smoke".to_owned(),
+            base_url: "http://127.0.0.1:8000".to_owned(),
+            concurrency: 1,
+            duration_seconds: 1,
+            sessions: 1,
+            request_timeout_seconds: 1,
+            log_files: Vec::new(),
+            max_iterations: None,
+            stop_after_accepted: None,
+            sleep_seconds: 1,
+            yolo: true,
+            no_yolo: true,
+            dry_run_codex: false,
+            use_current_candidate: false,
+            fail_fast: false,
+            commit_accepted: false,
+            commit_message: None,
+            codex_path: "codex".to_owned(),
+            model: "gpt-5.5".to_owned(),
+            codex_reasoning_effort: "xhigh".to_owned(),
+            codex_profile: None,
+            codex_timeout_seconds: 1,
+            command_timeout_seconds: 1,
+        };
+        let command = build_codex_command(&cli);
+        assert!(!command.iter().any(|item| item == "-a"));
+        assert!(
+            !command
                 .iter()
                 .any(|item| item == "--dangerously-bypass-approvals-and-sandbox")
         );
@@ -168,6 +207,7 @@ mod tests {
             stop_after_accepted: None,
             sleep_seconds: 1,
             yolo: false,
+            no_yolo: false,
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,

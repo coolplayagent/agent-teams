@@ -39,8 +39,10 @@ pub struct Cli {
     pub stop_after_accepted: Option<usize>,
     #[arg(long, default_value_t = 5)]
     pub sleep_seconds: u64,
-    #[arg(long)]
+    #[arg(long, default_value_t = true)]
     pub yolo: bool,
+    #[arg(long)]
+    pub no_yolo: bool,
     #[arg(long)]
     pub dry_run_codex: bool,
     #[arg(long)]
@@ -68,6 +70,10 @@ pub struct Cli {
 impl Cli {
     pub fn parse_args() -> Self {
         Self::parse()
+    }
+
+    pub fn effective_yolo(&self) -> bool {
+        self.yolo && !self.no_yolo
     }
 
     pub fn validate_profile(&self) -> Result<(), String> {
@@ -215,6 +221,7 @@ mod tests {
             stop_after_accepted: None,
             sleep_seconds: 5,
             yolo: false,
+            no_yolo: false,
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
@@ -250,6 +257,7 @@ mod tests {
             stop_after_accepted: None,
             sleep_seconds: 1,
             yolo: false,
+            no_yolo: false,
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
@@ -286,6 +294,7 @@ mod tests {
             stop_after_accepted: None,
             sleep_seconds: 1,
             yolo: false,
+            no_yolo: false,
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
@@ -318,5 +327,19 @@ mod tests {
         assert!(gates.iter().any(|gate| gate.name == "basedpyright"));
         assert!(gates.iter().any(|gate| gate.name == "pytest_unit"));
         assert!(gates.iter().any(|gate| gate.name == "pytest_integration"));
+    }
+
+    #[test]
+    fn yolo_is_effective_by_default() {
+        let cli = Cli::try_parse_from(["relay-teams-performance-iterate"]).unwrap();
+
+        assert!(cli.effective_yolo());
+    }
+
+    #[test]
+    fn no_yolo_disables_effective_yolo() {
+        let cli = Cli::try_parse_from(["relay-teams-performance-iterate", "--no-yolo"]).unwrap();
+
+        assert!(!cli.effective_yolo());
     }
 }

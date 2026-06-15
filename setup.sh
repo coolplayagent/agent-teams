@@ -68,8 +68,13 @@ run_uv() {
   uv "$@"
 }
 
-if [ -f "uv.lock" ]; then
+if [ "$INSTALL_EVALS" = "1" ] && [ -f "uv.lock" ]; then
   rm -f uv.lock
+fi
+
+if [ "$INSTALL_EVALS" = "0" ] && [ ! -f "uv.lock" ]; then
+  echo "[Error] uv.lock is required when using --no-evals."
+  exit 1
 fi
 
 export UV_NATIVE_TLS=1
@@ -81,14 +86,14 @@ if [ "$INSTALL_EVALS" = "1" ]; then
   fi
 else
   echo "Installing dependencies (including dev tools, excluding evals)..."
-  if ! run_uv sync --all-extras --no-group evals --index-strategy unsafe-best-match; then
+  if ! run_uv sync --all-extras --no-group evals --locked --index-strategy unsafe-best-match; then
     echo "[Error] Dependency installation failed."
     exit 1
   fi
 fi
 
 echo "Installing project entry points..."
-if ! run_uv pip install -e .; then
+if ! run_uv pip install -e . --no-deps; then
   echo "[Error] Editable project install failed."
   exit 1
 fi

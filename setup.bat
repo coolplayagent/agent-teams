@@ -64,7 +64,11 @@ if "%UV_CMD%"=="" (
     set "UV_CMD=%PYTHON_CMD% -m uv"
 )
 
-if exist uv.lock del /f /q uv.lock >nul 2>&1
+if "%INSTALL_EVALS%"=="1" if exist uv.lock del /f /q uv.lock >nul 2>&1
+if "%INSTALL_EVALS%"=="0" if not exist uv.lock (
+    echo [Error] uv.lock is required when using --no-evals.
+    exit /b 1
+)
 
 set UV_NATIVE_TLS=1
 if "%INSTALL_EVALS%"=="1" (
@@ -72,7 +76,7 @@ if "%INSTALL_EVALS%"=="1" (
     %UV_CMD% sync --all-extras --index-strategy unsafe-best-match
 ) else (
     echo Installing dependencies including dev tools, excluding evals...
-    %UV_CMD% sync --all-extras --no-group evals --index-strategy unsafe-best-match
+    %UV_CMD% sync --all-extras --no-group evals --locked --index-strategy unsafe-best-match
 )
 if %errorlevel% neq 0 (
     echo [Error] Dependency installation failed.
@@ -80,7 +84,7 @@ if %errorlevel% neq 0 (
 )
 
 echo Installing project entry points...
-%UV_CMD% pip install -e .
+%UV_CMD% pip install -e . --no-deps
 if %errorlevel% neq 0 (
     echo [Error] Editable project install failed.
     exit /b 1

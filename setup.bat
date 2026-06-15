@@ -1,6 +1,38 @@
 @echo off
 chcp 65001 >nul
 
+set "INSTALL_EVALS=1"
+
+:parse_args
+if "%~1"=="" goto args_done
+if "%~1"=="--no-evals" (
+    set "INSTALL_EVALS=0"
+    shift
+    goto parse_args
+)
+if "%~1"=="-h" goto usage
+if "%~1"=="--help" goto usage
+echo [Error] Unknown option: %~1
+goto usage_error
+
+:usage
+echo Usage: setup.bat [--no-evals]
+echo.
+echo Options:
+echo   --no-evals    Skip the evals dependency group.
+echo   -h, --help    Show this help message.
+exit /b 0
+
+:usage_error
+echo Usage: setup.bat [--no-evals]
+echo.
+echo Options:
+echo   --no-evals    Skip the evals dependency group.
+echo   -h, --help    Show this help message.
+exit /b 1
+
+:args_done
+
 echo Checking Python environment...
 set "PYTHON_CMD="
 py -3 --version >nul 2>&1
@@ -34,9 +66,14 @@ if "%UV_CMD%"=="" (
 
 if exist uv.lock del /f /q uv.lock >nul 2>&1
 
-echo Installing dependencies (including dev tools)...
 set UV_NATIVE_TLS=1
-%UV_CMD% sync --all-extras --index-strategy unsafe-best-match
+if "%INSTALL_EVALS%"=="1" (
+    echo Installing dependencies (including dev tools and evals)...
+    %UV_CMD% sync --all-extras --index-strategy unsafe-best-match
+) else (
+    echo Installing dependencies (including dev tools, excluding evals)...
+    %UV_CMD% sync --all-extras --no-group evals --index-strategy unsafe-best-match
+)
 if %errorlevel% neq 0 (
     echo [Error] Dependency installation failed.
     exit /b 1

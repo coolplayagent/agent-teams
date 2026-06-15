@@ -296,13 +296,11 @@ pub fn capture_head_state(workspace: &Path) -> Result<HeadState, String> {
         .current_dir(workspace)
         .output()
         .map_err(|error| format!("failed to inspect current branch: {error}"))
-        .and_then(|output| {
+        .map(|output| {
             if output.status.success() {
-                Ok(Some(
-                    String::from_utf8_lossy(&output.stdout).trim().to_owned(),
-                ))
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_owned())
             } else {
-                Ok(None)
+                None
             }
         })?;
     Ok(HeadState { commit, branch })
@@ -883,10 +881,7 @@ fn capture_git_diff(
         thread::spawn(move || {
             let mut output = Vec::new();
             let mut buffer = [0_u8; 4096];
-            loop {
-                let Ok(count) = stderr.read(&mut buffer) else {
-                    break;
-                };
+            while let Ok(count) = stderr.read(&mut buffer) {
                 if count == 0 {
                     break;
                 }
@@ -999,10 +994,7 @@ fn git_stdout_bounded(
         thread::spawn(move || {
             let mut output = Vec::new();
             let mut buffer = [0_u8; 4096];
-            loop {
-                let Ok(count) = stderr.read(&mut buffer) else {
-                    break;
-                };
+            while let Ok(count) = stderr.read(&mut buffer) {
                 if count == 0 {
                     break;
                 }

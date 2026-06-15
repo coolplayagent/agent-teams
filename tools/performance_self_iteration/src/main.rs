@@ -1,3 +1,4 @@
+mod architecture_notes;
 mod codex;
 mod command;
 mod config;
@@ -107,7 +108,18 @@ async fn evaluate_current(cli: &Cli, paths: &history::HistoryPaths) -> Result<i3
     let previous = history::previous_scored_run(paths, &cli.profile)?;
     let evaluation = evaluate_candidate(cli, paths, &run_id, &patch).await?;
     let score = scoring::score_evaluation(&evaluation.observation, previous.as_ref());
-    let report_path = history::write_report(paths, &run_id, &evaluation.report)?;
+    let algorithm_architecture_improvements =
+        architecture_notes::candidate_algorithm_architecture_improvements(
+            &patch,
+            None,
+            &score,
+            &evaluation.observation,
+        );
+    let report = architecture_notes::report_with_algorithm_architecture_improvements(
+        &evaluation.report,
+        &algorithm_architecture_improvements,
+    )?;
+    let report_path = history::write_report(paths, &run_id, &report)?;
     let record = history::make_run_record(history::RunRecordInput {
         run_id: &run_id,
         profile: &cli.profile,
@@ -116,10 +128,12 @@ async fn evaluate_current(cli: &Cli, paths: &history::HistoryPaths) -> Result<i3
         report_path: &report_path,
         score: &score,
         observation: &evaluation.observation,
+        algorithm_architecture_improvements: &algorithm_architecture_improvements,
         commit: None,
     });
     history::append_run(paths, &record)?;
     history::write_memory(paths, &record)?;
+    history::append_algorithm_architecture_markdown(paths, &record)?;
     println!(
         "[perf-iterate] score={:.6} accepted={} reasons={}",
         score.score,
@@ -214,9 +228,12 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
             &run_id,
             &patch,
             &evaluation,
-            &base_state,
-            ignored_snapshot.as_ref(),
-            previous.as_ref(),
+            RejectionContext {
+                base_state: &base_state,
+                ignored_snapshot: ignored_snapshot.as_ref(),
+                previous: previous.as_ref(),
+                codex_result: codex_result.as_ref(),
+            },
         )
         .await?;
         return Ok(1);
@@ -265,9 +282,12 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
             &run_id,
             &patch,
             &evaluation,
-            &base_state,
-            ignored_snapshot.as_ref(),
-            previous.as_ref(),
+            RejectionContext {
+                base_state: &base_state,
+                ignored_snapshot: ignored_snapshot.as_ref(),
+                previous: previous.as_ref(),
+                codex_result: codex_result.as_ref(),
+            },
         )
         .await?;
         return Ok(1);
@@ -280,9 +300,12 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
             &run_id,
             &patch,
             &evaluation,
-            &base_state,
-            ignored_snapshot.as_ref(),
-            previous.as_ref(),
+            RejectionContext {
+                base_state: &base_state,
+                ignored_snapshot: ignored_snapshot.as_ref(),
+                previous: previous.as_ref(),
+                codex_result: codex_result.as_ref(),
+            },
         )
         .await?;
         return Ok(1);
@@ -303,9 +326,12 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
                 &run_id,
                 &patch,
                 &evaluation,
-                &base_state,
-                ignored_snapshot.as_ref(),
-                previous.as_ref(),
+                RejectionContext {
+                    base_state: &base_state,
+                    ignored_snapshot: ignored_snapshot.as_ref(),
+                    previous: previous.as_ref(),
+                    codex_result: codex_result.as_ref(),
+                },
             )
             .await?;
             return Ok(1);
@@ -351,7 +377,18 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
         (&evaluation, &score)
     };
     let persist_result = (|| -> Result<(), String> {
-        let report_path = history::write_report(paths, &run_id, &evaluation.report)?;
+        let algorithm_architecture_improvements =
+            architecture_notes::candidate_algorithm_architecture_improvements(
+                &patch,
+                codex_result.as_ref(),
+                score,
+                &evaluation.observation,
+            );
+        let report = architecture_notes::report_with_algorithm_architecture_improvements(
+            &evaluation.report,
+            &algorithm_architecture_improvements,
+        )?;
+        let report_path = history::write_report(paths, &run_id, &report)?;
         let record = history::make_run_record(history::RunRecordInput {
             run_id: &run_id,
             profile: &cli.profile,
@@ -360,10 +397,12 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
             report_path: &report_path,
             score,
             observation: &evaluation.observation,
+            algorithm_architecture_improvements: &algorithm_architecture_improvements,
             commit: commit.as_deref(),
         });
         history::append_run(paths, &record)?;
         history::write_memory(paths, &record)?;
+        history::append_algorithm_architecture_markdown(paths, &record)?;
         Ok(())
     })();
     println!(
@@ -420,19 +459,35 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
     }
 }
 
+struct RejectionContext<'a> {
+    base_state: &'a git_ops::HeadState,
+    ignored_snapshot: Option<&'a git_ops::IgnoredOutputSnapshot>,
+    previous: Option<&'a serde_json::Value>,
+    codex_result: Option<&'a command::CommandResult>,
+}
+
 async fn persist_and_reject(
     cli: &Cli,
     paths: &history::HistoryPaths,
     run_id: &str,
     patch: &git_ops::PatchSnapshot,
     evaluation: &scoring::EvaluationRun,
-    base_state: &git_ops::HeadState,
-    ignored_snapshot: Option<&git_ops::IgnoredOutputSnapshot>,
-    previous: Option<&serde_json::Value>,
+    context: RejectionContext<'_>,
 ) -> Result<(), String> {
     let persist_result = (|| -> Result<(), String> {
-        let score = scoring::score_evaluation(&evaluation.observation, previous);
-        let report_path = history::write_report(paths, run_id, &evaluation.report)?;
+        let score = scoring::score_evaluation(&evaluation.observation, context.previous);
+        let algorithm_architecture_improvements =
+            architecture_notes::candidate_algorithm_architecture_improvements(
+                patch,
+                context.codex_result,
+                &score,
+                &evaluation.observation,
+            );
+        let report = architecture_notes::report_with_algorithm_architecture_improvements(
+            &evaluation.report,
+            &algorithm_architecture_improvements,
+        )?;
+        let report_path = history::write_report(paths, run_id, &report)?;
         let record = history::make_run_record(history::RunRecordInput {
             run_id,
             profile: &cli.profile,
@@ -441,14 +496,16 @@ async fn persist_and_reject(
             report_path: &report_path,
             score: &score,
             observation: &evaluation.observation,
+            algorithm_architecture_improvements: &algorithm_architecture_improvements,
             commit: None,
         });
         history::append_run(paths, &record)?;
         history::write_memory(paths, &record)?;
+        history::append_algorithm_architecture_markdown(paths, &record)?;
         Ok(())
     })();
     let restore_result = if should_restore_rejected_candidate(cli.use_current_candidate) {
-        restore_candidate_worktree(&cli.workspace, base_state, ignored_snapshot)
+        restore_candidate_worktree(&cli.workspace, context.base_state, context.ignored_snapshot)
     } else {
         Ok(())
     };
@@ -484,9 +541,12 @@ async fn reject_patch_capture_failure(
         run_id,
         &patch,
         &evaluation,
-        base_state,
-        ignored_snapshot,
-        previous,
+        RejectionContext {
+            base_state,
+            ignored_snapshot,
+            previous,
+            codex_result: None,
+        },
     )
     .await
 }
@@ -992,6 +1052,7 @@ mod tests {
             memory: root.join("memory"),
             runs_jsonl: root.join("runs.jsonl"),
             score_csv: root.join("score.csv"),
+            algorithm_architecture_markdown: root.join("algorithm-architecture-improvements.md"),
             root,
         }
     }
@@ -1037,9 +1098,12 @@ mod tests {
             "current-preserve",
             &patch,
             &evaluation,
-            &base_state,
-            Some(&ignored_snapshot),
-            None,
+            RejectionContext {
+                base_state: &base_state,
+                ignored_snapshot: Some(&ignored_snapshot),
+                previous: None,
+                codex_result: None,
+            },
         )
         .await
         .unwrap();
@@ -1211,9 +1275,12 @@ mod tests {
             "preloaded-baseline",
             &patch,
             &evaluation,
-            &base_state,
-            Some(&ignored_snapshot),
-            Some(&previous),
+            RejectionContext {
+                base_state: &base_state,
+                ignored_snapshot: Some(&ignored_snapshot),
+                previous: Some(&previous),
+                codex_result: None,
+            },
         )
         .await
         .unwrap();

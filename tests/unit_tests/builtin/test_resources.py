@@ -74,3 +74,30 @@ def test_deepresearch_news_sources_include_ai_engineer_talk_sources() -> None:
     assert "## 会议与演讲内容" in content
     assert "Site: <https://www.ai.engineer/>" in content
     assert "Site: <https://www.ai.engineer/europe>" in content
+
+
+def test_deepresearch_sources_include_papers_with_code() -> None:
+    skills_dir = get_builtin_skills_dir() / "deepresearch"
+
+    news_source_content = (skills_dir / "news_source.md").read_text(encoding="utf-8")
+    methodology_content = (skills_dir / "methodology.md").read_text(encoding="utf-8")
+
+    assert "- [Papers with Code](https://paperswithcode.co/)" in news_source_content
+    assert "Site: <https://paperswithcode.co/>" in news_source_content
+    assert "论文、代码实现、数据集、任务排行榜和 SOTA 基准" in methodology_content
+
+
+def test_deepresearch_recent_research_guidance_uses_rolling_dates() -> None:
+    skills_dir = get_builtin_skills_dir() / "deepresearch"
+
+    skill_content = (skills_dir / "SKILL.md").read_text(encoding="utf-8")
+    methodology_content = (skills_dir / "methodology.md").read_text(encoding="utf-8")
+
+    combined_content = f"{skill_content}\n{methodology_content}"
+    assert "2024-2025" not in combined_content
+    assert "2024–2025" not in combined_content
+    assert 'start_published_date="2024-01-01"' not in methodology_content
+    assert "quantum computing 2025" not in methodology_content
+    assert "近两年或当前年份筛选结果" in skill_content
+    assert "当前年份及上一年的新变化" in methodology_content
+    assert "start_published_date=recent_start_date" in methodology_content

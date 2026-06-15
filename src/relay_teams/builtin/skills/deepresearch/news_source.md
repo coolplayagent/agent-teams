@@ -6,6 +6,7 @@
 - [Block AI News](https://block.xyz/news/ai)
 - [AI Engineer](https://www.ai.engineer/)
 - [AI Engineer Europe](https://www.ai.engineer/europe)
+- [Papers with Code](https://paperswithcode.co/)
 
 ## 会议与演讲内容
 
@@ -15,6 +16,12 @@
 - `ai.engineer/europe`
   Site: <https://www.ai.engineer/europe>
   用途：AI Engineer Europe 的议程、演讲主题、讲者和相关会议内容。
+
+## 学术论文、代码与基准
+
+- `paperswithcode.co`
+  Site: <https://paperswithcode.co/>
+  用途：机器学习论文、关联代码实现、数据集、任务排行榜、SOTA 基准和方法对比线索。
 
 ## RSS 博客池
 

@@ -52,10 +52,10 @@
 
 1. **核心主题（语义搜索）** - 基于意义的主要概念探索
 2. **技术细节（关键词搜索）** - 具体术语、API、实现方式
-3. **近期发展动态（按日期筛选）** - 2024-2025 年的新变化
-4. **学术资源（特定领域）** - 论文、研究、正式分析
+3. **近期发展动态（按日期筛选）** - 当前年份及上一年的新变化；若当前日期已进入年中或年末，可补充下一年度已发布路线图、预告或前瞻资料
+4. **学术资源（特定领域）** - 论文、研究、正式分析；机器学习主题优先补充 Papers with Code 以核对论文、代码实现、数据集、任务排行榜和 SOTA 基准
 5. **其他视角（比较）** - 竞争性方法、批评意见
-6. **统计/数据来源** - 量化证据、指标、基准
+6. **统计/数据来源** - 量化证据、指标、基准；涉及模型或算法评测时，使用 Papers with Code 追踪公开基准和排行榜上下文
 7. **行业分析** - 商业应用、市场趋势
 8. **关键分析/局限性** - 已知问题、失效模式、极端情况
 
@@ -70,7 +70,7 @@
 - 使用简单查询字符串进行标准网络搜索
 - 参数：`query`（必填），可选 `num_results`、`allowed_domains`、`blocked_domains`
 - 返回结构化命中结果；直接使用命中里的 URL 作为来源，不要再从纯文本摘要里猜链接
-- 例如：`WebSearch(query="quantum computing 2025")`
+- 例如：`WebSearch(query="recent quantum computing advances")`
 
 **方案B：使用MCP（如有，功能更强大）**
 - 高级语义+关键词搜索
@@ -92,21 +92,22 @@
 
 ```
 [一条消息包含多个工具调用]
-- websearch(query="2025 年量子计算现状")
+- websearch(query="近两年量子计算现状")
 - websearch(query="量子计算的局限性和挑战")
-- websearch(query="2024-2025 年量子计算商业应用")
+- websearch(query="近两年量子计算商业应用")
 - websearch(query="量子计算与经典计算的比较")
 - websearch(query="量子纠错研究")
-- Task(subagent_type="General", description="分析量子计算论文", prompt="深入研究2024-2025年的量子计算学术论文，提取关键发现和方法论")
+- Task(subagent_type="General", description="分析量子计算论文", prompt="深入研究近两年的量子计算学术论文，提取关键发现和方法论")
 - Task(subagent_type="General", description="行业分析", prompt="分析量子计算行业报告和市场数据，识别商业应用")
 ```
 
 **并行执行示例（使用MCP，如果可用）：**
 ```
 [一条消息包含多个工具调用]
-- mcp_search(query="量子计算的最新进展", type="auto", num_results=10, start_published_date="2024-01-01")
+- recent_start_date = 当前年份减一年的 1 月 1 日
+- mcp_search(query="量子计算的最新进展", type="auto", num_results=10, start_published_date=recent_start_date)
 - mcp_search(query="量子计算的局限性", type="keyword", num_results=10)
-- mcp_search(query="量子计算商业", type="auto", num_results=10, start_published_date="2024-01-01")
+- mcp_search(query="量子计算商业", type="auto", num_results=10, start_published_date=recent_start_date)
 - mcp_search(query="量子纠错", type="auto", num_results=10, include_domains=["arxiv.org"])
 - Task(subagent_type="General", description="学术分析", prompt="分析量子计算学术论文")
 ```
@@ -137,7 +138,7 @@
 
 **来源多样性要求：**
 - 至少 3 种信息来源类型（学术文献、行业文献、新闻报道、技术文档）
-- 时间多样性（包含 2024-2025 年的最新数据以及更早期的基础数据）
+- 时间多样性（包含当前年份及上一年的最新数据以及更早期的基础数据）
 - 视角多样性（支持者 + 批评者 + 中立分析）
 - 地域多样性（不仅限于本国来源）
 

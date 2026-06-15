@@ -1,6 +1,34 @@
 #!/usr/bin/env sh
 set -eu
 
+INSTALL_EVALS=1
+
+usage() {
+  echo "Usage: sh setup.sh [--no-evals]"
+  echo ""
+  echo "Options:"
+  echo "  --no-evals    Skip the evals dependency group."
+  echo "  -h, --help    Show this help message."
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-evals)
+      INSTALL_EVALS=0
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "[Error] Unknown option: $1"
+      usage
+      exit 1
+      ;;
+  esac
+  shift
+done
+
 echo "Checking Python environment..."
 PYTHON_BIN=""
 if command -v python3 >/dev/null 2>&1; then
@@ -40,25 +68,38 @@ run_uv() {
   uv "$@"
 }
 
-if [ -f "uv.lock" ]; then
+if [ "$INSTALL_EVALS" = "1" ] && [ -f "uv.lock" ]; then
   rm -f uv.lock
 fi
 
-echo "Installing dependencies (including dev tools)..."
-export UV_NATIVE_TLS=1
-if ! run_uv sync --all-extras --index-strategy unsafe-best-match; then
-  echo "[Error] Dependency installation failed."
+if [ "$INSTALL_EVALS" = "0" ] && [ ! -f "uv.lock" ]; then
+  echo "[Error] uv.lock is required when using --no-evals."
   exit 1
 fi
 
+export UV_NATIVE_TLS=1
+if [ "$INSTALL_EVALS" = "1" ]; then
+  echo "Installing dependencies (including dev tools and evals)..."
+  if ! run_uv sync --all-extras --index-strategy unsafe-best-match; then
+    echo "[Error] Dependency installation failed."
+    exit 1
+  fi
+else
+  echo "Installing dependencies (including dev tools, excluding evals)..."
+  if ! run_uv sync --all-extras --no-group evals --locked --index-strategy unsafe-best-match; then
+    echo "[Error] Dependency installation failed."
+    exit 1
+  fi
+fi
+
 echo "Installing project entry points..."
-if ! run_uv pip install -e .; then
+if ! run_uv pip install -e . --no-deps; then
   echo "[Error] Editable project install failed."
   exit 1
 fi
 
 echo "install git hooks...."
-if run_uv run pre-commit install; then
+if run_uv run --no-sync pre-commit install; then
   echo "Git Hooks install successful"
 else
   echo ""

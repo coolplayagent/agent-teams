@@ -78,6 +78,8 @@ if [ "$INSTALL_EVALS" = "0" ] && [ ! -f "uv.lock" ]; then
 fi
 
 export UV_NATIVE_TLS=1
+export UV_CACHE_DIR=".tmp/uv-cache"
+export UV_LINK_MODE=copy
 if [ "$INSTALL_EVALS" = "1" ]; then
   echo "Installing dependencies (including dev tools and evals)..."
   if ! run_uv sync --all-extras --index-strategy unsafe-best-match; then
@@ -106,4 +108,6 @@ else
   echo "[WARNING] Git Hooks install failed"
 fi
 
+rm -rf ".tmp/uv-cache"
+rmdir ".tmp" 2>/dev/null || true
 echo "Environment setup completed."

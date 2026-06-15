@@ -7,6 +7,7 @@ import importlib.metadata
 import inspect
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+import shutil
 import sys
 
 import pytest
@@ -45,10 +46,39 @@ _ensure_installed_mcp_package()
 
 def pytest_configure(config: pytest.Config) -> None:
     _configure_windows_asyncio_policy()
+    _ensure_basetemp_parent(config)
     config.addinivalue_line(
         "markers",
         "asyncio: mark a test function to run in an asyncio event loop",
     )
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    if exitstatus != pytest.ExitCode.OK:
+        return
+    raw_basetemp = session.config.getoption("basetemp", default=None)
+    if not isinstance(raw_basetemp, str):
+        return
+    basetemp = Path(raw_basetemp)
+    expected_basetemp = Path(".tmp") / "pytest"
+    if basetemp.resolve() != expected_basetemp.resolve():
+        return
+    shutil.rmtree(basetemp, ignore_errors=True)
+    _remove_empty_directory(basetemp.parent)
+
+
+def _ensure_basetemp_parent(config: pytest.Config) -> None:
+    raw_basetemp = config.getoption("basetemp", default=None)
+    if not isinstance(raw_basetemp, str):
+        return
+    Path(raw_basetemp).parent.mkdir(parents=True, exist_ok=True)
+
+
+def _remove_empty_directory(path: Path) -> None:
+    try:
+        path.rmdir()
+    except OSError:
+        return
 
 
 def _configure_windows_asyncio_policy() -> None:

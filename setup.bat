@@ -71,6 +71,8 @@ if "%INSTALL_EVALS%"=="0" if not exist uv.lock (
 )
 
 set UV_NATIVE_TLS=1
+set "UV_CACHE_DIR=.tmp\uv-cache"
+set "UV_LINK_MODE=copy"
 if "%INSTALL_EVALS%"=="1" (
     echo Installing dependencies including dev tools and evals...
     %UV_CMD% sync --all-extras --index-strategy unsafe-best-match
@@ -99,4 +101,7 @@ if %errorlevel% neq 0 (
     echo Git Hooks install successful
 )
 
+if exist ".tmp\uv-cache" rmdir /s /q ".tmp\uv-cache" >nul 2>&1
+if exist ".tmp" rmdir ".tmp" >nul 2>&1
 echo Environment setup completed.
+exit /b 0

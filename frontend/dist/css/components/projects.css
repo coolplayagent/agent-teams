@@ -807,6 +807,12 @@
     padding: 0.08rem 0 0.2rem;
 }
 
+.projects-list .project-flat-session-pagers {
+    display: flex;
+    flex-direction: column;
+    gap: 0.02rem;
+}
+
 .projects-list .session-item {
     position: relative;
     width: 100%;

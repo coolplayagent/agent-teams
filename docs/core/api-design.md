@@ -1523,7 +1523,9 @@ Session records include terminal run projections for list badges:
 ### `GET /sessions/sidebar`
 
 Lists the lightweight session projection used by the frontend sidebar and background
-run discovery.
+run discovery. This endpoint returns the compatibility all-session projection; new
+workspace-grouped sidebar reads should prefer
+`GET /workspaces/{workspace_id}/sessions/sidebar`.
 
 Query:
 - `force_refresh`: optional boolean, default `false`. Normal sidebar reads should omit it so the backend can return a stale list snapshot immediately and refresh projections in the background.
@@ -3401,7 +3403,28 @@ Rules:
 
 ### `GET /workspaces`
 
-Lists registered execution workspaces.
+Lists one page of registered execution workspaces.
+
+Query:
+- `limit`: optional integer from `1` to `200`, default `50`.
+- `cursor`: optional opaque cursor returned as `next_cursor` by the previous page.
+- `sort`: optional workspace page order, default `activity`. Supported values:
+  - `activity`: page by latest sidebar activity, using the newest valid session
+    `updated_at`/`created_at` for each workspace when sessions exist, otherwise
+    the workspace timestamp.
+  - `created`: page by workspace `created_at` with `updated_at` fallback.
+
+Response:
+- `items`: workspace records ordered by the selected sort. `activity` uses
+  (`max(latest workspace session updated_at, workspace updated_at) DESC,
+  workspace_id DESC`); `created` uses
+  (`workspace created_at DESC, workspace_id DESC`).
+- `next_cursor`: cursor for the next page, or `null` when no further page exists.
+- `has_more`: `true` when another page is available.
+
+Clients that need the complete workspace set must follow `next_cursor` until
+`has_more` is `false`. Sidebar callers should render the first page immediately
+and request additional pages only from a load-more interaction.
 
 ### `POST /workspaces`
 
@@ -3425,6 +3448,23 @@ Rules:
 ### `GET /workspaces/{workspace_id}`
 
 Returns one registered execution workspace.
+
+### `GET /workspaces/{workspace_id}/sessions/sidebar`
+
+Lists one page of lightweight sidebar session rows for a single workspace.
+
+Query:
+- `limit`: optional integer from `1` to `200`, default `50`.
+- `cursor`: optional opaque cursor returned as `next_cursor` by the previous page.
+
+Response:
+- `items`: sidebar session rows ordered by `updated_at DESC, session_id DESC`.
+- `next_cursor`: cursor for the next page, or `null` when no further page exists.
+- `has_more`: `true` when another page is available.
+
+This endpoint is intended for sidebar workspace expansion and load-more flows. It
+avoids the all-workspace scan performed by `GET /sessions/sidebar` and keeps run
+status enrichment scoped to the current page.
 
 ### `POST /workspaces/{workspace_id}:open-root`
 

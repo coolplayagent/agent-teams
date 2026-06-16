@@ -137,7 +137,7 @@ class TestRouteRegistration:
         route_map: dict[str, set[str]] = {}
         for r in router.routes:
             if isinstance(r, APIRoute):
-                route_map.setdefault(r.path, set()).update(r.methods)
+                route_map.setdefault(r.path, set()).update(r.methods or set())
         wid = "/workspaces/{workspace_id}"
         assert "GET" in route_map.get("/memories", set())
         assert "POST" in route_map.get("/memories/search", set())

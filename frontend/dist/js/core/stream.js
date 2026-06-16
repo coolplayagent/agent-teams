@@ -213,7 +213,10 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
                 releaseUi: false,
             });
             notifyCurrentSessionRunStarted(safeSessionId, run);
-            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: false });
+            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {
+                forceRefresh: false,
+                sessionId: safeSessionId,
+            });
             attachRunStreamAsBackground(runId, safeSessionId, {
                 reason: 'start-background',
             });
@@ -225,7 +228,10 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
         if (typeof options.onRunCreated === 'function') {
             options.onRunCreated(run);
         }
-        scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: false });
+        scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {
+            forceRefresh: false,
+            sessionId: safeSessionId,
+        });
     } catch (err) {
         logError(
             'frontend.run.create_failed',
@@ -237,7 +243,10 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
                 clearStopRequest: true,
                 releaseUi: false,
             });
-            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, { forceRefresh: false });
+            scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {
+                forceRefresh: false,
+                sessionId: safeSessionId,
+            });
             return;
         }
         finishPendingRunStart(runStart, {
@@ -299,6 +308,7 @@ async function startDetachedIntentStream(promptText, sessionId, options) {
         });
         scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {
             forceRefresh: true,
+            sessionId,
         });
         attachRunStreamAsBackground(runId, sessionId, {
             reason: 'start-background',
@@ -311,6 +321,7 @@ async function startDetachedIntentStream(promptText, sessionId, options) {
         );
         scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {
             forceRefresh: false,
+            sessionId,
         });
     }
 }
@@ -1168,7 +1179,7 @@ function finishBackgroundConnection(connection, { rediscover = true, refreshSide
     syncRunStreamActivityState();
     requestMultiplexRunConnection('finish-background');
     if (refreshSidebar) {
-        scheduleSessionsRefresh();
+        scheduleSessionsRefresh(120, { sessionId: connection.sessionId });
     }
     if (rediscover) {
         ensureBackgroundDiscoveryLoop();
@@ -1227,7 +1238,7 @@ function applyBackgroundRunEvent(connection, evType, payload, eventMeta) {
         });
     }
     if (isTerminalRunEvent(evType)) {
-        scheduleSessionsRefresh();
+        scheduleSessionsRefresh(120, { sessionId: connection.sessionId });
     }
 }
 
@@ -1924,7 +1935,7 @@ function openNormalModeSubagentRunStreamConnection(connection, { afterEventId = 
             if (isTerminalRunEvent(evType)) {
                 connection.terminal = true;
                 finishNormalModeSubagentConnection(connection);
-                scheduleSessionsRefresh();
+                scheduleSessionsRefresh(120, { sessionId: connection.sessionId });
             }
         } catch (e) {
             logError(

@@ -9,6 +9,20 @@ import {
     requestJsonManaged,
 } from './request.js';
 
+const DEFAULT_WORKSPACE_SIDEBAR_SESSION_LIMIT = 50;
+const MAX_WORKSPACE_SIDEBAR_SESSION_LIMIT = 200;
+
+function normalizeWorkspaceSidebarSessionLimit(limit) {
+    const parsedLimit = Number.parseInt(
+        String(limit ?? DEFAULT_WORKSPACE_SIDEBAR_SESSION_LIMIT),
+        10,
+    );
+    if (!Number.isFinite(parsedLimit)) {
+        return DEFAULT_WORKSPACE_SIDEBAR_SESSION_LIMIT;
+    }
+    return Math.max(1, Math.min(parsedLimit, MAX_WORKSPACE_SIDEBAR_SESSION_LIMIT));
+}
+
 export async function fetchSessions(options = {}) {
     const sidebar = options.sidebar === true;
     const requestKey = sidebar ? 'sessions:sidebar' : 'sessions:list';
@@ -22,6 +36,34 @@ export async function fetchSessions(options = {}) {
     return requestJsonManaged(
         requestKey,
         `${endpoint}${query ? `?${query}` : ''}`,
+        { signal: options.signal },
+        'Failed to fetch sessions',
+        { ttlMs: 500 },
+    );
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        return { items: [], next_cursor: null, has_more: false };
+    }
+    const params = new URLSearchParams();
+    params.set(
+        'limit',
+        String(normalizeWorkspaceSidebarSessionLimit(options.limit)),
+    );
+    const cursor = String(options.cursor || '').trim();
+    if (cursor) {
+        params.set('cursor', cursor);
+    }
+    const query = params.toString();
+    const requestKey = `sessions:sidebar:workspace:${safeWorkspaceId}:${query}`;
+    if (options.forceRefresh === true) {
+        invalidateManagedRequests(`sessions:sidebar:workspace:${safeWorkspaceId}:`);
+    }
+    return requestJsonManaged(
+        requestKey,
+        `/api/workspaces/${encodeURIComponent(safeWorkspaceId)}/sessions/sidebar${query ? `?${query}` : ''}`,
         { signal: options.signal },
         'Failed to fetch sessions',
         { ttlMs: 500 },

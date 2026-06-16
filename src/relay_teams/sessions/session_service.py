@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import base64
+import binascii
 import contextlib
 import json
 import logging
@@ -82,6 +84,7 @@ from relay_teams.sessions.session_models import (
     SessionMetadataPatch,
     SessionMode,
     SessionRecord,
+    SessionSidebarPage,
     SessionSidebarRecord,
 )
 from relay_teams.sessions.session_history_marker_repository import (
@@ -146,6 +149,8 @@ _LEGACY_COORDINATOR_IDENTIFIERS = (
 )
 _MAIN_AGENT_IDENTIFIERS = ("mainagent", "main agent", "main_agent")
 _AUTO_SESSION_TITLE_MAX_CHARS = 120
+_SESSION_SIDEBAR_DEFAULT_LIMIT = 50
+_SESSION_SIDEBAR_MAX_LIMIT = 200
 LOGGER = get_logger(__name__)
 
 
@@ -154,6 +159,11 @@ class _SessionDeleteContext(NamedTuple):
     task_records: tuple[TaskRecord, ...]
     agent_records: tuple[AgentRuntimeRecord, ...]
     background_task_records: tuple[BackgroundTaskRecord, ...]
+
+
+class _SessionSidebarCursor(NamedTuple):
+    updated_at: str
+    session_id: str
 
 
 _SNAPSHOT_DIRTY_EVENT_TYPES = frozenset(
@@ -258,6 +268,51 @@ def _normalize_auto_session_title(value: str) -> str | None:
             return normalized
         return f"{normalized[: _AUTO_SESSION_TITLE_MAX_CHARS - 3].rstrip()}..."
     return None
+
+
+def _validate_session_sidebar_limit(limit: int) -> int:
+    safe_limit = int(limit)
+    if safe_limit < 1 or safe_limit > _SESSION_SIDEBAR_MAX_LIMIT:
+        raise ValueError("limit must be between 1 and 200")
+    return safe_limit
+
+
+def _encode_session_sidebar_cursor(*, sort_at: str, session_id: str) -> str:
+    payload = json.dumps(
+        {
+            "updated_at": sort_at,
+            "session_id": session_id,
+        },
+        separators=(",", ":"),
+    )
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _decode_session_sidebar_cursor(cursor: str | None) -> _SessionSidebarCursor | None:
+    safe_cursor = str(cursor or "").strip()
+    if not safe_cursor:
+        return None
+    padding = "=" * (-len(safe_cursor) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(f"{safe_cursor}{padding}".encode("ascii"))
+        decoded: object = json.loads(raw.decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError("Invalid session pagination cursor") from exc
+    if not isinstance(decoded, Mapping):
+        raise ValueError("Invalid session pagination cursor")
+    updated_at_raw = decoded.get("updated_at")
+    if updated_at_raw is None:
+        updated_at_raw = decoded.get("created_at")
+    session_id_raw = decoded.get("session_id")
+    if not isinstance(updated_at_raw, str) or not isinstance(session_id_raw, str):
+        raise ValueError("Invalid session pagination cursor")
+    updated_at = updated_at_raw.strip()
+    if not updated_at:
+        raise ValueError("Invalid session pagination cursor")
+    session_id = session_id_raw.strip()
+    if not session_id:
+        raise ValueError("Invalid session pagination cursor")
+    return _SessionSidebarCursor(updated_at=updated_at, session_id=session_id)
 
 
 def _terminal_run_status_for_event_type(event_type: RunEventType) -> str | None:
@@ -1485,7 +1540,14 @@ class SessionService:
         )
 
     def list_sessions(self) -> tuple[SessionRecord, ...]:
-        sessions = self._session_repo.list_all()
+        return self._enrich_session_records_for_list(self._session_repo.list_all())
+
+    def _enrich_session_records_for_list(
+        self,
+        sessions: tuple[SessionRecord, ...],
+    ) -> tuple[SessionRecord, ...]:
+        if not sessions:
+            return ()
         session_ids = tuple(record.session_id for record in sessions)
         runtimes_by_session: dict[str, tuple[RunRuntimeRecord, ...]] = (
             self._run_runtime_repo.list_by_session_ids(session_ids)
@@ -1604,6 +1666,136 @@ class SessionService:
             )
         return tuple(enriched)
 
+    async def _enrich_session_records_for_list_async(
+        self,
+        sessions: tuple[SessionRecord, ...],
+    ) -> tuple[SessionRecord, ...]:
+        if not sessions:
+            return ()
+        session_ids = tuple(record.session_id for record in sessions)
+        runtimes_by_session: dict[
+            str, tuple[RunRuntimeRecord, ...]
+        ] = await self._run_runtime_repo.list_by_session_ids_async(session_ids)
+        background_tasks_by_session: dict[str, tuple[BackgroundTaskRecord, ...]] = (
+            await self._background_task_repository.list_by_session_ids_async(
+                session_ids
+            )
+            if self._background_task_repository is not None
+            else {}
+        )
+        excluded_run_ids_by_session = self._subagent_run_ids_by_session_ids(
+            session_ids=session_ids,
+            runtimes_by_session=runtimes_by_session,
+            background_tasks_by_session=background_tasks_by_session,
+        )
+        active_background_run_ids = self._active_background_run_ids(
+            background_tasks_by_session,
+        )
+        first_intent_titles: dict[str, str] = (
+            await self._run_intent_repo.first_titles_by_session_ids_async(session_ids)
+            if self._run_intent_repo is not None
+            else {}
+        )
+        session_ids_needing_message_titles = tuple(
+            record.session_id
+            for record in sessions
+            if record.session_id not in first_intent_titles
+        )
+        first_user_messages = (
+            await self._message_repo.first_user_messages_by_session_ids_async(
+                session_ids_needing_message_titles
+            )
+        )
+        subagent_counts = await self._count_subagents_by_session_async(sessions)
+        selected_by_session: dict[str, tuple[str, RunRuntimeRecord]] = {}
+        latest_terminal_by_session: dict[str, RunRuntimeRecord] = {}
+        for session_id in session_ids:
+            runtimes = runtimes_by_session.get(session_id, ())
+            excluded_run_ids = excluded_run_ids_by_session.get(session_id, set())
+            selected = self._select_list_active_run_from_preloaded(
+                session_id=session_id,
+                runtimes=runtimes,
+                excluded_run_ids=excluded_run_ids,
+                active_background_run_ids=active_background_run_ids,
+            )
+            if selected is not None:
+                selected_by_session[session_id] = selected
+            latest_terminal = self._latest_terminal_run_from_preloaded(
+                runtimes,
+                excluded_run_ids,
+            )
+            if latest_terminal is not None:
+                latest_terminal_by_session[session_id] = latest_terminal
+        verification_status_by_run_id = (
+            await self._runtime_verification_statuses_by_run_id_async(
+                tuple(runtime.run_id for runtime in latest_terminal_by_session.values())
+            )
+        )
+        selected_run_ids = tuple(
+            dict.fromkeys(run_id for run_id, _runtime in selected_by_session.values())
+        )
+        approval_counts = await self._approval_ticket_repo.count_open_by_run_ids_async(
+            selected_run_ids
+        )
+        question_counts = (
+            await self._user_question_repo.count_open_by_run_ids_async(selected_run_ids)
+            if self._user_question_repo is not None
+            else {}
+        )
+        enriched: list[SessionRecord] = []
+        for record in sessions:
+            record = self._with_auto_session_title_from_preloaded(
+                record,
+                first_intent_titles=first_intent_titles,
+                first_user_messages=first_user_messages,
+            )
+            selected = selected_by_session.get(record.session_id)
+            subagent_session_count = subagent_counts.get(record.session_id, 0)
+            runtimes = runtimes_by_session.get(record.session_id, ())
+            excluded_run_ids = excluded_run_ids_by_session.get(
+                record.session_id,
+                set(),
+            )
+            if selected is None:
+                enriched.append(
+                    self._with_terminal_run_projection_from_preloaded(
+                        record.model_copy(
+                            update={
+                                "subagent_session_count": subagent_session_count,
+                            }
+                        ),
+                        runtimes=runtimes,
+                        excluded_run_ids=excluded_run_ids,
+                        verification_status_by_run_id=verification_status_by_run_id,
+                    )
+                )
+                continue
+            run_id, runtime = selected
+            approval_count = approval_counts.get(run_id, 0)
+            question_count = question_counts.get(run_id, 0)
+            enriched.append(
+                self._with_terminal_run_projection_from_preloaded(
+                    record.model_copy(
+                        update={
+                            "has_active_run": True,
+                            "active_run_id": run_id,
+                            "active_run_status": runtime.status.value,
+                            "active_run_phase": self._public_phase(
+                                runtime,
+                                approval_count,
+                                question_count,
+                            ),
+                            "pending_tool_approval_count": approval_count,
+                            "subagent_session_count": subagent_session_count,
+                        }
+                    ),
+                    runtimes=runtimes,
+                    excluded_run_ids=excluded_run_ids,
+                    verification_status_by_run_id=verification_status_by_run_id,
+                )
+            )
+        return tuple(enriched)
+
     async def list_sessions_async(
         self,
         *,
@@ -1624,6 +1816,72 @@ class SessionService:
         return tuple(
             SessionSidebarRecord.from_session_record(record) for record in records
         )
+
+    async def list_workspace_sidebar_sessions_page_async(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = _SESSION_SIDEBAR_DEFAULT_LIMIT,
+        cursor: str | None = None,
+    ) -> SessionSidebarPage:
+        safe_workspace_id = str(workspace_id or "").strip()
+        if not safe_workspace_id:
+            raise ValueError("workspace_id is required")
+        safe_limit = _validate_session_sidebar_limit(limit)
+        marker = _decode_session_sidebar_cursor(cursor)
+        page_records = await self._session_repo.list_by_workspace_page_entries_async(
+            safe_workspace_id,
+            limit=safe_limit + 1,
+            before_sort_at=marker.updated_at if marker is not None else None,
+            before_session_id=marker.session_id if marker is not None else None,
+        )
+        has_more = len(page_records) > safe_limit
+        selected_page_records = tuple(page_records[:safe_limit])
+        enriched = await self._enrich_session_records_for_list_async(
+            tuple(entry.record for entry in selected_page_records)
+        )
+        return SessionSidebarPage(
+            items=tuple(
+                SessionSidebarRecord.from_session_record(record) for record in enriched
+            ),
+            next_cursor=(
+                _encode_session_sidebar_cursor(
+                    sort_at=selected_page_records[-1].sort_at,
+                    session_id=selected_page_records[-1].record.session_id,
+                )
+                if has_more and selected_page_records
+                else None
+            ),
+            has_more=has_more,
+        )
+
+    async def list_sessions_by_project_refs_async(
+        self,
+        *,
+        project_kind: ProjectKind,
+        project_ids: tuple[str, ...],
+        session_ids: tuple[str, ...] = (),
+    ) -> tuple[SessionRecord, ...]:
+        project_records = await self._session_repo.list_by_project_refs_async(
+            project_kind=project_kind,
+            project_ids=project_ids,
+        )
+        explicit_records = await self._session_repo.list_by_ids_async(session_ids)
+        by_id: dict[str, SessionRecord] = {}
+        ordered: list[SessionRecord] = []
+        for record in (*project_records, *explicit_records):
+            if record.session_id in by_id:
+                continue
+            by_id[record.session_id] = record
+            ordered.append(record)
+        ordered.sort(
+            key=lambda session_record: (
+                session_record.created_at.isoformat(),
+                session_record.session_id,
+            ),
+            reverse=True,
+        )
+        return await self._enrich_session_records_for_list_async(tuple(ordered))
 
     def mark_latest_terminal_run_viewed(self, session_id: str) -> None:
         _ = self._session_repo.get(session_id)
@@ -2880,6 +3138,28 @@ class SessionService:
                 statuses[run_id] = "failed"
         return statuses
 
+    async def _runtime_verification_statuses_by_run_id_async(
+        self,
+        run_ids: tuple[str, ...],
+    ) -> dict[str, str]:
+        if self._event_log is None:
+            return {}
+        events = await self._event_log.list_by_run_ids_event_types_async(
+            run_ids,
+            (
+                RunEventType.RUN_COMPLETED.value,
+                RunEventType.RUN_FAILED.value,
+            ),
+        )
+        statuses: dict[str, str] = {}
+        for event in reversed(events):
+            run_id = str(event.get("trace_id") or "").strip()
+            if not run_id or run_id in statuses:
+                continue
+            if self._event_has_verification_failed_error_code(event):
+                statuses[run_id] = "failed"
+        return statuses
+
     async def _runtime_verification_status_async(
         self,
         runtime: RunRuntimeRecord,
@@ -3231,6 +3511,31 @@ class SessionService:
     ) -> dict[str, int]:
         session_ids = tuple(session.session_id for session in sessions)
         records_by_session = self._agent_repo.list_by_session_ids(session_ids)
+        counts: dict[str, int] = {}
+        for session in sessions:
+            records = records_by_session.get(session.session_id, ())
+            if session.session_mode == SessionMode.NORMAL:
+                counts[session.session_id] = sum(
+                    1
+                    for record in records
+                    if self._is_normal_mode_subagent_record(record, session=session)
+                )
+                continue
+            latest_by_role = self._latest_orchestration_subagents_by_role(
+                records,
+                session=session,
+            )
+            counts[session.session_id] = len(latest_by_role)
+        return counts
+
+    async def _count_subagents_by_session_async(
+        self,
+        sessions: tuple[SessionRecord, ...],
+    ) -> dict[str, int]:
+        session_ids = tuple(session.session_id for session in sessions)
+        records_by_session = await self._agent_repo.list_by_session_ids_async(
+            session_ids
+        )
         counts: dict[str, int] = {}
         for session in sessions:
             records = records_by_session.get(session.session_id, ())

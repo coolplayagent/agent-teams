@@ -467,7 +467,7 @@ def test_project_list_records_include_session_run_status(
         latest_terminal_run_status="completed",
         updated_at=datetime(2026, 6, 4, 11, 0, tzinfo=UTC),
     )
-    calls = {"list_sessions": 0, "list_sessions_async": 0}
+    calls = {"list_sessions": 0, "list_sessions_by_project_refs_async": 0}
 
     def list_sessions() -> tuple[SessionRecord, ...]:
         calls["list_sessions"] += 1
@@ -477,8 +477,22 @@ def test_project_list_records_include_session_run_status(
         *,
         force_refresh: bool = False,
     ) -> tuple[SessionRecord, ...]:
-        assert force_refresh is False
-        calls["list_sessions_async"] += 1
+        _ = force_refresh
+        pytest.fail("list_projects_async must query sessions by project refs")
+
+    async def list_sessions_by_project_refs_async(
+        *,
+        project_kind: ProjectKind,
+        project_ids: tuple[str, ...],
+        session_ids: tuple[str, ...] = (),
+    ) -> tuple[SessionRecord, ...]:
+        calls["list_sessions_by_project_refs_async"] += 1
+        assert project_kind == ProjectKind.AUTOMATION
+        assert set(project_ids) == {
+            created.automation_project_id,
+            ignored.automation_project_id,
+        }
+        assert session_ids == ()
         return (session_record, ignored_session_record)
 
     monkeypatch.setattr(
@@ -490,6 +504,11 @@ def test_project_list_records_include_session_run_status(
         session_service,
         "list_sessions_async",
         list_sessions_async,
+    )
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions_by_project_refs_async",
+        list_sessions_by_project_refs_async,
     )
     monkeypatch.setattr(
         session_service,
@@ -524,7 +543,7 @@ def test_project_list_records_include_session_run_status(
             record.automation_project_id: record for record in async_records
         }
 
-        assert calls["list_sessions_async"] == 1
+        assert calls["list_sessions_by_project_refs_async"] == 1
         assert (
             async_records_by_id[created.automation_project_id].active_run_status
             == "running"
@@ -1021,7 +1040,7 @@ def test_list_project_sessions_async_uses_async_session_listing(
         project_kind=ProjectKind.AUTOMATION,
         project_id=created.automation_project_id,
     )
-    calls = {"list_sessions_async": 0}
+    calls = {"list_sessions_by_project_refs_async": 0}
 
     async def fail_to_thread(
         _function: Callable[..., object],
@@ -1035,19 +1054,35 @@ def test_list_project_sessions_async_uses_async_session_listing(
         *,
         force_refresh: bool = False,
     ) -> tuple[SessionRecord, ...]:
-        assert force_refresh is False
-        calls["list_sessions_async"] += 1
+        _ = force_refresh
+        pytest.fail("list_project_sessions_async must query sessions by project refs")
+
+    async def list_sessions_by_project_refs_async(
+        *,
+        project_kind: ProjectKind,
+        project_ids: tuple[str, ...],
+        session_ids: tuple[str, ...] = (),
+    ) -> tuple[SessionRecord, ...]:
+        calls["list_sessions_by_project_refs_async"] += 1
+        assert project_kind == ProjectKind.AUTOMATION
+        assert project_ids == (created.automation_project_id,)
+        assert session_ids == ()
         return session_service.list_sessions()
 
     monkeypatch.setattr(automation_service_module.asyncio, "to_thread", fail_to_thread)
     monkeypatch.setattr(session_service, "list_sessions_async", list_sessions_async)
+    monkeypatch.setattr(
+        session_service,
+        "list_sessions_by_project_refs_async",
+        list_sessions_by_project_refs_async,
+    )
 
     async def exercise() -> None:
         sessions = await service.list_project_sessions_async(
             created.automation_project_id
         )
 
-        assert calls["list_sessions_async"] == 1
+        assert calls["list_sessions_by_project_refs_async"] == 1
         assert len(sessions) == 1
         assert sessions[0]["session_id"] == "session-automation"
 

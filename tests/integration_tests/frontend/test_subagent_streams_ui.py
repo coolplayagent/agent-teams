@@ -2389,7 +2389,10 @@ console.log(JSON.stringify({
         },
     ]
     assert payload["scheduleSessionsRefreshCalls"] == [
-        {"delay": 360, "options": {"forceRefresh": False}},
+        {
+            "delay": 360,
+            "options": {"forceRefresh": False, "sessionId": "session-a"},
+        },
     ]
     assert payload["focusCalls"] == 1
     assert [call["evType"] for call in payload["routeEventCalls"]] == ["run_paused"]

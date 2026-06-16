@@ -2201,7 +2201,8 @@ def test_browser_burst_new_session_starts_stay_within_request_budget(
     get_workspaces = [
         path
         for method, path in api_requests
-        if method == "GET" and path == "/api/workspaces"
+        if method == "GET"
+        and (path == "/api/workspaces" or path.startswith("/api/workspaces?"))
     ]
     get_recovery = [
         path
@@ -2571,14 +2572,18 @@ def _create_session_via_sidebar(page: Page) -> str:
 
 def _first_workspace_id(page: Page) -> str:
     response = page.request.get(
-        f"{page.url.rstrip('/')}/api/workspaces",
+        f"{page.url.rstrip('/')}/api/workspaces?limit=50",
         timeout=_WAIT_TIMEOUT_MS,
     )
     assert response.ok
     payload = cast(JsonValue, response.json())
-    if not isinstance(payload, list):
-        raise AssertionError("Workspace list response was not an array.")
-    for item in payload:
+    if isinstance(payload, dict):
+        items = payload.get("items")
+    else:
+        items = payload
+    if not isinstance(items, list):
+        raise AssertionError("Workspace list response did not include an item array.")
+    for item in items:
         if not isinstance(item, dict):
             continue
         workspace_id = str(item.get("workspace_id") or "").strip()

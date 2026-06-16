@@ -6,6 +6,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 import aiosqlite
 from pydantic import JsonValue, ValidationError
@@ -25,6 +26,7 @@ from relay_teams.workspace.workspace_models import (
     WorkspaceMountCapabilities,
     WorkspaceMountProvider,
     WorkspaceMountRecord,
+    WorkspacePageSort,
     WorkspaceLocalMountConfig,
     WorkspaceRecord,
     WorkspaceSshMountConfig,
@@ -35,6 +37,110 @@ from relay_teams.workspace.workspace_models import (
 )
 
 LOGGER = get_logger(__name__)
+
+
+class WorkspacePageRecord(NamedTuple):
+    record: WorkspaceRecord
+    activity_at: str
+
+
+def _workspace_activity_order_expression(prefix: str) -> str:
+    return f"COALESCE(NULLIF({prefix}.updated_at, ''), NULLIF({prefix}.created_at, ''), '')"
+
+
+def _workspace_created_order_expression(prefix: str) -> str:
+    return f"COALESCE(NULLIF({prefix}.created_at, ''), NULLIF({prefix}.updated_at, ''), '')"
+
+
+def _sqlite_datetime_sort_expression(column: str) -> str:
+    return f"CASE WHEN {column} GLOB '????-??-??T??:*' THEN {column} ELSE NULL END"
+
+
+def _workspace_session_activity_expression() -> str:
+    return (
+        "COALESCE("
+        f"{_sqlite_datetime_sort_expression('s.updated_at')}, "
+        f"{_sqlite_datetime_sort_expression('s.created_at')}"
+        ")"
+    )
+
+
+async def _fetch_workspace_activity_rows_async(
+    *,
+    conn: aiosqlite.Connection,
+    limit: int,
+    cursor_activity_at: str | None,
+    cursor_workspace_id: str | None,
+    include_sessions: bool,
+    sort: WorkspacePageSort,
+) -> tuple[sqlite3.Row, ...]:
+    if sort == WorkspacePageSort.ACTIVITY and include_sessions:
+        workspace_activity = _workspace_activity_order_expression("w")
+        session_activity = _workspace_session_activity_expression()
+        base_query = f"""
+            WITH workspace_activity AS (
+                SELECT w.*,
+                    COALESCE(
+                        NULLIF((
+                            SELECT {session_activity}
+                            FROM sessions s
+                            WHERE s.workspace_id = w.workspace_id
+                            ORDER BY {session_activity} DESC, s.session_id DESC
+                            LIMIT 1
+                        ), ''),
+                        {workspace_activity}
+                    )
+                        AS activity_at
+                FROM workspaces w
+            )
+            SELECT * FROM workspace_activity
+            """
+    else:
+        workspace_activity = (
+            _workspace_created_order_expression("workspaces")
+            if sort == WorkspacePageSort.CREATED
+            else _workspace_activity_order_expression("workspaces")
+        )
+        base_query = f"""
+            WITH workspace_activity AS (
+                SELECT *,
+                    {workspace_activity} AS activity_at
+                FROM workspaces
+            )
+            SELECT * FROM workspace_activity
+            """
+    if cursor_activity_at is None or cursor_workspace_id is None:
+        rows = await async_fetchall(
+            conn,
+            f"""
+            {base_query}
+            ORDER BY activity_at DESC, workspace_id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return tuple(rows)
+    rows = await async_fetchall(
+        conn,
+        f"""
+        {base_query}
+        WHERE activity_at < ?
+           OR (activity_at = ? AND workspace_id < ?)
+        ORDER BY activity_at DESC, workspace_id DESC
+        LIMIT ?
+        """,
+        (
+            cursor_activity_at,
+            cursor_activity_at,
+            cursor_workspace_id,
+            limit,
+        ),
+    )
+    return tuple(rows)
+
+
+def _workspace_page_activity_sort_value(row: sqlite3.Row) -> str:
+    return str(row["activity_at"] or "")
 
 
 class WorkspaceRepository(SharedSqliteRepository):
@@ -95,6 +201,18 @@ class WorkspaceRepository(SharedSqliteRepository):
                 """
                 CREATE INDEX IF NOT EXISTS idx_workspace_mounts_workspace
                 ON workspace_mounts(workspace_id)
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_workspaces_created_id
+                ON workspaces(created_at DESC, workspace_id DESC)
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_workspaces_updated_id
+                ON workspaces(updated_at DESC, workspace_id DESC)
                 """
             )
             self._migrate_legacy_workspace_rows()
@@ -506,6 +624,107 @@ class WorkspaceRepository(SharedSqliteRepository):
                     )
                 except (ValidationError, ValueError, json.JSONDecodeError) as exc:
                     _log_invalid_workspace_row(row=row, error=exc)
+            return tuple(records)
+
+        return await self._run_async_read(operation)
+
+    async def list_page_async(
+        self,
+        *,
+        limit: int,
+        before_activity_at: datetime | None = None,
+        before_activity_sort_at: str | None = None,
+        before_workspace_id: str | None = None,
+        sort: WorkspacePageSort = WorkspacePageSort.ACTIVITY,
+    ) -> tuple[WorkspacePageRecord, ...]:
+        if before_activity_at is not None and before_activity_sort_at is not None:
+            raise ValueError(
+                "Use either before_activity_at or before_activity_sort_at, not both"
+            )
+        if (before_activity_at is not None or before_activity_sort_at is not None) != (
+            before_workspace_id is not None
+        ):
+            raise ValueError(
+                "Both an activity cursor and before_workspace_id are required "
+                "for paged workspace queries"
+            )
+
+        async def operation(
+            conn: aiosqlite.Connection,
+        ) -> tuple[WorkspacePageRecord, ...]:
+            safe_limit = max(1, int(limit))
+            cursor_activity_at = before_activity_sort_at
+            if cursor_activity_at is None and before_activity_at is not None:
+                cursor_activity_at = before_activity_at.isoformat()
+            session_table_row = await async_fetchone(
+                conn,
+                """
+                SELECT 1
+                FROM sqlite_master
+                WHERE type='table' AND name='sessions'
+                LIMIT 1
+                """,
+            )
+            records: list[WorkspacePageRecord] = []
+            cursor_workspace_id = before_workspace_id
+            while len(records) < safe_limit:
+                requested = safe_limit - len(records)
+                rows = await _fetch_workspace_activity_rows_async(
+                    conn=conn,
+                    limit=requested,
+                    cursor_activity_at=cursor_activity_at,
+                    cursor_workspace_id=cursor_workspace_id,
+                    include_sessions=session_table_row is not None,
+                    sort=sort,
+                )
+                if not rows:
+                    break
+                workspace_ids = tuple(str(row["workspace_id"]) for row in rows)
+                mounts_by_workspace: dict[str, list[sqlite3.Row]] = {}
+                if workspace_ids:
+                    placeholders = ",".join("?" for _ in workspace_ids)
+                    mount_rows = await async_fetchall(
+                        conn,
+                        f"""
+                        SELECT * FROM workspace_mounts
+                        WHERE workspace_id IN ({placeholders})
+                        ORDER BY
+                            workspace_id ASC,
+                            CASE provider
+                                WHEN 'local' THEN 0
+                                WHEN 'ssh' THEN 1
+                                ELSE 2
+                            END ASC,
+                            mount_name ASC
+                        """,
+                        workspace_ids,
+                    )
+                    for row in mount_rows:
+                        mounts_by_workspace.setdefault(
+                            str(row["workspace_id"]),
+                            [],
+                        ).append(row)
+                for row in rows:
+                    try:
+                        record = self._to_record(
+                            row=row,
+                            mount_rows=tuple(
+                                mounts_by_workspace.get(str(row["workspace_id"]), [])
+                            ),
+                        )
+                        records.append(
+                            WorkspacePageRecord(
+                                record=record,
+                                activity_at=_workspace_page_activity_sort_value(row),
+                            )
+                        )
+                    except (ValidationError, ValueError, json.JSONDecodeError) as exc:
+                        _log_invalid_workspace_row(row=row, error=exc)
+                if len(rows) < requested:
+                    break
+                last_row = rows[-1]
+                cursor_activity_at = _workspace_page_activity_sort_value(last_row)
+                cursor_workspace_id = str(last_row["workspace_id"])
             return tuple(records)
 
         return await self._run_async_read(operation)

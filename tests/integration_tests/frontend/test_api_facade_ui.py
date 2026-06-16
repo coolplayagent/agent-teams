@@ -1116,6 +1116,8 @@ def test_core_api_facade_exports_workspace_provider_helpers() -> None:
                 f"const mod = await import({api_module_path.as_uri()!r}); "
                 "console.log(["
                 "typeof mod.updateWorkspace,"
+                "typeof mod.fetchWorkspace,"
+                "typeof mod.fetchWorkspacePage,"
                 "typeof mod.fetchSshProfiles,"
                 "typeof mod.saveSshProfile,"
                 "typeof mod.revealSshProfilePassword,"
@@ -1140,7 +1142,7 @@ def test_core_api_facade_exports_workspace_provider_helpers() -> None:
 
     assert (
         completed.stdout.strip()
-        == "function,function,function,function,function,function"
+        == "function,function,function,function,function,function,function,function"
     )
 
 
@@ -1542,6 +1544,123 @@ export function invalidateManagedRequests() {}
             "url": "/api/workspaces/project-alpha/diff?path=src%2Fmain.py&mount=ops",
             "options": None,
             "errorMessage": "Failed to fetch project workspace diff file",
+        },
+    ]
+
+
+def test_workspace_api_helpers_support_paginated_workspace_list(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source_path = (
+        repo_root / "frontend" / "dist" / "js" / "core" / "api" / "workspaces.js"
+    )
+    module_under_test_path = tmp_path / "workspaces.mjs"
+    mock_request_path = tmp_path / "mockRequest.mjs"
+
+    mock_request_path.write_text(
+        """
+const responses = new Map([
+    [
+        '/api/workspaces?limit=2',
+        { items: [{ workspace_id: 'alpha-project' }], next_cursor: 'cursor-1', has_more: true },
+    ],
+    [
+        '/api/workspaces?limit=2&cursor=cursor-1',
+        { items: [{ workspace_id: 'bravo-project' }], next_cursor: null, has_more: false },
+    ],
+]);
+
+export async function requestJson() {
+    throw new Error('not used');
+}
+
+export async function requestJsonManaged(key, url, options, errorMessage, cacheOptions) {
+    globalThis.__capturedRequests = globalThis.__capturedRequests || [];
+    globalThis.__capturedRequests.push({
+        key,
+        url,
+        options: options ?? null,
+        errorMessage,
+        cacheOptions,
+    });
+    const response = responses.get(url);
+    if (!response) {
+        throw new Error(`unexpected URL ${url}`);
+    }
+    return response;
+}
+
+export function invalidateManagedRequests() {}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    source_text = source_path.read_text(encoding="utf-8")
+    module_text = source_text.replace(
+        "from './request.js';",
+        "from './mockRequest.mjs';",
+    )
+    assert module_text != source_text
+    module_under_test_path.write_text(module_text, encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            (
+                f"const mod = await import({module_under_test_path.as_uri()!r}); "
+                "const firstPage = await mod.fetchWorkspacePage({ limit: 2 }); "
+                "const workspaces = await mod.fetchWorkspaces({ limit: 2 }); "
+                "console.log(JSON.stringify({ firstPage, workspaces, requests: globalThis.__capturedRequests }));"
+            ),
+        ],
+        capture_output=True,
+        check=False,
+        cwd=str(repo_root),
+        text=True,
+        timeout=30,
+    )
+
+    if completed.returncode != 0:
+        raise AssertionError(
+            "Node import failed:\n"
+            f"STDOUT:\n{completed.stdout}\n"
+            f"STDERR:\n{completed.stderr}"
+        )
+
+    payload = json.loads(completed.stdout.strip())
+    assert payload["firstPage"] == {
+        "items": [{"workspace_id": "alpha-project"}],
+        "next_cursor": "cursor-1",
+        "has_more": True,
+    }
+    assert payload["workspaces"] == [
+        {"workspace_id": "alpha-project"},
+        {"workspace_id": "bravo-project"},
+    ]
+    assert payload["requests"] == [
+        {
+            "key": "workspaces:list-page:activity:2:first",
+            "url": "/api/workspaces?limit=2",
+            "options": {},
+            "errorMessage": "Failed to fetch projects",
+            "cacheOptions": {"ttlMs": 800},
+        },
+        {
+            "key": "workspaces:list-page:activity:2:first",
+            "url": "/api/workspaces?limit=2",
+            "options": {},
+            "errorMessage": "Failed to fetch projects",
+            "cacheOptions": {"ttlMs": 800},
+        },
+        {
+            "key": "workspaces:list-page:activity:2:cursor-1",
+            "url": "/api/workspaces?limit=2&cursor=cursor-1",
+            "options": {},
+            "errorMessage": "Failed to fetch projects",
+            "cacheOptions": {"ttlMs": 800},
         },
     ]
 

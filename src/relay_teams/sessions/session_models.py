@@ -344,3 +344,11 @@ class SessionSidebarRecord(BaseModel):
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
+
+
+class SessionSidebarPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: tuple[SessionSidebarRecord, ...] = ()
+    next_cursor: str | None = None
+    has_more: bool = False

@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 import base64
 import shutil
+import sqlite3
 import subprocess
 from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from relay_teams.sessions.session_repository import SessionRepository
 from relay_teams.secrets import AppSecretStore
 from relay_teams.workspace import (
     FileScopeBackend,
@@ -22,6 +26,7 @@ from relay_teams.workspace import (
     WorkspaceFileScope,
     WorkspaceMountProvider,
     WorkspaceMountRecord,
+    WorkspacePageSort,
     WorkspaceProfile,
     WorkspaceRepository,
     WorkspaceService,
@@ -177,6 +182,212 @@ def test_workspace_service_creates_and_lists_workspace(tmp_path: Path) -> None:
     listed = service.list_workspaces()
     assert len(listed) == 1
     assert listed[0].workspace_id == "project-alpha"
+
+
+def test_workspace_service_page_orders_by_latest_session_activity(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "workspace_service_activity_page.db"
+    old_root = tmp_path / "old-root"
+    new_root = tmp_path / "new-root"
+    old_root.mkdir()
+    new_root.mkdir()
+    repository = WorkspaceRepository(db_path)
+    service = WorkspaceService(repository=repository)
+    _ = service.create_workspace(workspace_id="workspace-old", root_path=old_root)
+    _ = service.create_workspace(workspace_id="workspace-new", root_path=new_root)
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-old",
+        created_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-new",
+        created_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+    session_repository = SessionRepository(db_path)
+    _ = session_repository.create(
+        session_id="session-recent",
+        workspace_id="workspace-old",
+    )
+    _update_session_timestamps(
+        db_path,
+        "session-recent",
+        created_at=datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc),
+    )
+
+    async def exercise() -> None:
+        first_page = await service.list_workspaces_page_async(limit=1)
+        second_page = await service.list_workspaces_page_async(
+            limit=1,
+            cursor=first_page.next_cursor,
+        )
+
+        assert [item.workspace_id for item in first_page.items] == ["workspace-old"]
+        assert first_page.has_more is True
+        assert [item.workspace_id for item in second_page.items] == ["workspace-new"]
+        assert second_page.has_more is False
+
+    asyncio.run(exercise())
+
+
+def test_workspace_service_page_can_order_by_workspace_created_time(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "workspace_service_created_page.db"
+    old_root = tmp_path / "old-root"
+    new_root = tmp_path / "new-root"
+    old_root.mkdir()
+    new_root.mkdir()
+    repository = WorkspaceRepository(db_path)
+    service = WorkspaceService(repository=repository)
+    _ = service.create_workspace(workspace_id="workspace-old", root_path=old_root)
+    _ = service.create_workspace(workspace_id="workspace-new", root_path=new_root)
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-old",
+        created_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-new",
+        created_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+    session_repository = SessionRepository(db_path)
+    _ = session_repository.create(
+        session_id="session-recent",
+        workspace_id="workspace-old",
+    )
+    _update_session_timestamps(
+        db_path,
+        "session-recent",
+        created_at=datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc),
+    )
+
+    async def exercise() -> None:
+        first_page = await service.list_workspaces_page_async(
+            limit=1,
+            sort=WorkspacePageSort.CREATED,
+        )
+        second_page = await service.list_workspaces_page_async(
+            limit=1,
+            cursor=first_page.next_cursor,
+            sort=WorkspacePageSort.CREATED,
+        )
+
+        assert [item.workspace_id for item in first_page.items] == ["workspace-new"]
+        assert first_page.has_more is True
+        assert [item.workspace_id for item in second_page.items] == ["workspace-old"]
+        assert second_page.has_more is False
+
+    asyncio.run(exercise())
+
+
+def test_workspace_service_page_skips_invalid_rows_before_cursor(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "workspace_service_invalid_page.db"
+    service = WorkspaceService(repository=WorkspaceRepository(db_path))
+    for workspace_id in ("workspace-new", "workspace-invalid", "workspace-old"):
+        root_path = tmp_path / workspace_id
+        root_path.mkdir()
+        _ = service.create_workspace(workspace_id=workspace_id, root_path=root_path)
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-new",
+        created_at=datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-invalid",
+        created_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-old",
+        created_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE workspace_mounts
+        SET provider_config_json=?
+        WHERE workspace_id=?
+        """,
+        ("{not-json", "workspace-invalid"),
+    )
+    connection.commit()
+    connection.close()
+
+    async def exercise() -> None:
+        first_page = await service.list_workspaces_page_async(limit=1)
+        second_page = await service.list_workspaces_page_async(
+            limit=1,
+            cursor=first_page.next_cursor,
+        )
+
+        assert [item.workspace_id for item in first_page.items] == ["workspace-new"]
+        assert first_page.has_more is True
+        assert first_page.next_cursor is not None
+        assert [item.workspace_id for item in second_page.items] == ["workspace-old"]
+        assert second_page.has_more is False
+        assert second_page.next_cursor is None
+
+    asyncio.run(exercise())
+
+
+def test_workspace_service_page_ignores_malformed_session_activity(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "workspace_service_malformed_session_activity.db"
+    stale_root = tmp_path / "stale-root"
+    recent_root = tmp_path / "recent-root"
+    stale_root.mkdir()
+    recent_root.mkdir()
+    repository = WorkspaceRepository(db_path)
+    service = WorkspaceService(repository=repository)
+    _ = service.create_workspace(workspace_id="workspace-stale", root_path=stale_root)
+    _ = service.create_workspace(workspace_id="workspace-recent", root_path=recent_root)
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-stale",
+        created_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_workspace_timestamps(
+        db_path,
+        "workspace-recent",
+        created_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+    session_repository = SessionRepository(db_path)
+    _ = session_repository.create(
+        session_id="session-malformed",
+        workspace_id="workspace-stale",
+    )
+    _update_session_raw_timestamps(
+        db_path,
+        "session-malformed",
+        created_at="also-not-a-date",
+        updated_at="zzzz-not-a-date",
+    )
+
+    async def exercise() -> None:
+        page = await service.list_workspaces_page_async(limit=1)
+
+        assert [item.workspace_id for item in page.items] == ["workspace-recent"]
+
+    asyncio.run(exercise())
 
 
 def test_workspace_service_updates_mounts_and_default_mount(tmp_path: Path) -> None:
@@ -2665,6 +2876,66 @@ def test_workspace_service_diff_treats_selected_path_as_literal(
     assert "ab.txt" not in diff_file.diff
     assert "+new literal" in diff_file.diff
     assert "+new glob" not in diff_file.diff
+
+
+def _update_workspace_timestamps(
+    db_path: Path,
+    workspace_id: str,
+    *,
+    created_at: datetime,
+    updated_at: datetime,
+) -> None:
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE workspaces
+        SET created_at=?, updated_at=?
+        WHERE workspace_id=?
+        """,
+        (created_at.isoformat(), updated_at.isoformat(), workspace_id),
+    )
+    connection.commit()
+    connection.close()
+
+
+def _update_session_timestamps(
+    db_path: Path,
+    session_id: str,
+    *,
+    created_at: datetime,
+    updated_at: datetime,
+) -> None:
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE sessions
+        SET created_at=?, updated_at=?
+        WHERE session_id=?
+        """,
+        (created_at.isoformat(), updated_at.isoformat(), session_id),
+    )
+    connection.commit()
+    connection.close()
+
+
+def _update_session_raw_timestamps(
+    db_path: Path,
+    session_id: str,
+    *,
+    created_at: str,
+    updated_at: str,
+) -> None:
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE sessions
+        SET created_at=?, updated_at=?
+        WHERE session_id=?
+        """,
+        (created_at, updated_at, session_id),
+    )
+    connection.commit()
+    connection.close()
 
 
 def _run_git_command(workspace_root: Path, *args: str) -> None:

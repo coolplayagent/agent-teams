@@ -9,8 +9,12 @@ from fastapi.testclient import TestClient
 import pytest
 import relay_teams.workspace.workspace_service as workspace_service_module
 
-from relay_teams.interfaces.server.deps import get_workspace_service
+from relay_teams.interfaces.server.deps import (
+    get_session_service,
+    get_workspace_service,
+)
 from relay_teams.interfaces.server.routers import workspaces
+from relay_teams.sessions import SessionSidebarPage, SessionSidebarRecord
 from relay_teams.workspace import (
     FileScopeBackend,
     GitWorktreeClient,
@@ -93,10 +97,48 @@ class FakeGitWorktreeClient(GitWorktreeClient):
         _ = repository_root
 
 
+class FakeSessionSidebarService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int, str | None]] = []
+
+    async def list_workspace_sidebar_sessions_page_async(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> SessionSidebarPage:
+        self.calls.append((workspace_id, limit, cursor))
+        return SessionSidebarPage(
+            items=(
+                SessionSidebarRecord(
+                    session_id="session-1",
+                    workspace_id=workspace_id,
+                    metadata={"title": "Run"},
+                ),
+            ),
+            next_cursor="cursor-next",
+            has_more=True,
+        )
+
+
+class FailingSessionSidebarService:
+    async def list_workspace_sidebar_sessions_page_async(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> SessionSidebarPage:
+        _ = (workspace_id, limit, cursor)
+        raise ValueError("Invalid session pagination cursor")
+
+
 def _create_test_client(
     tmp_path: Path,
     *,
     service: WorkspaceService | None = None,
+    session_service: object | None = None,
 ) -> tuple[TestClient, WorkspaceService]:
     app = FastAPI()
     app.include_router(workspaces.router, prefix="/api")
@@ -104,6 +146,8 @@ def _create_test_client(
         repository=WorkspaceRepository(tmp_path / "workspaces_router.db")
     )
     app.dependency_overrides[get_workspace_service] = lambda: resolved_service
+    if session_service is not None:
+        app.dependency_overrides[get_session_service] = lambda: session_service
     return TestClient(app), resolved_service
 
 
@@ -296,9 +340,56 @@ def test_list_and_get_workspaces(tmp_path: Path) -> None:
     get_response = client.get("/api/workspaces/project-alpha")
 
     assert list_response.status_code == 200
-    assert [item["workspace_id"] for item in list_response.json()] == ["project-alpha"]
+    list_payload = list_response.json()
+    assert list_payload["has_more"] is False
+    assert list_payload["next_cursor"] is None
+    assert [item["workspace_id"] for item in list_payload["items"]] == ["project-alpha"]
     assert get_response.status_code == 200
     assert get_response.json()["root_path"] == str(root_path.resolve())
+
+
+def test_list_workspaces_supports_cursor_pagination(tmp_path: Path) -> None:
+    client, service = _create_test_client(tmp_path)
+    for workspace_id in ("project-alpha", "project-bravo", "project-charlie"):
+        root_path = tmp_path / workspace_id
+        root_path.mkdir()
+        _ = service.create_workspace(
+            workspace_id=workspace_id,
+            root_path=root_path,
+        )
+
+    first_response = client.get("/api/workspaces?limit=2")
+
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+    assert [item["workspace_id"] for item in first_payload["items"]] == [
+        "project-charlie",
+        "project-bravo",
+    ]
+    assert first_payload["has_more"] is True
+    assert isinstance(first_payload["next_cursor"], str)
+
+    second_response = client.get(
+        "/api/workspaces",
+        params={"limit": "2", "cursor": first_payload["next_cursor"]},
+    )
+
+    assert second_response.status_code == 200
+    second_payload = second_response.json()
+    assert [item["workspace_id"] for item in second_payload["items"]] == [
+        "project-alpha"
+    ]
+    assert second_payload["has_more"] is False
+    assert second_payload["next_cursor"] is None
+
+
+def test_list_workspaces_rejects_invalid_cursor(tmp_path: Path) -> None:
+    client, _ = _create_test_client(tmp_path)
+
+    response = client.get("/api/workspaces?cursor=not-a-cursor")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid workspace pagination cursor"}
 
 
 def test_update_workspace_replaces_mounts_and_default_mount(tmp_path: Path) -> None:
@@ -390,6 +481,38 @@ def test_get_workspace_rejects_none_like_path_identifier(tmp_path: Path) -> None
     response = client.get("/api/workspaces/None")
 
     assert response.status_code == 422
+
+
+def test_list_workspace_sidebar_sessions_forwards_pagination(
+    tmp_path: Path,
+) -> None:
+    session_service = FakeSessionSidebarService()
+    client, _ = _create_test_client(tmp_path, session_service=session_service)
+
+    response = client.get(
+        "/api/workspaces/project-alpha/sessions/sidebar?limit=25&cursor=cursor-1"
+    )
+
+    assert response.status_code == 200
+    assert session_service.calls == [("project-alpha", 25, "cursor-1")]
+    assert response.json()["items"][0]["session_id"] == "session-1"
+    assert response.json()["items"][0]["workspace_id"] == "project-alpha"
+    assert response.json()["next_cursor"] == "cursor-next"
+    assert response.json()["has_more"] is True
+
+
+def test_list_workspace_sidebar_sessions_maps_cursor_errors(
+    tmp_path: Path,
+) -> None:
+    client, _ = _create_test_client(
+        tmp_path,
+        session_service=FailingSessionSidebarService(),
+    )
+
+    response = client.get("/api/workspaces/project-alpha/sessions/sidebar")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid session pagination cursor"}
 
 
 def test_create_workspace_rejects_missing_root(tmp_path: Path) -> None:

@@ -232,7 +232,13 @@ class AutomationService:
 
     async def list_projects_async(self) -> tuple[AutomationProjectRecord, ...]:
         projects = await self._repository.list_all_async()
-        sessions = await self._session_service.list_sessions_async()
+        if not projects:
+            return ()
+        sessions = await self._session_service.list_sessions_by_project_refs_async(
+            project_kind=ProjectKind.AUTOMATION,
+            project_ids=_automation_project_ids(projects),
+            session_ids=_automation_project_last_session_ids(projects),
+        )
         return _with_project_run_statuses_from_sessions(projects, sessions)
 
     def get_project(self, automation_project_id: str) -> AutomationProjectRecord:
@@ -691,7 +697,11 @@ class AutomationService:
         automation_project_id: str,
     ) -> tuple[dict[str, object], ...]:
         project = await self._repository.get_async(automation_project_id)
-        sessions = await self._session_service.list_sessions_async()
+        sessions = await self._session_service.list_sessions_by_project_refs_async(
+            project_kind=ProjectKind.AUTOMATION,
+            project_ids=(project.automation_project_id,),
+            session_ids=_automation_project_last_session_ids((project,)),
+        )
         return _project_session_payloads_from_sessions(project, sessions)
 
     def process_due_projects(
@@ -1410,6 +1420,34 @@ def _coerce_optional_status(value: object) -> str | None:
     if not status:
         return None
     return status
+
+
+def _automation_project_ids(
+    projects: tuple[AutomationProjectRecord, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            project_id
+            for project_id in (
+                str(project.automation_project_id or "").strip() for project in projects
+            )
+            if project_id
+        )
+    )
+
+
+def _automation_project_last_session_ids(
+    projects: tuple[AutomationProjectRecord, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            session_id
+            for session_id in (
+                str(project.last_session_id or "").strip() for project in projects
+            )
+            if session_id
+        )
+    )
 
 
 def _automation_session_payloads_by_project(

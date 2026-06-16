@@ -287,7 +287,7 @@ def test_board_todo_router_does_not_register_manual_create_route() -> None:
         for route in _BOARDS_ROUTER.router.routes
         if isinstance(route, APIRoute)
         and route.path == "/boards/todos"
-        and "POST" in route.methods
+        and "POST" in (route.methods or set())
     ]
 
     assert post_todo_routes == []
@@ -299,7 +299,7 @@ def test_board_todo_router_registers_mark_done_route() -> None:
         for route in _BOARDS_ROUTER.router.routes
         if isinstance(route, APIRoute)
         and route.path == "/boards/todos/{todo_id}:mark-done"
-        and "POST" in route.methods
+        and "POST" in (route.methods or set())
     ]
 
     assert len(mark_done_routes) == 1
@@ -311,7 +311,7 @@ def test_board_todo_router_registers_preview_request_changes_route() -> None:
         for route in _BOARDS_ROUTER.router.routes
         if isinstance(route, APIRoute)
         and route.path == "/boards/todos/{todo_id}:preview-request-changes"
-        and "POST" in route.methods
+        and "POST" in (route.methods or set())
     ]
 
     assert len(preview_routes) == 1

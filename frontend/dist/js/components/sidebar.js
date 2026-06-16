@@ -5,6 +5,7 @@
 import { els } from '../utils/dom.js';
 import { showConfirmDialog, showFormDialog, showTextInputDialog } from '../utils/feedback.js';
 import { sysLog } from '../utils/logger.js';
+import * as coreApi from '../core/api.js';
 import {
     createAutomationProject,
     deleteAutomationProject,
@@ -80,6 +81,9 @@ import {
 import { syncSessionDebugBadge } from './sessionDebugBadge.js';
 
 const DEFAULT_VISIBLE_SESSION_COUNT = 10;
+const SIDEBAR_WORKSPACE_PAGE_SIZE = 50;
+const SIDEBAR_SESSION_PAGE_SIZE = 50;
+const SIDEBAR_SESSION_PAGE_MAX_LIMIT = 200;
 const AUTOMATION_INTERNAL_WORKSPACE_ID = 'automation-system';
 const FEATURE_IDS = Object.freeze({
     skills: 'skills',
@@ -104,10 +108,22 @@ let selectSessionHandler = null;
 let refreshTimer = null;
 let pendingSessionsRefreshForce = false;
 let pendingSessionsRefreshTrailingForce = false;
+const workspaceRefreshTimers = new Map();
+const pendingWorkspaceRefreshForce = new Map();
+const pendingWorkspaceRefreshTrailingForce = new Map();
+const workspaceSessionsRefreshPromises = new Map();
+let sidebarSessionIndexSessions = [];
+let sidebarSessionIndexLoaded = false;
 const expandedProjectIds = new Set();
-const expandedProjectSessionIds = new Set();
 const initializedProjectIds = new Set();
 const sessionWorkspaceMap = new Map();
+const workspacePageState = {
+    nextCursor: '',
+    hasMore: false,
+    loading: false,
+};
+const workspaceSessionPageState = new Map();
+const workspaceSessionVisibleCounts = new Map();
 const automationBoundSessionIds = new Set();
 const renderedSubagentListExpandedState = new Map();
 const normalSubagentCountBySessionId = new Map();
@@ -119,8 +135,8 @@ let languageRefreshBound = false;
 let terminalSessionClickBound = false;
 let sessionSearchConfigured = false;
 let pendingSessionAnimation = null;
-let pendingSessionVisibilityAnimation = null;
 let loadProjectsRequestId = 0;
+let workspacePageLoadToken = 0;
 let loadProjectsController = null;
 let sessionsRefreshPromise = null;
 let suppressSessionsRefreshUntil = 0;
@@ -140,10 +156,8 @@ const SESSION_DELETE_REFRESH_SUPPRESSION_MS = 20000;
 
 const SESSION_ANIMATION_ENTER_MS = 220;
 const SESSION_ANIMATION_REMOVE_MS = 180;
-const SESSION_VISIBILITY_ANIMATION_MS = 160;
 const PROJECT_BODY_ANIMATION_MS = 160;
 const SUBAGENT_LIST_ANIMATION_MS = 160;
-const SESSION_VISIBILITY_ANIMATED_ITEM_LIMIT = 24;
 const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'stopped']);
 const RUNNING_RUN_STATUSES = new Set(['queued', 'running', 'stopping']);
 const TERMINAL_RUN_INDICATOR_STATUSES = new Set(['failed', 'stopped']);
@@ -216,8 +230,14 @@ function suppressSessionsRefreshAfterLocalDelete() {
         clearTimeout(refreshTimer);
         refreshTimer = null;
     }
+    workspaceRefreshTimers.forEach(timer => {
+        clearTimeout(timer);
+    });
+    workspaceRefreshTimers.clear();
     pendingSessionsRefreshForce = false;
     pendingSessionsRefreshTrailingForce = false;
+    pendingWorkspaceRefreshForce.clear();
+    pendingWorkspaceRefreshTrailingForce.clear();
 }
 
 function isSessionsRefreshSuppressed() {
@@ -918,6 +938,552 @@ function sessionTimestampValue(session) {
     );
 }
 
+function normalizeWorkspaceSessionPage(page) {
+    const payload = page && typeof page === 'object' ? page : {};
+    return {
+        items: Array.isArray(payload.items) ? payload.items : [],
+        nextCursor: String(payload.next_cursor || payload.nextCursor || '').trim(),
+        hasMore: payload.has_more === true || payload.hasMore === true,
+    };
+}
+
+function normalizeWorkspacePage(page) {
+    const payload = page && typeof page === 'object' ? page : {};
+    return {
+        items: Array.isArray(payload.items) ? payload.items : [],
+        nextCursor: String(payload.next_cursor || payload.nextCursor || '').trim(),
+        hasMore: payload.has_more === true || payload.hasMore === true,
+    };
+}
+
+async function fetchSidebarWorkspacePage(options = {}) {
+    if (typeof coreApi.fetchWorkspacePage === 'function') {
+        return coreApi.fetchWorkspacePage(options);
+    }
+    const workspaces = await fetchWorkspaces(options);
+    return {
+        items: Array.isArray(workspaces) ? workspaces : [],
+        next_cursor: null,
+        has_more: false,
+    };
+}
+
+async function fetchSidebarWorkspaceById(workspaceId, options = {}) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        return null;
+    }
+    if (typeof coreApi.fetchWorkspace === 'function') {
+        return coreApi.fetchWorkspace(safeWorkspaceId, options);
+    }
+    const workspaces = await fetchWorkspaces({
+        signal: options.signal,
+    });
+    return (Array.isArray(workspaces) ? workspaces : [])
+        .find(workspace => String(workspace?.workspace_id || '').trim() === safeWorkspaceId)
+        || null;
+}
+
+function workspacePageSortOption() {
+    return projectSortMode === PROJECT_SORT_MODES.PROJECT_CREATED ? 'created' : 'activity';
+}
+
+async function fetchSidebarWorkspaceSessionsPage(workspaceId, options = {}) {
+    if (typeof coreApi.fetchWorkspaceSidebarSessions === 'function') {
+        return coreApi.fetchWorkspaceSidebarSessions(workspaceId, options);
+    }
+    const sessions = await fetchSessions({
+        sidebar: true,
+        forceRefresh: options.forceRefresh === true,
+        signal: options.signal,
+    });
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    return {
+        items: Array.isArray(sessions)
+            ? sessions.filter(session => String(session?.workspace_id || '').trim() === safeWorkspaceId)
+            : [],
+        next_cursor: null,
+        has_more: false,
+    };
+}
+
+function setWorkspacePageStateFromPage(page, { loading = false } = {}) {
+    const normalized = normalizeWorkspacePage(page);
+    workspacePageState.nextCursor = normalized.nextCursor;
+    workspacePageState.hasMore = normalized.hasMore && Boolean(normalized.nextCursor);
+    workspacePageState.loading = loading === true;
+    return normalized;
+}
+
+function normalizeWorkspaceIds(workspaces) {
+    return Array.from(new Set((Array.isArray(workspaces) ? workspaces : [])
+        .map(workspace => String(workspace?.workspace_id || '').trim())
+        .filter(Boolean)));
+}
+
+function pruneWorkspaceSessionPageState(workspaceIds) {
+    const activeIds = new Set(workspaceIds);
+    Array.from(workspaceSessionPageState.keys()).forEach(workspaceId => {
+        if (!activeIds.has(workspaceId)) {
+            workspaceSessionPageState.delete(workspaceId);
+        }
+    });
+    Array.from(workspaceSessionVisibleCounts.keys()).forEach(workspaceId => {
+        if (!activeIds.has(workspaceId)) {
+            workspaceSessionVisibleCounts.delete(workspaceId);
+        }
+    });
+}
+
+function resetWorkspaceSessionPageState(workspaceIds, { prune = true } = {}) {
+    if (prune) {
+        pruneWorkspaceSessionPageState(workspaceIds);
+    }
+    workspaceIds.forEach(workspaceId => {
+        if (!workspaceSessionVisibleCounts.has(workspaceId)) {
+            workspaceSessionVisibleCounts.set(workspaceId, DEFAULT_VISIBLE_SESSION_COUNT);
+        }
+        workspaceSessionPageState.set(workspaceId, {
+            nextCursor: '',
+            hasMore: false,
+            loading: false,
+        });
+    });
+}
+
+function dedupeSidebarWorkspaces(workspaces) {
+    const byId = new Map();
+    (Array.isArray(workspaces) ? workspaces : []).forEach(workspace => {
+        const workspaceId = String(workspace?.workspace_id || '').trim();
+        if (!workspaceId || byId.has(workspaceId)) {
+            return;
+        }
+        byId.set(workspaceId, workspace);
+    });
+    return Array.from(byId.values());
+}
+
+function mergeSidebarWorkspaces(currentWorkspaces, nextWorkspaces) {
+    const incomingById = new Map();
+    (Array.isArray(nextWorkspaces) ? nextWorkspaces : []).forEach(workspace => {
+        const workspaceId = String(workspace?.workspace_id || '').trim();
+        if (workspaceId) {
+            incomingById.set(workspaceId, workspace);
+        }
+    });
+    const merged = [];
+    const seenIds = new Set();
+    (Array.isArray(currentWorkspaces) ? currentWorkspaces : []).forEach(workspace => {
+        const workspaceId = String(workspace?.workspace_id || '').trim();
+        if (!workspaceId || seenIds.has(workspaceId)) {
+            return;
+        }
+        merged.push(incomingById.get(workspaceId) || workspace);
+        seenIds.add(workspaceId);
+    });
+    (Array.isArray(nextWorkspaces) ? nextWorkspaces : []).forEach(workspace => {
+        const workspaceId = String(workspace?.workspace_id || '').trim();
+        if (!workspaceId || seenIds.has(workspaceId)) {
+            return;
+        }
+        merged.push(workspace);
+        seenIds.add(workspaceId);
+    });
+    return merged;
+}
+
+function workspaceSessionVisibleCount(workspaceId) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        return DEFAULT_VISIBLE_SESSION_COUNT;
+    }
+    const value = Number(workspaceSessionVisibleCounts.get(safeWorkspaceId) || 0);
+    if (!Number.isFinite(value) || value <= 0) {
+        return DEFAULT_VISIBLE_SESSION_COUNT;
+    }
+    return Math.max(DEFAULT_VISIBLE_SESSION_COUNT, Math.floor(value));
+}
+
+function setWorkspaceSessionVisibleCount(workspaceId, visibleCount) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        return;
+    }
+    const value = Number(visibleCount || 0);
+    const safeVisibleCount = Number.isFinite(value)
+        ? Math.max(DEFAULT_VISIBLE_SESSION_COUNT, Math.floor(value))
+        : DEFAULT_VISIBLE_SESSION_COUNT;
+    workspaceSessionVisibleCounts.set(safeWorkspaceId, safeVisibleCount);
+}
+
+function increaseWorkspaceSessionVisibleCount(workspaceId, loadedCount) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        return DEFAULT_VISIBLE_SESSION_COUNT;
+    }
+    const currentVisibleCount = workspaceSessionVisibleCount(safeWorkspaceId);
+    const maxVisibleCount = Math.max(DEFAULT_VISIBLE_SESSION_COUNT, Number(loadedCount || 0));
+    const nextVisibleCount = Math.min(
+        currentVisibleCount + DEFAULT_VISIBLE_SESSION_COUNT,
+        maxVisibleCount,
+    );
+    setWorkspaceSessionVisibleCount(safeWorkspaceId, nextVisibleCount);
+    return nextVisibleCount;
+}
+
+function workspaceSessionRefreshLimit(workspaceId, { preserveLoadedSessions = false } = {}) {
+    if (preserveLoadedSessions !== true) {
+        return SIDEBAR_SESSION_PAGE_SIZE;
+    }
+    return Math.min(
+        SIDEBAR_SESSION_PAGE_MAX_LIMIT,
+        Math.max(
+            SIDEBAR_SESSION_PAGE_SIZE,
+            workspaceSessionVisibleCount(workspaceId),
+            workspaceSessionsFromSnapshot(workspaceId).length,
+        ),
+    );
+}
+
+function workspaceSessionsFromSnapshot(workspaceId) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId || !hasSidebarDataSnapshot()) {
+        return [];
+    }
+    const snapshotData = getSidebarDataSnapshot();
+    const sessions = Array.isArray(snapshotData.sessions)
+        ? mergeOptimisticSessions(snapshotData.sessions)
+        : [];
+    return sessions
+        .filter(session => String(session?.workspace_id || '').trim() === safeWorkspaceId)
+        .sort((a, b) => (
+            sessionTimestampValue(b) - sessionTimestampValue(a)
+            || formatSessionLabel(a).localeCompare(formatSessionLabel(b))
+        ));
+}
+
+function workspaceSessionTailFromSnapshot(workspaceId, refreshedSessionIds, coveredSessionCount) {
+    const safeCoveredSessionCount = Math.max(
+        0,
+        Math.floor(Number(coveredSessionCount) || 0),
+    );
+    const safeRefreshedSessionIds = refreshedSessionIds instanceof Set
+        ? refreshedSessionIds
+        : new Set();
+    return workspaceSessionsFromSnapshot(workspaceId).filter((session, index) => {
+        const sessionId = String(session?.session_id || '').trim();
+        return (
+            index >= safeCoveredSessionCount
+            && sessionId
+            && !safeRefreshedSessionIds.has(sessionId)
+        );
+    });
+}
+
+function ensureWorkspaceSessionVisible(sessionId) {
+    const safeSessionId = String(sessionId || '').trim();
+    if (!safeSessionId || !hasSidebarDataSnapshot()) {
+        return;
+    }
+    const snapshotData = getSidebarDataSnapshot();
+    const sessions = Array.isArray(snapshotData.sessions)
+        ? mergeOptimisticSessions(snapshotData.sessions)
+        : [];
+    const session = sessions
+        .find(item => String(item?.session_id || '').trim() === safeSessionId);
+    const workspaceId = String(
+        session?.workspace_id
+        || sessionWorkspaceMap.get(safeSessionId)
+        || '',
+    ).trim();
+    if (!workspaceId) {
+        return;
+    }
+    const workspaceSessions = workspaceSessionsFromSnapshot(workspaceId);
+    const sessionIndex = workspaceSessions.findIndex(
+        item => String(item?.session_id || '').trim() === safeSessionId,
+    );
+    if (sessionIndex < 0) {
+        return;
+    }
+    setWorkspaceSessionVisibleCount(
+        workspaceId,
+        Math.max(workspaceSessionVisibleCount(workspaceId), sessionIndex + 1),
+    );
+}
+
+function sidebarSessionSortValue(session) {
+    return sessionTimestampValue(session);
+}
+
+function dedupeSidebarSessions(sessions) {
+    const byId = new Map();
+    (Array.isArray(sessions) ? sessions : []).forEach(session => {
+        const sessionId = String(session?.session_id || '').trim();
+        if (!sessionId || byId.has(sessionId)) {
+            return;
+        }
+        byId.set(sessionId, session);
+    });
+    return Array.from(byId.values()).sort((a, b) => (
+        sidebarSessionSortValue(b) - sidebarSessionSortValue(a)
+        || formatSessionLabel(a).localeCompare(formatSessionLabel(b))
+        || String(b?.session_id || '').localeCompare(String(a?.session_id || ''))
+    ));
+}
+
+function rememberSessionWorkspaceMappings(sessions, { clear = false } = {}) {
+    if (clear) {
+        sessionWorkspaceMap.clear();
+    }
+    (Array.isArray(sessions) ? sessions : []).forEach(session => {
+        const sessionId = String(session?.session_id || '').trim();
+        const workspaceId = String(session?.workspace_id || session?.workspaceId || '').trim();
+        if (sessionId && workspaceId) {
+            sessionWorkspaceMap.set(sessionId, workspaceId);
+        }
+    });
+}
+
+function rememberSidebarSessionIndex(sessions) {
+    sidebarSessionIndexSessions = dedupeSidebarSessions(Array.isArray(sessions) ? sessions : []);
+    sidebarSessionIndexLoaded = true;
+    rememberSessionWorkspaceMappings(sidebarSessionIndexSessions);
+}
+
+function sidebarSessionIndexSource(fallbackSessions = []) {
+    const sourceSessions = sidebarSessionIndexLoaded
+        ? [...sidebarSessionIndexSessions, ...fallbackSessions]
+        : fallbackSessions;
+    return dedupeSidebarSessions(mergeOptimisticSessions(sourceSessions));
+}
+
+function resolveSessionWorkspaceId(sessionId, fallbackWorkspaceId = '') {
+    const safeFallbackWorkspaceId = String(fallbackWorkspaceId || '').trim();
+    if (safeFallbackWorkspaceId) {
+        return safeFallbackWorkspaceId;
+    }
+    const safeSessionId = String(sessionId || '').trim();
+    if (!safeSessionId) {
+        return '';
+    }
+    const mappedWorkspaceId = String(sessionWorkspaceMap.get(safeSessionId) || '').trim();
+    if (mappedWorkspaceId) {
+        return mappedWorkspaceId;
+    }
+    if (!hasSidebarDataSnapshot()) {
+        return '';
+    }
+    const snapshotData = getSidebarDataSnapshot();
+    const sessions = Array.isArray(snapshotData.sessions)
+        ? mergeOptimisticSessions(snapshotData.sessions)
+        : [];
+    const session = sessions.find(item => (
+        String(item?.session_id || '').trim() === safeSessionId
+    ));
+    return String(session?.workspace_id || session?.workspaceId || '').trim();
+}
+
+function workspaceIdFromSessionEventDetail(detail, sessionId = '') {
+    const safeDetail = detail && typeof detail === 'object' ? detail : {};
+    const session = safeDetail.session && typeof safeDetail.session === 'object'
+        ? safeDetail.session
+        : {};
+    const run = safeDetail.run && typeof safeDetail.run === 'object'
+        ? safeDetail.run
+        : {};
+    const explicitWorkspaceId = String(
+        safeDetail.workspaceId
+        || safeDetail.workspace_id
+        || session.workspace_id
+        || session.workspaceId
+        || run.workspace_id
+        || run.workspaceId
+        || '',
+    ).trim();
+    const resolvedWorkspaceId = resolveSessionWorkspaceId(sessionId, explicitWorkspaceId);
+    if (resolvedWorkspaceId) {
+        return resolvedWorkspaceId;
+    }
+    const safeSessionId = String(sessionId || '').trim();
+    if (safeSessionId && safeSessionId === String(state.currentSessionId || '').trim()) {
+        return String(state.currentWorkspaceId || '').trim();
+    }
+    return '';
+}
+
+function workspaceIdFromGroupKey(groupKeyValue) {
+    const safeGroupKey = String(groupKeyValue || '').trim();
+    if (!safeGroupKey.startsWith('workspace:')) {
+        return '';
+    }
+    return safeGroupKey.slice('workspace:'.length).trim();
+}
+
+function workspaceExistsInSnapshot(workspaceId) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId || !hasSidebarDataSnapshot()) {
+        return false;
+    }
+    const snapshotData = getSidebarDataSnapshot();
+    return (Array.isArray(snapshotData.workspaces) ? snapshotData.workspaces : [])
+        .some(workspace => String(workspace?.workspace_id || '').trim() === safeWorkspaceId);
+}
+
+function rememberWorkspaceSessionsSnapshot(
+    workspaceId,
+    sessions,
+    {
+        preserveLoadedSessions = false,
+        preserveLoadedSessionsAfterCount = 0,
+    } = {},
+) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId || !hasSidebarDataSnapshot()) {
+        return false;
+    }
+    const snapshotData = getSidebarDataSnapshot();
+    const currentSessions = Array.isArray(snapshotData.sessions)
+        ? snapshotData.sessions
+        : [];
+    const otherSessions = currentSessions.filter(session => (
+        String(session?.workspace_id || session?.workspaceId || '').trim() !== safeWorkspaceId
+    ));
+    const scopedSessions = (Array.isArray(sessions) ? sessions : [])
+        .filter(session => session && typeof session === 'object')
+        .map(session => {
+            const sessionWorkspaceId = String(session?.workspace_id || session?.workspaceId || '').trim();
+            if (sessionWorkspaceId) {
+                return session;
+            }
+            return {
+                ...session,
+                workspace_id: safeWorkspaceId,
+            };
+        })
+        .filter(session => (
+            String(session?.workspace_id || session?.workspaceId || '').trim() === safeWorkspaceId
+        ));
+    const refreshedSessionIds = new Set(scopedSessions
+        .map(session => String(session?.session_id || '').trim())
+        .filter(Boolean));
+    const preservedSessions = preserveLoadedSessions === true
+        ? workspaceSessionTailFromSnapshot(
+            safeWorkspaceId,
+            refreshedSessionIds,
+            preserveLoadedSessionsAfterCount,
+        )
+        : [];
+    rememberSidebarDataSnapshot({
+        workspaces: snapshotData.workspaces,
+        workspacesComplete: snapshotData.workspacesComplete === true,
+        sessions: dedupeSidebarSessions([
+            ...otherSessions,
+            ...scopedSessions,
+            ...preservedSessions,
+        ]),
+        automationProjects: snapshotData.automationProjects,
+    });
+    return true;
+}
+
+function updateSidebarSessionSnapshot(sessionId, updater) {
+    const safeSessionId = String(sessionId || '').trim();
+    if (!safeSessionId || !hasSidebarDataSnapshot()) {
+        return false;
+    }
+    const snapshotData = getSidebarDataSnapshot();
+    let updated = false;
+    const sessions = (Array.isArray(snapshotData.sessions) ? snapshotData.sessions : [])
+        .map(session => {
+            if (String(session?.session_id || '').trim() !== safeSessionId) {
+                return session;
+            }
+            const nextSession = updater(session);
+            if (!nextSession || typeof nextSession !== 'object') {
+                return session;
+            }
+            updated = true;
+            return nextSession;
+        });
+    if (!updated) {
+        return false;
+    }
+    rememberSidebarDataSnapshot({
+        workspaces: snapshotData.workspaces,
+        workspacesComplete: snapshotData.workspacesComplete === true,
+        sessions,
+        automationProjects: snapshotData.automationProjects,
+    });
+    return true;
+}
+
+function renderProjectsFromSnapshotOrLoad() {
+    if (!renderProjectsFromSnapshot({ syncStreams: false })) {
+        void loadProjects();
+    }
+}
+
+async function fetchSidebarSessionsForWorkspaces(
+    workspaces,
+    {
+        forceRefresh = false,
+        signal,
+        pruneExisting = true,
+        preserveLoadedSessions = false,
+    } = {},
+) {
+    const workspaceIds = normalizeWorkspaceIds(workspaces);
+    if (workspaceIds.length === 0) {
+        resetWorkspaceSessionPageState(workspaceIds, { prune: pruneExisting });
+        rememberSidebarSessionIndex([]);
+        return [];
+    }
+    const requestedLimitByWorkspaceId = new Map();
+    const pages = await Promise.all(workspaceIds.map(workspaceId => {
+        const limit = workspaceSessionRefreshLimit(workspaceId, { preserveLoadedSessions });
+        requestedLimitByWorkspaceId.set(workspaceId, limit);
+        return fetchSidebarWorkspaceSessionsPage(workspaceId, {
+            limit,
+            forceRefresh,
+            signal,
+        });
+    }));
+    resetWorkspaceSessionPageState(workspaceIds, { prune: pruneExisting });
+    const sessions = [];
+    const refreshedSessionIds = new Set();
+    pages.forEach((page, index) => {
+        const workspaceId = workspaceIds[index];
+        const normalized = normalizeWorkspaceSessionPage(page);
+        workspaceSessionPageState.set(workspaceId, {
+            nextCursor: normalized.nextCursor,
+            hasMore: normalized.hasMore && Boolean(normalized.nextCursor),
+            loading: false,
+        });
+        normalized.items.forEach(item => {
+            const sessionId = String(item?.session_id || '').trim();
+            if (sessionId) {
+                refreshedSessionIds.add(sessionId);
+            }
+            sessions.push(item);
+        });
+    });
+    if (preserveLoadedSessions === true) {
+        workspaceIds.forEach(workspaceId => {
+            workspaceSessionTailFromSnapshot(
+                workspaceId,
+                refreshedSessionIds,
+                requestedLimitByWorkspaceId.get(workspaceId) || 0,
+            ).forEach(session => {
+                sessions.push(session);
+            });
+        });
+    }
+    const dedupedSessions = dedupeSidebarSessions(sessions);
+    rememberSidebarSessionIndex(dedupedSessions);
+    return dedupedSessions;
+}
+
 function workspaceCreatedTimestampValue(workspace) {
     return timestampValue(
         workspace?.created_at
@@ -1024,6 +1590,41 @@ function groupKey(kind, id) {
     return `${kind}:${id}`;
 }
 
+function forgetSidebarWorkspace(workspaceId) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        return false;
+    }
+    workspaceSessionPageState.delete(safeWorkspaceId);
+    workspaceSessionVisibleCounts.delete(safeWorkspaceId);
+    initializedProjectIds.delete(groupKey('workspace', safeWorkspaceId));
+    sidebarSessionIndexSessions = sidebarSessionIndexSessions.filter(session => (
+        String(session?.workspace_id || session?.workspaceId || '').trim() !== safeWorkspaceId
+    ));
+    Array.from(sessionWorkspaceMap.entries()).forEach(([sessionId, mappedWorkspaceId]) => {
+        if (String(mappedWorkspaceId || '').trim() === safeWorkspaceId) {
+            sessionWorkspaceMap.delete(sessionId);
+        }
+    });
+    if (!hasSidebarDataSnapshot()) {
+        return false;
+    }
+    const snapshotData = getSidebarDataSnapshot();
+    const workspaces = (Array.isArray(snapshotData.workspaces) ? snapshotData.workspaces : [])
+        .filter(workspace => String(workspace?.workspace_id || '').trim() !== safeWorkspaceId);
+    const sessions = (Array.isArray(snapshotData.sessions) ? snapshotData.sessions : [])
+        .filter(session => (
+            String(session?.workspace_id || session?.workspaceId || '').trim() !== safeWorkspaceId
+        ));
+    rememberSidebarDataSnapshot({
+        workspaces,
+        workspacesComplete: snapshotData.workspacesComplete === true,
+        sessions,
+        automationProjects: snapshotData.automationProjects,
+    });
+    return true;
+}
+
 function buildWorkspaceDisplayMetadata(workspaces) {
     const labelCounts = new Map();
     const pathCounts = new Map();
@@ -1066,16 +1667,11 @@ function sessionGroupKey(session) {
 function buildProjectGroups(workspaces, sessions) {
     const sessionsByGroup = new Map();
     const workspaceDisplayMetadata = buildWorkspaceDisplayMetadata(workspaces);
-    sessionWorkspaceMap.clear();
+    rememberSessionWorkspaceMappings(sessions, { clear: true });
 
     sessions.forEach(session => {
-        const sessionId = String(session?.session_id || '').trim();
         const key = sessionGroupKey(session);
         if (!key) return;
-        const workspaceId = String(session?.workspace_id || '').trim();
-        if (workspaceId && sessionId) {
-            sessionWorkspaceMap.set(sessionId, workspaceId);
-        }
         if (!sessionsByGroup.has(key)) sessionsByGroup.set(key, []);
         sessionsByGroup.get(key).push(session);
     });
@@ -1159,6 +1755,27 @@ function buildChronologicalSessionSearchEntries(workspaces, sessions) {
     });
 }
 
+function syncSessionSearchEntriesFromSources(workspaces, fallbackSessions) {
+    const indexedSessions = sidebarSessionIndexSource(fallbackSessions);
+    rememberSessionWorkspaceMappings(indexedSessions);
+    setSessionSearchEntries(buildChronologicalSessionSearchEntries(workspaces, indexedSessions));
+}
+
+function syncBackgroundStreamsFromSources(fallbackSessions) {
+    void maybeSyncBackgroundStreams(sidebarSessionIndexSource(fallbackSessions));
+}
+
+function syncSidebarSessionIndexConsumers(
+    workspaces,
+    fallbackSessions,
+    { syncStreams = false } = {},
+) {
+    syncSessionSearchEntriesFromSources(workspaces, fallbackSessions);
+    if (syncStreams) {
+        syncBackgroundStreamsFromSources(fallbackSessions);
+    }
+}
+
 function ensureSessionSearchConfigured() {
     if (sessionSearchConfigured) {
         return;
@@ -1224,7 +1841,7 @@ function ensureProjectMenuDismissBinding() {
         if (openProjectMenuId !== null || projectSortMenuOpen) {
             openProjectMenuId = null;
             projectSortMenuOpen = false;
-            void loadProjects();
+            renderProjectsFromSnapshotOrLoad();
         }
     });
     projectMenuDismissBound = true;
@@ -1327,10 +1944,13 @@ function buildProjectsRenderSignature(groups, automationProjects, chronologicalS
     const activeSubagent = getActiveSubagentSession();
     const visibleState = groups.map(group => {
         const groupKeyValue = String(group?.key || '').trim();
-        const sessionsExpanded = expandedProjectSessionIds.has(groupKeyValue);
-        const visibleSessions = visibleSessionsForGroup(group, {
-            sessionsExpanded,
-        });
+        const visibleSessions = visibleSessionsForGroup(group);
+        const workspaceVisibleCount = group.kind === 'workspace'
+            ? workspaceSessionVisibleCount(group?.id)
+            : DEFAULT_VISIBLE_SESSION_COUNT;
+        const pageState = group.kind === 'workspace'
+            ? workspaceSessionPageState.get(String(group?.id || '').trim()) || {}
+            : {};
         return {
             key: groupKeyValue,
             id: String(group?.id || '').trim(),
@@ -1338,13 +1958,16 @@ function buildProjectsRenderSignature(groups, automationProjects, chronologicalS
             label: formatProjectLabel(group),
             path: String(group?.pathHint || group?.workspace?.root_path || '').trim(),
             expanded: expandedProjectIds.has(groupKeyValue),
-            sessionsExpanded,
+            workspaceVisibleCount,
             menuOpen: openProjectMenuId === groupKeyValue,
             projectActive: (
                 state.currentMainView === 'project'
                 && state.currentProjectViewWorkspaceId === group?.id
             ),
             totalSessions: Array.isArray(group?.sessions) ? group.sessions.length : 0,
+            pageHasMore: pageState.hasMore === true,
+            pageLoading: pageState.loading === true,
+            pageCursor: String(pageState.nextCursor || '').trim(),
             visibleSessions: visibleSessions.map(session => buildSessionSignature(session)),
         };
     });
@@ -1358,8 +1981,12 @@ function buildProjectsRenderSignature(groups, automationProjects, chronologicalS
         activeView: String(state.activeView || '').trim(),
         openProjectMenuId,
         projectSortMenuOpen,
+        workspacePage: {
+            hasMore: workspacePageState.hasMore === true,
+            loading: workspacePageState.loading === true,
+            nextCursor: String(workspacePageState.nextCursor || '').trim(),
+        },
         pendingAnimation: pendingSessionAnimation,
-        pendingVisibilityAnimation: pendingSessionVisibilityAnimation,
         automationBindings: buildAutomationBindingSignature(automationProjects),
         groups: visibleState,
         chronologicalSessions: chronologicalSessions.map(session => buildSessionSignature(session)),
@@ -1627,9 +2254,13 @@ async function handleSessionSearchSelection(result) {
     const selectionToken = nextSidebarSelectionToken();
     if (groupKeyValue) {
         expandedProjectIds.add(groupKeyValue);
-        expandedProjectSessionIds.add(groupKeyValue);
     }
-    void loadProjects();
+    ensureWorkspaceSessionVisible(sessionId);
+    if (!renderProjectsFromSnapshot({ syncStreams: false })) {
+        scheduleSessionSidebarRefresh(sessionId, 120, {
+            workspaceId: workspaceIdFromGroupKey(groupKeyValue),
+        });
+    }
     if (!isLatestSidebarSelection(selectionToken)) {
         return;
     }
@@ -1663,36 +2294,8 @@ function consumePendingSessionAnimation() {
     return pending;
 }
 
-function setPendingSessionVisibilityAnimation(groupKeyValue, direction) {
-    const safeGroupKey = String(groupKeyValue || '').trim();
-    const safeDirection = String(direction || '').trim();
-    if (!safeGroupKey || !['expand', 'collapse'].includes(safeDirection)) {
-        pendingSessionVisibilityAnimation = null;
-        return;
-    }
-    pendingSessionVisibilityAnimation = {
-        groupKey: safeGroupKey,
-        direction: safeDirection,
-    };
-}
-
-function consumePendingSessionVisibilityAnimation(groupKeyValue) {
-    const safeGroupKey = String(groupKeyValue || '').trim();
-    if (
-        !safeGroupKey
-        || !pendingSessionVisibilityAnimation
-        || pendingSessionVisibilityAnimation.groupKey !== safeGroupKey
-    ) {
-        return null;
-    }
-    const pending = pendingSessionVisibilityAnimation;
-    pendingSessionVisibilityAnimation = null;
-    return pending;
-}
-
 function clearPendingSidebarAnimations() {
     pendingSessionAnimation = null;
-    pendingSessionVisibilityAnimation = null;
 }
 
 function findSessionItem(sessionId) {
@@ -1890,57 +2493,6 @@ function playPendingSessionAnimation() {
     animateSessionItem(item, pending.animation);
 }
 
-async function toggleProjectSessionVisibility(card, groupKeyValue) {
-    const safeGroupKey = String(groupKeyValue || '').trim();
-    if (!safeGroupKey) return;
-    const wasExpanded = expandedProjectSessionIds.has(safeGroupKey);
-    if (wasExpanded) {
-        await animateProjectSessionVisibilityCollapse(card);
-        expandedProjectSessionIds.delete(safeGroupKey);
-    } else {
-        expandedProjectSessionIds.add(safeGroupKey);
-        setPendingSessionVisibilityAnimation(safeGroupKey, 'expand');
-    }
-    await loadProjects();
-}
-
-async function animateProjectSessionVisibilityCollapse(card) {
-    const list = card?.querySelector?.('.project-session-list') || null;
-    if (!list?.classList?.add) {
-        return;
-    }
-    const fromHeight = measureElementHeight(list);
-    const toHeight = measureCollapsedSessionListHeight(list);
-    if (fromHeight > 0 && toHeight >= 0 && toHeight < fromHeight) {
-        list.classList.add('is-visibility-height-collapsing');
-        list.style?.setProperty?.('max-height', `${fromHeight}px`);
-        list.style?.setProperty?.('overflow', 'hidden');
-        void list.offsetHeight;
-        list.style?.setProperty?.('max-height', `${toHeight}px`);
-        await new Promise(resolve => globalThis.setTimeout(resolve, SESSION_VISIBILITY_ANIMATION_MS));
-        return;
-    }
-    list.classList.add('is-visibility-collapsing');
-    const entries = Array.from(list.querySelectorAll?.('.session-entry[data-session-index]') || []);
-    let animatedCount = 0;
-    for (const entry of entries) {
-        const index = Number(entry?.getAttribute?.('data-session-index') || 0);
-        if (index < DEFAULT_VISIBLE_SESSION_COUNT) {
-            continue;
-        }
-        if (animatedCount >= SESSION_VISIBILITY_ANIMATED_ITEM_LIMIT) {
-            break;
-        }
-        entry.style?.setProperty?.('--session-visibility-index', String(animatedCount));
-        entry.classList?.add?.('session-entry-collapsing');
-        animatedCount += 1;
-    }
-    if (animatedCount === 0) {
-        return;
-    }
-    await new Promise(resolve => globalThis.setTimeout(resolve, SESSION_VISIBILITY_ANIMATION_MS));
-}
-
 function measureElementHeight(element) {
     const rect = element?.getBoundingClientRect?.();
     const rectHeight = Number(rect?.height || 0);
@@ -1949,26 +2501,6 @@ function measureElementHeight(element) {
     }
     const scrollHeight = Number(element?.scrollHeight || 0);
     return scrollHeight > 0 ? scrollHeight : 0;
-}
-
-function measureCollapsedSessionListHeight(list) {
-    const entries = Array.from(list?.querySelectorAll?.('.session-entry[data-session-index]') || []);
-    if (entries.length <= DEFAULT_VISIBLE_SESSION_COUNT) {
-        return measureElementHeight(list);
-    }
-    const lastVisibleEntry = entries[DEFAULT_VISIBLE_SESSION_COUNT - 1];
-    const listRect = list?.getBoundingClientRect?.();
-    const entryRect = lastVisibleEntry?.getBoundingClientRect?.();
-    const listTop = Number(listRect?.top || 0);
-    const entryBottom = Number(entryRect?.bottom || 0);
-    if (entryBottom > listTop) {
-        return Math.ceil(entryBottom - listTop);
-    }
-    const entryHeight = Number(lastVisibleEntry?.offsetHeight || 0);
-    if (entryHeight > 0) {
-        return Math.ceil(entryHeight * DEFAULT_VISIBLE_SESSION_COUNT);
-    }
-    return 0;
 }
 
 function dispatchSubagentItemSelection(button) {
@@ -2060,7 +2592,8 @@ function bindSubagentDeleteButtons(root) {
             if (state.currentSessionId === sessionId && !state.activeSubagentSession && typeof selectSessionHandler === 'function') {
                 await selectSessionHandler(sessionId);
             }
-            await loadProjects({ forceRefresh: true });
+            renderProjectsFromSnapshot({ syncStreams: false });
+            scheduleSessionSidebarRefresh(sessionId, 120, { forceRefresh: true });
         });
     });
 }
@@ -2110,17 +2643,9 @@ function renderSessionItem(session, { workspaceId = '' } = {}) {
 function renderSessionEntry(session, {
     sessionIndex = 0,
     workspaceId = '',
-    enteringVisibility = false,
-    visibilityIndex = 0,
 } = {}) {
-    const sessionEntryClassName = enteringVisibility
-        ? 'session-entry session-entry-visible-entering'
-        : 'session-entry';
-    const sessionEntryStyle = enteringVisibility
-        ? ` style="--session-visibility-index: ${visibilityIndex};"`
-        : '';
     return `
-        <div class="${sessionEntryClassName}" data-session-index="${sessionIndex}"${sessionEntryStyle}>
+        <div class="session-entry" data-session-index="${sessionIndex}">
             ${renderSessionItem(session, { workspaceId })}
             ${renderSubagentChildren(session)}
         </div>
@@ -2240,7 +2765,22 @@ function bindSessionRows(root, { projectId = '' } = {}) {
                 nextMetadata.title = null;
             }
             await updateSession(sessionId, nextMetadata);
-            await loadProjects();
+            const snapshotUpdated = updateSidebarSessionSnapshot(sessionId, session => {
+                const currentMetadata = session.metadata && typeof session.metadata === 'object'
+                    ? session.metadata
+                    : {};
+                return {
+                    ...session,
+                    metadata: {
+                        ...currentMetadata,
+                        ...nextMetadata,
+                    },
+                };
+            });
+            if (snapshotUpdated || normalizedTitle) {
+                renderProjectsFromSnapshot({ syncStreams: false });
+            }
+            scheduleSessionSidebarRefresh(sessionId, 120, { forceRefresh: true });
         });
     });
 
@@ -2284,7 +2824,8 @@ function bindSessionRows(root, { projectId = '' } = {}) {
             if (state.currentSessionId === sessionId && !state.activeSubagentSession && typeof selectSessionHandler === 'function') {
                 await selectSessionHandler(sessionId);
             }
-            await loadProjects();
+            renderProjectsFromSnapshot({ syncStreams: false });
+            scheduleSessionSidebarRefresh(sessionId, 120, { forceRefresh: true });
         });
     });
 
@@ -2296,6 +2837,7 @@ function bindSessionRows(root, { projectId = '' } = {}) {
             event.stopPropagation();
             const sessionId = String(button.getAttribute('data-session-id') || '').trim();
             if (!sessionId) return;
+            const workspaceId = resolveSessionWorkspaceId(sessionId);
             const shouldDelete = await showConfirmDialog({
                 title: t('sidebar.delete_session_title'),
                 message: formatMessage('sidebar.delete_session_message', { session_id: sessionId }),
@@ -2314,7 +2856,11 @@ function bindSessionRows(root, { projectId = '' } = {}) {
             if (state.currentSessionId === sessionId) {
                 clearActiveSessionView();
             }
-            scheduleSessionsRefresh(900, { forceRefresh: true });
+            if (workspaceId) {
+                scheduleWorkspaceSessionsRefresh(workspaceId, 900, { forceRefresh: true });
+            } else {
+                scheduleSessionsRefresh(900, { forceRefresh: true });
+            }
         });
     });
 }
@@ -2338,7 +2884,7 @@ function bindProjectCard(card, group) {
         clearFeatureNavigationState();
         clearSessionNavigationState();
         await openWorkspaceProjectView(group.workspace, { originSessionId });
-        await loadProjects();
+        renderProjectsFromSnapshotOrLoad();
     });
     card.querySelector('.project-new-session-btn')?.addEventListener('click', event => {
         event?.stopPropagation?.();
@@ -2348,11 +2894,11 @@ function bindProjectCard(card, group) {
         event?.stopPropagation?.();
         projectSortMenuOpen = false;
         openProjectMenuId = openProjectMenuId === groupKeyValue ? null : groupKeyValue;
-        void loadProjects();
+        renderProjectsFromSnapshotOrLoad();
     });
-    card.querySelector('.project-session-visibility-btn')?.addEventListener('click', event => {
+    card.querySelector('.project-session-load-more-btn')?.addEventListener('click', event => {
         event?.stopPropagation?.();
-        void toggleProjectSessionVisibility(card, groupKeyValue);
+        void loadMoreWorkspaceSessions(projectId);
     });
     card.querySelector('.project-fork-btn')?.addEventListener('click', event => {
         event?.stopPropagation?.();
@@ -2363,6 +2909,52 @@ function bindProjectCard(card, group) {
         void handleRemoveWorkspaceClick(group.workspace);
     });
     bindSessionRows(card, { projectId });
+}
+
+function renderWorkspaceSessionLoadMoreButton(group) {
+    if (group?.kind !== 'workspace') {
+        return '';
+    }
+    const safeWorkspaceId = String(group?.id || '').trim();
+    if (!safeWorkspaceId) {
+        return '';
+    }
+    const loadedSessionCount = Array.isArray(group.sessions) ? group.sessions.length : 0;
+    const visibleSessionCount = workspaceSessionVisibleCount(safeWorkspaceId);
+    const pageState = workspaceSessionPageState.get(safeWorkspaceId) || {};
+    const hasHiddenLoadedSessions = loadedSessionCount > visibleSessionCount;
+    if (!hasHiddenLoadedSessions && pageState.hasMore !== true && pageState.loading !== true) {
+        return '';
+    }
+    const loading = pageState.loading === true;
+    const label = loading
+        ? t('sidebar.loading_more_sessions')
+        : t('sidebar.load_more_sessions');
+    return `<button class="project-session-load-more-btn" type="button" data-workspace-session-load-more="${escapeHtml(safeWorkspaceId)}" ${loading ? 'disabled' : ''}>${escapeHtml(label)}</button>`;
+}
+
+function renderWorkspaceLoadMoreButton() {
+    if (
+        workspacePageState.hasMore !== true
+        && workspacePageState.loading !== true
+    ) {
+        return null;
+    }
+    const footer = document.createElement('div');
+    footer.className = 'project-workspace-load-more';
+    const button = document.createElement('button');
+    button.className = 'project-workspace-load-more-btn';
+    button.type = 'button';
+    button.disabled = workspacePageState.loading === true;
+    button.textContent = workspacePageState.loading === true
+        ? t('sidebar.loading_more_workspaces')
+        : t('sidebar.load_more_workspaces');
+    button.addEventListener('click', event => {
+        event?.stopPropagation?.();
+        void loadMoreWorkspaces();
+    });
+    footer.appendChild(button);
+    return footer;
 }
 
 async function markClickedSessionTerminalViewed(sessionId) {
@@ -2518,16 +3110,7 @@ function renderProjectCard(group) {
     const projectLabel = formatProjectLabel(group);
     const expanded = expandedProjectIds.has(projectKey);
     const menuOpen = openProjectMenuId === projectKey;
-    const sessionsExpanded = expandedProjectSessionIds.has(projectKey);
-    const visibleSessions = visibleSessionsForGroup(group, {
-        sessionsExpanded,
-    });
-    const visibilityAnimation = consumePendingSessionVisibilityAnimation(projectKey);
-    const visibilityDirection = String(visibilityAnimation?.direction || '').trim();
-    const listVisibilityClass = visibilityDirection
-        ? ` is-visibility-${visibilityDirection === 'expand' ? 'expanding' : 'collapsed'}`
-        : '';
-    const hasHiddenSessions = group.sessions.length > DEFAULT_VISIBLE_SESSION_COUNT;
+    const visibleSessions = visibleSessionsForGroup(group);
     const projectViewActive = state.currentMainView === 'project' && state.currentProjectViewWorkspaceId === projectId;
     const pathHint = String(group.pathHint || group.workspace?.root_path || '').trim();
     const projectIcon = '<svg viewBox="0 0 24 24" fill="none" class="icon-sm"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
@@ -2547,18 +3130,13 @@ function renderProjectCard(group) {
         <div class="project-path-hint">${escapeHtml(pathHint)}</div>
         ${menuOpen ? `<div class="project-menu project-menu-workspace is-opening" role="menu"><button class="project-fork-btn project-workspace-menu-btn" type="button" role="menuitem"><span class="project-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" class="icon-sm"><path d="M9 5H6.75A1.75 1.75 0 0 0 5 6.75v10.5C5 18.22 5.78 19 6.75 19h10.5A1.75 1.75 0 0 0 19 17.25V15M15 5h4m0 0v4m0-4-7.5 7.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>${escapeHtml(t('sidebar.fork'))}</span></button><button class="project-remove-btn project-workspace-menu-btn project-remove-workspace-btn" type="button" role="menuitem"><span class="project-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" class="icon-sm"><path d="M6 7h12M9 7V5.8c0-.44 0-.66.09-.83a1 1 0 0 1 .42-.42C9.74 4.5 9.96 4.5 10.4 4.5h3.2c.44 0 .66 0 .83.08a1 1 0 0 1 .42.42c.09.17.09.39.09.83V7m-7 0 .55 9.18c.03.55.05.82.17 1.03a1 1 0 0 0 .43.4c.22.1.49.1 1.03.1h4.64c.54 0 .81 0 1.03-.1a1 1 0 0 0 .43-.4c.12-.21.14-.48.17-1.03L18 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>${escapeHtml(t('sidebar.remove'))}</span></button></div>` : ''}
         <div class="project-body${expanded ? ' is-expanded' : ' is-collapsed'}">
-            <div class="project-session-list${listVisibilityClass}">
+            <div class="project-session-list">
                 ${
                     visibleSessions.length > 0
                         ? visibleSessions.map((session, sessionIndex) => {
-                            const enteringVisibility = visibilityDirection === 'expand'
-                                && sessionIndex >= DEFAULT_VISIBLE_SESSION_COUNT
-                                && sessionIndex < DEFAULT_VISIBLE_SESSION_COUNT + SESSION_VISIBILITY_ANIMATED_ITEM_LIMIT;
                             return renderSessionEntry(session, {
                                 sessionIndex,
                                 workspaceId: session?.workspace_id || group.workspace?.workspace_id || '',
-                                enteringVisibility,
-                                visibilityIndex: sessionIndex - DEFAULT_VISIBLE_SESSION_COUNT,
                             });
                         }).join('')
                         : `
@@ -2568,7 +3146,7 @@ function renderProjectCard(group) {
                         `
                 }
             </div>
-            ${hasHiddenSessions ? `<button class="project-session-visibility-btn" type="button">${sessionsExpanded ? escapeHtml(t('sidebar.collapse')) : escapeHtml(formatMessage('sidebar.show_all', { count: group.sessions.length }))}</button>` : ''}
+            ${renderWorkspaceSessionLoadMoreButton(group)}
         </div>
     `;
     bindProjectCard(card, group);
@@ -2578,7 +3156,7 @@ function renderProjectCard(group) {
 function renderChronologicalSessionList(sessions) {
     const container = document.createElement('section');
     container.className = 'project-flat-session-list';
-    container.innerHTML = Array.isArray(sessions) && sessions.length > 0
+    const sessionHtml = Array.isArray(sessions) && sessions.length > 0
         ? sessions.map((session, sessionIndex) => renderSessionEntry(session, {
             sessionIndex,
             workspaceId: session?.workspace_id || '',
@@ -2588,15 +3166,221 @@ function renderChronologicalSessionList(sessions) {
                 <p>${escapeHtml(t('sidebar.no_sessions'))}</p>
             </div>
         `;
+    container.innerHTML = (
+        `${sessionHtml}${renderChronologicalSessionLoadMoreButtons(sessions)}`
+    );
     bindSessionRows(container);
+    bindChronologicalSessionLoadMoreButtons(container);
     return container;
 }
 
-function visibleSessionsForGroup(group, { sessionsExpanded = false } = {}) {
-    if (sessionsExpanded) {
-        return group.sessions;
+function renderChronologicalSessionLoadMoreButtons(sessions) {
+    const workspaceIds = [];
+    const seen = new Set();
+    const rememberWorkspaceId = workspaceId => {
+        const safeWorkspaceId = String(workspaceId || '').trim();
+        if (!safeWorkspaceId || seen.has(safeWorkspaceId)) {
+            return;
+        }
+        seen.add(safeWorkspaceId);
+        workspaceIds.push(safeWorkspaceId);
+    };
+    (Array.isArray(sessions) ? sessions : []).forEach(session => {
+        rememberWorkspaceId(session?.workspace_id || session?.workspaceId || '');
+    });
+    Array.from(workspaceSessionPageState.keys()).forEach(rememberWorkspaceId);
+    const buttons = workspaceIds.map(workspaceId => {
+        const pageState = workspaceSessionPageState.get(workspaceId) || {};
+        if (pageState.hasMore !== true && pageState.loading !== true) {
+            return '';
+        }
+        const loading = pageState.loading === true;
+        const label = loading
+            ? t('sidebar.loading_more_sessions')
+            : t('sidebar.load_more_sessions');
+        return `
+            <button class="project-session-load-more-btn" type="button" data-workspace-session-load-more="${escapeHtml(workspaceId)}" ${loading ? 'disabled' : ''}>
+                ${escapeHtml(label)}
+            </button>
+        `;
+    }).filter(Boolean);
+    if (buttons.length === 0) {
+        return '';
     }
-    const visibleSessions = group.sessions.slice(0, DEFAULT_VISIBLE_SESSION_COUNT);
+    return `<div class="project-flat-session-pagers">${buttons.join('')}</div>`;
+}
+
+function bindChronologicalSessionLoadMoreButtons(container) {
+    container.querySelectorAll('.project-session-load-more-btn').forEach(button => {
+        button.addEventListener('click', event => {
+            event?.stopPropagation?.();
+            const workspaceId = String(
+                button.getAttribute('data-workspace-session-load-more') || '',
+            ).trim();
+            void loadMoreWorkspaceSessions(workspaceId, { revealLoadedFirst: false });
+        });
+    });
+}
+
+async function loadMoreWorkspaceSessions(
+    workspaceId,
+    { revealLoadedFirst = true } = {},
+) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        return;
+    }
+    const pageState = workspaceSessionPageState.get(safeWorkspaceId) || {};
+    const loadedSessionCount = workspaceSessionsFromSnapshot(safeWorkspaceId).length;
+    const visibleSessionCount = workspaceSessionVisibleCount(safeWorkspaceId);
+    if (revealLoadedFirst && loadedSessionCount > visibleSessionCount) {
+        increaseWorkspaceSessionVisibleCount(safeWorkspaceId, loadedSessionCount);
+        renderProjectsFromSnapshot({ syncStreams: false });
+        return;
+    }
+    const cursor = String(pageState.nextCursor || '').trim();
+    if (pageState.loading === true || pageState.hasMore !== true || !cursor) {
+        return;
+    }
+    workspaceSessionPageState.set(safeWorkspaceId, {
+        ...pageState,
+        loading: true,
+    });
+    renderProjectsFromSnapshot({ syncStreams: false });
+    try {
+        const page = await fetchSidebarWorkspaceSessionsPage(safeWorkspaceId, {
+            limit: SIDEBAR_SESSION_PAGE_SIZE,
+            cursor,
+        });
+        const normalized = normalizeWorkspaceSessionPage(page);
+        workspaceSessionPageState.set(safeWorkspaceId, {
+            nextCursor: normalized.nextCursor,
+            hasMore: normalized.hasMore && Boolean(normalized.nextCursor),
+            loading: false,
+        });
+        const snapshotData = getSidebarDataSnapshot();
+        rememberSidebarDataSnapshot({
+            workspaces: snapshotData.workspaces,
+            workspacesComplete: snapshotData.workspacesComplete === true,
+            sessions: dedupeSidebarSessions([
+                ...snapshotData.sessions,
+                ...normalized.items,
+            ]),
+            automationProjects: snapshotData.automationProjects,
+        });
+        const nextLoadedSessionCount = workspaceSessionsFromSnapshot(safeWorkspaceId).length;
+        increaseWorkspaceSessionVisibleCount(safeWorkspaceId, nextLoadedSessionCount);
+        const nextSnapshotData = getSidebarDataSnapshot();
+        renderProjectSidebarData(
+            nextSnapshotData.workspaces,
+            nextSnapshotData.sessions,
+            nextSnapshotData.automationProjects,
+            { syncStreams: false },
+        );
+    } catch (error) {
+        workspaceSessionPageState.set(safeWorkspaceId, {
+            ...pageState,
+            loading: false,
+        });
+        renderProjectsFromSnapshot({ syncStreams: false });
+        if (error?.name === 'AbortError') {
+            return;
+        }
+        sysLog(formatMessage('sidebar.error.loading_projects', {
+            error: error?.message || String(error),
+        }), 'log-error');
+    }
+}
+
+async function loadMoreWorkspaces() {
+    if (!hasSidebarDataSnapshot()) {
+        return;
+    }
+    const cursor = String(workspacePageState.nextCursor || '').trim();
+    if (
+        workspacePageState.loading === true
+        || workspacePageState.hasMore !== true
+        || !cursor
+    ) {
+        return;
+    }
+    const previousState = {
+        nextCursor: workspacePageState.nextCursor,
+        hasMore: workspacePageState.hasMore,
+        loading: workspacePageState.loading,
+    };
+    const requestedSort = workspacePageSortOption();
+    const requestToken = workspacePageLoadToken;
+    workspacePageState.loading = true;
+    renderProjectsFromSnapshot({ syncStreams: false });
+    try {
+        const page = await fetchSidebarWorkspacePage({
+            limit: SIDEBAR_WORKSPACE_PAGE_SIZE,
+            cursor,
+            sort: requestedSort,
+        });
+        if (requestToken !== workspacePageLoadToken || requestedSort !== workspacePageSortOption()) {
+            return;
+        }
+        const normalized = normalizeWorkspacePage(page);
+        const snapshotData = getSidebarDataSnapshot();
+        const currentWorkspaceIds = new Set(normalizeWorkspaceIds(snapshotData.workspaces));
+        const pageWorkspaces = dedupeSidebarWorkspaces(normalized.items);
+        const newWorkspaces = pageWorkspaces.filter(workspace => {
+            const workspaceId = String(workspace?.workspace_id || '').trim();
+            return workspaceId && !currentWorkspaceIds.has(workspaceId);
+        });
+        const sessions = await fetchSidebarSessionsForWorkspaces(newWorkspaces, {
+            pruneExisting: false,
+        });
+        if (requestToken !== workspacePageLoadToken || requestedSort !== workspacePageSortOption()) {
+            return;
+        }
+        const latestSnapshotData = getSidebarDataSnapshot();
+        workspacePageState.nextCursor = normalized.nextCursor;
+        workspacePageState.hasMore = normalized.hasMore && Boolean(normalized.nextCursor);
+        workspacePageState.loading = false;
+        rememberSidebarDataSnapshot({
+            workspaces: mergeSidebarWorkspaces(
+                latestSnapshotData.workspaces,
+                pageWorkspaces,
+            ),
+            workspacesComplete: workspacePageState.hasMore !== true,
+            sessions: dedupeSidebarSessions([
+                ...latestSnapshotData.sessions,
+                ...sessions,
+            ]),
+            automationProjects: latestSnapshotData.automationProjects,
+        });
+        const nextSnapshotData = getSidebarDataSnapshot();
+        renderProjectSidebarData(
+            nextSnapshotData.workspaces,
+            nextSnapshotData.sessions,
+            nextSnapshotData.automationProjects,
+            { syncStreams: false },
+        );
+    } catch (error) {
+        if (requestToken !== workspacePageLoadToken || requestedSort !== workspacePageSortOption()) {
+            return;
+        }
+        workspacePageState.nextCursor = previousState.nextCursor;
+        workspacePageState.hasMore = previousState.hasMore;
+        workspacePageState.loading = false;
+        renderProjectsFromSnapshot({ syncStreams: false });
+        if (error?.name === 'AbortError') {
+            return;
+        }
+        sysLog(formatMessage('sidebar.error.loading_projects', {
+            error: error?.message || String(error),
+        }), 'log-error');
+    }
+}
+
+function visibleSessionsForGroup(group) {
+    const visibleSessionCount = group?.kind === 'workspace'
+        ? workspaceSessionVisibleCount(group?.id)
+        : DEFAULT_VISIBLE_SESSION_COUNT;
+    const visibleSessions = group.sessions.slice(0, visibleSessionCount);
     const pendingSessionId = String(pendingSessionAnimation?.sessionId || '').trim();
     if (!pendingSessionId) {
         return visibleSessions;
@@ -2604,7 +3388,7 @@ function visibleSessionsForGroup(group, { sessionsExpanded = false } = {}) {
     const pendingIndex = group.sessions.findIndex(
         session => String(session?.session_id || '').trim() === pendingSessionId,
     );
-    if (pendingIndex < 0 || pendingIndex < DEFAULT_VISIBLE_SESSION_COUNT) {
+    if (pendingIndex < 0 || pendingIndex < visibleSessionCount) {
         return visibleSessions;
     }
     const nextVisibleSessions = [...visibleSessions];
@@ -2687,18 +3471,17 @@ function renderProjectSidebarData(
             automationBoundSessionIds.add(sessionId);
         }
     });
-    if (syncStreams) {
-        void maybeSyncBackgroundStreams(sessions);
-    }
     const safeWorkspaces = Array.isArray(workspaces) ? workspaces : [];
     const safeSessions = Array.isArray(sessions) ? mergeOptimisticSessions(sessions) : [];
     const groups = buildProjectGroups(safeWorkspaces, safeSessions);
     const chronologicalSessions = projectSortMode === PROJECT_SORT_MODES.TIME
         ? buildChronologicalSessions(safeSessions)
         : [];
-    setSessionSearchEntries(projectSortMode === PROJECT_SORT_MODES.TIME
-        ? buildChronologicalSessionSearchEntries(safeWorkspaces, chronologicalSessions)
-        : buildSessionSearchEntries(groups));
+    syncSidebarSessionIndexConsumers(
+        safeWorkspaces,
+        safeSessions,
+        { syncStreams },
+    );
     const nextSignature = buildProjectsRenderSignature(groups, automationProjects, chronologicalSessions);
     if (nextSignature === lastProjectsRenderSignature) {
         syncProjectSortButton();
@@ -2712,6 +3495,10 @@ function renderProjectSidebarData(
     if (groups.length === 0 && projectSortMode !== PROJECT_SORT_MODES.TIME) {
         openProjectMenuId = null;
         workspaceContentNodes.push(renderEmptyProjectsState());
+        const loadMoreButton = renderWorkspaceLoadMoreButton();
+        if (loadMoreButton) {
+            workspaceContentNodes.push(loadMoreButton);
+        }
         const nextNodes = [
             featureNode,
             renderProjectsWorkspaceShell(toolbarNode, workspaceContentNodes),
@@ -2729,6 +3516,10 @@ function renderProjectSidebarData(
     } else {
         groups.forEach(group => workspaceContentNodes.push(renderProjectCard(group)));
     }
+    const loadMoreButton = renderWorkspaceLoadMoreButton();
+    if (loadMoreButton) {
+        workspaceContentNodes.push(loadMoreButton);
+    }
     const nextNodes = [
         featureNode,
         renderProjectsWorkspaceShell(toolbarNode, workspaceContentNodes),
@@ -2742,12 +3533,17 @@ function renderProjectSidebarData(
 
 function handleNewSessionDraftCreated(event) {
     const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
+    const sessionId = String(detail.sessionId || detail.session?.session_id || '').trim();
+    const workspaceId = workspaceIdFromSessionEventDetail(detail, sessionId)
+        || String(state.currentWorkspaceId || '').trim();
     if (detail.detached === true) {
-        scheduleSessionsRefresh(900, { forceRefresh: false });
+        if (workspaceId) {
+            scheduleWorkspaceSessionsRefresh(workspaceId, 900, { forceRefresh: false });
+        } else {
+            scheduleSessionsRefresh(900, { forceRefresh: false });
+        }
         return;
     }
-    const sessionId = String(detail.sessionId || detail.session?.session_id || '').trim();
-    const workspaceId = String(detail.workspaceId || detail.session?.workspace_id || state.currentWorkspaceId || '').trim();
     if (!sessionId || !workspaceId) {
         scheduleSessionsRefresh(320, { forceRefresh: false });
         return;
@@ -2769,10 +3565,10 @@ function handleNewSessionDraftCreated(event) {
     });
     setPendingSessionAnimation(sessionId, 'entering');
     if (!renderProjectsFromSnapshot({ syncStreams: false })) {
-        scheduleSessionsRefresh(120, { forceRefresh: false });
+        scheduleSessionSidebarRefresh(sessionId, 120, { forceRefresh: false, workspaceId });
         return;
     }
-    scheduleSessionsRefresh(900, { forceRefresh: false });
+    scheduleWorkspaceSessionsRefresh(workspaceId, 900, { forceRefresh: false });
 }
 
 function handleSessionUpserted(event) {
@@ -2791,7 +3587,10 @@ function handleCurrentSessionRunStarted(event) {
     );
     markSidebarSessionRunStarted(sessionId, detail.run || detail);
     if (!renderProjectsFromSnapshot({ syncStreams: false })) {
-        scheduleSessionsRefresh(120, { forceRefresh: false });
+        scheduleSessionSidebarRefresh(sessionId, 120, {
+            forceRefresh: false,
+            workspaceId: workspaceIdFromSessionEventDetail(detail, sessionId),
+        });
         return;
     }
     syncActivatedSessionFromEvent({ detail: { sessionId } });
@@ -2828,7 +3627,10 @@ function handleSessionRunTerminal(event) {
         viewed: isViewedInCurrentSession,
     });
     if (!renderProjectsFromSnapshot({ syncStreams: false })) {
-        scheduleSessionsRefresh(120, { forceRefresh: false });
+        scheduleSessionSidebarRefresh(sessionId, 120, {
+            forceRefresh: false,
+            workspaceId: workspaceIdFromSessionEventDetail(detail, sessionId),
+        });
     }
 }
 
@@ -2865,6 +3667,7 @@ export async function loadProjects({ forceRefresh = false } = {}) {
             const sessionId = detail && typeof detail === 'object'
                 ? String(detail.sessionId || '').trim()
                 : '';
+            const workspaceId = workspaceIdFromSessionEventDetail(detail, sessionId);
             if (!forceRefresh && reason !== 'structure') {
                 syncSubagentSessionListVisualState({
                     ensureListSessionId: reason === 'loading' || reason === 'visibility' ? sessionId : '',
@@ -2879,11 +3682,11 @@ export async function loadProjects({ forceRefresh = false } = {}) {
                 });
             }
             if (forceRefresh) {
-                scheduleSessionsRefresh(90, { forceRefresh: true });
+                scheduleSessionSidebarRefresh(sessionId, 90, { forceRefresh: true, workspaceId });
                 return;
             }
             if (!renderProjectsFromSnapshot({ syncStreams: false })) {
-                scheduleSessionsRefresh(180, { forceRefresh: false });
+                scheduleSessionSidebarRefresh(sessionId, 180, { forceRefresh: false, workspaceId });
             }
         });
         document.addEventListener('agent-teams-subagent-session-status-changed', event => {
@@ -2904,7 +3707,10 @@ export async function loadProjects({ forceRefresh = false } = {}) {
                 });
             }
             if (!renderProjectsFromSnapshot({ syncStreams: false })) {
-                scheduleSessionsRefresh(180, { forceRefresh: false });
+                scheduleSessionSidebarRefresh(sessionId, 180, {
+                    forceRefresh: false,
+                    workspaceId: workspaceIdFromSessionEventDetail(event?.detail, sessionId),
+                });
             }
         });
         document.addEventListener('agent-teams-new-session-draft-created', event => {
@@ -2934,6 +3740,8 @@ export async function loadProjects({ forceRefresh = false } = {}) {
         languageRefreshBound = true;
     }
     const requestId = ++loadProjectsRequestId;
+    workspacePageLoadToken += 1;
+    workspacePageState.loading = false;
     if (loadProjectsController) {
         loadProjectsController.abort();
     }
@@ -2944,15 +3752,23 @@ export async function loadProjects({ forceRefresh = false } = {}) {
     try {
         ensureProjectMenuDismissBinding();
         const shouldForceRefreshSessions = forceRefresh === true;
-        const [workspaces, sessions, automationProjects] = await Promise.all([
-            fetchWorkspaces({ signal: controller?.signal }),
-            fetchSessions({
-                sidebar: true,
-                forceRefresh: shouldForceRefreshSessions,
-                signal: controller?.signal,
-            }),
-            fetchAutomationProjects({ signal: controller?.signal }),
-        ]);
+        const workspacePagePromise = fetchSidebarWorkspacePage({
+            limit: SIDEBAR_WORKSPACE_PAGE_SIZE,
+            sort: workspacePageSortOption(),
+            signal: controller?.signal,
+        });
+        const automationProjectsPromise = fetchAutomationProjects({
+            signal: controller?.signal,
+        });
+        const workspacePage = await workspacePagePromise;
+        const normalizedWorkspacePage = setWorkspacePageStateFromPage(workspacePage);
+        const workspaces = dedupeSidebarWorkspaces(normalizedWorkspacePage.items);
+        const sessionsPromise = fetchSidebarSessionsForWorkspaces(workspaces, {
+            forceRefresh: shouldForceRefreshSessions,
+            signal: controller?.signal,
+        });
+        const automationProjects = await automationProjectsPromise;
+        const sessions = await sessionsPromise;
         if (requestId !== loadProjectsRequestId) {
             return;
         }
@@ -2960,7 +3776,12 @@ export async function loadProjects({ forceRefresh = false } = {}) {
             renderProjectsFromSnapshot({ syncStreams: false });
             return;
         }
-        rememberSidebarDataSnapshot({ workspaces, sessions, automationProjects });
+        rememberSidebarDataSnapshot({
+            workspaces,
+            workspacesComplete: workspacePageState.hasMore !== true,
+            sessions,
+            automationProjects,
+        });
         const snapshotData = getSidebarDataSnapshot();
         renderProjectSidebarData(
             snapshotData.workspaces,
@@ -2981,6 +3802,7 @@ export async function loadProjects({ forceRefresh = false } = {}) {
         if (loadProjectsController === controller) {
             loadProjectsController = null;
         }
+        drainPendingWorkspaceRefreshTrailingForce();
         if (pendingSessionsRefreshTrailingForce) {
             const trailingForce = pendingSessionsRefreshTrailingForce;
             pendingSessionsRefreshTrailingForce = false;
@@ -2989,7 +3811,77 @@ export async function loadProjects({ forceRefresh = false } = {}) {
     }
 }
 
-export function scheduleSessionsRefresh(delayMs = 120, { forceRefresh = false } = {}) {
+export function scheduleWorkspaceSessionsRefresh(workspaceId, delayMs = 120, { forceRefresh = false } = {}) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId) {
+        scheduleSessionsRefresh(delayMs, { forceRefresh });
+        return;
+    }
+    if (isSessionsRefreshSuppressed() && forceRefresh !== true) {
+        return;
+    }
+    pendingWorkspaceRefreshForce.set(
+        safeWorkspaceId,
+        pendingWorkspaceRefreshForce.get(safeWorkspaceId) === true || forceRefresh === true,
+    );
+    const existingTimer = workspaceRefreshTimers.get(safeWorkspaceId);
+    if (existingTimer) {
+        clearTimeout(existingTimer);
+    }
+    let safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    if (
+        forceRefresh !== true
+        && (state.isGenerating || state.activeEventSource || Number(state.activeRunStreamCount || 0) > 0)
+    ) {
+        safeDelayMs = Math.max(safeDelayMs, SIDEBAR_ACTIVE_RUN_REFRESH_DELAY_MS);
+    }
+    if (forceRefresh !== true) {
+        safeDelayMs = Math.max(safeDelayMs, getDeferredSessionsRefreshDelayMs());
+    }
+    const timer = setTimeout(() => {
+        workspaceRefreshTimers.delete(safeWorkspaceId);
+        const forceNow = pendingWorkspaceRefreshForce.get(safeWorkspaceId) === true;
+        const deferredDelayMs = forceNow ? 0 : getDeferredSessionsRefreshDelayMs();
+        if (deferredDelayMs > 0) {
+            scheduleWorkspaceSessionsRefresh(safeWorkspaceId, deferredDelayMs, { forceRefresh: false });
+            return;
+        }
+        if (!forceNow && isProjectsListInteracting()) {
+            scheduleWorkspaceSessionsRefresh(
+                safeWorkspaceId,
+                Math.max(safeDelayMs, SIDEBAR_INTERACTION_REFRESH_DELAY_MS),
+            );
+            return;
+        }
+        pendingWorkspaceRefreshForce.delete(safeWorkspaceId);
+        void refreshWorkspaceSessionsSnapshot(safeWorkspaceId, { forceRefresh: forceNow });
+    }, safeDelayMs);
+    workspaceRefreshTimers.set(safeWorkspaceId, timer);
+}
+
+function scheduleSessionSidebarRefresh(
+    sessionId,
+    delayMs = 120,
+    { forceRefresh = false, workspaceId = '' } = {},
+) {
+    const safeWorkspaceId = resolveSessionWorkspaceId(sessionId, workspaceId);
+    if (safeWorkspaceId) {
+        scheduleWorkspaceSessionsRefresh(safeWorkspaceId, delayMs, { forceRefresh });
+        return;
+    }
+    scheduleSessionsRefresh(delayMs, { forceRefresh });
+}
+
+export function scheduleSessionsRefresh(
+    delayMs = 120,
+    { forceRefresh = false, sessionId = '', workspaceId = '' } = {},
+) {
+    const scopedWorkspaceId = String(workspaceId || '').trim()
+        || resolveSessionWorkspaceId(sessionId);
+    if (scopedWorkspaceId) {
+        scheduleWorkspaceSessionsRefresh(scopedWorkspaceId, delayMs, { forceRefresh });
+        return;
+    }
     if (isSessionsRefreshSuppressed() && forceRefresh !== true) {
         return;
     }
@@ -3035,6 +3927,151 @@ function getDeferredSessionsRefreshDelayMs() {
     return remainingSettleDelayMs > 0 ? remainingSettleDelayMs : 0;
 }
 
+function drainPendingWorkspaceRefreshTrailingForce(delayMs = 120) {
+    if (pendingWorkspaceRefreshTrailingForce.size === 0) {
+        return;
+    }
+    const entries = Array.from(pendingWorkspaceRefreshTrailingForce.entries());
+    pendingWorkspaceRefreshTrailingForce.clear();
+    entries.forEach(([workspaceId, trailingForce]) => {
+        scheduleWorkspaceSessionsRefresh(workspaceId, delayMs, {
+            forceRefresh: trailingForce === true,
+        });
+    });
+}
+
+async function loadMissingWorkspaceIntoSidebarSnapshot(workspaceId, { forceRefresh = false } = {}) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!safeWorkspaceId || !hasSidebarDataSnapshot()) {
+        return false;
+    }
+    const workspace = await fetchSidebarWorkspaceById(safeWorkspaceId);
+    if (!workspace || typeof workspace !== 'object') {
+        return false;
+    }
+    const loadedWorkspaceId = String(workspace?.workspace_id || '').trim();
+    if (loadedWorkspaceId !== safeWorkspaceId) {
+        return false;
+    }
+    const sessions = await fetchSidebarSessionsForWorkspaces([workspace], {
+        forceRefresh: forceRefresh === true,
+        pruneExisting: false,
+    });
+    const snapshotData = getSidebarDataSnapshot();
+    rememberSidebarDataSnapshot({
+        workspaces: mergeSidebarWorkspaces(snapshotData.workspaces, [workspace]),
+        workspacesComplete: snapshotData.workspacesComplete === true,
+        sessions: dedupeSidebarSessions([
+            ...snapshotData.sessions,
+            ...sessions,
+        ]),
+        automationProjects: snapshotData.automationProjects,
+    });
+    const nextSnapshotData = getSidebarDataSnapshot();
+    renderProjectSidebarData(
+        nextSnapshotData.workspaces,
+        nextSnapshotData.sessions,
+        nextSnapshotData.automationProjects,
+    );
+    return true;
+}
+
+async function refreshWorkspaceSessionsSnapshot(workspaceId, { forceRefresh = false } = {}) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    if (!els.projectsList || !safeWorkspaceId) {
+        return;
+    }
+    if (isSessionsRefreshSuppressed() && forceRefresh !== true) {
+        renderProjectsFromSnapshot({ syncStreams: false });
+        return;
+    }
+    if (!hasSidebarDataSnapshot()) {
+        await loadProjects({ forceRefresh });
+        return;
+    }
+    if (!workspaceExistsInSnapshot(safeWorkspaceId)) {
+        try {
+            if (await loadMissingWorkspaceIntoSidebarSnapshot(safeWorkspaceId, { forceRefresh })) {
+                return;
+            }
+        } catch (error) {
+            sysLog(formatMessage('sidebar.error.loading_projects', {
+                error: error?.message || String(error),
+            }), 'log-error');
+        }
+        await loadProjects({ forceRefresh });
+        return;
+    }
+    if (loadProjectsController || sessionsRefreshPromise) {
+        pendingWorkspaceRefreshTrailingForce.set(
+            safeWorkspaceId,
+            pendingWorkspaceRefreshTrailingForce.get(safeWorkspaceId) === true || forceRefresh === true,
+        );
+        return;
+    }
+    const existingPromise = workspaceSessionsRefreshPromises.get(safeWorkspaceId);
+    if (existingPromise) {
+        pendingWorkspaceRefreshTrailingForce.set(
+            safeWorkspaceId,
+            pendingWorkspaceRefreshTrailingForce.get(safeWorkspaceId) === true || forceRefresh === true,
+        );
+        await existingPromise;
+        return;
+    }
+    const refreshPromise = (async () => {
+        try {
+            const requestedLimit = Math.min(
+                SIDEBAR_SESSION_PAGE_MAX_LIMIT,
+                Math.max(
+                    SIDEBAR_SESSION_PAGE_SIZE,
+                    workspaceSessionVisibleCount(safeWorkspaceId),
+                ),
+            );
+            const page = await fetchSidebarWorkspaceSessionsPage(safeWorkspaceId, {
+                limit: requestedLimit,
+                forceRefresh: forceRefresh === true,
+            });
+            const normalized = normalizeWorkspaceSessionPage(page);
+            workspaceSessionPageState.set(safeWorkspaceId, {
+                nextCursor: normalized.nextCursor,
+                hasMore: normalized.hasMore && Boolean(normalized.nextCursor),
+                loading: false,
+            });
+            if (!rememberWorkspaceSessionsSnapshot(
+                safeWorkspaceId,
+                normalized.items,
+                {
+                    preserveLoadedSessions: true,
+                    preserveLoadedSessionsAfterCount: requestedLimit,
+                },
+            )) {
+                await loadProjects({ forceRefresh });
+                return;
+            }
+            const nextSnapshotData = getSidebarDataSnapshot();
+            renderProjectSidebarData(
+                nextSnapshotData.workspaces,
+                nextSnapshotData.sessions,
+                nextSnapshotData.automationProjects,
+            );
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                return;
+            }
+            sysLog(formatMessage('sidebar.error.loading_projects', { error: error.message }), 'log-error');
+        } finally {
+            workspaceSessionsRefreshPromises.delete(safeWorkspaceId);
+            if (pendingWorkspaceRefreshTrailingForce.has(safeWorkspaceId)) {
+                const trailingForce = pendingWorkspaceRefreshTrailingForce.get(safeWorkspaceId) === true;
+                pendingWorkspaceRefreshTrailingForce.delete(safeWorkspaceId);
+                scheduleWorkspaceSessionsRefresh(safeWorkspaceId, 120, { forceRefresh: trailingForce });
+            }
+        }
+    })();
+    workspaceSessionsRefreshPromises.set(safeWorkspaceId, refreshPromise);
+    await refreshPromise;
+}
+
 async function refreshSessionsSnapshot({ forceRefresh = false } = {}) {
     if (!els.projectsList) return;
     if (isSessionsRefreshSuppressed() && forceRefresh !== true) {
@@ -3054,19 +4091,23 @@ async function refreshSessionsSnapshot({ forceRefresh = false } = {}) {
     }
     sessionsRefreshPromise = (async () => {
         try {
-            const sessions = await fetchSessions({
-                sidebar: true,
-                forceRefresh: forceRefresh === true,
-            });
+            const currentSnapshotData = getSidebarDataSnapshot();
+            const sessions = await fetchSidebarSessionsForWorkspaces(
+                currentSnapshotData.workspaces,
+                {
+                    forceRefresh: forceRefresh === true,
+                    preserveLoadedSessions: true,
+                },
+            );
             if (isSessionsRefreshSuppressed() && forceRefresh !== true) {
                 renderProjectsFromSnapshot({ syncStreams: false });
                 return;
             }
-            const snapshotData = getSidebarDataSnapshot();
             rememberSidebarDataSnapshot({
-                workspaces: snapshotData.workspaces,
+                workspaces: currentSnapshotData.workspaces,
+                workspacesComplete: currentSnapshotData.workspacesComplete === true,
                 sessions,
-                automationProjects: snapshotData.automationProjects,
+                automationProjects: currentSnapshotData.automationProjects,
             });
             const nextSnapshotData = getSidebarDataSnapshot();
             renderProjectSidebarData(
@@ -3081,6 +4122,7 @@ async function refreshSessionsSnapshot({ forceRefresh = false } = {}) {
             sysLog(formatMessage('sidebar.error.loading_projects', { error: error.message }), 'log-error');
         } finally {
             sessionsRefreshPromise = null;
+            drainPendingWorkspaceRefreshTrailingForce();
             if (pendingSessionsRefreshTrailingForce) {
                 const trailingForce = pendingSessionsRefreshTrailingForce;
                 pendingSessionsRefreshTrailingForce = false;
@@ -3097,7 +4139,7 @@ export function toggleProjectSortMode() {
         openProjectMenuId = null;
     }
     syncProjectSortButton();
-    void loadProjects();
+    renderProjectsFromSnapshotOrLoad();
 }
 
 function setProjectSortMode(sortMode) {
@@ -3108,6 +4150,9 @@ function setProjectSortMode(sortMode) {
     projectSortMenuOpen = false;
     openProjectMenuId = null;
     syncProjectSortButton();
+    workspacePageState.nextCursor = '';
+    workspacePageState.hasMore = false;
+    workspacePageState.loading = false;
     void loadProjects();
 }
 
@@ -3178,7 +4223,7 @@ export async function handleForkWorkspaceClick(workspace) {
     try {
         const forkedWorkspace = await forkWorkspace(workspaceId, nextName);
         expandedProjectIds.add(groupKey('workspace', forkedWorkspace.workspace_id));
-        expandedProjectSessionIds.add(groupKey('workspace', forkedWorkspace.workspace_id));
+        setWorkspaceSessionVisibleCount(forkedWorkspace.workspace_id, DEFAULT_VISIBLE_SESSION_COUNT);
         state.currentWorkspaceId = forkedWorkspace.workspace_id;
         openProjectMenuId = null;
         sysLog(formatMessage('sidebar.log.forked_project', { workspace_id: forkedWorkspace.workspace_id }));
@@ -3224,16 +4269,19 @@ export async function handleRemoveWorkspaceClick(workspace) {
         );
         for (const session of workspaceSessions) {
             await deleteSession(session.session_id);
+            removeSidebarSession(session.session_id);
         }
         await deleteWorkspace(workspaceId, { removeDirectory });
         expandedProjectIds.delete(groupKey('workspace', workspaceId));
-        expandedProjectSessionIds.delete(groupKey('workspace', workspaceId));
-        initializedProjectIds.delete(groupKey('workspace', workspaceId));
+        const removedFromSnapshot = forgetSidebarWorkspace(workspaceId);
         openProjectMenuId = null;
         if (shouldClearView) clearActiveSessionView();
         if (state.currentProjectViewWorkspaceId === workspaceId) hideProjectView();
         if (state.currentWorkspaceId === workspaceId) state.currentWorkspaceId = null;
-        await loadProjects();
+        if (removedFromSnapshot) {
+            renderProjectsFromSnapshot({ syncStreams: false });
+        }
+        await loadProjects({ forceRefresh: true });
     } catch (error) {
         sysLog(formatMessage('sidebar.error.removing_project', { error: error.message }), 'log-error');
     }
@@ -3253,7 +4301,6 @@ async function handleRemoveAutomationProjectClick(project) {
     if (!shouldDelete) return;
     await deleteAutomationProject(projectId);
     expandedProjectIds.delete(groupKey('automation', projectId));
-    expandedProjectSessionIds.delete(groupKey('automation', projectId));
     initializedProjectIds.delete(groupKey('automation', projectId));
     openProjectMenuId = null;
     await loadProjects();

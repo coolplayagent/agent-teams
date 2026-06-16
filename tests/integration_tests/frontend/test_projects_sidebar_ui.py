@@ -65,16 +65,19 @@ const initialProjectExpanded = firstProject.querySelector(".project-toggle").get
 const initialFirstProjectTitle = firstProject.querySelector(".project-title").textContent;
 const initialSecondProjectTitle = secondProject.querySelector(".project-title").textContent;
 const initialFirstSessionLabel = firstProject.querySelectorAll(".session-id")[0].textContent;
-const initialVisibilityLabel = firstProject.querySelector(".project-session-visibility-btn").textContent;
+const initialLoadMoreLabel = firstProject.querySelector(".project-session-load-more-btn").textContent;
 
-firstProject.querySelector(".project-session-visibility-btn").onclick();
+firstProject.querySelector(".project-session-load-more-btn").onclick();
 await flushTasks();
 const expandedSessionProject = projectsList.children.filter(child => child.className === "project-card")[0];
 const expandedSessionCount = expandedSessionProject.querySelectorAll(".session-item").length;
-const expandedVisibilityLabel = expandedSessionProject.querySelector(".project-session-visibility-btn").textContent;
+const expandedLoadMoreButton = expandedSessionProject.querySelector(".project-session-load-more-btn");
+const expandedLoadMoreLabel = expandedLoadMoreButton ? expandedLoadMoreButton.textContent : "";
 
-expandedSessionProject.querySelector(".project-session-visibility-btn").onclick();
-await flushTasks();
+if (expandedLoadMoreButton) {
+    expandedLoadMoreButton.onclick();
+    await flushTasks();
+}
 const recollapsedProject = projectsList.children.filter(child => child.className === "project-card")[0];
 const recollapsedSessionCount = recollapsedProject.querySelectorAll(".session-item").length;
 
@@ -114,9 +117,9 @@ console.log(JSON.stringify({
     initialSessionCount,
     initialProjectExpanded,
     collapsedProjectExpanded,
-    initialVisibilityLabel,
+    initialLoadMoreLabel,
     expandedSessionCount,
-    expandedVisibilityLabel,
+    expandedLoadMoreLabel,
     recollapsedSessionCount,
     createdSessionWorkspaceIds: globalThis.__createdSessionWorkspaceIds,
     openedNewSessionDraftWorkspaceIds: globalThis.__openedNewSessionDraftWorkspaceIds,
@@ -142,10 +145,10 @@ console.log(JSON.stringify({
     assert payload["initialSessionCount"] == 10
     assert payload["initialProjectExpanded"] == "true"
     assert payload["collapsedProjectExpanded"] == "false"
-    assert payload["initialVisibilityLabel"] == "Show all (11)"
+    assert payload["initialLoadMoreLabel"] == "Load more"
     assert payload["expandedSessionCount"] == 11
-    assert payload["expandedVisibilityLabel"] == "Collapse"
-    assert payload["recollapsedSessionCount"] == 10
+    assert payload["expandedLoadMoreLabel"] == ""
+    assert payload["recollapsedSessionCount"] == 11
     assert payload["createdSessionWorkspaceIds"] == []
     assert payload["openedNewSessionDraftWorkspaceIds"] == [
         "alpha-project",
@@ -171,6 +174,1858 @@ console.log(JSON.stringify({
     assert chronological_session_ids[0] == "session-11"
     assert chronological_session_ids[-1] == "beta-1"
     assert payload["updatedSortFirstProjectTitle"] == "Gamma Project"
+
+
+def test_projects_sidebar_fetches_workspace_pages_for_selected_sort(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { loadProjects } from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+async function selectSortMode(sortMode) {
+    const projectsList = document.getElementById("projects-list");
+    projectsList.querySelector(".projects-toolbar-sort-btn").onclick();
+    await flushTasks();
+    await flushTasks();
+    const target = projectsList.querySelectorAll(".project-sort-menu-btn")
+        .find(button => button.getAttribute("data-project-sort-mode") === sortMode);
+    if (!target) {
+        throw new Error(`Missing sort option: ${sortMode}`);
+    }
+    target.onclick();
+    await flushTasks();
+    await flushTasks();
+    await flushTasks();
+}
+
+await loadProjects();
+await selectSortMode("project_created");
+
+const projectsList = document.getElementById("projects-list");
+const projectTitles = projectsList.children
+    .filter(child => child.className === "project-card")
+    .map(card => card.querySelector(".project-title").textContent);
+
+console.log(JSON.stringify({
+    pageCalls: globalThis.__workspacePageCalls,
+    projectTitles,
+}));
+""".strip(),
+        mock_api_source="""
+const activityWorkspaces = [
+    {
+        workspace_id: "activity-project",
+        root_path: "/work/Activity Project",
+        created_at: "2026-03-10T10:00:00Z",
+        updated_at: "2026-03-16T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const createdWorkspaces = [
+    {
+        workspace_id: "created-project",
+        root_path: "/work/Created Project",
+        created_at: "2026-03-17T10:00:00Z",
+        updated_at: "2026-03-11T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+globalThis.__workspacePageCalls = [];
+
+export async function fetchWorkspacePage(options = {}) {
+    globalThis.__workspacePageCalls.push({
+        sort: options.sort || "",
+        cursor: options.cursor || "",
+    });
+    return {
+        items: options.sort === "created" ? createdWorkspaces : activityWorkspaces,
+        next_cursor: null,
+        has_more: false,
+    };
+}
+
+export async function fetchWorkspaces() {
+    return activityWorkspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions() {
+    return { items: [], next_cursor: null, has_more: false };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["pageCalls"] == [
+        {"sort": "activity", "cursor": ""},
+        {"sort": "created", "cursor": ""},
+    ]
+    assert payload["projectTitles"] == ["Created Project"]
+
+
+def test_projects_sidebar_discards_stale_workspace_pages_after_sort_change(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { loadProjects } from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+const projectsList = document.getElementById("projects-list");
+
+function projectTitles() {
+    return projectsList.children
+        .filter(child => child.className === "project-card")
+        .map(card => card.querySelector(".project-title").textContent);
+}
+
+async function selectSortMode(sortMode) {
+    projectsList.querySelector(".projects-toolbar-sort-btn").onclick();
+    await flushTasks();
+    await flushTasks();
+    const target = projectsList.querySelectorAll(".project-sort-menu-btn")
+        .find(button => button.getAttribute("data-project-sort-mode") === sortMode);
+    if (!target) {
+        throw new Error(`Missing sort option: ${sortMode}`);
+    }
+    target.onclick();
+    await flushTasks();
+    await flushTasks();
+    await flushTasks();
+}
+
+await loadProjects();
+projectsList.querySelector(".project-workspace-load-more-btn").onclick({ stopPropagation() {} });
+await flushTasks();
+await selectSortMode("project_created");
+
+globalThis.__resolveActivityLoadMore({
+    items: [
+        {
+            workspace_id: "old-activity-project",
+            root_path: "/work/Old Activity Project",
+            created_at: "2026-03-01T10:00:00Z",
+            updated_at: "2026-03-17T10:00:00Z",
+            profile: { file_scope: { backend: "project" } },
+        },
+    ],
+    next_cursor: "activity-cursor-2",
+    has_more: true,
+});
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+const titlesAfterStaleResponse = projectTitles();
+projectsList.querySelector(".project-workspace-load-more-btn").onclick({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    pageCalls: globalThis.__workspacePageCalls,
+    titlesAfterStaleResponse,
+    finalProjectTitles: projectTitles(),
+}));
+""".strip(),
+        mock_api_source="""
+const activityWorkspace = {
+    workspace_id: "activity-project",
+    root_path: "/work/Activity Project",
+    created_at: "2026-03-10T10:00:00Z",
+    updated_at: "2026-03-16T10:00:00Z",
+    profile: { file_scope: { backend: "project" } },
+};
+
+const createdWorkspace = {
+    workspace_id: "created-project",
+    root_path: "/work/Created Project",
+    created_at: "2026-03-17T10:00:00Z",
+    updated_at: "2026-03-11T10:00:00Z",
+    profile: { file_scope: { backend: "project" } },
+};
+
+const createdNextWorkspace = {
+    workspace_id: "created-next-project",
+    root_path: "/work/Created Next Project",
+    created_at: "2026-03-16T10:00:00Z",
+    updated_at: "2026-03-10T10:00:00Z",
+    profile: { file_scope: { backend: "project" } },
+};
+
+globalThis.__workspacePageCalls = [];
+globalThis.__resolveActivityLoadMore = null;
+
+export async function fetchWorkspacePage(options = {}) {
+    const sort = options.sort || "activity";
+    const cursor = options.cursor || "";
+    globalThis.__workspacePageCalls.push({ sort, cursor });
+    if (sort === "activity" && !cursor) {
+        return {
+            items: [activityWorkspace],
+            next_cursor: "activity-cursor-1",
+            has_more: true,
+        };
+    }
+    if (sort === "activity" && cursor === "activity-cursor-1") {
+        return new Promise(resolve => {
+            globalThis.__resolveActivityLoadMore = resolve;
+        });
+    }
+    if (sort === "created" && !cursor) {
+        return {
+            items: [createdWorkspace],
+            next_cursor: "created-cursor-1",
+            has_more: true,
+        };
+    }
+    if (sort === "created" && cursor === "created-cursor-1") {
+        return {
+            items: [createdNextWorkspace],
+            next_cursor: null,
+            has_more: false,
+        };
+    }
+    throw new Error(`Unexpected page call: ${sort}:${cursor}`);
+}
+
+export async function fetchWorkspaces() {
+    return [activityWorkspace, createdWorkspace, createdNextWorkspace];
+}
+
+export async function fetchWorkspaceSidebarSessions() {
+    return { items: [], next_cursor: null, has_more: false };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["titlesAfterStaleResponse"] == ["Created Project"]
+    assert payload["finalProjectTitles"] == [
+        "Created Project",
+        "Created Next Project",
+    ]
+    assert payload["pageCalls"] == [
+        {"sort": "activity", "cursor": ""},
+        {"sort": "activity", "cursor": "activity-cursor-1"},
+        {"sort": "created", "cursor": ""},
+        {"sort": "created", "cursor": "created-cursor-1"},
+    ]
+
+
+def test_projects_sidebar_fetches_missing_workspace_for_scoped_refresh(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleWorkspaceSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+scheduleWorkspaceSessionsRefresh("beta-project", 0, { forceRefresh: true });
+await new Promise(resolve => setTimeout(resolve, 20));
+await flushTasks();
+await flushTasks();
+await flushTasks();
+
+const projectsList = document.getElementById("projects-list");
+
+console.log(JSON.stringify({
+    fetchWorkspaceCalls: globalThis.__fetchWorkspaceCalls,
+    workspacePageCalls: globalThis.__workspacePageCalls,
+    workspaceSessionCalls: globalThis.__workspaceSessionCalls,
+    projectTitles: projectsList.children
+        .filter(child => child.className === "project-card")
+        .map(card => card.querySelector(".project-title").textContent),
+    sessionIds: Array.from(new Set(projectsList.querySelectorAll(".session-item")
+        .map(item => item.getAttribute("data-session-id")))),
+}));
+""".strip(),
+        mock_api_source="""
+const alphaWorkspace = {
+    workspace_id: "alpha-project",
+    root_path: "/work/Alpha Project",
+    created_at: "2026-03-10T10:00:00Z",
+    updated_at: "2026-03-10T10:00:00Z",
+    profile: { file_scope: { backend: "project" } },
+};
+
+const betaWorkspace = {
+    workspace_id: "beta-project",
+    root_path: "/work/Beta Project",
+    created_at: "2026-03-09T10:00:00Z",
+    updated_at: "2026-03-17T10:00:00Z",
+    profile: { file_scope: { backend: "project" } },
+};
+
+globalThis.__workspacePageCalls = [];
+globalThis.__fetchWorkspaceCalls = [];
+globalThis.__workspaceSessionCalls = [];
+
+export async function fetchWorkspacePage(options = {}) {
+    globalThis.__workspacePageCalls.push({
+        sort: options.sort || "",
+        cursor: options.cursor || "",
+    });
+    return {
+        items: [alphaWorkspace],
+        next_cursor: "next-workspace-page",
+        has_more: true,
+    };
+}
+
+export async function fetchWorkspace(workspaceId) {
+    globalThis.__fetchWorkspaceCalls.push(workspaceId);
+    return workspaceId === "beta-project" ? betaWorkspace : null;
+}
+
+export async function fetchWorkspaces() {
+    return [alphaWorkspace];
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    globalThis.__workspaceSessionCalls.push({
+        workspaceId,
+        forceRefresh: options.forceRefresh === true,
+    });
+    if (workspaceId === "beta-project") {
+        return {
+            items: [
+                {
+                    session_id: "beta-session",
+                    workspace_id: "beta-project",
+                    updated_at: "2026-03-17T10:01:00Z",
+                    pending_tool_approval_count: 0,
+                },
+            ],
+            next_cursor: null,
+            has_more: false,
+        };
+    }
+    return { items: [], next_cursor: null, has_more: false };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["fetchWorkspaceCalls"] == ["beta-project"]
+    assert payload["workspacePageCalls"] == [{"sort": "activity", "cursor": ""}]
+    assert payload["workspaceSessionCalls"] == [
+        {"workspaceId": "alpha-project", "forceRefresh": False},
+        {"workspaceId": "beta-project", "forceRefresh": True},
+    ]
+    assert payload["projectTitles"] == ["Beta Project", "Alpha Project"]
+    assert payload["sessionIds"] == ["beta-session"]
+
+
+def test_projects_sidebar_menu_toggles_do_not_refetch_sessions(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { loadProjects } from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+function projectCards() {
+    return document.getElementById("projects-list").children
+        .filter(child => child.className === "project-card");
+}
+
+await loadProjects();
+const fetchCountAfterLoad = globalThis.__fetchSessionsCalls;
+
+let firstProject = projectCards()[0];
+firstProject.querySelector(".project-options-btn").onclick({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+const fetchCountAfterProjectMenuOpen = globalThis.__fetchSessionsCalls;
+
+firstProject = projectCards()[0];
+firstProject.querySelector(".project-options-btn").onclick({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+const fetchCountAfterProjectMenuClose = globalThis.__fetchSessionsCalls;
+
+document.getElementById("projects-list").querySelector(".projects-toolbar-sort-btn").onclick();
+await flushTasks();
+await flushTasks();
+const fetchCountAfterSortMenuOpen = globalThis.__fetchSessionsCalls;
+
+console.log(JSON.stringify({
+    fetchCountAfterLoad,
+    fetchCountAfterProjectMenuOpen,
+    fetchCountAfterProjectMenuClose,
+    fetchCountAfterSortMenuOpen,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        updated_at: "2026-03-14T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+    {
+        workspace_id: "beta-project",
+        root_path: "/work/Beta Project",
+        updated_at: "2026-03-14T09:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = [
+    {
+        session_id: "session-alpha",
+        workspace_id: "alpha-project",
+        updated_at: "2026-03-14T10:01:00Z",
+        pending_tool_approval_count: 0,
+    },
+    {
+        session_id: "session-beta",
+        workspace_id: "beta-project",
+        updated_at: "2026-03-14T09:01:00Z",
+        pending_tool_approval_count: 0,
+    },
+];
+
+globalThis.__fetchSessionsCalls = 0;
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchSessions() {
+    globalThis.__fetchSessionsCalls += 1;
+    return sessions;
+}
+
+export async function fetchAutomationProjects() {
+    return [];
+}
+
+export async function fetchAutomationFeishuBindings() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function deleteSession() {
+    return { status: "ok" };
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function forkWorkspace() {
+    return {};
+}
+
+export async function pickWorkspace() {
+    return { workspace_id: "alpha-project" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["fetchCountAfterLoad"] == 2
+    assert payload["fetchCountAfterProjectMenuOpen"] == payload["fetchCountAfterLoad"]
+    assert payload["fetchCountAfterProjectMenuClose"] == payload["fetchCountAfterLoad"]
+    assert payload["fetchCountAfterSortMenuOpen"] == payload["fetchCountAfterLoad"]
+
+
+def test_projects_sidebar_chronological_mode_loads_more_workspace_sessions(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { loadProjects } from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+async function selectSortMode(sortMode) {
+    const projectsList = document.getElementById("projects-list");
+    projectsList.querySelector(".projects-toolbar-sort-btn").onclick();
+    await flushTasks();
+    await flushTasks();
+    const target = projectsList.querySelectorAll(".project-sort-menu-btn")
+        .find(button => button.getAttribute("data-project-sort-mode") === sortMode);
+    if (!target) {
+        throw new Error(`Missing sort option: ${sortMode}`);
+    }
+    target.onclick();
+    await flushTasks();
+    await flushTasks();
+}
+
+await loadProjects();
+await selectSortMode("time");
+const projectsList = document.getElementById("projects-list");
+const beforeCount = projectsList.querySelectorAll(".session-item").length;
+const loadMoreButton = projectsList.querySelector(".project-session-load-more-btn");
+const loadMoreWorkspaceId = loadMoreButton.getAttribute("data-workspace-session-load-more");
+loadMoreButton.onclick({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+const afterCount = projectsList.querySelectorAll(".session-item").length;
+
+console.log(JSON.stringify({
+    beforeCount,
+    afterCount,
+    loadMoreWorkspaceId,
+    calls: globalThis.__workspaceSessionPageCalls,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const firstSessions = Array.from({ length: 50 }, (_, index) => ({
+    session_id: `session-${String(50 - index).padStart(2, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: `2026-03-14T10:${String(50 - index).padStart(2, "0")}:00Z`,
+    pending_tool_approval_count: 0,
+}));
+
+const nextSessions = [
+    {
+        session_id: "session-00",
+        workspace_id: "alpha-project",
+        updated_at: "2026-03-14T09:59:00Z",
+        pending_tool_approval_count: 0,
+    },
+];
+
+globalThis.__workspaceSessionPageCalls = [];
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    globalThis.__workspaceSessionPageCalls.push({
+        workspaceId,
+        limit: options.limit,
+        cursor: options.cursor || "",
+    });
+    if (options.cursor === "cursor-1") {
+        return { items: nextSessions, next_cursor: null, has_more: false };
+    }
+    return { items: firstSessions, next_cursor: "cursor-1", has_more: true };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["beforeCount"] == 50
+    assert payload["afterCount"] == 51
+    assert payload["loadMoreWorkspaceId"] == "alpha-project"
+    calls = cast(list[dict[str, object]], payload["calls"])
+    assert calls[-1]["cursor"] == "cursor-1"
+
+
+def test_projects_sidebar_workspace_session_refresh_clamps_limit(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleWorkspaceSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+const projectsList = document.getElementById("projects-list");
+for (let index = 0; index < 20; index += 1) {
+    const project = projectsList.children.filter(child => child.className === "project-card")[0];
+    const button = project.querySelector(".project-session-load-more-btn");
+    if (!button) {
+        throw new Error(`Missing load-more button at ${index}`);
+    }
+    button.onclick({ stopPropagation() {} });
+    await flushTasks();
+}
+
+scheduleWorkspaceSessionsRefresh("alpha-project", 0, { forceRefresh: true });
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    limits: globalThis.__workspaceSessionLimits,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = Array.from({ length: 250 }, (_, index) => ({
+    session_id: `session-${String(250 - index).padStart(3, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: `2026-03-14T10:${String(index % 60).padStart(2, "0")}:00Z`,
+    pending_tool_approval_count: 0,
+}));
+
+globalThis.__workspaceSessionLimits = [];
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(_workspaceId, options = {}) {
+    globalThis.__workspaceSessionLimits.push(options.limit);
+    return { items: sessions, next_cursor: null, has_more: false };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    limits = cast(list[int], payload["limits"])
+    assert limits[0] == 50
+    assert limits[-1] == 200
+
+
+def test_projects_sidebar_preserves_loaded_tail_after_capped_workspace_refresh(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleWorkspaceSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+for (let index = 0; index < 24; index += 1) {
+    const project = document.getElementById("projects-list").children
+        .filter(child => child.className === "project-card")[0];
+    const button = project.querySelector(".project-session-load-more-btn");
+    if (!button) {
+        throw new Error(`Missing reveal button at ${index}`);
+    }
+    button.onclick({ stopPropagation() {} });
+    await flushTasks();
+    await flushTasks();
+}
+let project = document.getElementById("projects-list").children
+    .filter(child => child.className === "project-card")[0];
+const beforeIds = project.querySelectorAll(".session-item")
+    .map(item => item.getAttribute("data-session-id"));
+
+scheduleWorkspaceSessionsRefresh("alpha-project", 0, { forceRefresh: true });
+await new Promise(resolve => setTimeout(resolve, 20));
+await flushTasks();
+await flushTasks();
+
+project = document.getElementById("projects-list").children
+    .filter(child => child.className === "project-card")[0];
+const afterIds = project.querySelectorAll(".session-item")
+    .map(item => item.getAttribute("data-session-id"));
+
+console.log(JSON.stringify({
+    beforeCount: beforeIds.length,
+    afterCount: afterIds.length,
+    afterHasTailSession: afterIds.includes("session-001"),
+    limits: globalThis.__workspaceSessionLimits,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = Array.from({ length: 250 }, (_, index) => ({
+    session_id: `session-${String(250 - index).padStart(3, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: new Date(Date.UTC(2026, 2, 14, 10, 0, 250 - index)).toISOString(),
+    pending_tool_approval_count: 0,
+}));
+
+globalThis.__workspaceSessionLimits = [];
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(_workspaceId, options = {}) {
+    globalThis.__workspaceSessionLimits.push(options.limit);
+    if (options.forceRefresh === true) {
+        return {
+            items: sessions.slice(0, options.limit),
+            next_cursor: "cursor-200",
+            has_more: true,
+        };
+    }
+    return { items: sessions, next_cursor: null, has_more: false };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["beforeCount"] == 250
+    assert payload["afterCount"] == 250
+    assert payload["afterHasTailSession"] is True
+    limits = cast(list[int], payload["limits"])
+    assert limits[-1] == 200
+
+
+def test_projects_sidebar_drops_deleted_sessions_inside_capped_refresh_page(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleWorkspaceSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+for (let index = 0; index < 24; index += 1) {
+    const project = document.getElementById("projects-list").children
+        .filter(child => child.className === "project-card")[0];
+    const button = project.querySelector(".project-session-load-more-btn");
+    if (!button) {
+        throw new Error(`Missing reveal button at ${index}`);
+    }
+    button.onclick({ stopPropagation() {} });
+    await flushTasks();
+    await flushTasks();
+}
+
+scheduleWorkspaceSessionsRefresh("alpha-project", 0, { forceRefresh: true });
+await new Promise(resolve => setTimeout(resolve, 20));
+await flushTasks();
+await flushTasks();
+
+const project = document.getElementById("projects-list").children
+    .filter(child => child.className === "project-card")[0];
+const afterIds = project.querySelectorAll(".session-item")
+    .map(item => item.getAttribute("data-session-id"));
+
+console.log(JSON.stringify({
+    afterCount: afterIds.length,
+    hasDeletedCoveredSession: afterIds.includes("session-249"),
+    hasPreservedTailSession: afterIds.includes("session-001"),
+    limits: globalThis.__workspaceSessionLimits,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = Array.from({ length: 250 }, (_, index) => ({
+    session_id: `session-${String(250 - index).padStart(3, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: new Date(Date.UTC(2026, 2, 14, 10, 0, 250 - index)).toISOString(),
+    pending_tool_approval_count: 0,
+}));
+
+globalThis.__workspaceSessionLimits = [];
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(_workspaceId, options = {}) {
+    globalThis.__workspaceSessionLimits.push(options.limit);
+    if (options.forceRefresh === true) {
+        return {
+            items: sessions
+                .filter(session => session.session_id !== "session-249")
+                .slice(0, options.limit),
+            next_cursor: "cursor-200",
+            has_more: true,
+        };
+    }
+    return { items: sessions, next_cursor: null, has_more: false };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["afterCount"] == 249
+    assert payload["hasDeletedCoveredSession"] is False
+    assert payload["hasPreservedTailSession"] is True
+    limits = cast(list[int], payload["limits"])
+    assert limits[-1] == 200
+
+
+def test_projects_sidebar_keeps_load_more_state_when_global_refresh_fails(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+let button = document.getElementById("projects-list")
+    .querySelector(".project-session-load-more-btn");
+const beforeHasButton = Boolean(button);
+
+globalThis.__failWorkspaceSessionFetch = true;
+scheduleSessionsRefresh(0, { forceRefresh: true });
+await new Promise(resolve => setTimeout(resolve, 20));
+await flushTasks();
+await flushTasks();
+
+button = document.getElementById("projects-list")
+    .querySelector(".project-session-load-more-btn");
+
+console.log(JSON.stringify({
+    beforeHasButton,
+    afterHasButton: Boolean(button),
+    calls: globalThis.__workspaceSessionCalls,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = Array.from({ length: 60 }, (_, index) => ({
+    session_id: `session-${String(60 - index).padStart(2, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: `2026-03-14T10:${String(index % 60).padStart(2, "0")}:00Z`,
+    pending_tool_approval_count: 0,
+}));
+
+globalThis.__workspaceSessionCalls = [];
+globalThis.__failWorkspaceSessionFetch = false;
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    globalThis.__workspaceSessionCalls.push({
+        workspaceId,
+        forceRefresh: options.forceRefresh === true,
+    });
+    if (globalThis.__failWorkspaceSessionFetch === true) {
+        throw new Error("workspace sessions unavailable");
+    }
+    return {
+        items: sessions.slice(0, 50),
+        next_cursor: "cursor-50",
+        has_more: true,
+    };
+}
+
+export async function fetchSessions() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["beforeHasButton"] is True
+    assert payload["afterHasButton"] is True
+    assert payload["calls"] == [
+        {"workspaceId": "alpha-project", "forceRefresh": False},
+        {"workspaceId": "alpha-project", "forceRefresh": True},
+    ]
+
+
+def test_projects_sidebar_global_refresh_preserves_loaded_workspace_sessions(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+for (let index = 0; index < 6; index += 1) {
+    const project = document.getElementById("projects-list").children
+        .filter(child => child.className === "project-card")[0];
+    project.querySelector(".project-session-load-more-btn").onclick({ stopPropagation() {} });
+    await flushTasks();
+    await flushTasks();
+}
+scheduleSessionsRefresh(0, { forceRefresh: true });
+await new Promise(resolve => setTimeout(resolve, 20));
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    calls: globalThis.__workspaceSessionPageCalls,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = Array.from({ length: 100 }, (_, index) => ({
+    session_id: `session-${String(100 - index).padStart(3, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: `2026-03-14T10:${String(index % 60).padStart(2, "0")}:00Z`,
+    pending_tool_approval_count: 0,
+}));
+
+globalThis.__workspaceSessionPageCalls = [];
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    globalThis.__workspaceSessionPageCalls.push({
+        workspaceId,
+        limit: options.limit,
+        cursor: options.cursor || "",
+        forceRefresh: options.forceRefresh === true,
+    });
+    if (options.cursor === "cursor-1") {
+        return { items: sessions.slice(50), next_cursor: null, has_more: false };
+    }
+    const limit = Number(options.limit || 50);
+    return {
+        items: sessions.slice(0, limit),
+        next_cursor: limit < sessions.length ? "cursor-1" : null,
+        has_more: limit < sessions.length,
+    };
+}
+
+export async function fetchSessions() {
+    return sessions;
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    calls = cast(list[dict[str, object]], payload["calls"])
+    assert any(call["cursor"] == "cursor-1" for call in calls)
+    assert calls[-1]["cursor"] == ""
+    assert calls[-1]["limit"] == 100
+    assert calls[-1]["forceRefresh"] is True
+
+
+def test_projects_sidebar_indexes_search_and_streams_from_loaded_session_pages(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { loadProjects } from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    searchSessionIds: globalThis.__sessionSearchEntries
+        .map(entry => entry.sessionId),
+    streamSessionIds: globalThis.__backgroundStreamSyncSessionIds,
+    workspacePageCalls: globalThis.__workspaceSessionPageCalls,
+    fetchSessionsCalls: globalThis.__fetchSessionsCalls,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const firstPageSessions = Array.from({ length: 50 }, (_, index) => ({
+    session_id: `session-${String(50 - index).padStart(2, "0")}`,
+    workspace_id: "alpha-project",
+    updated_at: `2026-03-14T10:${String(50 - index).padStart(2, "0")}:00Z`,
+    pending_tool_approval_count: 0,
+}));
+
+const hiddenSession = {
+    session_id: "session-hidden-active",
+    workspace_id: "alpha-project",
+    updated_at: "2026-03-14T09:59:00Z",
+    has_active_run: true,
+    active_run_id: "run-hidden",
+    pending_tool_approval_count: 0,
+    metadata: { title: "Hidden active session" },
+};
+
+globalThis.__workspaceSessionPageCalls = [];
+globalThis.__fetchSessionsCalls = 0;
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    globalThis.__workspaceSessionPageCalls.push({
+        workspaceId,
+        limit: options.limit,
+        cursor: options.cursor || "",
+    });
+    return { items: firstPageSessions, next_cursor: "cursor-1", has_more: true };
+}
+
+export async function fetchSessions() {
+    globalThis.__fetchSessionsCalls += 1;
+    return [...firstPageSessions, hiddenSession];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["fetchSessionsCalls"] == 0
+    assert "session-50" in cast(list[str], payload["searchSessionIds"])
+    assert "session-50" in cast(list[str], payload["streamSessionIds"])
+    assert "session-hidden-active" not in cast(list[str], payload["searchSessionIds"])
+    assert "session-hidden-active" not in cast(list[str], payload["streamSessionIds"])
+
+
+def test_projects_sidebar_drains_workspace_refresh_after_global_load(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleWorkspaceSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+globalThis.__deferWorkspaceSessionFetches = true;
+const loadPromise = loadProjects({ forceRefresh: true });
+await flushTasks();
+await flushTasks();
+
+scheduleWorkspaceSessionsRefresh("alpha-project", 0, { forceRefresh: true });
+await new Promise(resolve => setTimeout(resolve, 20));
+await flushTasks();
+
+const callsBeforeResolve = globalThis.__workspaceSessionPageCalls.length;
+globalThis.__workspaceSessionResolvers.splice(0).forEach(resolve => resolve());
+await loadPromise;
+await new Promise(resolve => setTimeout(resolve, 180));
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    callsBeforeResolve,
+    calls: globalThis.__workspaceSessionPageCalls,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-12T10:00:00Z",
+        updated_at: "2026-03-12T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = [
+    {
+        session_id: "session-1",
+        workspace_id: "alpha-project",
+        updated_at: "2026-03-14T10:00:00Z",
+        pending_tool_approval_count: 0,
+    },
+];
+
+globalThis.__workspaceSessionPageCalls = [];
+globalThis.__workspaceSessionResolvers = [];
+globalThis.__deferWorkspaceSessionFetches = false;
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    globalThis.__workspaceSessionPageCalls.push({
+        workspaceId,
+        forceRefresh: options.forceRefresh === true,
+        limit: options.limit,
+    });
+    if (globalThis.__deferWorkspaceSessionFetches === true) {
+        return await new Promise(resolve => {
+            globalThis.__workspaceSessionResolvers.push(() => resolve({
+                items: sessions,
+                next_cursor: null,
+                has_more: false,
+            }));
+        });
+    }
+    return { items: sessions, next_cursor: null, has_more: false };
+}
+
+export async function fetchSessions() {
+    return sessions;
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession() {
+    return undefined;
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    calls = cast(list[dict[str, object]], payload["calls"])
+    assert payload["callsBeforeResolve"] == 2
+    assert len(calls) >= 3
+    assert calls[-1]["workspaceId"] == "alpha-project"
+    assert calls[-1]["forceRefresh"] is True
+
+
+def test_projects_sidebar_scopes_session_refresh_to_session_workspace(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+    scheduleSessionsRefresh,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+
+await loadProjects();
+const initialWorkspaceCalls = globalThis.__workspaceSidebarSessionCalls
+    .map(call => call.workspaceId);
+
+globalThis.__workspaceSidebarSessionCalls = [];
+scheduleSessionsRefresh(0, {
+    forceRefresh: true,
+    sessionId: "session-alpha",
+});
+await new Promise(resolve => setTimeout(resolve, 20));
+await flushTasks();
+await flushTasks();
+
+console.log(JSON.stringify({
+    initialWorkspaceCalls,
+    scopedWorkspaceCalls: globalThis.__workspaceSidebarSessionCalls
+        .map(call => call.workspaceId),
+    fallbackFetchSessionsCalls: globalThis.__fetchSessionsCalls,
+}));
+""".strip(),
+        mock_api_source="""
+const workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        updated_at: "2026-03-14T10:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+    {
+        workspace_id: "beta-project",
+        root_path: "/work/Beta Project",
+        updated_at: "2026-03-14T09:00:00Z",
+        profile: { file_scope: { backend: "project" } },
+    },
+];
+
+const sessions = [
+    {
+        session_id: "session-alpha",
+        workspace_id: "alpha-project",
+        updated_at: "2026-03-14T10:01:00Z",
+        pending_tool_approval_count: 0,
+    },
+    {
+        session_id: "session-beta",
+        workspace_id: "beta-project",
+        updated_at: "2026-03-14T09:01:00Z",
+        pending_tool_approval_count: 0,
+    },
+];
+
+globalThis.__workspaceSidebarSessionCalls = [];
+globalThis.__fetchSessionsCalls = 0;
+
+export async function fetchWorkspaces() {
+    return workspaces;
+}
+
+export async function fetchWorkspaceSidebarSessions(workspaceId, options = {}) {
+    globalThis.__workspaceSidebarSessionCalls.push({
+        workspaceId,
+        forceRefresh: options.forceRefresh === true,
+    });
+    return {
+        items: sessions.filter(session => session.workspace_id === workspaceId),
+        next_cursor: null,
+        has_more: false,
+    };
+}
+
+export async function fetchSessions() {
+    globalThis.__fetchSessionsCalls += 1;
+    return sessions;
+}
+
+export async function fetchAutomationProjects() {
+    return [];
+}
+
+export async function fetchAutomationFeishuBindings() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function deleteSession() {
+    return { status: "ok" };
+}
+
+export async function deleteWorkspace() {
+    return { status: "ok" };
+}
+
+export async function forkWorkspace() {
+    return {};
+}
+
+export async function pickWorkspace() {
+    return { workspace_id: "alpha-project" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    initial_workspace_calls = cast(list[str], payload["initialWorkspaceCalls"])
+    assert sorted(initial_workspace_calls) == [
+        "alpha-project",
+        "beta-project",
+    ]
+    assert payload["scopedWorkspaceCalls"] == ["alpha-project"]
+    assert payload["fallbackFetchSessionsCalls"] == 0
 
 
 def test_new_session_draft_event_renders_sidebar_session_without_refetch(
@@ -561,18 +2416,18 @@ const elapsedMs = performance.now() - started;
 const projectsList = document.getElementById("projects-list");
 const firstProject = projectsList.children.filter(child => child.className === "project-card")[0];
 const visibleSessionCount = firstProject.querySelectorAll(".session-item").length;
-const visibilityLabel = firstProject.querySelector(".project-session-visibility-btn").textContent;
+const loadMoreLabel = firstProject.querySelector(".project-session-load-more-btn").textContent;
 
 console.log(JSON.stringify({
     elapsedMs,
     visibleSessionCount,
-    visibilityLabel,
+    loadMoreLabel,
 }));
 """.strip(),
     )
 
     assert payload["visibleSessionCount"] == 10
-    assert payload["visibilityLabel"] == "Show all (2000)"
+    assert payload["loadMoreLabel"] == "Load more"
     elapsed_ms = payload["elapsedMs"]
     assert isinstance(elapsed_ms, int | float)
     assert elapsed_ms < 300
@@ -987,14 +2842,18 @@ await loadProjects();
 const projectsList = document.getElementById("projects-list");
 const firstProject = projectsList.children.filter(child => child.className === "project-card")[0];
 
-firstProject.querySelector(".project-session-visibility-btn").onclick();
+firstProject.querySelector(".project-session-load-more-btn").onclick();
 await flushTasks();
 const expandedProject = projectsList.children.filter(child => child.className === "project-card")[0];
-expandedProject.querySelector(".project-session-visibility-btn").onclick();
-await flushTasks();
+const expandedLoadMoreButton = expandedProject.querySelector(".project-session-load-more-btn");
+if (expandedLoadMoreButton) {
+    expandedLoadMoreButton.onclick();
+    await flushTasks();
+}
 const recollapsedProject = projectsList.children.filter(child => child.className === "project-card")[0];
 const beforeCount = recollapsedProject.querySelectorAll(".session-item").length;
-const beforeVisibilityLabel = recollapsedProject.querySelector(".project-session-visibility-btn").textContent;
+const beforeLoadMoreButton = recollapsedProject.querySelector(".project-session-load-more-btn");
+const beforeLoadMoreLabel = beforeLoadMoreButton ? beforeLoadMoreButton.textContent : "";
 
 recollapsedProject.querySelectorAll(".project-new-session-btn")[0].onclick();
 await flushTasks();
@@ -1002,13 +2861,14 @@ await flushTasks();
 
 const refreshedProject = projectsList.children.filter(child => child.className === "project-card")[0];
 const afterCount = refreshedProject.querySelectorAll(".session-item").length;
-const afterVisibilityLabel = refreshedProject.querySelector(".project-session-visibility-btn").textContent;
+const afterLoadMoreButton = refreshedProject.querySelector(".project-session-load-more-btn");
+const afterLoadMoreLabel = afterLoadMoreButton ? afterLoadMoreButton.textContent : "";
 
 console.log(JSON.stringify({
     beforeCount,
-    beforeVisibilityLabel,
+    beforeLoadMoreLabel,
     afterCount,
-    afterVisibilityLabel,
+    afterLoadMoreLabel,
     openedNewSessionDraftWorkspaceIds: globalThis.__openedNewSessionDraftWorkspaceIds,
     selectedSessionIds: globalThis.__selectedSessionIds,
 }));
@@ -1021,10 +2881,10 @@ console.log(JSON.stringify({
     ).read_text(encoding="utf-8")
     components_base_css = load_components_css()
 
-    assert payload["beforeCount"] == 10
-    assert payload["beforeVisibilityLabel"] == "Show all (11)"
-    assert payload["afterCount"] == 10
-    assert payload["afterVisibilityLabel"] == "Show all (11)"
+    assert payload["beforeCount"] == 11
+    assert payload["beforeLoadMoreLabel"] == ""
+    assert payload["afterCount"] == 11
+    assert payload["afterLoadMoreLabel"] == ""
     assert payload["openedNewSessionDraftWorkspaceIds"] == ["alpha-project"]
     assert payload["selectedSessionIds"] == []
     assert (
@@ -1045,7 +2905,10 @@ console.log(JSON.stringify({
     assert "agent-teams-session-selection-cancelled" in sidebar_script
     assert "if (state.currentFeatureViewId === safeFeatureId) {" in sidebar_script
     assert "animateSessionItem(sessionItem, 'removing');" in sidebar_script
-    assert sidebar_script.count("await loadProjects({ forceRefresh: true });") >= 1
+    assert (
+        "scheduleSessionSidebarRefresh(sessionId, 120, { forceRefresh: true });"
+        in sidebar_script
+    )
     assert "scheduleSessionsRefresh(900, { forceRefresh: false });" in sidebar_script
     assert "isSessionsRefreshSuppressed() && forceRefresh !== true" in sidebar_script
     assert "PROJECT_UPDATED: 'project_updated'" in sidebar_script
@@ -1088,10 +2951,10 @@ console.log(JSON.stringify({
     assert "@keyframes sessionItemEnter {" in components_base_css
     assert "@keyframes sessionItemRemove {" in components_base_css
     assert "@keyframes sessionItemActivate {" not in components_base_css
-    assert "pendingSessionVisibilityAnimation" in sidebar_script
-    assert "SESSION_VISIBILITY_ANIMATED_ITEM_LIMIT = 24" in sidebar_script
-    assert "session-entry-visible-entering" in sidebar_script
-    assert "session-entry-collapsing" in sidebar_script
+    assert "pendingSessionVisibilityAnimation" not in sidebar_script
+    assert "SESSION_VISIBILITY_ANIMATED_ITEM_LIMIT = 24" not in sidebar_script
+    assert "project-session-load-more-btn" in sidebar_script
+    assert ".project-session-load-more-btn" in components_base_css
     assert "button.scrollIntoView?.({ block: 'nearest' });" in (
         repo_root / "frontend" / "dist" / "js" / "components" / "sessionSearch.js"
     ).read_text(encoding="utf-8")
@@ -1118,14 +2981,16 @@ console.log(JSON.stringify({
     assert ".projects-list::-webkit-scrollbar-thumb {" not in components_base_css
     assert ".home-feature-section {\n    position: sticky;" not in components_base_css
     assert ".projects-toolbar {\n    position: sticky;" not in components_base_css
-    assert ".project-session-list.is-visibility-expanding" in components_base_css
-    assert ".project-session-list.is-visibility-collapsing" in components_base_css
+    assert ".projects-list .project-session-load-more-btn {" in components_base_css
+    assert ".project-session-list.is-visibility-expanding" not in components_base_css
+    assert ".project-session-list.is-visibility-collapsing" not in components_base_css
     assert (
-        ".project-session-list.is-visibility-height-collapsing" in components_base_css
+        ".project-session-list.is-visibility-height-collapsing"
+        not in components_base_css
     )
     assert "projectSessionVisibilitySettle" not in components_base_css
-    assert "@keyframes projectSessionVisibilityEnter {" in components_base_css
-    assert "@keyframes projectSessionVisibilityExit {" in components_base_css
+    assert "@keyframes projectSessionVisibilityEnter {" not in components_base_css
+    assert "@keyframes projectSessionVisibilityExit {" not in components_base_css
     assert ".session-search-root {" in components_base_css
     assert ".session-search-result {" in components_base_css
     assert ".session-search-mark {" in components_base_css
@@ -1149,6 +3014,198 @@ console.log(JSON.stringify({
     assert "@keyframes sessionRunIndicatorSpin {" in components_base_css
     assert "@media (prefers-reduced-motion: reduce)" in components_base_css
     assert 'class="session-label-text" title=' in sidebar_script
+
+
+def test_new_session_draft_fetches_workspaces_for_incomplete_sidebar_snapshot(
+    tmp_path: Path,
+) -> None:
+    source = Path("frontend/dist/js/components/newSessionDraft.js").read_text(
+        encoding="utf-8"
+    )
+    (tmp_path / "newSessionDraft.mjs").write_text(
+        source.replace("../core/api.js", "./mockApi.mjs")
+        .replace("../core/state.js", "./mockState.mjs")
+        .replace("./agentPanel.js", "./mockNoop.mjs")
+        .replace("./contextIndicators.js", "./mockNoop.mjs")
+        .replace("./messageRenderer.js", "./mockNoop.mjs")
+        .replace("./rounds/timeline.js", "./mockNoop.mjs")
+        .replace("./sessionTokenUsage.js", "./mockNoop.mjs")
+        .replace("./subagentSessions.js", "./mockNoop.mjs")
+        .replace("./newSessionDraftView.js", "./mockView.mjs")
+        .replace("./sessionSidebarStore.js", "./mockSidebarStore.mjs")
+        .replace("../utils/dom.js", "./mockDom.mjs")
+        .replace("../utils/i18n.js", "./mockI18n.mjs")
+        .replace("../utils/feedback.js", "./mockFeedback.mjs"),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockApi.mjs").write_text(
+        """
+export async function fetchWorkspaces() {
+    globalThis.__fetchWorkspacesCalls = (globalThis.__fetchWorkspacesCalls || 0) + 1;
+    return [
+        { workspace_id: "alpha-project", root_path: "/work/Alpha" },
+        { workspace_id: "beta-project", root_path: "/work/Beta" },
+    ];
+}
+
+export async function pickWorkspace() {
+    return null;
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSessionTopology() {
+    throw new Error("not used");
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockState.mjs").write_text(
+        """
+export const state = {
+    activeEventSource: null,
+    pendingNewSessionActive: false,
+    pendingNewSessionWorkspaceId: null,
+    currentWorkspaceId: "",
+    currentSessionId: "session-1",
+    currentMainView: "session",
+    currentProjectViewWorkspaceId: null,
+    currentFeatureViewId: null,
+};
+
+export function applyCurrentSessionRecord() {
+    return undefined;
+}
+
+export function resetCurrentSessionTopology() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockNoop.mjs").write_text(
+        """
+export function clearActiveSubagentSession() { return undefined; }
+export function clearAllPanels() { return undefined; }
+export function clearAllStreamState() { return undefined; }
+export function clearContextIndicators() { return undefined; }
+export function clearSessionTimeline() { return undefined; }
+export function clearSessionTokenUsage() { return undefined; }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockView.mjs").write_text(
+        """
+export function renderNewSessionDraftView() {
+    return '<div class="new-session-draft-page"></div>';
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockSidebarStore.mjs").write_text(
+        """
+export function getSidebarDataSnapshot() {
+    return {
+        workspacesComplete: false,
+        workspaces: [{ workspace_id: "alpha-project", root_path: "/work/Alpha" }],
+        sessions: [],
+    };
+}
+
+export function hasSidebarDataSnapshot() {
+    return true;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockDom.mjs").write_text(
+        """
+export const els = {
+    chatMessages: {
+        innerHTML: "",
+        querySelector() { return null; },
+    },
+    chatContainer: {
+        style: {},
+        classList: { add() {}, remove() {} },
+    },
+    projectView: { style: {} },
+    promptInput: {
+        disabled: true,
+        value: "",
+        style: {},
+        focus() {},
+    },
+    sendBtn: {
+        disabled: true,
+        setAttribute() {},
+    },
+};
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockI18n.mjs").write_text(
+        """
+export function t(key) {
+    return key;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "mockFeedback.mjs").write_text(
+        """
+export async function showTextInputDialog() {
+    return null;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    runner = """
+globalThis.document = {
+    body: { classList: { remove() {} } },
+    addEventListener() {},
+    dispatchEvent(event) {
+        globalThis.__events = [...(globalThis.__events || []), event.type];
+    },
+    getElementById() {
+        return null;
+    },
+    querySelectorAll() {
+        return [];
+    },
+};
+globalThis.CustomEvent = class CustomEvent {
+    constructor(type, init = {}) {
+        this.type = type;
+        this.detail = init.detail || {};
+    }
+};
+
+const draft = await import("./newSessionDraft.mjs");
+draft.openNewSessionDraft("");
+await Promise.resolve();
+await new Promise(resolve => setTimeout(resolve, 0));
+
+console.log(JSON.stringify({
+    fetchWorkspacesCalls: globalThis.__fetchWorkspacesCalls || 0,
+    events: globalThis.__events || [],
+}));
+""".strip()
+
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["fetchWorkspacesCalls"] == 1
+    assert "agent-teams-new-session-draft-opened" in payload["events"]
 
 
 def test_projects_sidebar_render_signature_does_not_recurse_serialized_markup() -> None:
@@ -3458,6 +5515,162 @@ console.log(JSON.stringify({
     ]
 
 
+def test_projects_sidebar_removes_deleted_workspace_from_snapshot(
+    tmp_path: Path,
+) -> None:
+    payload = _run_sidebar_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import {
+    loadProjects,
+} from "./sidebar.mjs";
+
+installGlobals(createDomEnvironment());
+globalThis.__showFormDialogResult = { remove_directory: false };
+
+await loadProjects();
+let projectsList = document.getElementById("projects-list");
+function projectTitles() {
+    return projectsList.children
+        .filter(child => child.className === "project-card")
+        .map(card => card.querySelector(".project-title").textContent);
+}
+const projectTitlesBeforeDelete = projectTitles();
+let firstProject = projectsList.children.filter(child => child.className === "project-card")[0];
+firstProject.querySelector(".project-options-btn").onclick({ stopPropagation() {} });
+await flushTasks();
+projectsList = document.getElementById("projects-list");
+firstProject = projectsList.children.filter(child => child.className === "project-card")[0];
+firstProject.querySelector(".project-remove-btn").onclick({ stopPropagation() {} });
+await flushTasks();
+await flushTasks();
+await flushTasks();
+projectsList = document.getElementById("projects-list");
+
+console.log(JSON.stringify({
+    projectTitlesBeforeDelete,
+    projectTitlesAfterDelete: projectTitles(),
+    deleteWorkspaceCalls: globalThis.__deleteWorkspaceCalls,
+    deleteSessionCalls: globalThis.__deleteSessionCalls,
+    fetchWorkspacesCalls: globalThis.__fetchWorkspacesCalls,
+}));
+""".strip(),
+        mock_api_source="""
+let workspaces = [
+    {
+        workspace_id: "alpha-project",
+        root_path: "/work/Alpha Project",
+        created_at: "2026-03-16T10:00:00Z",
+        updated_at: "2026-03-16T10:00:00Z",
+        profile: {
+            file_scope: {
+                backend: "project",
+            },
+        },
+    },
+    {
+        workspace_id: "beta-project",
+        root_path: "/work/Beta Project",
+        created_at: "2026-03-15T10:00:00Z",
+        updated_at: "2026-03-15T10:00:00Z",
+        profile: {
+            file_scope: {
+                backend: "project",
+            },
+        },
+    },
+];
+
+let sessions = [
+    { session_id: "alpha-session", workspace_id: "alpha-project", updated_at: "2026-03-16T10:01:00Z", pending_tool_approval_count: 0 },
+    { session_id: "beta-session", workspace_id: "beta-project", updated_at: "2026-03-15T10:01:00Z", pending_tool_approval_count: 0 },
+];
+
+globalThis.__fetchWorkspacesCalls = 0;
+globalThis.__deleteSessionCalls = [];
+
+export async function fetchWorkspaces() {
+    globalThis.__fetchWorkspacesCalls += 1;
+    return workspaces;
+}
+
+export async function fetchSessions() {
+    return sessions;
+}
+
+export async function fetchAutomationProjects() {
+    return [];
+}
+
+export async function fetchAutomationFeishuBindings() {
+    return [];
+}
+
+export async function startNewSession() {
+    throw new Error("not used");
+}
+
+export async function updateSession() {
+    return { status: "ok" };
+}
+
+export async function pickWorkspace() {
+    throw new Error("not used");
+}
+
+export async function forkWorkspace() {
+    throw new Error("not used");
+}
+
+export async function deleteSession(sessionId) {
+    globalThis.__deleteSessionCalls.push(sessionId);
+    sessions = sessions.filter(session => session.session_id !== sessionId);
+    return { status: "ok" };
+}
+
+export async function deleteWorkspace(workspaceId, options = {}) {
+    globalThis.__deleteWorkspaceCalls.push({ workspaceId, options });
+    workspaces = workspaces.filter(workspace => workspace.workspace_id !== workspaceId);
+    return { status: "ok" };
+}
+
+export async function createAutomationProject() {
+    throw new Error("not used");
+}
+
+export async function deleteAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function disableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function enableAutomationProject() {
+    return { status: "ok" };
+}
+
+export async function runAutomationProject() {
+    throw new Error("not used");
+}
+""".strip(),
+    )
+
+    assert payload["projectTitlesBeforeDelete"] == [
+        "Alpha Project",
+        "Beta Project",
+    ]
+    assert payload["projectTitlesAfterDelete"] == ["Beta Project"]
+    assert payload["deleteWorkspaceCalls"] == [
+        {
+            "workspaceId": "alpha-project",
+            "options": {"removeDirectory": False},
+        }
+    ]
+    assert payload["deleteSessionCalls"] == ["alpha-session"]
+    assert payload["fetchWorkspacesCalls"] == 2
+
+
 def test_projects_sidebar_can_delete_directory_when_removing_workspace(
     tmp_path: Path,
 ) -> None:
@@ -4514,7 +6727,7 @@ function parseElements(source, selector) {
         ".project-new-session-btn": /class="([^"]*project-new-session-btn[^"]*)"[^>]*>/g,
             ".project-fork-btn": /class="[^"]*project-fork-btn[^"]*"[^>]*>/g,
             ".project-remove-btn": /class="[^"]*project-remove-btn[^"]*"[^>]*>/g,
-        ".project-session-visibility-btn": /class="project-session-visibility-btn"[^>]*>([\s\S]*?)<\/button>/g,
+        ".project-session-load-more-btn": /class="project-session-load-more-btn"[^>]*>([\s\S]*?)<\/button>/g,
             ".session-subagents-toggle": /class="session-subagents-toggle"[^>]*data-session-id="([^"]+)"[^>]*aria-expanded="([^"]+)"[^>]*>/g,
             ".session-subagent-list": /class="([^"]*session-subagent-list[^"]*)"[^>]*data-session-id="([^"]+)"[^>]*aria-hidden="([^"]+)"[^>]*>/g,
             ".session-subagent-item": /class="([^"]*session-subagent-item[^"]*)"[^>]*data-session-id="([^"]+)"[^>]*data-subagent-instance-id="([^"]+)"[^>]*data-subagent-role-id="([^"]+)"[^>]*data-subagent-run-id="([^"]+)"[^>]*data-subagent-title="([^"]*)"[^>]*>[\s\S]*?<span class="session-label-text"[^>]*>([\s\S]*?)<\/span>/g,
@@ -4582,8 +6795,14 @@ function parseElements(source, selector) {
             results.push(createNode());
         } else if (selector === ".project-remove-btn") {
             results.push(createNode());
-        } else if (selector === ".project-session-visibility-btn") {
-            results.push(createNode({ textContent: match[1].replace(/<[^>]+>/g, "").trim() }));
+        } else if (selector === ".project-session-load-more-btn") {
+            const workspaceMatch = match[0].match(/data-workspace-session-load-more="([^"]*)"/);
+            results.push(createNode({
+                textContent: match[1].replace(/<[^>]+>/g, "").trim(),
+                attributes: {
+                    "data-workspace-session-load-more": workspaceMatch ? decodeHtmlAttribute(workspaceMatch[1]) : "",
+                },
+            }));
         } else if (selector === ".session-subagents-toggle") {
             results.push(createNode({
                 attributes: {
@@ -4703,6 +6922,16 @@ function createCardElement() {
         className: "",
         style: {},
         children: [],
+        onclick: null,
+        onkeydown: null,
+        addEventListener(name, handler) {
+            if (name === "click") {
+                this.onclick = handler;
+            }
+            if (name === "keydown") {
+                this.onkeydown = handler;
+            }
+        },
         setAttribute() {
             return undefined;
         },
@@ -4946,7 +7175,10 @@ const translations = {
     "sidebar.fork": "Fork",
     "sidebar.remove": "Remove",
     "sidebar.collapse": "Collapse",
-    "sidebar.show_all": "Show all ({count})",
+    "sidebar.load_more_sessions": "Load more",
+    "sidebar.loading_more_sessions": "Loading...",
+    "sidebar.load_more_workspaces": "Load more workspaces",
+    "sidebar.loading_more_workspaces": "Loading workspaces...",
     "sidebar.fork_project": "Fork Project",
     "sidebar.fork_project_message": "Enter the name for the forked project.",
     "sidebar.fork_project_placeholder": "Forked project name",
@@ -5221,6 +7453,12 @@ export function detachNormalModeSubagentStreamsForSessionSwitch() {
 export function closeNormalModeSubagentStream(runId) {
     globalThis.__closedSubagentRunIds = globalThis.__closedSubagentRunIds || [];
     globalThis.__closedSubagentRunIds.push(runId);
+}
+
+export function syncBackgroundStreamsForSessions(sessionRecords = []) {
+    globalThis.__backgroundStreamSyncSessionIds = Array.isArray(sessionRecords)
+        ? sessionRecords.map(record => String(record?.session_id || "").trim())
+        : [];
 }
 """.strip(),
         encoding="utf-8",
@@ -5498,11 +7736,19 @@ export function syncSessionDebugBadge() {
         session_sidebar_store_source_path.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    session_search_source = session_search_source_path.read_text(
+        encoding="utf-8"
+    ).replace(
+        "../utils/i18n.js",
+        "./mockI18n.mjs",
+    )
+    session_search_source = session_search_source.replace(
+        "export function setSessionSearchEntries(nextEntries = []) {\n",
+        "export function setSessionSearchEntries(nextEntries = []) {\n"
+        "    globalThis.__sessionSearchEntries = Array.isArray(nextEntries) ? nextEntries : [];\n",
+    )
     session_search_module_path.write_text(
-        session_search_source_path.read_text(encoding="utf-8").replace(
-            "../utils/i18n.js",
-            "./mockI18n.mjs",
-        ),
+        session_search_source,
         encoding="utf-8",
     )
 
@@ -5541,6 +7787,8 @@ globalThis.__loadingSubagentSessionIds = new Set();
 globalThis.__activeSubagentSession = null;
 globalThis.__closedSubagentRunIds = [];
 globalThis.__documentDispatches = [];
+globalThis.__sessionSearchEntries = [];
+globalThis.__backgroundStreamSyncSessionIds = [];
 installGlobals(createDomEnvironment());
 
 {runner_source}

@@ -23,6 +23,7 @@ from relay_teams.sessions.session_metadata import (
 from relay_teams.sessions.session_models import (
     ProjectKind,
     SessionMode,
+    SessionSidebarPage,
     SessionRecord,
     SessionSidebarRecord,
 )
@@ -30,6 +31,7 @@ from relay_teams.sessions.session_models import (
 __all__ = [
     "ProjectKind",
     "SessionRecord",
+    "SessionSidebarPage",
     "SessionSidebarRecord",
     "SessionMode",
     "ExternalSessionBinding",

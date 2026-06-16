@@ -392,5 +392,6 @@ def test_detached_run_creation_forces_sidebar_refresh() -> None:
     assert (
         "scheduleSessionsRefresh(RUN_CREATED_SIDEBAR_REFRESH_DELAY_MS, {\n"
         "            forceRefresh: true,\n"
+        "            sessionId,\n"
         "        });" in detached_block
     )

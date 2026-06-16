@@ -187,21 +187,6 @@
     gap: 0.1rem;
 }
 
-.projects-list .project-session-list.is-visibility-expanding .session-entry-visible-entering {
-    opacity: 0;
-    animation: projectSessionVisibilityEnter 0.16s ease forwards;
-    animation-delay: calc(min(var(--session-visibility-index), 8) * 10ms);
-}
-
-.projects-list .project-session-list.is-visibility-collapsing .session-entry-collapsing {
-    animation: projectSessionVisibilityExit 0.12s ease forwards;
-}
-
-.projects-list .project-session-list.is-visibility-height-collapsing {
-    transition: max-height 0.16s ease;
-    will-change: max-height;
-}
-
 .projects-list .session-subagent-list {
     --session-subagent-list-height: auto;
     position: relative;
@@ -312,7 +297,7 @@
     font-size: 0.72rem;
 }
 
-.projects-list .project-session-visibility-btn {
+.projects-list .project-session-load-more-btn {
     margin-left: 1.86rem;
     margin-top: -0.02rem;
     padding: 0.08rem 0.4rem 0.22rem 0.56rem;
@@ -322,6 +307,31 @@
     font-size: 0.71rem;
     text-align: left;
     cursor: pointer;
+}
+
+.projects-list .project-session-load-more-btn:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.projects-list .project-workspace-load-more {
+    padding: 0.16rem 0.76rem 0.36rem;
+}
+
+.projects-list .project-workspace-load-more-btn {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-surface-muted);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.73rem;
+    padding: 0.36rem 0.5rem;
+}
+
+.projects-list .project-workspace-load-more-btn:disabled {
+    cursor: default;
+    opacity: 0.7;
 }
 
 @keyframes sessionRunIndicatorSpin {
@@ -337,30 +347,6 @@
 
     to {
         opacity: 1;
-    }
-}
-
-@keyframes projectSessionVisibilityEnter {
-    from {
-        opacity: 0;
-        transform: translateY(3px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes projectSessionVisibilityExit {
-    from {
-        opacity: 1;
-        transform: translateY(0);
-    }
-
-    to {
-        opacity: 0;
-        transform: translateY(-2px);
     }
 }
 
@@ -382,9 +368,6 @@
     }
 
     .projects-list .session-item.session-run-indicator-clearing .session-time,
-    .projects-list .project-session-list.is-visibility-expanding .session-entry-visible-entering,
-    .projects-list .project-session-list.is-visibility-collapsing .session-entry-collapsing,
-    .projects-list .project-session-list.is-visibility-height-collapsing,
     .projects-list .project-menu.is-opening,
     .projects-list .project-body.is-animating,
     .projects-list .session-subagent-list,
@@ -537,7 +520,11 @@
     }
 }
 
-.projects-list .project-session-visibility-btn:hover {
+.projects-list .project-session-load-more-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+}
+
+.projects-list .project-workspace-load-more-btn:hover:not(:disabled) {
     color: var(--text-primary);
 }
 

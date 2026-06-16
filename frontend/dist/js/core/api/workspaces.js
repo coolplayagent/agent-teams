@@ -4,14 +4,75 @@
  */
 import { invalidateManagedRequests, requestJson, requestJsonManaged } from './request.js';
 
-export async function fetchWorkspaces(options = {}) {
-    return requestJsonManaged(
-        'workspaces:list',
-        '/api/workspaces',
+const DEFAULT_WORKSPACE_PAGE_LIMIT = 50;
+const MAX_WORKSPACE_PAGE_LIMIT = 200;
+
+function normalizeWorkspacePage(payload) {
+    if (Array.isArray(payload)) {
+        return {
+            items: payload,
+            next_cursor: null,
+            has_more: false,
+        };
+    }
+    const page = payload && typeof payload === 'object' ? payload : {};
+    const nextCursor = String(page.next_cursor || page.nextCursor || '').trim();
+    return {
+        items: Array.isArray(page.items) ? page.items : [],
+        next_cursor: nextCursor || null,
+        has_more: page.has_more === true || page.hasMore === true,
+    };
+}
+
+function normalizeWorkspacePageLimit(limit) {
+    const numericLimit = Number(limit);
+    if (!Number.isFinite(numericLimit)) {
+        return DEFAULT_WORKSPACE_PAGE_LIMIT;
+    }
+    return Math.max(1, Math.min(Math.floor(numericLimit), MAX_WORKSPACE_PAGE_LIMIT));
+}
+
+export async function fetchWorkspacePage(options = {}) {
+    const limit = normalizeWorkspacePageLimit(options.limit);
+    const cursor = String(options.cursor || '').trim();
+    const sort = String(options.sort || '').trim() === 'created' ? 'created' : 'activity';
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) {
+        query.set('cursor', cursor);
+    }
+    if (sort !== 'activity') {
+        query.set('sort', sort);
+    }
+    const payload = await requestJsonManaged(
+        `workspaces:list-page:${sort}:${limit}:${cursor || 'first'}`,
+        `/api/workspaces?${query.toString()}`,
         { signal: options.signal },
         'Failed to fetch projects',
         { ttlMs: 800 },
     );
+    return normalizeWorkspacePage(payload);
+}
+
+export async function fetchWorkspaces(options = {}) {
+    const limit = normalizeWorkspacePageLimit(options.limit);
+    const workspaces = [];
+    const seenCursors = new Set();
+    let cursor = String(options.cursor || '').trim();
+    while (true) {
+        const page = await fetchWorkspacePage({
+            limit,
+            cursor,
+            sort: options.sort,
+            signal: options.signal,
+        });
+        page.items.forEach(workspace => workspaces.push(workspace));
+        const nextCursor = String(page.next_cursor || '').trim();
+        if (page.has_more !== true || !nextCursor || seenCursors.has(nextCursor)) {
+            return workspaces;
+        }
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
+    }
 }
 
 export async function updateWorkspace(workspaceId, payload) {
@@ -26,6 +87,17 @@ export async function updateWorkspace(workspaceId, payload) {
     );
     invalidateManagedRequests('workspaces:');
     return result;
+}
+
+export async function fetchWorkspace(workspaceId, options = {}) {
+    const safeWorkspaceId = String(workspaceId || '').trim();
+    return requestJsonManaged(
+        `workspaces:item:${safeWorkspaceId}`,
+        `/api/workspaces/${encodeURIComponent(safeWorkspaceId)}`,
+        { signal: options.signal },
+        'Failed to fetch project workspace',
+        { ttlMs: 800 },
+    );
 }
 
 export function buildWorkspaceImagePreviewUrl(workspaceId, path) {

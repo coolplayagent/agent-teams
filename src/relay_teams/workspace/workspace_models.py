@@ -368,6 +368,19 @@ class WorkspaceRecord(BaseModel):
         return None
 
 
+class WorkspacePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: tuple[WorkspaceRecord, ...] = ()
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
+class WorkspacePageSort(str, Enum):
+    ACTIVITY = "activity"
+    CREATED = "created"
+
+
 class WorkspaceTreeNodeKind(str, Enum):
     DIRECTORY = "directory"
     FILE = "file"

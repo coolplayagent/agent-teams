@@ -20,6 +20,12 @@ def _workspace_response(root_path: Path) -> dict[str, object]:
     }
 
 
+def _workspace_items(payload: object) -> list[dict[str, object]]:
+    raw_items = payload.get("items") if isinstance(payload, dict) else payload
+    assert isinstance(raw_items, list)
+    return [item for item in raw_items if isinstance(item, dict)]
+
+
 def test_root_message_prints_fake_llm_output(
     integration_env: IntegrationEnvironment,
     monkeypatch,
@@ -60,8 +66,8 @@ def test_root_message_supports_workspace_selection(
         trust_env=False,
     )
     response.raise_for_status()
-    payload = response.json()
-    assert any(item["root_path"] == str(project_root.resolve()) for item in payload)
+    items = _workspace_items(response.json())
+    assert any(item.get("root_path") == str(project_root.resolve()) for item in items)
 
 
 def test_root_message_uses_current_directory_as_default_workspace(
@@ -85,8 +91,8 @@ def test_root_message_uses_current_directory_as_default_workspace(
         trust_env=False,
     )
     response.raise_for_status()
-    payload = response.json()
-    assert any(item["root_path"] == str(project_root.resolve()) for item in payload)
+    items = _workspace_items(response.json())
+    assert any(item.get("root_path") == str(project_root.resolve()) for item in items)
 
 
 def test_root_message_uses_yolo_by_default(monkeypatch, tmp_path: Path) -> None:

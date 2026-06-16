@@ -14,6 +14,7 @@ export {
     fetchSessionSubagents,
     fetchSessions,
     fetchSessionTasks,
+    fetchWorkspaceSidebarSessions,
     invalidateSessionRecovery,
     markSessionTerminalRunViewed,
     updateSessionNormalModelProfile,
@@ -271,9 +272,11 @@ export {
 
 export {
     deleteWorkspace,
+    fetchWorkspace,
     fetchWorkspaceDiffFile,
     fetchWorkspaceDiffs,
     fetchWorkspaceFile,
+    fetchWorkspacePage,
     fetchWorkspaceSnapshot,
     fetchWorkspaceTree,
     fetchWorkspaces,

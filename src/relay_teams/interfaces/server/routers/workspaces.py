@@ -9,14 +9,21 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from relay_teams.validation import require_force_delete
-from relay_teams.interfaces.server.deps import get_workspace_service
+from relay_teams.interfaces.server.deps import (
+    get_session_service,
+    get_workspace_service,
+)
 from relay_teams.interfaces.server.write_models import DeleteRequest
+from relay_teams.sessions import SessionSidebarPage
+from relay_teams.sessions.session_service import SessionService
 from relay_teams.validation import RequiredIdentifierStr
 from relay_teams.workspace import (
     WorkspaceMountRecord,
     WorkspaceDiffFile,
     WorkspaceDiffListing,
     WorkspaceFileContent,
+    WorkspacePage,
+    WorkspacePageSort,
     WorkspaceRecord,
     WorkspaceSearchResponse,
     WorkspaceService,
@@ -114,12 +121,21 @@ async def pick_workspace(
     return PickWorkspaceResponse(workspace=workspace)
 
 
-@router.get("", response_model=list[WorkspaceRecord])
+@router.get("", response_model=WorkspacePage)
 async def list_workspaces(
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    cursor: Annotated[str | None, Query()] = None,
+    sort: Annotated[WorkspacePageSort, Query()] = WorkspacePageSort.ACTIVITY,
     service: WorkspaceService = Depends(get_workspace_service),
-) -> list[WorkspaceRecord]:
-    records = await service.list_workspaces_async()
-    return list(records)
+) -> WorkspacePage:
+    try:
+        return await service.list_workspaces_page_async(
+            limit=limit,
+            cursor=cursor,
+            sort=sort,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceRecord)
@@ -131,6 +147,23 @@ async def get_workspace(
         return await service.get_workspace_async(workspace_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Workspace not found") from exc
+
+
+@router.get("/{workspace_id}/sessions/sidebar", response_model=SessionSidebarPage)
+async def list_workspace_sidebar_sessions(
+    workspace_id: RequiredIdentifierStr,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    cursor: Annotated[str | None, Query()] = None,
+    service: SessionService = Depends(get_session_service),
+) -> SessionSidebarPage:
+    try:
+        return await service.list_workspace_sidebar_sessions_page_async(
+            workspace_id,
+            limit=limit,
+            cursor=cursor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/{workspace_id}", response_model=WorkspaceRecord)

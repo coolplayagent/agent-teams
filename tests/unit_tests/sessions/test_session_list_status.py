@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
+import pytest
+
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.sessions.session_service import _terminal_run_status_for_event_type
 from relay_teams.agent_runtimes.instances.instance_repository import (
@@ -58,6 +60,65 @@ def _seed_root_task(db_path: Path, *, run_id: str, session_id: str) -> None:
             verification=VerificationPlan(checklist=("non_empty_response",)),
         )
     )
+
+
+def _update_session_timestamp(
+    db_path: Path,
+    session_id: str,
+    created_at: datetime,
+) -> None:
+    timestamp = created_at.isoformat()
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE sessions
+        SET created_at=?, updated_at=?
+        WHERE session_id=?
+        """,
+        (timestamp, timestamp, session_id),
+    )
+    connection.commit()
+    connection.close()
+
+
+def _update_session_timestamps(
+    db_path: Path,
+    session_id: str,
+    *,
+    created_at: datetime,
+    updated_at: datetime,
+) -> None:
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE sessions
+        SET created_at=?, updated_at=?
+        WHERE session_id=?
+        """,
+        (created_at.isoformat(), updated_at.isoformat(), session_id),
+    )
+    connection.commit()
+    connection.close()
+
+
+def _update_session_raw_timestamps(
+    db_path: Path,
+    session_id: str,
+    *,
+    created_at: str,
+    updated_at: str,
+) -> None:
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE sessions
+        SET created_at=?, updated_at=?
+        WHERE session_id=?
+        """,
+        (created_at, updated_at, session_id),
+    )
+    connection.commit()
+    connection.close()
 
 
 def test_list_sessions_includes_active_run_overlay(tmp_path: Path) -> None:
@@ -213,6 +274,189 @@ def test_list_sessions_by_workspace_filters_sessions(tmp_path: Path) -> None:
     sessions = service.list_sessions_by_workspace("workspace-1")
 
     assert [session.session_id for session in sessions] == ["session-workspace-1"]
+
+
+def test_list_workspace_sidebar_sessions_page_async_returns_cursor_page(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_sidebar_page.db"
+    service = _build_service(db_path)
+    _ = service.create_session(
+        session_id="session-a",
+        workspace_id="workspace-1",
+        metadata={"title": "A"},
+    )
+    _ = service.create_session(
+        session_id="session-b",
+        workspace_id="workspace-1",
+        metadata={"title": "B"},
+    )
+    _ = service.create_session(
+        session_id="session-c",
+        workspace_id="workspace-1",
+        metadata={"title": "C"},
+    )
+    _ = service.create_session(
+        session_id="session-other",
+        workspace_id="workspace-2",
+        metadata={"title": "Other"},
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-a",
+        datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-b",
+        datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-c",
+        datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-other",
+        datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc),
+    )
+
+    async def exercise() -> None:
+        first_page = await service.list_workspace_sidebar_sessions_page_async(
+            "workspace-1",
+            limit=2,
+        )
+        second_page = await service.list_workspace_sidebar_sessions_page_async(
+            "workspace-1",
+            limit=2,
+            cursor=first_page.next_cursor,
+        )
+
+        assert [item.session_id for item in first_page.items] == [
+            "session-c",
+            "session-b",
+        ]
+        assert first_page.has_more is True
+        assert first_page.next_cursor is not None
+        assert [item.session_id for item in second_page.items] == ["session-a"]
+        assert second_page.has_more is False
+        assert second_page.next_cursor is None
+
+    asyncio.run(exercise())
+
+
+def test_list_workspace_sidebar_sessions_page_async_orders_by_updated_at(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_sidebar_page_updated_order.db"
+    service = _build_service(db_path)
+    _ = service.create_session(
+        session_id="session-old-created",
+        workspace_id="workspace-1",
+        metadata={"title": "Old Created"},
+    )
+    _ = service.create_session(
+        session_id="session-new-created",
+        workspace_id="workspace-1",
+        metadata={"title": "New Created"},
+    )
+    _update_session_timestamps(
+        db_path,
+        "session-old-created",
+        created_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_session_timestamps(
+        db_path,
+        "session-new-created",
+        created_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+
+    async def exercise() -> None:
+        first_page = await service.list_workspace_sidebar_sessions_page_async(
+            "workspace-1",
+            limit=1,
+        )
+        second_page = await service.list_workspace_sidebar_sessions_page_async(
+            "workspace-1",
+            limit=1,
+            cursor=first_page.next_cursor,
+        )
+
+        assert [item.session_id for item in first_page.items] == ["session-old-created"]
+        assert first_page.has_more is True
+        assert [item.session_id for item in second_page.items] == [
+            "session-new-created"
+        ]
+        assert second_page.has_more is False
+
+    asyncio.run(exercise())
+
+
+def test_list_workspace_sidebar_sessions_page_async_uses_raw_sort_cursor(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_sidebar_page_raw_cursor.db"
+    service = _build_service(db_path)
+    _ = service.create_session(
+        session_id="session-dirty-updated",
+        workspace_id="workspace-1",
+        metadata={"title": "Dirty Updated"},
+    )
+    _ = service.create_session(
+        session_id="session-clean",
+        workspace_id="workspace-1",
+        metadata={"title": "Clean"},
+    )
+    _update_session_raw_timestamps(
+        db_path,
+        "session-dirty-updated",
+        created_at="2026-06-03T12:00:00+00:00",
+        updated_at="not-a-date",
+    )
+    _update_session_timestamps(
+        db_path,
+        "session-clean",
+        created_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+
+    async def exercise() -> None:
+        first_page = await service.list_workspace_sidebar_sessions_page_async(
+            "workspace-1",
+            limit=1,
+        )
+        second_page = await service.list_workspace_sidebar_sessions_page_async(
+            "workspace-1",
+            limit=1,
+            cursor=first_page.next_cursor,
+        )
+
+        assert [item.session_id for item in first_page.items] == [
+            "session-dirty-updated"
+        ]
+        assert first_page.has_more is True
+        assert [item.session_id for item in second_page.items] == ["session-clean"]
+        assert second_page.has_more is False
+
+    asyncio.run(exercise())
+
+
+def test_list_workspace_sidebar_sessions_page_async_rejects_invalid_cursor(
+    tmp_path: Path,
+) -> None:
+    service = _build_service(tmp_path / "session_sidebar_invalid_cursor.db")
+
+    async def exercise() -> None:
+        with pytest.raises(ValueError, match="Invalid session pagination cursor"):
+            await service.list_workspace_sidebar_sessions_page_async(
+                "workspace-1",
+                cursor="not-json",
+            )
+
+    asyncio.run(exercise())
 
 
 def test_list_sessions_uses_runtime_overlay_for_running_subagent(

@@ -6,6 +6,7 @@
 const snapshot = {
     hasData: false,
     workspaces: [],
+    workspacesComplete: false,
     sessions: [],
     automationProjects: [],
 };
@@ -15,10 +16,16 @@ const optimisticSessions = new Map();
 const removedSessionIds = new Map();
 const viewedTerminalRunsBySessionId = new Map();
 
-export function rememberSidebarDataSnapshot({ workspaces, sessions, automationProjects } = {}) {
+export function rememberSidebarDataSnapshot({
+    workspaces,
+    workspacesComplete = snapshot.workspacesComplete,
+    sessions,
+    automationProjects,
+} = {}) {
     const incomingSessions = withoutRemovedSessions(cloneRows(sessions));
     snapshot.hasData = true;
     snapshot.workspaces = cloneRows(workspaces);
+    snapshot.workspacesComplete = workspacesComplete === true;
     snapshot.sessions = hasRecentSessionRemoval()
         ? mergeIncomingSessionsWithExistingSnapshot(incomingSessions, snapshot.sessions)
         : incomingSessions;
@@ -33,6 +40,7 @@ export function hasSidebarDataSnapshot() {
 export function getSidebarDataSnapshot() {
     return {
         workspaces: cloneRows(snapshot.workspaces),
+        workspacesComplete: snapshot.workspacesComplete,
         sessions: mergeOptimisticSessions(snapshot.sessions),
         automationProjects: cloneRows(snapshot.automationProjects),
     };

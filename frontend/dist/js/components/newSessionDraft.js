@@ -300,6 +300,9 @@ function adoptSnapshotDraftWorkspaces() {
         return false;
     }
     const snapshotData = getSidebarDataSnapshot();
+    if (snapshotData?.workspacesComplete !== true) {
+        return false;
+    }
     const workspaces = Array.isArray(snapshotData?.workspaces)
         ? snapshotData.workspaces
         : [];

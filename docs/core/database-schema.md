@@ -24,6 +24,8 @@
 CREATE TABLE IF NOT EXISTS sessions (
     session_id   TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
+    project_kind TEXT NOT NULL DEFAULT 'workspace',
+    project_id   TEXT NOT NULL DEFAULT '',
     metadata     TEXT NOT NULL,
     session_mode TEXT NOT NULL DEFAULT 'normal',
     normal_root_role_id TEXT,
@@ -34,17 +36,36 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_sessions_workspace_created_session
+    ON sessions(workspace_id, created_at DESC, session_id DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_workspace_updated_session
+    ON sessions(workspace_id, updated_at DESC, session_id DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_workspace_sidebar_sort
+    ON sessions(
+        workspace_id,
+        COALESCE(
+            CASE WHEN updated_at GLOB '????-??-??T??:*' THEN updated_at ELSE NULL END,
+            CASE WHEN created_at GLOB '????-??-??T??:*' THEN created_at ELSE NULL END,
+            ''
+        ) DESC,
+        session_id DESC
+    );
 ```
 
 Purpose: session metadata, lifecycle, and bound execution workspace identity.
 
 Notes:
+- `project_kind` and `project_id` identify the logical project owner; workspace sessions default `project_id` to `workspace_id`.
 - `session_mode` is `normal` or `orchestration`.
 - `normal_root_role_id` stores the session-selected root role for normal mode. When `NULL`, runtime falls back to the current `MainAgent`.
 - `normal_model_profile` stores the session-selected normal-mode model override. When `NULL`, the selected root role or `@Role` target uses its role default.
 - `orchestration_preset_id` stores the session-selected preset for orchestration mode.
 - `started_at` is written when the first run is created and locks further mode switching for that session.
 - `last_viewed_terminal_run_id` stores the latest terminal top-level run the user has opened, so the sidebar can distinguish newly finished runs from already-viewed sessions.
+- `idx_sessions_workspace_created_session` supports legacy workspace-scoped session reads ordered by `created_at DESC, session_id DESC`.
+- `idx_sessions_workspace_updated_session` supports workspace-scoped maintenance reads keyed by `updated_at DESC, session_id DESC`.
+- `idx_sessions_workspace_sidebar_sort` supports workspace-scoped sidebar pagination ordered by normalized last activity time, falling back from valid `updated_at` to valid `created_at`.
 
 ---
 
@@ -59,9 +80,18 @@ CREATE TABLE IF NOT EXISTS workspaces (
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_workspaces_created_id
+    ON workspaces(created_at DESC, workspace_id DESC);
+CREATE INDEX IF NOT EXISTS idx_workspaces_updated_id
+    ON workspaces(updated_at DESC, workspace_id DESC);
 ```
 
 Purpose: registered execution workspaces. `profile_json` stores the typed workspace profile, including Git worktree metadata such as `source_root_path`, `branch_name`, and `forked_from_workspace_id` when a workspace is created through project forking.
+
+Notes:
+- `idx_workspaces_created_id` supports legacy created-time workspace reads.
+- `idx_workspaces_updated_id` supports the workspace side of paginated `GET /workspaces` reads, which order by sidebar activity time: the latest session `updated_at` for the workspace when sessions exist, otherwise workspace `updated_at`.
 
 The read-only workspace file preview API does not add persistent tables or columns; it resolves file content from the configured workspace mount at request time.
 

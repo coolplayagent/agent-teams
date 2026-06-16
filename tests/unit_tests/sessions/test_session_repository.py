@@ -147,6 +147,18 @@ def test_list_by_workspace_filters_sessions(tmp_path: Path) -> None:
     assert records[0].metadata == {"title": "Workspace 1"}
 
 
+def test_session_repository_creates_workspace_sidebar_index(tmp_path: Path) -> None:
+    repository = SessionRepository(tmp_path / "session_repository_indexes.db")
+
+    rows = repository._conn.execute("PRAGMA index_list(sessions)").fetchall()
+
+    index_names = {str(row["name"]) for row in rows}
+
+    assert "idx_sessions_workspace_created_session" in index_names
+    assert "idx_sessions_workspace_updated_session" in index_names
+    assert "idx_sessions_workspace_sidebar_sort" in index_names
+
+
 @pytest.mark.asyncio
 async def test_normal_model_profile_persists_and_clears(tmp_path: Path) -> None:
     db_path = tmp_path / "session_repository_normal_model_profile.db"
@@ -280,6 +292,94 @@ async def test_list_by_workspace_async_filters_sessions(tmp_path: Path) -> None:
 
     assert [record.session_id for record in records] == ["session-workspace-1"]
     assert records[0].metadata == {"title": "Workspace 1"}
+
+
+@pytest.mark.asyncio
+async def test_list_by_workspace_page_async_uses_workspace_keyset_order(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_repository_workspace_page.db"
+    repository = SessionRepository(db_path)
+    await repository.create_async(
+        session_id="session-a",
+        workspace_id="workspace-1",
+    )
+    await repository.create_async(
+        session_id="session-b",
+        workspace_id="workspace-1",
+    )
+    await repository.create_async(
+        session_id="session-c",
+        workspace_id="workspace-1",
+    )
+    await repository.create_async(
+        session_id="session-other",
+        workspace_id="workspace-2",
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-a",
+        datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-b",
+        datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-c",
+        datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc),
+    )
+    _update_session_timestamp(
+        db_path,
+        "session-other",
+        datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc),
+    )
+
+    first_page = await repository.list_by_workspace_page_async(
+        "workspace-1",
+        limit=2,
+    )
+    second_page = await repository.list_by_workspace_page_async(
+        "workspace-1",
+        limit=2,
+        before_updated_at=first_page[-1].updated_at,
+        before_session_id=first_page[-1].session_id,
+    )
+
+    assert [record.session_id for record in first_page] == ["session-c", "session-b"]
+    assert [record.session_id for record in second_page] == ["session-a"]
+
+
+@pytest.mark.asyncio
+async def test_list_by_workspace_page_async_pages_past_invalid_rows(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_repository_workspace_page_invalid.db"
+    repository = SessionRepository(db_path)
+    _insert_session_row(
+        db_path,
+        session_id="session-new",
+        metadata_json="{}",
+        updated_at=datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc).isoformat(),
+    )
+    _insert_session_row(
+        db_path,
+        session_id="",
+        metadata_json="{}",
+        updated_at=datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc).isoformat(),
+    )
+    _insert_session_row(
+        db_path,
+        session_id="session-old",
+        metadata_json="{}",
+        updated_at=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc).isoformat(),
+    )
+
+    records = await repository.list_by_workspace_page_async("default", limit=2)
+
+    assert [record.session_id for record in records] == ["session-new", "session-old"]
 
 
 @pytest.mark.asyncio
@@ -562,6 +662,25 @@ async def test_reconcile_orchestration_presets_async_updates_dirty_rows(
     assert no_default.orchestration_preset_id is None
     assert started.session_mode == SessionMode.ORCHESTRATION
     assert started.orchestration_preset_id == "removed-preset"
+
+
+def _update_session_timestamp(
+    db_path: Path,
+    session_id: str,
+    created_at: datetime,
+) -> None:
+    timestamp = created_at.isoformat()
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        UPDATE sessions
+        SET created_at=?, updated_at=?
+        WHERE session_id=?
+        """,
+        (timestamp, timestamp, session_id),
+    )
+    connection.commit()
+    connection.close()
 
 
 def _insert_session_row(

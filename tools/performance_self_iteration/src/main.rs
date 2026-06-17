@@ -52,6 +52,7 @@ async fn run_loop(cli: &Cli, paths: &history::HistoryPaths) -> Result<i32, Strin
     if !cli.use_current_candidate {
         git_ops::ensure_clean_worktree(&cli.workspace)?;
     }
+    let commit_accepted = cli.effective_commit_accepted();
     let max_iterations = cli.max_iterations.unwrap_or(usize::MAX);
     let mut accepted_count = 0usize;
     for iteration in 1..=max_iterations {
@@ -65,7 +66,7 @@ async fn run_loop(cli: &Cli, paths: &history::HistoryPaths) -> Result<i32, Strin
         let iteration_exit_code = match run_generation_iteration(cli, paths).await {
             Ok(0) => {
                 accepted_count += 1;
-                if cli.commit_accepted && git_ops::head_commit_touches_harness(&cli.workspace)? {
+                if commit_accepted && git_ops::head_commit_touches_harness(&cli.workspace)? {
                     println!(
                         "[perf-iterate] accepted harness change committed; stopping loop so wrapper can rebuild"
                     );
@@ -85,7 +86,7 @@ async fn run_loop(cli: &Cli, paths: &history::HistoryPaths) -> Result<i32, Strin
             return Ok(iteration_exit_code);
         }
         tokio::time::sleep(std::time::Duration::from_secs(cli.sleep_seconds)).await;
-        if !cli.commit_accepted && accepted_count > 0 {
+        if !commit_accepted && accepted_count > 0 {
             println!("[perf-iterate] accepted candidate left in working tree; stopping loop");
             return Ok(0);
         }
@@ -339,7 +340,8 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
     };
     let score = scoring::score_evaluation(&evaluation.observation, previous.as_ref());
     let mut acceptance_error = None;
-    let commit = if score.accepted && cli.commit_accepted {
+    let commit_accepted = cli.effective_commit_accepted();
+    let commit = if score.accepted && commit_accepted {
         match git_ops::verify_patch_unchanged(
             &cli.workspace,
             paths,
@@ -433,7 +435,7 @@ async fn run_generation_iteration(cli: &Cli, paths: &history::HistoryPaths) -> R
         if should_restore_generated_ignored_outputs(cli.use_current_candidate) {
             restore_accepted_ignored_outputs(&cli.workspace, ignored_snapshot.as_ref())?;
         }
-        if cli.commit_accepted {
+        if commit_accepted {
             println!(
                 "[perf-iterate] accepted commit={}",
                 commit.unwrap_or_default()
@@ -1000,7 +1002,8 @@ mod tests {
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
-            commit_accepted: false,
+            commit_accepted: true,
+            no_commit_accepted: false,
             commit_message: None,
             codex_path: "codex".to_owned(),
             model: "gpt-5.5".to_owned(),

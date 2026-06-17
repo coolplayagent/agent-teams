@@ -29,6 +29,7 @@ def mock_memory_bank() -> MagicMock:
     empty_query_result.total_count = 0
     svc.list_entries_async = AsyncMock(return_value=empty_query_result)
     svc.infer_single_run_role_id_async = AsyncMock(return_value=None)
+    svc.semantic_consolidation_available = MagicMock(return_value=True)
     svc.consolidate_async = AsyncMock(
         return_value=MemoryConsolidationResult(
             source_entry_count=2,
@@ -144,6 +145,22 @@ class TestOnRunCompletedAsync:
             run_id=None,
         )
         assert mock_memory_bank.consolidate_async.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_semantic_not_triggered_without_backend(
+        self, handler: MemoryEventHandler, mock_memory_bank: MagicMock
+    ) -> None:
+        mock_memory_bank.semantic_consolidation_available.return_value = False
+
+        await handler.on_run_completed_async(
+            workspace_id="ws-1",
+            session_id="sess-1",
+            run_id="run-1",
+        )
+
+        assert mock_memory_bank.consolidate_async.call_count == 1
+        request = mock_memory_bank.consolidate_async.call_args.args[0]
+        assert request.consolidation_mode == ConsolidationMode.STRUCTURAL
 
     @pytest.mark.asyncio
     async def test_semantic_failure_non_fatal(

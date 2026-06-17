@@ -258,6 +258,13 @@ class MemoryEventHandler:
                 ),
             )
             try:
+                if not self._memory_bank.semantic_consolidation_available():
+                    LOGGER.debug(
+                        "semantic consolidation skipped for run=%s because no "
+                        "semantic backend is configured",
+                        run_id,
+                    )
+                    return
                 semantic_result = await self._memory_bank.consolidate_async(
                     semantic_request
                 )

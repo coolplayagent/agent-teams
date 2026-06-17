@@ -109,6 +109,7 @@ from relay_teams.hooks import HookService
 logger = get_logger(__name__)
 _T = TypeVar("_T")
 SLOW_RUN_WORKER_STAGE_SECONDS = 1.0
+SLOW_COMPLETED_RUNNER_STAGE_WARNING_SECONDS = 15.0
 RUN_START_SCHEDULER_CONCURRENCY = 2
 
 
@@ -132,10 +133,15 @@ def _log_slow_run_worker_stage(
     elapsed_seconds = time.perf_counter() - started
     if elapsed_seconds < SLOW_RUN_WORKER_STAGE_SECONDS:
         return
+    log_level = _slow_run_worker_stage_log_level(
+        stage=stage,
+        elapsed_seconds=elapsed_seconds,
+        payload=payload,
+    )
     with bind_trace_context(trace_id=run_id, run_id=run_id, session_id=session_id):
         log_event(
             logger,
-            logging.WARNING,
+            log_level,
             event="run.worker.stage_slow",
             message="Run worker stage was slow",
             duration_ms=int(elapsed_seconds * 1000),
@@ -144,6 +150,21 @@ def _log_slow_run_worker_stage(
                 **(payload or {}),
             },
         )
+
+
+def _slow_run_worker_stage_log_level(
+    *,
+    stage: str,
+    elapsed_seconds: float,
+    payload: dict[str, JsonValue] | None,
+) -> int:
+    if stage != "runner":
+        return logging.WARNING
+    if payload is None or payload.get("status") != "completed":
+        return logging.WARNING
+    if elapsed_seconds >= SLOW_COMPLETED_RUNNER_STAGE_WARNING_SECONDS:
+        return logging.WARNING
+    return logging.DEBUG
 
 
 def _clear_current_task_cancellation_requests() -> None:

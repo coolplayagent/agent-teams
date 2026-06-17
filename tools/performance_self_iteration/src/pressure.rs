@@ -13,6 +13,7 @@ use tokio::sync::{Mutex, Semaphore};
 
 const MAX_ERROR_SAMPLES: usize = 100;
 const CLEANUP_REQUEST_TIMEOUT_SECONDS: u64 = 5;
+const CLEANUP_CONCURRENCY: usize = 8;
 const MAX_RESPONSE_BODY_BYTES: usize = 64 * 1024;
 const MAX_LATENCY_SAMPLES: usize = 10_000;
 const MIN_SESSION_SETUP_TIMEOUT_SECONDS: u64 = 10;
@@ -200,7 +201,7 @@ impl PressureAggregate {
             TerminalRunResult::MissingCleanupFailed(error) => {
                 self.sse_failures += 1;
                 self.cleanup_failure_count += 1;
-                push_error_sample(&mut self.errors, error.clone());
+                push_priority_error_sample(&mut self.errors, error.clone());
             }
         }
     }
@@ -252,7 +253,11 @@ impl PressureAggregate {
         self.overloaded_response_count += other.overloaded_response_count;
         self.cleanup_failure_count += other.cleanup_failure_count;
         for error in other.errors {
-            push_error_sample(&mut self.errors, error);
+            if is_priority_error_sample(&error) {
+                push_priority_error_sample(&mut self.errors, error);
+            } else {
+                push_error_sample(&mut self.errors, error);
+            }
         }
     }
 }
@@ -344,7 +349,7 @@ pub async fn run_pressure(config: PressureConfig) -> Result<PressureReport, Stri
     let cleanup_errors = cleanup_sessions(&client, &config.base_url, &cleanup_targets).await;
     report.cleanup_failure_count += cleanup_errors.len();
     for error in cleanup_errors {
-        push_error_sample(&mut report.errors, error);
+        push_priority_error_sample(&mut report.errors, error);
     }
     Ok(report)
 }
@@ -635,18 +640,19 @@ async fn bounded_response_body_contains(
 ) -> Result<bool, String> {
     let mut stream = response.bytes_stream();
     let mut body = Vec::new();
+    let mut contains_needle = false;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| error.to_string())?;
         let remaining = MAX_RESPONSE_BODY_BYTES.saturating_sub(body.len());
-        if chunk.len() > remaining {
-            return Err(format!(
-                "response body exceeds {} bytes",
-                MAX_RESPONSE_BODY_BYTES
-            ));
+        if remaining > 0 {
+            let captured = remaining.min(chunk.len());
+            body.extend_from_slice(&chunk[..captured]);
+            if String::from_utf8_lossy(&body).contains(needle) {
+                contains_needle = true;
+            }
         }
-        body.extend_from_slice(&chunk);
     }
-    Ok(String::from_utf8_lossy(&body).contains(needle))
+    Ok(contains_needle || String::from_utf8_lossy(&body).contains(needle))
 }
 
 async fn bounded_response_json(response: reqwest::Response) -> Result<Value, String> {
@@ -871,6 +877,12 @@ async fn cleanup_sessions(client: &Client, base_url: &str, sessions: &[String]) 
             base_url.to_owned(),
             session_id,
         ));
+        if pending.len() >= CLEANUP_CONCURRENCY {
+            match pending.next().await {
+                Some(Some(error)) => errors.push(error),
+                Some(None) | None => {}
+            }
+        }
     }
     while let Some(result) = pending.next().await {
         if let Some(error) = result {
@@ -939,6 +951,21 @@ fn push_error_sample(errors: &mut Vec<String>, error: String) {
     if errors.len() < MAX_ERROR_SAMPLES {
         errors.push(error);
     }
+}
+
+fn push_priority_error_sample(errors: &mut Vec<String>, error: String) {
+    if errors.len() < MAX_ERROR_SAMPLES {
+        errors.push(error);
+        return;
+    }
+    if !errors.is_empty() {
+        errors.remove(0);
+    }
+    errors.push(error);
+}
+
+fn is_priority_error_sample(error: &str) -> bool {
+    error.starts_with("cleanup session ") || error.starts_with("stop pressure run ")
 }
 
 fn percentile(mut values: Vec<u64>, percentile: usize) -> u64 {
@@ -1055,6 +1082,62 @@ mod tests {
 
         assert_eq!(report.overloaded_response_count, MAX_ERROR_SAMPLES + 25);
         assert_eq!(report.errors.len(), MAX_ERROR_SAMPLES);
+    }
+
+    #[test]
+    fn cleanup_error_samples_are_retained_when_error_buffer_is_full() {
+        let mut aggregate = PressureAggregate::new();
+        for index in 0..MAX_ERROR_SAMPLES {
+            aggregate.record_sample(RequestSample {
+                path: format!("/api/overloaded/{index}"),
+                status: Some(StatusCode::SERVICE_UNAVAILABLE),
+                duration_ms: 1,
+                server_busy: false,
+                error: None,
+            });
+        }
+
+        aggregate.record_terminal(TerminalRunResult::MissingCleanupFailed(
+            "cleanup session perf-pressure-1 returned 500".to_owned(),
+        ));
+        let report = aggregate.report();
+
+        assert_eq!(report.errors.len(), MAX_ERROR_SAMPLES);
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("cleanup session perf-pressure-1"))
+        );
+    }
+
+    #[test]
+    fn cleanup_error_samples_are_retained_when_worker_aggregates_merge() {
+        let mut aggregate = PressureAggregate::new();
+        for index in 0..MAX_ERROR_SAMPLES {
+            aggregate.record_sample(RequestSample {
+                path: format!("/api/overloaded/{index}"),
+                status: Some(StatusCode::SERVICE_UNAVAILABLE),
+                duration_ms: 1,
+                server_busy: false,
+                error: None,
+            });
+        }
+        let mut worker_aggregate = PressureAggregate::new();
+        worker_aggregate.record_terminal(TerminalRunResult::MissingCleanupFailed(
+            "stop pressure run run-merge returned 500".to_owned(),
+        ));
+
+        aggregate.merge(worker_aggregate);
+        let report = aggregate.report();
+
+        assert_eq!(report.errors.len(), MAX_ERROR_SAMPLES);
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("stop pressure run run-merge"))
+        );
     }
 
     #[test]
@@ -1240,7 +1323,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bounded_response_body_contains_rejects_large_body() {
+    async fn bounded_response_body_contains_ignores_large_success_body_tail() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -1257,12 +1340,70 @@ mod tests {
         });
 
         let response = Client::new().get(url).send().await.unwrap();
-        let error = bounded_response_body_contains(response, "Server is busy")
+        let contains = bounded_response_body_contains(response, "Server is busy")
             .await
-            .unwrap_err();
+            .unwrap();
         server.await.unwrap();
 
-        assert!(error.contains("response body exceeds"));
+        assert!(!contains);
+    }
+
+    #[tokio::test]
+    async fn bounded_response_body_contains_detects_busy_before_scan_cap() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = vec![0; 1024];
+            let _ = stream.read(&mut buffer).await.unwrap();
+            let body = format!("Server is busy{}", "x".repeat(MAX_RESPONSE_BODY_BYTES + 1));
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let response = Client::new().get(url).send().await.unwrap();
+        let contains = bounded_response_body_contains(response, "Server is busy")
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        assert!(contains);
+    }
+
+    #[tokio::test]
+    async fn bounded_response_body_contains_drains_large_success_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = vec![0; 1024];
+            let _ = stream.read(&mut buffer).await.unwrap();
+            let body_len = MAX_RESPONSE_BODY_BYTES + 2;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {body_len}\r\n\r\n"
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            stream
+                .write_all("x".repeat(MAX_RESPONSE_BODY_BYTES + 1).as_bytes())
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            stream.write_all(b"y").await.unwrap();
+        });
+
+        let response = Client::new().get(url).send().await.unwrap();
+        let started = Instant::now();
+        let contains = bounded_response_body_contains(response, "Server is busy")
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        assert!(!contains);
+        assert!(started.elapsed() >= Duration::from_millis(40));
     }
 
     #[tokio::test]
@@ -1324,6 +1465,77 @@ mod tests {
 
         assert!(error.contains("session create failed"));
         assert_eq!(cleanup_requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn cleanup_sessions_limit_concurrency_and_keep_pressure_scope() {
+        let current_requests = Arc::new(AtomicUsize::new(0));
+        let max_requests = Arc::new(AtomicUsize::new(0));
+        let accepted_requests = Arc::new(AtomicUsize::new(0));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let current_requests_for_server = Arc::clone(&current_requests);
+        let max_requests_for_server = Arc::clone(&max_requests);
+        let accepted_requests_for_server = Arc::clone(&accepted_requests);
+        let server = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let current_requests_for_connection = Arc::clone(&current_requests_for_server);
+                let max_requests_for_connection = Arc::clone(&max_requests_for_server);
+                let accepted_requests_for_connection = Arc::clone(&accepted_requests_for_server);
+                tokio::spawn(async move {
+                    let mut buffer = vec![0; 4096];
+                    let Ok(read) = stream.read(&mut buffer).await else {
+                        return;
+                    };
+                    let request = String::from_utf8_lossy(&buffer[..read]);
+                    if request.starts_with("DELETE /api/sessions/perf-pressure-") {
+                        accepted_requests_for_connection.fetch_add(1, Ordering::SeqCst);
+                        let current =
+                            current_requests_for_connection.fetch_add(1, Ordering::SeqCst) + 1;
+                        loop {
+                            let max = max_requests_for_connection.load(Ordering::SeqCst);
+                            if current <= max
+                                || max_requests_for_connection
+                                    .compare_exchange(
+                                        max,
+                                        current,
+                                        Ordering::SeqCst,
+                                        Ordering::SeqCst,
+                                    )
+                                    .is_ok()
+                            {
+                                break;
+                            }
+                        }
+                        tokio::time::sleep(Duration::from_millis(25)).await;
+                        current_requests_for_connection.fetch_sub(1, Ordering::SeqCst);
+                        let response = "HTTP/1.1 204 No Content\r\nconnection: close\r\ncontent-length: 0\r\n\r\n";
+                        let _ = stream.write_all(response.as_bytes()).await;
+                        return;
+                    }
+                    let response =
+                        "HTTP/1.1 404 Not Found\r\nconnection: close\r\ncontent-length: 0\r\n\r\n";
+                    let _ = stream.write_all(response.as_bytes()).await;
+                });
+            }
+        });
+        let sessions = (0..(CLEANUP_CONCURRENCY * 3))
+            .map(|index| format!("perf-pressure-test-{index}"))
+            .chain(std::iter::once("user-owned-session".to_owned()))
+            .collect::<Vec<_>>();
+
+        let errors = cleanup_sessions(&Client::new(), &base_url, &sessions).await;
+        server.abort();
+
+        assert!(errors.iter().any(|error| error.contains("non-pressure")));
+        assert_eq!(
+            accepted_requests.load(Ordering::SeqCst),
+            CLEANUP_CONCURRENCY * 3
+        );
+        assert!(max_requests.load(Ordering::SeqCst) <= CLEANUP_CONCURRENCY);
     }
 
     #[tokio::test]

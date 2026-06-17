@@ -6,6 +6,31 @@ HARNESS_DIR="$ROOT_DIR/tools/performance_self_iteration"
 HARNESS_TARGET_DIR="$HARNESS_DIR/target"
 BUILD_ARGS=""
 TARGET_DIR="debug"
+
+raise_nofile_limit() {
+  CURRENT_NOFILE="$(ulimit -n 2>/dev/null || true)"
+  HARD_NOFILE="$(ulimit -H -n 2>/dev/null || true)"
+  TARGET_NOFILE=8192
+
+  case "$CURRENT_NOFILE" in
+    ''|unlimited|*[!0-9]*) return ;;
+  esac
+  case "$HARD_NOFILE" in
+    unlimited|'') ;;
+    *[!0-9]*) return ;;
+    *)
+      if [ "$HARD_NOFILE" -lt "$TARGET_NOFILE" ]; then
+        TARGET_NOFILE="$HARD_NOFILE"
+      fi
+      ;;
+  esac
+  if [ "$CURRENT_NOFILE" -lt "$TARGET_NOFILE" ]; then
+    ulimit -n "$TARGET_NOFILE" 2>/dev/null || true
+  fi
+}
+
+raise_nofile_limit
+
 if [ "${RELAY_TEAMS_PERFORMANCE_ITERATION_RELEASE:-0}" = "1" ]; then
   BUILD_ARGS="--release"
   TARGET_DIR="release"

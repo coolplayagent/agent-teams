@@ -1222,18 +1222,22 @@ fn should_snapshot_ignored_contents(
 }
 
 fn is_removable_ignored_output(relative_path: &str) -> bool {
-    is_large_generated_ignored_output(relative_path)
+    is_generated_ignored_output(relative_path)
 }
 
 fn is_ignored_content_snapshot_excluded(relative_path: &str) -> bool {
     is_ignored_output_entry_excluded(relative_path)
-        || is_large_generated_ignored_output(relative_path)
+        || is_generated_ignored_output(relative_path)
         || relative_path.ends_with(".log")
 }
 
-fn is_large_generated_ignored_output(relative_path: &str) -> bool {
+fn is_generated_ignored_output(relative_path: &str) -> bool {
     relative_path.starts_with("target/")
         || relative_path.starts_with("tools/performance_self_iteration/target/")
+        || relative_path.ends_with(".pyc")
+        || relative_path
+            .split('/')
+            .any(|component| component == "__pycache__")
 }
 
 fn reset_candidate_ignored_outputs(
@@ -2125,7 +2129,7 @@ mod tests {
         run(&workspace, &["init", "-b", "main"]);
         fs::write(
             workspace.join(".gitignore"),
-            "*.ignored\nignored-dir/\nchanged.cache\ntarget/\n.venv/\n",
+            "*.ignored\nignored-dir/\nchanged.cache\ntarget/\n.venv/\n__pycache__/\n",
         )
         .unwrap();
         fs::write(workspace.join("tracked.txt"), "base\n").unwrap();
@@ -2153,8 +2157,26 @@ mod tests {
         .unwrap();
         fs::create_dir_all(workspace.join(".venv")).unwrap();
         fs::write(workspace.join(".venv").join("pyvenv.cfg"), "local env\n").unwrap();
+        fs::create_dir_all(
+            workspace
+                .join("src")
+                .join("relay_teams")
+                .join("__pycache__"),
+        )
+        .unwrap();
+        let pyc_path = workspace
+            .join("src")
+            .join("relay_teams")
+            .join("__pycache__")
+            .join("app.cpython-312.pyc");
+        fs::write(&pyc_path, b"baseline bytecode").unwrap();
         let snapshot = IgnoredOutputSnapshot::capture(&workspace).unwrap();
         assert!(snapshot.entries["target/cache.bin"].contents.is_none());
+        assert!(
+            snapshot.entries["src/relay_teams/__pycache__/app.cpython-312.pyc"]
+                .contents
+                .is_none()
+        );
         assert!(snapshot.entries[".venv"].filter_only);
         assert!(snapshot.entries[".venv/pyvenv.cfg"].filter_only);
         fs::write(workspace.join("new.ignored"), "candidate\n").unwrap();
@@ -2165,6 +2187,7 @@ mod tests {
             "candidate cache\n",
         )
         .unwrap();
+        fs::write(&pyc_path, b"candidate bytecode").unwrap();
         fs::create_dir_all(workspace.join("ignored-dir")).unwrap();
         fs::write(
             workspace.join("ignored-dir").join("candidate.log"),
@@ -2180,6 +2203,7 @@ mod tests {
         let deleted_content = fs::read_to_string(workspace.join("deleted.ignored")).unwrap();
         let ignored_dir_exists = workspace.join("ignored-dir").exists();
         let target_cache_exists = workspace.join("target").join("cache.bin").exists();
+        let pyc_exists = pyc_path.exists();
         let _ = fs::remove_dir_all(&workspace);
 
         assert!(kept_exists);
@@ -2188,6 +2212,7 @@ mod tests {
         assert_eq!(deleted_content, "baseline deleted\n");
         assert!(!ignored_dir_exists);
         assert!(!target_cache_exists);
+        assert!(!pyc_exists);
     }
 
     #[cfg(unix)]

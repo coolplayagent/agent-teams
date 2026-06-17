@@ -49,8 +49,10 @@ pub struct Cli {
     pub use_current_candidate: bool,
     #[arg(long)]
     pub fail_fast: bool,
-    #[arg(long)]
+    #[arg(long, default_value_t = true)]
     pub commit_accepted: bool,
+    #[arg(long)]
+    pub no_commit_accepted: bool,
     #[arg(long)]
     pub commit_message: Option<String>,
     #[arg(long, default_value = "codex")]
@@ -74,6 +76,10 @@ impl Cli {
 
     pub fn effective_yolo(&self) -> bool {
         self.yolo && !self.no_yolo
+    }
+
+    pub fn effective_commit_accepted(&self) -> bool {
+        self.commit_accepted && !self.no_commit_accepted
     }
 
     pub fn validate_profile(&self) -> Result<(), String> {
@@ -225,7 +231,8 @@ mod tests {
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
-            commit_accepted: false,
+            commit_accepted: true,
+            no_commit_accepted: false,
             commit_message: None,
             codex_path: "codex".to_owned(),
             model: "gpt-5.5".to_owned(),
@@ -261,7 +268,8 @@ mod tests {
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
-            commit_accepted: false,
+            commit_accepted: true,
+            no_commit_accepted: false,
             commit_message: None,
             codex_path: "codex".to_owned(),
             model: "gpt-5.5".to_owned(),
@@ -298,7 +306,8 @@ mod tests {
             dry_run_codex: false,
             use_current_candidate: false,
             fail_fast: false,
-            commit_accepted: false,
+            commit_accepted: true,
+            no_commit_accepted: false,
             commit_message: None,
             codex_path: "codex".to_owned(),
             model: "gpt-5.5".to_owned(),
@@ -341,5 +350,28 @@ mod tests {
         let cli = Cli::try_parse_from(["relay-teams-performance-iterate", "--no-yolo"]).unwrap();
 
         assert!(!cli.effective_yolo());
+    }
+
+    #[test]
+    fn commit_accepted_is_effective_by_default() {
+        let cli = Cli::try_parse_from(["relay-teams-performance-iterate"]).unwrap();
+
+        assert!(cli.effective_commit_accepted());
+    }
+
+    #[test]
+    fn no_commit_accepted_disables_effective_commit_accepted() {
+        let cli = Cli::try_parse_from(["relay-teams-performance-iterate", "--no-commit-accepted"])
+            .unwrap();
+
+        assert!(!cli.effective_commit_accepted());
+    }
+
+    #[test]
+    fn commit_accepted_flag_remains_accepted() {
+        let cli =
+            Cli::try_parse_from(["relay-teams-performance-iterate", "--commit-accepted"]).unwrap();
+
+        assert!(cli.effective_commit_accepted());
     }
 }

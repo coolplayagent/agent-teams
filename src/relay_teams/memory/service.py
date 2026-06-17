@@ -290,6 +290,11 @@ class MemoryBankService:
         self._message_repo = message_repo
         self._event_log = event_log
 
+    def semantic_consolidation_available(self) -> bool:
+        return (
+            self._message_repo is not None and self._llm_provider_resolver() is not None
+        )
+
     # ------------------------------------------------------------------
     # 1. Create
     # ------------------------------------------------------------------

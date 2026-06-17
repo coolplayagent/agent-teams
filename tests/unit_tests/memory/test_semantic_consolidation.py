@@ -62,6 +62,46 @@ def service_with_llm(tmp_path: Path) -> MemoryBankService:
     return MemoryBankService(repository=repo, llm_provider=provider)
 
 
+class _SemanticMessageRepo:
+    async def get_messages_by_session_run_ids_async(
+        self,
+        session_id: str,
+        run_ids: tuple[str, ...],
+        *,
+        include_cleared: bool = False,
+        include_hidden_from_context: bool = False,
+    ) -> list[dict[str, JsonValue]]:
+        _ = (
+            session_id,
+            run_ids,
+            include_cleared,
+            include_hidden_from_context,
+        )
+        return []
+
+
+async def test_semantic_consolidation_available_requires_provider_and_message_repo(
+    tmp_path: Path,
+) -> None:
+    missing_provider = MemoryBankService(
+        repository=MemoryBankRepository(tmp_path / "missing_provider.db"),
+        message_repo=_SemanticMessageRepo(),
+    )
+    missing_message_repo = MemoryBankService(
+        repository=MemoryBankRepository(tmp_path / "missing_message_repo.db"),
+        llm_provider=EchoProvider(),
+    )
+    configured = MemoryBankService(
+        repository=MemoryBankRepository(tmp_path / "configured.db"),
+        llm_provider=EchoProvider(),
+        message_repo=_SemanticMessageRepo(),
+    )
+
+    assert missing_provider.semantic_consolidation_available() is False
+    assert missing_message_repo.semantic_consolidation_available() is False
+    assert configured.semantic_consolidation_available() is True
+
+
 def _create_entry_request(**overrides: object) -> CreateMemoryEntryRequest:
     base: dict[str, object] = {
         "tier": MemoryTier.WORKING,

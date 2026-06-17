@@ -1150,7 +1150,7 @@ def _register_signal_handlers() -> None:
         signame = signal.Signals(sig).name
         log_event(
             logger,
-            logging.WARNING,
+            logging.INFO,
             event="process.signal.received",
             message="Shutdown signal received",
             payload={"signal": signame},

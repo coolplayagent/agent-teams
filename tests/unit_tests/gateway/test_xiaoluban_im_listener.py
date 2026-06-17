@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi.testclient import TestClient
 import pytest
 
+import relay_teams.gateway.xiaoluban.im_listener as im_listener_module
 from relay_teams.gateway.xiaoluban.im_listener import (
     _format_host_for_url,
     _is_local_or_unspecified_hostname,
@@ -221,6 +224,74 @@ def test_is_running_returns_false_when_not_started() -> None:
     listener = XiaolubanImListenerService(service=_FakeInboundHandler())
 
     assert listener.is_running() is False
+
+
+def test_default_listener_port_unavailable_logs_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("RELAY_TEAMS_XIAOLUBAN_IM_LISTENER_PORT", raising=False)
+    monkeypatch.setattr(im_listener_module, "_can_bind", lambda _host, _port: False)
+    logged_levels: list[int] = []
+    logged_payloads: list[dict[str, object]] = []
+
+    def fake_log_event(
+        _logger: logging.Logger,
+        level: int,
+        *,
+        event: str,
+        message: str,
+        payload: dict[str, object] | None = None,
+        duration_ms: int | None = None,
+        exc_info: BaseException | None = None,
+    ) -> None:
+        _ = event, message, duration_ms, exc_info
+        logged_levels.append(level)
+        if payload is not None:
+            logged_payloads.append(payload)
+
+    monkeypatch.setattr(im_listener_module, "log_event", fake_log_event)
+
+    listener = XiaolubanImListenerService(service=_FakeInboundHandler())
+    listener.start()
+
+    assert logged_levels == [logging.INFO]
+    assert logged_payloads == [
+        {"host": "0.0.0.0", "port": 9009, "explicit_port": False}
+    ]
+
+
+def test_explicit_listener_port_unavailable_logs_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(im_listener_module, "_can_bind", lambda _host, _port: False)
+    logged_levels: list[int] = []
+    logged_payloads: list[dict[str, object]] = []
+
+    def fake_log_event(
+        _logger: logging.Logger,
+        level: int,
+        *,
+        event: str,
+        message: str,
+        payload: dict[str, object] | None = None,
+        duration_ms: int | None = None,
+        exc_info: BaseException | None = None,
+    ) -> None:
+        _ = event, message, duration_ms, exc_info
+        logged_levels.append(level)
+        if payload is not None:
+            logged_payloads.append(payload)
+
+    monkeypatch.setattr(im_listener_module, "log_event", fake_log_event)
+
+    listener = XiaolubanImListenerService(
+        service=_FakeInboundHandler(),
+        port=9010,
+    )
+    listener.start()
+
+    assert logged_levels == [logging.WARNING]
+    assert logged_payloads == [{"host": "0.0.0.0", "port": 9010, "explicit_port": True}]
 
 
 def test_format_host_for_url_ipv6() -> None:

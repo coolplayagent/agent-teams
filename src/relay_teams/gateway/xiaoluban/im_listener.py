@@ -49,12 +49,16 @@ class XiaolubanImListenerService:
         public_host: str | None = None,
     ) -> None:
         self._service = service
+        raw_env_port = os.environ.get(XIAOLUBAN_IM_LISTENER_PORT_ENV)
         self._host = _normalize_host(
             host
             or os.environ.get(XIAOLUBAN_IM_LISTENER_HOST_ENV)
             or DEFAULT_XIAOLUBAN_IM_LISTENER_HOST
         )
         self._port = port or _listener_port_from_env()
+        self._port_explicitly_configured = (
+            port is not None or raw_env_port is not None and bool(raw_env_port.strip())
+        )
         self._public_host = _normalize_optional_host(
             public_host or os.environ.get(XIAOLUBAN_IM_PUBLIC_HOST_ENV)
         )
@@ -80,12 +84,21 @@ class XiaolubanImListenerService:
             if self.is_running():
                 return
             if not _can_bind(self._host, self._port):
+                level = (
+                    logging.WARNING
+                    if self._port_explicitly_configured
+                    else logging.INFO
+                )
                 log_event(
                     LOGGER,
-                    logging.WARNING,
+                    level,
                     event="gateway.xiaoluban.im_listener.port_unavailable",
                     message="Xiaoluban IM listener port is unavailable",
-                    payload={"host": self._host, "port": self._port},
+                    payload={
+                        "host": self._host,
+                        "port": self._port,
+                        "explicit_port": self._port_explicitly_configured,
+                    },
                 )
                 return
             config = uvicorn.Config(

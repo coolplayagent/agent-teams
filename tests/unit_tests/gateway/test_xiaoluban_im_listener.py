@@ -5,7 +5,6 @@ import logging
 from fastapi.testclient import TestClient
 import pytest
 
-import relay_teams.gateway.xiaoluban.im_listener as im_listener_module
 from relay_teams.gateway.xiaoluban.im_listener import (
     _format_host_for_url,
     _is_local_or_unspecified_hostname,
@@ -230,7 +229,10 @@ def test_default_listener_port_unavailable_logs_info(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("RELAY_TEAMS_XIAOLUBAN_IM_LISTENER_PORT", raising=False)
-    monkeypatch.setattr(im_listener_module, "_can_bind", lambda _host, _port: False)
+    monkeypatch.setattr(
+        "relay_teams.gateway.xiaoluban.im_listener._can_bind",
+        lambda _host, _port: False,
+    )
     logged_levels: list[int] = []
     logged_payloads: list[dict[str, object]] = []
 
@@ -249,7 +251,10 @@ def test_default_listener_port_unavailable_logs_info(
         if payload is not None:
             logged_payloads.append(payload)
 
-    monkeypatch.setattr(im_listener_module, "log_event", fake_log_event)
+    monkeypatch.setattr(
+        "relay_teams.gateway.xiaoluban.im_listener.log_event",
+        fake_log_event,
+    )
 
     listener = XiaolubanImListenerService(service=_FakeInboundHandler())
     listener.start()
@@ -263,7 +268,10 @@ def test_default_listener_port_unavailable_logs_info(
 def test_explicit_listener_port_unavailable_logs_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(im_listener_module, "_can_bind", lambda _host, _port: False)
+    monkeypatch.setattr(
+        "relay_teams.gateway.xiaoluban.im_listener._can_bind",
+        lambda _host, _port: False,
+    )
     logged_levels: list[int] = []
     logged_payloads: list[dict[str, object]] = []
 
@@ -282,7 +290,10 @@ def test_explicit_listener_port_unavailable_logs_warning(
         if payload is not None:
             logged_payloads.append(payload)
 
-    monkeypatch.setattr(im_listener_module, "log_event", fake_log_event)
+    monkeypatch.setattr(
+        "relay_teams.gateway.xiaoluban.im_listener.log_event",
+        fake_log_event,
+    )
 
     listener = XiaolubanImListenerService(
         service=_FakeInboundHandler(),

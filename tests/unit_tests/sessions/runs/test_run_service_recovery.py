@@ -4958,13 +4958,14 @@ async def test_ensure_run_started_local_async_validates_recoverable_state(
 def test_log_slow_run_worker_stage_emits_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    events: list[tuple[str, int]] = []
+    events: list[tuple[str, int, int]] = []
 
     def capture_log_event(*args: object, **kwargs: object) -> None:
-        _ = args
+        level = args[1]
+        assert isinstance(level, int)
         duration_ms = kwargs["duration_ms"]
         assert isinstance(duration_ms, int)
-        events.append((str(kwargs["event"]), duration_ms))
+        events.append((str(kwargs["event"]), duration_ms, level))
 
     monkeypatch.setattr(run_service_module.time, "perf_counter", lambda: 12.5)
     monkeypatch.setattr(run_service_module, "log_event", capture_log_event)
@@ -4977,7 +4978,74 @@ def test_log_slow_run_worker_stage_emits_warning(
         payload={"queued": True},
     )
 
-    assert events == [("run.worker.stage_slow", 2500)]
+    assert events == [
+        ("run.worker.stage_slow", 2500, run_service_module.logging.WARNING)
+    ]
+
+
+def test_completed_runner_stage_below_runner_warning_threshold_logs_debug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, int, int]] = []
+
+    def capture_log_event(*args: object, **kwargs: object) -> None:
+        level = args[1]
+        assert isinstance(level, int)
+        duration_ms = kwargs["duration_ms"]
+        assert isinstance(duration_ms, int)
+        events.append((str(kwargs["event"]), duration_ms, level))
+
+    monkeypatch.setattr(run_service_module.time, "perf_counter", lambda: 12.5)
+    monkeypatch.setattr(run_service_module, "log_event", capture_log_event)
+
+    run_service_module._log_slow_run_worker_stage(
+        run_id="run-1",
+        session_id="session-1",
+        stage="runner",
+        started=10.0,
+        payload={
+            "status": "completed",
+            "completion_reason": "assistant_response",
+        },
+    )
+
+    assert events == [("run.worker.stage_slow", 2500, run_service_module.logging.DEBUG)]
+
+
+def test_completed_runner_stage_above_runner_warning_threshold_logs_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, int, int]] = []
+
+    def capture_log_event(*args: object, **kwargs: object) -> None:
+        level = args[1]
+        assert isinstance(level, int)
+        duration_ms = kwargs["duration_ms"]
+        assert isinstance(duration_ms, int)
+        events.append((str(kwargs["event"]), duration_ms, level))
+
+    monkeypatch.setattr(
+        run_service_module,
+        "SLOW_COMPLETED_RUNNER_STAGE_WARNING_SECONDS",
+        3.0,
+    )
+    monkeypatch.setattr(run_service_module.time, "perf_counter", lambda: 13.25)
+    monkeypatch.setattr(run_service_module, "log_event", capture_log_event)
+
+    run_service_module._log_slow_run_worker_stage(
+        run_id="run-1",
+        session_id="session-1",
+        stage="runner",
+        started=10.0,
+        payload={
+            "status": "completed",
+            "completion_reason": "assistant_response",
+        },
+    )
+
+    assert events == [
+        ("run.worker.stage_slow", 3250, run_service_module.logging.WARNING)
+    ]
 
 
 @pytest.mark.asyncio

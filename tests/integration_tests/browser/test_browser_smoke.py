@@ -1497,6 +1497,10 @@ def test_browser_workspace_and_automation_project_views(
     page.locator("#project-view-close").click()
     expect(page.locator("#project-view")).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
 
+    workspace_card.hover()
+    expect(workspace_card.locator(".project-options-btn")).to_be_visible(
+        timeout=_WAIT_TIMEOUT_MS
+    )
     with page.expect_request(
         lambda request: (
             request.method == "DELETE"

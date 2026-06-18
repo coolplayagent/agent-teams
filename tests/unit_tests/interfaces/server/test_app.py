@@ -53,6 +53,7 @@ def test_register_signal_handlers_logs_and_chains_previous_handler(
 ) -> None:
     assigned_handlers: dict[int, server_app.SignalHandler] = {}
     previous_called_with: list[int] = []
+    logged_levels: list[int] = []
     logged_signals: list[str] = []
 
     def previous_handler(sig: int, _frame: FrameType | None) -> None:
@@ -67,8 +68,18 @@ def test_register_signal_handlers_logs_and_chains_previous_handler(
         assigned_handlers[sig] = handler
         return previous_handler
 
-    def fake_log_event(*_args: object, **kwargs: object) -> None:
-        payload = kwargs.get("payload")
+    def fake_log_event(
+        _logger: logging.Logger,
+        level: int,
+        *,
+        event: str,
+        message: str,
+        payload: dict[str, object] | None = None,
+        duration_ms: int | None = None,
+        exc_info: BaseException | None = None,
+    ) -> None:
+        _ = event, message, duration_ms, exc_info
+        logged_levels.append(level)
         if isinstance(payload, dict):
             signal_name = payload.get("signal")
             if isinstance(signal_name, str):
@@ -83,6 +94,7 @@ def test_register_signal_handlers_logs_and_chains_previous_handler(
     assigned_handlers[signal.SIGINT](signal.SIGINT, None)
 
     assert previous_called_with == [signal.SIGINT]
+    assert logged_levels == [logging.INFO]
     assert logged_signals == ["SIGINT"]
 
 

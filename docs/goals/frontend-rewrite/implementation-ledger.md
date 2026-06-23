@@ -358,3 +358,35 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Re-ran `npm run test -- --run SessionTokenUsage.test.tsx`, `npm run typecheck`, `npm run lint`, and `npm run build` in `frontend/app`.
 - Addressed reviewer `019ef371-9d93-7812-b763-16131dbec0a6` test-gap finding with explicit MainAgent fallback coverage when no primary role is provided.
 - Re-ran `npm run test -- --run SessionTokenUsage.test.tsx`, `npm run typecheck`, and `npm run lint` in `frontend/app`.
+
+## 2026-06-23 Recovery Approval Options Batch
+
+### Scope
+- Rendered explicit ACP approval options in the React RecoveryBar while preserving the default Approve and Deny controls.
+- Mapped ACP allow options to `approve` with `optionId` and reject options to `deny` with `optionId`.
+- Kept the default Approve and Deny payloads free of `optionId` so backend ACP default selection remains authoritative.
+- Added focused React coverage for explicit ACP option submission and default approval behavior.
+
+### Verification
+- `npm run test -- --run RecoveryBar.test.tsx` in `frontend/app` passed with 9 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- Reviewer subagent `019ef46c-d1d3-7d33-a6e0-7ad44475f606` returned PASS.
+- Committed as `28aa36373 Render recovery approval options`.
+
+## 2026-06-23 Recovery Stream Continuity Refresh Batch
+
+### Scope
+- Added explicit recovery query refresh when the React AG-UI run stream starts.
+- Added a 10 second continuity refresh interval while a stream remains active.
+- Cleared the continuity refresh timer when streams are replaced, manually cleared, closed, or unmounted.
+- Preserved stream-close refreshes for messages, sidebar state, recovery, and token usage.
+- Added focused hook coverage for start-time refresh, active-stream refresh, close-time timer cleanup, and token usage refresh on stream close.
+
+### Verification
+- `npm run test -- --run RunStreamController.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- Reviewer subagent `019ef473-4994-7483-b51e-9e2a1560706a` returned PASS.

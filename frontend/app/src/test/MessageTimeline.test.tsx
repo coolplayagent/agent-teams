@@ -274,6 +274,72 @@ describe("MessageTimeline", () => {
     expect(screen.getByText(/"error": "cd failed"/)).toBeVisible();
   });
 
+  it("renders runtime tool approval requests and resolved decisions", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-approval": {
+            runId: "run-approval",
+            status: "closed",
+            lastEventId: 2,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-approval:1:0",
+                sessionId: "session-1",
+                runId: "run-approval",
+                roleId: "MainAgent",
+                kind: "tool_approval_requested",
+                text: "execute_command",
+                payload: {
+                  acp_options: [
+                    { name: "Allow once", optionId: "allow_once" },
+                    { name: "Deny", optionId: "deny" },
+                  ],
+                  args_preview: "npm test",
+                  tool_call_id: "tool-approval-1",
+                  tool_name: "execute_command",
+                },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-approval:2:1",
+                sessionId: "session-1",
+                runId: "run-approval",
+                roleId: "MainAgent",
+                kind: "tool_approval_resolved",
+                text: "execute_command",
+                payload: {
+                  action: "deny",
+                  feedback: "Unsafe command",
+                  tool_call_id: "tool-approval-1",
+                  tool_name: "execute_command",
+                },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText("Approval requested: execute_command"),
+    ).toBeVisible();
+    expect(screen.getByText(/Args: npm test/)).toBeVisible();
+    expect(screen.getByText(/Options: Allow once, Deny/)).toBeVisible();
+    expect(screen.getByText("Approval denied: execute_command")).toBeVisible();
+    expect(screen.getByText(/Action: deny/)).toBeVisible();
+    expect(screen.getByText(/Feedback: Unsafe command/)).toBeVisible();
+  });
+
   it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

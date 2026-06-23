@@ -5,7 +5,12 @@ import { Copy, Wrench } from "lucide-react";
 import { useMemo, useRef } from "react";
 
 import { listSessionMessages } from "../../api/client";
-import { contentPartText, type ContentPart, type TimelineMessage } from "../../api/contracts";
+import {
+  contentPartText,
+  type ContentPart,
+  type JsonValue,
+  type TimelineMessage,
+} from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import type { TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
@@ -176,11 +181,17 @@ interface TimelineMediaPart {
 }
 
 interface TimelineToolPart {
+  action: string;
   body: string;
   callId: string;
   error: boolean;
   kind: "tool";
-  phase: "call" | "result" | "validation";
+  phase:
+    | "approval-requested"
+    | "approval-resolved"
+    | "call"
+    | "result"
+    | "validation";
   toolName: string;
 }
 
@@ -218,15 +229,24 @@ function messageToRow(message: TimelineMessage, index: number): TimelineRow {
 }
 
 function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
+  const parts = runtimeEntryParts(entry);
   return {
     key: `runtime:${entry.id}`,
     role: entry.roleId,
     text: entry.text,
     kind: entry.kind,
-    parts: [{ kind: "text", text: entry.text }],
+    parts,
     source: "runtime",
     copyable: false,
   };
+}
+
+function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
+  const approval = runtimeApprovalPart(entry);
+  if (approval !== null) {
+    return [approval];
+  }
+  return [{ kind: "text", text: entry.text }];
 }
 
 function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
@@ -328,6 +348,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   const kind = contentPartKind(part);
   if (kind === "tool-call" || contentPartHasToolCallShape(part)) {
     return {
+      action: "",
       body: jsonValueText("args" in part ? part.args ?? null : null),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: false,
@@ -339,6 +360,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   if (kind === "tool-return") {
     const content = "content" in part ? part.content ?? null : null;
     return {
+      action: "",
       body: jsonValueText(content),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: toolReturnIsError(part, content),
@@ -349,6 +371,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   }
   if (kind === "retry-prompt") {
     return {
+      action: "",
       body: jsonValueText("content" in part ? part.content ?? null : null),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: true,
@@ -358,6 +381,39 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
     };
   }
   return null;
+}
+
+function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
+  if (
+    entry.kind !== "tool_approval_requested" &&
+    entry.kind !== "tool_approval_resolved"
+  ) {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null) {
+    return null;
+  }
+  const action = objectString(payload, "action");
+  const feedback = objectString(payload, "feedback");
+  const argsPreview = objectString(payload, "args_preview");
+  const optionLabels = approvalOptionLabels(payload.acp_options);
+  return {
+    action,
+    body: approvalBody({
+      action,
+      argsPreview,
+      feedback,
+      optionLabels,
+    }),
+    callId: objectString(payload, "tool_call_id"),
+    error: entry.kind === "tool_approval_resolved" && approvalActionIsError(action),
+    kind: "tool",
+    phase: entry.kind === "tool_approval_requested"
+      ? "approval-requested"
+      : "approval-resolved",
+    toolName: objectString(payload, "tool_name") || entry.text || "unknown_tool",
+  };
 }
 
 function contentPartKind(part: ContentPart): string {
@@ -455,6 +511,18 @@ function estimateRowSize(row: TimelineRow | undefined): number {
 }
 
 function toolPhaseLabel(tool: TimelineToolPart): string {
+  if (tool.phase === "approval-requested") {
+    return "Approval requested";
+  }
+  if (tool.phase === "approval-resolved") {
+    if (approvalActionIsError(tool.action)) {
+      return approvalDeniedLabel(tool.action);
+    }
+    if (approvalActionIsApproved(tool.action)) {
+      return "Approval approved";
+    }
+    return "Approval resolved";
+  }
   if (tool.phase === "call") {
     return "Tool call";
   }
@@ -465,6 +533,55 @@ function toolPhaseLabel(tool: TimelineToolPart): string {
     return "Tool error";
   }
   return "Tool result";
+}
+
+function approvalBody({
+  action,
+  argsPreview,
+  feedback,
+  optionLabels,
+}: {
+  action: string;
+  argsPreview: string;
+  feedback: string;
+  optionLabels: string;
+}): string {
+  return [
+    argsPreview ? `Args: ${argsPreview}` : "",
+    optionLabels ? `Options: ${optionLabels}` : "",
+    action ? `Action: ${action}` : "",
+    feedback ? `Feedback: ${feedback}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function approvalActionIsApproved(action: string): boolean {
+  const normalized = action.trim().toLowerCase();
+  return normalized.startsWith("approve") || normalized.startsWith("allow");
+}
+
+function approvalActionIsError(action: string): boolean {
+  const normalized = action.trim().toLowerCase();
+  return (
+    normalized === "cancel" ||
+    normalized === "cancelled" ||
+    normalized === "deny" ||
+    normalized === "denied" ||
+    normalized === "reject" ||
+    normalized === "rejected" ||
+    normalized === "timeout" ||
+    normalized === "timed_out"
+  );
+}
+
+function approvalDeniedLabel(action: string): string {
+  const normalized = action.trim().toLowerCase();
+  if (normalized === "timeout" || normalized === "timed_out") {
+    return "Approval timed out";
+  }
+  if (normalized === "cancel" || normalized === "cancelled") {
+    return "Approval cancelled";
+  }
+  return "Approval denied";
 }
 
 function toolReturnIsError(
@@ -493,6 +610,41 @@ function jsonObjectHasFailedOk(value: unknown): boolean {
     return false;
   }
   return "ok" in value && value.ok === false;
+}
+
+function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value;
+}
+
+function objectString(
+  object: Record<string, JsonValue>,
+  key: string,
+): string {
+  const value = object[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function approvalOptionLabels(value: JsonValue | undefined): string {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+  return value
+    .map((item) => {
+      const option = jsonObject(item);
+      if (option === null) {
+        return "";
+      }
+      return objectString(option, "label")
+        || objectString(option, "name")
+        || objectString(option, "optionId")
+        || objectString(option, "option_id")
+        || objectString(option, "id");
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 function jsonValueText(value: unknown): string {

@@ -281,6 +281,10 @@ function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
+  const output = runtimeOutputParts(entry);
+  if (output !== null && output.length > 0) {
+    return output;
+  }
   const tool = runtimeToolPart(entry);
   if (tool !== null) {
     return [tool];
@@ -290,6 +294,57 @@ function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
     return [approval];
   }
   return [{ kind: "text", text: entry.text }];
+}
+
+function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {
+  if (entry.kind !== "output_delta") {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return [];
+  }
+  const output = payload.output;
+  if (!Array.isArray(output)) {
+    return [];
+  }
+  return output.flatMap((part) => {
+    const renderPart = outputDeltaRenderPart(part);
+    return renderPart === null ? [] : [renderPart];
+  });
+}
+
+function outputDeltaRenderPart(part: JsonValue): TimelineRenderPart | null {
+  const outputPart = jsonObject(part);
+  if (outputPart === null) {
+    return null;
+  }
+  const kind = objectString(outputPart, "kind");
+  if (kind === "text") {
+    return outputDeltaTextPart(outputPart);
+  }
+  if (kind === "media_ref") {
+    return outputDeltaMediaPart(outputPart);
+  }
+  return null;
+}
+
+function outputDeltaTextPart(
+  part: Record<string, JsonValue>,
+): TimelineTextPart | null {
+  const text = objectRawString(part, "text") || objectRawString(part, "content");
+  return text ? { kind: "text", text } : null;
+}
+
+function outputDeltaMediaPart(
+  part: Record<string, JsonValue>,
+): TimelineMediaPart | null {
+  return mediaPartFromFields({
+    mimeType: objectString(part, "mime_type"),
+    modality: objectString(part, "modality"),
+    name: objectString(part, "name"),
+    url: objectString(part, "url"),
+  });
 }
 
 function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {

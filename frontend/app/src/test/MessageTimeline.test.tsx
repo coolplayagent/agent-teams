@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSessionMessages } from "../api/client";
 import { MessageTimeline } from "../features/timeline/MessageTimeline";
+import type { TimelineEntry } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 
 vi.mock("../api/client", () => ({
@@ -338,6 +339,97 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Approval denied: execute_command")).toBeVisible();
     expect(screen.getByText(/Action: deny/)).toBeVisible();
     expect(screen.getByText(/Feedback: Unsafe command/)).toBeVisible();
+  });
+
+  it("renders runtime output_delta text parts from payload output", async () => {
+    setRuntimeEntries([
+      runtimeOutputDeltaEntry({
+        id: "run-output:1:0",
+        payload: {
+          output: [{ kind: "text", text: "Structured output text" }],
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Structured output text")).toBeVisible();
+    expect(screen.queryByText("output delta")).not.toBeInTheDocument();
+  });
+
+  it("renders runtime output_delta media_ref parts from payload output", async () => {
+    setRuntimeEntries([
+      runtimeOutputDeltaEntry({
+        id: "run-output:1:0",
+        payload: {
+          output: [
+            {
+              kind: "media_ref",
+              mime_type: "image/png",
+              modality: "image",
+              name: "runtime-image.png",
+              url: "https://example.test/runtime-image.png",
+            },
+          ],
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    const image = await screen.findByRole("img", { name: "runtime-image.png" });
+    expect(image).toHaveAttribute("src", "https://example.test/runtime-image.png");
+    expect(screen.getByText("runtime-image.png")).toBeVisible();
+    expect(screen.queryByText("output delta")).not.toBeInTheDocument();
+  });
+
+  it("falls back to runtime text when output_delta has no renderable output parts", async () => {
+    setRuntimeEntries([
+      runtimeOutputDeltaEntry({
+        id: "run-output:1:0",
+        payload: {
+          output: [
+            null,
+            "ignored plain string",
+            { kind: "media_ref", name: "missing-url.png", url: "" },
+            { kind: "unsupported", text: "unsupported output part" },
+          ],
+        },
+        text: "fallback output text",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("fallback output text")).toBeVisible();
+    expect(screen.queryByText("unsupported output part")).not.toBeInTheDocument();
+    expect(screen.queryByText("missing-url.png")).not.toBeInTheDocument();
+  });
+
+  it("preserves structured output_delta parts without showing literal output delta fallback", async () => {
+    setRuntimeEntries([
+      runtimeOutputDeltaEntry({
+        id: "run-output:1:0",
+        payload: {
+          output: [
+            { kind: "unsupported", text: "unsupported output part" },
+            { kind: "text", content: "Content field output text" },
+            { kind: "media_ref", name: "missing-url.png", url: "" },
+          ],
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Content field output text")).toBeVisible();
+    expect(screen.queryByText("output delta")).not.toBeInTheDocument();
+    expect(screen.queryByText("unsupported output part")).not.toBeInTheDocument();
+    expect(screen.queryByText("missing-url.png")).not.toBeInTheDocument();
   });
 
   it("accumulates runtime thinking events into one collapsible markdown block", async () => {
@@ -967,6 +1059,53 @@ function renderTimeline() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+function setRuntimeEntries(entries: TimelineEntry[]): void {
+  const runId = entries[0]?.runId ?? "run-output";
+  const lastEventId = entries.reduce(
+    (latest, entry) => Math.max(latest, entry.eventId),
+    0,
+  );
+  useRuntimeStore.setState({
+    runtimeState: {
+      activeRunIds: [],
+      runs: {
+        [runId]: {
+          runId,
+          status: "closed",
+          lastEventId,
+          seenEventKeys: [],
+          terminalEventType: null,
+          entries,
+        },
+      },
+    },
+  });
+}
+
+function runtimeOutputDeltaEntry({
+  id,
+  payload,
+  text = "output delta",
+  eventId = 1,
+}: {
+  id: string;
+  payload: TimelineEntry["payload"];
+  text?: string;
+  eventId?: number;
+}): TimelineEntry {
+  return {
+    id,
+    sessionId: "session-1",
+    runId: "run-output",
+    roleId: "MainAgent",
+    kind: "output_delta",
+    text,
+    payload,
+    eventId,
+    occurredAt: "2026-06-23T00:00:00Z",
+  };
 }
 
 function mockElementMeasurements(): () => void {

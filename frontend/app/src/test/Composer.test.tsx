@@ -40,6 +40,7 @@ const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe("Composer", () => {
@@ -90,6 +91,39 @@ describe("Composer", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
+  });
+
+  it("passes selected thinking settings to AG-UI run creation", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("switch", { name: "Thinking" }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Thinking effort" }));
+    fireEvent.click(await screen.findByText("High"));
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Think through the migration" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(createRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thinking: {
+            enabled: true,
+            effort: "high",
+          },
+        }),
+      ),
+    );
+    expect(localStorage.getItem("agent_teams_thinking_enabled")).toBe("true");
+    expect(localStorage.getItem("agent_teams_thinking_effort")).toBe("high");
   });
 });
 

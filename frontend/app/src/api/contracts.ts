@@ -138,7 +138,15 @@ export interface RunCreateRequest {
   input: RunInputPart[];
   display_input?: RunInputPart[];
   yolo?: boolean;
+  thinking?: RunThinkingConfig;
   target_role_id?: string | null;
+}
+
+export type ThinkingEffort = "minimal" | "low" | "medium" | "high";
+
+export interface RunThinkingConfig {
+  enabled: boolean;
+  effort: ThinkingEffort | null;
 }
 
 export interface RunCreateResponse {

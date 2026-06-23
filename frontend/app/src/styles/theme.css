@@ -295,8 +295,16 @@ body {
   gap: 12px;
 }
 
+.at-composer-control-set {
+  min-width: 0;
+}
+
 .at-role-select {
   width: 180px;
+}
+
+.at-thinking-effort-select {
+  width: 112px;
 }
 
 .at-composer-hint {

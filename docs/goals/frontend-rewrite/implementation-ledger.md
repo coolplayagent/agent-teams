@@ -109,3 +109,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 11 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Composer Thinking Controls Batch
+
+### Scope
+- Added a strict React `RunThinkingConfig` contract matching the AG-UI run schema.
+- Added composer thinking mode and effort controls backed by the existing V1 local storage keys.
+- Sent the selected thinking settings through AG-UI run creation with the prompt, role, and YOLO controls.
+- Added focused React coverage for thinking payload submission and persistence.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 12 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

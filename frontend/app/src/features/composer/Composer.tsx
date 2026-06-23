@@ -1,4 +1,4 @@
-import { App, Button, Checkbox, Select, Space, Tooltip } from "antd";
+import { App, Button, Checkbox, Select, Space, Switch, Tooltip } from "antd";
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { createRun, getRoleConfigOptions, stopRun } from "../../api/client";
+import type { RunThinkingConfig, ThinkingEffort } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 
 interface ComposerProps {
@@ -13,12 +14,25 @@ interface ComposerProps {
   sessionId: string | null;
 }
 
+const THINKING_MODE_STORAGE_KEY = "agent_teams_thinking_enabled";
+const THINKING_EFFORT_STORAGE_KEY = "agent_teams_thinking_effort";
+const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
+const THINKING_EFFORT_OPTIONS: Array<{ label: string; value: ThinkingEffort }> = [
+  { label: "Minimal", value: "minimal" },
+  { label: "Low", value: "low" },
+  { label: "Medium", value: "medium" },
+  { label: "High", value: "high" },
+];
+
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const inputRef = useRef<SenderRef | null>(null);
   const [draft, setDraft] = useState("");
   const [yolo, setYolo] = useState(true);
+  const [thinking, setThinking] = useState<RunThinkingConfig>(() =>
+    readSavedThinkingState(),
+  );
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
   const activeRunId = runStreamController.activeRunId;
   const roleOptionsQuery = useQuery({
@@ -45,6 +59,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         input: [{ kind: "text", text: draft.trim() }],
         display_input: [{ kind: "text", text: draft.trim() }],
         target_role_id: targetRoleId,
+        thinking,
         yolo,
       });
     },
@@ -114,7 +129,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         actions={false}
       />
       <div className="at-composer-controls">
-        <Space size={8}>
+        <Space className="at-composer-control-set" size={8} wrap>
           <Select
             allowClear
             aria-label="Target role"
@@ -129,6 +144,27 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             size="small"
             value={targetRoleId ?? undefined}
           />
+          <Space.Compact>
+            <Switch
+              aria-label="Thinking"
+              checked={thinking.enabled}
+              disabled={busy || activeRunId !== null}
+              onChange={(enabled) => updateThinking({ enabled })}
+              size="small"
+            />
+            {thinking.enabled ? (
+              <Select
+                aria-label="Thinking effort"
+                className="at-thinking-effort-select"
+                disabled={busy || activeRunId !== null}
+                onChange={(effort) => updateThinking({ effort })}
+                options={THINKING_EFFORT_OPTIONS}
+                popupMatchSelectWidth={false}
+                size="small"
+                value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
+              />
+            ) : null}
+          </Space.Compact>
           <Checkbox checked={yolo} onChange={(event) => setYolo(event.target.checked)}>
             YOLO
           </Checkbox>
@@ -160,4 +196,58 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       </div>
     </form>
   );
+
+  function updateThinking(nextState: Partial<RunThinkingConfig>) {
+    setThinking((current) => {
+      const updated = normalizeThinkingState({
+        enabled: nextState.enabled ?? current.enabled,
+        effort: nextState.effort ?? current.effort ?? DEFAULT_THINKING_EFFORT,
+      });
+      persistThinkingState(updated);
+      return updated;
+    });
+  }
+}
+
+function readSavedThinkingState(): RunThinkingConfig {
+  try {
+    const storage = globalThis.localStorage;
+    const enabled = storage.getItem(THINKING_MODE_STORAGE_KEY) === "true";
+    const effort = normalizeThinkingEffort(
+      storage.getItem(THINKING_EFFORT_STORAGE_KEY),
+    );
+    return { enabled, effort };
+  } catch (_error) {
+    return { enabled: false, effort: DEFAULT_THINKING_EFFORT };
+  }
+}
+
+function persistThinkingState(state: RunThinkingConfig) {
+  try {
+    const storage = globalThis.localStorage;
+    storage.setItem(THINKING_MODE_STORAGE_KEY, state.enabled ? "true" : "false");
+    storage.setItem(
+      THINKING_EFFORT_STORAGE_KEY,
+      state.effort ?? DEFAULT_THINKING_EFFORT,
+    );
+  } catch (_error) {
+    return;
+  }
+}
+
+function normalizeThinkingState(state: RunThinkingConfig): RunThinkingConfig {
+  return {
+    enabled: state.enabled,
+    effort: normalizeThinkingEffort(state.effort),
+  };
+}
+
+function normalizeThinkingEffort(value: string | null | undefined): ThinkingEffort {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "minimal" || normalized === "low" || normalized === "high") {
+    return normalized;
+  }
+  return DEFAULT_THINKING_EFFORT;
 }

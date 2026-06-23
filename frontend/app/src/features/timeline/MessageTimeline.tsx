@@ -171,10 +171,7 @@ function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
     text: entry.text,
     kind: entry.kind,
     source: "runtime",
-    copyable:
-      isAnswerRole(entry.roleId) &&
-      (entry.kind === "text_delta" || entry.kind === "output_delta") &&
-      entry.text.trim().length > 0,
+    copyable: false,
   };
 }
 

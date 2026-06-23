@@ -179,3 +179,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 17 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Timeline Copy Reviewer Remediation Batch
+
+### Scope
+- Addressed reviewer `019ef284-18b0-7b53-a3b0-cb41ccb24a04` finding where closed runtime delta rows could win over hydrated full answers.
+- Limited copy-last-answer eligibility to stable hydrated messages until the runtime timeline has a true aggregated answer projection.
+- Added focused React regression coverage proving stale runtime chunks do not replace the persisted answer in clipboard output.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run MessageTimeline.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 18 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

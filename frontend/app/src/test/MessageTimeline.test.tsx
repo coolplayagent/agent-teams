@@ -54,6 +54,61 @@ describe("MessageTimeline", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Latest answer"));
   });
+
+  it("does not copy stale runtime delta chunks over hydrated answers", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-1": {
+            runId: "run-1",
+            status: "closed",
+            lastEventId: 5,
+            seenEventKeys: [],
+            terminalEventType: "run_completed",
+            entries: [
+              {
+                id: "run-1:4:0",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "final chunk only",
+                payload: { text: "final chunk only" },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        content: "Full persisted answer",
+      },
+    ]);
+
+    renderTimeline();
+
+    const copyButton = await screen.findByRole("button", {
+      name: "Copy last answer",
+    });
+    await waitFor(() => expect(copyButton).toBeEnabled());
+    fireEvent.click(copyButton);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("Full persisted answer"),
+    );
+    expect(writeText).not.toHaveBeenCalledWith("final chunk only");
+  });
 });
 
 function renderTimeline() {

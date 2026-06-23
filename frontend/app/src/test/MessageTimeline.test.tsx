@@ -311,6 +311,44 @@ describe("MessageTimeline", () => {
     expect(codeBlock).toHaveTextContent("const answer = \"yes\";");
     expect(codeBlock?.querySelector(".hljs-keyword")).not.toBeNull();
   });
+
+  it("measures markdown rows so long blocks do not overlap following messages", async () => {
+    const restoreMeasurements = mockElementMeasurements();
+    try {
+      listSessionMessagesMock.mockResolvedValue([
+        {
+          content: [
+            "```ts",
+            ...Array.from(
+              { length: 36 },
+              (_, index) => `const line${index} = "long";`,
+            ),
+            "```",
+          ].join("\n"),
+          message_id: "assistant-long-markdown",
+          role_id: "MainAgent",
+        },
+        {
+          content: "After long markdown",
+          message_id: "assistant-after-markdown",
+          role_id: "MainAgent",
+        },
+      ]);
+
+      const { container } = renderTimeline();
+
+      expect(await screen.findByText("After long markdown")).toBeVisible();
+      await waitFor(() => {
+        const secondRow = container.querySelector(
+          'article.at-message[data-index="1"]',
+        );
+        expect(secondRow).not.toBeNull();
+        expect(translateY(secondRow)).toBeGreaterThan(600);
+      });
+    } finally {
+      restoreMeasurements();
+    }
+  });
 });
 
 function renderTimeline() {
@@ -331,4 +369,57 @@ function renderTimeline() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+function mockElementMeasurements(): () => void {
+  const heightDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetHeight",
+  );
+  const widthDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetWidth",
+  );
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get() {
+      if (this instanceof HTMLElement && this.classList.contains("at-timeline")) {
+        return 720;
+      }
+      if (this instanceof HTMLElement && this.classList.contains("at-message")) {
+        return this.dataset.index === "0" ? 640 : 88;
+      }
+      return 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+    configurable: true,
+    get() {
+      return 1024;
+    },
+  });
+  return () => {
+    restoreProperty(HTMLElement.prototype, "offsetHeight", heightDescriptor);
+    restoreProperty(HTMLElement.prototype, "offsetWidth", widthDescriptor);
+  };
+}
+
+function restoreProperty<TObject extends object, TKey extends keyof TObject>(
+  target: TObject,
+  propertyName: TKey,
+  descriptor: PropertyDescriptor | undefined,
+): void {
+  if (descriptor === undefined) {
+    delete target[propertyName];
+    return;
+  }
+  Object.defineProperty(target, propertyName, descriptor);
+}
+
+function translateY(element: Element | null): number {
+  if (!(element instanceof HTMLElement)) {
+    return 0;
+  }
+  const match = element.style.transform.match(/translateY\(([-\d.]+)px\)/);
+  return match?.[1] === undefined ? 0 : Number(match[1]);
 }

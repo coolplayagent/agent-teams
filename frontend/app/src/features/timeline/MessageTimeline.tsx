@@ -133,7 +133,9 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
           return (
             <article
               className={`at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
+              data-index={virtualItem.index}
               key={row.key}
+              ref={virtualizer.measureElement}
               style={{ transform: `translateY(${virtualItem.start}px)` }}
             >
               <Typography.Text className="at-message-role">

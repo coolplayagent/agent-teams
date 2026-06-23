@@ -1,0 +1,130 @@
+import type {
+  GeneralConfig,
+  JsonValue,
+  ObservabilityBreakdowns,
+  ObservabilityOverview,
+  RecoverySnapshot,
+  RunCreateRequest,
+  RunCreateResponse,
+  ServerHealthPayload,
+  SessionRecord,
+  SessionSidebarRecord,
+  TimelineMessage,
+  WorkspaceRecord,
+} from "./contracts";
+import { requestJson } from "./http";
+
+export function getHealth(): Promise<ServerHealthPayload> {
+  return requestJson<ServerHealthPayload>("/system/health");
+}
+
+export function listWorkspaces(): Promise<WorkspaceRecord[]> {
+  return requestJson<WorkspaceRecord[]>("/workspaces");
+}
+
+export function listSidebarSessions(forceRefresh = false): Promise<SessionSidebarRecord[]> {
+  const params = new URLSearchParams();
+  if (forceRefresh) {
+    params.set("force_refresh", "true");
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return requestJson<SessionSidebarRecord[]>(`/sessions/sidebar${suffix}`);
+}
+
+export function getSession(sessionId: string): Promise<SessionRecord> {
+  return requestJson<SessionRecord>(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function listSessionMessages(sessionId: string): Promise<TimelineMessage[]> {
+  return requestJson<TimelineMessage[]>(
+    `/sessions/${encodeURIComponent(sessionId)}/messages`,
+  );
+}
+
+export function getRecoverySnapshot(
+  sessionId: string,
+  forceRefresh = false,
+): Promise<RecoverySnapshot> {
+  const params = new URLSearchParams();
+  if (forceRefresh) {
+    params.set("force_refresh", "true");
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return requestJson<RecoverySnapshot>(
+    `/sessions/${encodeURIComponent(sessionId)}/recovery${suffix}`,
+  );
+}
+
+export function createRun(request: RunCreateRequest): Promise<RunCreateResponse> {
+  return requestJson<RunCreateResponse>("/runs", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function stopRun(runId: string): Promise<{ status: string; scope: string }> {
+  return requestJson<{ status: string; scope: string }>(
+    `/runs/${encodeURIComponent(runId)}/stop`,
+    {
+      method: "POST",
+      body: JSON.stringify({ scope: "main" }),
+    },
+  );
+}
+
+export function resumeRun(runId: string): Promise<{ status: string; run_id: string; session_id: string }> {
+  return requestJson<{ status: string; run_id: string; session_id: string }>(
+    `/runs/${encodeURIComponent(runId)}:resume`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function getGeneralConfig(): Promise<GeneralConfig> {
+  return requestJson<GeneralConfig>("/system/configs/general");
+}
+
+export function saveGeneralConfig(config: GeneralConfig): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/general", {
+    method: "PUT",
+    body: JSON.stringify({ config }),
+  });
+}
+
+export function getObservabilityOverview(
+  scope: "global" | "session",
+  scopeId: string,
+): Promise<ObservabilityOverview> {
+  const params = new URLSearchParams();
+  params.set("scope", scope);
+  if (scopeId.trim()) {
+    params.set("scope_id", scopeId);
+  }
+  params.set("time_window_minutes", "1440");
+  return requestJson<ObservabilityOverview>(
+    `/observability/overview?${params.toString()}`,
+  );
+}
+
+export function getObservabilityBreakdowns(
+  scope: "global" | "session",
+  scopeId: string,
+): Promise<ObservabilityBreakdowns> {
+  const params = new URLSearchParams();
+  params.set("scope", scope);
+  if (scopeId.trim()) {
+    params.set("scope_id", scopeId);
+  }
+  params.set("time_window_minutes", "1440");
+  return requestJson<ObservabilityBreakdowns>(
+    `/observability/breakdowns?${params.toString()}`,
+  );
+}
+
+export function jsonRecord(value: JsonValue | undefined): Record<string, JsonValue> {
+  if (value !== undefined && typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value;
+  }
+  return {};
+}

@@ -22,6 +22,8 @@ node_modules
 package-lock.json
 package.json
 !frontend/package.json
+!frontend/app/package.json
+!frontend/app/package-lock.json
 !src/relay_teams/builtin/skills/pptx-craft/package.json
 !src/relay_teams/builtin/skills/pptx-craft/designer/lib/html-to-pptx/package.json
 .claude

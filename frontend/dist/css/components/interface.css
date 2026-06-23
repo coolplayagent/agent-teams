@@ -70,6 +70,29 @@
     color: var(--text-primary);
 }
 
+.interface-switch-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--button-secondary-border);
+    border-radius: 6px;
+    background: var(--button-secondary-bg);
+    color: var(--button-secondary-text);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.interface-switch-link:hover,
+.interface-switch-link:focus-visible {
+    background: var(--button-secondary-hover);
+    border-color: var(--settings-border-hover);
+    color: var(--text-primary);
+}
+
 .icon-btn {
     width: 34px;
     height: 34px;

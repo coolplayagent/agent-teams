@@ -60,6 +60,10 @@ vi.mock("../features/shell/CurrentSessionIndicator", () => ({
 
 vi.mock("../features/shell/MessageExportMenu", () => ({
   MessageExportMenu: () => <button type="button">Export</button>,
+  useMessageExporter: () => ({
+    exporting: null,
+    exportMessages: vi.fn(),
+  }),
 }));
 
 vi.mock("../features/shell/ObservabilityPanel", () => ({
@@ -161,6 +165,26 @@ describe("AppShell", () => {
       expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
     );
     expect(screen.getByTestId("timeline")).toBeVisible();
+  });
+
+  it("keeps secondary actions in a compact mobile topbar menu", async () => {
+    mockViewportMatch(true);
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "More actions" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "V1" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Observability" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(await screen.findByText("Observability")).toBeInTheDocument();
+    expect(screen.getByText("Export messages (HTML)")).toBeInTheDocument();
+    expect(screen.getByText("Export messages (PNG)")).toBeInTheDocument();
+    expect(screen.getByText("V1")).toBeInTheDocument();
   });
 
   it("resizes the sidebar from the keyboard-accessible separator", async () => {

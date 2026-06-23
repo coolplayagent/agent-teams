@@ -11,7 +11,7 @@ import {
 } from "./messageExport";
 import { useTranslations } from "../../i18n";
 
-interface MessageExportMessenger {
+export interface MessageExportMessenger {
   error(content: string): unknown;
   success(content: string): unknown;
   warning(content: string): unknown;
@@ -22,24 +22,19 @@ interface MessageExportMenuProps {
   sessionId: string | null;
 }
 
-export function MessageExportMenu({
+export interface MessageExporter {
+  exporting: MessageExportFormat | null;
+  exportMessages(format: MessageExportFormat): Promise<void>;
+}
+
+export function useMessageExporter({
   messenger,
   sessionId,
-}: MessageExportMenuProps) {
+}: MessageExportMenuProps): MessageExporter {
   const [exporting, setExporting] = useState<MessageExportFormat | null>(null);
   const t = useTranslations();
-  const exportMenuItems: MenuProps["items"] = [
-    {
-      key: "html",
-      label: t("exportAsHtml"),
-    },
-    {
-      key: "png",
-      label: t("exportAsPng"),
-    },
-  ];
 
-  const handleExport = async (format: MessageExportFormat): Promise<void> => {
+  const exportMessages = async (format: MessageExportFormat): Promise<void> => {
     if (sessionId === null) {
       void messenger.warning(t("exportSelectSession"));
       return;
@@ -70,12 +65,35 @@ export function MessageExportMenu({
     }
   };
 
+  return {
+    exporting,
+    exportMessages,
+  };
+}
+
+export function MessageExportMenu({
+  messenger,
+  sessionId,
+}: MessageExportMenuProps) {
+  const t = useTranslations();
+  const exporter = useMessageExporter({ messenger, sessionId });
+  const exportMenuItems: MenuProps["items"] = [
+    {
+      key: "html",
+      label: t("exportAsHtml"),
+    },
+    {
+      key: "png",
+      label: t("exportAsPng"),
+    },
+  ];
+
   return (
     <Dropdown
       menu={{
         items: exportMenuItems,
         onClick: ({ key }) => {
-          void handleExport(key === "png" ? "png" : "html");
+          void exporter.exportMessages(key === "png" ? "png" : "html");
         },
       }}
       placement="bottomRight"
@@ -85,7 +103,7 @@ export function MessageExportMenu({
         <Button
           aria-label={t("exportMessages")}
           icon={<Download size={17} />}
-          loading={exporting !== null}
+          loading={exporter.exporting !== null}
           type="text"
         />
       </Tooltip>

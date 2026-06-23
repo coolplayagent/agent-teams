@@ -5,12 +5,18 @@ import {
   Tooltip,
   theme,
   App,
+  Dropdown,
 } from "antd";
+import type { MenuProps } from "antd";
 import {
   Activity,
+  Download,
+  ExternalLink,
+  Languages,
   Menu,
   MessageSquare,
   Moon,
+  MoreHorizontal,
   RefreshCcw,
   Search,
   Settings,
@@ -27,7 +33,7 @@ import {
 } from "../../api/client";
 import { Composer } from "../composer/Composer";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
-import { MessageExportMenu } from "./MessageExportMenu";
+import { MessageExportMenu, useMessageExporter } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { RecoveryBar } from "../recovery/RecoveryBar";
 import { SessionTokenUsage } from "./SessionTokenUsage";
@@ -67,6 +73,10 @@ export function AppShell() {
   const setLanguage = useUiStore((state) => state.setLanguage);
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const isNarrowViewport = useNarrowViewport();
+  const messageExporter = useMessageExporter({
+    messenger: message,
+    sessionId: selectedSessionId,
+  });
 
   const healthQuery = useQuery({
     queryKey: ["server-health"],
@@ -142,6 +152,52 @@ export function AppShell() {
     ],
     [activeView, isNarrowViewport, setSidebarCollapsed, t],
   );
+  const mobileActionItems = useMemo<MenuProps["items"]>(
+    () => [
+      {
+        icon: <Languages size={15} />,
+        key: "language",
+        label:
+          language === "zh-CN" ? t("languageChinese") : t("languageEnglish"),
+      },
+      {
+        icon: <Activity size={15} />,
+        key: "observability",
+        label: t("appObservability"),
+      },
+      {
+        disabled: messageExporter.exporting !== null,
+        icon: <Download size={15} />,
+        key: "export-html",
+        label: `${t("exportMessages")} (${t("exportAsHtml")})`,
+      },
+      {
+        disabled: messageExporter.exporting !== null,
+        icon: <Download size={15} />,
+        key: "export-png",
+        label: `${t("exportMessages")} (${t("exportAsPng")})`,
+      },
+      {
+        icon: themeMode === "dark" ? <Sun size={15} /> : <Moon size={15} />,
+        key: "theme",
+        label: t("appToggleTheme"),
+      },
+      {
+        icon: <RefreshCcw size={15} />,
+        key: "health",
+        label: `${t("settingsServerStatus")}: ${healthLabel}`,
+      },
+      {
+        type: "divider",
+      },
+      {
+        icon: <ExternalLink size={15} />,
+        key: "v1",
+        label: "V1",
+      },
+    ],
+    [healthLabel, language, messageExporter.exporting, t, themeMode],
+  );
 
   useEffect(() => {
     if (isNarrowViewport) {
@@ -206,50 +262,88 @@ export function AppShell() {
           />
         </div>
         <Space size={8} className="at-topbar-right">
-          <Button
-            onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}
-            size="small"
-          >
-            {language === "zh-CN" ? t("languageChinese") : t("languageEnglish")}
-          </Button>
-          <Tooltip title={t("appObservability")}>
-            <Button
-              aria-label={t("appObservability")}
-              icon={<Activity size={17} />}
-              onClick={() => setActiveView("observability")}
-              type={activeView === "observability" ? "default" : "text"}
-            />
-          </Tooltip>
-          <MessageExportMenu messenger={message} sessionId={selectedSessionId} />
-          <Tooltip title={t("appSettings")}>
-            <Button
-              aria-label={t("appSettings")}
-              icon={<Settings size={17} />}
-              onClick={() => setSettingsOpen(true)}
-              type="text"
-            />
-          </Tooltip>
-          <Tooltip title={t("appToggleTheme")}>
-            <Button
-              aria-label={t("appToggleTheme")}
-              icon={themeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-              onClick={() => setThemeMode(themeMode === "dark" ? "light" : "dark")}
-              type="text"
-            />
-          </Tooltip>
-          <Button
-            className="at-health-button"
-            icon={<RefreshCcw size={15} />}
-            loading={healthQuery.isFetching}
-            onClick={() => queryClient.invalidateQueries({ queryKey: ["server-health"] })}
-            size="small"
-            style={{ borderColor: token.colorBorder }}
-          >
-            {healthLabel}
-          </Button>
-          <Button href="/" size="small">
-            V1
-          </Button>
+          {isNarrowViewport ? (
+            <>
+              <Tooltip title={t("appSettings")}>
+                <Button
+                  aria-label={t("appSettings")}
+                  icon={<Settings size={17} />}
+                  onClick={() => setSettingsOpen(true)}
+                  type="text"
+                />
+              </Tooltip>
+              <Dropdown
+                menu={{
+                  items: mobileActionItems,
+                  onClick: handleMobileActionClick,
+                }}
+                placement="bottomRight"
+                trigger={["click"]}
+              >
+                <Tooltip title={t("appMoreActions")}>
+                  <Button
+                    aria-label={t("appMoreActions")}
+                    icon={<MoreHorizontal size={17} />}
+                    loading={messageExporter.exporting !== null}
+                    type="text"
+                  />
+                </Tooltip>
+              </Dropdown>
+            </>
+          ) : (
+            <>
+              <Button
+                onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}
+                size="small"
+              >
+                {language === "zh-CN"
+                  ? t("languageChinese")
+                  : t("languageEnglish")}
+              </Button>
+              <Tooltip title={t("appObservability")}>
+                <Button
+                  aria-label={t("appObservability")}
+                  icon={<Activity size={17} />}
+                  onClick={() => setActiveView("observability")}
+                  type={activeView === "observability" ? "default" : "text"}
+                />
+              </Tooltip>
+              <MessageExportMenu messenger={message} sessionId={selectedSessionId} />
+              <Tooltip title={t("appSettings")}>
+                <Button
+                  aria-label={t("appSettings")}
+                  icon={<Settings size={17} />}
+                  onClick={() => setSettingsOpen(true)}
+                  type="text"
+                />
+              </Tooltip>
+              <Tooltip title={t("appToggleTheme")}>
+                <Button
+                  aria-label={t("appToggleTheme")}
+                  icon={themeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+                  onClick={() =>
+                    setThemeMode(themeMode === "dark" ? "light" : "dark")
+                  }
+                  type="text"
+                />
+              </Tooltip>
+              <Button
+                className="at-health-button"
+                icon={<RefreshCcw size={15} />}
+                loading={healthQuery.isFetching}
+                onClick={() =>
+                  queryClient.invalidateQueries({ queryKey: ["server-health"] })
+                }
+                size="small"
+                style={{ borderColor: token.colorBorder }}
+              >
+                {healthLabel}
+              </Button>
+              <Button href="/" size="small">
+                V1
+              </Button>
+            </>
+          )}
         </Space>
       </Header>
       <Layout className="at-body">
@@ -349,6 +443,37 @@ export function AppShell() {
   function closeSidebarOnNarrow() {
     if (isNarrowViewport) {
       setSidebarCollapsed(true);
+    }
+  }
+
+  function handleMobileActionClick({ key }: { key: string }) {
+    if (key === "language") {
+      setLanguage(language === "zh-CN" ? "en" : "zh-CN");
+      return;
+    }
+    if (key === "observability") {
+      setActiveView("observability");
+      closeSidebarOnNarrow();
+      return;
+    }
+    if (key === "export-html") {
+      void messageExporter.exportMessages("html");
+      return;
+    }
+    if (key === "export-png") {
+      void messageExporter.exportMessages("png");
+      return;
+    }
+    if (key === "theme") {
+      setThemeMode(themeMode === "dark" ? "light" : "dark");
+      return;
+    }
+    if (key === "health") {
+      void queryClient.invalidateQueries({ queryKey: ["server-health"] });
+      return;
+    }
+    if (key === "v1") {
+      window.location.assign("/");
     }
   }
 }

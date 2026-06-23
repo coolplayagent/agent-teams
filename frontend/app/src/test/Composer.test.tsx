@@ -549,6 +549,33 @@ describe("Composer", () => {
     );
   });
 
+  it("keeps the shell safety policy control disabled when general config fails", async () => {
+    getGeneralConfigMock.mockRejectedValue(new Error("general config failed"));
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const shellSafetyToggle = await screen.findByRole("checkbox", {
+      name: "Shell safety policy",
+    });
+    await waitFor(() => expect(shellSafetyToggle).toBeDisabled());
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Run with backend safety default" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0]).not.toHaveProperty(
+      "shell_safety_policy_enabled",
+    );
+  });
+
   it("queues an injection instead of creating a run while a run is active", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

@@ -293,10 +293,11 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Added a compact Composer shell safety policy toggle backed by the existing general config endpoint.
 - Sent the selected shell safety policy override with new AG-UI run creation requests.
 - Avoided sending a shell safety override before general config has loaded so backend defaults remain authoritative.
-- Added focused React coverage proving the Composer control sends the selected override and omits it while config is still loading.
+- Addressed reviewer `019ef33f-233c-7750-a53e-b7c29429b0bb` finding by keeping the Shell safety control disabled when general config fails to load.
+- Added focused React coverage proving the Composer control sends the selected override, omits it while config is still loading, and remains disabled on config failure.
 
 ### Verification
-- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 14 tests.
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 15 tests.
 - `npm run typecheck` in `frontend/app` passed.
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

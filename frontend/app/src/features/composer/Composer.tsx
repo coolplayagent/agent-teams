@@ -330,6 +330,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const canChangeModelProfile =
     sessionId !== null && sessionQuery.data !== undefined && !sessionQuery.isError;
   const isTopologyLocallyLocked = topologyLockQuery.data === true;
+  const canOverrideShellSafetyPolicy =
+    generalConfigQuery.data !== undefined && !generalConfigQuery.isError;
   const canChangeTopology =
     canChangeModelProfile &&
     activeRunId === null &&
@@ -512,7 +514,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           <Checkbox
             aria-label="Shell safety policy"
             checked={shellSafetyPolicyEnabled}
-            disabled={busy || activeRunId !== null || generalConfigQuery.isLoading}
+            disabled={
+              busy || activeRunId !== null || !canOverrideShellSafetyPolicy
+            }
             onChange={(event) =>
               setShellSafetyPolicyEnabled(event.target.checked)
             }

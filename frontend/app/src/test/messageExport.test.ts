@@ -105,6 +105,45 @@ describe("messageExport", () => {
     expect(html).toContain("URL: https://example.test/assets/asset-1");
   });
 
+  it("exports inline, url, and binary prompt media parts", () => {
+    const html = buildMessagesHtml("session-1", [
+      {
+        intent: "Describe these files",
+        intent_parts: [
+          { kind: "text", text: "Describe these files" },
+          {
+            base64_data: "QUJD",
+            kind: "inline_media",
+            mime_type: "image/png",
+            modality: "image",
+            name: "inline.png",
+          },
+          {
+            kind: "image-url",
+            media_type: "image/jpeg",
+            name: "remote.jpg",
+            url: "https://example.test/remote.jpg",
+          },
+          {
+            data: "UklGRg==",
+            kind: "binary",
+            media_type: "audio/wav",
+            name: "voice.wav",
+          },
+        ],
+        run_id: "run-1",
+      },
+    ]);
+
+    expect(html).toContain("Describe these files");
+    expect(html).toContain("[image: inline.png]");
+    expect(html).toContain("URL: data:image/png;base64,QUJD");
+    expect(html).toContain("[image: remote.jpg]");
+    expect(html).toContain("URL: https://example.test/remote.jpg");
+    expect(html).toContain("[audio: voice.wav]");
+    expect(html).toContain("URL: data:audio/wav;base64,UklGRg==");
+  });
+
   it("exports mixed text and media injection parts", () => {
     const html = buildMessagesHtml("session-1", [
       {

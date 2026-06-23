@@ -1,12 +1,15 @@
 import {
+  type BinaryMediaPart,
   contentPartText,
   type ContentMediaRefPart,
   type ContentPart,
+  type InlineMediaPart,
   type JsonValue,
   type LegacyContentMediaRefPart,
   type SessionRound,
   type SessionRoundMessage,
   type SessionRoundMessagePart,
+  type UrlMediaPart,
 } from "../../api/contracts";
 
 export type MessageExportFormat = "html" | "png";
@@ -351,6 +354,30 @@ function contentPartExportText(part: ContentPart): string | null {
       url: part.url,
     });
   }
+  if (isInlineMediaPart(part)) {
+    return mediaReferenceText({
+      mimeType: part.mime_type,
+      modality: part.modality || mediaTypeModality(part.mime_type),
+      name: part.name,
+      url: mediaDataUrl(part.mime_type, part.base64_data),
+    });
+  }
+  if (isBinaryMediaPart(part)) {
+    return mediaReferenceText({
+      mimeType: part.media_type,
+      modality: mediaTypeModality(part.media_type),
+      name: part.name,
+      url: mediaDataUrl(part.media_type, part.data),
+    });
+  }
+  if (isUrlMediaPart(part)) {
+    return mediaReferenceText({
+      mimeType: part.media_type,
+      modality: part.kind.replace("-url", ""),
+      name: part.name,
+      url: part.url,
+    });
+  }
   return null;
 }
 
@@ -362,6 +389,19 @@ function isLegacyContentMediaRefPart(
   part: ContentPart,
 ): part is LegacyContentMediaRefPart {
   return "part_kind" in part && part.part_kind === "media_ref";
+}
+
+function isInlineMediaPart(part: ContentPart): part is InlineMediaPart {
+  return "kind" in part && part.kind === "inline_media";
+}
+
+function isBinaryMediaPart(part: ContentPart): part is BinaryMediaPart {
+  return "kind" in part && part.kind === "binary";
+}
+
+function isUrlMediaPart(part: ContentPart): part is UrlMediaPart {
+  return "kind" in part
+    && (part.kind === "image-url" || part.kind === "audio-url" || part.kind === "video-url");
 }
 
 function layoutPngBlocks(
@@ -593,6 +633,32 @@ function mediaReferenceText({
     mimeType ? `Type: ${mimeType}` : "",
     url ? `URL: ${url}` : "",
   ].filter(Boolean).join("\n");
+}
+
+function mediaDataUrl(
+  mediaType: string | undefined,
+  data: string | undefined,
+): string | undefined {
+  const safeMediaType = normalizedText(mediaType);
+  const safeData = normalizedText(data);
+  if (!safeMediaType || !safeData) {
+    return undefined;
+  }
+  return `data:${safeMediaType};base64,${safeData}`;
+}
+
+function mediaTypeModality(mediaType: string | undefined): string {
+  const normalized = normalizedText(mediaType).toLowerCase();
+  if (normalized.startsWith("audio/")) {
+    return "audio";
+  }
+  if (normalized.startsWith("video/")) {
+    return "video";
+  }
+  if (normalized.startsWith("image/")) {
+    return "image";
+  }
+  return "media";
 }
 
 function jsonValueText(value: JsonValue): string {

@@ -130,11 +130,40 @@ export interface LegacyContentMediaRefPart {
   name?: string;
 }
 
+export interface InlineMediaPart {
+  base64_data?: string;
+  height?: number | null;
+  kind: "inline_media";
+  mime_type?: string;
+  modality?: string;
+  name?: string;
+  size_bytes?: number | null;
+  thumbnail_asset_id?: string | null;
+  width?: number | null;
+}
+
+export interface BinaryMediaPart {
+  data?: string;
+  kind: "binary";
+  media_type?: string;
+  name?: string;
+}
+
+export interface UrlMediaPart {
+  kind: "image-url" | "audio-url" | "video-url";
+  media_type?: string;
+  name?: string;
+  url?: string;
+}
+
 export type RunInputPart = ContentTextPart | ContentMediaRefPart;
 export type ContentPart =
   | RunInputPart
+  | BinaryMediaPart
+  | InlineMediaPart
   | LegacyContentTextPart
-  | LegacyContentMediaRefPart;
+  | LegacyContentMediaRefPart
+  | UrlMediaPart;
 
 export function contentPartText(part: ContentPart): string | null {
   if (isContentTextPart(part)) {

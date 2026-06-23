@@ -59,6 +59,38 @@ describe("SessionsSidebar", () => {
     expect(useUiStore.getState().selectedSessionId).toBe("session-new");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
   });
+
+  it("ignores a stale stored workspace id when creating a session", async () => {
+    useUiStore.setState({
+      selectedWorkspaceId: "missing-workspace",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([]);
+    createSessionMock.mockResolvedValue({
+      session_id: "session-new",
+      workspace_id: "workspace-1",
+    });
+
+    renderSidebar();
+
+    await screen.findByText("Agent Teams");
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+
+    await waitFor(() =>
+      expect(createSessionMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-1",
+      }),
+    );
+    expect(createSessionMock).not.toHaveBeenCalledWith({
+      workspace_id: "missing-workspace",
+    });
+  });
 });
 
 function renderSidebar() {

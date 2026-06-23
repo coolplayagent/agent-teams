@@ -124,3 +124,14 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 12 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Stale Workspace Regression Batch
+
+### Scope
+- Added a focused sidebar regression test proving stale stored workspace ids are ignored during new-session creation.
+- Covered the non-blocking reviewer follow-up from the session creation pass.
+
+### Verification
+- `npm run test -- --run SessionsSidebar.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run test -- --run` in `frontend/app` passed with 13 tests.
+- `npm run lint` in `frontend/app` passed.

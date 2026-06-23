@@ -145,8 +145,11 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await waitFor(() =>
+      expect(selectRoot("Model profile")).not.toHaveClass("ant-select-disabled"),
+    );
     fireEvent.mouseDown(
-      await screen.findByRole("combobox", { name: "Model profile" }),
+      screen.getByRole("combobox", { name: "Model profile" }),
     );
     fireEvent.click(await screen.findByText("precise - gpt-4.1"));
 
@@ -156,6 +159,69 @@ describe("Composer", () => {
         "precise",
       ),
     );
+  });
+
+  it("keeps model profile updates out of the sidebar cache namespace", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    getSessionMock.mockResolvedValue({
+      session_id: "sidebar",
+      workspace_id: "workspace-1",
+      normal_model_profile: null,
+    });
+    getModelProfilesMock.mockResolvedValue({
+      precise: {
+        model: "gpt-4.1",
+      },
+    });
+    const updatedSession = {
+      session_id: "sidebar",
+      workspace_id: "workspace-1",
+      normal_model_profile: "precise",
+    };
+    updateSessionNormalModelProfileMock.mockImplementation(async () => {
+      getSessionMock.mockResolvedValue(updatedSession);
+      return updatedSession;
+    });
+
+    const queryClient = renderComposer(runStreamController(), "sidebar");
+    const sidebarRows = [{ session_id: "sidebar", title: "Sidebar" }];
+    queryClient.setQueryData(["sessions", "sidebar"], sidebarRows);
+
+    await waitFor(() =>
+      expect(selectRoot("Model profile")).not.toHaveClass("ant-select-disabled"),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("combobox", { name: "Model profile" }),
+    );
+    fireEvent.click(await screen.findByText("precise - gpt-4.1"));
+
+    await waitFor(() =>
+      expect(updateSessionNormalModelProfileMock).toHaveBeenCalledWith(
+        "sidebar",
+        "precise",
+      ),
+    );
+    expect(queryClient.getQueryData(["sessions", "sidebar"])).toEqual(
+      sidebarRows,
+    );
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["sessions", "detail", "sidebar"])).toEqual(
+        updatedSession,
+      ),
+    );
+  });
+
+  it("disables the model profile selector until the session record loads", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    getSessionMock.mockReturnValue(new Promise(() => undefined));
+
+    renderComposer();
+
+    expect(selectRoot("Model profile")).toHaveClass("ant-select-disabled");
   });
 
   it("passes selected thinking settings to AG-UI run creation", async () => {
@@ -243,7 +309,10 @@ describe("Composer", () => {
   });
 });
 
-function renderComposer(controller = runStreamController()) {
+function renderComposer(
+  controller = runStreamController(),
+  sessionId = "session-1",
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -256,11 +325,12 @@ function renderComposer(controller = runStreamController()) {
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
-          <Composer runStreamController={controller} sessionId="session-1" />
+          <Composer runStreamController={controller} sessionId={sessionId} />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 function runStreamController(activeRunId: string | null = null): RunStreamController {
@@ -269,4 +339,12 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
   };
+}
+
+function selectRoot(label: string): HTMLElement {
+  const element = screen.getByRole("combobox", { name: label }).closest(".ant-select");
+  if (element === null) {
+    throw new Error(`${label} select root was not rendered.`);
+  }
+  return element as HTMLElement;
 }

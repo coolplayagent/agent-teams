@@ -52,6 +52,10 @@ interface ModelProfileOption {
   value: string;
 }
 
+function sessionDetailQueryKey(sessionId: string) {
+  return ["sessions", "detail", sessionId] as const;
+}
+
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -69,7 +73,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     staleTime: 30000,
   });
   const sessionQuery = useQuery({
-    queryKey: ["sessions", sessionId],
+    queryKey:
+      sessionId === null
+        ? ["sessions", "detail", null]
+        : sessionDetailQueryKey(sessionId),
     queryFn: () => {
       if (sessionId === null) {
         throw new Error("Session is required.");
@@ -92,11 +99,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       })),
     [roleOptionsQuery.data?.normal_mode_roles],
   );
-  const selectedModelProfile = normalizeProfileName(
-    sessionQuery.data?.normal_model_profile,
-  );
+  const selectedModelProfile =
+    sessionQuery.data === undefined
+      ? null
+      : normalizeProfileName(sessionQuery.data.normal_model_profile);
   const modelProfileOptions = useMemo(
-    () => buildModelProfileOptions(modelProfilesQuery.data, selectedModelProfile),
+    () => buildModelProfileOptions(modelProfilesQuery.data, selectedModelProfile ?? ""),
     [modelProfilesQuery.data, selectedModelProfile],
   );
 
@@ -180,8 +188,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       );
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(["sessions", updated.session_id], updated);
-      void queryClient.invalidateQueries({ queryKey: ["sessions", updated.session_id] });
+      queryClient.setQueryData(sessionDetailQueryKey(updated.session_id), updated);
+      void queryClient.invalidateQueries({
+        queryKey: sessionDetailQueryKey(updated.session_id),
+      });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       void message.success(
         updated.normal_model_profile
@@ -204,6 +214,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const canCreateRun =
     sessionId !== null && activeRunId === null && draft.trim().length > 0 && !busy;
   const canInject = activeRunId !== null && draft.trim().length > 0 && !busy;
+  const canChangeModelProfile =
+    sessionId !== null && sessionQuery.data !== undefined && !sessionQuery.isError;
 
   return (
     <form
@@ -261,7 +273,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             allowClear
             aria-label="Model profile"
             className="at-model-profile-select"
-            disabled={busy || activeRunId !== null || sessionId === null}
+            disabled={busy || activeRunId !== null || !canChangeModelProfile}
             loading={
               sessionQuery.isLoading ||
               modelProfilesQuery.isLoading ||
@@ -269,7 +281,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             }
             onChange={(value) => {
               const nextProfile = normalizeProfileName(value);
-              if (nextProfile !== selectedModelProfile) {
+              if (
+                selectedModelProfile !== null &&
+                nextProfile !== selectedModelProfile
+              ) {
                 updateModelProfileMutation.mutate(nextProfile);
               }
             }}
@@ -279,7 +294,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             popupMatchSelectWidth={false}
             showSearch
             size="small"
-            value={selectedModelProfile}
+            value={selectedModelProfile ?? undefined}
           />
           <Space className="at-thinking-control" size={6}>
             <Typography.Text className="at-control-label" id="at-thinking-label">

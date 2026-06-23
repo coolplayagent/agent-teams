@@ -236,3 +236,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 22 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Composer Model Profile Reviewer Remediation Batch
+
+### Scope
+- Addressed reviewer `019ef2b6-51d7-7e12-8a25-c9f6140ad6ee` finding where the session detail query key could collide with the sidebar cache namespace.
+- Namespaced session detail cache entries under `["sessions", "detail", session_id]`.
+- Disabled the model profile selector until the selected session record has loaded so an unknown profile value is not briefly treated as Default.
+- Added focused React regressions for the `sidebar` session id cache collision and loading-state selector lockout.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 7 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 24 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

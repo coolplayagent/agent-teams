@@ -6,6 +6,8 @@ import {
   listSessionRounds,
   listWorkspaces,
   openWorkspaceRoot,
+  saveNotificationConfig,
+  saveWebConfig,
   stopBackgroundTask,
 } from "../api/client";
 
@@ -171,6 +173,72 @@ describe("api client", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("saves Web and notification settings through their system config endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      saveWebConfig({
+        exa_api_key: "secret",
+        fallback_provider: "searxng",
+        provider: "exa",
+        searxng_instance_url: "https://search.example/",
+      }),
+    ).resolves.toEqual({ status: "ok" });
+    await expect(
+      saveNotificationConfig({
+        monitor_triggered: {
+          channels: ["browser", "toast"],
+          enabled: true,
+        },
+        run_completed: {
+          channels: ["feishu", "toast"],
+          enabled: true,
+        },
+        run_failed: {
+          channels: ["browser", "toast"],
+          enabled: true,
+        },
+        run_stopped: {
+          channels: ["toast"],
+          enabled: false,
+        },
+        tool_approval_requested: {
+          channels: ["browser", "toast"],
+          enabled: true,
+        },
+      }),
+    ).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/web",
+      expect.objectContaining({
+        body: JSON.stringify({
+          exa_api_key: "secret",
+          fallback_provider: "searxng",
+          provider: "exa",
+          searxng_instance_url: "https://search.example/",
+        }),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/notifications",
+      expect.objectContaining({
+        body: expect.stringContaining('"config"'),
+        method: "PUT",
       }),
     );
   });

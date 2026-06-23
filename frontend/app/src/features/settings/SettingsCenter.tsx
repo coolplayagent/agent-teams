@@ -1,17 +1,14 @@
 import {
-  Alert,
   App,
   Button,
   Form,
   Segmented,
-  Skeleton,
   Switch,
   Typography,
 } from "antd";
 import type { FormInstance } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 
 import {
   getGeneralConfig,
@@ -31,14 +28,19 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
+import { NotificationSettingsSection } from "./NotificationSettingsSection";
+import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import { WebSettingsSection } from "./WebSettingsSection";
 
 type SettingsSection =
   | "appearance"
   | "general"
+  | "notifications"
   | "roles"
   | "models"
   | "orchestration"
-  | "system";
+  | "system"
+  | "web";
 
 interface SettingsCenterProps {
   open: boolean;
@@ -101,9 +103,11 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
     () => [
       { key: "appearance" as const, label: t("settingsAppearance") },
       { key: "general" as const, label: t("settingsGeneral") },
+      { key: "notifications" as const, label: t("settingsNotifications") },
       { key: "models" as const, label: t("settingsModels") },
       { key: "roles" as const, label: t("settingsRoles") },
       { key: "orchestration" as const, label: t("settingsOrchestration") },
+      { key: "web" as const, label: t("settingsWeb") },
       { key: "system" as const, label: t("settingsSystem") },
     ],
     [t],
@@ -146,6 +150,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             saving={saveMutation.isPending}
           />
         ) : null}
+        {activeSection === "notifications" ? <NotificationSettingsSection /> : null}
         {activeSection === "roles" ? (
           <SettingsRoles
             error={rolesQuery.error}
@@ -167,6 +172,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             loading={orchestrationQuery.isLoading}
           />
         ) : null}
+        {activeSection === "web" ? <WebSettingsSection /> : null}
         {activeSection === "system" ? (
           <SettingsSystem
             error={healthQuery.error}
@@ -404,46 +410,6 @@ function SettingsSystem({
       ) : null}
     </SettingsSection>
   );
-}
-
-function SettingsSection({
-  children,
-  title,
-}: {
-  children: ReactNode;
-  title: string;
-}) {
-  return (
-    <div className="at-settings-section">
-      <div className="at-settings-section-header">
-        <Typography.Title level={3}>{title}</Typography.Title>
-      </div>
-      <div className="at-settings-section-body">{children}</div>
-    </div>
-  );
-}
-
-function SettingsQueryState({
-  error,
-  loading,
-}: {
-  error: Error | null;
-  loading: boolean;
-}) {
-  const t = useTranslations();
-  if (loading) {
-    return <Skeleton active paragraph={{ rows: 6 }} />;
-  }
-  if (error !== null) {
-    return (
-      <Alert
-        message={error.message || t("settingsLoadFailed")}
-        showIcon
-        type="error"
-      />
-    );
-  }
-  return null;
 }
 
 function SettingsList({

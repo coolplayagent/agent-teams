@@ -636,6 +636,33 @@ export interface GeneralConfig {
   shell_safety_policy_enabled: boolean;
 }
 
+export type WebProvider = "exa";
+export type WebFallbackProvider = "disabled" | "searxng";
+
+export interface WebConfig {
+  exa_api_key?: string | null;
+  fallback_provider?: WebFallbackProvider | null;
+  provider: WebProvider;
+  searxng_instance_seeds?: string[];
+  searxng_instance_url?: string | null;
+}
+
+export type NotificationChannel = "browser" | "feishu" | "toast";
+export type NotificationTypeId =
+  | "monitor_triggered"
+  | "run_completed"
+  | "run_failed"
+  | "run_stopped"
+  | "tool_approval_requested";
+
+export interface NotificationRule {
+  channels: NotificationChannel[];
+  enabled: boolean;
+  feishu_format?: string;
+}
+
+export type NotificationConfig = Record<NotificationTypeId, NotificationRule>;
+
 export interface ObservabilityOverview {
   updated_at?: string;
   scope?: string;

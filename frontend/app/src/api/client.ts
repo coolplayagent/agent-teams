@@ -4,6 +4,7 @@ import type {
   RunInjectionRequest,
   JsonValue,
   ModelProfilesPayload,
+  NotificationConfig,
   OrchestrationConfig,
   ObservabilityBreakdowns,
   ObservabilityOverview,
@@ -27,6 +28,7 @@ import type {
   WorkspaceRecord,
   WorkspaceDiffListing,
   WorkspaceSnapshot,
+  WebConfig,
 } from "./contracts";
 import { requestJson } from "./http";
 
@@ -78,6 +80,30 @@ export function getModelProfiles(): Promise<ModelProfilesPayload> {
 
 export function getOrchestrationConfig(): Promise<OrchestrationConfig> {
   return requestJson<OrchestrationConfig>("/system/configs/orchestration");
+}
+
+export function getWebConfig(): Promise<WebConfig> {
+  return requestJson<WebConfig>("/system/configs/web");
+}
+
+export function saveWebConfig(config: WebConfig): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/web", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export function getNotificationConfig(): Promise<NotificationConfig> {
+  return requestJson<NotificationConfig>("/system/configs/notifications");
+}
+
+export function saveNotificationConfig(
+  config: NotificationConfig,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/notifications", {
+    method: "PUT",
+    body: JSON.stringify({ config }),
+  });
 }
 
 export function listSidebarSessions(forceRefresh = false): Promise<SessionSidebarRecord[]> {

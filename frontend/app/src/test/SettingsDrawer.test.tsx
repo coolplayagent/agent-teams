@@ -15,9 +15,13 @@ import {
   getGeneralConfig,
   getHealth,
   getModelProfiles,
+  getNotificationConfig,
   getOrchestrationConfig,
   getRoleConfigOptions,
+  getWebConfig,
   saveGeneralConfig,
+  saveNotificationConfig,
+  saveWebConfig,
 } from "../api/client";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
 import { useUiStore } from "../runtime/uiStore";
@@ -26,17 +30,25 @@ vi.mock("../api/client", () => ({
   getGeneralConfig: vi.fn(),
   getHealth: vi.fn(),
   getModelProfiles: vi.fn(),
+  getNotificationConfig: vi.fn(),
   getOrchestrationConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
+  getWebConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
+  saveNotificationConfig: vi.fn(),
+  saveWebConfig: vi.fn(),
 }));
 
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getHealthMock = vi.mocked(getHealth);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
+const getNotificationConfigMock = vi.mocked(getNotificationConfig);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
+const getWebConfigMock = vi.mocked(getWebConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
+const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
+const saveWebConfigMock = vi.mocked(saveWebConfig);
 
 beforeEach(() => {
   getGeneralConfigMock.mockResolvedValue({ shell_safety_policy_enabled: true });
@@ -75,6 +87,28 @@ beforeEach(() => {
       },
     ],
   });
+  getNotificationConfigMock.mockResolvedValue({
+    monitor_triggered: {
+      channels: ["browser", "toast"],
+      enabled: true,
+    },
+    run_completed: {
+      channels: ["toast", "feishu"],
+      enabled: true,
+    },
+    run_failed: {
+      channels: ["browser", "toast", "feishu"],
+      enabled: true,
+    },
+    run_stopped: {
+      channels: ["toast"],
+      enabled: false,
+    },
+    tool_approval_requested: {
+      channels: ["browser", "toast"],
+      enabled: true,
+    },
+  });
   getRoleConfigOptionsMock.mockResolvedValue({
     coordinator_role: {
       name: "Coordinator",
@@ -104,7 +138,16 @@ beforeEach(() => {
       },
     ],
   });
+  getWebConfigMock.mockResolvedValue({
+    exa_api_key: "saved-exa-key",
+    fallback_provider: "searxng",
+    provider: "exa",
+    searxng_instance_seeds: ["https://search.example/"],
+    searxng_instance_url: "https://search.example/",
+  });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
+  saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
+  saveWebConfigMock.mockResolvedValue({ status: "ok" });
   useUiStore.setState({
     language: "en",
     themeMode: "light",
@@ -125,9 +168,11 @@ describe("SettingsDrawer", () => {
     const sections = screen.getByRole("navigation", { name: "Settings sections" });
     expect(within(sections).getByRole("button", { name: "Appearance" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "General" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Notifications" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Models" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Roles" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Orchestration" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Web" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "System" })).toBeVisible();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
@@ -150,6 +195,14 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(sections).getByRole("button", { name: "System" }));
     expect(await screen.findByText("2.0-test")).toBeVisible();
     expect(screen.getByText("database")).toBeVisible();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
+    expect(await screen.findByText("https://search.example/")).toBeVisible();
+    expect(getWebConfigMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Notifications" }));
+    expect(await screen.findByText("Run completed")).toBeVisible();
+    expect(getNotificationConfigMock).toHaveBeenCalledTimes(1);
   });
 
   it("saves the general shell policy through the real general config client", async () => {
@@ -181,6 +234,58 @@ describe("SettingsDrawer", () => {
 
     fireEvent.click(screen.getByText("中文"));
     expect(useUiStore.getState().language).toBe("zh-CN");
+  });
+
+  it("saves web settings while preserving the saved Exa key when the key field is blank", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
+
+    const searxngUrl = await screen.findByLabelText("SearXNG instance URL");
+    fireEvent.change(searxngUrl, {
+      target: { value: "https://search.changed.example/" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveWebConfigMock).toHaveBeenCalledWith({
+        exa_api_key: "saved-exa-key",
+        fallback_provider: "searxng",
+        provider: "exa",
+        searxng_instance_url: "https://search.changed.example/",
+      }),
+    );
+  });
+
+  it("saves notification settings without dropping hidden delivery channels", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Notifications" }));
+
+    const runCompleted = await screen.findByText("Run completed");
+    const row = runCompleted.closest(".at-notification-row");
+    if (!(row instanceof HTMLElement)) {
+      throw new Error("Run completed notification row was not rendered.");
+    }
+    fireEvent.click(within(row).getByLabelText("Browser"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveNotificationConfigMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          run_completed: expect.objectContaining({
+            channels: ["feishu", "browser", "toast"],
+            enabled: true,
+          }),
+        }),
+      ),
+    );
   });
 });
 

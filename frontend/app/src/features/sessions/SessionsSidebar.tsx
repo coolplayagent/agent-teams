@@ -45,19 +45,30 @@ export function SessionsSidebar() {
       })),
     [workspacesQuery.data],
   );
-  const effectiveWorkspaceId =
-    selectedWorkspaceId ?? workspaceOptions[0]?.value ?? "default";
+  const loadedWorkspaceIds = useMemo(
+    () => new Set((workspacesQuery.data ?? []).map((item) => item.workspace_id)),
+    [workspacesQuery.data],
+  );
+  const selectedLoadedWorkspaceId =
+    selectedWorkspaceId !== null && loadedWorkspaceIds.has(selectedWorkspaceId)
+      ? selectedWorkspaceId
+      : null;
+  const effectiveWorkspaceId = selectedLoadedWorkspaceId ?? workspaceOptions[0]?.value ?? "";
 
   useEffect(() => {
-    const workspaceIds = new Set((workspacesQuery.data ?? []).map((item) => item.workspace_id));
     const firstWorkspaceId = workspacesQuery.data?.[0]?.workspace_id;
     if (firstWorkspaceId === undefined) {
       return;
     }
-    if (selectedWorkspaceId === null || !workspaceIds.has(selectedWorkspaceId)) {
+    if (selectedWorkspaceId === null || !loadedWorkspaceIds.has(selectedWorkspaceId)) {
       setSelectedWorkspaceId(firstWorkspaceId);
     }
-  }, [selectedWorkspaceId, setSelectedWorkspaceId, workspacesQuery.data]);
+  }, [
+    loadedWorkspaceIds,
+    selectedWorkspaceId,
+    setSelectedWorkspaceId,
+    workspacesQuery.data,
+  ]);
 
   const createSessionMutation = useMutation({
     mutationFn: () => createSession({ workspace_id: effectiveWorkspaceId }),
@@ -128,7 +139,7 @@ export function SessionsSidebar() {
         placeholder="Workspace"
         showSearch
         size="small"
-        value={selectedWorkspaceId ?? undefined}
+        value={selectedLoadedWorkspaceId ?? undefined}
       />
       {sessionsQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
       {sessionsQuery.isError ? (

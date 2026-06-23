@@ -38,6 +38,24 @@ export interface SessionCreateRequest {
   } | null;
 }
 
+export interface RoleOption {
+  role_id: string;
+  name: string;
+  description?: string;
+  model_profile?: string;
+  model_name?: string;
+  input_modalities?: string[];
+}
+
+export interface RoleConfigOptions {
+  coordinator_role_id?: string;
+  main_agent_role_id?: string;
+  coordinator_role?: RoleOption | null;
+  main_agent_role?: RoleOption | null;
+  normal_mode_roles: RoleOption[];
+  subagent_roles?: RoleOption[];
+}
+
 export interface SessionSidebarRecord {
   session_id: string;
   workspace_id?: string;

@@ -93,3 +93,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 10 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- Reviewer subagent `019ef270-912a-78f2-8661-e656893d31fd` passed re-review of the recovery interaction fixes and session creation flow.
+
+## 2026-06-23 Composer Target Role Batch
+
+### Scope
+- Added React API contracts and client support for `/api/roles:options`.
+- Added a compact composer target-role selector backed by normal-mode role options.
+- Sent the selected `target_role_id` through AG-UI run creation.
+- Tightened workspace selection so stale local storage cannot briefly drive new-session creation before loaded workspace options are validated.
+- Added focused React coverage for target-role run creation.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 11 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

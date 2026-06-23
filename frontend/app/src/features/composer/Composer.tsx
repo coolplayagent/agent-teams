@@ -1,11 +1,11 @@
-import { App, Button, Checkbox, Space, Tooltip } from "antd";
+import { App, Button, Checkbox, Select, Space, Tooltip } from "antd";
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
-import { useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createRun, stopRun } from "../../api/client";
+import { createRun, getRoleConfigOptions, stopRun } from "../../api/client";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 
 interface ComposerProps {
@@ -19,7 +19,21 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const inputRef = useRef<SenderRef | null>(null);
   const [draft, setDraft] = useState("");
   const [yolo, setYolo] = useState(true);
+  const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
   const activeRunId = runStreamController.activeRunId;
+  const roleOptionsQuery = useQuery({
+    queryKey: ["roles", "options"],
+    queryFn: getRoleConfigOptions,
+    staleTime: 30000,
+  });
+  const roleOptions = useMemo(
+    () =>
+      (roleOptionsQuery.data?.normal_mode_roles ?? []).map((role) => ({
+        label: role.name || role.role_id,
+        value: role.role_id,
+      })),
+    [roleOptionsQuery.data?.normal_mode_roles],
+  );
 
   const createRunMutation = useMutation({
     mutationFn: async () => {
@@ -30,6 +44,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         session_id: sessionId,
         input: [{ kind: "text", text: draft.trim() }],
         display_input: [{ kind: "text", text: draft.trim() }],
+        target_role_id: targetRoleId,
         yolo,
       });
     },
@@ -100,6 +115,20 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       />
       <div className="at-composer-controls">
         <Space size={8}>
+          <Select
+            allowClear
+            aria-label="Target role"
+            className="at-role-select"
+            disabled={busy || activeRunId !== null}
+            loading={roleOptionsQuery.isLoading}
+            onChange={(value) => setTargetRoleId(value ?? null)}
+            optionFilterProp="label"
+            options={roleOptions}
+            placeholder="Role"
+            showSearch
+            size="small"
+            value={targetRoleId ?? undefined}
+          />
           <Checkbox checked={yolo} onChange={(event) => setYolo(event.target.checked)}>
             YOLO
           </Checkbox>

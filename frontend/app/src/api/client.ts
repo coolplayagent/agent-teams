@@ -4,6 +4,7 @@ import type {
   ObservabilityBreakdowns,
   ObservabilityOverview,
   RecoverySnapshot,
+  RoleConfigOptions,
   RunCreateRequest,
   RunCreateResponse,
   ServerHealthPayload,
@@ -27,6 +28,10 @@ export async function listWorkspaces(): Promise<WorkspaceRecord[]> {
     "/workspaces?limit=200",
   );
   return Array.isArray(payload) ? payload : payload.items;
+}
+
+export function getRoleConfigOptions(): Promise<RoleConfigOptions> {
+  return requestJson<RoleConfigOptions>("/roles:options");
 }
 
 export function listSidebarSessions(forceRefresh = false): Promise<SessionSidebarRecord[]> {

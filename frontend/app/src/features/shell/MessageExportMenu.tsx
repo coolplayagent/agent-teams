@@ -3,7 +3,8 @@ import type { MenuProps } from "antd";
 import { Download } from "lucide-react";
 import { useState } from "react";
 
-import { listSessionMessages } from "../../api/client";
+import { listSessionRounds } from "../../api/client";
+import type { SessionRound } from "../../api/contracts";
 import {
   exportSessionMessages,
   type MessageExportFormat,
@@ -45,10 +46,10 @@ export function MessageExportMenu({
 
     setExporting(format);
     try {
-      const messages = await listSessionMessages(sessionId);
+      const rounds = await collectCompleteSessionRounds(sessionId);
       const fileCount = await exportSessionMessages({
         format,
-        messages,
+        rounds,
         sessionId,
       });
       const label = format === "html" ? "HTML" : "PNG";
@@ -85,6 +86,47 @@ export function MessageExportMenu({
       </Tooltip>
     </Dropdown>
   );
+}
+
+async function collectCompleteSessionRounds(sessionId: string): Promise<SessionRound[]> {
+  const rounds: SessionRound[] = [];
+  let cursorRunId: string | null = null;
+  let hasMore = true;
+  while (hasMore) {
+    const page = await listSessionRounds(sessionId, {
+      cursorRunId,
+      limit: 50,
+    });
+    rounds.push(...page.items);
+    hasMore = page.has_more === true && page.items.length > 0;
+    cursorRunId = hasMore ? page.next_cursor ?? null : null;
+    if (hasMore && cursorRunId === null) {
+      break;
+    }
+  }
+  return sortRoundsAscending(uniqueRoundsByRunId(rounds));
+}
+
+function uniqueRoundsByRunId(rounds: SessionRound[]): SessionRound[] {
+  const byRunId = new Map<string, SessionRound>();
+  for (const round of rounds) {
+    const runId = round.run_id.trim();
+    if (runId && !byRunId.has(runId)) {
+      byRunId.set(runId, round);
+    }
+  }
+  return Array.from(byRunId.values());
+}
+
+function sortRoundsAscending(rounds: SessionRound[]): SessionRound[] {
+  return [...rounds].sort((left, right) =>
+    sortableTimestamp(left.created_at) - sortableTimestamp(right.created_at),
+  );
+}
+
+function sortableTimestamp(value: string | undefined): number {
+  const timestamp = Date.parse(value ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function exportErrorMessage(error: unknown): string {

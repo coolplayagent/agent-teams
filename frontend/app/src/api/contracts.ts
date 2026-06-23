@@ -209,6 +209,71 @@ export interface TimelineMessage {
   entry_type?: string;
 }
 
+export interface SessionRoundMessagePart {
+  args?: JsonValue;
+  content?: JsonValue;
+  is_error?: boolean;
+  kind?: string;
+  modality?: string;
+  mime_type?: string;
+  name?: string;
+  part_kind?: string;
+  text?: string;
+  tool_call_id?: string;
+  tool_name?: string;
+  url?: string;
+}
+
+export interface SessionRoundMessageBody {
+  parts?: SessionRoundMessagePart[];
+}
+
+export interface SessionRoundMessage {
+  content?: string;
+  content_parts?: ContentPart[];
+  created_at?: string;
+  entry_type?: string;
+  injection_id?: string;
+  injection_status?: string;
+  instance_id?: string;
+  label?: string;
+  message?: SessionRoundMessageBody;
+  message_id?: string;
+  role?: string;
+  role_id?: string;
+  source?: string;
+  status?: string;
+}
+
+export interface SessionRound {
+  clear_marker_before?: JsonValue;
+  compaction_marker_before?: JsonValue;
+  coordinator_messages?: SessionRoundMessage[];
+  created_at?: string;
+  has_final_output?: boolean;
+  has_user_messages?: boolean;
+  injection_messages?: SessionRoundMessage[];
+  intent?: string;
+  intent_parts?: ContentPart[];
+  pending_tool_approval_count?: number;
+  pending_tool_approvals?: JsonValue[];
+  primary_role_id?: string | null;
+  retry_events?: JsonValue[];
+  run_diagnostic_message?: string | null;
+  run_error_code?: string | null;
+  run_id: string;
+  run_phase?: string | null;
+  run_status?: string | null;
+  run_user_message?: string | null;
+  verification_status?: string | null;
+}
+
+export interface SessionRoundsPage {
+  has_more?: boolean;
+  items: SessionRound[];
+  next_cursor?: string | null;
+}
+
 export interface TokenUsageRoleSummary {
   role_id: string;
   input_tokens: number;

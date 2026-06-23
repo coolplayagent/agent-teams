@@ -10,21 +10,57 @@ afterEach(() => {
 });
 
 describe("messageExport", () => {
-  it("builds escaped standalone HTML from message content and parts", () => {
+  it("builds escaped standalone HTML from complete round projections", () => {
     const html = buildMessagesHtml("session/<one>", [
       {
-        role_id: "Writer",
-        parts: [
-          { kind: "text", text: "First part" },
-          { part_kind: "text", content: "<script>alert(1)</script>" },
+        coordinator_messages: [
+          {
+            message: {
+              parts: [
+                { part_kind: "text", content: "First part" },
+                {
+                  args: { cmd: "npm test" },
+                  part_kind: "tool-call",
+                  tool_call_id: "tool-1",
+                  tool_name: "execute_command",
+                },
+                {
+                  content: "<script>alert(1)</script>",
+                  part_kind: "tool-return",
+                  tool_call_id: "tool-1",
+                  tool_name: "execute_command",
+                },
+              ],
+            },
+            role_id: "Writer",
+          },
         ],
+        created_at: "2026-06-23T01:00:00Z",
+        has_final_output: true,
+        injection_messages: [
+          {
+            content: "Injected note",
+            created_at: "2026-06-23T01:00:01Z",
+            source: "user",
+          },
+        ],
+        intent_parts: [{ kind: "text", text: "User prompt" }],
+        run_id: "run-1",
+        run_phase: "completed",
+        run_status: "completed",
       },
     ]);
 
     expect(html).toContain("session/&lt;one&gt;");
+    expect(html).toContain("Round 1 prompt");
+    expect(html).toContain("User prompt");
     expect(html).toContain("Writer");
     expect(html).toContain("First part");
+    expect(html).toContain("Tool call: execute_command");
+    expect(html).toContain("&quot;cmd&quot;: &quot;npm test&quot;");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).toContain("User injection");
+    expect(html).toContain("Injected note");
   });
 
   it("downloads the HTML transcript", async () => {
@@ -35,7 +71,17 @@ describe("messageExport", () => {
 
     await exportSessionMessages({
       format: "html",
-      messages: [{ role: "assistant", content: "Done" }],
+      rounds: [
+        {
+          coordinator_messages: [
+            {
+              message: { parts: [{ part_kind: "text", content: "Done" }] },
+              role: "assistant",
+            },
+          ],
+          run_id: "run-1",
+        },
+      ],
       sessionId: "session one",
     });
 
@@ -46,31 +92,21 @@ describe("messageExport", () => {
   });
 
   it("renders and downloads a PNG transcript through canvas", async () => {
-    const createObjectUrl = mockDownloadUrl();
-    const fillText = vi.fn();
-    const context = fakeCanvasContext(fillText);
-    const getCanvasContext = ((
-      contextId: string,
-    ): RenderingContext | null => {
-      return contextId === "2d" ? context : null;
-    }) as HTMLCanvasElement["getContext"];
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
-      getCanvasContext,
-    );
-    const toBlob = vi.fn((callback: BlobCallback, type?: string) => {
-      callback(new Blob(["png"], { type: type ?? "image/png" }));
-    });
-    Object.defineProperty(HTMLCanvasElement.prototype, "toBlob", {
-      configurable: true,
-      value: toBlob,
-    });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
-      () => undefined,
-    );
+    const { createObjectUrl, fillText, toBlob } = mockCanvasDownloads();
 
     await exportSessionMessages({
       format: "png",
-      messages: [{ role_id: "MainAgent", content: "Rendered content" }],
+      rounds: [
+        {
+          coordinator_messages: [
+            {
+              message: { parts: [{ part_kind: "text", content: "Rendered content" }] },
+              role_id: "MainAgent",
+            },
+          ],
+          run_id: "run-1",
+        },
+      ],
       sessionId: "session-1",
     });
 
@@ -85,7 +121,58 @@ describe("messageExport", () => {
       expect.any(Number),
     );
   });
+
+  it("splits oversized PNG transcripts into multiple downloads", async () => {
+    const { createObjectUrl, toBlob } = mockCanvasDownloads();
+    const longContent = Array.from({ length: 700 }, (_, index) => `line ${index}`)
+      .join("\n");
+
+    const fileCount = await exportSessionMessages({
+      format: "png",
+      rounds: [
+        {
+          coordinator_messages: [
+            {
+              message: { parts: [{ part_kind: "text", content: longContent }] },
+              role_id: "MainAgent",
+            },
+          ],
+          run_id: "run-1",
+        },
+      ],
+      sessionId: "session-1",
+    });
+
+    expect(fileCount).toBeGreaterThan(1);
+    expect(toBlob).toHaveBeenCalledTimes(fileCount);
+    expect(createObjectUrl).toHaveBeenCalledTimes(fileCount);
+  });
 });
+
+function mockCanvasDownloads() {
+  const createObjectUrl = mockDownloadUrl();
+  const fillText = vi.fn();
+  const context = fakeCanvasContext(fillText);
+  const getCanvasContext = ((
+    contextId: string,
+  ): RenderingContext | null => {
+    return contextId === "2d" ? context : null;
+  }) as HTMLCanvasElement["getContext"];
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+    getCanvasContext,
+  );
+  const toBlob = vi.fn((callback: BlobCallback, type?: string) => {
+    callback(new Blob(["png"], { type: type ?? "image/png" }));
+  });
+  Object.defineProperty(HTMLCanvasElement.prototype, "toBlob", {
+    configurable: true,
+    value: toBlob,
+  });
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+    () => undefined,
+  );
+  return { createObjectUrl, fillText, toBlob };
+}
 
 function mockDownloadUrl() {
   const createObjectUrl = vi.fn((_: Blob | MediaSource) => "blob:export");

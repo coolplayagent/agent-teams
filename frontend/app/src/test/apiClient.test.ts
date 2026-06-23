@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { listWorkspaces, stopBackgroundTask } from "../api/client";
+import { listSessionRounds, listWorkspaces, stopBackgroundTask } from "../api/client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -68,6 +68,32 @@ describe("api client", () => {
       "/api/runs/run-1/background-tasks/background-task-1:stop",
       expect.objectContaining({
         method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("lists session rounds through the paginated rounds endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          has_more: false,
+          items: [{ run_id: "run-1" }],
+          next_cursor: null,
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listSessionRounds("session-1", { cursorRunId: "run-2", limit: 50 }),
+    ).resolves.toMatchObject({
+      items: [{ run_id: "run-1" }],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sessions/session-1/rounds?limit=50&cursor_run_id=run-2",
+      expect.objectContaining({
         headers: expect.any(Headers),
       }),
     );

@@ -11,6 +11,8 @@ import type {
   RoleConfigOptions,
   RunCreateRequest,
   RunCreateResponse,
+  SessionRound,
+  SessionRoundsPage,
   SessionTokenUsage,
   ServerHealthPayload,
   SessionCreateRequest,
@@ -103,6 +105,35 @@ export function listSessionMessages(sessionId: string): Promise<TimelineMessage[
   return requestJson<TimelineMessage[]>(
     `/sessions/${encodeURIComponent(sessionId)}/messages`,
   );
+}
+
+export async function listSessionRounds(
+  sessionId: string,
+  options: {
+    cursorRunId?: string | null;
+    forceRefresh?: boolean;
+    limit?: number;
+  } = {},
+): Promise<SessionRoundsPage> {
+  const params = new URLSearchParams();
+  params.set("limit", String(options.limit ?? 50));
+  if (options.cursorRunId) {
+    params.set("cursor_run_id", options.cursorRunId);
+  }
+  if (options.forceRefresh === true) {
+    params.set("force_refresh", "true");
+  }
+  const payload = await requestJson<SessionRound[] | SessionRoundsPage>(
+    `/sessions/${encodeURIComponent(sessionId)}/rounds?${params.toString()}`,
+  );
+  if (Array.isArray(payload)) {
+    return {
+      has_more: false,
+      items: payload,
+      next_cursor: null,
+    };
+  }
+  return payload;
 }
 
 export function getSessionTokenUsage(

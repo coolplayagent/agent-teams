@@ -59,6 +59,23 @@ describe("SessionTokenUsage", () => {
     expect(screen.queryByText("1k / 2k")).not.toBeInTheDocument();
   });
 
+  it("falls back to MainAgent context when no primary role is provided", async () => {
+    getSessionTokenUsageMock.mockResolvedValue(
+      usage({
+        input: 900,
+        output: 500,
+        total: 1400,
+        secondaryContextWindow: 2000,
+        secondaryInput: 1000,
+      }),
+    );
+
+    renderUsage();
+
+    expect(await screen.findByText("900 / 10k")).toBeVisible();
+    expect(screen.queryByText("1k / 2k")).not.toBeInTheDocument();
+  });
+
   it("uses explicit context titles for loading, error, and missing windows", async () => {
     let resolveUsage: (value: SessionTokenUsagePayload) => void = () => undefined;
     getSessionTokenUsageMock.mockImplementation(

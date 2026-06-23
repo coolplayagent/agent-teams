@@ -175,14 +175,15 @@ body {
   gap: 10px;
 }
 
-.at-sidebar-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px 32px;
-  gap: 6px;
+.at-sidebar-new-session {
+  flex: 0 0 auto;
+  justify-content: flex-start;
 }
 
-.at-workspace-select {
-  width: 100%;
+.at-sidebar-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 6px;
 }
 
 .at-session-list {
@@ -191,15 +192,87 @@ body {
   overflow: auto;
 }
 
+.at-workspace-group {
+  display: grid;
+  gap: 2px;
+  padding: 2px 0 6px;
+}
+
+.at-workspace-group + .at-workspace-group {
+  border-top: 1px solid var(--at-border);
+  padding-top: 8px;
+}
+
+.at-workspace-group-header {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-workspace-group-header:hover,
+.at-workspace-group-header:focus-visible {
+  background: var(--at-surface-muted);
+  outline: none;
+}
+
+.at-workspace-group-header.is-selected {
+  background: var(--at-surface-muted);
+  color: var(--at-text);
+}
+
+.at-workspace-group-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 520;
+}
+
+.at-workspace-group-count,
+.at-workspace-group-empty {
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
+.at-workspace-group-sessions {
+  display: grid;
+  gap: 1px;
+  padding-left: 16px;
+}
+
+.at-workspace-group-empty {
+  padding: 4px 6px 4px 22px;
+}
+
 .at-session-item {
+  display: block;
+  width: 100%;
   cursor: pointer;
   border: 1px solid transparent;
   border-radius: 6px;
+  background: transparent;
+  color: var(--at-text);
+  font: inherit;
   padding: 6px 8px !important;
+  text-align: left;
 }
 
-.at-session-item:hover {
+.at-session-item:hover,
+.at-session-item:focus-visible {
   background: var(--at-surface-muted);
+  outline: none;
 }
 
 .at-session-item.is-selected {

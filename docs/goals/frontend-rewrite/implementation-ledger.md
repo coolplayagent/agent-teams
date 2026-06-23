@@ -476,3 +476,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Restored compact session metadata using real sidebar fields for active run status, background tasks, pending approvals/questions, and relative update time without returning to bulky mode tags.
 - Added focused sidebar coverage for compact status, background work, pending approval/question, and update time rendering.
 - Reviewer subagent `019ef4bb-eef3-71d3-a24c-e0497567b767` re-reviewed the remediation and returned PASS.
+
+## 2026-06-23 Sidebar Workspace Grouping Batch
+
+### Scope
+- Replaced the React sidebar's flat session list with V1-aligned workspace groups.
+- Kept each workspace header interactive so selecting a session from another workspace updates both selected workspace and selected session state.
+- Preserved a fixed one-page shell by keeping workspace and document scrolling locked while the session list owns its own scroll.
+- Kept search useful by matching both session labels and workspace labels, while hiding empty workspace groups during filtered searches.
+- Preserved workspace display names and path hints for filtered workspace groups instead of falling back to raw workspace ids.
+
+### Verification
+- Browser comparison captured V1 sidebar reference and V2 desktop/mobile screenshots under `.tmp/frontend-v2-sidebar/`.
+- V2 desktop verification at `1248x679` showed body and document scroll heights both matched viewport height at `679`, while `.at-session-list` owned the long scroll (`14327` scroll height).
+- V2 mobile emulation at `390x844` showed body/document/shell scroll width and height matched the viewport with no page-level overflow; `.at-session-list` remained the only long scroll area.
+- `npm run test -- --run src/test/SessionsSidebar.test.tsx` in `frontend/app` passed with 5 tests.
+- `npm run test -- --run` in `frontend/app` passed with 124 tests after stabilizing two existing Composer model-profile wait assertions.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Reviewer subagent `019ef4d2-7fb8-7701-8415-5f401c3f436e` returned PASS.
+- Followed up on the reviewer test-gap note by adding explicit coverage for workspace-label search and filtered empty-group suppression.

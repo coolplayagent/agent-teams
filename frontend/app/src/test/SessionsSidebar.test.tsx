@@ -134,6 +134,89 @@ describe("SessionsSidebar", () => {
     );
     expect(screen.getByTitle("2026-06-23T00:00:00Z")).toBeVisible();
   });
+
+  it("groups sessions by workspace and switches workspace with the selected session", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/desktop",
+        display_name: "Desktop",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-b",
+        title: "Beta",
+        updated_at: "2026-06-23T11:00:00Z",
+        workspace_id: "workspace-2",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Agent Teams")).toBeVisible();
+    expect(screen.getByText("Desktop")).toBeVisible();
+    expect(screen.getByText("Alpha")).toBeVisible();
+    expect(screen.getByText("Beta")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /Beta/ }));
+
+    expect(useUiStore.getState().selectedSessionId).toBe("session-b");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
+  });
+
+  it("filters sessions by workspace label without showing empty workspace groups", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/desktop",
+        display_name: "Desktop",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-b",
+        title: "Beta",
+        updated_at: "2026-06-23T11:00:00Z",
+        workspace_id: "workspace-2",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Agent Teams")).toBeVisible();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
+      target: { value: "desktop" },
+    });
+
+    expect(screen.getByText("Desktop")).toBeVisible();
+    expect(screen.getByText("Beta")).toBeVisible();
+    expect(screen.queryByText("Agent Teams")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+  });
 });
 
 function renderSidebar() {

@@ -3,14 +3,11 @@ import {
   Button,
   Empty,
   Input,
-  List,
-  Select,
   Skeleton,
-  Tooltip,
   Typography,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, RefreshCcw } from "lucide-react";
+import { FolderClosed, Plus, RefreshCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
@@ -36,11 +33,7 @@ export function SessionsSidebar() {
   });
 
   const workspaceOptions = useMemo(
-    () =>
-      (workspacesQuery.data ?? []).map((workspace) => ({
-        label: workspaceLabel(workspace),
-        value: workspace.workspace_id,
-      })),
+    () => workspacesQuery.data ?? [],
     [workspacesQuery.data],
   );
   const loadedWorkspaceIds = useMemo(
@@ -51,7 +44,8 @@ export function SessionsSidebar() {
     selectedWorkspaceId !== null && loadedWorkspaceIds.has(selectedWorkspaceId)
       ? selectedWorkspaceId
       : null;
-  const effectiveWorkspaceId = selectedLoadedWorkspaceId ?? workspaceOptions[0]?.value ?? "";
+  const effectiveWorkspaceId =
+    selectedLoadedWorkspaceId ?? workspaceOptions[0]?.workspace_id ?? "";
 
   useEffect(() => {
     const firstWorkspaceId = workspacesQuery.data?.[0]?.workspace_id;
@@ -84,20 +78,51 @@ export function SessionsSidebar() {
     },
   });
 
-  const sessions = useMemo(() => {
+  const filteredSessions = useMemo(() => {
     const records = sessionsQuery.data ?? [];
     const normalizedFilter = filter.trim().toLowerCase();
     if (!normalizedFilter) {
       return records;
     }
-    return records.filter((session) =>
-      sessionLabel(session).toLowerCase().includes(normalizedFilter),
+    const workspaceLabels = new Map(
+      workspaceOptions.map((workspace) => [
+        workspace.workspace_id,
+        workspaceLabel(workspace).toLowerCase(),
+      ]),
     );
-  }, [filter, sessionsQuery.data]);
+    return records.filter((session) => {
+      const workspaceId = session.workspace_id ?? "";
+      const workspaceSearch = workspaceLabels.get(workspaceId) ?? workspaceId;
+      return (
+        sessionLabel(session).toLowerCase().includes(normalizedFilter) ||
+        workspaceSearch.includes(normalizedFilter)
+      );
+    });
+  }, [filter, sessionsQuery.data, workspaceOptions]);
+  const includeEmptyWorkspaces = filter.trim().length === 0;
+  const sessionGroups = useMemo(
+    () => buildSessionGroups(workspaceOptions, filteredSessions, includeEmptyWorkspaces),
+    [filteredSessions, includeEmptyWorkspaces, workspaceOptions],
+  );
+  const totalVisibleSessions = sessionGroups.reduce(
+    (total, group) => total + group.sessions.length,
+    0,
+  );
 
   return (
     <div className="at-sidebar-inner">
-      <div className="at-sidebar-toolbar">
+      <Button
+        block
+        className="at-sidebar-new-session"
+        disabled={workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()}
+        icon={<Plus size={15} />}
+        loading={createSessionMutation.isPending}
+        onClick={() => createSessionMutation.mutate()}
+        type="primary"
+      >
+        New session
+      </Button>
+      <div className="at-sidebar-search-row">
         <Input.Search
           allowClear
           aria-label="Search sessions"
@@ -106,17 +131,6 @@ export function SessionsSidebar() {
           size="small"
           value={filter}
         />
-        <Tooltip title="New session">
-          <Button
-            aria-label="New session"
-            disabled={workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()}
-            icon={<Plus size={15} />}
-            loading={createSessionMutation.isPending}
-            onClick={() => createSessionMutation.mutate()}
-            size="small"
-            type="primary"
-          />
-        </Tooltip>
         <Button
           aria-label="Refresh sessions"
           icon={<RefreshCcw size={15} />}
@@ -126,53 +140,84 @@ export function SessionsSidebar() {
           type="text"
         />
       </div>
-      <Select
-        aria-label="Workspace"
-        className="at-workspace-select"
-        disabled={workspaceOptions.length === 0}
-        loading={workspacesQuery.isLoading}
-        onChange={(workspaceId) => setSelectedWorkspaceId(workspaceId)}
-        optionFilterProp="label"
-        options={workspaceOptions}
-        placeholder="Workspace"
-        showSearch
-        size="small"
-        value={selectedLoadedWorkspaceId ?? undefined}
-      />
       {sessionsQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
       {sessionsQuery.isError ? (
         <Empty description="Could not load sessions" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : null}
-      {!sessionsQuery.isLoading && !sessionsQuery.isError && sessions.length === 0 ? (
+      {!sessionsQuery.isLoading &&
+      !sessionsQuery.isError &&
+      totalVisibleSessions === 0 &&
+      sessionGroups.length === 0 ? (
         <Empty description="No sessions" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : null}
-      <List
-        className="at-session-list"
-        dataSource={sessions}
-        renderItem={(session) => (
-          <List.Item
-            className={
-              session.session_id === selectedSessionId
-                ? "at-session-item is-selected"
-                : "at-session-item"
-            }
-            onClick={() => setSelectedSessionId(session.session_id)}
-          >
-            <div className="at-session-copy">
-              <Typography.Text
-                className="at-session-label"
-                ellipsis
-                title={sessionLabel(session)}
-              >
-                {sessionLabel(session)}
-              </Typography.Text>
-              {sessionMeta(session)}
-            </div>
-          </List.Item>
-        )}
-      />
+      <div className="at-session-list">
+        {sessionGroups.map((group) => (
+          <section className="at-workspace-group" key={group.id}>
+            <button
+              className={
+                group.id === selectedWorkspaceId
+                  ? "at-workspace-group-header is-selected"
+                  : "at-workspace-group-header"
+              }
+              onClick={() => setSelectedWorkspaceId(group.id)}
+              title={group.pathHint || group.label}
+              type="button"
+            >
+              <FolderClosed aria-hidden="true" size={15} />
+              <span className="at-workspace-group-title">{group.label}</span>
+              <span className="at-workspace-group-count">{group.sessions.length}</span>
+            </button>
+            {group.sessions.length === 0 ? (
+              <div className="at-workspace-group-empty">No sessions</div>
+            ) : (
+              <div className="at-workspace-group-sessions">
+                {group.sessions.map((session) => (
+                  <button
+                    aria-current={
+                      session.session_id === selectedSessionId ? "page" : undefined
+                    }
+                    className={
+                      session.session_id === selectedSessionId
+                        ? "at-session-item is-selected"
+                        : "at-session-item"
+                    }
+                    key={session.session_id}
+                    onClick={() => {
+                      if (session.workspace_id) {
+                        setSelectedWorkspaceId(session.workspace_id);
+                      }
+                      setSelectedSessionId(session.session_id);
+                    }}
+                    title={sessionLabel(session)}
+                    type="button"
+                  >
+                    <div className="at-session-copy">
+                      <Typography.Text
+                        className="at-session-label"
+                        ellipsis
+                        title={sessionLabel(session)}
+                      >
+                        {sessionLabel(session)}
+                      </Typography.Text>
+                      {sessionMeta(session)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
     </div>
   );
+}
+
+interface SessionGroup {
+  id: string;
+  label: string;
+  pathHint: string;
+  sessions: SessionSidebarRecord[];
+  updatedAt: number;
 }
 
 function sessionLabel(session: SessionSidebarRecord): string {
@@ -185,6 +230,74 @@ function workspaceLabel(workspace: WorkspaceRecord): string {
     workspace.name?.trim() ||
     workspace.workspace_id
   );
+}
+
+function buildSessionGroups(
+  workspaces: WorkspaceRecord[],
+  sessions: SessionSidebarRecord[],
+  includeEmptyWorkspaces: boolean,
+): SessionGroup[] {
+  const groups = new Map<string, SessionGroup>();
+  const workspaceById = new Map(
+    workspaces.map((workspace) => [workspace.workspace_id, workspace]),
+  );
+  if (includeEmptyWorkspaces) {
+    workspaces.forEach((workspace) => {
+      groups.set(workspace.workspace_id, {
+        id: workspace.workspace_id,
+        label: workspaceLabel(workspace),
+        pathHint: workspace.root_path,
+        sessions: [],
+        updatedAt: 0,
+      });
+    });
+  }
+  sessions.forEach((session) => {
+    const workspaceId = session.workspace_id?.trim() || "unknown";
+    const existing = groups.get(workspaceId);
+    const workspace = workspaceById.get(workspaceId);
+    const group = existing ?? {
+      id: workspaceId,
+      label: workspace === undefined ? workspaceId : workspaceLabel(workspace),
+      pathHint: workspace?.root_path ?? "",
+      sessions: [],
+      updatedAt: 0,
+    };
+    group.sessions.push(session);
+    group.updatedAt = Math.max(group.updatedAt, sessionTimestampValue(session));
+    groups.set(workspaceId, group);
+  });
+  return Array.from(groups.values())
+    .map((group) => {
+      const sortedSessions = sortSessions(group.sessions);
+      return {
+        ...group,
+        sessions: sortedSessions,
+        updatedAt: group.updatedAt,
+      };
+    })
+    .sort((left, right) => (
+      right.updatedAt - left.updatedAt ||
+      left.label.localeCompare(right.label) ||
+      left.id.localeCompare(right.id)
+    ));
+}
+
+function sortSessions(sessions: SessionSidebarRecord[]): SessionSidebarRecord[] {
+  return [...sessions].sort((left, right) => (
+    sessionTimestampValue(right) - sessionTimestampValue(left) ||
+    sessionLabel(left).localeCompare(sessionLabel(right)) ||
+    left.session_id.localeCompare(right.session_id)
+  ));
+}
+
+function sessionTimestampValue(session: SessionSidebarRecord): number {
+  const value = session.updated_at;
+  if (value === undefined || !value.trim()) {
+    return 0;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function sessionMeta(session: SessionSidebarRecord) {

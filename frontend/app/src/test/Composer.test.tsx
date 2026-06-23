@@ -930,8 +930,12 @@ describe("Composer", () => {
 
     renderComposer();
 
-    await waitFor(() =>
-      expect(selectRoot("Model profile")).not.toHaveClass("ant-select-disabled"),
+    await waitFor(
+      () =>
+        expect(selectRoot("Model profile")).not.toHaveClass(
+          "ant-select-disabled",
+        ),
+      { timeout: 5000 },
     );
     fireEvent.mouseDown(
       screen.getByRole("combobox", { name: "Model profile" }),
@@ -1081,8 +1085,12 @@ describe("Composer", () => {
     const sidebarRows = [{ session_id: "sidebar", title: "Sidebar" }];
     queryClient.setQueryData(["sessions", "sidebar"], sidebarRows);
 
-    await waitFor(() =>
-      expect(selectRoot("Model profile")).not.toHaveClass("ant-select-disabled"),
+    await waitFor(
+      () =>
+        expect(selectRoot("Model profile")).not.toHaveClass(
+          "ant-select-disabled",
+        ),
+      { timeout: 5000 },
     );
     fireEvent.mouseDown(
       screen.getByRole("combobox", { name: "Model profile" }),

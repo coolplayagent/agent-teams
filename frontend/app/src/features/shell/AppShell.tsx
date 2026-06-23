@@ -23,6 +23,7 @@ import { getHealth, listSessionMessages } from "../../api/client";
 import { Composer } from "../composer/Composer";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { RecoveryBar } from "../recovery/RecoveryBar";
+import { SessionTokenUsage } from "./SessionTokenUsage";
 import { SessionsSidebar } from "../sessions/SessionsSidebar";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { MessageTimeline } from "../timeline/MessageTimeline";
@@ -150,6 +151,7 @@ export function AppShell() {
                 sessionId={selectedSessionId}
               />
               <MessageTimeline sessionId={selectedSessionId} />
+              <SessionTokenUsage sessionId={selectedSessionId} />
               <Composer
                 runStreamController={runStreamController}
                 sessionId={selectedSessionId}

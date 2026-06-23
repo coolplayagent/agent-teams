@@ -9,6 +9,7 @@ import type {
   RoleConfigOptions,
   RunCreateRequest,
   RunCreateResponse,
+  SessionTokenUsage,
   ServerHealthPayload,
   SessionCreateRequest,
   SessionRecord,
@@ -59,6 +60,20 @@ export function createSession(request: SessionCreateRequest): Promise<SessionRec
 export function listSessionMessages(sessionId: string): Promise<TimelineMessage[]> {
   return requestJson<TimelineMessage[]>(
     `/sessions/${encodeURIComponent(sessionId)}/messages`,
+  );
+}
+
+export function getSessionTokenUsage(
+  sessionId: string,
+  forceRefresh = false,
+): Promise<SessionTokenUsage> {
+  const params = new URLSearchParams();
+  if (forceRefresh) {
+    params.set("force_refresh", "true");
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return requestJson<SessionTokenUsage>(
+    `/sessions/${encodeURIComponent(sessionId)}/token-usage${suffix}`,
   );
 }
 

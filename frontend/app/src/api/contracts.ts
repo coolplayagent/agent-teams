@@ -185,6 +185,33 @@ export interface TimelineMessage {
   entry_type?: string;
 }
 
+export interface TokenUsageRoleSummary {
+  role_id: string;
+  input_tokens: number;
+  latest_input_tokens: number;
+  cached_input_tokens: number;
+  max_input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+  total_tokens: number;
+  requests: number;
+  tool_calls: number;
+  context_window: number;
+  model_profile: string;
+}
+
+export interface SessionTokenUsage {
+  session_id: string;
+  total_input_tokens: number;
+  total_cached_input_tokens: number;
+  total_output_tokens: number;
+  total_reasoning_output_tokens: number;
+  total_tokens: number;
+  total_requests: number;
+  total_tool_calls: number;
+  by_role: Record<string, TokenUsageRoleSummary>;
+}
+
 export interface RecoverySnapshot {
   active_run: RecoveryRun | null;
   background_tasks: JsonValue[];

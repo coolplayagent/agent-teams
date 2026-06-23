@@ -165,3 +165,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 16 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Session Token Usage Batch
+
+### Scope
+- Added React API contracts and client support for `/api/sessions/{session_id}/token-usage`.
+- Added a compact session token usage strip above the composer with input, output, total, and force refresh.
+- Added focused React coverage for token usage rendering and `force_refresh=true` refresh behavior.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run SessionTokenUsage.test.tsx` in `frontend/app` passed with 1 test.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 17 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

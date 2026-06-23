@@ -635,12 +635,12 @@ body {
 .at-project-view-grid {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(220px, 0.72fr) minmax(320px, 1fr) minmax(260px, 0.88fr);
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 0.88fr);
   grid-template-rows: minmax(180px, 0.4fr) minmax(260px, 0.6fr);
   gap: 12px;
   min-height: 0;
   height: 100%;
-  overflow: hidden;
+  overflow: auto;
   padding: 16px 20px 22px;
 }
 

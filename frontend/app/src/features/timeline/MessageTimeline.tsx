@@ -221,14 +221,14 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
           )}
         </div>
       </div>
-      <RoundRail
-        activeRunId={activeRoundRunId}
-        error={roundsQuery.isError}
-        loading={roundsQuery.isLoading}
-        onSelectRun={handleRoundSelect}
-        rounds={rounds}
-        t={t}
-      />
+      {!roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 1 ? (
+        <RoundRail
+          activeRunId={activeRoundRunId}
+          onSelectRun={handleRoundSelect}
+          rounds={rounds}
+          t={t}
+        />
+      ) : null}
     </div>
   );
 }

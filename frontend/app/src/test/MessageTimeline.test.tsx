@@ -155,6 +155,37 @@ describe("MessageTimeline", () => {
     expect(followUpRound).not.toHaveAttribute("aria-current");
   });
 
+  it("keeps single-round sessions full width without the round rail", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Only answer",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-1",
+          run_status: "completed",
+          run_user_message: "Single task",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Only answer")).toBeVisible();
+    await waitFor(() => {
+      expect(container.querySelectorAll(".at-round-marker")).toHaveLength(1);
+    });
+    expect(screen.queryByRole("navigation", { name: "Rounds" })).toBeNull();
+  });
+
   it("does not copy stale runtime delta chunks over hydrated answers", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

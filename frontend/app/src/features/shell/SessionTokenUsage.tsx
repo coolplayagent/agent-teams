@@ -7,10 +7,14 @@ import { getSessionTokenUsage } from "../../api/client";
 import type { SessionTokenUsage as SessionTokenUsagePayload } from "../../api/contracts";
 
 interface SessionTokenUsageProps {
+  primaryRoleId?: string | null;
   sessionId: string | null;
 }
 
-export function SessionTokenUsage({ sessionId }: SessionTokenUsageProps) {
+export function SessionTokenUsage({
+  primaryRoleId = null,
+  sessionId,
+}: SessionTokenUsageProps) {
   const queryClient = useQueryClient();
   const queryKey = ["sessions", sessionId, "token-usage"];
   const usageQuery = useQuery({
@@ -31,10 +35,9 @@ export function SessionTokenUsage({ sessionId }: SessionTokenUsageProps) {
     },
   });
   const usage = usageQuery.data;
-  const contextUsage = useMemo(() => selectContextUsage(usage), [usage]);
-  const detailTitle = useMemo(
-    () => buildDetailTitle(usage, contextUsage),
-    [contextUsage, usage],
+  const contextUsage = useMemo(
+    () => selectContextUsage(usage, primaryRoleId),
+    [primaryRoleId, usage],
   );
   const state = usageQuery.isError
     ? "error"
@@ -43,6 +46,10 @@ export function SessionTokenUsage({ sessionId }: SessionTokenUsageProps) {
       : hasUsage(usage)
         ? "ready"
         : "idle";
+  const detailTitle = useMemo(
+    () => buildDetailTitle(usage, contextUsage, state),
+    [contextUsage, state, usage],
+  );
 
   return (
     <div className="at-token-usage" data-state={state} title={detailTitle}>
@@ -53,7 +60,7 @@ export function SessionTokenUsage({ sessionId }: SessionTokenUsageProps) {
         <TokenUsagePair label="Total" value={usage?.total_tokens ?? 0} />
         <TokenUsagePair
           label="Context"
-          value={formatContextUsage(contextUsage)}
+          value={formatContextLabel(contextUsage)}
         />
       </Space>
       <Tooltip title="Refresh token usage">
@@ -104,6 +111,7 @@ interface ContextUsageSummary {
 
 function selectContextUsage(
   usage: SessionTokenUsagePayload | undefined,
+  primaryRoleId: string | null,
 ): ContextUsageSummary | null {
   const candidates = Object.values(usage?.by_role ?? {})
     .map((role) => {
@@ -124,15 +132,35 @@ function selectContextUsage(
   if (candidates.length === 0) {
     return null;
   }
-  return candidates.reduce((highest, candidate) =>
-    candidate.ratio > highest.ratio ? candidate : highest,
+  const requestedRoleId = primaryRoleId?.trim();
+  if (requestedRoleId) {
+    const requested = candidates.find(
+      (candidate) => candidate.roleId === requestedRoleId,
+    );
+    if (requested !== undefined) {
+      return requested;
+    }
+  }
+  const mainAgent = candidates.find(
+    (candidate) => normalizeRoleId(candidate.roleId) === "mainagent",
   );
+  if (mainAgent !== undefined) {
+    return mainAgent;
+  }
+  return candidates[0];
 }
 
 function buildDetailTitle(
   usage: SessionTokenUsagePayload | undefined,
   contextUsage: ContextUsageSummary | null,
+  state: "error" | "idle" | "loading" | "ready",
 ): string {
+  if (state === "loading") {
+    return "Loading token usage";
+  }
+  if (state === "error") {
+    return "Token usage unavailable";
+  }
   if (usage === undefined || !hasUsage(usage)) {
     return "Token usage";
   }
@@ -148,13 +176,20 @@ function buildDetailTitle(
   ];
   if (contextUsage !== null) {
     details.push(
-      `context ${contextUsage.roleId} ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextUsage.contextWindow)} (${formatContextUsage(contextUsage)})`,
+      `context ${contextUsage.roleId} ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextUsage.contextWindow)} (${formatContextPercent(contextUsage)})`,
     );
   }
   return details.join(" · ");
 }
 
-function formatContextUsage(contextUsage: ContextUsageSummary | null): string {
+function formatContextLabel(contextUsage: ContextUsageSummary | null): string {
+  if (contextUsage === null) {
+    return "--";
+  }
+  return `${formatCompact(contextUsage.latestInputTokens)} / ${formatCompact(contextUsage.contextWindow)}`;
+}
+
+function formatContextPercent(contextUsage: ContextUsageSummary | null): string {
   if (contextUsage === null) {
     return "--";
   }
@@ -163,6 +198,10 @@ function formatContextUsage(contextUsage: ContextUsageSummary | null): string {
     return "<1%";
   }
   return `${Math.round(percent)}%`;
+}
+
+function normalizeRoleId(roleId: string): string {
+  return roleId.replaceAll(/[\s_-]/g, "").toLowerCase();
 }
 
 function formatInteger(value: number | undefined): string {

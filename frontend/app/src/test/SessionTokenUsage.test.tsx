@@ -29,7 +29,7 @@ describe("SessionTokenUsage", () => {
     expect(await screen.findByText("1.2k")).toBeVisible();
     expect(screen.getByText("3.4k")).toBeVisible();
     expect(screen.getByText("4.6k")).toBeVisible();
-    expect(screen.getByText("12%")).toBeVisible();
+    expect(screen.getByText("1.2k / 10k")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
 
@@ -39,10 +39,10 @@ describe("SessionTokenUsage", () => {
     expect(await screen.findByText("2k")).toBeVisible();
     expect(screen.getByText("4.2k")).toBeVisible();
     expect(screen.getByText("6.2k")).toBeVisible();
-    expect(screen.getByText("20%")).toBeVisible();
+    expect(screen.getByText("2k / 10k")).toBeVisible();
   });
 
-  it("shows the highest loaded role context when roles have different windows", async () => {
+  it("shows the selected primary role context instead of the busiest helper role", async () => {
     getSessionTokenUsageMock.mockResolvedValue(
       usage({
         input: 1000,
@@ -53,15 +53,73 @@ describe("SessionTokenUsage", () => {
       }),
     );
 
-    renderUsage();
+    renderUsage({ primaryRoleId: "MainAgent" });
 
-    expect(await screen.findByText("50%")).toBeVisible();
-    expect(screen.queryByText("10%")).not.toBeInTheDocument();
+    expect(await screen.findByText("1k / 10k")).toBeVisible();
+    expect(screen.queryByText("1k / 2k")).not.toBeInTheDocument();
+  });
+
+  it("uses explicit context titles for loading, error, and missing windows", async () => {
+    let resolveUsage: (value: SessionTokenUsagePayload) => void = () => undefined;
+    getSessionTokenUsageMock.mockImplementation(
+      () =>
+        new Promise<SessionTokenUsagePayload>((resolve) => {
+          resolveUsage = resolve;
+        }),
+    );
+
+    const { rerender } = renderUsage();
+
+    const usageStrip = screen.getByTitle("Loading token usage");
+    expect(usageStrip).toHaveAttribute("data-state", "loading");
+    resolveUsage(
+      usage({
+        contextWindow: 0,
+        input: 1000,
+        output: 500,
+        total: 1500,
+      }),
+    );
+    expect(await screen.findByText("--")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTitle(/total 1,500/)).toHaveAttribute(
+        "data-state",
+        "ready",
+      ),
+    );
+
+    getSessionTokenUsageMock.mockRejectedValue(new Error("nope"));
+    rerender(
+      <QueryClientProvider client={createQueryClient()}>
+        <ConfigProvider>
+          <SessionTokenUsage sessionId="session-2" />
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByTitle("Token usage unavailable")).toHaveAttribute(
+      "data-state",
+      "error",
+    );
   });
 });
 
-function renderUsage() {
-  const queryClient = new QueryClient({
+function renderUsage({ primaryRoleId = null }: { primaryRoleId?: string | null } = {}) {
+  const queryClient = createQueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ConfigProvider>
+        <SessionTokenUsage
+          primaryRoleId={primaryRoleId}
+          sessionId="session-1"
+        />
+      </ConfigProvider>
+    </QueryClientProvider>,
+  );
+}
+
+function createQueryClient(): QueryClient {
+  return new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
@@ -69,13 +127,6 @@ function renderUsage() {
       },
     },
   });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <ConfigProvider>
-        <SessionTokenUsage sessionId="session-1" />
-      </ConfigProvider>
-    </QueryClientProvider>,
-  );
 }
 
 interface UsageValues {

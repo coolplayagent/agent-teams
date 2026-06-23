@@ -18,7 +18,12 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { getHealth, listSessionMessages, listSidebarSessions } from "../../api/client";
+import {
+  getHealth,
+  getSession,
+  listSessionMessages,
+  listSidebarSessions,
+} from "../../api/client";
 import { Composer } from "../composer/Composer";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
 import { ObservabilityPanel } from "./ObservabilityPanel";
@@ -57,6 +62,17 @@ export function AppShell() {
   const sidebarSessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
     queryFn: () => listSidebarSessions(false),
+  });
+  const sessionDetailQuery = useQuery({
+    queryKey: ["sessions", "detail", selectedSessionId],
+    queryFn: () => {
+      if (selectedSessionId === null) {
+        throw new Error("Session is required.");
+      }
+      return getSession(selectedSessionId);
+    },
+    enabled: selectedSessionId !== null,
+    staleTime: 10000,
   });
 
   const healthLabel = useMemo(() => {
@@ -165,7 +181,10 @@ export function AppShell() {
                 sessionId={selectedSessionId}
               />
               <MessageTimeline sessionId={selectedSessionId} />
-              <SessionTokenUsage sessionId={selectedSessionId} />
+              <SessionTokenUsage
+                primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
+                sessionId={selectedSessionId}
+              />
               <Composer
                 runStreamController={runStreamController}
                 sessionId={selectedSessionId}

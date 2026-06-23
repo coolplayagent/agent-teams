@@ -340,12 +340,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Scope
 - Extended the React session token usage strip with a real context usage indicator derived from `by_role.latest_input_tokens` and `by_role.context_window`.
-- Matched V1's context signal by showing the most loaded role's latest input against its context window.
+- Matched V1's context signal by showing the selected normal root role's latest input against its context window as `input / window`.
 - Preserved the compact composer-adjacent layout without adding placeholder controls or fake progress.
-- Added focused React coverage for context percentage refreshes and multi-role highest-load selection.
+- Added focused React coverage for context label refreshes, primary-role selection, and loading/error/missing-window titles.
 
 ### Verification
-- `npm run test -- --run SessionTokenUsage.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run test -- --run SessionTokenUsage.test.tsx` in `frontend/app` passed with 3 tests.
 - `npm run typecheck` in `frontend/app` passed.
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer Remediation
+- Addressed reviewer `019ef367-7f06-75d3-9d4f-c0b9ff698349` findings by replacing highest-loaded-role selection with explicit `normal_root_role_id`/MainAgent fallback semantics.
+- Changed the visible Context value from a percentage to the V1-style `latest input / context window` label.
+- Added explicit loading, unavailable, and missing-window title coverage.

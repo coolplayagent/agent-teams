@@ -32,6 +32,7 @@ import type {
   OrchestrationConfig,
   RunThinkingConfig,
   SessionMode,
+  SessionRecord,
   ThinkingEffort,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
@@ -167,6 +168,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
     onSuccess: (result) => {
       setDraft("");
+      queryClient.setQueryData<SessionRecord | undefined>(
+        sessionDetailQueryKey(result.session_id),
+        (current) =>
+          current === undefined ? current : { ...current, can_switch_mode: false },
+      );
       runStreamController.startRunStream({
         runId: result.run_id,
         sessionId: result.session_id,

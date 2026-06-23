@@ -271,3 +271,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `uv run --extra dev basedpyright` passed.
 - `uv run --extra dev pytest -q tests/unit_tests` passed.
 - `uv run --extra dev pytest -q tests/integration_tests` passed with 1052 passed and 9 skipped.
+
+## 2026-06-23 Composer Session Topology Reviewer Remediation Batch
+
+### Scope
+- Addressed reviewer `019ef2f8-fff2-7700-8b98-d6dbf9c4b3b1` finding where `can_switch_mode` could remain stale after the first run.
+- Locked the session detail cache by setting `can_switch_mode` to `false` immediately after run creation succeeds.
+- Added a focused React regression proving topology controls stay locked after the first run even when `activeRunId` is back to `null`.
+
+### Verification
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 11 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 28 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check --fix` passed.
+- `uv run --extra dev ruff format --no-cache --force-exclude` passed.
+- `uv run --extra dev basedpyright` passed.
+- `uv run --extra dev pytest -q tests/unit_tests` passed with 7931 passed and 8 skipped.
+- `uv run --extra dev pytest -q tests/integration_tests/api/test_system_and_project_flows.py::test_xiaoluban_delivery_binding_and_run_flow` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_browser_smoke.py::test_browser_ask_question_recovery_card_submits_answers` passed.
+- `uv run --extra dev pytest -q tests/integration_tests` passed with 1052 passed and 9 skipped.

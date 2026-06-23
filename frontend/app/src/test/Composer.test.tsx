@@ -138,6 +138,42 @@ describe("Composer", () => {
     });
   });
 
+  it("keeps topology locked after creating the first run", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    const controller = runStreamController();
+
+    renderComposer(controller);
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Start the session" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+    );
+    await waitFor(() =>
+      expect(selectRoot("Root role")).toHaveClass("ant-select-disabled"),
+    );
+    fireEvent.click(screen.getByText("Orchestration"));
+
+    expect(updateSessionTopologyMock).not.toHaveBeenCalled();
+  });
+
   it("updates the current session model profile", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

@@ -406,3 +406,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
 - Reviewer subagent `019ef479-689e-7da1-9653-c7f7400bd9c9` returned PASS.
+
+## 2026-06-23 Recovery Interaction Busy And Error States Batch
+
+### Scope
+- Added per-tool-call approval error state in the React RecoveryBar.
+- Added per-question user question error state in the React RecoveryBar.
+- Showed approval and question errors inline while retaining toast notifications.
+- Derived approval and question busy state from mutation variables so the active item shows loading and related duplicate actions are temporarily disabled.
+- Disabled pending question options and supplemental inputs while their answer submission is in flight.
+- Added focused React coverage for approval retry error clearing and question busy/error behavior.
+
+### Verification
+- `npm run test -- --run RecoveryBar.test.tsx` in `frontend/app` passed with 13 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- Reviewer subagent `019ef481-f383-7233-9caf-17baf53f252a` returned PASS.

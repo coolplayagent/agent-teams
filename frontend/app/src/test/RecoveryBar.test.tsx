@@ -1,6 +1,13 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -125,6 +132,40 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("shows approval errors locally and clears them before retrying", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_tool_approvals: [
+          {
+            tool_call_id: "tool-call-1",
+            tool_name: "execute_command",
+          },
+        ],
+      }),
+    );
+    resolveToolApprovalMock
+      .mockRejectedValueOnce(new Error("approval unavailable"))
+      .mockResolvedValueOnce({ status: "ok" });
+
+    renderRecoveryBar();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await screen.findByText("approval unavailable");
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(resolveToolApprovalMock).toHaveBeenCalledTimes(2));
+    const approvalItem = screen
+      .getByText("execute_command")
+      .closest(".at-recovery-item");
+    if (!(approvalItem instanceof HTMLElement)) {
+      throw new Error("Approval item was not rendered.");
+    }
+    await waitFor(() =>
+      expect(within(approvalItem).queryByText("approval unavailable")).not.toBeInTheDocument(),
+    );
+  });
+
   it("submits selected answers for pending user questions", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({
@@ -158,6 +199,42 @@ describe("RecoveryBar", () => {
         { answers: [{ selections: [{ label: "Go" }] }] },
       ),
     );
+  });
+
+  it("shows pending question busy and error states locally", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_user_questions: [
+          {
+            question_id: "question-1",
+            run_id: "sub-run-1",
+            role_id: "Explorer",
+            questions: [
+              {
+                question: "Pick next step",
+                options: [{ label: "Go" }],
+                multiple: false,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const answerDeferred = deferredResponse<{ status: string }>();
+    answerUserQuestionMock.mockReturnValueOnce(answerDeferred.promise);
+
+    renderRecoveryBar();
+
+    fireEvent.click(await screen.findByLabelText("Go"));
+    fireEvent.click(screen.getByRole("button", { name: "Answer" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Answer" })).toBeDisabled(),
+    );
+    answerDeferred.reject(new Error("question unavailable"));
+
+    await screen.findByText("question unavailable");
+    expect(screen.getByRole("button", { name: "Answer" })).not.toBeDisabled();
   });
 
   it("hides the reserved question option label and submits supplements", async () => {
@@ -515,5 +592,19 @@ function recoverySnapshot(
     paused_subagent: null,
     round_snapshot: null,
     ...overrides,
+  };
+}
+
+function deferredResponse<T>() {
+  let resolvePromise: (value: T) => void = () => undefined;
+  let rejectPromise: (reason: Error) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return {
+    promise,
+    reject: rejectPromise,
+    resolve: resolvePromise,
   };
 }

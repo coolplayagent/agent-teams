@@ -41,6 +41,8 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const [backgroundTaskErrors, setBackgroundTaskErrors] = useState<Record<string, string>>(
     {},
   );
+  const [approvalErrors, setApprovalErrors] = useState<Record<string, string>>({});
+  const [questionErrors, setQuestionErrors] = useState<Record<string, string>>({});
   const [collapsedBackgroundRunIds, setCollapsedBackgroundRunIds] = useState<
     Record<string, boolean>
   >({});
@@ -103,14 +105,21 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
         request.optionId,
       );
     },
+    onMutate: (request) => {
+      setApprovalErrors((current) => removeRecordKey(current, request.toolCallId));
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
-    onError: (error) => {
-      void message.error(
-        error instanceof Error ? error.message : "Tool approval failed.",
-      );
+    onError: (error, request) => {
+      const messageText =
+        error instanceof Error ? error.message : "Tool approval failed.";
+      setApprovalErrors((current) => ({
+        ...current,
+        [request.toolCallId]: messageText,
+      }));
+      void message.error(messageText);
     },
   });
 
@@ -126,16 +135,23 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
       }
       return answerUserQuestion(question.run_id, question.question_id, answers);
     },
+    onMutate: (question) => {
+      setQuestionErrors((current) => removeRecordKey(current, question.question_id));
+    },
     onSuccess: () => {
       setQuestionSelections({});
       setQuestionSupplements({});
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
-    onError: (error) => {
-      void message.error(
-        error instanceof Error ? error.message : "Question answer failed.",
-      );
+    onError: (error, question) => {
+      const messageText =
+        error instanceof Error ? error.message : "Question answer failed.";
+      setQuestionErrors((current) => ({
+        ...current,
+        [question.question_id]: messageText,
+      }));
+      void message.error(messageText);
     },
   });
 
@@ -210,11 +226,21 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
           <PendingApprovals
             activeRunId={activeRun.run_id}
             approvals={pendingApprovals}
-            busy={approvalMutation.isPending}
+            busyToolCallId={
+              approvalMutation.isPending
+                ? approvalMutation.variables?.toolCallId ?? null
+                : null
+            }
+            errors={approvalErrors}
             onResolve={(request) => approvalMutation.mutate(request)}
           />
           <PendingQuestions
-            busy={questionMutation.isPending}
+            busyQuestionId={
+              questionMutation.isPending
+                ? questionMutation.variables?.question_id ?? null
+                : null
+            }
+            errors={questionErrors}
             onAnswer={(question) => questionMutation.mutate(question)}
             onSelectionChange={(questionId, promptIndex, selectedLabels) => {
               setQuestionSelections((current) => ({
@@ -370,14 +396,16 @@ function BackgroundTasksPanel({
 interface PendingApprovalsProps {
   activeRunId: string;
   approvals: PendingToolApproval[];
-  busy: boolean;
+  busyToolCallId: string | null;
+  errors: Record<string, string>;
   onResolve: (request: ApprovalActionRequest) => void;
 }
 
 function PendingApprovals({
   activeRunId,
   approvals,
-  busy,
+  busyToolCallId,
+  errors,
   onResolve,
 }: PendingApprovalsProps) {
   if (approvals.length === 0) {
@@ -387,30 +415,38 @@ function PendingApprovals({
     <div className="at-recovery-panel">
       {approvals.map((approval) => {
         const approvalOptions = normalizedApprovalOptions(approval.acp_options);
+        const toolCallId = approval.tool_call_id;
+        const busy = busyToolCallId === toolCallId;
+        const disabled = busyToolCallId !== null;
+        const error = errors[toolCallId] ?? "";
         return (
-          <div className="at-recovery-item" key={approval.tool_call_id}>
+          <div className="at-recovery-item" key={toolCallId}>
             <div className="at-recovery-copy">
               <Typography.Text strong>
-                {approval.tool_name?.trim() || approval.tool_call_id}
+                {approval.tool_name?.trim() || toolCallId}
               </Typography.Text>
               {approval.args_preview?.trim() ? (
                 <Typography.Text type="secondary" ellipsis>
                   {approval.args_preview}
                 </Typography.Text>
               ) : null}
+              {error ? (
+                <Typography.Text type="danger">{error}</Typography.Text>
+              ) : null}
             </div>
             <Space size={6} wrap>
               {approvalOptions.map((option) => (
                 <Button
                   danger={option.action === "deny"}
-                  disabled={busy}
+                  disabled={disabled}
                   key={`${option.optionId}:${option.action}`}
+                  loading={busy}
                   onClick={() =>
                     onResolve({
                       action: option.action,
                       optionId: option.optionId,
                       runId: activeRunId,
-                      toolCallId: approval.tool_call_id,
+                      toolCallId,
                     })
                   }
                   size="small"
@@ -419,12 +455,13 @@ function PendingApprovals({
                 </Button>
               ))}
               <Button
-                disabled={busy}
+                disabled={disabled}
+                loading={busy}
                 onClick={() =>
                   onResolve({
                     action: "approve",
                     runId: activeRunId,
-                    toolCallId: approval.tool_call_id,
+                    toolCallId,
                   })
                 }
                 size="small"
@@ -434,12 +471,13 @@ function PendingApprovals({
               </Button>
               <Button
                 danger
-                disabled={busy}
+                disabled={disabled}
+                loading={busy}
                 onClick={() =>
                   onResolve({
                     action: "deny",
                     runId: activeRunId,
-                    toolCallId: approval.tool_call_id,
+                    toolCallId,
                   })
                 }
                 size="small"
@@ -455,7 +493,8 @@ function PendingApprovals({
 }
 
 interface PendingQuestionsProps {
-  busy: boolean;
+  busyQuestionId: string | null;
+  errors: Record<string, string>;
   onAnswer: (question: PendingUserQuestion) => void;
   onSelectionChange: (
     questionId: string,
@@ -473,7 +512,8 @@ interface PendingQuestionsProps {
 }
 
 function PendingQuestions({
-  busy,
+  busyQuestionId,
+  errors,
   onAnswer,
   onSelectionChange,
   onSupplementChange,
@@ -486,42 +526,55 @@ function PendingQuestions({
   }
   return (
     <div className="at-recovery-panel">
-      {questions.map((question) => (
-        <div className="at-recovery-question" key={question.question_id}>
-          <Typography.Text strong>
-            {question.role_id?.trim() || "Agent"} needs input
-          </Typography.Text>
-          {question.questions.map((prompt, index) => (
-            <QuestionPromptControl
-              key={`${question.question_id}:${index}`}
-              onSelectionChange={(selectedLabels) =>
-                onSelectionChange(question.question_id, index, selectedLabels)
-              }
-              onSupplementChange={(supplement) =>
-                onSupplementChange(question.question_id, index, supplement)
-              }
-              prompt={prompt}
-              selectedLabels={selections[selectionKey(question.question_id, index)] ?? []}
-              selectedSupplement={
-                supplements[selectionKey(question.question_id, index)] ?? ""
-              }
-            />
-          ))}
-          <Button
-            disabled={busy || !hasSelections(question, selections)}
-            onClick={() => onAnswer(question)}
-            size="small"
-            type="primary"
-          >
-            Answer
-          </Button>
-        </div>
-      ))}
+      {questions.map((question) => {
+        const busy = busyQuestionId === question.question_id;
+        const disabled = busyQuestionId !== null;
+        const error = errors[question.question_id] ?? "";
+        return (
+          <div className="at-recovery-question" key={question.question_id}>
+            <div className="at-recovery-copy">
+              <Typography.Text strong>
+                {question.role_id?.trim() || "Agent"} needs input
+              </Typography.Text>
+              {error ? (
+                <Typography.Text type="danger">{error}</Typography.Text>
+              ) : null}
+            </div>
+            {question.questions.map((prompt, index) => (
+              <QuestionPromptControl
+                key={`${question.question_id}:${index}`}
+                onSelectionChange={(selectedLabels) =>
+                  onSelectionChange(question.question_id, index, selectedLabels)
+                }
+                onSupplementChange={(supplement) =>
+                  onSupplementChange(question.question_id, index, supplement)
+                }
+                disabled={disabled}
+                prompt={prompt}
+                selectedLabels={selections[selectionKey(question.question_id, index)] ?? []}
+                selectedSupplement={
+                  supplements[selectionKey(question.question_id, index)] ?? ""
+                }
+              />
+            ))}
+            <Button
+              disabled={disabled || !hasSelections(question, selections)}
+              loading={busy}
+              onClick={() => onAnswer(question)}
+              size="small"
+              type="primary"
+            >
+              Answer
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 interface QuestionPromptControlProps {
+  disabled: boolean;
   onSelectionChange: (selectedLabels: string[]) => void;
   onSupplementChange: (supplement: string) => void;
   prompt: UserQuestionPrompt;
@@ -530,6 +583,7 @@ interface QuestionPromptControlProps {
 }
 
 function QuestionPromptControl({
+  disabled,
   onSelectionChange,
   onSupplementChange,
   prompt,
@@ -546,14 +600,14 @@ function QuestionPromptControl({
       <Typography.Text>{prompt.question}</Typography.Text>
       {prompt.multiple === true ? (
         <Checkbox.Group
-          disabled={options.length === 0}
+          disabled={disabled || options.length === 0}
           onChange={(values) => onSelectionChange(values.map(String))}
           options={options}
           value={selectedLabels}
         />
       ) : (
         <Radio.Group
-          disabled={options.length === 0}
+          disabled={disabled || options.length === 0}
           onChange={(event) => onSelectionChange([String(event.target.value)])}
           options={options}
           value={selectedLabels[0] ?? null}
@@ -562,6 +616,7 @@ function QuestionPromptControl({
       {showSupplement ? (
         <Input
           aria-label="Additional answer"
+          disabled={disabled}
           onChange={(event) => onSupplementChange(event.target.value)}
           placeholder={prompt.placeholder?.trim() || "Add details"}
           size="small"
@@ -615,6 +670,18 @@ function questionOptionLabel(label: string, description: string | undefined): st
 
 function selectionKey(questionId: string, promptIndex: number): string {
   return `${questionId}:${promptIndex}`;
+}
+
+function removeRecordKey(
+  record: Record<string, string>,
+  key: string,
+): Record<string, string> {
+  if (!(key in record)) {
+    return record;
+  }
+  const nextRecord = { ...record };
+  delete nextRecord[key];
+  return nextRecord;
 }
 
 function visiblePausedSubagent(

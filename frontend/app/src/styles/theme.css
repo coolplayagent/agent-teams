@@ -474,6 +474,46 @@ body {
   width: fit-content;
 }
 
+.at-message-thinking {
+  display: grid;
+  gap: 6px;
+  max-width: 760px;
+  padding: 8px 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-surface-muted);
+}
+
+.at-message-thinking-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--at-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.at-message-thinking-title svg {
+  color: var(--at-primary);
+}
+
+.at-message-thinking-body .at-message-markdown {
+  max-width: 100%;
+  line-height: 1.48;
+}
+
+.at-message-thinking-body .at-message-markdown p,
+.at-message-thinking-body .at-message-markdown h1,
+.at-message-thinking-body .at-message-markdown h2,
+.at-message-thinking-body .at-message-markdown h3,
+.at-message-thinking-body .at-message-markdown ul,
+.at-message-thinking-body .at-message-markdown ol,
+.at-message-thinking-body .at-message-markdown blockquote,
+.at-message-thinking-body .at-message-markdown pre,
+.at-message-thinking-body .at-message-markdown table {
+  margin-bottom: 8px;
+}
+
 .at-message-tool {
   display: grid;
   gap: 6px;

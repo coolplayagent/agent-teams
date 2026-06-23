@@ -1,7 +1,7 @@
 import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Copy, Wrench } from "lucide-react";
+import { Brain, Copy, Wrench } from "lucide-react";
 import { useMemo, useRef } from "react";
 
 import { listSessionMessages } from "../../api/client";
@@ -165,7 +165,11 @@ interface TimelineRow {
   copyable: boolean;
 }
 
-type TimelineRenderPart = TimelineTextPart | TimelineMediaPart | TimelineToolPart;
+type TimelineRenderPart =
+  | TimelineTextPart
+  | TimelineMediaPart
+  | TimelineThinkingPart
+  | TimelineToolPart;
 
 interface TimelineTextPart {
   kind: "text";
@@ -193,6 +197,13 @@ interface TimelineToolPart {
     | "result"
     | "validation";
   toolName: string;
+}
+
+interface TimelineThinkingPart {
+  kind: "thinking";
+  phase: "started" | "delta" | "finished";
+  partIndex: number | null;
+  text: string;
 }
 
 interface FallbackVirtualItem {
@@ -242,6 +253,10 @@ function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
+  const thinking = runtimeThinkingPart(entry);
+  if (thinking !== null) {
+    return [thinking];
+  }
   const tool = runtimeToolPart(entry);
   if (tool !== null) {
     return [tool];
@@ -265,8 +280,36 @@ function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
         if (part.kind === "tool") {
           return <MessageToolBlock key={`tool:${index}`} tool={part} />;
         }
+        if (part.kind === "thinking") {
+          return (
+            <MessageThinkingBlock
+              key={`thinking:${index}`}
+              thinking={part}
+            />
+          );
+        }
         return <MessageMediaPreview key={`media:${index}`} media={part} />;
       })}
+    </div>
+  );
+}
+
+function MessageThinkingBlock({ thinking }: { thinking: TimelineThinkingPart }) {
+  const hasText = thinking.text.trim().length > 0;
+  return (
+    <div
+      className={`at-message-thinking is-${thinking.phase}`}
+      data-part-index={thinking.partIndex ?? undefined}
+    >
+      <div className="at-message-thinking-title">
+        <Brain aria-hidden="true" size={14} />
+        <span>{thinkingPhaseLabel(thinking.phase)}</span>
+      </div>
+      {hasText ? (
+        <div className="at-message-thinking-body">
+          <MarkdownMessage text={thinking.text} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -425,6 +468,19 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
   };
 }
 
+function runtimeThinkingPart(entry: TimelineEntry): TimelineThinkingPart | null {
+  const phase = thinkingPhase(entry.kind);
+  if (phase === null) {
+    return null;
+  }
+  return {
+    kind: "thinking",
+    phase,
+    partIndex: thinkingPartIndex(entry.payload),
+    text: phase === "delta" ? thinkingDeltaText(entry) : "",
+  };
+}
+
 function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
   if (
     entry.kind !== "tool_call" &&
@@ -569,12 +625,39 @@ function estimateRowSize(row: TimelineRow | undefined): number {
     return 120;
   }
   const mediaCount = row.parts.filter((part) => part.kind === "media").length;
+  const thinkingCount = row.parts.filter((part) => part.kind === "thinking").length;
   const toolCount = row.parts.filter((part) => part.kind === "tool").length;
   const textLength = row.text.length;
   return 96
     + mediaCount * 138
+    + thinkingCount * 42
     + toolCount * 118
     + Math.min(160, Math.ceil(textLength / 110) * 22);
+}
+
+function thinkingPhase(
+  kind: RunEventType | "message",
+): TimelineThinkingPart["phase"] | null {
+  if (kind === "thinking_started") {
+    return "started";
+  }
+  if (kind === "thinking_delta") {
+    return "delta";
+  }
+  if (kind === "thinking_finished") {
+    return "finished";
+  }
+  return null;
+}
+
+function thinkingPhaseLabel(phase: TimelineThinkingPart["phase"]): string {
+  if (phase === "started") {
+    return "Thinking started";
+  }
+  if (phase === "finished") {
+    return "Thinking finished";
+  }
+  return "Thinking";
 }
 
 function toolPhaseLabel(tool: TimelineToolPart): string {
@@ -626,6 +709,29 @@ function validationFailureBody(payload: Record<string, JsonValue>): string {
     objectString(payload, "reason"),
     objectString(payload, "details"),
   ].filter(Boolean).join("\n");
+}
+
+function thinkingPartIndex(payload: JsonValue): number | null {
+  const payloadObject = jsonObject(payload);
+  if (payloadObject === null) {
+    return null;
+  }
+  const value = payloadObject.part_index;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return null;
+  }
+  return value;
+}
+
+function thinkingDeltaText(entry: TimelineEntry): string {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return "";
+  }
+  return objectRawString(payload, "text")
+    || objectRawString(payload, "delta")
+    || objectRawString(payload, "content")
+    || objectRawString(payload, "message");
 }
 
 function approvalActionIsApproved(action: string): boolean {
@@ -703,6 +809,14 @@ function objectString(
 ): string {
   const value = object[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function objectRawString(
+  object: Record<string, JsonValue>,
+  key: string,
+): string {
+  const value = object[key];
+  return typeof value === "string" ? value : "";
 }
 
 function objectBoolean(

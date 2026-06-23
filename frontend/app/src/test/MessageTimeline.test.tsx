@@ -340,6 +340,80 @@ describe("MessageTimeline", () => {
     expect(screen.getByText(/Feedback: Unsafe command/)).toBeVisible();
   });
 
+  it("renders runtime thinking events as compact blocks with markdown deltas", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-thinking": {
+            runId: "run-thinking",
+            status: "closed",
+            lastEventId: 3,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-thinking:1:0",
+                sessionId: "session-1",
+                runId: "run-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_started",
+                text: "thinking started",
+                payload: { part_index: 0 },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-thinking:2:1",
+                sessionId: "session-1",
+                runId: "run-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_delta",
+                text: "**Draft** [plan](https://example.test/plan)",
+                payload: {
+                  part_index: 0,
+                  text: "**Draft** [plan](https://example.test/plan)",
+                },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-thinking:3:2",
+                sessionId: "session-1",
+                runId: "run-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_finished",
+                text: "thinking finished",
+                payload: { part_index: 0 },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Thinking started")).toBeVisible();
+    expect(screen.getByText("Thinking")).toBeVisible();
+    expect(screen.getByText("Thinking finished")).toBeVisible();
+    expect(screen.getByText("Draft")).toBeVisible();
+    expect(screen.getByRole("link", { name: "plan" })).toHaveAttribute(
+      "href",
+      "https://example.test/plan",
+    );
+    expect(container.querySelectorAll(".at-message-thinking")).toHaveLength(3);
+    expect(
+      container.querySelector(".at-message-thinking-body .at-message-markdown"),
+    ).not.toBeNull();
+    expect(screen.queryByText("thinking started")).not.toBeInTheDocument();
+    expect(screen.queryByText("thinking delta")).not.toBeInTheDocument();
+    expect(screen.queryByText("thinking finished")).not.toBeInTheDocument();
+  });
+
   it("renders runtime tool calls, results, and validation failures", async () => {
     useRuntimeStore.setState({
       runtimeState: {

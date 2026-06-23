@@ -431,285 +431,287 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         }
       }}
     >
-      <Sender
-        ref={inputRef}
-        aria-label="Prompt"
-        autoSize={{ minRows: 1, maxRows: 7 }}
-        disabled={busy || sessionId === null}
-        className="at-composer-sender"
-        loading={createRunMutation.isPending || injectMessageMutation.isPending}
-        onChange={(value) => {
-          if (voiceInput.isBusy) {
-            voiceInput.stop({ ignoreTextUpdates: true });
-          }
-          setDraft(value);
-        }}
-        onPaste={(event) => {
-          void handlePromptPaste(event);
-        }}
-        onKeyDown={(event) => {
-          handlePromptKeyDown(event);
-        }}
-        onSubmit={() => {
-          if (canCreateRun) {
-            createRunMutation.mutate();
-            return;
-          }
-          if (canInject) {
-            injectMessageMutation.mutate("queued");
-          }
-        }}
-        placeholder="What would you like the agents to do?"
-        submitType="enter"
-        value={draft}
-        actions={false}
-      />
-      <PromptMentionMenu
-        activeIndex={activeMentionIndex}
-        onSelect={selectPromptMentionOption}
-        options={leadingMentionOptions}
-      />
-      <PromptAttachments
-        attachments={promptAttachments}
-        hasError={Boolean(attachmentValidationMessage)}
-        onRemove={(attachmentId) => {
-          setPromptAttachments((current) =>
-            current.filter((attachment) => attachment.id !== attachmentId),
-          );
-        }}
-      />
-      {displayedComposerStatus ? (
-        <Typography.Text className="at-composer-status" type="danger">
-          {displayedComposerStatus}
-        </Typography.Text>
-      ) : null}
-      <div className="at-composer-controls">
-        <Space className="at-composer-control-set" size={8} wrap>
-          <Segmented<SessionMode>
-            aria-label="Session mode"
-            className="at-session-mode-control"
-            disabled={!canChangeTopology}
-            onChange={(mode) => {
-              if (mode !== selectedSessionMode) {
-                updateSessionTopologyMode(mode);
-              }
-            }}
-            options={SESSION_MODE_OPTIONS.map((option) => ({
-              ...option,
-              disabled:
-                option.value === "orchestration" &&
-                orchestrationPresetOptions.length === 0,
-            }))}
-            size="small"
-            value={selectedSessionMode}
-          />
-          <Select
-            aria-label="Root role"
-            className="at-normal-root-role-select"
-            disabled={
-              !canChangeTopology ||
-              selectedSessionMode !== "normal" ||
-              normalRootRoleOptions.length === 0
+      <div className="at-composer-inner">
+        <Sender
+          ref={inputRef}
+          aria-label="Prompt"
+          autoSize={{ minRows: 1, maxRows: 7 }}
+          disabled={busy || sessionId === null}
+          className="at-composer-sender"
+          loading={createRunMutation.isPending || injectMessageMutation.isPending}
+          onChange={(value) => {
+            if (voiceInput.isBusy) {
+              voiceInput.stop({ ignoreTextUpdates: true });
             }
-            loading={roleOptionsQuery.isLoading || updateTopologyMutation.isPending}
-            onChange={(roleId) => {
-              const nextRoleId = normalizeProfileName(roleId);
-              if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
-                updateSessionTopologyMode("normal", {
-                  normalRootRoleId: nextRoleId,
-                });
-              }
-            }}
-            optionFilterProp="label"
-            options={normalRootRoleOptions}
-            placeholder="Root role"
-            popupMatchSelectWidth={false}
-            showSearch
-            size="small"
-            value={selectedNormalRootRoleId || undefined}
-          />
-          <Select
-            aria-label="Orchestration preset"
-            className="at-orchestration-preset-select"
-            disabled={
-              !canChangeTopology ||
-              selectedSessionMode !== "orchestration" ||
-              orchestrationPresetOptions.length === 0
+            setDraft(value);
+          }}
+          onPaste={(event) => {
+            void handlePromptPaste(event);
+          }}
+          onKeyDown={(event) => {
+            handlePromptKeyDown(event);
+          }}
+          onSubmit={() => {
+            if (canCreateRun) {
+              createRunMutation.mutate();
+              return;
             }
-            loading={
-              orchestrationQuery.isLoading || updateTopologyMutation.isPending
+            if (canInject) {
+              injectMessageMutation.mutate("queued");
             }
-            onChange={(presetId) => {
-              const nextPresetId = normalizeProfileName(presetId);
-              if (nextPresetId && nextPresetId !== selectedOrchestrationPresetId) {
-                updateSessionTopologyMode("orchestration", {
-                  orchestrationPresetId: nextPresetId,
-                });
-              }
-            }}
-            optionFilterProp="label"
-            options={orchestrationPresetOptions}
-            placeholder="Preset"
-            popupMatchSelectWidth={false}
-            showSearch
-            size="small"
-            value={selectedOrchestrationPresetId || undefined}
-          />
-          <Select
-            allowClear
-            aria-label="Target role"
-            className="at-role-select"
-            disabled={busy || activeRunId !== null}
-            loading={roleOptionsQuery.isLoading}
-            onChange={(value) => setTargetRoleId(value ?? null)}
-            optionFilterProp="label"
-            options={roleOptions}
-            placeholder="Role"
-            showSearch
-            size="small"
-            value={targetRoleId ?? undefined}
-          />
-          <Select
-            allowClear
-            aria-label="Model profile"
-            className="at-model-profile-select"
-            disabled={busy || activeRunId !== null || !canChangeModelProfile}
-            loading={
-              sessionQuery.isLoading ||
-              modelProfilesQuery.isLoading ||
-              updateModelProfileMutation.isPending
-            }
-            onChange={(value) => {
-              const nextProfile = normalizeProfileName(value);
-              if (
-                selectedModelProfile !== null &&
-                nextProfile !== selectedModelProfile
-              ) {
-                updateModelProfileMutation.mutate(nextProfile);
-              }
-            }}
-            optionFilterProp="label"
-            options={modelProfileOptions}
-            placeholder="Model"
-            popupMatchSelectWidth={false}
-            showSearch
-            size="small"
-            value={selectedModelProfile ?? undefined}
-          />
-          <Space className="at-thinking-control" size={6}>
-            <Typography.Text className="at-control-label" id="at-thinking-label">
-              Thinking
-            </Typography.Text>
-            <Switch
-              aria-labelledby="at-thinking-label"
-              checked={thinking.enabled}
-              disabled={busy || activeRunId !== null}
-              onChange={(enabled) => updateThinking({ enabled })}
+          }}
+          placeholder="What would you like the agents to do?"
+          submitType="enter"
+          value={draft}
+          actions={false}
+        />
+        <PromptMentionMenu
+          activeIndex={activeMentionIndex}
+          onSelect={selectPromptMentionOption}
+          options={leadingMentionOptions}
+        />
+        <PromptAttachments
+          attachments={promptAttachments}
+          hasError={Boolean(attachmentValidationMessage)}
+          onRemove={(attachmentId) => {
+            setPromptAttachments((current) =>
+              current.filter((attachment) => attachment.id !== attachmentId),
+            );
+          }}
+        />
+        {displayedComposerStatus ? (
+          <Typography.Text className="at-composer-status" type="danger">
+            {displayedComposerStatus}
+          </Typography.Text>
+        ) : null}
+        <div className="at-composer-controls">
+          <Space className="at-composer-control-set" size={8} wrap>
+            <Segmented<SessionMode>
+              aria-label="Session mode"
+              className="at-session-mode-control"
+              disabled={!canChangeTopology}
+              onChange={(mode) => {
+                if (mode !== selectedSessionMode) {
+                  updateSessionTopologyMode(mode);
+                }
+              }}
+              options={SESSION_MODE_OPTIONS.map((option) => ({
+                ...option,
+                disabled:
+                  option.value === "orchestration" &&
+                  orchestrationPresetOptions.length === 0,
+              }))}
               size="small"
+              value={selectedSessionMode}
             />
-            {thinking.enabled ? (
-              <Select
-                aria-label="Thinking effort"
-                className="at-thinking-effort-select"
+            <Select
+              aria-label="Root role"
+              className="at-normal-root-role-select"
+              disabled={
+                !canChangeTopology ||
+                selectedSessionMode !== "normal" ||
+                normalRootRoleOptions.length === 0
+              }
+              loading={roleOptionsQuery.isLoading || updateTopologyMutation.isPending}
+              onChange={(roleId) => {
+                const nextRoleId = normalizeProfileName(roleId);
+                if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
+                  updateSessionTopologyMode("normal", {
+                    normalRootRoleId: nextRoleId,
+                  });
+                }
+              }}
+              optionFilterProp="label"
+              options={normalRootRoleOptions}
+              placeholder="Root role"
+              popupMatchSelectWidth={false}
+              showSearch
+              size="small"
+              value={selectedNormalRootRoleId || undefined}
+            />
+            <Select
+              aria-label="Orchestration preset"
+              className="at-orchestration-preset-select"
+              disabled={
+                !canChangeTopology ||
+                selectedSessionMode !== "orchestration" ||
+                orchestrationPresetOptions.length === 0
+              }
+              loading={
+                orchestrationQuery.isLoading || updateTopologyMutation.isPending
+              }
+              onChange={(presetId) => {
+                const nextPresetId = normalizeProfileName(presetId);
+                if (nextPresetId && nextPresetId !== selectedOrchestrationPresetId) {
+                  updateSessionTopologyMode("orchestration", {
+                    orchestrationPresetId: nextPresetId,
+                  });
+                }
+              }}
+              optionFilterProp="label"
+              options={orchestrationPresetOptions}
+              placeholder="Preset"
+              popupMatchSelectWidth={false}
+              showSearch
+              size="small"
+              value={selectedOrchestrationPresetId || undefined}
+            />
+            <Select
+              allowClear
+              aria-label="Target role"
+              className="at-role-select"
+              disabled={busy || activeRunId !== null}
+              loading={roleOptionsQuery.isLoading}
+              onChange={(value) => setTargetRoleId(value ?? null)}
+              optionFilterProp="label"
+              options={roleOptions}
+              placeholder="Role"
+              showSearch
+              size="small"
+              value={targetRoleId ?? undefined}
+            />
+            <Select
+              allowClear
+              aria-label="Model profile"
+              className="at-model-profile-select"
+              disabled={busy || activeRunId !== null || !canChangeModelProfile}
+              loading={
+                sessionQuery.isLoading ||
+                modelProfilesQuery.isLoading ||
+                updateModelProfileMutation.isPending
+              }
+              onChange={(value) => {
+                const nextProfile = normalizeProfileName(value);
+                if (
+                  selectedModelProfile !== null &&
+                  nextProfile !== selectedModelProfile
+                ) {
+                  updateModelProfileMutation.mutate(nextProfile);
+                }
+              }}
+              optionFilterProp="label"
+              options={modelProfileOptions}
+              placeholder="Model"
+              popupMatchSelectWidth={false}
+              showSearch
+              size="small"
+              value={selectedModelProfile ?? undefined}
+            />
+            <Space className="at-thinking-control" size={6}>
+              <Typography.Text className="at-control-label" id="at-thinking-label">
+                Thinking
+              </Typography.Text>
+              <Switch
+                aria-labelledby="at-thinking-label"
+                checked={thinking.enabled}
                 disabled={busy || activeRunId !== null}
-                onChange={(effort) => updateThinking({ effort })}
-                options={THINKING_EFFORT_OPTIONS}
-                popupMatchSelectWidth={false}
+                onChange={(enabled) => updateThinking({ enabled })}
                 size="small"
-                value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
               />
-            ) : null}
-          </Space>
-          <Checkbox
-            aria-label="Shell safety policy"
-            checked={shellSafetyPolicyEnabled}
-            disabled={
-              busy || activeRunId !== null || !canOverrideShellSafetyPolicy
-            }
-            onChange={(event) =>
-              setShellSafetyPolicyEnabled(event.target.checked)
-            }
-          >
-            Shell safety
-          </Checkbox>
-          <Checkbox
-            checked={yolo}
-            disabled={busy || activeRunId !== null}
-            onChange={(event) => setYolo(event.target.checked)}
-          >
-            YOLO
-          </Checkbox>
-        </Space>
-        <Space size={8}>
-          {voiceInput.visible ? (
-            <Tooltip title={voiceInput.tooltip}>
-              <Button
-                aria-label={voiceInput.ariaLabel}
-                className="at-voice-input-button"
-                data-voice-state={voiceInput.state}
-                disabled={voiceInput.disabled}
-                icon={
-                  voiceInput.isAvailable ? <Mic size={16} /> : <MicOff size={16} />
-                }
-                loading={voiceInput.state === "transcribing"}
-                onClick={() =>
-                  voiceInput.toggle(
-                    readPromptSelection(draft, inputRef.current?.nativeElement),
-                  )
-                }
-              />
-            </Tooltip>
-          ) : null}
-          {activeRunId !== null ? (
-            <Tooltip title="Stop run">
-              <Button
-                danger
-                icon={<Pause size={16} />}
-                loading={stopRunMutation.isPending}
-                onClick={() => stopRunMutation.mutate()}
-              >
-                Stop
-              </Button>
-            </Tooltip>
-          ) : null}
-          {activeRunId !== null ? (
-            <>
-              <Button
-                disabled={!canInject}
-                icon={<Send size={16} />}
-                loading={
-                  injectMessageMutation.isPending &&
-                  injectMessageMutation.variables === "queued"
-                }
-                onClick={() => injectMessageMutation.mutate("queued")}
-              >
-                Queue
-              </Button>
-              <Button
-                danger
-                disabled={!canInject}
-                icon={<Play size={16} />}
-                loading={
-                  injectMessageMutation.isPending &&
-                  injectMessageMutation.variables === "interrupt"
-                }
-                onClick={() => injectMessageMutation.mutate("interrupt")}
-              >
-                Interrupt
-              </Button>
-            </>
-          ) : (
-            <Button
-              htmlType="submit"
-              icon={sessionId === null ? <Play size={16} /> : <Send size={16} />}
-              loading={createRunMutation.isPending}
-              type="primary"
-              disabled={!canCreateRun}
+              {thinking.enabled ? (
+                <Select
+                  aria-label="Thinking effort"
+                  className="at-thinking-effort-select"
+                  disabled={busy || activeRunId !== null}
+                  onChange={(effort) => updateThinking({ effort })}
+                  options={THINKING_EFFORT_OPTIONS}
+                  popupMatchSelectWidth={false}
+                  size="small"
+                  value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
+                />
+              ) : null}
+            </Space>
+            <Checkbox
+              aria-label="Shell safety policy"
+              checked={shellSafetyPolicyEnabled}
+              disabled={
+                busy || activeRunId !== null || !canOverrideShellSafetyPolicy
+              }
+              onChange={(event) =>
+                setShellSafetyPolicyEnabled(event.target.checked)
+              }
             >
-              Send
-            </Button>
-          )}
-        </Space>
+              Shell safety
+            </Checkbox>
+            <Checkbox
+              checked={yolo}
+              disabled={busy || activeRunId !== null}
+              onChange={(event) => setYolo(event.target.checked)}
+            >
+              YOLO
+            </Checkbox>
+          </Space>
+          <Space size={8}>
+            {voiceInput.visible ? (
+              <Tooltip title={voiceInput.tooltip}>
+                <Button
+                  aria-label={voiceInput.ariaLabel}
+                  className="at-voice-input-button"
+                  data-voice-state={voiceInput.state}
+                  disabled={voiceInput.disabled}
+                  icon={
+                    voiceInput.isAvailable ? <Mic size={16} /> : <MicOff size={16} />
+                  }
+                  loading={voiceInput.state === "transcribing"}
+                  onClick={() =>
+                    voiceInput.toggle(
+                      readPromptSelection(draft, inputRef.current?.nativeElement),
+                    )
+                  }
+                />
+              </Tooltip>
+            ) : null}
+            {activeRunId !== null ? (
+              <Tooltip title="Stop run">
+                <Button
+                  danger
+                  icon={<Pause size={16} />}
+                  loading={stopRunMutation.isPending}
+                  onClick={() => stopRunMutation.mutate()}
+                >
+                  Stop
+                </Button>
+              </Tooltip>
+            ) : null}
+            {activeRunId !== null ? (
+              <>
+                <Button
+                  disabled={!canInject}
+                  icon={<Send size={16} />}
+                  loading={
+                    injectMessageMutation.isPending &&
+                    injectMessageMutation.variables === "queued"
+                  }
+                  onClick={() => injectMessageMutation.mutate("queued")}
+                >
+                  Queue
+                </Button>
+                <Button
+                  danger
+                  disabled={!canInject}
+                  icon={<Play size={16} />}
+                  loading={
+                    injectMessageMutation.isPending &&
+                    injectMessageMutation.variables === "interrupt"
+                  }
+                  onClick={() => injectMessageMutation.mutate("interrupt")}
+                >
+                  Interrupt
+                </Button>
+              </>
+            ) : (
+              <Button
+                htmlType="submit"
+                icon={sessionId === null ? <Play size={16} /> : <Send size={16} />}
+                loading={createRunMutation.isPending}
+                type="primary"
+                disabled={!canCreateRun}
+              >
+                Send
+              </Button>
+            )}
+          </Space>
+        </div>
       </div>
     </form>
   );

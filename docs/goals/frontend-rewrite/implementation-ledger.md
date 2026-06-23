@@ -522,3 +522,30 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Reviewer subagent `019ef4ef-00f8-7fa1-b831-d460e1cd6bfd` returned PASS.
 - Followed up on the reviewer test-gap note by adding explicit coverage for metadata `name`, metadata `label`, and fallback behavior.
+
+## 2026-06-23 Framework Layout Recheck Batch
+
+### Scope
+- Rechecked V1 and V2 with real browser screenshots before editing, focusing on the high-level workspace/session/chat frame instead of detail polish.
+- Limited each V2 workspace sidebar group to the first ten sessions by default, with an explicit per-workspace `Show more` action that expands in batches.
+- Kept search results complete while preventing large unfiltered workspaces from rendering hundreds of session rows into the sidebar.
+- Centered the V2 timeline virtual content and composer contents into stable working columns closer to V1's visual structure.
+- Kept the fixed single-page shell while preserving timeline-owned scrolling and sidebar-owned scrolling.
+
+### Verification
+- Browser baseline screenshots captured V1 desktop, V2 desktop before, and V2 mobile before under `.tmp/frontend-v2-framework-round2/`.
+- V2 desktop before showed `.at-session-list` at `1124` client height and `14482` scroll height because `default` rendered 343 sessions at once.
+- V2 desktop after screenshot showed `.at-session-list` at `1124` client height and `1124` scroll height, with `Show more 10/343` and `Show more 10/41` controls.
+- V2 desktop after centered the timeline virtual column at `760px` width and the composer inner column at `920px` width.
+- Browser wheel verification showed timeline scrolling changed `.at-timeline.scrollTop` from `3309` to `2609` while document/body and session list scroll stayed at `0`.
+- V2 mobile before showed `.at-session-list` at `696` client height and `14482` scroll height.
+- V2 mobile after showed document/body dimensions still locked to the `390x844` viewport, and `.at-session-list` reduced to `696` client height and `1074` scroll height.
+- `npm run test -- --run src/test/SessionsSidebar.test.tsx src/test/Composer.test.tsx src/test/AppShell.test.tsx` in `frontend/app` passed with 51 tests.
+- Follow-up `npm run test -- --run src/test/SessionsSidebar.test.tsx` in `frontend/app` passed with 7 tests after adding search uncapped coverage.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Reviewer subagent `019ef501-d543-73d0-99b6-9ffd797bf55f` returned PASS.
+- Followed up on the reviewer test-gap note by adding explicit coverage that filtered workspace results remain uncapped beyond ten sessions.

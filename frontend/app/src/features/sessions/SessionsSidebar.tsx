@@ -7,13 +7,16 @@ import {
   Typography,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderClosed, Plus, RefreshCcw } from "lucide-react";
+import { ChevronDown, FolderClosed, Plus, RefreshCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
 import { useUiStore } from "../../runtime/uiStore";
 import { sessionDisplayLabel } from "./sessionLabels";
+
+const initialVisibleSessionsPerGroup = 10;
+const visibleSessionIncrement = 20;
 
 export function SessionsSidebar() {
   const { message } = App.useApp();
@@ -23,6 +26,9 @@ export function SessionsSidebar() {
   const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
   const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const [filter, setFilter] = useState("");
+  const [visibleSessionLimits, setVisibleSessionLimits] = useState<
+    Record<string, number>
+  >({});
 
   const sessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
@@ -100,7 +106,8 @@ export function SessionsSidebar() {
       );
     });
   }, [filter, sessionsQuery.data, workspaceOptions]);
-  const includeEmptyWorkspaces = filter.trim().length === 0;
+  const isFiltering = filter.trim().length > 0;
+  const includeEmptyWorkspaces = !isFiltering;
   const sessionGroups = useMemo(
     () => buildSessionGroups(workspaceOptions, filteredSessions, includeEmptyWorkspaces),
     [filteredSessions, includeEmptyWorkspaces, workspaceOptions],
@@ -152,65 +159,97 @@ export function SessionsSidebar() {
         <Empty description="No sessions" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : null}
       <div className="at-session-list">
-        {sessionGroups.map((group) => (
-          <section className="at-workspace-group" key={group.id}>
-            <button
-              className={
-                group.id === selectedWorkspaceId
-                  ? "at-workspace-group-header is-selected"
-                  : "at-workspace-group-header"
-              }
-              onClick={() => setSelectedWorkspaceId(group.id)}
-              title={group.pathHint || group.label}
-              type="button"
-            >
-              <FolderClosed aria-hidden="true" size={15} />
-              <span className="at-workspace-group-title">{group.label}</span>
-              <span className="at-workspace-group-count">{group.sessions.length}</span>
-            </button>
-            {group.sessions.length === 0 ? (
-              <div className="at-workspace-group-empty">No sessions</div>
-            ) : (
-              <div className="at-workspace-group-sessions">
-                {group.sessions.map((session) => (
-                  <button
-                    aria-current={
-                      session.session_id === selectedSessionId ? "page" : undefined
-                    }
-                    className={
-                      session.session_id === selectedSessionId
-                        ? "at-session-item is-selected"
-                        : "at-session-item"
-                    }
-                    key={session.session_id}
-                    onClick={() => {
-                      if (session.workspace_id) {
-                        setSelectedWorkspaceId(session.workspace_id);
+        {sessionGroups.map((group) => {
+          const visibleSessions = visibleSessionsForGroup(
+            group,
+            selectedSessionId,
+            visibleSessionLimits[group.id],
+            isFiltering,
+          );
+          const hiddenSessionCount = group.sessions.length - visibleSessions.length;
+          return (
+            <section className="at-workspace-group" key={group.id}>
+              <button
+                className={
+                  group.id === selectedWorkspaceId
+                    ? "at-workspace-group-header is-selected"
+                    : "at-workspace-group-header"
+                }
+                onClick={() => setSelectedWorkspaceId(group.id)}
+                title={group.pathHint || group.label}
+                type="button"
+              >
+                <FolderClosed aria-hidden="true" size={15} />
+                <span className="at-workspace-group-title">{group.label}</span>
+                <span className="at-workspace-group-count">{group.sessions.length}</span>
+              </button>
+              {group.sessions.length === 0 ? (
+                <div className="at-workspace-group-empty">No sessions</div>
+              ) : (
+                <div className="at-workspace-group-sessions">
+                  {visibleSessions.map((session) => (
+                    <button
+                      aria-current={
+                        session.session_id === selectedSessionId ? "page" : undefined
                       }
-                      setSelectedSessionId(session.session_id);
-                    }}
-                    title={sessionLabel(session)}
-                    type="button"
-                  >
-                    <div className="at-session-copy">
-                      <Typography.Text
-                        className="at-session-label"
-                        ellipsis
-                        title={sessionLabel(session)}
-                      >
-                        {sessionLabel(session)}
-                      </Typography.Text>
-                      {sessionMeta(session)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        ))}
+                      className={
+                        session.session_id === selectedSessionId
+                          ? "at-session-item is-selected"
+                          : "at-session-item"
+                      }
+                      key={session.session_id}
+                      onClick={() => {
+                        if (session.workspace_id) {
+                          setSelectedWorkspaceId(session.workspace_id);
+                        }
+                        setSelectedSessionId(session.session_id);
+                      }}
+                      title={sessionLabel(session)}
+                      type="button"
+                    >
+                      <div className="at-session-copy">
+                        <Typography.Text
+                          className="at-session-label"
+                          ellipsis
+                          title={sessionLabel(session)}
+                        >
+                          {sessionLabel(session)}
+                        </Typography.Text>
+                        {sessionMeta(session)}
+                      </div>
+                    </button>
+                  ))}
+                  {hiddenSessionCount > 0 ? (
+                    <button
+                      aria-label={`Show more sessions in ${group.label}`}
+                      className="at-workspace-group-more"
+                      onClick={() => showMoreSessions(group.id)}
+                      type="button"
+                    >
+                      <ChevronDown aria-hidden="true" size={14} />
+                      <span>Show more</span>
+                      <span className="at-workspace-group-more-count">
+                        {visibleSessions.length}/{group.sessions.length}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
     </div>
   );
+
+  function showMoreSessions(groupId: string) {
+    setVisibleSessionLimits((current) => ({
+      ...current,
+      [groupId]:
+        (current[groupId] ?? initialVisibleSessionsPerGroup) +
+        visibleSessionIncrement,
+    }));
+  }
 }
 
 interface SessionGroup {
@@ -290,6 +329,34 @@ function sortSessions(sessions: SessionSidebarRecord[]): SessionSidebarRecord[] 
     sessionLabel(left).localeCompare(sessionLabel(right)) ||
     left.session_id.localeCompare(right.session_id)
   ));
+}
+
+function visibleSessionsForGroup(
+  group: SessionGroup,
+  selectedSessionId: string | null,
+  visibleLimit: number | undefined,
+  isFiltering: boolean,
+): SessionSidebarRecord[] {
+  if (isFiltering) {
+    return group.sessions;
+  }
+  const limit = Math.max(
+    initialVisibleSessionsPerGroup,
+    visibleLimit ?? initialVisibleSessionsPerGroup,
+  );
+  if (group.sessions.length <= limit) {
+    return group.sessions;
+  }
+  const selectedIndex = group.sessions.findIndex(
+    (session) => session.session_id === selectedSessionId,
+  );
+  if (selectedIndex >= limit && limit > 1) {
+    return [
+      ...group.sessions.slice(0, limit - 1),
+      group.sessions[selectedIndex],
+    ];
+  }
+  return group.sessions.slice(0, limit);
 }
 
 function sessionTimestampValue(session: SessionSidebarRecord): number {

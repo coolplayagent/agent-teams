@@ -221,6 +221,82 @@ describe("SessionsSidebar", () => {
     expect(screen.queryByText("Agent Teams")).not.toBeInTheDocument();
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
   });
+
+  it("limits large workspace groups until the user asks for more sessions", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      ...Array.from({ length: 10 }, (_, index) => ({
+        session_id: `session-visible-${index}`,
+        title: `Visible session ${index + 1}`,
+        updated_at: `2026-06-23T10:${String(index).padStart(2, "0")}:00Z`,
+        workspace_id: "workspace-1",
+      })),
+      {
+        session_id: "session-hidden-1",
+        title: "Hidden session 1",
+        updated_at: "2026-06-23T09:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-hidden-2",
+        title: "Hidden session 2",
+        updated_at: "2026-06-23T08:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Visible session 10")).toBeVisible();
+    expect(screen.queryByText("Hidden session 1")).not.toBeInTheDocument();
+    expect(screen.getByText("10/12")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Show more sessions in Agent Teams",
+    }));
+
+    expect(await screen.findByText("Hidden session 1")).toBeVisible();
+    expect(screen.getByText("Hidden session 2")).toBeVisible();
+  });
+
+  it("keeps filtered workspace results uncapped", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        session_id: `session-result-${index}`,
+        title: `Filtered result ${String(index + 1).padStart(2, "0")}`,
+        updated_at: `2026-06-23T10:${String(index).padStart(2, "0")}:00Z`,
+        workspace_id: "workspace-1",
+      })),
+    );
+
+    renderSidebar();
+
+    expect(await screen.findByText("Filtered result 12")).toBeVisible();
+    expect(screen.queryByText("Filtered result 01")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
+      target: { value: "filtered" },
+    });
+
+    expect(await screen.findByText("Filtered result 01")).toBeVisible();
+    expect(screen.getByText("Filtered result 02")).toBeVisible();
+    expect(screen.queryByRole("button", {
+      name: "Show more sessions in Agent Teams",
+    })).not.toBeInTheDocument();
+  });
 });
 
 function renderSidebar() {

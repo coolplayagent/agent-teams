@@ -1492,6 +1492,189 @@ body {
   color: var(--at-danger);
 }
 
+.at-settings-drawer .ant-drawer-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.at-settings-center {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--at-surface);
+}
+
+.at-settings-nav {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  border-right: 1px solid var(--at-border);
+  background: var(--at-sidebar);
+}
+
+.at-settings-nav-item {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.at-settings-nav-item:hover,
+.at-settings-nav-item:focus-visible,
+.at-settings-nav-item.is-active {
+  background: var(--at-surface-muted);
+  outline: none;
+}
+
+.at-settings-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.at-settings-section {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.at-settings-section-header {
+  flex: 0 0 auto;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-section-header h3.ant-typography {
+  margin: 0;
+  color: var(--at-text);
+  font-size: 17px;
+  font-weight: 620;
+  line-height: 1.3;
+}
+
+.at-settings-section-body {
+  flex: 1 1 auto;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 24px 24px;
+}
+
+.at-settings-form {
+  max-width: 480px;
+}
+
+.at-settings-field-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  max-width: 560px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-field-row > span {
+  color: var(--at-text);
+  font-size: 13px;
+}
+
+.at-settings-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.at-settings-facts > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--at-border);
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-facts dt {
+  margin: 0 0 3px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-settings-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--at-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-settings-list {
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.at-settings-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, 168px);
+  align-items: center;
+  gap: 16px;
+  min-height: 50px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-list-row:last-child {
+  border-bottom: 0;
+}
+
+.at-settings-list-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.at-settings-list-main > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text);
+  font-size: 13px;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-settings-list-main .ant-typography,
+.at-settings-list-meta {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-settings-empty {
+  padding: 14px 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  color: var(--at-text-muted);
+  font-size: 13px;
+}
+
 @media (max-width: 760px) {
   .at-shell,
   .at-topbar,
@@ -1624,6 +1807,47 @@ body {
   .at-project-facts > div {
     grid-template-columns: minmax(0, 1fr);
     gap: 3px;
+  }
+
+  .at-settings-center {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .at-settings-nav {
+    align-items: center;
+    display: flex;
+    gap: 4px;
+    min-height: 0;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--at-border);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .at-settings-nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .at-settings-section-header {
+    padding: 14px 16px 12px;
+  }
+
+  .at-settings-section-body {
+    padding: 14px 16px 18px;
+  }
+
+  .at-settings-field-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .at-settings-list-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
   }
 
   .at-recovery-item,

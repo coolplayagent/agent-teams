@@ -420,6 +420,55 @@ describe("MessageTimeline", () => {
     expect(screen.getByText(/cmd is required/)).toBeVisible();
   });
 
+  it("falls back to runtime text for malformed tool and approval payloads", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-malformed-tools": {
+            runId: "run-malformed-tools",
+            status: "closed",
+            lastEventId: 2,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-malformed-tools:1:0",
+                sessionId: "session-1",
+                runId: "run-malformed-tools",
+                roleId: "MainAgent",
+                kind: "tool_call",
+                text: "tool call",
+                payload: { parse_error: true, raw_payload: "{bad json" },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-malformed-tools:2:1",
+                sessionId: "session-1",
+                runId: "run-malformed-tools",
+                roleId: "MainAgent",
+                kind: "tool_approval_requested",
+                text: "tool approval requested",
+                payload: {},
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("tool call")).toBeVisible();
+    expect(screen.getByText("tool approval requested")).toBeVisible();
+    expect(screen.queryByText(/Tool call:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Approval requested:/)).not.toBeInTheDocument();
+  });
+
   it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

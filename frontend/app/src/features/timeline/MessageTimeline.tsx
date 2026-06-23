@@ -395,13 +395,18 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
     return null;
   }
   const payload = jsonObject(entry.payload);
-  if (payload === null) {
+  if (payload === null || payloadHasParseError(payload)) {
     return null;
   }
   const action = objectString(payload, "action");
   const feedback = objectString(payload, "feedback");
   const argsPreview = objectString(payload, "args_preview");
   const optionLabels = approvalOptionLabels(payload.acp_options);
+  const callId = objectString(payload, "tool_call_id");
+  const toolName = objectString(payload, "tool_name");
+  if (!callId && !toolName && !action && !feedback && !argsPreview && !optionLabels) {
+    return null;
+  }
   return {
     action,
     body: approvalBody({
@@ -410,13 +415,13 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
       feedback,
       optionLabels,
     }),
-    callId: objectString(payload, "tool_call_id"),
+    callId,
     error: entry.kind === "tool_approval_resolved" && approvalActionIsError(action),
     kind: "tool",
     phase: entry.kind === "tool_approval_requested"
       ? "approval-requested"
       : "approval-resolved",
-    toolName: objectString(payload, "tool_name") || entry.text || "unknown_tool",
+    toolName: toolName || entry.text || "unknown_tool",
   };
 }
 
@@ -429,12 +434,15 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     return null;
   }
   const payload = jsonObject(entry.payload);
-  if (payload === null) {
+  if (payload === null || payloadHasParseError(payload)) {
     return null;
   }
   const toolName = objectString(payload, "tool_name") || entry.text || "unknown_tool";
   const callId = objectString(payload, "tool_call_id");
   if (entry.kind === "tool_call") {
+    if (!callId && !objectString(payload, "tool_name") && payload.args === undefined) {
+      return null;
+    }
     return {
       action: "",
       body: jsonValueText(payload.args ?? null),
@@ -446,9 +454,13 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     };
   }
   if (entry.kind === "tool_input_validation_failed") {
+    const body = validationFailureBody(payload);
+    if (!callId && !objectString(payload, "tool_name") && !body) {
+      return null;
+    }
     return {
       action: "",
-      body: validationFailureBody(payload),
+      body,
       callId,
       error: true,
       kind: "tool",
@@ -457,6 +469,9 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     };
   }
   const result = payload.result ?? payload.content ?? null;
+  if (!callId && !objectString(payload, "tool_name") && result === null) {
+    return null;
+  }
   return {
     action: "",
     body: jsonValueText(result),
@@ -676,6 +691,10 @@ function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
     return null;
   }
   return value;
+}
+
+function payloadHasParseError(payload: Record<string, JsonValue>): boolean {
+  return payload.parse_error === true || payload.raw_payload_json !== undefined;
 }
 
 function objectString(

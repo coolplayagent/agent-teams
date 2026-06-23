@@ -51,3 +51,16 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `uv run --extra dev ruff check --fix` on touched backend files passed.
 - `uv run --extra dev basedpyright` on touched backend files passed.
 - `uv run --extra dev pytest -q tests/unit_tests/interfaces/server/test_ag_ui_mapping.py tests/unit_tests/interfaces/server/test_ag_ui_router.py tests/unit_tests/interfaces/server/test_runs_router.py::test_create_run_route_reuses_input_media_refs_for_display_input tests/unit_tests/interfaces/server/test_app.py::test_runtime_bundle_wires_runtime_app_with_fake_modules` passed with 21 tests.
+
+## 2026-06-23 Recovery Resume Stream Batch
+
+### Scope
+- Extracted the React AG-UI stream lifecycle into a shared run stream controller.
+- Reused the controller from both composer-created runs and recovery resume actions.
+- Recovery resume now starts `/api/ag-ui/runs/{run_id}/events` from the recovery snapshot event offset when available.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 4 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

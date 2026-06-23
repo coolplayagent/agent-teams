@@ -2,39 +2,24 @@ import { App, Button, Checkbox, Space, Tooltip } from "antd";
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { createRun, stopRun } from "../../api/client";
-import { openRunStream, type RunStreamHandle } from "../../runtime/streamClient";
-import { useRuntimeStore } from "../../runtime/runtimeStore";
+import type { RunStreamController } from "../../runtime/useRunStreamController";
 
 interface ComposerProps {
+  runStreamController: RunStreamController;
   sessionId: string | null;
 }
 
-export function Composer({ sessionId }: ComposerProps) {
+export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const inputRef = useRef<SenderRef | null>(null);
-  const streamHandleRef = useRef<RunStreamHandle | null>(null);
-  const runtimeState = useRuntimeStore((state) => state.runtimeState);
-  const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
-  const runtimeStateRef = useRef(runtimeState);
   const [draft, setDraft] = useState("");
   const [yolo, setYolo] = useState(true);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
-
-  useEffect(() => {
-    runtimeStateRef.current = runtimeState;
-  }, [runtimeState]);
-
-  useEffect(
-    () => () => {
-      streamHandleRef.current?.close();
-    },
-    [],
-  );
+  const activeRunId = runStreamController.activeRunId;
 
   const createRunMutation = useMutation({
     mutationFn: async () => {
@@ -50,24 +35,9 @@ export function Composer({ sessionId }: ComposerProps) {
     },
     onSuccess: (result) => {
       setDraft("");
-      setActiveRunId(result.run_id);
-      streamHandleRef.current?.close();
-      streamHandleRef.current = openRunStream({
+      runStreamController.startRunStream({
         runId: result.run_id,
-        afterEventId: runtimeStateRef.current.runs[result.run_id]?.lastEventId ?? 0,
-        initialState: runtimeStateRef.current,
-        onState: (nextRuntimeState) => {
-          setRuntimeState(nextRuntimeState);
-        },
-        onClosed: () => {
-          setActiveRunId(null);
-          void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "messages"] });
-          void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-          void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
-        },
-        onError: (errorMessage) => {
-          void message.error(errorMessage);
-        },
+        sessionId: result.session_id,
       });
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "messages"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
@@ -85,7 +55,7 @@ export function Composer({ sessionId }: ComposerProps) {
       return stopRun(activeRunId);
     },
     onSuccess: () => {
-      setActiveRunId(null);
+      runStreamController.clearRunStream();
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       if (sessionId !== null) {
         void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });

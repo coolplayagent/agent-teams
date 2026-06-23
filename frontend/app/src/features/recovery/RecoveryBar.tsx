@@ -2,12 +2,14 @@ import { Alert, Button, Space } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getRecoverySnapshot, resumeRun } from "../../api/client";
+import type { RunStreamController } from "../../runtime/useRunStreamController";
 
 interface RecoveryBarProps {
+  runStreamController: RunStreamController;
   sessionId: string | null;
 }
 
-export function RecoveryBar({ sessionId }: RecoveryBarProps) {
+export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps) {
   const queryClient = useQueryClient();
   const recoveryQuery = useQuery({
     queryKey: ["sessions", sessionId, "recovery"],
@@ -22,7 +24,12 @@ export function RecoveryBar({ sessionId }: RecoveryBarProps) {
 
   const resumeMutation = useMutation({
     mutationFn: () => resumeRun(recoverableRunId ?? ""),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      runStreamController.startRunStream({
+        runId: result.run_id,
+        sessionId: result.session_id,
+        afterEventId: activeRun?.last_event_id,
+      });
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },

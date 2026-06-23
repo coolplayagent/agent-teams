@@ -26,6 +26,7 @@ import { RecoveryBar } from "../recovery/RecoveryBar";
 import { SessionsSidebar } from "../sessions/SessionsSidebar";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { MessageTimeline } from "../timeline/MessageTimeline";
+import { useRunStreamController } from "../../runtime/useRunStreamController";
 import { useUiStore } from "../../runtime/uiStore";
 import { contentPartText, type TimelineMessage } from "../../api/contracts";
 
@@ -37,6 +38,7 @@ export function AppShell() {
   const { token } = theme.useToken();
   const [activeView, setActiveView] = useState<"chat" | "observability">("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   const themeMode = useUiStore((state) => state.themeMode);
@@ -143,9 +145,15 @@ export function AppShell() {
             <ObservabilityPanel sessionId={selectedSessionId} />
           ) : (
             <>
-              <RecoveryBar sessionId={selectedSessionId} />
+              <RecoveryBar
+                runStreamController={runStreamController}
+                sessionId={selectedSessionId}
+              />
               <MessageTimeline sessionId={selectedSessionId} />
-              <Composer sessionId={selectedSessionId} />
+              <Composer
+                runStreamController={runStreamController}
+                sessionId={selectedSessionId}
+              />
             </>
           )}
         </Content>

@@ -14,11 +14,7 @@ interface MessageTimelineProps {
 
 export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
-  const runtimeEntries = useRuntimeStore((state) =>
-    Object.values(state.runtimeState.runs)
-      .flatMap((runState) => runState.entries)
-      .filter((entry) => entry.sessionId === sessionId),
-  );
+  const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const messagesQuery = useQuery({
     queryKey: ["sessions", sessionId, "messages"],
     queryFn: () => listSessionMessages(sessionId ?? ""),
@@ -26,6 +22,13 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   });
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const runtimeEntries = useMemo(
+    () =>
+      Object.values(runtimeState.runs)
+        .flatMap((runState) => runState.entries)
+        .filter((entry) => entry.sessionId === sessionId),
+    [runtimeState, sessionId],
+  );
   const rows = useMemo(
     () => [
       ...messages.map(messageToRow),

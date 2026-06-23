@@ -222,6 +222,51 @@ describe("SessionsSidebar", () => {
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
   });
 
+  it("collapses workspace groups while keeping search results visible", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-b",
+        title: "Beta",
+        updated_at: "2026-06-23T11:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Alpha")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Agent Teams" }));
+
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand Agent Teams" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
+      target: { value: "alpha" },
+    });
+
+    expect(await screen.findByText("Alpha")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Collapse Agent Teams" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
   it("limits large workspace groups until the user asks for more sessions", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

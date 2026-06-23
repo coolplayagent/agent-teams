@@ -549,3 +549,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Reviewer subagent `019ef501-d543-73d0-99b6-9ffd797bf55f` returned PASS.
 - Followed up on the reviewer test-gap note by adding explicit coverage that filtered workspace results remain uncapped beyond ten sessions.
+
+## 2026-06-23 Workspace Group Collapse Batch
+
+### Scope
+- Split each V2 workspace header into a dedicated expand/collapse control and a separate title selection target, matching the V1 sidebar interaction shape more closely.
+- Added per-workspace expanded state with `aria-expanded` and explicit `Collapse`/`Expand` labels for keyboard and screen-reader affordance.
+- Kept search results visible by forcing matching workspace groups open while filtering, even if the group was collapsed before the search.
+- Preserved the existing capped unfiltered group rendering while letting filtered results remain complete.
+
+### Verification
+- Browser screenshots captured expanded, collapsed, search-expanded, and mobile states under `.tmp/frontend-v2-workspace-collapse/`.
+- V2 desktop verification at `1248x679` showed body and document scroll dimensions locked to the viewport, while `.at-session-list` owned its own scroll.
+- Expanded desktop state showed `default` rendered ten visible session rows; collapsed desktop state showed `default` at `aria-expanded=false` with zero rendered session rows.
+- Collapsing `default` reduced `.at-session-list` scroll height from `1073` to `672`.
+- Searching for `连续修复验证` after collapse forced `default` back to `aria-expanded=true` and rendered all `70` matching sessions.
+- Mobile verification at `390x844` kept body and document dimensions locked to the viewport while `.at-session-list` remained the long scroll area.
+- `npm run test -- --run src/test/SessionsSidebar.test.tsx` in `frontend/app` passed with 8 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Reviewer subagent `019ef50d-593e-71f0-956f-de50c07567fd` returned PASS.

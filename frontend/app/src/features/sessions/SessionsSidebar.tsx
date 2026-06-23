@@ -7,7 +7,13 @@ import {
   Typography,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, FolderClosed, Plus, RefreshCcw } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderClosed,
+  Plus,
+  RefreshCcw,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
@@ -28,6 +34,9 @@ export function SessionsSidebar() {
   const [filter, setFilter] = useState("");
   const [visibleSessionLimits, setVisibleSessionLimits] = useState<
     Record<string, number>
+  >({});
+  const [workspaceExpanded, setWorkspaceExpanded] = useState<
+    Record<string, boolean>
   >({});
 
   const sessionsQuery = useQuery({
@@ -160,6 +169,7 @@ export function SessionsSidebar() {
       ) : null}
       <div className="at-session-list">
         {sessionGroups.map((group) => {
+          const groupExpanded = isFiltering || workspaceExpanded[group.id] !== false;
           const visibleSessions = visibleSessionsForGroup(
             group,
             selectedSessionId,
@@ -169,23 +179,41 @@ export function SessionsSidebar() {
           const hiddenSessionCount = group.sessions.length - visibleSessions.length;
           return (
             <section className="at-workspace-group" key={group.id}>
-              <button
+              <div
                 className={
                   group.id === selectedWorkspaceId
                     ? "at-workspace-group-header is-selected"
                     : "at-workspace-group-header"
                 }
-                onClick={() => setSelectedWorkspaceId(group.id)}
                 title={group.pathHint || group.label}
-                type="button"
               >
-                <FolderClosed aria-hidden="true" size={15} />
-                <span className="at-workspace-group-title">{group.label}</span>
+                <button
+                  aria-expanded={groupExpanded}
+                  aria-label={`${groupExpanded ? "Collapse" : "Expand"} ${group.label}`}
+                  className="at-workspace-group-toggle"
+                  onClick={() => toggleWorkspaceGroup(group.id)}
+                  type="button"
+                >
+                  <FolderClosed aria-hidden="true" size={15} />
+                  {groupExpanded ? (
+                    <ChevronDown aria-hidden="true" size={13} />
+                  ) : (
+                    <ChevronRight aria-hidden="true" size={13} />
+                  )}
+                </button>
+                <button
+                  className="at-workspace-group-title-button"
+                  onClick={() => setSelectedWorkspaceId(group.id)}
+                  type="button"
+                >
+                  <span className="at-workspace-group-title">{group.label}</span>
+                </button>
                 <span className="at-workspace-group-count">{group.sessions.length}</span>
-              </button>
-              {group.sessions.length === 0 ? (
+              </div>
+              {groupExpanded && group.sessions.length === 0 ? (
                 <div className="at-workspace-group-empty">No sessions</div>
-              ) : (
+              ) : null}
+              {groupExpanded && group.sessions.length > 0 ? (
                 <div className="at-workspace-group-sessions">
                   {visibleSessions.map((session) => (
                     <button
@@ -234,7 +262,7 @@ export function SessionsSidebar() {
                     </button>
                   ) : null}
                 </div>
-              )}
+              ) : null}
             </section>
           );
         })}
@@ -248,6 +276,13 @@ export function SessionsSidebar() {
       [groupId]:
         (current[groupId] ?? initialVisibleSessionsPerGroup) +
         visibleSessionIncrement,
+    }));
+  }
+
+  function toggleWorkspaceGroup(groupId: string) {
+    setWorkspaceExpanded((current) => ({
+      ...current,
+      [groupId]: current[groupId] === false,
     }));
   }
 }

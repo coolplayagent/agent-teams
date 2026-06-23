@@ -10,6 +10,8 @@ import type {
   SessionRecord,
   SessionSidebarRecord,
   TimelineMessage,
+  ToolApprovalAction,
+  UserQuestionAnswerSubmission,
   WorkspaceRecord,
 } from "./contracts";
 import { requestJson } from "./http";
@@ -77,6 +79,39 @@ export function resumeRun(runId: string): Promise<{ status: string; run_id: stri
     `/ag-ui/runs/${encodeURIComponent(runId)}:resume`,
     {
       method: "POST",
+    },
+  );
+}
+
+export function resolveToolApproval(
+  runId: string,
+  toolCallId: string,
+  action: ToolApprovalAction,
+  optionId = "",
+): Promise<{ status: string }> {
+  const payload: { action: ToolApprovalAction; option_id?: string } = { action };
+  if (optionId.trim()) {
+    payload.option_id = optionId.trim();
+  }
+  return requestJson<{ status: string }>(
+    `/ag-ui/runs/${encodeURIComponent(runId)}/tool-approvals/${encodeURIComponent(toolCallId)}:resolve`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function answerUserQuestion(
+  runId: string,
+  questionId: string,
+  answers: UserQuestionAnswerSubmission,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/ag-ui/runs/${encodeURIComponent(runId)}/questions/${encodeURIComponent(questionId)}:answer`,
+    {
+      method: "POST",
+      body: JSON.stringify(answers),
     },
   );
 }

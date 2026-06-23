@@ -64,3 +64,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 4 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Pending Interaction Actions Batch
+
+### Scope
+- Added typed React contracts for recovery snapshot tool approvals and user questions.
+- Added AG-UI client actions for resolving tool approvals and answering user questions.
+- Expanded the recovery bar so pending approvals and questions can be handled without returning to the legacy UI.
+- Added focused React tests for approval resolution, question answer submission, and resume-before-approval behavior.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 7 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

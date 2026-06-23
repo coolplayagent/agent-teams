@@ -143,6 +143,47 @@ body {
   border-right: 0;
 }
 
+.at-recovery-body {
+  display: grid;
+  gap: 8px;
+}
+
+.at-recovery-panel {
+  display: grid;
+  gap: 8px;
+  max-width: 980px;
+}
+
+.at-recovery-item,
+.at-recovery-question {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+}
+
+.at-recovery-question {
+  align-items: start;
+}
+
+.at-recovery-copy,
+.at-recovery-prompt {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.at-recovery-question .ant-radio-group,
+.at-recovery-question .ant-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
 .at-timeline {
   grid-row: 2;
   min-height: 0;
@@ -277,6 +318,11 @@ body {
 
   .at-timeline {
     padding: 14px;
+  }
+
+  .at-recovery-item,
+  .at-recovery-question {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .at-composer-controls {

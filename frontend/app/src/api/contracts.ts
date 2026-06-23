@@ -129,8 +129,8 @@ export interface TimelineMessage {
 export interface RecoverySnapshot {
   active_run: RecoveryRun | null;
   background_tasks: JsonValue[];
-  pending_tool_approvals: JsonValue[];
-  pending_user_questions: JsonValue[];
+  pending_tool_approvals: PendingToolApproval[];
+  pending_user_questions: PendingUserQuestion[];
   paused_subagent: JsonValue | null;
   round_snapshot: JsonValue | null;
 }
@@ -145,6 +145,70 @@ export interface RecoveryRun {
   should_show_recover?: boolean;
   pending_tool_approval_count?: number;
   pending_user_question_count?: number;
+}
+
+export type ToolApprovalAction =
+  | "approve"
+  | "approve_once"
+  | "approve_exact"
+  | "approve_prefix"
+  | "deny";
+
+export interface ToolApprovalOption {
+  id?: string;
+  option_id?: string;
+  optionId?: string;
+  label?: string;
+  name?: string;
+  kind?: string;
+}
+
+export interface PendingToolApproval {
+  tool_call_id: string;
+  tool_name?: string;
+  args_preview?: string;
+  role_id?: string;
+  instance_id?: string;
+  requested_at?: string;
+  status?: string;
+  feedback?: string;
+  acp_options?: ToolApprovalOption[];
+}
+
+export interface UserQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface UserQuestionPrompt {
+  header?: string;
+  question: string;
+  options: UserQuestionOption[];
+  multiple?: boolean;
+  placeholder?: string;
+}
+
+export interface PendingUserQuestion {
+  question_id: string;
+  run_id: string;
+  role_id?: string;
+  instance_id?: string;
+  requested_at?: string;
+  status?: string;
+  questions: UserQuestionPrompt[];
+}
+
+export interface UserQuestionSelection {
+  label: string;
+  supplement?: string;
+}
+
+export interface UserQuestionAnswer {
+  selections: UserQuestionSelection[];
+}
+
+export interface UserQuestionAnswerSubmission {
+  answers: UserQuestionAnswer[];
 }
 
 export interface GeneralConfig {

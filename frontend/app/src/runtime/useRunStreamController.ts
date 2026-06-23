@@ -68,6 +68,9 @@ export function useRunStreamController(): RunStreamController {
         void queryClient.invalidateQueries({
           queryKey: ["sessions", options.sessionId, "recovery"],
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", options.sessionId, "token-usage"],
+        });
       },
       onError: (errorMessage) => {
         void message.error(errorMessage);

@@ -207,3 +207,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 20 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Token Usage Refresh Remediation Batch
+
+### Scope
+- Addressed reviewer `019ef284-18b0-7b53-a3b0-cb41ccb24a04` finding where token usage only refreshed on mount or manual refresh.
+- Invalidated the selected session token usage query when an AG-UI run stream closes.
+- Added hook-level React coverage for token usage invalidation on stream close.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run RunStreamController.test.tsx` in `frontend/app` passed with 1 test.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 21 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

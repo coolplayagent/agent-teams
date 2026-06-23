@@ -20,7 +20,22 @@ export interface ServerHealthPayload {
 export interface WorkspaceRecord {
   workspace_id: string;
   root_path: string;
+  name?: string;
   display_name?: string;
+}
+
+export interface WorkspacePage {
+  items: WorkspaceRecord[];
+  next_cursor?: string | null;
+  has_more?: boolean;
+}
+
+export interface SessionCreateRequest {
+  workspace_id: string;
+  normal_model_profile?: string | null;
+  metadata?: {
+    title?: string;
+  } | null;
 }
 
 export interface SessionSidebarRecord {

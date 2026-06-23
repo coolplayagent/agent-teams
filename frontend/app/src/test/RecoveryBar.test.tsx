@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 describe("RecoveryBar", () => {
-  it("resolves pending tool approvals through AG-UI", async () => {
+  it("lets the backend choose the safest ACP approval option", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({
         pending_tool_approvals: [
@@ -40,7 +40,10 @@ describe("RecoveryBar", () => {
             tool_call_id: "tool-call-1",
             tool_name: "execute_command",
             args_preview: '{"cmd":"npm test"}',
-            acp_options: [{ id: "allow_once", kind: "allow_once" }],
+            acp_options: [
+              { optionId: "allow_always", kind: "allow_always" },
+              { optionId: "allow_once", kind: "allow_once" },
+            ],
           },
         ],
       }),
@@ -57,7 +60,7 @@ describe("RecoveryBar", () => {
         "run-1",
         "tool-call-1",
         "approve",
-        "allow_once",
+        undefined,
       ),
     );
   });
@@ -93,6 +96,60 @@ describe("RecoveryBar", () => {
         "sub-run-1",
         "question-1",
         { answers: [{ selections: [{ label: "Go" }] }] },
+      ),
+    );
+  });
+
+  it("hides the reserved question option label and submits supplements", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_user_questions: [
+          {
+            question_id: "question-1",
+            run_id: "sub-run-1",
+            role_id: "Explorer",
+            questions: [
+              {
+                question: "Pick next step",
+                options: [
+                  { label: "Go", description: "Continue" },
+                  { label: "__none_of_the_above__" },
+                ],
+                multiple: false,
+                placeholder: "Describe the next step",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    answerUserQuestionMock.mockResolvedValue({ status: "ok" });
+
+    renderRecoveryBar();
+
+    expect(screen.queryByText("__none_of_the_above__")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByLabelText("Other"));
+    fireEvent.change(screen.getByLabelText("Additional answer"), {
+      target: { value: "Try a narrower search" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Answer" }));
+
+    await waitFor(() =>
+      expect(answerUserQuestionMock).toHaveBeenCalledWith(
+        "sub-run-1",
+        "question-1",
+        {
+          answers: [
+            {
+              selections: [
+                {
+                  label: "__none_of_the_above__",
+                  supplement: "Try a narrower search",
+                },
+              ],
+            },
+          ],
+        },
       ),
     );
   });
@@ -140,7 +197,7 @@ describe("RecoveryBar", () => {
       "run-1",
       "tool-call-1",
       "approve",
-      "",
+      undefined,
     );
   });
 });

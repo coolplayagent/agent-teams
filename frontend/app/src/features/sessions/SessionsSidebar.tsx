@@ -1,21 +1,78 @@
-import { Button, Empty, Input, List, Skeleton, Space, Tag, Typography } from "antd";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  App,
+  Button,
+  Empty,
+  Input,
+  List,
+  Select,
+  Skeleton,
+  Space,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, RefreshCcw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import { listSidebarSessions } from "../../api/client";
-import type { SessionSidebarRecord } from "../../api/contracts";
+import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
+import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
 import { useUiStore } from "../../runtime/uiStore";
 
 export function SessionsSidebar() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
+  const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
+  const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const [filter, setFilter] = useState("");
 
   const sessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
     queryFn: () => listSidebarSessions(false),
+  });
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: listWorkspaces,
+  });
+
+  const workspaceOptions = useMemo(
+    () =>
+      (workspacesQuery.data ?? []).map((workspace) => ({
+        label: workspaceLabel(workspace),
+        value: workspace.workspace_id,
+      })),
+    [workspacesQuery.data],
+  );
+  const effectiveWorkspaceId =
+    selectedWorkspaceId ?? workspaceOptions[0]?.value ?? "default";
+
+  useEffect(() => {
+    const workspaceIds = new Set((workspacesQuery.data ?? []).map((item) => item.workspace_id));
+    const firstWorkspaceId = workspacesQuery.data?.[0]?.workspace_id;
+    if (firstWorkspaceId === undefined) {
+      return;
+    }
+    if (selectedWorkspaceId === null || !workspaceIds.has(selectedWorkspaceId)) {
+      setSelectedWorkspaceId(firstWorkspaceId);
+    }
+  }, [selectedWorkspaceId, setSelectedWorkspaceId, workspacesQuery.data]);
+
+  const createSessionMutation = useMutation({
+    mutationFn: () => createSession({ workspace_id: effectiveWorkspaceId }),
+    onSuccess: (session) => {
+      setSelectedWorkspaceId(session.workspace_id);
+      setSelectedSessionId(session.session_id);
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", session.session_id] });
+      void message.success("Session created.");
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : "Session creation failed.",
+      );
+    },
   });
 
   const sessions = useMemo(() => {
@@ -40,6 +97,17 @@ export function SessionsSidebar() {
           size="small"
           value={filter}
         />
+        <Tooltip title="New session">
+          <Button
+            aria-label="New session"
+            disabled={workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()}
+            icon={<Plus size={15} />}
+            loading={createSessionMutation.isPending}
+            onClick={() => createSessionMutation.mutate()}
+            size="small"
+            type="primary"
+          />
+        </Tooltip>
         <Button
           aria-label="Refresh sessions"
           icon={<RefreshCcw size={15} />}
@@ -49,6 +117,19 @@ export function SessionsSidebar() {
           type="text"
         />
       </div>
+      <Select
+        aria-label="Workspace"
+        className="at-workspace-select"
+        disabled={workspaceOptions.length === 0}
+        loading={workspacesQuery.isLoading}
+        onChange={(workspaceId) => setSelectedWorkspaceId(workspaceId)}
+        optionFilterProp="label"
+        options={workspaceOptions}
+        placeholder="Workspace"
+        showSearch
+        size="small"
+        value={selectedWorkspaceId ?? undefined}
+      />
       {sessionsQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
       {sessionsQuery.isError ? (
         <Empty description="Could not load sessions" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -86,6 +167,14 @@ export function SessionsSidebar() {
 
 function sessionLabel(session: SessionSidebarRecord): string {
   return session.title?.trim() || session.session_id;
+}
+
+function workspaceLabel(workspace: WorkspaceRecord): string {
+  return (
+    workspace.display_name?.trim() ||
+    workspace.name?.trim() ||
+    workspace.workspace_id
+  );
 }
 
 function statusTag(session: SessionSidebarRecord) {

@@ -1,4 +1,4 @@
-import { Alert, App, Button, Checkbox, Radio, Space, Typography } from "antd";
+import { Alert, App, Button, Checkbox, Input, Radio, Space, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -17,6 +17,8 @@ import type {
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 
+const NONE_OF_THE_ABOVE_OPTION_LABEL = "__none_of_the_above__";
+
 interface RecoveryBarProps {
   runStreamController: RunStreamController;
   sessionId: string | null;
@@ -26,6 +28,9 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [questionSelections, setQuestionSelections] = useState<Record<string, string[]>>(
+    {},
+  );
+  const [questionSupplements, setQuestionSupplements] = useState<Record<string, string>>(
     {},
   );
   const recoveryQuery = useQuery({
@@ -87,7 +92,11 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
 
   const questionMutation = useMutation({
     mutationFn: (question: PendingUserQuestion) => {
-      const answers = buildQuestionAnswer(question, questionSelections);
+      const answers = buildQuestionAnswer(
+        question,
+        questionSelections,
+        questionSupplements,
+      );
       if (answers === null) {
         throw new Error("Select an answer for each question.");
       }
@@ -95,6 +104,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     },
     onSuccess: () => {
       setQuestionSelections({});
+      setQuestionSupplements({});
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
@@ -144,8 +154,15 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
                 [selectionKey(questionId, promptIndex)]: selectedLabels,
               }));
             }}
+            onSupplementChange={(questionId, promptIndex, supplement) => {
+              setQuestionSupplements((current) => ({
+                ...current,
+                [selectionKey(questionId, promptIndex)]: supplement,
+              }));
+            }}
             questions={pendingQuestions}
             selections={questionSelections}
+            supplements={questionSupplements}
           />
         </div>
       }
@@ -180,54 +197,50 @@ function PendingApprovals({
   }
   return (
     <div className="at-recovery-panel">
-      {approvals.map((approval) => {
-        const option = preferredApprovalOption(approval);
-        return (
-          <div className="at-recovery-item" key={approval.tool_call_id}>
-            <div className="at-recovery-copy">
-              <Typography.Text strong>
-                {approval.tool_name?.trim() || approval.tool_call_id}
+      {approvals.map((approval) => (
+        <div className="at-recovery-item" key={approval.tool_call_id}>
+          <div className="at-recovery-copy">
+            <Typography.Text strong>
+              {approval.tool_name?.trim() || approval.tool_call_id}
+            </Typography.Text>
+            {approval.args_preview?.trim() ? (
+              <Typography.Text type="secondary" ellipsis>
+                {approval.args_preview}
               </Typography.Text>
-              {approval.args_preview?.trim() ? (
-                <Typography.Text type="secondary" ellipsis>
-                  {approval.args_preview}
-                </Typography.Text>
-              ) : null}
-            </div>
-            <Space size={6}>
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  onResolve({
-                    action: "approve",
-                    optionId: option,
-                    runId: activeRunId,
-                    toolCallId: approval.tool_call_id,
-                  })
-                }
-                size="small"
-                type="primary"
-              >
-                Approve
-              </Button>
-              <Button
-                danger
-                disabled={busy}
-                onClick={() =>
-                  onResolve({
-                    action: "deny",
-                    runId: activeRunId,
-                    toolCallId: approval.tool_call_id,
-                  })
-                }
-                size="small"
-              >
-                Deny
-              </Button>
-            </Space>
+            ) : null}
           </div>
-        );
-      })}
+          <Space size={6}>
+            <Button
+              disabled={busy}
+              onClick={() =>
+                onResolve({
+                  action: "approve",
+                  runId: activeRunId,
+                  toolCallId: approval.tool_call_id,
+                })
+              }
+              size="small"
+              type="primary"
+            >
+              Approve
+            </Button>
+            <Button
+              danger
+              disabled={busy}
+              onClick={() =>
+                onResolve({
+                  action: "deny",
+                  runId: activeRunId,
+                  toolCallId: approval.tool_call_id,
+                })
+              }
+              size="small"
+            >
+              Deny
+            </Button>
+          </Space>
+        </div>
+      ))}
     </div>
   );
 }
@@ -240,16 +253,24 @@ interface PendingQuestionsProps {
     promptIndex: number,
     selectedLabels: string[],
   ) => void;
+  onSupplementChange: (
+    questionId: string,
+    promptIndex: number,
+    supplement: string,
+  ) => void;
   questions: PendingUserQuestion[];
   selections: Record<string, string[]>;
+  supplements: Record<string, string>;
 }
 
 function PendingQuestions({
   busy,
   onAnswer,
   onSelectionChange,
+  onSupplementChange,
   questions,
   selections,
+  supplements,
 }: PendingQuestionsProps) {
   if (questions.length === 0) {
     return null;
@@ -267,8 +288,14 @@ function PendingQuestions({
               onSelectionChange={(selectedLabels) =>
                 onSelectionChange(question.question_id, index, selectedLabels)
               }
+              onSupplementChange={(supplement) =>
+                onSupplementChange(question.question_id, index, supplement)
+              }
               prompt={prompt}
               selectedLabels={selections[selectionKey(question.question_id, index)] ?? []}
+              selectedSupplement={
+                supplements[selectionKey(question.question_id, index)] ?? ""
+              }
             />
           ))}
           <Button
@@ -287,21 +314,24 @@ function PendingQuestions({
 
 interface QuestionPromptControlProps {
   onSelectionChange: (selectedLabels: string[]) => void;
+  onSupplementChange: (supplement: string) => void;
   prompt: UserQuestionPrompt;
   selectedLabels: string[];
+  selectedSupplement: string;
 }
 
 function QuestionPromptControl({
   onSelectionChange,
+  onSupplementChange,
   prompt,
   selectedLabels,
+  selectedSupplement,
 }: QuestionPromptControlProps) {
   const options = prompt.options.map((option) => ({
-    label: option.description?.trim()
-      ? `${option.label} - ${option.description}`
-      : option.label,
+    label: questionOptionLabel(option.label, option.description),
     value: option.label,
   }));
+  const showSupplement = selectedLabels.includes(NONE_OF_THE_ABOVE_OPTION_LABEL);
   return (
     <div className="at-recovery-prompt">
       <Typography.Text>{prompt.question}</Typography.Text>
@@ -320,6 +350,15 @@ function QuestionPromptControl({
           value={selectedLabels[0] ?? null}
         />
       )}
+      {showSupplement ? (
+        <Input
+          aria-label="Additional answer"
+          onChange={(event) => onSupplementChange(event.target.value)}
+          placeholder={prompt.placeholder?.trim() || "Add details"}
+          size="small"
+          value={selectedSupplement}
+        />
+      ) : null}
     </div>
   );
 }
@@ -327,11 +366,19 @@ function QuestionPromptControl({
 function buildQuestionAnswer(
   question: PendingUserQuestion,
   selections: Record<string, string[]>,
+  supplements: Record<string, string>,
 ): UserQuestionAnswerSubmission | null {
   const answers = question.questions.map((prompt, index) => {
-    const selectedLabels = selections[selectionKey(question.question_id, index)] ?? [];
+    const key = selectionKey(question.question_id, index);
+    const selectedLabels = selections[key] ?? [];
     return {
-      selections: selectedLabels.map((label) => ({ label })),
+      selections: selectedLabels.map((label) => {
+        const supplement =
+          label === NONE_OF_THE_ABOVE_OPTION_LABEL
+            ? supplements[key]?.trim()
+            : "";
+        return supplement ? { label, supplement } : { label };
+      }),
     };
   });
   if (answers.length === 0 || answers.some((answer) => answer.selections.length === 0)) {
@@ -350,22 +397,11 @@ function hasSelections(
   );
 }
 
-function preferredApprovalOption(approval: PendingToolApproval): string {
-  const options = approval.acp_options ?? [];
-  const option = options.find((item) => {
-    const kind = String(item.kind ?? "").toLowerCase();
-    const id = approvalOptionId(item).toLowerCase();
-    return kind.includes("allow") || id.includes("allow");
-  });
-  return option === undefined ? "" : approvalOptionId(option);
-}
-
-function approvalOptionId(option: {
-  id?: string;
-  option_id?: string;
-  optionId?: string;
-}): string {
-  return option.option_id ?? option.optionId ?? option.id ?? "";
+function questionOptionLabel(label: string, description: string | undefined): string {
+  if (label === NONE_OF_THE_ABOVE_OPTION_LABEL) {
+    return "Other";
+  }
+  return description?.trim() ? `${label} - ${description}` : label;
 }
 
 function selectionKey(questionId: string, promptIndex: number): string {

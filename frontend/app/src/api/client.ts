@@ -7,11 +7,13 @@ import type {
   RunCreateRequest,
   RunCreateResponse,
   ServerHealthPayload,
+  SessionCreateRequest,
   SessionRecord,
   SessionSidebarRecord,
   TimelineMessage,
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
+  WorkspacePage,
   WorkspaceRecord,
 } from "./contracts";
 import { requestJson } from "./http";
@@ -20,8 +22,11 @@ export function getHealth(): Promise<ServerHealthPayload> {
   return requestJson<ServerHealthPayload>("/system/health");
 }
 
-export function listWorkspaces(): Promise<WorkspaceRecord[]> {
-  return requestJson<WorkspaceRecord[]>("/workspaces");
+export async function listWorkspaces(): Promise<WorkspaceRecord[]> {
+  const payload = await requestJson<WorkspaceRecord[] | WorkspacePage>(
+    "/workspaces?limit=200",
+  );
+  return Array.isArray(payload) ? payload : payload.items;
 }
 
 export function listSidebarSessions(forceRefresh = false): Promise<SessionSidebarRecord[]> {
@@ -35,6 +40,13 @@ export function listSidebarSessions(forceRefresh = false): Promise<SessionSideba
 
 export function getSession(sessionId: string): Promise<SessionRecord> {
   return requestJson<SessionRecord>(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function createSession(request: SessionCreateRequest): Promise<SessionRecord> {
+  return requestJson<SessionRecord>("/sessions", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
 }
 
 export function listSessionMessages(sessionId: string): Promise<TimelineMessage[]> {

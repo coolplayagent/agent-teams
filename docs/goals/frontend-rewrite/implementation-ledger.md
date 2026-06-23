@@ -78,3 +78,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 7 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Session Creation Batch
+
+### Scope
+- Addressed recovery interaction reviewer findings by letting backend ACP defaults choose the safest approval option and supporting user-question supplements.
+- Normalized the React workspace client for the current paginated `/api/workspaces` contract.
+- Added workspace selection state to the React UI store.
+- Added a sidebar workspace picker and new-session action that creates a session, refreshes the sidebar, and selects the created session.
+- Added focused React coverage for recovery reviewer regressions, workspace response normalization, and the new-session path.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 10 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

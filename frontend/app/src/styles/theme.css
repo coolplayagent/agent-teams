@@ -99,8 +99,12 @@ body {
 
 .at-sidebar-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
   gap: 6px;
+}
+
+.at-workspace-select {
+  width: 100%;
 }
 
 .at-session-list {

@@ -40,7 +40,9 @@ describe("MessageTimeline", () => {
       {
         message_id: "assistant-2",
         role_id: "MainAgent",
-        parts: [{ kind: "text", text: "Latest answer" }],
+        message: {
+          parts: [{ kind: "text", text: "Latest answer" }],
+        },
       },
     ]);
 
@@ -114,17 +116,19 @@ describe("MessageTimeline", () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         message_id: "assistant-image",
-        parts: [
-          { kind: "text", text: "Here is the chart." },
-          {
-            asset_id: "asset-1",
-            kind: "media_ref",
-            mime_type: "image/png",
-            modality: "image",
-            name: "chart.png",
-            url: "https://example.test/chart.png",
-          },
-        ],
+        message: {
+          parts: [
+            { kind: "text", text: "Here is the chart." },
+            {
+              asset_id: "asset-1",
+              kind: "media_ref",
+              mime_type: "image/png",
+              modality: "image",
+              name: "chart.png",
+              url: "https://example.test/chart.png",
+            },
+          ],
+        },
         role_id: "MainAgent",
       },
     ]);
@@ -141,14 +145,16 @@ describe("MessageTimeline", () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         message_id: "assistant-audio",
-        parts: [
-          {
-            media_type: "audio/mpeg",
-            name: "voice.mp3",
-            part_kind: "media_ref",
-            url: "https://example.test/voice.mp3",
-          },
-        ],
+        message: {
+          parts: [
+            {
+              media_type: "audio/mpeg",
+              name: "voice.mp3",
+              part_kind: "media_ref",
+              url: "https://example.test/voice.mp3",
+            },
+          ],
+        },
         role_id: "MainAgent",
       },
     ]);
@@ -157,6 +163,33 @@ describe("MessageTimeline", () => {
 
     const link = await screen.findByRole("link", { name: "voice.mp3" });
     expect(link).toHaveAttribute("href", "https://example.test/voice.mp3");
+  });
+
+  it("copies nested message content from persisted message rows", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: { content: "Nested persisted answer" },
+        message_id: "assistant-nested",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    const copyButton = await screen.findByRole("button", {
+      name: "Copy last answer",
+    });
+    await waitFor(() => expect(copyButton).toBeEnabled());
+    fireEvent.click(copyButton);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("Nested persisted answer"),
+    );
   });
 });
 

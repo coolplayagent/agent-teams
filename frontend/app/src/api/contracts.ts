@@ -232,6 +232,10 @@ export interface TimelineMessage {
   role_id?: string;
   instance_id?: string;
   content?: string;
+  message?: {
+    content?: string;
+    parts?: ContentPart[];
+  };
   parts?: ContentPart[];
   created_at?: string;
   run_id?: string;

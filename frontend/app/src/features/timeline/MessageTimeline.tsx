@@ -268,11 +268,18 @@ function messageParts(message: TimelineMessage): TimelineRenderPart[] {
   if (typeof message.content === "string" && message.content.trim()) {
     return [{ kind: "text", text: message.content }];
   }
-  const parts = (message.parts ?? []).flatMap(contentPartToRenderParts);
+  const parts = messageContentParts(message).flatMap(contentPartToRenderParts);
   if (parts.length > 0) {
     return parts;
   }
+  if (typeof message.message?.content === "string" && message.message.content.trim()) {
+    return [{ kind: "text", text: message.message.content }];
+  }
   return [{ kind: "text", text: message.entry_type ?? "message" }];
+}
+
+function messageContentParts(message: TimelineMessage): ContentPart[] {
+  return message.parts ?? message.message?.parts ?? [];
 }
 
 function contentPartToRenderParts(part: ContentPart): TimelineRenderPart[] {

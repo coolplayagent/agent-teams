@@ -154,6 +154,39 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("resumes a recoverable run from the standalone resume action", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "stopped",
+          phase: "stopped",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+      }),
+    );
+    resumeRunMock.mockResolvedValue({
+      status: "ok",
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        runId: "run-1",
+        sessionId: "session-1",
+        afterEventId: 42,
+      }),
+    );
+  });
+
   it("resumes a disconnected recoverable run before resolving approval", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({
@@ -184,6 +217,7 @@ describe("RecoveryBar", () => {
     renderRecoveryBar(controller);
 
     await screen.findByText("execute_command");
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     await waitFor(() =>
@@ -199,6 +233,26 @@ describe("RecoveryBar", () => {
       "approve",
       undefined,
     );
+  });
+
+  it("hides the standalone resume action while the run is already streaming", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "stopped",
+          phase: "stopped",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+      }),
+    );
+
+    renderRecoveryBar(runStreamController("run-1"));
+
+    await screen.findByText("Run run-1 is stopped");
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
   });
 });
 
@@ -228,9 +282,9 @@ function TestProviders({ children }: { children: ReactNode }) {
   );
 }
 
-function runStreamController(): RunStreamController {
+function runStreamController(activeRunId: string | null = null): RunStreamController {
   return {
-    activeRunId: null,
+    activeRunId,
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
   };

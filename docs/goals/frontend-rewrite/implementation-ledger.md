@@ -286,6 +286,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
 
+## 2026-06-23 Recovery Resume Action Batch
+
+### Scope
+- Aligned the React RecoveryBar standalone Resume action with V1 recovery visibility rules.
+- Hid the standalone Resume button while approvals, user questions, paused subagents, local streams, or stopping runs own the recovery path.
+- Preserved automatic resume-before-approval behavior only for stopped recoverable runs before resolving approvals.
+- Added focused React coverage for standalone resume, approval-owned resume, and already-streaming resume suppression.
+
+### Verification
+- `npm run test -- --run RecoveryBar.test.tsx` in `frontend/app` passed with 6 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
 ## 2026-06-23 Composer Shell Safety Policy Batch
 
 ### Scope

@@ -14,6 +14,7 @@ import type {
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
   UserQuestionPrompt,
+  RecoveryRun,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 
@@ -45,6 +46,13 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const pendingQuestions = recoveryQuery.data?.pending_user_questions ?? [];
   const recoverableRunId =
     activeRun?.should_show_recover === true ? activeRun.run_id : null;
+  const showResumeAction = shouldShowResumeAction(
+    activeRun,
+    pendingApprovals,
+    pendingQuestions,
+    recoveryQuery.data?.paused_subagent ?? null,
+    runStreamController.activeRunId,
+  );
 
   const resumeRecoverableRun = async (runId: string) => {
     const result = await resumeRun(runId);
@@ -69,7 +77,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
 
   const approvalMutation = useMutation({
     mutationFn: async (request: ApprovalActionRequest) => {
-      if (recoverableRunId === request.runId) {
+      if (shouldResumeBeforeApproval(activeRun, request.runId)) {
         await resumeRecoverableRun(request.runId);
       }
       return resolveToolApproval(
@@ -128,7 +136,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
             <span>
               Run {activeRun.run_id} is {activeRun.phase ?? activeRun.status}
             </span>
-            {recoverableRunId !== null ? (
+            {showResumeAction ? (
               <Button
                 loading={resumeMutation.isPending}
                 onClick={() => resumeMutation.mutate()}
@@ -406,4 +414,42 @@ function questionOptionLabel(label: string, description: string | undefined): st
 
 function selectionKey(questionId: string, promptIndex: number): string {
   return `${questionId}:${promptIndex}`;
+}
+
+function shouldShowResumeAction(
+  activeRun: RecoveryRun | null,
+  pendingApprovals: PendingToolApproval[],
+  pendingQuestions: PendingUserQuestion[],
+  pausedSubagent: unknown,
+  activeStreamRunId: string | null,
+): boolean {
+  if (activeRun?.should_show_recover !== true || !activeRun.run_id) {
+    return false;
+  }
+  if (activeStreamRunId === activeRun.run_id) {
+    return false;
+  }
+  if (pendingApprovals.length > 0 || pendingQuestions.length > 0 || pausedSubagent) {
+    return false;
+  }
+  if (activeRun.status === "stopping" || activeRun.phase === "stopping") {
+    return false;
+  }
+  return (
+    activeRun.status === "stopped" ||
+    activeRun.phase === "stopped" ||
+    activeRun.status === "paused" ||
+    activeRun.phase === "awaiting_recovery"
+  );
+}
+
+function shouldResumeBeforeApproval(
+  activeRun: RecoveryRun | null,
+  runId: string,
+): boolean {
+  return (
+    activeRun?.should_show_recover === true &&
+    activeRun.run_id === runId &&
+    (activeRun.status === "stopped" || activeRun.phase === "stopped")
+  );
 }

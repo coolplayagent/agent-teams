@@ -335,3 +335,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Addressed reviewer `019ef35b-543e-7663-b602-37e95e8e9a39` finding by switching the React stop client from the AG-UI run path to the real `/api/runs/{run_id}/background-tasks/{background_task_id}:stop` endpoint.
 - Added `apiClient.test.ts` coverage that asserts the concrete background task stop URL.
 - Re-ran `npm run test -- --run apiClient.test.ts RecoveryBar.test.tsx`, `npm run typecheck`, `npm run lint`, and `npm run build` in `frontend/app`.
+
+## 2026-06-23 Session Context Indicator Batch
+
+### Scope
+- Extended the React session token usage strip with a real context usage indicator derived from `by_role.latest_input_tokens` and `by_role.context_window`.
+- Matched V1's context signal by showing the most loaded role's latest input against its context window.
+- Preserved the compact composer-adjacent layout without adding placeholder controls or fake progress.
+- Added focused React coverage for context percentage refreshes and multi-role highest-load selection.
+
+### Verification
+- `npm run test -- --run SessionTokenUsage.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

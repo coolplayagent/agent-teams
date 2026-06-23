@@ -31,7 +31,11 @@ export function SessionTokenUsage({ sessionId }: SessionTokenUsageProps) {
     },
   });
   const usage = usageQuery.data;
-  const detailTitle = useMemo(() => buildDetailTitle(usage), [usage]);
+  const contextUsage = useMemo(() => selectContextUsage(usage), [usage]);
+  const detailTitle = useMemo(
+    () => buildDetailTitle(usage, contextUsage),
+    [contextUsage, usage],
+  );
   const state = usageQuery.isError
     ? "error"
     : usageQuery.isFetching || refreshMutation.isPending
@@ -47,6 +51,10 @@ export function SessionTokenUsage({ sessionId }: SessionTokenUsageProps) {
         <TokenUsagePair label="Input" value={usage?.total_input_tokens ?? 0} />
         <TokenUsagePair label="Output" value={usage?.total_output_tokens ?? 0} />
         <TokenUsagePair label="Total" value={usage?.total_tokens ?? 0} />
+        <TokenUsagePair
+          label="Context"
+          value={formatContextUsage(contextUsage)}
+        />
       </Space>
       <Tooltip title="Refresh token usage">
         <Button
@@ -65,14 +73,16 @@ export function SessionTokenUsage({ sessionId }: SessionTokenUsageProps) {
 
 interface TokenUsagePairProps {
   label: string;
-  value: number;
+  value: number | string;
 }
 
 function TokenUsagePair({ label, value }: TokenUsagePairProps) {
   return (
     <span className="at-token-usage-pair">
       <span className="at-token-usage-name">{label}</span>
-      <span className="at-token-usage-value">{formatCompact(value)}</span>
+      <span className="at-token-usage-value">
+        {typeof value === "number" ? formatCompact(value) : value}
+      </span>
     </span>
   );
 }
@@ -85,7 +95,44 @@ function hasUsage(usage: SessionTokenUsagePayload | undefined): boolean {
   );
 }
 
-function buildDetailTitle(usage: SessionTokenUsagePayload | undefined): string {
+interface ContextUsageSummary {
+  contextWindow: number;
+  latestInputTokens: number;
+  ratio: number;
+  roleId: string;
+}
+
+function selectContextUsage(
+  usage: SessionTokenUsagePayload | undefined,
+): ContextUsageSummary | null {
+  const candidates = Object.values(usage?.by_role ?? {})
+    .map((role) => {
+      const contextWindow = safeNumber(role.context_window);
+      if (contextWindow === 0) {
+        return null;
+      }
+      const latestInputTokens =
+        safeNumber(role.latest_input_tokens) || safeNumber(role.input_tokens);
+      return {
+        contextWindow,
+        latestInputTokens,
+        ratio: latestInputTokens / contextWindow,
+        roleId: role.role_id,
+      };
+    })
+    .filter((item): item is ContextUsageSummary => item !== null);
+  if (candidates.length === 0) {
+    return null;
+  }
+  return candidates.reduce((highest, candidate) =>
+    candidate.ratio > highest.ratio ? candidate : highest,
+  );
+}
+
+function buildDetailTitle(
+  usage: SessionTokenUsagePayload | undefined,
+  contextUsage: ContextUsageSummary | null,
+): string {
   if (usage === undefined || !hasUsage(usage)) {
     return "Token usage";
   }
@@ -94,11 +141,28 @@ function buildDetailTitle(usage: SessionTokenUsagePayload | undefined): string {
   const cachedPart = cached > 0 ? ` cached ${formatInteger(cached)}` : "";
   const reasoningPart =
     reasoning > 0 ? ` reasoning ${formatInteger(reasoning)}` : "";
-  return [
+  const details = [
     `total ${formatInteger(usage.total_tokens)}`,
     `input ${formatInteger(usage.total_input_tokens)}${cachedPart}`,
     `output ${formatInteger(usage.total_output_tokens)}${reasoningPart}`,
-  ].join(" · ");
+  ];
+  if (contextUsage !== null) {
+    details.push(
+      `context ${contextUsage.roleId} ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextUsage.contextWindow)} (${formatContextUsage(contextUsage)})`,
+    );
+  }
+  return details.join(" · ");
+}
+
+function formatContextUsage(contextUsage: ContextUsageSummary | null): string {
+  if (contextUsage === null) {
+    return "--";
+  }
+  const percent = contextUsage.ratio * 100;
+  if (percent > 0 && percent < 1) {
+    return "<1%";
+  }
+  return `${Math.round(percent)}%`;
 }
 
 function formatInteger(value: number | undefined): string {

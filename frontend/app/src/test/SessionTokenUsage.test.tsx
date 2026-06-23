@@ -29,6 +29,7 @@ describe("SessionTokenUsage", () => {
     expect(await screen.findByText("1.2k")).toBeVisible();
     expect(screen.getByText("3.4k")).toBeVisible();
     expect(screen.getByText("4.6k")).toBeVisible();
+    expect(screen.getByText("12%")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
 
@@ -38,6 +39,24 @@ describe("SessionTokenUsage", () => {
     expect(await screen.findByText("2k")).toBeVisible();
     expect(screen.getByText("4.2k")).toBeVisible();
     expect(screen.getByText("6.2k")).toBeVisible();
+    expect(screen.getByText("20%")).toBeVisible();
+  });
+
+  it("shows the highest loaded role context when roles have different windows", async () => {
+    getSessionTokenUsageMock.mockResolvedValue(
+      usage({
+        input: 1000,
+        output: 500,
+        total: 1500,
+        secondaryContextWindow: 2000,
+        secondaryInput: 1000,
+      }),
+    );
+
+    renderUsage();
+
+    expect(await screen.findByText("50%")).toBeVisible();
+    expect(screen.queryByText("10%")).not.toBeInTheDocument();
   });
 });
 
@@ -60,8 +79,11 @@ function renderUsage() {
 }
 
 interface UsageValues {
+  contextWindow?: number;
   input: number;
   output: number;
+  secondaryContextWindow?: number;
+  secondaryInput?: number;
   total: number;
 }
 
@@ -87,9 +109,28 @@ function usage(values: UsageValues): SessionTokenUsagePayload {
         total_tokens: values.total,
         requests: 2,
         tool_calls: 1,
-        context_window: 1_000_000,
+        context_window: values.contextWindow ?? 10_000,
         model_profile: "default",
       },
+      ...(values.secondaryInput !== undefined &&
+      values.secondaryContextWindow !== undefined
+        ? {
+            HelperAgent: {
+              role_id: "HelperAgent",
+              input_tokens: values.secondaryInput,
+              latest_input_tokens: values.secondaryInput,
+              cached_input_tokens: 0,
+              max_input_tokens: values.secondaryInput,
+              output_tokens: 0,
+              reasoning_output_tokens: 0,
+              total_tokens: values.secondaryInput,
+              requests: 1,
+              tool_calls: 0,
+              context_window: values.secondaryContextWindow,
+              model_profile: "default",
+            },
+          }
+        : {}),
     },
   };
 }

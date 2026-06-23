@@ -120,6 +120,9 @@ export interface ModelProfileRecord {
   input_modalities?: string[];
   capabilities?: ModelCapabilities;
   resolved_capabilities?: ModelCapabilities;
+  speech_realtime?: {
+    model?: string | null;
+  } | null;
 }
 
 export type ModelProfilesPayload = Record<string, ModelProfileRecord>;

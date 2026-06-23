@@ -30,6 +30,7 @@ import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
 
 type SettingsSection =
@@ -39,6 +40,7 @@ type SettingsSection =
   | "roles"
   | "models"
   | "orchestration"
+  | "speech"
   | "system"
   | "web";
 
@@ -103,6 +105,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
     () => [
       { key: "appearance" as const, label: t("settingsAppearance") },
       { key: "general" as const, label: t("settingsGeneral") },
+      { key: "speech" as const, label: t("settingsSpeech") },
       { key: "notifications" as const, label: t("settingsNotifications") },
       { key: "models" as const, label: t("settingsModels") },
       { key: "roles" as const, label: t("settingsRoles") },
@@ -150,6 +153,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             saving={saveMutation.isPending}
           />
         ) : null}
+        {activeSection === "speech" ? <SpeechSettingsSection /> : null}
         {activeSection === "notifications" ? <NotificationSettingsSection /> : null}
         {activeSection === "roles" ? (
           <SettingsRoles

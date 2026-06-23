@@ -24,6 +24,7 @@ import {
   saveWebConfig,
 } from "../api/client";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
+import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
@@ -39,6 +40,11 @@ vi.mock("../api/client", () => ({
   saveWebConfig: vi.fn(),
 }));
 
+vi.mock("../api/speech", () => ({
+  fetchSpeechConfig: vi.fn(),
+  saveSpeechConfig: vi.fn(),
+}));
+
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getHealthMock = vi.mocked(getHealth);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
@@ -49,6 +55,8 @@ const getWebConfigMock = vi.mocked(getWebConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
+const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
+const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
 
 beforeEach(() => {
   getGeneralConfigMock.mockResolvedValue({ shell_safety_policy_enabled: true });
@@ -75,6 +83,28 @@ beforeEach(() => {
       model: "gpt-5-vision",
       provider: "openai",
     },
+    stt: {
+      model: "qwen3-omni-flash",
+      provider: "openai_compatible",
+      resolved_capabilities: {
+        input: { audio: true, text: true },
+        output: { text: true },
+      },
+      speech_realtime: {
+        model: "qwen3-omni-flash",
+      },
+    },
+  });
+  fetchSpeechConfigMock.mockResolvedValue({
+    configured: false,
+    language: null,
+    noise_reduction: "near_field",
+    prompt: null,
+    stt_profile_name: null,
+    supported_models: ["whisper-1", "gpt-4o-transcribe"],
+    vad_prefix_padding_ms: 300,
+    vad_silence_duration_ms: 500,
+    vad_threshold: 0.5,
   });
   getOrchestrationConfigMock.mockResolvedValue({
     default_orchestration_preset_id: "default",
@@ -147,6 +177,16 @@ beforeEach(() => {
   });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
   saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
+  saveSpeechConfigMock.mockResolvedValue({
+    configured: true,
+    language: "zh-CN",
+    noise_reduction: "near_field",
+    prompt: "domain terms",
+    stt_profile_name: "stt",
+    vad_prefix_padding_ms: 300,
+    vad_silence_duration_ms: 500,
+    vad_threshold: 0.5,
+  });
   saveWebConfigMock.mockResolvedValue({ status: "ok" });
   useUiStore.setState({
     language: "en",
@@ -168,6 +208,7 @@ describe("SettingsDrawer", () => {
     const sections = screen.getByRole("navigation", { name: "Settings sections" });
     expect(within(sections).getByRole("button", { name: "Appearance" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "General" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Speech" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Notifications" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Models" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Roles" })).toBeVisible();
@@ -285,6 +326,37 @@ describe("SettingsDrawer", () => {
           }),
         }),
       ),
+    );
+  });
+
+  it("saves speech settings through the speech config API", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Speech" }));
+
+    const profile = await screen.findByLabelText("STT profile");
+    fireEvent.change(profile, { target: { value: "stt" } });
+    fireEvent.change(screen.getByLabelText("Language"), {
+      target: { value: "zh-CN" },
+    });
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "domain terms" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveSpeechConfigMock).toHaveBeenCalledWith({
+        language: "zh-CN",
+        noise_reduction: "near_field",
+        prompt: "domain terms",
+        stt_profile_name: "stt",
+        vad_prefix_padding_ms: 300,
+        vad_silence_duration_ms: 500,
+        vad_threshold: 0.5,
+      }),
     );
   });
 });

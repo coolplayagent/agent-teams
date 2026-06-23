@@ -10,6 +10,7 @@ import {
   saveWebConfig,
   stopBackgroundTask,
 } from "../api/client";
+import { saveSpeechConfig } from "../api/speech";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -177,7 +178,7 @@ describe("api client", () => {
     );
   });
 
-  it("saves Web and notification settings through their system config endpoints", async () => {
+  it("saves Web, notification, and speech settings through their config endpoints", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(() =>
@@ -219,6 +220,13 @@ describe("api client", () => {
         },
       }),
     ).resolves.toEqual({ status: "ok" });
+    await expect(
+      saveSpeechConfig({
+        language: "zh-CN",
+        prompt: "domain terms",
+        stt_profile_name: "alibaba-cn-qwen3-omni-flash",
+      }),
+    ).resolves.toEqual({ status: "ok" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -238,6 +246,18 @@ describe("api client", () => {
       "/api/system/configs/notifications",
       expect.objectContaining({
         body: expect.stringContaining('"config"'),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/speech/config",
+      expect.objectContaining({
+        body: JSON.stringify({
+          language: "zh-CN",
+          prompt: "domain terms",
+          stt_profile_name: "alibaba-cn-qwen3-omni-flash",
+        }),
         method: "PUT",
       }),
     );

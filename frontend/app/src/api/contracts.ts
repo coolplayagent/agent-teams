@@ -156,6 +156,14 @@ export interface UrlMediaPart {
   url?: string;
 }
 
+export type ToolReturnOutcome =
+  | "completed"
+  | "denied"
+  | "failed"
+  | "success"
+  | "succeeded"
+  | (string & {});
+
 export interface ToolCallContentPart {
   args?: JsonValue;
   kind: "tool-call";
@@ -174,6 +182,7 @@ export interface ToolReturnContentPart {
   content?: JsonValue;
   is_error?: boolean;
   kind: "tool-return";
+  outcome?: ToolReturnOutcome;
   tool_call_id?: string;
   tool_name?: string;
 }
@@ -181,6 +190,7 @@ export interface ToolReturnContentPart {
 export interface LegacyToolReturnContentPart {
   content?: JsonValue;
   is_error?: boolean;
+  outcome?: ToolReturnOutcome;
   part_kind: "tool-return";
   tool_call_id?: string;
   tool_name?: string;
@@ -189,6 +199,13 @@ export interface LegacyToolReturnContentPart {
 export interface ToolValidationContentPart {
   content?: JsonValue;
   kind: "retry-prompt";
+  tool_call_id?: string;
+  tool_name?: string;
+}
+
+export interface LegacyToolValidationContentPart {
+  content?: JsonValue;
+  part_kind: "retry-prompt";
   tool_call_id?: string;
   tool_name?: string;
 }
@@ -202,6 +219,7 @@ export type ContentPart =
   | LegacyContentMediaRefPart
   | LegacyToolCallContentPart
   | LegacyToolReturnContentPart
+  | LegacyToolValidationContentPart
   | ToolCallContentPart
   | ToolReturnContentPart
   | ToolValidationContentPart
@@ -292,6 +310,7 @@ export interface SessionRoundMessagePart {
   modality?: string;
   mime_type?: string;
   name?: string;
+  outcome?: ToolReturnOutcome;
   part_kind?: string;
   text?: string;
   tool_call_id?: string;

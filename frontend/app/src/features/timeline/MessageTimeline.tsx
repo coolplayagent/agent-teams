@@ -250,7 +250,7 @@ function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
 }
 
 function MessageToolBlock({ tool }: { tool: TimelineToolPart }) {
-  const title = `${toolPhaseLabel(tool.phase)}: ${tool.toolName}`;
+  const title = `${toolPhaseLabel(tool)}: ${tool.toolName}`;
   return (
     <div className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
       <div className="at-message-tool-title">
@@ -339,23 +339,24 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
     };
   }
   if (kind === "tool-return") {
+    const content = "content" in part ? part.content ?? null : null;
     return {
-      body: jsonValueText("content" in part ? part.content ?? null : null),
+      body: jsonValueText(content),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
-      error: "is_error" in part && part.is_error === true,
+      error: toolReturnIsError(part, content),
       kind: "tool",
       phase: "result",
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
     };
   }
-  if (kind === "retry-prompt" && "tool_name" in part) {
+  if (kind === "retry-prompt") {
     return {
       body: jsonValueText("content" in part ? part.content ?? null : null),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: true,
       kind: "tool",
       phase: "validation",
-      toolName: part.tool_name ?? "unknown_tool",
+      toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
     };
   }
   return null;
@@ -455,14 +456,45 @@ function estimateRowSize(row: TimelineRow | undefined): number {
     + Math.min(160, Math.ceil(textLength / 110) * 22);
 }
 
-function toolPhaseLabel(phase: TimelineToolPart["phase"]): string {
-  if (phase === "call") {
+function toolPhaseLabel(tool: TimelineToolPart): string {
+  if (tool.phase === "call") {
     return "Tool call";
   }
-  if (phase === "validation") {
+  if (tool.phase === "validation") {
     return "Tool validation";
   }
+  if (tool.error) {
+    return "Tool error";
+  }
   return "Tool result";
+}
+
+function toolReturnIsError(
+  part: ContentPart,
+  content: unknown,
+): boolean {
+  if ("is_error" in part && part.is_error === true) {
+    return true;
+  }
+  if ("outcome" in part && toolOutcomeIsError(part.outcome)) {
+    return true;
+  }
+  return jsonObjectHasFailedOk(content);
+}
+
+function toolOutcomeIsError(outcome: unknown): boolean {
+  if (typeof outcome !== "string") {
+    return false;
+  }
+  const normalized = outcome.trim().toLowerCase();
+  return normalized === "failed" || normalized === "denied";
+}
+
+function jsonObjectHasFailedOk(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return "ok" in value && value.ok === false;
 }
 
 function jsonValueText(value: unknown): string {

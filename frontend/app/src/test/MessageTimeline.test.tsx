@@ -211,7 +211,7 @@ describe("MessageTimeline", () => {
             },
             {
               content: "path is required",
-              kind: "retry-prompt",
+              part_kind: "retry-prompt",
               tool_call_id: "tool-2",
               tool_name: "read_file",
             },
@@ -230,6 +230,48 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("tests passed")).toBeVisible();
     expect(screen.getByText("Tool validation: read_file")).toBeVisible();
     expect(screen.getByText("path is required")).toBeVisible();
+  });
+
+  it("marks failed persisted tool returns as tool errors", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: "explicit tool failure",
+              is_error: true,
+              part_kind: "tool-return",
+              tool_call_id: "tool-1",
+              tool_name: "execute_command",
+            },
+            {
+              content: "denied by policy",
+              outcome: "denied",
+              part_kind: "tool-return",
+              tool_call_id: "tool-2",
+              tool_name: "execute_command",
+            },
+            {
+              content: { error: "cd failed", ok: false },
+              part_kind: "tool-return",
+              tool_call_id: "tool-3",
+              tool_name: "execute_command",
+            },
+          ],
+        },
+        message_id: "assistant-failed-tools",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findAllByText("Tool error: execute_command"))
+      .toHaveLength(3);
+    expect(screen.getByText("explicit tool failure")).toBeVisible();
+    expect(screen.getByText("denied by policy")).toBeVisible();
+    expect(screen.getByText(/"ok": false/)).toBeVisible();
+    expect(screen.getByText(/"error": "cd failed"/)).toBeVisible();
   });
 });
 

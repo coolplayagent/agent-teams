@@ -42,6 +42,7 @@ export interface RoleOption {
   role_id: string;
   name: string;
   description?: string;
+  capabilities?: ModelCapabilities;
   model_profile?: string;
   model_name?: string;
   input_modalities?: string[];
@@ -73,9 +74,23 @@ export interface ModelProfileRecord {
   model?: string;
   is_default?: boolean;
   input_modalities?: string[];
+  capabilities?: ModelCapabilities;
+  resolved_capabilities?: ModelCapabilities;
 }
 
 export type ModelProfilesPayload = Record<string, ModelProfileRecord>;
+
+export interface ModalityCapabilities {
+  audio?: boolean | null;
+  image?: boolean | null;
+  text?: boolean | null;
+  video?: boolean | null;
+}
+
+export interface ModelCapabilities {
+  input?: ModalityCapabilities;
+  output?: ModalityCapabilities;
+}
 
 export interface SessionSidebarRecord {
   session_id: string;
@@ -228,7 +243,7 @@ export interface LegacyToolValidationContentPart {
   tool_name?: string;
 }
 
-export type RunInputPart = ContentTextPart | ContentMediaRefPart;
+export type RunInputPart = ContentTextPart | ContentMediaRefPart | InlineMediaPart;
 export type ContentPart =
   | RunInputPart
   | BinaryMediaPart

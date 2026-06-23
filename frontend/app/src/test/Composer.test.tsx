@@ -2,7 +2,7 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ClipboardEventHandler, ReactNode } from "react";
 
 import {
   createRun,
@@ -23,6 +23,7 @@ interface MockSenderProps {
   "aria-label"?: string;
   disabled?: boolean;
   onChange?: (value: string) => void;
+  onPaste?: ClipboardEventHandler<HTMLElement>;
   placeholder?: string;
   value?: string;
 }
@@ -33,6 +34,7 @@ vi.mock("@ant-design/x", () => ({
       aria-label={props["aria-label"]}
       disabled={props.disabled}
       onChange={(event) => props.onChange?.(event.target.value)}
+      onPaste={props.onPaste}
       placeholder={props.placeholder}
       value={props.value ?? ""}
     />
@@ -143,6 +145,360 @@ describe("Composer", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
+  });
+
+  it("submits pasted image attachments as inline media parts", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    const controller = runStreamController();
+
+    renderComposer(controller);
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Describe this image" },
+    });
+    const imageFile = pasteImage("chart.png");
+
+    expect(await screen.findByText("chart.png")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    const request = createRunMock.mock.calls[0]?.[0];
+    expect(request?.input).toHaveLength(2);
+    expect(request?.input[0]).toEqual({
+      kind: "text",
+      text: "Describe this image",
+    });
+    expect(request?.input[1]).toMatchObject({
+      height: null,
+      kind: "inline_media",
+      mime_type: "image/png",
+      modality: "image",
+      name: "chart.png",
+      size_bytes: imageFile.size,
+      width: null,
+    });
+    expect(request?.input[1]).toHaveProperty("base64_data", expect.any(String));
+    expect(request?.display_input).toEqual(request?.input);
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText("chart.png")).toBeNull());
+  });
+
+  it("creates a run from a media-only pasted image prompt", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("media-only.png");
+
+    expect(await screen.findByText("media-only.png")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    const request = createRunMock.mock.calls[0]?.[0];
+    expect(request?.input).toHaveLength(1);
+    expect(request?.input[0]).toMatchObject({
+      kind: "inline_media",
+      mime_type: "image/png",
+      modality: "image",
+      name: "media-only.png",
+    });
+  });
+
+  it("uses pasted image MIME subtype for unnamed attachment filenames", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("", "image/webp");
+
+    expect(await screen.findByText("pasted-image-1.webp")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0].input[0]).toMatchObject({
+      kind: "inline_media",
+      mime_type: "image/webp",
+      name: "pasted-image-1.webp",
+    });
+  });
+
+  it("removes pasted image attachments before sending", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    pasteImage("removable.png");
+
+    expect(await screen.findByText("removable.png")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Remove removable.png" }));
+
+    await waitFor(() => expect(screen.queryByText("removable.png")).toBeNull());
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("blocks image attachments when the selected role does not support image input", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["text"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Describe this image" },
+    });
+    pasteImage("unsupported.png");
+
+    expect(
+      await screen.findByText("Writer does not support image input."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks image attachments when image support is unknown for the selected role", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("unknown-support.png");
+
+    expect(
+      await screen.findByText("Image input support for Writer is unknown."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("checks coordinator image support for orchestration image prompts", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "orchestration",
+      normal_root_role_id: "Writer",
+      normal_model_profile: null,
+      orchestration_preset_id: "team",
+      can_switch_mode: true,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      coordinator_role_id: "Coordinator",
+      coordinator_role: {
+        role_id: "Coordinator",
+        name: "Coordinator",
+        input_modalities: ["text"],
+      },
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("orchestration-blocked.png");
+
+    expect(
+      await screen.findByText("Coordinator does not support image input."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("does not let orchestration target role selection bypass coordinator image support", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "orchestration",
+      normal_root_role_id: "Writer",
+      normal_model_profile: null,
+      orchestration_preset_id: "team",
+      can_switch_mode: true,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      coordinator_role_id: "Coordinator",
+      coordinator_role: {
+        role_id: "Coordinator",
+        name: "Coordinator",
+        input_modalities: ["text"],
+      },
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.mouseDown(
+      await screen.findByRole("combobox", { name: "Target role" }),
+    );
+    const writerOptions = await screen.findAllByText("Writer");
+    const visibleWriterOption = writerOptions.at(-1);
+    if (visibleWriterOption === undefined) {
+      throw new Error("Writer option was not rendered.");
+    }
+    fireEvent.click(visibleWriterOption);
+    pasteImage("target-role-bypass.png");
+
+    expect(
+      await screen.findByText("Coordinator does not support image input."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("allows orchestration image prompts when only the coordinator supports images", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "orchestration",
+      normal_root_role_id: "Writer",
+      normal_model_profile: null,
+      orchestration_preset_id: "team",
+      can_switch_mode: true,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      coordinator_role_id: "Coordinator",
+      coordinator_role: {
+        role_id: "Coordinator",
+        name: "Coordinator",
+        input_modalities: ["image"],
+      },
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["text"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("orchestration-allowed.png");
+
+    expect(await screen.findByText("orchestration-allowed.png")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0].input[0]).toMatchObject({
+      kind: "inline_media",
+      name: "orchestration-allowed.png",
+    });
+  });
+
+  it("keeps runtime injections text-only when an image attachment is present", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    injectRunMessageMock.mockResolvedValue({
+      status: "ok",
+      run_id: "run-1",
+    });
+
+    renderComposer(runStreamController("run-1"));
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Use this image" },
+    });
+    pasteImage("runtime.png");
+
+    expect(
+      await screen.findByText("Runtime injections support text only."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Queue" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+
+    expect(injectRunMessageMock).not.toHaveBeenCalled();
   });
 
   it("keeps topology locked after creating the first run", async () => {
@@ -685,4 +1041,19 @@ function segmentedItem(label: string): HTMLElement {
     throw new Error(`${label} segmented item was not rendered.`);
   }
   return element as HTMLElement;
+}
+
+function pasteImage(filename: string, mimeType = "image/png"): File {
+  const file = new File(["image-bytes"], filename, { type: mimeType });
+  fireEvent.paste(screen.getByLabelText("Prompt"), {
+    clipboardData: {
+      items: [
+        {
+          getAsFile: () => file,
+          type: mimeType,
+        },
+      ],
+    },
+  });
+  return file;
 }

@@ -630,6 +630,51 @@ body {
   background: var(--at-surface);
 }
 
+.at-prompt-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.at-prompt-attachment {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 140px) 28px;
+  align-items: center;
+  gap: 8px;
+  max-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface-muted);
+}
+
+.at-prompt-attachments.is-error .at-prompt-attachment {
+  border-color: color-mix(in srgb, var(--at-danger) 50%, var(--at-border));
+}
+
+.at-prompt-attachment .ant-image {
+  display: block;
+}
+
+.at-prompt-attachment-thumb {
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--at-surface);
+}
+
+.at-prompt-attachment-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.at-prompt-attachment-name,
+.at-prompt-attachment-meta,
+.at-composer-status {
+  font-size: 12px;
+}
+
 .at-composer-controls {
   display: flex;
   align-items: center;

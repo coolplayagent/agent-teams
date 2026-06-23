@@ -13,6 +13,7 @@ import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ClipboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -31,6 +32,8 @@ import type {
   InjectionDeliveryMode,
   ModelProfilesPayload,
   OrchestrationConfig,
+  RoleOption,
+  RoleConfigOptions,
   RunCreateRequest,
   RunThinkingConfig,
   SessionMode,
@@ -38,6 +41,12 @@ import type {
   ThinkingEffort,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
+import {
+  buildPromptInputParts,
+  PromptAttachments,
+  readPastedImageAttachments,
+  type PromptAttachment,
+} from "./PromptAttachments";
 
 interface ComposerProps {
   runStreamController: RunStreamController;
@@ -83,6 +92,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const queryClient = useQueryClient();
   const inputRef = useRef<SenderRef | null>(null);
   const [draft, setDraft] = useState("");
+  const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
+  const [composerStatus, setComposerStatus] = useState("");
   const [yolo, setYolo] = useState(true);
   const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] =
     useState(true);
@@ -171,6 +182,17 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     () => buildModelProfileOptions(modelProfilesQuery.data, selectedModelProfile ?? ""),
     [modelProfilesQuery.data, selectedModelProfile],
   );
+  const attachmentValidationMessage = resolveImageInputBlockedMessage({
+    activeRunId,
+    attachments: promptAttachments,
+    modelProfiles: modelProfilesQuery.data,
+    roleOptions: roleOptionsQuery.data,
+    selectedModelProfile,
+    selectedNormalRootRoleId,
+    selectedSessionMode,
+    targetRoleId,
+  });
+  const displayedComposerStatus = attachmentValidationMessage || composerStatus;
 
   useEffect(() => {
     if (generalConfigQuery.data !== undefined) {
@@ -185,10 +207,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       if (sessionId === null) {
         throw new Error("Select a session before sending.");
       }
+      const inputParts = buildPromptInputParts(draft, promptAttachments);
       const request: RunCreateRequest = {
         session_id: sessionId,
-        input: [{ kind: "text", text: draft.trim() }],
-        display_input: [{ kind: "text", text: draft.trim() }],
+        input: inputParts,
+        display_input: inputParts,
         target_role_id: targetRoleId,
         thinking,
         yolo,
@@ -200,6 +223,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
     onSuccess: (result) => {
       setDraft("");
+      setPromptAttachments([]);
+      setComposerStatus("");
       queryClient.setQueryData(sessionTopologyLockQueryKey(result.session_id), true);
       queryClient.setQueryData<SessionRecord | undefined>(
         sessionDetailQueryKey(result.session_id),
@@ -325,8 +350,16 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     updateModelProfileMutation.isPending ||
     updateTopologyMutation.isPending;
   const canCreateRun =
-    sessionId !== null && activeRunId === null && draft.trim().length > 0 && !busy;
-  const canInject = activeRunId !== null && draft.trim().length > 0 && !busy;
+    sessionId !== null &&
+    activeRunId === null &&
+    (draft.trim().length > 0 || promptAttachments.length > 0) &&
+    !busy &&
+    !attachmentValidationMessage;
+  const canInject =
+    activeRunId !== null &&
+    draft.trim().length > 0 &&
+    promptAttachments.length === 0 &&
+    !busy;
   const canChangeModelProfile =
     sessionId !== null && sessionQuery.data !== undefined && !sessionQuery.isError;
   const isTopologyLocallyLocked = topologyLockQuery.data === true;
@@ -360,6 +393,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         className="at-composer-sender"
         loading={createRunMutation.isPending || injectMessageMutation.isPending}
         onChange={setDraft}
+        onPaste={(event) => {
+          void handlePromptPaste(event);
+        }}
         onSubmit={() => {
           if (canCreateRun) {
             createRunMutation.mutate();
@@ -374,6 +410,20 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         value={draft}
         actions={false}
       />
+      <PromptAttachments
+        attachments={promptAttachments}
+        hasError={Boolean(attachmentValidationMessage)}
+        onRemove={(attachmentId) => {
+          setPromptAttachments((current) =>
+            current.filter((attachment) => attachment.id !== attachmentId),
+          );
+        }}
+      />
+      {displayedComposerStatus ? (
+        <Typography.Text className="at-composer-status" type="danger">
+          {displayedComposerStatus}
+        </Typography.Text>
+      ) : null}
       <div className="at-composer-controls">
         <Space className="at-composer-control-set" size={8} wrap>
           <Segmented<SessionMode>
@@ -597,6 +647,22 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     });
   }
 
+  async function handlePromptPaste(event: ClipboardEvent<HTMLElement>) {
+    try {
+      const attachments = await readPastedImageAttachments(event);
+      if (attachments.length === 0) {
+        return;
+      }
+      setComposerStatus("");
+      setPromptAttachments((current) => [...current, ...attachments]);
+      inputRef.current?.focus();
+    } catch (error) {
+      setComposerStatus(
+        error instanceof Error ? error.message : "Failed to read pasted image.",
+      );
+    }
+  }
+
   function updateSessionTopologyMode(
     sessionMode: SessionMode,
     overrides: Partial<Omit<TopologyPatch, "sessionMode">> = {},
@@ -690,6 +756,190 @@ function buildModelProfileOptions(
     });
   }
   return options;
+}
+
+function resolveImageInputBlockedMessage({
+  activeRunId,
+  attachments,
+  modelProfiles,
+  roleOptions,
+  selectedModelProfile,
+  selectedNormalRootRoleId,
+  selectedSessionMode,
+  targetRoleId,
+}: {
+  activeRunId: string | null;
+  attachments: PromptAttachment[];
+  modelProfiles: ModelProfilesPayload | undefined;
+  roleOptions: RoleConfigOptions | undefined;
+  selectedModelProfile: string | null;
+  selectedNormalRootRoleId: string;
+  selectedSessionMode: SessionMode;
+  targetRoleId: string | null;
+}): string {
+  if (attachments.length === 0) {
+    return "";
+  }
+  if (activeRunId !== null) {
+    return "Runtime injections support text only.";
+  }
+  const resolvedTargetRoleId = resolveValidationRoleId(
+    selectedSessionMode,
+    roleOptions,
+    selectedNormalRootRoleId,
+    targetRoleId,
+  );
+  if (!resolvedTargetRoleId) {
+    return "";
+  }
+  const selectedProfileSupport =
+    selectedSessionMode === "normal"
+      ? resolveModelProfileInputModalitySupport(
+          modelProfiles,
+          selectedModelProfile,
+          "image",
+        )
+      : { label: "", support: null };
+  const roleSupport = resolveRoleInputModalitySupport(
+    roleOptions,
+    resolvedTargetRoleId,
+    "image",
+  );
+  const imageSupport = selectedProfileSupport.support ?? roleSupport.support;
+  if (imageSupport === true) {
+    return "";
+  }
+  const targetLabel =
+    selectedProfileSupport.label ||
+    roleSupport.label ||
+    resolvedTargetRoleId ||
+    "the selected agent";
+  if (imageSupport === null) {
+    return `Image input support for ${targetLabel} is unknown.`;
+  }
+  return `${targetLabel} does not support image input.`;
+}
+
+function resolveValidationRoleId(
+  sessionMode: SessionMode,
+  roleOptions: RoleConfigOptions | undefined,
+  selectedNormalRootRoleId: string,
+  targetRoleId: string | null,
+): string {
+  if (sessionMode === "normal") {
+    return (
+      normalizeProfileName(targetRoleId) ||
+      resolvePrimaryRoleId(sessionMode, roleOptions, selectedNormalRootRoleId)
+    );
+  }
+  return resolvePrimaryRoleId(sessionMode, roleOptions, selectedNormalRootRoleId);
+}
+
+function resolveModelProfileInputModalitySupport(
+  profiles: ModelProfilesPayload | undefined,
+  selectedProfile: string | null,
+  modality: "image",
+): { label: string; support: boolean | null } {
+  const profileName = normalizeProfileName(selectedProfile);
+  if (!profileName) {
+    return { label: "", support: null };
+  }
+  const profile = profiles?.[profileName];
+  if (profile === undefined) {
+    return { label: profileName, support: null };
+  }
+  const inputModalities = normalizeInputModalities(profile.input_modalities);
+  if (inputModalities !== null) {
+    return {
+      label: normalizeProfileName(profile.model) || profileName,
+      support: inputModalities.includes(modality),
+    };
+  }
+  return {
+    label: normalizeProfileName(profile.model) || profileName,
+    support:
+      resolveCapabilityInputSupport(profile.resolved_capabilities?.input, modality) ??
+      resolveCapabilityInputSupport(profile.capabilities?.input, modality),
+  };
+}
+
+function resolveRoleInputModalitySupport(
+  roleOptions: RoleConfigOptions | undefined,
+  roleId: string,
+  modality: "image",
+): { label: string; support: boolean | null } {
+  const role = findRoleOption(roleOptions, roleId);
+  if (role === undefined) {
+    return { label: roleId, support: null };
+  }
+  const label =
+    normalizeProfileName(role.model_name) ||
+    normalizeProfileName(role.model_profile) ||
+    normalizeProfileName(role.name) ||
+    role.role_id;
+  const capabilitySupport = resolveCapabilityInputSupport(
+    role.capabilities?.input,
+    modality,
+  );
+  if (capabilitySupport !== null) {
+    return { label, support: capabilitySupport };
+  }
+  const inputModalities = normalizeInputModalities(role.input_modalities);
+  return {
+    label,
+    support: inputModalities === null ? null : inputModalities.includes(modality),
+  };
+}
+
+function resolvePrimaryRoleId(
+  sessionMode: SessionMode,
+  roleOptions: RoleConfigOptions | undefined,
+  selectedNormalRootRoleId: string,
+): string {
+  if (sessionMode === "orchestration") {
+    return (
+      normalizeProfileName(roleOptions?.coordinator_role_id) ||
+      normalizeProfileName(roleOptions?.coordinator_role?.role_id)
+    );
+  }
+  return (
+    normalizeProfileName(selectedNormalRootRoleId) ||
+    normalizeProfileName(roleOptions?.main_agent_role_id) ||
+    normalizeProfileName(roleOptions?.main_agent_role?.role_id) ||
+    "MainAgent"
+  );
+}
+
+function findRoleOption(
+  roleOptions: RoleConfigOptions | undefined,
+  roleId: string,
+): RoleOption | undefined {
+  const normalizedRoleId = normalizeProfileName(roleId);
+  return [
+    roleOptions?.coordinator_role,
+    roleOptions?.main_agent_role,
+    ...(roleOptions?.normal_mode_roles ?? []),
+    ...(roleOptions?.subagent_roles ?? []),
+  ]
+    .filter((option): option is RoleOption => option !== null && option !== undefined)
+    .find((option) => option.role_id === normalizedRoleId);
+}
+
+function resolveCapabilityInputSupport(
+  inputCapabilities: { image?: boolean | null } | undefined,
+  modality: "image",
+): boolean | null {
+  const support = inputCapabilities?.[modality];
+  return typeof support === "boolean" ? support : null;
+}
+
+function normalizeInputModalities(inputModalities: string[] | undefined): string[] | null {
+  if (!Array.isArray(inputModalities)) {
+    return null;
+  }
+  return inputModalities
+    .map((modality) => modality.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function normalizeProfileName(value: string | null | undefined): string {

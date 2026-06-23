@@ -273,6 +273,44 @@ describe("MessageTimeline", () => {
     expect(screen.getByText(/"ok": false/)).toBeVisible();
     expect(screen.getByText(/"error": "cd failed"/)).toBeVisible();
   });
+
+  it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: [
+          "## Plan",
+          "",
+          "| Step | State |",
+          "| --- | --- |",
+          "| Timeline | Done |",
+          "",
+          "[Docs](https://example.test/docs)",
+          "",
+          "```ts",
+          "const answer = \"yes\";",
+          "```",
+        ].join("\n"),
+        message_id: "assistant-markdown",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Plan" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "href",
+      "https://example.test/docs",
+    );
+    expect(screen.getByRole("cell", { name: "Timeline" })).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Done" })).toBeVisible();
+    const codeBlock = container.querySelector("pre code.language-ts");
+    expect(codeBlock).not.toBeNull();
+    expect(codeBlock).toHaveTextContent("const answer = \"yes\";");
+    expect(codeBlock?.querySelector(".hljs-keyword")).not.toBeNull();
+  });
 });
 
 function renderTimeline() {
@@ -284,7 +322,7 @@ function renderTimeline() {
       },
     },
   });
-  render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>

@@ -11,6 +11,10 @@
   --at-text-muted: #62665f;
   --at-primary: #2f6f5e;
   --at-danger: #b42318;
+  --at-code-bg: #eceee8;
+  --at-code-keyword: #7a3e9d;
+  --at-code-string: #7a4a10;
+  --at-code-title: #22659b;
 }
 
 :root[data-theme="dark"] {
@@ -26,6 +30,10 @@
   --at-text-muted: #b4b8ad;
   --at-primary: #6fa38e;
   --at-danger: #f97066;
+  --at-code-bg: #242721;
+  --at-code-keyword: #d6a4ff;
+  --at-code-string: #dfb06d;
+  --at-code-title: #88bff3;
 }
 
 * {
@@ -304,9 +312,133 @@ body {
   color: var(--at-text);
 }
 
-.at-message-text {
-  margin: 0 !important;
-  white-space: pre-wrap;
+.at-message-markdown {
+  max-width: 760px;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.at-message-markdown > :first-child {
+  margin-top: 0;
+}
+
+.at-message-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.at-message-markdown p,
+.at-message-markdown h1,
+.at-message-markdown h2,
+.at-message-markdown h3,
+.at-message-markdown ul,
+.at-message-markdown ol,
+.at-message-markdown blockquote,
+.at-message-markdown pre,
+.at-message-markdown table {
+  margin: 0 0 10px;
+}
+
+.at-message-markdown h1,
+.at-message-markdown h2,
+.at-message-markdown h3 {
+  color: var(--at-text);
+  line-height: 1.3;
+  font-weight: 650;
+}
+
+.at-message-markdown h1 {
+  font-size: 18px;
+}
+
+.at-message-markdown h2 {
+  font-size: 16px;
+}
+
+.at-message-markdown h3 {
+  font-size: 14px;
+}
+
+.at-message-markdown ul,
+.at-message-markdown ol {
+  padding-left: 22px;
+}
+
+.at-message-markdown li + li {
+  margin-top: 4px;
+}
+
+.at-message-markdown a {
+  color: var(--at-primary);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.at-message-markdown code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--at-code-bg);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.93em;
+}
+
+.at-message-markdown pre {
+  max-width: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-code-bg);
+}
+
+.at-message-markdown pre code {
+  display: block;
+  min-width: max-content;
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.at-message-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+
+.at-message-markdown th,
+.at-message-markdown td {
+  padding: 6px 8px;
+  border: 1px solid var(--at-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.at-message-markdown blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--at-border-strong);
+  color: var(--at-text-muted);
+}
+
+.at-message-markdown .hljs-keyword,
+.at-message-markdown .hljs-built_in,
+.at-message-markdown .hljs-selector-tag {
+  color: var(--at-code-keyword);
+}
+
+.at-message-markdown .hljs-string,
+.at-message-markdown .hljs-attr,
+.at-message-markdown .hljs-meta .hljs-string {
+  color: var(--at-code-string);
+}
+
+.at-message-markdown .hljs-title,
+.at-message-markdown .hljs-function,
+.at-message-markdown .hljs-name {
+  color: var(--at-code-title);
+}
+
+.at-message-markdown .hljs-comment {
+  color: var(--at-text-muted);
 }
 
 .at-message-media {

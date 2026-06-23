@@ -9,6 +9,7 @@ import { contentPartText, type ContentPart, type TimelineMessage } from "../../a
 import type { RunEventType } from "../../runtime/events";
 import type { TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
+import { MarkdownMessage } from "./MarkdownMessage";
 
 interface MessageTimelineProps {
   sessionId: string | null;
@@ -232,12 +233,7 @@ function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
       {parts.map((part, index) => {
         if (part.kind === "text") {
           return (
-            <Typography.Paragraph
-              className="at-message-text"
-              key={`text:${index}`}
-            >
-              {part.text}
-            </Typography.Paragraph>
+            <MarkdownMessage key={`text:${index}`} text={part.text} />
           );
         }
         if (part.kind === "tool") {

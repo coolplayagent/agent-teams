@@ -15,6 +15,7 @@ import {
   updateSessionNormalModelProfile,
 } from "../api/client";
 import { Composer } from "../features/composer/Composer";
+import type { SessionRecord } from "../api/contracts";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
 interface MockSenderProps {
@@ -174,6 +175,62 @@ describe("Composer", () => {
     expect(updateSessionTopologyMock).not.toHaveBeenCalled();
   });
 
+  it("keeps topology locked when stale session detail resolves after run creation", async () => {
+    let resolveSession: ((session: SessionRecord) => void) | undefined;
+    getSessionMock.mockReturnValue(
+      new Promise<SessionRecord>((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    const controller = runStreamController();
+
+    renderComposer(controller);
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Start before session detail returns" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+    );
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-1"));
+    if (resolveSession === undefined) {
+      throw new Error("Session detail query did not start.");
+    }
+    resolveSession({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: null,
+      normal_model_profile: null,
+      orchestration_preset_id: null,
+      can_switch_mode: true,
+    });
+
+    await waitFor(() =>
+      expect(selectRoot("Root role")).toHaveClass("ant-select-disabled"),
+    );
+    fireEvent.click(screen.getByText("Orchestration"));
+
+    expect(updateSessionTopologyMock).not.toHaveBeenCalled();
+  });
+
   it("updates the current session model profile", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
@@ -269,8 +326,9 @@ describe("Composer", () => {
 
     renderComposer();
 
-    await waitFor(() =>
-      expect(selectRoot("Root role")).not.toHaveClass("ant-select-disabled"),
+    await waitFor(
+      () => expect(selectRoot("Root role")).not.toHaveClass("ant-select-disabled"),
+      { timeout: 5000 },
     );
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Root role" }));
     const reviewerOptions = await screen.findAllByText("Reviewer");

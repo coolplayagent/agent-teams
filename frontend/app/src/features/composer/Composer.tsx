@@ -82,6 +82,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     readSavedThinkingState(),
   );
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
+  const [locallyLockedTopologySessionIds, setLocallyLockedTopologySessionIds] =
+    useState<ReadonlySet<string>>(() => new Set());
   const activeRunId = runStreamController.activeRunId;
   const roleOptionsQuery = useQuery({
     queryKey: ["roles", "options"],
@@ -168,6 +170,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
     onSuccess: (result) => {
       setDraft("");
+      setLocallyLockedTopologySessionIds((current) => {
+        if (current.has(result.session_id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(result.session_id);
+        return next;
+      });
       queryClient.setQueryData<SessionRecord | undefined>(
         sessionDetailQueryKey(result.session_id),
         (current) =>
@@ -296,9 +306,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const canInject = activeRunId !== null && draft.trim().length > 0 && !busy;
   const canChangeModelProfile =
     sessionId !== null && sessionQuery.data !== undefined && !sessionQuery.isError;
+  const isTopologyLocallyLocked =
+    sessionId !== null && locallyLockedTopologySessionIds.has(sessionId);
   const canChangeTopology =
     canChangeModelProfile &&
     activeRunId === null &&
+    !isTopologyLocallyLocked &&
     sessionQuery.data?.can_switch_mode !== false;
 
   return (

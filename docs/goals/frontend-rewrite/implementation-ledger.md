@@ -277,13 +277,14 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Scope
 - Addressed reviewer `019ef2f8-fff2-7700-8b98-d6dbf9c4b3b1` finding where `can_switch_mode` could remain stale after the first run.
 - Locked the session detail cache by setting `can_switch_mode` to `false` immediately after run creation succeeds.
-- Added a focused React regression proving topology controls stay locked after the first run even when `activeRunId` is back to `null`.
+- Added a local run-start topology lock so in-flight stale session detail responses cannot re-enable topology controls.
+- Added focused React regressions proving topology controls stay locked after the first run even when `activeRunId` is back to `null` and when stale session detail resolves after run creation.
 
 ### Verification
-- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 11 tests.
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 12 tests.
 - `npm run typecheck` in `frontend/app` passed.
 - `npm run lint` in `frontend/app` passed.
-- `npm run test -- --run` in `frontend/app` passed with 28 tests.
+- `npm run test -- --run` in `frontend/app` passed with 29 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
 - `uv run --extra dev ruff check --fix` passed.
 - `uv run --extra dev ruff format --no-cache --force-exclude` passed.

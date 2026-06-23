@@ -351,14 +351,19 @@ describe("MessageTimeline", () => {
       },
     ]);
 
-    renderTimeline();
+    const { container } = renderTimeline();
 
     expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
-    expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
     expect(screen.getByText("Tool result: execute_command")).toBeVisible();
-    expect(screen.getByText("tests passed")).toBeVisible();
     expect(screen.getByText("Tool validation: read_file")).toBeVisible();
-    expect(screen.getByText("path is required")).toBeVisible();
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(3);
+    expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
+    expect(screen.getByText("tests passed")).not.toBeVisible();
+    expect(screen.getByText("path is required")).not.toBeVisible();
+
+    fireEvent.click(screen.getByText("Tool call: execute_command"));
+
+    expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
   });
 
   it("marks failed persisted tool returns as tool errors", async () => {
@@ -395,10 +400,15 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findAllByText("Tool error: execute_command"))
-      .toHaveLength(3);
-    expect(screen.getByText("explicit tool failure")).toBeVisible();
-    expect(screen.getByText("denied by policy")).toBeVisible();
+    const errorTitles = await screen.findAllByText("Tool error: execute_command");
+    expect(errorTitles).toHaveLength(3);
+    expect(screen.getByText("explicit tool failure")).not.toBeVisible();
+    expect(screen.getByText("denied by policy")).not.toBeVisible();
+    expect(screen.getByText(/"ok": false/)).not.toBeVisible();
+    expect(screen.getByText(/"error": "cd failed"/)).not.toBeVisible();
+
+    fireEvent.click(errorTitles[2]);
+
     expect(screen.getByText(/"ok": false/)).toBeVisible();
     expect(screen.getByText(/"error": "cd failed"/)).toBeVisible();
   });
@@ -459,12 +469,22 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(
-      await screen.findByText("Approval requested: execute_command"),
-    ).toBeVisible();
+    const approvalRequest = await screen.findByText("Approval requested: execute_command");
+    expect(approvalRequest).toBeVisible();
+    expect(screen.getByText(/Args: npm test/)).not.toBeVisible();
+    expect(screen.getByText(/Options: Allow once, Deny/)).not.toBeVisible();
+    const approvalDenied = screen.getByText("Approval denied: execute_command");
+    expect(approvalDenied).toBeVisible();
+    expect(screen.getByText(/Action: deny/)).not.toBeVisible();
+    expect(screen.getByText(/Feedback: Unsafe command/)).not.toBeVisible();
+
+    fireEvent.click(approvalRequest);
+
     expect(screen.getByText(/Args: npm test/)).toBeVisible();
     expect(screen.getByText(/Options: Allow once, Deny/)).toBeVisible();
-    expect(screen.getByText("Approval denied: execute_command")).toBeVisible();
+
+    fireEvent.click(approvalDenied);
+
     expect(screen.getByText(/Action: deny/)).toBeVisible();
     expect(screen.getByText(/Feedback: Unsafe command/)).toBeVisible();
   });
@@ -1277,11 +1297,18 @@ describe("MessageTimeline", () => {
     renderTimeline();
 
     expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
-    expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
     expect(screen.getByText("Tool error: execute_command")).toBeVisible();
-    expect(screen.getByText(/"ok": false/)).toBeVisible();
-    expect(screen.getByText(/"error": "command failed"/)).toBeVisible();
     expect(screen.getByText("Tool validation: execute_command")).toBeVisible();
+    expect(
+      screen.getByText(/Input validation failed before tool execution/),
+    ).not.toBeVisible();
+    expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
+    expect(screen.getByText(/"ok": false/)).not.toBeVisible();
+    expect(screen.getByText(/"error": "command failed"/)).not.toBeVisible();
+    expect(screen.getByText(/cmd is required/)).not.toBeVisible();
+
+    fireEvent.click(screen.getByText("Tool validation: execute_command"));
+
     expect(
       screen.getByText(/Input validation failed before tool execution/),
     ).toBeVisible();

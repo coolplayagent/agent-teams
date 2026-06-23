@@ -900,3 +900,27 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this framework recheck slice. No Application Shell, Workspace, or Timeline subsystem completion is claimed from this batch; the next pass should continue screenshot-first comparison and focus on remaining workspace visual structure, composer density, and V1/V2 interaction parity before smaller polish.
+
+## 2026-06-24 Timeline Tool Event Density Batch
+
+### Scope
+- Rechecked the real V1 and V2 browser surfaces before editing, using the same `你好啊` session for the chat-frame comparison.
+- V1 presented the selected run as compact round cards and readable assistant text, while V2 still displayed every tool call/result/error body inline with nested scrollbars, making the chat frame feel vertically overloaded.
+- Changed V2 tool call, tool result, validation, and approval timeline parts to render as collapsed `<details>` summaries by default.
+- Preserved expandable call ids, parameters, results, errors, approval options, and feedback so detailed tool inspection remains available without dominating the default chat reading path.
+- Lowered the virtual row height estimate for collapsed tool events so the timeline no longer reserves space for large hidden JSON bodies.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-framework-followup/`.
+- V1 reference screenshot: `v1-current-chat-loaded.png`.
+- V2 before screenshot for the same session: `v2-current-chat-same-session.png`.
+- V2 after screenshot: `v2-tool-events-collapsed-after.png`.
+- V2 before metrics for the same session had `.at-timeline` `scrollHeight=4766` with visible tool bodies and nested scrollbars.
+- V2 after metrics had `.at-timeline` `scrollHeight=2520`, `toolBlockCount=16`, `openToolBlockCount=0`, body/document still fixed to `1272 / 1272`, and the composer fixed at the bottom of the one-page shell.
+- Browser expansion check opened the first collapsed tool event and verified the call id plus parameter body were still available, then collapsed it again.
+- Browser console check returned no warnings or errors after the built V2 page was loaded and checked.
+- `npm run test -- src/test/MessageTimeline.test.tsx` in `frontend/app` passed with 35 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this timeline density slice. No Message Timeline subsystem completion is claimed from this batch; streaming/replay/recovery parity, remaining workspace styling, composer density, and reviewer sign-off remain open.

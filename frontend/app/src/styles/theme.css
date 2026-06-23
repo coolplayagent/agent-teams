@@ -1261,26 +1261,66 @@ body {
 }
 
 .at-message-tool {
-  display: grid;
-  gap: 6px;
   max-width: 100%;
-  padding: 10px 12px;
   border: 1px solid var(--at-border);
   border-radius: 6px;
   background: var(--at-surface);
+  overflow: hidden;
 }
 
 .at-message-tool.is-error {
   border-color: color-mix(in srgb, var(--at-danger) 45%, var(--at-border));
 }
 
+.at-message-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+  color: var(--at-text);
+  font-size: 13px;
+  list-style: none;
+}
+
+.at-message-tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+.at-message-tool-summary::before {
+  content: ">";
+  flex: 0 0 auto;
+  color: var(--at-text-muted);
+  font-family: var(--at-font-mono);
+  font-size: 13px;
+  transition: transform 0.16s ease;
+}
+
+.at-message-tool[open] .at-message-tool-summary::before {
+  transform: rotate(90deg);
+}
+
 .at-message-tool-title {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
   color: var(--at-text);
-  font-size: 13px;
   font-weight: 600;
+}
+
+.at-message-tool-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-message-tool-body {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px 10px 28px;
 }
 
 .at-message-tool-meta {

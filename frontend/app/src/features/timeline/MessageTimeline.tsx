@@ -1105,17 +1105,24 @@ function MessageToolBlock({
   t: Translate;
 }) {
   const title = `${toolPhaseLabel(tool, t)}: ${tool.toolName}`;
+  const hasDetails = tool.callId.trim().length > 0 || tool.body.trim().length > 0;
   return (
-    <div className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
-      <div className="at-message-tool-title">
-        <Wrench aria-hidden="true" size={14} />
-        <span>{title}</span>
-      </div>
-      {tool.callId ? (
-        <div className="at-message-tool-meta">{t("timelineCallId")}: {tool.callId}</div>
+    <details className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
+      <summary className="at-message-tool-summary">
+        <span className="at-message-tool-title">
+          <Wrench aria-hidden="true" size={14} />
+          <span>{title}</span>
+        </span>
+      </summary>
+      {hasDetails ? (
+        <div className="at-message-tool-body">
+          {tool.callId ? (
+            <div className="at-message-tool-meta">{t("timelineCallId")}: {tool.callId}</div>
+          ) : null}
+          {tool.body ? <pre>{tool.body}</pre> : null}
+        </div>
       ) : null}
-      {tool.body ? <pre>{tool.body}</pre> : null}
-    </div>
+    </details>
   );
 }
 
@@ -1581,7 +1588,7 @@ function estimateRowSize(row: TimelineRow | undefined): number {
   return 96
     + mediaCount * 138
     + thinkingCount * 42
-    + toolCount * 118
+    + toolCount * 46
     + Math.min(160, Math.ceil(textLength / 110) * 22);
 }
 

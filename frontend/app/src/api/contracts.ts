@@ -130,6 +130,24 @@ export interface LegacyContentMediaRefPart {
   name?: string;
 }
 
+export interface ThinkingContentPart {
+  content?: string;
+  finished?: boolean;
+  kind: "thinking";
+  part_index?: number | string;
+  streaming?: boolean;
+  text?: string;
+}
+
+export interface LegacyThinkingContentPart {
+  content?: string;
+  finished?: boolean;
+  part_index?: number | string;
+  part_kind: "thinking";
+  streaming?: boolean;
+  text?: string;
+}
+
 export interface InlineMediaPart {
   base64_data?: string;
   height?: number | null;
@@ -217,9 +235,11 @@ export type ContentPart =
   | InlineMediaPart
   | LegacyContentTextPart
   | LegacyContentMediaRefPart
+  | LegacyThinkingContentPart
   | LegacyToolCallContentPart
   | LegacyToolReturnContentPart
   | LegacyToolValidationContentPart
+  | ThinkingContentPart
   | ToolCallContentPart
   | ToolReturnContentPart
   | ToolValidationContentPart

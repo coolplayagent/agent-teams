@@ -1,7 +1,7 @@
 import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Brain, Copy, Wrench } from "lucide-react";
+import { Copy, Wrench } from "lucide-react";
 import { useMemo, useRef } from "react";
 
 import { listSessionMessages } from "../../api/client";
@@ -38,12 +38,16 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
         .filter((entry) => entry.sessionId === sessionId),
     [runtimeState, sessionId],
   );
+  const runtimeRows = useMemo(
+    () => runtimeEntriesToRows(runtimeEntries),
+    [runtimeEntries],
+  );
   const rows = useMemo(
     () => [
       ...messages.map(messageToRow),
-      ...runtimeEntries.map(runtimeEntryToRow),
+      ...runtimeRows,
     ],
-    [messages, runtimeEntries],
+    [messages, runtimeRows],
   );
   const streamOpenForSession = useMemo(
     () =>
@@ -201,14 +205,19 @@ interface TimelineToolPart {
 
 interface TimelineThinkingPart {
   kind: "thinking";
-  phase: "started" | "delta" | "finished";
-  partIndex: number | null;
+  partIndex: string;
+  streaming: boolean;
   text: string;
 }
 
 interface FallbackVirtualItem {
   index: number;
   start: number;
+}
+
+interface RuntimeThinkingAccumulator {
+  part: TimelineThinkingPart;
+  row: TimelineRow;
 }
 
 function fallbackVirtualItems(rows: TimelineRow[]): FallbackVirtualItem[] {
@@ -239,6 +248,21 @@ function messageToRow(message: TimelineMessage, index: number): TimelineRow {
   };
 }
 
+function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
+  const rows: TimelineRow[] = [];
+  const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
+  for (const entry of entries) {
+    if (isThinkingEvent(entry.kind)) {
+      if (!applyRuntimeThinkingEvent(entry, rows, activeThinking)) {
+        rows.push(runtimeEntryToRow(entry));
+      }
+      continue;
+    }
+    rows.push(runtimeEntryToRow(entry));
+  }
+  return rows;
+}
+
 function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
   const parts = runtimeEntryParts(entry);
   return {
@@ -253,10 +277,6 @@ function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
-  const thinking = runtimeThinkingPart(entry);
-  if (thinking !== null) {
-    return [thinking];
-  }
   const tool = runtimeToolPart(entry);
   if (tool !== null) {
     return [tool];
@@ -297,20 +317,24 @@ function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
 function MessageThinkingBlock({ thinking }: { thinking: TimelineThinkingPart }) {
   const hasText = thinking.text.trim().length > 0;
   return (
-    <div
-      className={`at-message-thinking is-${thinking.phase}`}
-      data-part-index={thinking.partIndex ?? undefined}
+    <details
+      className="at-message-thinking"
+      data-part-index={thinking.partIndex}
+      data-streaming={thinking.streaming ? "true" : "false"}
+      open={thinking.streaming ? true : undefined}
     >
-      <div className="at-message-thinking-title">
-        <Brain aria-hidden="true" size={14} />
-        <span>{thinkingPhaseLabel(thinking.phase)}</span>
-      </div>
+      <summary className="at-message-thinking-summary">
+        <span className="at-message-thinking-label">Thinking</span>
+        {thinking.streaming ? (
+          <span className="at-message-thinking-live">Live</span>
+        ) : null}
+      </summary>
       {hasText ? (
         <div className="at-message-thinking-body">
           <MarkdownMessage text={thinking.text} />
         </div>
       ) : null}
-    </div>
+    </details>
   );
 }
 
@@ -384,11 +408,27 @@ function contentPartToRenderParts(part: ContentPart): TimelineRenderPart[] {
   if (media !== null) {
     return [media];
   }
+  const thinking = contentPartThinking(part);
+  if (thinking !== null) {
+    return [thinking];
+  }
   const tool = contentPartTool(part);
   if (tool !== null) {
     return [tool];
   }
   return [];
+}
+
+function contentPartThinking(part: ContentPart): TimelineThinkingPart | null {
+  if (contentPartKind(part) !== "thinking") {
+    return null;
+  }
+  return {
+    kind: "thinking",
+    partIndex: contentPartIndex(part),
+    streaming: contentPartStreaming(part) && !contentPartFinished(part),
+    text: thinkingContentText(part),
+  };
 }
 
 function contentPartTool(part: ContentPart): TimelineToolPart | null {
@@ -468,17 +508,90 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
   };
 }
 
-function runtimeThinkingPart(entry: TimelineEntry): TimelineThinkingPart | null {
-  const phase = thinkingPhase(entry.kind);
-  if (phase === null) {
+function applyRuntimeThinkingEvent(
+  entry: TimelineEntry,
+  rows: TimelineRow[],
+  activeThinking: Map<string, RuntimeThinkingAccumulator>,
+): boolean {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return false;
+  }
+  const partIndex = thinkingPartIndex(payload);
+  const groupKey = runtimeThinkingGroupKey(entry, partIndex);
+  if (entry.kind === "thinking_started") {
+    if (!activeThinking.has(groupKey)) {
+      const row = runtimeThinkingRow(entry, partIndex);
+      const part = row.parts[0];
+      if (part?.kind === "thinking") {
+        rows.push(row);
+        activeThinking.set(groupKey, { part, row });
+      }
+    }
+    return true;
+  }
+  if (entry.kind === "thinking_delta") {
+    const accumulator = activeThinking.get(groupKey)
+      ?? createRuntimeThinkingAccumulator(entry, partIndex, rows, activeThinking);
+    if (accumulator === null) {
+      return false;
+    }
+    accumulator.part.text += thinkingDeltaText(entry);
+    accumulator.part.streaming = true;
+    accumulator.row.text = accumulator.part.text;
+    return true;
+  }
+  if (entry.kind === "thinking_finished") {
+    const accumulator = activeThinking.get(groupKey);
+    if (accumulator !== undefined) {
+      accumulator.part.streaming = false;
+      activeThinking.delete(groupKey);
+    }
+    return true;
+  }
+  return false;
+}
+
+function createRuntimeThinkingAccumulator(
+  entry: TimelineEntry,
+  partIndex: string,
+  rows: TimelineRow[],
+  activeThinking: Map<string, RuntimeThinkingAccumulator>,
+): RuntimeThinkingAccumulator | null {
+  const row = runtimeThinkingRow(entry, partIndex);
+  const part = row.parts[0];
+  if (part?.kind !== "thinking") {
     return null;
   }
-  return {
+  rows.push(row);
+  const accumulator = { part, row };
+  activeThinking.set(runtimeThinkingGroupKey(entry, partIndex), accumulator);
+  return accumulator;
+}
+
+function runtimeThinkingRow(
+  entry: TimelineEntry,
+  partIndex: string,
+): TimelineRow {
+  const part: TimelineThinkingPart = {
     kind: "thinking",
-    phase,
-    partIndex: thinkingPartIndex(entry.payload),
-    text: phase === "delta" ? thinkingDeltaText(entry) : "",
+    partIndex,
+    streaming: true,
+    text: "",
   };
+  return {
+    key: `runtime-thinking:${entry.runId}:${entry.roleId}:${partIndex}:${entry.eventId}`,
+    role: entry.roleId,
+    text: "",
+    kind: entry.kind,
+    parts: [part],
+    source: "runtime",
+    copyable: false,
+  };
+}
+
+function runtimeThinkingGroupKey(entry: TimelineEntry, partIndex: string): string {
+  return `${entry.runId}:${entry.roleId}:${partIndex}`;
 }
 
 function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
@@ -551,6 +664,37 @@ function contentPartKind(part: ContentPart): string {
 
 function contentPartHasToolCallShape(part: ContentPart): boolean {
   return "tool_name" in part && "args" in part && part.tool_name !== undefined;
+}
+
+function thinkingContentText(part: ContentPart): string {
+  if ("content" in part && typeof part.content === "string") {
+    return part.content;
+  }
+  if ("text" in part && typeof part.text === "string") {
+    return part.text;
+  }
+  return "";
+}
+
+function contentPartIndex(part: ContentPart): string {
+  if ("part_index" in part) {
+    const value = part.part_index;
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "0";
+}
+
+function contentPartStreaming(part: ContentPart): boolean {
+  return "streaming" in part && part.streaming === true;
+}
+
+function contentPartFinished(part: ContentPart): boolean {
+  return "finished" in part && part.finished === true;
 }
 
 function contentPartMedia(part: ContentPart): TimelineMediaPart | null {
@@ -626,8 +770,11 @@ function estimateRowSize(row: TimelineRow | undefined): number {
   }
   const mediaCount = row.parts.filter((part) => part.kind === "media").length;
   const thinkingCount = row.parts.filter((part) => part.kind === "thinking").length;
+  const thinkingTextLength = row.parts
+    .filter((part): part is TimelineThinkingPart => part.kind === "thinking")
+    .reduce((total, part) => total + part.text.length, 0);
   const toolCount = row.parts.filter((part) => part.kind === "tool").length;
-  const textLength = row.text.length;
+  const textLength = row.text.length + thinkingTextLength;
   return 96
     + mediaCount * 138
     + thinkingCount * 42
@@ -635,29 +782,12 @@ function estimateRowSize(row: TimelineRow | undefined): number {
     + Math.min(160, Math.ceil(textLength / 110) * 22);
 }
 
-function thinkingPhase(
-  kind: RunEventType | "message",
-): TimelineThinkingPart["phase"] | null {
-  if (kind === "thinking_started") {
-    return "started";
-  }
-  if (kind === "thinking_delta") {
-    return "delta";
-  }
-  if (kind === "thinking_finished") {
-    return "finished";
-  }
-  return null;
-}
-
-function thinkingPhaseLabel(phase: TimelineThinkingPart["phase"]): string {
-  if (phase === "started") {
-    return "Thinking started";
-  }
-  if (phase === "finished") {
-    return "Thinking finished";
-  }
-  return "Thinking";
+function isThinkingEvent(kind: RunEventType | "message"): boolean {
+  return (
+    kind === "thinking_started" ||
+    kind === "thinking_delta" ||
+    kind === "thinking_finished"
+  );
 }
 
 function toolPhaseLabel(tool: TimelineToolPart): string {
@@ -711,16 +841,15 @@ function validationFailureBody(payload: Record<string, JsonValue>): string {
   ].filter(Boolean).join("\n");
 }
 
-function thinkingPartIndex(payload: JsonValue): number | null {
-  const payloadObject = jsonObject(payload);
-  if (payloadObject === null) {
-    return null;
+function thinkingPartIndex(payload: Record<string, JsonValue>): string {
+  const value = payload.part_index;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
   }
-  const value = payloadObject.part_index;
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return null;
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
   }
-  return value;
+  return "0";
 }
 
 function thinkingDeltaText(entry: TimelineEntry): string {

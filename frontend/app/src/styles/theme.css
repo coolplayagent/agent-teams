@@ -11,6 +11,7 @@
   --at-text-muted: #62665f;
   --at-primary: #2f6f5e;
   --at-danger: #b42318;
+  --at-font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --at-code-bg: #eceee8;
   --at-code-keyword: #7a3e9d;
   --at-code-string: #7a4a10;
@@ -475,26 +476,57 @@ body {
 }
 
 .at-message-thinking {
-  display: grid;
-  gap: 6px;
   max-width: 760px;
-  padding: 8px 10px;
   border: 1px solid var(--at-border);
   border-radius: 6px;
   background: var(--at-surface-muted);
+  overflow: hidden;
 }
 
-.at-message-thinking-title {
-  display: inline-flex;
+.at-message-thinking-summary {
+  display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
   color: var(--at-text-muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
+  list-style: none;
 }
 
-.at-message-thinking-title svg {
+.at-message-thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.at-message-thinking-summary::before {
+  content: ">";
+  color: var(--at-text-muted);
+  font-family: var(--at-font-mono);
+  font-size: 13px;
+  transition: transform 0.16s ease;
+}
+
+.at-message-thinking[open] .at-message-thinking-summary::before {
+  transform: rotate(90deg);
+}
+
+.at-message-thinking-label {
+  flex: 1 1 auto;
+}
+
+.at-message-thinking-live {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--at-primary) 12%, transparent);
   color: var(--at-primary);
+  font-size: 11px;
+}
+
+.at-message-thinking-body {
+  padding: 0 10px 8px;
 }
 
 .at-message-thinking-body .at-message-markdown {

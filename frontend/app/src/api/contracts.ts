@@ -650,6 +650,44 @@ export interface WebConfig {
   searxng_instance_url?: string | null;
 }
 
+export interface ProxyConfig {
+  all_proxy?: string | null;
+  http_proxy?: string | null;
+  https_proxy?: string | null;
+  no_proxy?: string | null;
+  proxy_password?: string | null;
+  proxy_username?: string | null;
+  ssl_verify?: boolean | null;
+}
+
+export type WebProbeMethod = "GET" | "HEAD";
+
+export interface WebConnectivityProbeDiagnostics {
+  endpoint_reachable: boolean;
+  redirected: boolean;
+  used_proxy: boolean;
+}
+
+export interface WebConnectivityProbeRequest {
+  proxy_override?: ProxyConfig | null;
+  timeout_ms?: number | null;
+  url: string;
+}
+
+export interface WebConnectivityProbeResult {
+  checked_at?: string;
+  diagnostics: WebConnectivityProbeDiagnostics;
+  error_code?: string | null;
+  error_message?: string | null;
+  final_url?: string;
+  latency_ms: number;
+  ok: boolean;
+  retryable?: boolean;
+  status_code?: number | null;
+  url?: string;
+  used_method: WebProbeMethod;
+}
+
 export type NotificationChannel = "browser" | "feishu" | "toast";
 export type NotificationTypeId =
   | "monitor_triggered"

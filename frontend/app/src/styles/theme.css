@@ -1642,6 +1642,21 @@ body {
   white-space: nowrap;
 }
 
+.at-settings-proxy-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 112px;
+  align-items: end;
+  gap: 10px;
+}
+
+.at-settings-proxy-test-row .ant-form-item {
+  margin-bottom: 0;
+}
+
+.at-settings-proxy-test-row .ant-input-number {
+  width: 100%;
+}
+
 .at-settings-provider-link {
   display: grid;
   gap: 2px;

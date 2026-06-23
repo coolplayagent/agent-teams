@@ -6,7 +6,10 @@ import {
   listSessionRounds,
   listWorkspaces,
   openWorkspaceRoot,
+  probeWebConnectivity,
+  reloadProxyConfig,
   saveNotificationConfig,
+  saveProxyConfig,
   saveWebConfig,
   stopBackgroundTask,
 } from "../api/client";
@@ -178,7 +181,7 @@ describe("api client", () => {
     );
   });
 
-  it("saves Web, notification, and speech settings through their config endpoints", async () => {
+  it("saves Web, notification, proxy, and speech settings through their config endpoints", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(() =>
@@ -221,6 +224,30 @@ describe("api client", () => {
       }),
     ).resolves.toEqual({ status: "ok" });
     await expect(
+      saveProxyConfig({
+        all_proxy: "socks5://proxy.example:1080",
+        http_proxy: "http://proxy.example:8080",
+        https_proxy: "http://proxy.example:8443",
+        no_proxy: "localhost,127.0.0.1",
+        proxy_password: "secret",
+        proxy_username: "alice",
+        ssl_verify: false,
+      }),
+    ).resolves.toEqual({ status: "ok" });
+    await expect(reloadProxyConfig()).resolves.toEqual({ status: "ok" });
+    await expect(
+      probeWebConnectivity({
+        proxy_override: {
+          http_proxy: "http://proxy.example:8080",
+          proxy_password: "secret",
+          proxy_username: "alice",
+          ssl_verify: false,
+        },
+        timeout_ms: 2500,
+        url: "https://example.com",
+      }),
+    ).resolves.toEqual({ status: "ok" });
+    await expect(
       saveSpeechConfig({
         language: "zh-CN",
         prompt: "domain terms",
@@ -251,6 +278,46 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      "/api/system/configs/proxy",
+      expect.objectContaining({
+        body: JSON.stringify({
+          all_proxy: "socks5://proxy.example:1080",
+          http_proxy: "http://proxy.example:8080",
+          https_proxy: "http://proxy.example:8443",
+          no_proxy: "localhost,127.0.0.1",
+          proxy_password: "secret",
+          proxy_username: "alice",
+          ssl_verify: false,
+        }),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/configs/proxy:reload",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/system/configs/web:probe",
+      expect.objectContaining({
+        body: JSON.stringify({
+          proxy_override: {
+            http_proxy: "http://proxy.example:8080",
+            proxy_password: "secret",
+            proxy_username: "alice",
+            ssl_verify: false,
+          },
+          timeout_ms: 2500,
+          url: "https://example.com",
+        }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
       "/api/speech/config",
       expect.objectContaining({
         body: JSON.stringify({

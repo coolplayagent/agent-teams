@@ -17,10 +17,14 @@ import {
   getModelProfiles,
   getNotificationConfig,
   getOrchestrationConfig,
+  getProxyConfig,
   getRoleConfigOptions,
   getWebConfig,
+  probeWebConnectivity,
+  reloadProxyConfig,
   saveGeneralConfig,
   saveNotificationConfig,
+  saveProxyConfig,
   saveWebConfig,
 } from "../api/client";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
@@ -33,10 +37,14 @@ vi.mock("../api/client", () => ({
   getModelProfiles: vi.fn(),
   getNotificationConfig: vi.fn(),
   getOrchestrationConfig: vi.fn(),
+  getProxyConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
+  probeWebConnectivity: vi.fn(),
+  reloadProxyConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveNotificationConfig: vi.fn(),
+  saveProxyConfig: vi.fn(),
   saveWebConfig: vi.fn(),
 }));
 
@@ -50,10 +58,14 @@ const getHealthMock = vi.mocked(getHealth);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getNotificationConfigMock = vi.mocked(getNotificationConfig);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
+const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
+const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
+const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
+const saveProxyConfigMock = vi.mocked(saveProxyConfig);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
@@ -175,8 +187,30 @@ beforeEach(() => {
     searxng_instance_seeds: ["https://search.example/"],
     searxng_instance_url: "https://search.example/",
   });
+  getProxyConfigMock.mockResolvedValue({
+    all_proxy: "socks5://proxy.example:1080",
+    http_proxy: "http://proxy.example:8080",
+    https_proxy: "http://proxy.example:8443",
+    no_proxy: "localhost,127.0.0.1",
+    proxy_password: "saved-secret",
+    proxy_username: "alice",
+    ssl_verify: false,
+  });
+  probeWebConnectivityMock.mockResolvedValue({
+    diagnostics: {
+      endpoint_reachable: true,
+      redirected: false,
+      used_proxy: true,
+    },
+    final_url: "https://example.com",
+    latency_ms: 38,
+    ok: true,
+    status_code: 200,
+    used_method: "HEAD",
+  });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
   saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
+  reloadProxyConfigMock.mockResolvedValue({ status: "ok" });
   saveSpeechConfigMock.mockResolvedValue({
     configured: true,
     language: "zh-CN",
@@ -187,6 +221,7 @@ beforeEach(() => {
     vad_silence_duration_ms: 500,
     vad_threshold: 0.5,
   });
+  saveProxyConfigMock.mockResolvedValue({ status: "ok" });
   saveWebConfigMock.mockResolvedValue({ status: "ok" });
   useUiStore.setState({
     language: "en",
@@ -214,6 +249,7 @@ describe("SettingsDrawer", () => {
     expect(within(sections).getByRole("button", { name: "Roles" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Orchestration" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Web" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Proxy" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "System" })).toBeVisible();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
@@ -300,6 +336,59 @@ describe("SettingsDrawer", () => {
       }),
     );
   });
+
+  it("saves and probes proxy settings while preserving the saved password", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Proxy" }));
+
+    const httpProxy = await screen.findByLabelText("HTTP Proxy");
+    fireEvent.change(httpProxy, {
+      target: { value: "http://edited.example:8080" },
+    });
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "placeholder",
+      "************",
+    );
+    fireEvent.change(screen.getByLabelText("Target URL"), {
+      target: { value: "https://example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test URL" }));
+
+    await waitFor(() =>
+      expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        proxy_override: expect.objectContaining({
+          http_proxy: "http://edited.example:8080",
+          proxy_password: "saved-secret",
+          proxy_username: "alice",
+          ssl_verify: false,
+        }),
+        timeout_ms: 5000,
+        url: "https://example.com",
+      }),
+    );
+    expect(await screen.findByText("HEAD 200 in 38ms")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveProxyConfigMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          all_proxy: "socks5://proxy.example:1080",
+          http_proxy: "http://edited.example:8080",
+          https_proxy: "http://proxy.example:8443",
+          no_proxy: "localhost,127.0.0.1",
+          proxy_password: "saved-secret",
+          proxy_username: "alice",
+          ssl_verify: false,
+        }),
+      ),
+    );
+    await waitFor(() => expect(reloadProxyConfigMock).toHaveBeenCalledTimes(1));
+  }, 10000);
 
   it("saves notification settings without dropping hidden delivery channels", async () => {
     renderDrawer();

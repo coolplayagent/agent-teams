@@ -6,6 +6,7 @@ import type {
   ModelProfilesPayload,
   NotificationConfig,
   OrchestrationConfig,
+  ProxyConfig,
   ObservabilityBreakdowns,
   ObservabilityOverview,
   RecoverySnapshot,
@@ -29,6 +30,8 @@ import type {
   WorkspaceDiffListing,
   WorkspaceSnapshot,
   WebConfig,
+  WebConnectivityProbeRequest,
+  WebConnectivityProbeResult,
 } from "./contracts";
 import { requestJson } from "./http";
 
@@ -90,6 +93,32 @@ export function saveWebConfig(config: WebConfig): Promise<{ status: string }> {
   return requestJson<{ status: string }>("/system/configs/web", {
     method: "PUT",
     body: JSON.stringify(config),
+  });
+}
+
+export function getProxyConfig(): Promise<ProxyConfig> {
+  return requestJson<ProxyConfig>("/system/configs/proxy");
+}
+
+export function saveProxyConfig(config: ProxyConfig): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/proxy", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export function reloadProxyConfig(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/proxy:reload", {
+    method: "POST",
+  });
+}
+
+export function probeWebConnectivity(
+  request: WebConnectivityProbeRequest,
+): Promise<WebConnectivityProbeResult> {
+  return requestJson<WebConnectivityProbeResult>("/system/configs/web:probe", {
+    method: "POST",
+    body: JSON.stringify(request),
   });
 }
 

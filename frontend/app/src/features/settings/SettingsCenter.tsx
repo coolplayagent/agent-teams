@@ -29,6 +29,7 @@ import type {
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
+import { ProxySettingsSection } from "./ProxySettingsSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
@@ -40,6 +41,7 @@ type SettingsSection =
   | "roles"
   | "models"
   | "orchestration"
+  | "proxy"
   | "speech"
   | "system"
   | "web";
@@ -111,6 +113,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
       { key: "roles" as const, label: t("settingsRoles") },
       { key: "orchestration" as const, label: t("settingsOrchestration") },
       { key: "web" as const, label: t("settingsWeb") },
+      { key: "proxy" as const, label: t("settingsProxy") },
       { key: "system" as const, label: t("settingsSystem") },
     ],
     [t],
@@ -177,6 +180,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           />
         ) : null}
         {activeSection === "web" ? <WebSettingsSection /> : null}
+        {activeSection === "proxy" ? <ProxySettingsSection /> : null}
         {activeSection === "system" ? (
           <SettingsSystem
             error={healthQuery.error}

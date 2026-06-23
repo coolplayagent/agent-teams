@@ -303,7 +303,7 @@ export function AppShell() {
               sessions={sidebarSessionsQuery.data ?? []}
             />
           ) : (
-            <>
+            <div className="at-chat-view">
               <RecoveryBar
                 runStreamController={runStreamController}
                 sessionId={selectedSessionId}
@@ -317,7 +317,7 @@ export function AppShell() {
                 runStreamController={runStreamController}
                 sessionId={selectedSessionId}
               />
-            </>
+            </div>
           )}
         </Content>
       </Layout>

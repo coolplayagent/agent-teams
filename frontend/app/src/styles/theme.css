@@ -448,13 +448,22 @@ body {
 }
 
 .at-workspace {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) max-content max-content;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   background: var(--at-bg);
+}
+
+.at-chat-view {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) max-content max-content;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .at-recovery {
@@ -519,8 +528,9 @@ body {
 
 .at-timeline-frame {
   grid-row: 2;
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -533,7 +543,7 @@ body {
 }
 
 .at-surface-view {
-  grid-row: 1 / -1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 18px 24px;
@@ -574,7 +584,7 @@ body {
 }
 
 .at-project-view {
-  grid-row: 1 / -1;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -625,29 +635,49 @@ body {
 .at-project-view-grid {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(280px, 0.86fr) minmax(360px, 1.14fr);
-  grid-auto-rows: min-content;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(320px, 1fr) minmax(260px, 0.88fr);
+  grid-template-rows: minmax(180px, 0.4fr) minmax(260px, 0.6fr);
   gap: 12px;
   min-height: 0;
-  overflow: auto;
+  height: 100%;
+  overflow: hidden;
   padding: 16px 20px 22px;
 }
 
 .at-project-panel {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--at-border);
   border-radius: 8px;
   background: var(--at-surface);
 }
 
-.at-project-panel-summary,
+.at-project-panel-summary {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.at-project-panel-files {
+  grid-column: 2 / 4;
+  grid-row: 1;
+}
+
+.at-project-panel-changes {
+  grid-column: 1 / 3;
+  grid-row: 2;
+}
+
 .at-project-panel-sessions {
-  align-self: start;
+  grid-column: 3;
+  grid-row: 2;
 }
 
 .at-project-panel-files,
 .at-project-panel-changes {
-  min-height: 220px;
+  min-height: 0;
 }
 
 .at-project-panel-header {
@@ -674,8 +704,11 @@ body {
 
 .at-project-facts {
   display: grid;
+  align-content: start;
   gap: 0;
   margin: 0;
+  min-height: 0;
+  overflow: auto;
   padding: 4px 0;
 }
 
@@ -706,12 +739,17 @@ body {
 .at-project-file-list,
 .at-project-change-list,
 .at-project-session-list {
+  flex: 1 1 auto;
   display: grid;
+  align-content: start;
   gap: 1px;
+  min-height: 0;
+  overflow: auto;
   padding: 6px;
 }
 
 .at-project-list-actions {
+  flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
   padding: 0 8px 8px;
@@ -800,6 +838,9 @@ body {
 }
 
 .at-project-state {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
   padding: 14px 12px;
   color: var(--at-text-muted);
   font-size: 13px;
@@ -839,6 +880,12 @@ body {
 }
 
 .at-round-rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 132px;
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--at-border);
@@ -1450,6 +1497,7 @@ body {
   .at-topbar,
   .at-body,
   .at-workspace,
+  .at-chat-view,
   .at-timeline-frame,
   .at-composer,
   .at-project-view {
@@ -1557,8 +1605,20 @@ body {
 
   .at-project-view-grid {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    height: auto;
     gap: 10px;
+    overflow: auto;
     padding: 12px 14px 18px;
+  }
+
+  .at-project-panel-summary,
+  .at-project-panel-files,
+  .at-project-panel-changes,
+  .at-project-panel-sessions {
+    grid-column: auto;
+    grid-row: auto;
+    min-height: 180px;
   }
 
   .at-project-facts > div {

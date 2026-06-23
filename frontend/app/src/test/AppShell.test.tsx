@@ -130,6 +130,7 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
     expect(screen.getByTestId("timeline")).toBeVisible();
+    expect(screen.getByTestId("timeline").closest(".at-chat-view")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
 
@@ -227,11 +228,13 @@ describe("AppShell", () => {
     );
 
     expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
+    expect(document.querySelector(".at-chat-view")).toBeNull();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(screen.getByTestId("timeline").closest(".at-chat-view")).not.toBeNull();
   });
 });
 

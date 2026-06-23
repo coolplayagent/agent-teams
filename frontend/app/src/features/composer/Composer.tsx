@@ -12,11 +12,12 @@ import {
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   createRun,
+  getGeneralConfig,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfigOptions,
@@ -30,6 +31,7 @@ import type {
   InjectionDeliveryMode,
   ModelProfilesPayload,
   OrchestrationConfig,
+  RunCreateRequest,
   RunThinkingConfig,
   SessionMode,
   SessionRecord,
@@ -82,6 +84,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const inputRef = useRef<SenderRef | null>(null);
   const [draft, setDraft] = useState("");
   const [yolo, setYolo] = useState(true);
+  const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] =
+    useState(true);
   const [thinking, setThinking] = useState<RunThinkingConfig>(() =>
     readSavedThinkingState(),
   );
@@ -112,6 +116,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     enabled: false,
     initialData: false,
     staleTime: Number.POSITIVE_INFINITY,
+  });
+  const generalConfigQuery = useQuery({
+    queryKey: ["settings", "general"],
+    queryFn: getGeneralConfig,
+    staleTime: 30000,
   });
   const modelProfilesQuery = useQuery({
     queryKey: ["model-profiles"],
@@ -163,19 +172,31 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     [modelProfilesQuery.data, selectedModelProfile],
   );
 
+  useEffect(() => {
+    if (generalConfigQuery.data !== undefined) {
+      setShellSafetyPolicyEnabled(
+        generalConfigQuery.data.shell_safety_policy_enabled !== false,
+      );
+    }
+  }, [generalConfigQuery.data]);
+
   const createRunMutation = useMutation({
     mutationFn: async () => {
       if (sessionId === null) {
         throw new Error("Select a session before sending.");
       }
-      return createRun({
+      const request: RunCreateRequest = {
         session_id: sessionId,
         input: [{ kind: "text", text: draft.trim() }],
         display_input: [{ kind: "text", text: draft.trim() }],
         target_role_id: targetRoleId,
         thinking,
         yolo,
-      });
+      };
+      if (generalConfigQuery.data !== undefined) {
+        request.shell_safety_policy_enabled = shellSafetyPolicyEnabled;
+      }
+      return createRun(request);
     },
     onSuccess: (result) => {
       setDraft("");
@@ -488,6 +509,16 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               />
             ) : null}
           </Space>
+          <Checkbox
+            aria-label="Shell safety policy"
+            checked={shellSafetyPolicyEnabled}
+            disabled={busy || activeRunId !== null || generalConfigQuery.isLoading}
+            onChange={(event) =>
+              setShellSafetyPolicyEnabled(event.target.checked)
+            }
+          >
+            Shell safety
+          </Checkbox>
           <Checkbox
             checked={yolo}
             disabled={busy || activeRunId !== null}

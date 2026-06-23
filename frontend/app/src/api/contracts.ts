@@ -161,6 +161,7 @@ export interface RunCreateRequest {
   input: RunInputPart[];
   display_input?: RunInputPart[];
   yolo?: boolean;
+  shell_safety_policy_enabled?: boolean;
   thinking?: RunThinkingConfig;
   target_role_id?: string | null;
 }

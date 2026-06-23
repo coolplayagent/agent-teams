@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 import {
   createRun,
+  getGeneralConfig,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfigOptions,
@@ -40,6 +41,7 @@ vi.mock("@ant-design/x", () => ({
 
 vi.mock("../api/client", () => ({
   createRun: vi.fn(),
+  getGeneralConfig: vi.fn(),
   getModelProfiles: vi.fn(),
   getOrchestrationConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
@@ -51,6 +53,7 @@ vi.mock("../api/client", () => ({
 }));
 
 const createRunMock = vi.mocked(createRun);
+const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
@@ -70,6 +73,9 @@ beforeEach(() => {
     normal_model_profile: null,
     orchestration_preset_id: null,
     can_switch_mode: true,
+  });
+  getGeneralConfigMock.mockResolvedValue({
+    shell_safety_policy_enabled: true,
   });
   getModelProfilesMock.mockResolvedValue({
     default: {
@@ -485,6 +491,62 @@ describe("Composer", () => {
     );
     expect(localStorage.getItem("agent_teams_thinking_enabled")).toBe("true");
     expect(localStorage.getItem("agent_teams_thinking_effort")).toBe("high");
+  });
+
+  it("passes the shell safety policy override to AG-UI run creation", async () => {
+    getGeneralConfigMock.mockResolvedValue({
+      shell_safety_policy_enabled: false,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const shellSafetyToggle = await screen.findByRole("checkbox", {
+      name: "Shell safety policy",
+    });
+    await waitFor(() => expect(shellSafetyToggle).not.toBeChecked());
+    fireEvent.click(shellSafetyToggle);
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Run with policy checks" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(createRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shell_safety_policy_enabled: true,
+        }),
+      ),
+    );
+  });
+
+  it("omits the shell safety policy override before general config loads", async () => {
+    getGeneralConfigMock.mockReturnValue(new Promise(() => undefined));
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Run with backend defaults" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0]).not.toHaveProperty(
+      "shell_safety_policy_enabled",
+    );
   });
 
   it("queues an injection instead of creating a run while a run is active", async () => {

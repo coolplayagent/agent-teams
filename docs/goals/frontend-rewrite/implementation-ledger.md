@@ -285,3 +285,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run typecheck` in `frontend/app` passed.
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Composer Shell Safety Policy Batch
+
+### Scope
+- Added the AG-UI run create contract field for `shell_safety_policy_enabled`.
+- Added a compact Composer shell safety policy toggle backed by the existing general config endpoint.
+- Sent the selected shell safety policy override with new AG-UI run creation requests.
+- Avoided sending a shell safety override before general config has loaded so backend defaults remain authoritative.
+- Added focused React coverage proving the Composer control sends the selected override and omits it while config is still loading.
+
+### Verification
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 14 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

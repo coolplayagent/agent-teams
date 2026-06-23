@@ -3,13 +3,14 @@ import {
   eventDedupeKey,
   isTerminalRunEvent,
   parseRunEvent,
-  type RelayRunEvent,
+  type RunEventEnvelope,
   type RunEventType,
   type StreamStatus,
 } from "./events";
 
 export interface TimelineEntry {
   id: string;
+  sessionId: string;
   runId: string;
   roleId: string;
   kind: RunEventType | "message";
@@ -40,7 +41,7 @@ export const initialRuntimeState: RuntimeState = {
 
 export function reduceRunEvent(
   state: RuntimeState,
-  rawEvent: RelayRunEvent,
+  rawEvent: RunEventEnvelope,
 ): RuntimeState {
   const event = parseRunEvent(rawEvent);
   const runId = event.run_id;
@@ -65,6 +66,7 @@ export function reduceRunEvent(
       : existing.terminalEventType,
     entries: appendTimelineEntry(existing.entries, {
       id: `${runId}:${eventId}:${existing.entries.length}`,
+      sessionId: event.session_id,
       runId,
       roleId: event.role_id ?? event.instance_id ?? "agent",
       kind: event.event_type,

@@ -51,18 +51,89 @@ export interface RelayRunEvent {
   event_id?: number | null;
 }
 
+export interface AgUiRunEvent {
+  type: string;
+  event_id?: number | null;
+  session_id: string;
+  run_id: string;
+  trace_id: string;
+  task_id?: string | null;
+  instance_id?: string | null;
+  role_id?: string | null;
+  relay_event_type: RunEventType;
+  occurred_at?: string;
+  payload: JsonValue;
+}
+
 export interface ParsedRunEvent extends RelayRunEvent {
   payload: JsonValue;
 }
 
 export type StreamStatus = "idle" | "connecting" | "open" | "closed" | "failed";
+export type RunEventEnvelope = RelayRunEvent | AgUiRunEvent;
 
-export function parseRunEvent(event: RelayRunEvent): ParsedRunEvent {
+export const AG_UI_EVENT_NAMES = [
+  "run.started",
+  "run.paused",
+  "run.resumed",
+  "run.completed",
+  "run.stopped",
+  "run.failed",
+  "model_step.started",
+  "model_step.finished",
+  "message.text.delta",
+  "message.output.delta",
+  "generation.progress",
+  "thinking.started",
+  "thinking.delta",
+  "thinking.finished",
+  "tool_call.started",
+  "tool_call.batch_sealed",
+  "tool_call.validation_failed",
+  "tool_result.completed",
+  "tool_approval.requested",
+  "tool_approval.resolved",
+  "user_question.requested",
+  "user_question.answered",
+  "injection.enqueued",
+  "injection.applied",
+  "token_usage.updated",
+  "todo.updated",
+  "background_task.started",
+  "background_task.updated",
+  "background_task.completed",
+  "background_task.stopped",
+  "subagent_session.status_changed",
+  "subagent.stopped",
+  "subagent.resumed",
+  "notification.requested",
+  "relay.event",
+] as const;
+
+export function parseRunEvent(event: RunEventEnvelope): ParsedRunEvent {
+  if (isAgUiRunEvent(event)) {
+    return {
+      session_id: event.session_id,
+      run_id: event.run_id,
+      trace_id: event.trace_id,
+      task_id: event.task_id,
+      instance_id: event.instance_id,
+      role_id: event.role_id,
+      event_type: event.relay_event_type,
+      occurred_at: event.occurred_at,
+      event_id: event.event_id,
+      payload: event.payload,
+    };
+  }
   const rawPayload = event.payload_json ?? "{}";
   return {
     ...event,
     payload: parsePayload(rawPayload),
   };
+}
+
+function isAgUiRunEvent(event: RunEventEnvelope): event is AgUiRunEvent {
+  return "relay_event_type" in event;
 }
 
 function parsePayload(rawPayload: string): JsonValue {
@@ -85,7 +156,7 @@ export function isTerminalRunEvent(eventType: RunEventType): boolean {
   );
 }
 
-export function eventDedupeKey(event: RelayRunEvent): string {
+export function eventDedupeKey(event: ParsedRunEvent): string {
   if (typeof event.event_id === "number" && event.event_id > 0) {
     return `${event.run_id}:${event.event_id}`;
   }
@@ -95,6 +166,6 @@ export function eventDedupeKey(event: RelayRunEvent): string {
     event.event_type,
     event.task_id ?? "",
     event.instance_id ?? "",
-    event.payload_json ?? "",
+    event.payload_json ?? JSON.stringify(event.payload),
   ].join(":");
 }

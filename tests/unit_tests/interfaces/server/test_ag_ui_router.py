@@ -14,6 +14,12 @@ from relay_teams.interfaces.server.deps import (
     get_skill_registry,
 )
 from relay_teams.interfaces.server.routers import ag_ui
+from relay_teams.media import (
+    ContentPart,
+    InlineMediaContentPart,
+    MediaModality,
+    MediaRefContentPart,
+)
 from relay_teams.sessions.runs.enums import (
     InjectionDeliveryMode,
     InjectionSource,
@@ -169,6 +175,55 @@ class _FakeSessionService:
         return [{"session_id": session_id, "event": "created"}]
 
 
+class _FakeSessionRecord:
+    def __init__(self) -> None:
+        self.workspace_id = "workspace-1"
+
+
+class _FakeContainerSessionService:
+    def get_session(self, session_id: str) -> _FakeSessionRecord:
+        _ = session_id
+        return _FakeSessionRecord()
+
+
+class _FakeMediaAssetService:
+    def __init__(self) -> None:
+        self.normalize_calls: list[tuple[ContentPart, ...]] = []
+
+    def normalize_content_parts(
+        self,
+        *,
+        session_id: str,
+        workspace_id: str,
+        parts: tuple[ContentPart, ...],
+    ) -> tuple[ContentPart, ...]:
+        _ = session_id, workspace_id
+        self.normalize_calls.append(parts)
+        normalized_parts: list[ContentPart] = []
+        for index, part in enumerate(parts):
+            if isinstance(part, InlineMediaContentPart):
+                normalized_parts.append(
+                    MediaRefContentPart(
+                        asset_id=f"asset-{len(self.normalize_calls)}-{index}",
+                        session_id="session-1",
+                        modality=part.modality,
+                        mime_type=part.mime_type,
+                        name=part.name,
+                        url=f"/api/sessions/session-1/media/asset-{index}/file",
+                        size_bytes=part.size_bytes,
+                    )
+                )
+                continue
+            normalized_parts.append(part)
+        return tuple(normalized_parts)
+
+
+class _FakeContainer:
+    def __init__(self, media_asset_service: _FakeMediaAssetService) -> None:
+        self.session_service = _FakeContainerSessionService()
+        self.media_asset_service = media_asset_service
+
+
 class _FakeSkillRegistry:
     def __init__(self) -> None:
         self.resolve_calls: list[tuple[tuple[str, ...], bool, str | None]] = []
@@ -201,10 +256,13 @@ class _FakeGeneralConfigService:
 def _create_client(
     run_service: _FakeRunService | None = None,
     session_service: _FakeSessionService | None = None,
+    fake_container: _FakeContainer | None = None,
 ) -> tuple[TestClient, _FakeRunService, _FakeSessionService]:
     resolved_run_service = run_service or _FakeRunService()
     resolved_session_service = session_service or _FakeSessionService()
     app = FastAPI()
+    if fake_container is not None:
+        app.state.container = fake_container
     app.include_router(ag_ui.router, prefix="/api")
     app.dependency_overrides[get_run_service] = lambda: resolved_run_service
     app.dependency_overrides[get_session_service] = lambda: resolved_session_service
@@ -254,6 +312,43 @@ def test_create_run_route_uses_session_run_service() -> None:
     assert run_service.created_inputs[0].intent == "hello"
     assert run_service.created_inputs[0].target_role_id == "writer"
     assert run_service.scheduled_runs == [("run-1", "session-1")]
+
+
+def test_create_run_route_reuses_input_media_refs_for_display_input() -> None:
+    media_service = _FakeMediaAssetService()
+    client, run_service, _session_service = _create_client(
+        fake_container=_FakeContainer(media_service),
+    )
+    inline_media = {
+        "kind": "inline_media",
+        "modality": MediaModality.IMAGE.value,
+        "mime_type": "image/png",
+        "base64_data": "aGVsbG8=",
+        "name": "diagram.png",
+        "size_bytes": 5,
+    }
+
+    response = client.post(
+        "/api/ag-ui/runs",
+        json={
+            "session_id": "session-1",
+            "input": [{"kind": "text", "text": "analyze"}, inline_media],
+            "display_input": [
+                {"kind": "text", "text": "/vision analyze"},
+                inline_media,
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(media_service.normalize_calls) == 1
+    created = run_service.created_inputs[0]
+    input_media = created.input[1]
+    display_media = created.display_input[1]
+    assert isinstance(input_media, MediaRefContentPart)
+    assert isinstance(display_media, MediaRefContentPart)
+    assert input_media.asset_id == display_media.asset_id
+    assert created.display_intent == "/vision analyze\n\n[image: diagram.png]"
 
 
 def test_single_run_stream_formats_ag_ui_sse_and_uses_last_event_id() -> None:

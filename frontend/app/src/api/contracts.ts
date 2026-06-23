@@ -48,24 +48,62 @@ export interface SessionRecord {
 }
 
 export interface ContentTextPart {
+  kind: "text";
+  text: string;
+}
+
+export interface ContentMediaRefPart {
+  kind: "media_ref";
+  asset_id: string;
+  session_id?: string;
+  modality?: "image" | "audio" | "video";
+  mime_type?: string;
+  name?: string;
+  url?: string;
+}
+
+export interface LegacyContentTextPart {
   part_kind: "text";
   content: string;
 }
 
-export interface ContentMediaRefPart {
+export interface LegacyContentMediaRefPart {
   part_kind: "media_ref";
   url?: string;
   media_type?: string;
   name?: string;
-  [key: string]: JsonValue | undefined;
 }
 
-export type ContentPart = ContentTextPart | ContentMediaRefPart;
+export type RunInputPart = ContentTextPart | ContentMediaRefPart;
+export type ContentPart =
+  | RunInputPart
+  | LegacyContentTextPart
+  | LegacyContentMediaRefPart;
+
+export function contentPartText(part: ContentPart): string | null {
+  if (isContentTextPart(part)) {
+    return part.text;
+  }
+  if (isLegacyContentTextPart(part)) {
+    return part.content;
+  }
+  return null;
+}
+
+function isContentTextPart(part: ContentPart): part is ContentTextPart {
+  return "kind" in part && part.kind === "text";
+}
+
+function isLegacyContentTextPart(
+  part: ContentPart,
+): part is LegacyContentTextPart {
+  return "part_kind" in part && part.part_kind === "text";
+}
 
 export interface RunCreateRequest {
   session_id: string;
-  input: ContentPart[];
-  display_input?: ContentPart[];
+  input: RunInputPart[];
+  display_input?: RunInputPart[];
   yolo?: boolean;
   target_role_id?: string | null;
 }

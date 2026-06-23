@@ -2,10 +2,12 @@ import { App, Button, Checkbox, Space, Tooltip } from "antd";
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { createRun, stopRun } from "../../api/client";
+import { openRunStream, type RunStreamHandle } from "../../runtime/streamClient";
+import { useRuntimeStore } from "../../runtime/runtimeStore";
 
 interface ComposerProps {
   sessionId: string | null;
@@ -15,9 +17,24 @@ export function Composer({ sessionId }: ComposerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const inputRef = useRef<SenderRef | null>(null);
+  const streamHandleRef = useRef<RunStreamHandle | null>(null);
+  const runtimeState = useRuntimeStore((state) => state.runtimeState);
+  const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
+  const runtimeStateRef = useRef(runtimeState);
   const [draft, setDraft] = useState("");
   const [yolo, setYolo] = useState(true);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    runtimeStateRef.current = runtimeState;
+  }, [runtimeState]);
+
+  useEffect(
+    () => () => {
+      streamHandleRef.current?.close();
+    },
+    [],
+  );
 
   const createRunMutation = useMutation({
     mutationFn: async () => {
@@ -26,14 +43,32 @@ export function Composer({ sessionId }: ComposerProps) {
       }
       return createRun({
         session_id: sessionId,
-        input: [{ part_kind: "text", content: draft.trim() }],
-        display_input: [{ part_kind: "text", content: draft.trim() }],
+        input: [{ kind: "text", text: draft.trim() }],
+        display_input: [{ kind: "text", text: draft.trim() }],
         yolo,
       });
     },
     onSuccess: (result) => {
       setDraft("");
       setActiveRunId(result.run_id);
+      streamHandleRef.current?.close();
+      streamHandleRef.current = openRunStream({
+        runId: result.run_id,
+        afterEventId: runtimeStateRef.current.runs[result.run_id]?.lastEventId ?? 0,
+        initialState: runtimeStateRef.current,
+        onState: (nextRuntimeState) => {
+          setRuntimeState(nextRuntimeState);
+        },
+        onClosed: () => {
+          setActiveRunId(null);
+          void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "messages"] });
+          void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+          void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
+        },
+        onError: (errorMessage) => {
+          void message.error(errorMessage);
+        },
+      });
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "messages"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
@@ -62,7 +97,8 @@ export function Composer({ sessionId }: ComposerProps) {
   });
 
   const busy = createRunMutation.isPending || stopRunMutation.isPending;
-  const canSend = sessionId !== null && draft.trim().length > 0 && !busy;
+  const canSend =
+    sessionId !== null && activeRunId === null && draft.trim().length > 0 && !busy;
 
   return (
     <form

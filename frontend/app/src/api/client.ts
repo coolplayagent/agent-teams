@@ -56,7 +56,7 @@ export function getRecoverySnapshot(
 }
 
 export function createRun(request: RunCreateRequest): Promise<RunCreateResponse> {
-  return requestJson<RunCreateResponse>("/runs", {
+  return requestJson<RunCreateResponse>("/ag-ui/runs", {
     method: "POST",
     body: JSON.stringify(request),
   });
@@ -64,7 +64,7 @@ export function createRun(request: RunCreateRequest): Promise<RunCreateResponse>
 
 export function stopRun(runId: string): Promise<{ status: string; scope: string }> {
   return requestJson<{ status: string; scope: string }>(
-    `/runs/${encodeURIComponent(runId)}/stop`,
+    `/ag-ui/runs/${encodeURIComponent(runId)}:stop`,
     {
       method: "POST",
       body: JSON.stringify({ scope: "main" }),
@@ -74,7 +74,7 @@ export function stopRun(runId: string): Promise<{ status: string; scope: string 
 
 export function resumeRun(runId: string): Promise<{ status: string; run_id: string; session_id: string }> {
   return requestJson<{ status: string; run_id: string; session_id: string }>(
-    `/runs/${encodeURIComponent(runId)}:resume`,
+    `/ag-ui/runs/${encodeURIComponent(runId)}:resume`,
     {
       method: "POST",
     },

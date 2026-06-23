@@ -4,7 +4,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef } from "react";
 
 import { listSessionMessages } from "../../api/client";
-import type { TimelineMessage } from "../../api/contracts";
+import { contentPartText, type TimelineMessage } from "../../api/contracts";
+import type { TimelineEntry } from "../../runtime/reducers";
+import { useRuntimeStore } from "../../runtime/runtimeStore";
 
 interface MessageTimelineProps {
   sessionId: string | null;
@@ -12,6 +14,11 @@ interface MessageTimelineProps {
 
 export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const runtimeEntries = useRuntimeStore((state) =>
+    Object.values(state.runtimeState.runs)
+      .flatMap((runState) => runState.entries)
+      .filter((entry) => entry.sessionId === sessionId),
+  );
   const messagesQuery = useQuery({
     queryKey: ["sessions", sessionId, "messages"],
     queryFn: () => listSessionMessages(sessionId ?? ""),
@@ -19,8 +26,15 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   });
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const rows = useMemo(
+    () => [
+      ...messages.map(messageToRow),
+      ...runtimeEntries.map(runtimeEntryToRow),
+    ],
+    [messages, runtimeEntries],
+  );
   const virtualizer = useVirtualizer({
-    count: messages.length,
+    count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 120,
     overscan: 8,
@@ -50,7 +64,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     );
   }
 
-  if (messages.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="at-timeline at-timeline-empty">
         <Empty description="No messages yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -65,18 +79,18 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
         style={{ height: `${virtualizer.getTotalSize()}px` }}
       >
         {virtualizer.getVirtualItems().map((virtualItem) => {
-          const message = messages[virtualItem.index];
+          const row = rows[virtualItem.index];
           return (
             <article
-              className="at-message"
-              key={`${message.message_id ?? virtualItem.index}`}
+              className={`at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
+              key={row.key}
               style={{ transform: `translateY(${virtualItem.start}px)` }}
             >
               <Typography.Text className="at-message-role">
-                {message.role_id ?? message.role ?? "agent"}
+                {row.role}
               </Typography.Text>
               <Typography.Paragraph className="at-message-content">
-                {messageText(message)}
+                {row.text}
               </Typography.Paragraph>
             </article>
           );
@@ -86,13 +100,40 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   );
 }
 
+interface TimelineRow {
+  key: string;
+  role: string;
+  text: string;
+  source: "message" | "runtime";
+}
+
+function messageToRow(message: TimelineMessage, index: number): TimelineRow {
+  return {
+    key: `message:${message.message_id ?? index}`,
+    role: message.role_id ?? message.role ?? "agent",
+    text: messageText(message),
+    source: "message",
+  };
+}
+
+function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
+  return {
+    key: `runtime:${entry.id}`,
+    role: entry.roleId,
+    text: entry.text,
+    source: "runtime",
+  };
+}
+
 function messageText(message: TimelineMessage): string {
   if (typeof message.content === "string" && message.content.trim()) {
     return message.content;
   }
-  const textPart = message.parts?.find((part) => part.part_kind === "text");
-  if (textPart?.part_kind === "text") {
-    return textPart.content;
+  for (const part of message.parts ?? []) {
+    const text = contentPartText(part);
+    if (text !== null) {
+      return text;
+    }
   }
   return message.entry_type ?? "message";
 }

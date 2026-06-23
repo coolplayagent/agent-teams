@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { initialRuntimeState, reduceRunEvent } from "../runtime/reducers";
-import type { RelayRunEvent } from "../runtime/events";
+import type { AgUiRunEvent, RelayRunEvent } from "../runtime/events";
 
 describe("runtime reducers", () => {
   it("deduplicates replayed events by run and event id", () => {
@@ -43,6 +43,16 @@ describe("runtime reducers", () => {
       parse_error: true,
     });
   });
+
+  it("reduces AG-UI envelopes without reparsing payload JSON", () => {
+    const state = reduceRunEvent(initialRuntimeState, agUiEvent());
+
+    expect(state.runs["run-1"].entries[0]).toMatchObject({
+      sessionId: "session-1",
+      text: "hello from ag-ui",
+      eventId: 12,
+    });
+  });
 });
 
 function runEvent(overrides: Partial<RelayRunEvent>): RelayRunEvent {
@@ -55,5 +65,18 @@ function runEvent(overrides: Partial<RelayRunEvent>): RelayRunEvent {
     event_id: 1,
     occurred_at: "2026-06-23T00:00:00Z",
     ...overrides,
+  };
+}
+
+function agUiEvent(): AgUiRunEvent {
+  return {
+    type: "message.text.delta",
+    session_id: "session-1",
+    run_id: "run-1",
+    trace_id: "run-1",
+    relay_event_type: "text_delta",
+    payload: { text: "hello from ag-ui" },
+    event_id: 12,
+    occurred_at: "2026-06-23T00:00:00Z",
   };
 }

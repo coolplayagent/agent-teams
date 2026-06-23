@@ -207,6 +207,11 @@ body {
   border-bottom: 1px solid var(--at-border);
 }
 
+.at-message.is-runtime {
+  border-left: 2px solid var(--at-primary);
+  padding-left: 10px;
+}
+
 .at-message-role {
   color: var(--at-text-muted);
   font-size: 12px;

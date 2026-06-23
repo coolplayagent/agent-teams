@@ -21,7 +21,32 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `uv run --extra dev pytest -q tests/unit_tests/interfaces/server/test_ag_ui_mapping.py tests/unit_tests/interfaces/server/test_ag_ui_router.py tests/unit_tests/interfaces/server/test_app.py::test_runtime_bundle_wires_runtime_app_with_fake_modules` passed with 19 tests.
 
 ### Known Follow-Ups
-- Add reviewer subagent passes for the AG-UI backend and React app shell foundation.
+- Re-run reviewer subagent passes for the AG-UI backend and React app shell foundation after the 2026-06-23 remediation batch.
 - Wire the React runtime stream client into active run execution and replay.
 - Replace temporary migration switch labels before final release cleanup.
 - Split Ant Design-heavy surfaces by route or feature if bundle size becomes a release blocker.
+
+## 2026-06-23 Reviewer Remediation Batch
+
+### Findings Addressed
+- AG-UI reviewer found that `/api/ag-ui/runs` bypassed inline media normalization from the existing `/api/runs` route.
+- Frontend reviewer found that mixed `kind/text` and legacy `part_kind/content` content parts broke TypeScript narrowing in timeline/export rendering.
+- Frontend reviewer found that `frontend/dist/app` needed to be regenerated after source changes.
+
+### Fixes
+- Extracted shared run content normalization for inline media and display-input media-ref reuse.
+- Reused the shared normalization from both `/api/runs` and `/api/ag-ui/runs`.
+- Added AG-UI parity coverage for inline media display-input ref reuse.
+- Switched the React app run lifecycle to `/api/ag-ui` create/stop/resume and AG-UI SSE streams.
+- Added a runtime store so the timeline can render live AG-UI stream entries.
+- Added typed content-part text extraction for current and legacy message payloads.
+- Regenerated `frontend/dist/app`.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 4 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check --fix` on touched backend files passed.
+- `uv run --extra dev basedpyright` on touched backend files passed.
+- `uv run --extra dev pytest -q tests/unit_tests/interfaces/server/test_ag_ui_mapping.py tests/unit_tests/interfaces/server/test_ag_ui_router.py tests/unit_tests/interfaces/server/test_runs_router.py::test_create_run_route_reuses_input_media_refs_for_display_input tests/unit_tests/interfaces/server/test_app.py::test_runtime_bundle_wires_runtime_app_with_fake_modules` passed with 21 tests.

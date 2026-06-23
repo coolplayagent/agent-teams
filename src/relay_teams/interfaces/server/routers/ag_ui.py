@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
@@ -27,6 +27,9 @@ from relay_teams.interfaces.server.deps import get_run_service, get_session_serv
 from relay_teams.interfaces.server.deps import (
     get_general_config_service,
     get_skill_registry,
+)
+from relay_teams.interfaces.server.run_content_normalization import (
+    normalize_run_create_content_parts,
 )
 from relay_teams.interfaces.server.router_error_mapping import http_exception_for
 from relay_teams.logger import get_logger, log_event
@@ -53,6 +56,7 @@ MAX_MULTIPLEX_RUN_STREAMS = 32
     response_model_exclude_none=True,
 )
 async def create_run(
+    request: Request,
     req: AgUiCreateRunRequest,
     service: Annotated[SessionRunService, Depends(get_run_service)],
     skill_registry: Annotated[SkillRegistry, Depends(get_skill_registry)],
@@ -60,7 +64,13 @@ async def create_run(
         GeneralConfigService, Depends(get_general_config_service)
     ],
 ) -> AgUiCreateRunResponse:
-    if not req.input:
+    normalized_content = normalize_run_create_content_parts(
+        request=request,
+        session_id=req.session_id,
+        input_parts=req.input,
+        display_input_parts=req.display_input,
+    )
+    if not normalized_content.input:
         raise HTTPException(status_code=400, detail="Run input cannot be empty")
     resolved_skills = None
     if req.skills is not None:
@@ -80,8 +90,8 @@ async def create_run(
         )
     intent_input = IntentInput(
         session_id=req.session_id,
-        input=req.input,
-        display_input=req.display_input,
+        input=normalized_content.input,
+        display_input=normalized_content.display_input,
         run_kind=req.run_kind,
         generation_config=req.generation_config,
         execution_mode=req.execution_mode,

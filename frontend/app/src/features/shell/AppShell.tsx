@@ -27,7 +27,7 @@ import { SessionsSidebar } from "../sessions/SessionsSidebar";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import { useUiStore } from "../../runtime/uiStore";
-import type { TimelineMessage } from "../../api/contracts";
+import { contentPartText, type TimelineMessage } from "../../api/contracts";
 
 const { Header, Sider, Content } = Layout;
 
@@ -210,8 +210,13 @@ function messageText(messageItem: TimelineMessage): string {
   if (typeof messageItem.content === "string" && messageItem.content.trim()) {
     return messageItem.content;
   }
-  const textPart = messageItem.parts?.find((part) => part.part_kind === "text");
-  return textPart?.part_kind === "text" ? textPart.content : "message";
+  for (const part of messageItem.parts ?? []) {
+    const text = contentPartText(part);
+    if (text !== null) {
+      return text;
+    }
+  }
+  return "message";
 }
 
 function escapeHtml(value: string): string {

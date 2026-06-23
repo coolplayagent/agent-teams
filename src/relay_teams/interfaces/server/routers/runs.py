@@ -17,12 +17,13 @@ from relay_teams.interfaces.server.deps import (
     get_run_service,
     get_skill_registry,
 )
+from relay_teams.interfaces.server.run_content_normalization import (
+    normalize_run_create_content_parts,
+)
 from relay_teams.interfaces.server.router_error_mapping import http_exception_for
 from relay_teams.logger import get_logger, log_event
 from relay_teams.media import (
     ContentPart,
-    InlineMediaContentPart,
-    MediaRefContentPart,
     user_prompt_content_to_text,
 )
 from relay_teams.monitors import MonitorActionType, MonitorRule, MonitorSourceKind
@@ -71,10 +72,7 @@ async def _create_and_schedule_run_start(
         raise
 
 
-async def _resume_and_start_run(
-    service: SessionRunService,
-    run_id: str,
-) -> str:
+async def _resume_and_start_run(service: SessionRunService, run_id: str) -> str:
     async def operation() -> str:
         session_id = await service.resume_run_async(run_id)
         await service.ensure_run_started_async(run_id)
@@ -86,46 +84,6 @@ async def _resume_and_start_run(
     except asyncio.CancelledError:
         _ = await task
         raise
-
-
-def _reuse_normalized_inline_media_refs(
-    *,
-    raw_input: tuple[ContentPart, ...],
-    normalized_input: tuple[ContentPart, ...],
-    display_input: tuple[ContentPart, ...],
-) -> tuple[ContentPart, ...]:
-    normalized_refs: list[tuple[InlineMediaContentPart, MediaRefContentPart]] = []
-    for raw_part, normalized_part in zip(raw_input, normalized_input, strict=False):
-        if isinstance(raw_part, InlineMediaContentPart) and isinstance(
-            normalized_part, MediaRefContentPart
-        ):
-            normalized_refs.append((raw_part, normalized_part))
-    if not normalized_refs:
-        return display_input
-
-    reused_parts: list[ContentPart] = []
-    for part in display_input:
-        if isinstance(part, InlineMediaContentPart):
-            replacement = _find_normalized_media_ref(part, normalized_refs)
-            if replacement is not None:
-                reused_parts.append(replacement)
-                continue
-        reused_parts.append(part)
-    return tuple(reused_parts)
-
-
-def _find_normalized_media_ref(
-    part: InlineMediaContentPart,
-    normalized_refs: list[tuple[InlineMediaContentPart, MediaRefContentPart]],
-) -> MediaRefContentPart | None:
-    for raw_part, normalized_part in normalized_refs:
-        if part == raw_part:
-            return normalized_part
-    return None
-
-
-def _contains_inline_media(parts: tuple[ContentPart, ...]) -> bool:
-    return any(isinstance(part, InlineMediaContentPart) for part in parts)
 
 
 def _normalize_multiplex_run_offsets(
@@ -305,41 +263,13 @@ async def create_run(
 ) -> CreateRunResponse:
     started = time.perf_counter()
     try:
-        normalized_input = req.input
-        normalized_display_input = req.display_input
-        has_inline_media = any(
-            isinstance(part, InlineMediaContentPart)
-            for part in (*req.input, *req.display_input)
+        normalized_content = normalize_run_create_content_parts(
+            request=request,
+            session_id=req.session_id,
+            input_parts=req.input,
+            display_input_parts=req.display_input,
         )
-        if has_inline_media:
-            container = getattr(request.app.state, "container", None)
-            if container is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Media uploads require the server container to be initialized",
-                )
-            session = container.session_service.get_session(req.session_id)
-            normalized_input = container.media_asset_service.normalize_content_parts(
-                session_id=req.session_id,
-                workspace_id=session.workspace_id,
-                parts=req.input,
-            )
-            if req.display_input:
-                display_input = _reuse_normalized_inline_media_refs(
-                    raw_input=req.input,
-                    normalized_input=normalized_input,
-                    display_input=req.display_input,
-                )
-                normalized_display_input = display_input
-                if _contains_inline_media(display_input):
-                    normalized_display_input = (
-                        container.media_asset_service.normalize_content_parts(
-                            session_id=req.session_id,
-                            workspace_id=session.workspace_id,
-                            parts=display_input,
-                        )
-                    )
-        if not normalized_input:
+        if not normalized_content.input:
             raise HTTPException(status_code=400, detail="Run input cannot be empty")
         resolved_skills = None
         if req.skills is not None:
@@ -356,8 +286,8 @@ async def create_run(
             )
         intent_input = IntentInput(
             session_id=req.session_id,
-            input=normalized_input,
-            display_input=normalized_display_input,
+            input=normalized_content.input,
+            display_input=normalized_content.display_input,
             run_kind=req.run_kind,
             generation_config=req.generation_config,
             execution_mode=req.execution_mode,

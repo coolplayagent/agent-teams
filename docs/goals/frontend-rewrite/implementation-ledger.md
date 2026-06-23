@@ -499,3 +499,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Reviewer subagent `019ef4d2-7fb8-7701-8415-5f401c3f436e` returned PASS.
 - Followed up on the reviewer test-gap note by adding explicit coverage for workspace-label search and filtered empty-group suppression.
+
+## 2026-06-23 Sidebar Session Label Parity Batch
+
+### Scope
+- Added React frontend contract support for sidebar session `metadata` returned by the backend.
+- Reused the V1 session label priority of metadata `title`, `name`, then `label` before falling back to legacy title and session id.
+- Shared the label resolver between the sidebar rows and the topbar current-session indicator so both surfaces show the same human-readable session name.
+- Preserved session id fallback for records that have no usable metadata/title.
+
+### Verification
+- Browser comparison captured the V1 reference and stable V2 after screenshots under `.tmp/frontend-v2-session-labels/`.
+- V1 reference labels from the same local data included `你好啊`, `新会话`, `你好`, and `Use OpenSpec to draft a proposal for this change.`.
+- V2 after verification showed the selected session label as `你好啊` and the first visible labels matched metadata/prompt titles instead of raw ids, with only one raw `session-*` fallback among the first eighteen visible sessions.
+- Browser verification also surfaced a remaining framework blocker for the next pass: large workspace groups and chat scroll behavior still need a framework-first layout review against V1 rather than detail-only polish.
+- Stable V2 after screenshot had server health `ok`, zero skeleton placeholders, selected label `你好啊`, and one raw `session-*` fallback among the first eighteen visible sessions.
+- `npm run test -- --run src/test/sessionLabels.test.ts src/test/SessionsSidebar.test.tsx src/test/CurrentSessionIndicator.test.tsx` in `frontend/app` passed with 9 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Reviewer subagent `019ef4ef-00f8-7fa1-b831-d460e1cd6bfd` returned PASS.
+- Followed up on the reviewer test-gap note by adding explicit coverage for metadata `name`, metadata `label`, and fallback behavior.

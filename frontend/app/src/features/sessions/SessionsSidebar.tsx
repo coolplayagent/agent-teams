@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
 import { useUiStore } from "../../runtime/uiStore";
+import { sessionDisplayLabel } from "./sessionLabels";
 
 export function SessionsSidebar() {
   const { message } = App.useApp();
@@ -221,7 +222,7 @@ interface SessionGroup {
 }
 
 function sessionLabel(session: SessionSidebarRecord): string {
-  return session.title?.trim() || session.session_id;
+  return sessionDisplayLabel(session, session.session_id);
 }
 
 function workspaceLabel(workspace: WorkspaceRecord): string {

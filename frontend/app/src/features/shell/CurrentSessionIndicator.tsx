@@ -1,6 +1,7 @@
 import { Tag, Typography } from "antd";
 
 import type { SessionSidebarRecord } from "../../api/contracts";
+import { sessionDisplayLabel } from "../sessions/sessionLabels";
 
 interface CurrentSessionIndicatorProps {
   selectedSessionId: string | null;
@@ -11,7 +12,7 @@ export function CurrentSessionIndicator({
   selectedSessionId,
   session,
 }: CurrentSessionIndicatorProps) {
-  const label = sessionLabel(session, selectedSessionId);
+  const label = sessionDisplayLabel(session, selectedSessionId ?? "Agent Teams");
   const status = session?.active_run_status || "";
   return (
     <div className="at-current-session">
@@ -20,18 +21,6 @@ export function CurrentSessionIndicator({
       </Typography.Text>
       {status ? <Tag color={statusColor(status)}>{status}</Tag> : null}
     </div>
-  );
-}
-
-function sessionLabel(
-  session: SessionSidebarRecord | null,
-  selectedSessionId: string | null,
-): string {
-  return (
-    session?.title?.trim() ||
-    session?.session_id ||
-    selectedSessionId?.trim() ||
-    "Agent Teams"
   );
 }
 

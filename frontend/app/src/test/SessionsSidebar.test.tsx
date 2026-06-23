@@ -104,10 +104,13 @@ describe("SessionsSidebar", () => {
       {
         active_run_status: "running",
         background_task_count: 2,
+        metadata: {
+          title: "Readable running session",
+        },
         pending_tool_approval_count: 1,
         pending_user_question_count: 1,
         session_id: "session-running",
-        title: "Running session",
+        title: "Legacy title",
         updated_at: "2026-06-23T00:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -115,7 +118,8 @@ describe("SessionsSidebar", () => {
 
     renderSidebar();
 
-    expect(await screen.findByText("Running session")).toBeVisible();
+    expect(await screen.findByText("Readable running session")).toBeVisible();
+    expect(screen.queryByText("Legacy title")).not.toBeInTheDocument();
     expect(screen.getByText("running")).toHaveAttribute(
       "title",
       "Run status: running",

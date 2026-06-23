@@ -14,13 +14,17 @@ describe("CurrentSessionIndicator", () => {
         selectedSessionId="session-1"
         session={{
           session_id: "session-1",
-          title: "Frontend rewrite",
+          metadata: {
+            title: "Frontend rewrite",
+          },
+          title: "Legacy rewrite",
           active_run_status: "running",
         }}
       />,
     );
 
     expect(screen.getByText("Frontend rewrite")).toBeVisible();
+    expect(screen.queryByText("Legacy rewrite")).not.toBeInTheDocument();
     expect(screen.getByText("running")).toBeVisible();
   });
 

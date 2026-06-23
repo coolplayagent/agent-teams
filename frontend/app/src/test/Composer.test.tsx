@@ -2,7 +2,7 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClipboardEventHandler, ReactNode } from "react";
+import type { ClipboardEventHandler, KeyboardEventHandler, ReactNode } from "react";
 
 import {
   createRun,
@@ -23,7 +23,9 @@ interface MockSenderProps {
   "aria-label"?: string;
   disabled?: boolean;
   onChange?: (value: string) => void;
+  onKeyDown?: KeyboardEventHandler<HTMLElement>;
   onPaste?: ClipboardEventHandler<HTMLElement>;
+  onSubmit?: (message: string) => void;
   placeholder?: string;
   value?: string;
 }
@@ -34,6 +36,12 @@ vi.mock("@ant-design/x", () => ({
       aria-label={props["aria-label"]}
       disabled={props.disabled}
       onChange={(event) => props.onChange?.(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          props.onSubmit?.(props.value ?? "");
+        }
+        props.onKeyDown?.(event);
+      }}
       onPaste={props.onPaste}
       placeholder={props.placeholder}
       value={props.value ?? ""}
@@ -179,6 +187,79 @@ describe("Composer", () => {
         }),
       ),
     );
+  });
+
+  it("shows leading role mention options and inserts a clicked role mention", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          description: "Writes copy",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "@W" } });
+
+    const option = await screen.findByRole("option", { name: /@Writer/ });
+    expect(option).toHaveTextContent("Writes copy");
+    fireEvent.mouseDown(option);
+
+    expect(prompt).toHaveValue("@Writer ");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("selects a leading role mention option from the keyboard", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+        {
+          role_id: "Reviewer",
+          name: "Reviewer",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "@Rev" } });
+
+    expect(await screen.findByRole("option", { name: /@Reviewer/ })).toBeVisible();
+    fireEvent.keyDown(prompt, { key: "Enter" });
+
+    expect(createRunMock).not.toHaveBeenCalled();
+    expect(prompt).toHaveValue("@Reviewer ");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("dismisses the leading role mention menu with Escape", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "@W" } });
+
+    expect(await screen.findByRole("option", { name: /@Writer/ })).toBeVisible();
+    fireEvent.keyDown(prompt, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    expect(prompt).toHaveValue("@W");
   });
 
   it("supports fullwidth leading role mention triggers", async () => {

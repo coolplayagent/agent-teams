@@ -13,7 +13,7 @@ import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent } from "react";
+import type { ClipboardEvent, KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -47,9 +47,12 @@ import {
   readPastedImageAttachments,
   type PromptAttachment,
 } from "./PromptAttachments";
+import { PromptMentionMenu } from "./PromptMentionMenu";
 import {
+  findLeadingRoleMentionOptions,
   parseLeadingRoleMention,
   type LeadingRoleMention,
+  type PromptMentionOption,
 } from "./PromptMentions";
 
 interface ComposerProps {
@@ -98,6 +101,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
   const [composerStatus, setComposerStatus] = useState("");
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const [dismissedMentionDraft, setDismissedMentionDraft] = useState("");
   const [yolo, setYolo] = useState(true);
   const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] =
     useState(true);
@@ -190,6 +195,13 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     () => parseLeadingRoleMention(draft, roleOptionsQuery.data),
     [draft, roleOptionsQuery.data],
   );
+  const leadingMentionOptions = useMemo(
+    () =>
+      activeRunId === null && dismissedMentionDraft !== draft
+        ? findLeadingRoleMentionOptions(draft, roleOptionsQuery.data)
+        : [],
+    [activeRunId, dismissedMentionDraft, draft, roleOptionsQuery.data],
+  );
   const effectiveTargetRoleId = leadingRoleMention.roleId ?? targetRoleId;
   const effectivePromptText =
     leadingRoleMention.roleId === null ? draft.trim() : leadingRoleMention.promptText;
@@ -217,6 +229,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       );
     }
   }, [generalConfigQuery.data]);
+
+  useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [leadingMentionOptions.length]);
 
   const createRunMutation = useMutation({
     mutationFn: async () => {
@@ -374,7 +390,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     (effectivePromptText.length > 0 || promptAttachments.length > 0) &&
     !busy &&
     !draftValidationMessage &&
-    !attachmentValidationMessage;
+    !attachmentValidationMessage &&
+    (leadingMentionOptions.length === 0 || leadingRoleMention.roleId !== null);
   const canInject =
     activeRunId !== null &&
     draft.trim().length > 0 &&
@@ -416,6 +433,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         onPaste={(event) => {
           void handlePromptPaste(event);
         }}
+        onKeyDown={(event) => {
+          handlePromptKeyDown(event);
+        }}
         onSubmit={() => {
           if (canCreateRun) {
             createRunMutation.mutate();
@@ -429,6 +449,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         submitType="enter"
         value={draft}
         actions={false}
+      />
+      <PromptMentionMenu
+        activeIndex={activeMentionIndex}
+        onSelect={selectPromptMentionOption}
+        options={leadingMentionOptions}
       />
       <PromptAttachments
         attachments={promptAttachments}
@@ -681,6 +706,42 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         error instanceof Error ? error.message : "Failed to read pasted image.",
       );
     }
+  }
+
+  function handlePromptKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (leadingMentionOptions.length === 0) {
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setActiveMentionIndex((current) =>
+        wrapIndex(current + direction, leadingMentionOptions.length),
+      );
+      return;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      selectPromptMentionOption(
+        leadingMentionOptions[
+          Math.min(activeMentionIndex, leadingMentionOptions.length - 1)
+        ],
+      );
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setDismissedMentionDraft(draft);
+    }
+  }
+
+  function selectPromptMentionOption(option: PromptMentionOption | undefined) {
+    if (option === undefined) {
+      return;
+    }
+    setDraft(`@${option.insertTerm} `);
+    setDismissedMentionDraft("");
+    inputRef.current?.focus();
   }
 
   function updateSessionTopologyMode(
@@ -973,6 +1034,13 @@ function normalizeInputModalities(inputModalities: string[] | undefined): string
   return inputModalities
     .map((modality) => modality.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function wrapIndex(index: number, length: number): number {
+  if (length <= 0) {
+    return 0;
+  }
+  return ((index % length) + length) % length;
 }
 
 function normalizeProfileName(value: string | null | undefined): string {

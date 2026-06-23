@@ -12,6 +12,18 @@ interface MentionCandidate {
   term: string;
 }
 
+export interface PromptMentionOption {
+  aliases: string[];
+  description: string;
+  displayName: string;
+  insertTerm: string;
+  roleId: string;
+}
+
+interface InternalPromptMentionOption extends PromptMentionOption {
+  aliasSet: Set<string>;
+}
+
 export function parseLeadingRoleMention(
   text: string,
   roleOptions: RoleConfigOptions | undefined,
@@ -57,6 +69,25 @@ export function startsWithPromptMention(value: string): boolean {
   return firstChar === "@" || firstChar === "＠";
 }
 
+export function findLeadingRoleMentionOptions(
+  text: string,
+  roleOptions: RoleConfigOptions | undefined,
+): PromptMentionOption[] {
+  const query = leadingMentionQuery(text);
+  if (query === null) {
+    return [];
+  }
+  return listMentionableRoleOptions(roleOptions)
+    .map((option, index) => ({
+      index,
+      option,
+      score: mentionOptionScore(option, query),
+    }))
+    .filter((item) => item.score < Number.POSITIVE_INFINITY)
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .map((item) => item.option);
+}
+
 function listMentionableRoleCandidates(
   roleOptions: RoleConfigOptions | undefined,
 ): MentionCandidate[] {
@@ -96,6 +127,98 @@ function listMentionableRoleCandidates(
     pushCandidate(role.role_id, role.role_id);
   }
   return entries;
+}
+
+function listMentionableRoleOptions(
+  roleOptions: RoleConfigOptions | undefined,
+): PromptMentionOption[] {
+  const entries: InternalPromptMentionOption[] = [];
+  const byRoleId = new Map<string, InternalPromptMentionOption>();
+  const upsertOption = (
+    roleId: string | undefined,
+    displayName: string | undefined,
+    { aliases = [], description = "" }: { aliases?: string[]; description?: string } = {},
+  ) => {
+    const safeRoleId = normalizeRoleId(roleId);
+    const safeDisplayName = normalizeRoleId(displayName) || safeRoleId;
+    if (!safeRoleId || !safeDisplayName) {
+      return;
+    }
+    const nextAliases = [safeDisplayName, safeRoleId, ...aliases]
+      .map(normalizeRoleId)
+      .filter(Boolean);
+    const existing = byRoleId.get(safeRoleId);
+    if (existing !== undefined) {
+      if (
+        existing.displayName.toLowerCase() === existing.roleId.toLowerCase() &&
+        safeDisplayName.toLowerCase() !== safeRoleId.toLowerCase()
+      ) {
+        existing.displayName = safeDisplayName;
+        existing.insertTerm = safeDisplayName;
+      }
+      if (!existing.description && description.trim()) {
+        existing.description = description.trim();
+      }
+      for (const alias of nextAliases) {
+        existing.aliasSet.add(alias);
+      }
+      existing.aliases = Array.from(existing.aliasSet);
+      return;
+    }
+    const entry = {
+      aliasSet: new Set(nextAliases),
+      aliases: nextAliases,
+      description: description.trim(),
+      displayName: safeDisplayName,
+      insertTerm: safeDisplayName,
+      roleId: safeRoleId,
+    };
+    byRoleId.set(safeRoleId, entry);
+    entries.push(entry);
+  };
+
+  const coordinatorRoleId =
+    normalizeRoleId(roleOptions?.coordinator_role_id) ||
+    normalizeRoleId(roleOptions?.coordinator_role?.role_id);
+  const mainAgentRoleId =
+    normalizeRoleId(roleOptions?.main_agent_role_id) ||
+    normalizeRoleId(roleOptions?.main_agent_role?.role_id) ||
+    "MainAgent";
+  if (coordinatorRoleId) {
+    upsertOption(coordinatorRoleId, "Coordinator");
+  }
+  if (mainAgentRoleId) {
+    upsertOption(mainAgentRoleId, roleDisplayName(roleOptions?.main_agent_role));
+  }
+  for (const role of roleOptions?.normal_mode_roles ?? []) {
+    upsertOption(role.role_id, role.name || role.role_id, {
+      aliases: [role.role_id],
+      description: role.description,
+    });
+  }
+  return entries.map(({ aliasSet: _aliasSet, ...entry }) => entry);
+}
+
+function leadingMentionQuery(text: string): string | null {
+  const match = text.match(/^[@＠]([^\s]*)$/);
+  return match === null ? null : match[1]?.trim().toLowerCase() ?? "";
+}
+
+function mentionOptionScore(option: PromptMentionOption, query: string): number {
+  if (!query) {
+    return 0;
+  }
+  const aliases = option.aliases.map((alias) => alias.toLowerCase());
+  if (aliases.some((alias) => alias === query)) {
+    return 0;
+  }
+  if (aliases.some((alias) => alias.startsWith(query))) {
+    return 1;
+  }
+  if (aliases.some((alias) => alias.includes(query))) {
+    return 2;
+  }
+  return Number.POSITIVE_INFINITY;
 }
 
 function roleDisplayName(role: RoleOption | null | undefined): string {

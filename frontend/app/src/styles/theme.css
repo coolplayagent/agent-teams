@@ -630,6 +630,52 @@ body {
   background: var(--at-surface);
 }
 
+.at-prompt-mention-menu {
+  width: min(360px, 100%);
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  overflow: hidden;
+}
+
+.at-prompt-mention-menu-list {
+  display: grid;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.at-prompt-mention-item {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 0;
+  border-bottom: 1px solid var(--at-border);
+  background: transparent;
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-prompt-mention-item:last-child {
+  border-bottom: 0;
+}
+
+.at-prompt-mention-item:hover,
+.at-prompt-mention-item.is-active {
+  background: var(--at-surface-muted);
+}
+
+.at-prompt-mention-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.at-prompt-mention-description {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
 .at-prompt-attachments {
   display: flex;
   flex-wrap: wrap;

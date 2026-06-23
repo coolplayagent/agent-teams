@@ -1,12 +1,30 @@
-import { App, Button, Checkbox, Select, Space, Switch, Tooltip } from "antd";
+import {
+  App,
+  Button,
+  Checkbox,
+  Select,
+  Space,
+  Switch,
+  Tooltip,
+  Typography,
+} from "antd";
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import { Pause, Play, Send } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createRun, getRoleConfigOptions, stopRun } from "../../api/client";
-import type { RunThinkingConfig, ThinkingEffort } from "../../api/contracts";
+import {
+  createRun,
+  getRoleConfigOptions,
+  injectRunMessage,
+  stopRun,
+} from "../../api/client";
+import type {
+  InjectionDeliveryMode,
+  RunThinkingConfig,
+  ThinkingEffort,
+} from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 
 interface ComposerProps {
@@ -96,17 +114,47 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
   });
 
-  const busy = createRunMutation.isPending || stopRunMutation.isPending;
-  const canSend =
+  const injectMessageMutation = useMutation({
+    mutationFn: async (mode: InjectionDeliveryMode) => {
+      if (activeRunId === null) {
+        throw new Error("No active run to inject into.");
+      }
+      const content = draft.trim();
+      if (!content) {
+        throw new Error("Injection content cannot be empty.");
+      }
+      return injectRunMessage(activeRunId, { content, mode });
+    },
+    onSuccess: () => {
+      setDraft("");
+      if (sessionId !== null) {
+        void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
+      }
+    },
+    onError: (error) => {
+      void message.error(error instanceof Error ? error.message : "Injection failed.");
+    },
+  });
+
+  const busy =
+    createRunMutation.isPending ||
+    stopRunMutation.isPending ||
+    injectMessageMutation.isPending;
+  const canCreateRun =
     sessionId !== null && activeRunId === null && draft.trim().length > 0 && !busy;
+  const canInject = activeRunId !== null && draft.trim().length > 0 && !busy;
 
   return (
     <form
       className="at-composer"
       onSubmit={(event) => {
         event.preventDefault();
-        if (canSend) {
+        if (canCreateRun) {
           createRunMutation.mutate();
+          return;
+        }
+        if (canInject) {
+          injectMessageMutation.mutate("queued");
         }
       }}
     >
@@ -116,11 +164,15 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         autoSize={{ minRows: 1, maxRows: 7 }}
         disabled={busy || sessionId === null}
         className="at-composer-sender"
-        loading={createRunMutation.isPending}
+        loading={createRunMutation.isPending || injectMessageMutation.isPending}
         onChange={setDraft}
         onSubmit={() => {
-          if (canSend) {
+          if (canCreateRun) {
             createRunMutation.mutate();
+            return;
+          }
+          if (canInject) {
+            injectMessageMutation.mutate("queued");
           }
         }}
         placeholder="What would you like the agents to do?"
@@ -144,9 +196,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             size="small"
             value={targetRoleId ?? undefined}
           />
-          <Space.Compact>
+          <Space className="at-thinking-control" size={6}>
+            <Typography.Text className="at-control-label" id="at-thinking-label">
+              Thinking
+            </Typography.Text>
             <Switch
-              aria-label="Thinking"
+              aria-labelledby="at-thinking-label"
               checked={thinking.enabled}
               disabled={busy || activeRunId !== null}
               onChange={(enabled) => updateThinking({ enabled })}
@@ -164,11 +219,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
               />
             ) : null}
-          </Space.Compact>
-          <Checkbox checked={yolo} onChange={(event) => setYolo(event.target.checked)}>
+          </Space>
+          <Checkbox
+            checked={yolo}
+            disabled={busy || activeRunId !== null}
+            onChange={(event) => setYolo(event.target.checked)}
+          >
             YOLO
           </Checkbox>
-          <span className="at-composer-hint">Enter to send, Shift+Enter for newline</span>
         </Space>
         <Space size={8}>
           {activeRunId !== null ? (
@@ -183,15 +241,43 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               </Button>
             </Tooltip>
           ) : null}
-          <Button
-            htmlType="submit"
-            icon={sessionId === null ? <Play size={16} /> : <Send size={16} />}
-            loading={createRunMutation.isPending}
-            type="primary"
-            disabled={!canSend}
-          >
-            Send
-          </Button>
+          {activeRunId !== null ? (
+            <>
+              <Button
+                disabled={!canInject}
+                icon={<Send size={16} />}
+                loading={
+                  injectMessageMutation.isPending &&
+                  injectMessageMutation.variables === "queued"
+                }
+                onClick={() => injectMessageMutation.mutate("queued")}
+              >
+                Queue
+              </Button>
+              <Button
+                danger
+                disabled={!canInject}
+                icon={<Play size={16} />}
+                loading={
+                  injectMessageMutation.isPending &&
+                  injectMessageMutation.variables === "interrupt"
+                }
+                onClick={() => injectMessageMutation.mutate("interrupt")}
+              >
+                Interrupt
+              </Button>
+            </>
+          ) : (
+            <Button
+              htmlType="submit"
+              icon={sessionId === null ? <Play size={16} /> : <Send size={16} />}
+              loading={createRunMutation.isPending}
+              type="primary"
+              disabled={!canCreateRun}
+            >
+              Send
+            </Button>
+          )}
         </Space>
       </div>
     </form>

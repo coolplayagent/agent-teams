@@ -155,6 +155,24 @@ export interface RunCreateResponse {
   target_role_id?: string | null;
 }
 
+export type InjectionDeliveryMode = "queued" | "interrupt";
+
+export interface RunInjectionRequest {
+  content: string;
+  mode: InjectionDeliveryMode;
+}
+
+export interface AgUiActionResponse {
+  status: "ok" | "deferred";
+  run_id?: string | null;
+  session_id?: string | null;
+  scope?: "main" | "subagent" | null;
+  instance_id?: string | null;
+  action?: string | null;
+  option_id?: string | null;
+  payload?: JsonValue;
+}
+
 export interface TimelineMessage {
   message_id?: string;
   role?: string;

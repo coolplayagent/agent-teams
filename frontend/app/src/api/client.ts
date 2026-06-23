@@ -1,5 +1,7 @@
 import type {
   GeneralConfig,
+  AgUiActionResponse,
+  RunInjectionRequest,
   JsonValue,
   ObservabilityBreakdowns,
   ObservabilityOverview,
@@ -96,6 +98,19 @@ export function resumeRun(runId: string): Promise<{ status: string; run_id: stri
     `/ag-ui/runs/${encodeURIComponent(runId)}:resume`,
     {
       method: "POST",
+    },
+  );
+}
+
+export function injectRunMessage(
+  runId: string,
+  request: RunInjectionRequest,
+): Promise<AgUiActionResponse> {
+  return requestJson<AgUiActionResponse>(
+    `/ag-ui/runs/${encodeURIComponent(runId)}/inject`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
     },
   );
 }

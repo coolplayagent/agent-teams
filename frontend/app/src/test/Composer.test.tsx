@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { createRun, getRoleConfigOptions } from "../api/client";
+import { createRun, getRoleConfigOptions, injectRunMessage } from "../api/client";
 import { Composer } from "../features/composer/Composer";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
@@ -31,11 +31,13 @@ vi.mock("@ant-design/x", () => ({
 vi.mock("../api/client", () => ({
   createRun: vi.fn(),
   getRoleConfigOptions: vi.fn(),
+  injectRunMessage: vi.fn(),
   stopRun: vi.fn(),
 }));
 
 const createRunMock = vi.mocked(createRun);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
+const injectRunMessageMock = vi.mocked(injectRunMessage);
 
 afterEach(() => {
   cleanup();
@@ -104,6 +106,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    expect(screen.getByText("Thinking")).toBeVisible();
     fireEvent.click(screen.getByRole("switch", { name: "Thinking" }));
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Thinking effort" }));
     fireEvent.click(await screen.findByText("High"));
@@ -124,6 +127,56 @@ describe("Composer", () => {
     );
     expect(localStorage.getItem("agent_teams_thinking_enabled")).toBe("true");
     expect(localStorage.getItem("agent_teams_thinking_effort")).toBe("high");
+  });
+
+  it("queues an injection instead of creating a run while a run is active", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    injectRunMessageMock.mockResolvedValue({
+      status: "ok",
+      run_id: "run-1",
+    });
+
+    renderComposer(runStreamController("run-1"));
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Add a regression test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+
+    await waitFor(() =>
+      expect(injectRunMessageMock).toHaveBeenCalledWith("run-1", {
+        content: "Add a regression test",
+        mode: "queued",
+      }),
+    );
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("interrupts an active run with injected content", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    injectRunMessageMock.mockResolvedValue({
+      status: "ok",
+      run_id: "run-1",
+    });
+
+    renderComposer(runStreamController("run-1"));
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Switch to the UI fix first" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
+
+    await waitFor(() =>
+      expect(injectRunMessageMock).toHaveBeenCalledWith("run-1", {
+        content: "Switch to the UI fix first",
+        mode: "interrupt",
+      }),
+    );
+    expect(createRunMock).not.toHaveBeenCalled();
   });
 });
 
@@ -147,9 +200,9 @@ function renderComposer(controller = runStreamController()) {
   );
 }
 
-function runStreamController(): RunStreamController {
+function runStreamController(activeRunId: string | null = null): RunStreamController {
   return {
-    activeRunId: null,
+    activeRunId,
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
   };

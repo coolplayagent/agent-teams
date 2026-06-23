@@ -135,3 +135,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run test -- --run SessionsSidebar.test.tsx` in `frontend/app` passed with 2 tests.
 - `npm run test -- --run` in `frontend/app` passed with 13 tests.
 - `npm run lint` in `frontend/app` passed.
+
+## 2026-06-23 Runtime Injection Controls Batch
+
+### Scope
+- Addressed reviewer `019ef284-18b0-7b53-a3b0-cb41ccb24a04` finding by adding a visible Thinking label and test coverage for it.
+- Added React AG-UI client support for `/api/ag-ui/runs/{run_id}/inject`.
+- Reused the composer during active runs for real queued and interrupt injections instead of creating a second run.
+- Locked run-creation-only controls while an active run is present.
+- Added focused React coverage proving Queue and Interrupt call the injection API and do not call run creation.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 4 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 15 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

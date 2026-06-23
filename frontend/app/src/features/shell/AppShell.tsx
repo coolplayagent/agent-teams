@@ -15,7 +15,8 @@ import {
   Sun,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent, PointerEvent } from "react";
 
 import {
   getHealth,
@@ -49,8 +50,10 @@ export function AppShell() {
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
+  const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
   const setLanguage = useUiStore((state) => state.setLanguage);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
 
   const healthQuery = useQuery({
     queryKey: ["server-health"],
@@ -89,6 +92,31 @@ export function AppShell() {
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
   );
+
+  useEffect(() => {
+    if (!sidebarResizing) {
+      return undefined;
+    }
+
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      setSidebarWidth(event.clientX);
+    };
+    const handlePointerUp = () => {
+      setSidebarResizing(false);
+    };
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [setSidebarWidth, sidebarResizing]);
 
   return (
     <Layout className="at-shell">
@@ -156,8 +184,24 @@ export function AppShell() {
       </Header>
       <Layout className="at-body">
         {!sidebarCollapsed ? (
-          <Sider className="at-sidebar" theme="light" width={sidebarWidth}>
+          <Sider
+            className={sidebarResizing ? "at-sidebar is-resizing" : "at-sidebar"}
+            theme="light"
+            width={sidebarWidth}
+          >
             <SessionsSidebar />
+            <div
+              aria-label="Resize sidebar"
+              aria-orientation="vertical"
+              aria-valuemax={360}
+              aria-valuemin={220}
+              aria-valuenow={sidebarWidth}
+              className="at-sidebar-resizer"
+              onKeyDown={handleSidebarResizeKeyDown}
+              onPointerDown={handleSidebarResizePointerDown}
+              role="separator"
+              tabIndex={0}
+            />
           </Sider>
         ) : null}
         <Content className="at-workspace">
@@ -185,4 +229,25 @@ export function AppShell() {
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </Layout>
   );
+
+  function handleSidebarResizePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    setSidebarResizing(true);
+    setSidebarWidth(event.clientX);
+  }
+
+  function handleSidebarResizeKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setSidebarWidth(sidebarWidth - 16);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setSidebarWidth(sidebarWidth + 16);
+    }
+  }
 }

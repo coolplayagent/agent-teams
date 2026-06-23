@@ -447,3 +447,32 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Addressed all three findings with focused code paths and regression coverage.
 - Browser screenshot comparison found the unconfigured voice button was visible in V2 while hidden in V1; changed the React button to hide when speech is not configured and added coverage.
 - Addressed the follow-up reviewer finding where Ant Design `loading` made the connecting voice button unclickable; connecting remains cancellable, unopened sockets close immediately, and focused coverage verifies both unopened and open-but-not-ready stop paths.
+
+## 2026-06-23 App Shell Fixed Viewport Layout Batch
+
+### Scope
+- Locked the React shell to a single viewport-height application frame instead of allowing chat content to grow the document.
+- Moved scrolling responsibility into the message timeline and session list so workspace/session navigation no longer scrolls with the page.
+- Added width and height constraints for the Ant Design `App` wrapper so the shell fills the browser rather than shrinking to content.
+- Added a keyboard-accessible sidebar resize separator backed by the existing `sidebarWidth` UI state.
+- Tightened sidebar session row density by showing active run status only when present instead of rendering normal-mode metadata on every row.
+
+### Verification
+- Browser comparison captured V1 desktop reference, V2 before, V2 after desktop, V2 after mobile, and V2 after collapsed-mobile screenshots under `.tmp/frontend-v2-framework/`.
+- V1 desktop reference: document scroll height matched viewport height at `1272 / 1272` and body overflow was hidden.
+- V2 before fix: desktop document scroll height was `4581` for a `1272` viewport, and mobile document scroll height was `4872` for an `844` viewport.
+- V2 after fix: desktop document scroll height matched viewport height at `1272 / 1272`; mobile document scroll height matched viewport height at `844 / 844`.
+- V2 after reviewer remediation: mobile document/body/shell/topbar/workspace/composer scroll width all matched the `390` viewport, with no document-level horizontal overflow.
+- Browser scroll verification showed sidebar wheel scrolling changed only `.at-session-list.scrollTop` from `0` to `700`, while body/document scroll stayed `0`; timeline wheel scrolling changed only `.at-timeline.scrollTop` from `3309` to `2609`.
+- `npm run test -- --run src/test/AppShell.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run test -- --run src/test/SessionsSidebar.test.tsx` in `frontend/app` passed with 3 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer Remediation
+- Reviewer subagent `019ef4bb-eef3-71d3-a24c-e0497567b767` returned FAIL for mobile horizontal overflow and overly thin sidebar status affordance.
+- Fixed mobile overflow by constraining the shell, workspace, composer controls, select widths, and compact topbar spacing under the narrow breakpoint.
+- Restored compact session metadata using real sidebar fields for active run status, background tasks, pending approvals/questions, and relative update time without returning to bulky mode tags.
+- Added focused sidebar coverage for compact status, background work, pending approval/question, and update time rendering.
+- Reviewer subagent `019ef4bb-eef3-71d3-a24c-e0497567b767` re-reviewed the remediation and returned PASS.

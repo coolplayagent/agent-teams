@@ -1,0 +1,148 @@
+import { App as AntApp, ConfigProvider } from "antd";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+
+import { getHealth, getSession, listSidebarSessions } from "../api/client";
+import { AppShell } from "../features/shell/AppShell";
+import { useUiStore } from "../runtime/uiStore";
+
+vi.mock("../api/client", () => ({
+  getHealth: vi.fn(),
+  getSession: vi.fn(),
+  listSidebarSessions: vi.fn(),
+}));
+
+vi.mock("../features/composer/Composer", () => ({
+  Composer: () => <div data-testid="composer" />,
+}));
+
+vi.mock("../features/recovery/RecoveryBar", () => ({
+  RecoveryBar: () => <div data-testid="recovery" />,
+}));
+
+vi.mock("../features/sessions/SessionsSidebar", () => ({
+  SessionsSidebar: () => <div data-testid="sessions-sidebar" />,
+}));
+
+vi.mock("../features/shell/CurrentSessionIndicator", () => ({
+  CurrentSessionIndicator: () => <span>session-1</span>,
+}));
+
+vi.mock("../features/shell/MessageExportMenu", () => ({
+  MessageExportMenu: () => <button type="button">Export</button>,
+}));
+
+vi.mock("../features/shell/ObservabilityPanel", () => ({
+  ObservabilityPanel: () => <div data-testid="observability" />,
+}));
+
+vi.mock("../features/shell/SessionTokenUsage", () => ({
+  SessionTokenUsage: () => <div data-testid="token-usage" />,
+}));
+
+vi.mock("../features/shell/SettingsDrawer", () => ({
+  SettingsDrawer: ({ open }: { onClose: () => void; open: boolean }) =>
+    open ? <div role="dialog">Settings</div> : null,
+}));
+
+vi.mock("../features/timeline/MessageTimeline", () => ({
+  MessageTimeline: () => <div data-testid="timeline" />,
+}));
+
+const getHealthMock = vi.mocked(getHealth);
+const getSessionMock = vi.mocked(getSession);
+const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
+
+beforeEach(() => {
+  getHealthMock.mockResolvedValue({ status: "ok" });
+  getSessionMock.mockResolvedValue({
+    session_id: "session-1",
+    workspace_id: "workspace-1",
+    normal_root_role_id: "MainAgent",
+  });
+  listSidebarSessionsMock.mockResolvedValue([
+    {
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      title: "Session 1",
+    },
+  ]);
+  useUiStore.setState({
+    language: "en",
+    selectedSessionId: "session-1",
+    selectedWorkspaceId: "workspace-1",
+    sidebarCollapsed: false,
+    sidebarWidth: 280,
+    themeMode: "light",
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+  vi.clearAllMocks();
+});
+
+describe("AppShell", () => {
+  it("toggles the session sidebar without unmounting the workspace", async () => {
+    renderShell();
+
+    expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
+    expect(screen.getByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("sessions-sidebar")).toBeNull(),
+    );
+    expect(screen.getByTestId("timeline")).toBeVisible();
+  });
+
+  it("resizes the sidebar from the keyboard-accessible separator", async () => {
+    renderShell();
+
+    const resizer = await screen.findByRole("separator", {
+      name: "Resize sidebar",
+    });
+    expect(resizer).toHaveAttribute("aria-valuenow", "280");
+
+    fireEvent.keyDown(resizer, { key: "ArrowRight" });
+
+    expect(useUiStore.getState().sidebarWidth).toBe(296);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("separator", { name: "Resize sidebar" }),
+      ).toHaveAttribute("aria-valuenow", "296"),
+    );
+
+    fireEvent.keyDown(screen.getByRole("separator", { name: "Resize sidebar" }), {
+      key: "ArrowLeft",
+    });
+
+    expect(useUiStore.getState().sidebarWidth).toBe(280);
+  });
+});
+
+function renderShell() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: Number.POSITIVE_INFINITY,
+      },
+    },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ConfigProvider>
+        <AntApp>{renderWithStrictModeBoundary(<AppShell />)}</AntApp>
+      </ConfigProvider>
+    </QueryClientProvider>,
+  );
+}
+
+function renderWithStrictModeBoundary(children: ReactNode) {
+  return children;
+}

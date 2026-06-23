@@ -45,22 +45,41 @@ html,
 body,
 #root {
   height: 100%;
+  min-height: 0;
+  width: 100%;
 }
 
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--at-bg);
   color: var(--at-text);
   font-family:
     "Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
+#root {
+  display: flex;
+}
+
+#root > .ant-app {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+
 .at-shell {
-  min-height: 100%;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background: var(--at-bg);
 }
 
 .at-topbar {
+  flex: 0 0 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -77,6 +96,14 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.at-topbar-left {
+  flex: 1 1 auto;
+}
+
+.at-topbar-right {
+  flex: 0 1 auto;
 }
 
 .at-workspace-title {
@@ -99,18 +126,51 @@ body {
 }
 
 .at-body {
-  min-height: calc(100vh - 52px);
+  flex: 1 1 auto;
+  height: calc(100vh - 52px);
+  height: calc(100dvh - 52px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .at-sidebar {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid var(--at-border);
   background: var(--at-sidebar) !important;
+}
+
+.at-sidebar .ant-layout-sider-children {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.at-sidebar-resizer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.at-sidebar-resizer:hover,
+.at-sidebar-resizer:focus-visible,
+.at-sidebar.is-resizing .at-sidebar-resizer {
+  background: color-mix(in srgb, var(--at-primary) 18%, transparent);
+  outline: none;
 }
 
 .at-sidebar-inner {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 52px);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   padding: 10px;
   gap: 10px;
 }
@@ -126,6 +186,7 @@ body {
 }
 
 .at-session-list {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
 }
@@ -133,8 +194,8 @@ body {
 .at-session-item {
   cursor: pointer;
   border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 8px 10px !important;
+  border-radius: 6px;
+  padding: 6px 8px !important;
 }
 
 .at-session-item:hover {
@@ -147,14 +208,52 @@ body {
 }
 
 .at-session-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
   width: 100%;
+}
+
+.at-session-label {
+  min-width: 0;
+}
+
+.at-session-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+  color: var(--at-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.at-session-status,
+.at-session-background {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.at-session-status.is-running,
+.at-session-status.is-queued {
+  color: var(--at-primary);
+}
+
+.at-session-status.is-failed {
+  color: var(--at-danger);
 }
 
 .at-workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) max-content max-content;
   min-width: 0;
-  min-height: calc(100vh - 52px);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background: var(--at-bg);
 }
 
@@ -221,6 +320,7 @@ body {
 .at-timeline {
   grid-row: 2;
   min-height: 0;
+  height: 100%;
   overflow: auto;
   padding: 18px 24px;
 }
@@ -773,23 +873,59 @@ body {
 }
 
 @media (max-width: 760px) {
+  .at-shell,
+  .at-topbar,
+  .at-body,
+  .at-workspace,
+  .at-composer {
+    max-width: 100vw;
+    width: 100%;
+  }
+
   .at-topbar {
     gap: 8px;
+    padding: 0 4px;
+  }
+
+  .at-topbar-left {
+    gap: 4px;
   }
 
   .at-topbar-right {
-    gap: 4px;
+    column-gap: 1px !important;
+    gap: 1px;
+  }
+
+  .at-topbar .ant-btn {
+    min-width: 26px;
+    padding-inline: 4px;
+  }
+
+  .at-topbar .ant-btn-icon-only,
+  .at-health-button {
+    width: 26px;
+  }
+
+  .at-health-button > span:not(.ant-btn-icon) {
+    display: none;
   }
 
   .at-sidebar {
     position: fixed !important;
     z-index: 20;
     inset: 52px auto 0 0;
+    height: calc(100vh - 52px);
+    height: calc(100dvh - 52px);
     width: min(86vw, 320px) !important;
   }
 
+  .at-sidebar-resizer {
+    display: none;
+  }
+
   .at-workspace-title {
-    max-width: 160px;
+    max-width: 60px;
+    font-size: 14px;
   }
 
   .at-timeline {
@@ -804,5 +940,48 @@ body {
   .at-composer-controls {
     align-items: stretch;
     flex-direction: column;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .at-composer-control-set {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px !important;
+    width: 100%;
+  }
+
+  .at-composer-control-set > .ant-space-item {
+    min-width: 0;
+  }
+
+  .at-composer-control-set > .ant-space-item:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .at-session-mode-control,
+  .at-normal-root-role-select,
+  .at-orchestration-preset-select,
+  .at-role-select,
+  .at-model-profile-select,
+  .at-thinking-effort-select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .at-thinking-control {
+    width: 100%;
+  }
+
+  .at-thinking-control > .ant-space-item:last-child {
+    min-width: 0;
+  }
+
+  .at-composer-controls > .ant-space:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+    width: 100%;
   }
 }

@@ -91,6 +91,49 @@ describe("SessionsSidebar", () => {
       workspace_id: "missing-workspace",
     });
   });
+
+  it("renders compact session status, background work, and update time", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        active_run_status: "running",
+        background_task_count: 2,
+        pending_tool_approval_count: 1,
+        pending_user_question_count: 1,
+        session_id: "session-running",
+        title: "Running session",
+        updated_at: "2026-06-23T00:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Running session")).toBeVisible();
+    expect(screen.getByText("running")).toHaveAttribute(
+      "title",
+      "Run status: running",
+    );
+    expect(screen.getByText("bg 2")).toHaveAttribute(
+      "title",
+      "2 background tasks",
+    );
+    expect(screen.getByText("ap 1")).toHaveAttribute(
+      "title",
+      "1 pending approvals",
+    );
+    expect(screen.getByText("q 1")).toHaveAttribute(
+      "title",
+      "1 pending questions",
+    );
+    expect(screen.getByTitle("2026-06-23T00:00:00Z")).toBeVisible();
+  });
 });
 
 function renderSidebar() {

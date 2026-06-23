@@ -6,8 +6,6 @@ import {
   List,
   Select,
   Skeleton,
-  Space,
-  Tag,
   Tooltip,
   Typography,
 } from "antd";
@@ -160,15 +158,16 @@ export function SessionsSidebar() {
             }
             onClick={() => setSelectedSessionId(session.session_id)}
           >
-            <Space direction="vertical" size={4} className="at-session-copy">
-              <Typography.Text ellipsis title={sessionLabel(session)}>
+            <div className="at-session-copy">
+              <Typography.Text
+                className="at-session-label"
+                ellipsis
+                title={sessionLabel(session)}
+              >
                 {sessionLabel(session)}
               </Typography.Text>
-              <Space size={4} wrap>
-                {session.session_mode ? <Tag>{session.session_mode}</Tag> : null}
-                {statusTag(session)}
-              </Space>
-            </Space>
+              {sessionMeta(session)}
+            </div>
           </List.Item>
         )}
       />
@@ -188,18 +187,93 @@ function workspaceLabel(workspace: WorkspaceRecord): string {
   );
 }
 
-function statusTag(session: SessionSidebarRecord) {
+function sessionMeta(session: SessionSidebarRecord) {
   const status = session.active_run_status || "";
-  if (!status) {
+  const updatedAt = formatRelativeTime(session.updated_at);
+  const backgroundTaskCount = positiveCount(session.background_task_count);
+  const pendingApprovalCount = positiveCount(session.pending_tool_approval_count);
+  const pendingQuestionCount = positiveCount(session.pending_user_question_count);
+  if (
+    !status &&
+    !updatedAt &&
+    backgroundTaskCount === 0 &&
+    pendingApprovalCount === 0 &&
+    pendingQuestionCount === 0
+  ) {
     return null;
   }
-  const color =
-    status === "running" || status === "queued"
-      ? "processing"
-      : status === "failed"
-        ? "error"
-        : status === "stopped"
-          ? "warning"
-          : "default";
-  return <Tag color={color}>{status}</Tag>;
+  return (
+    <span className="at-session-meta">
+      {status ? (
+        <span
+          className={`at-session-status is-${status}`}
+          title={`Run status: ${status}`}
+        >
+          {status}
+        </span>
+      ) : null}
+      {backgroundTaskCount > 0 ? (
+        <span
+          className="at-session-background"
+          title={`${backgroundTaskCount} background tasks`}
+        >
+          bg {backgroundTaskCount}
+        </span>
+      ) : null}
+      {pendingApprovalCount > 0 ? (
+        <span
+          className="at-session-background"
+          title={`${pendingApprovalCount} pending approvals`}
+        >
+          ap {pendingApprovalCount}
+        </span>
+      ) : null}
+      {pendingQuestionCount > 0 ? (
+        <span
+          className="at-session-background"
+          title={`${pendingQuestionCount} pending questions`}
+        >
+          q {pendingQuestionCount}
+        </span>
+      ) : null}
+      {updatedAt ? <span title={session.updated_at}>{updatedAt}</span> : null}
+    </span>
+  );
+}
+
+function positiveCount(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+function formatRelativeTime(value: string | undefined): string {
+  if (value === undefined || !value.trim()) {
+    return "";
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  const elapsedMs = Math.max(0, Date.now() - timestamp);
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+  if (elapsedMs < minuteMs) {
+    return "now";
+  }
+  if (elapsedMs < hourMs) {
+    return `${Math.floor(elapsedMs / minuteMs)}m`;
+  }
+  if (elapsedMs < dayMs) {
+    return `${Math.floor(elapsedMs / hourMs)}h`;
+  }
+  if (elapsedMs < 7 * dayMs) {
+    return `${Math.floor(elapsedMs / dayMs)}d`;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+  }).format(new Date(timestamp));
 }

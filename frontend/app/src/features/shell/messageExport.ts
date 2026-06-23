@@ -1,7 +1,9 @@
 import {
   contentPartText,
+  type ContentMediaRefPart,
   type ContentPart,
   type JsonValue,
+  type LegacyContentMediaRefPart,
   type SessionRound,
   type SessionRoundMessage,
   type SessionRoundMessagePart,
@@ -311,21 +313,55 @@ function partText(part: SessionRoundMessagePart): string | null {
     ].join("\n");
   }
   if (kind === "media_ref") {
-    return [
-      "Media reference",
-      part.name ? `Name: ${part.name}` : "",
-      part.mime_type ? `Type: ${part.mime_type}` : "",
-      part.url ? `URL: ${part.url}` : "",
-    ].filter(Boolean).join("\n");
+    return mediaReferenceText({
+      mimeType: part.mime_type,
+      modality: part.modality,
+      name: part.name,
+      url: part.url,
+    });
   }
   return null;
 }
 
 function promptPartsText(parts: ContentPart[] | undefined): string | null {
   const partTexts = (parts ?? [])
-    .map((part) => contentPartText(part))
+    .map((part) => contentPartExportText(part))
     .filter(isPresentText);
   return partTexts.length > 0 ? partTexts.join("\n\n") : null;
+}
+
+function contentPartExportText(part: ContentPart): string | null {
+  const text = contentPartText(part);
+  if (isPresentText(text)) {
+    return text;
+  }
+  if (isContentMediaRefPart(part)) {
+    return mediaReferenceText({
+      assetId: part.asset_id,
+      mimeType: part.mime_type,
+      modality: part.modality,
+      name: part.name,
+      url: part.url,
+    });
+  }
+  if (isLegacyContentMediaRefPart(part)) {
+    return mediaReferenceText({
+      modality: part.media_type,
+      name: part.name,
+      url: part.url,
+    });
+  }
+  return null;
+}
+
+function isContentMediaRefPart(part: ContentPart): part is ContentMediaRefPart {
+  return "kind" in part && part.kind === "media_ref";
+}
+
+function isLegacyContentMediaRefPart(
+  part: ContentPart,
+): part is LegacyContentMediaRefPart {
+  return "part_kind" in part && part.part_kind === "media_ref";
 }
 
 function layoutPngBlocks(
@@ -535,6 +571,28 @@ function normalizedText(value: JsonValue | string | null | undefined): string {
     return value.trim();
   }
   return "";
+}
+
+function mediaReferenceText({
+  assetId,
+  mimeType,
+  modality,
+  name,
+  url,
+}: {
+  assetId?: string;
+  mimeType?: string;
+  modality?: string;
+  name?: string;
+  url?: string;
+}): string {
+  const mediaType = normalizedText(modality) || "media";
+  const label = normalizedText(name) || normalizedText(assetId) || normalizedText(url) || "reference";
+  return [
+    `[${mediaType}: ${label}]`,
+    mimeType ? `Type: ${mimeType}` : "",
+    url ? `URL: ${url}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 function jsonValueText(value: JsonValue): string {

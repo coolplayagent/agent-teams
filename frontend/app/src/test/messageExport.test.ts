@@ -82,6 +82,55 @@ describe("messageExport", () => {
     expect(html).toContain("Nested final output");
   });
 
+  it("exports media-only prompt parts as readable references", () => {
+    const html = buildMessagesHtml("session-1", [
+      {
+        intent_parts: [
+          {
+            asset_id: "asset-1",
+            kind: "media_ref",
+            mime_type: "image/png",
+            modality: "image",
+            name: "screenshot.png",
+            url: "https://example.test/assets/asset-1",
+          },
+        ],
+        run_id: "run-1",
+      },
+    ]);
+
+    expect(html).toContain("Round 1 prompt");
+    expect(html).toContain("[image: screenshot.png]");
+    expect(html).toContain("Type: image/png");
+    expect(html).toContain("URL: https://example.test/assets/asset-1");
+  });
+
+  it("exports mixed text and media injection parts", () => {
+    const html = buildMessagesHtml("session-1", [
+      {
+        injection_messages: [
+          {
+            content_parts: [
+              { kind: "text", text: "Inspect this output" },
+              {
+                asset_id: "asset-2",
+                kind: "media_ref",
+                modality: "image",
+                name: "render.png",
+              },
+            ],
+            source: "subagent",
+          },
+        ],
+        run_id: "run-1",
+      },
+    ]);
+
+    expect(html).toContain("Subagent injection");
+    expect(html).toContain("Inspect this output");
+    expect(html).toContain("[image: render.png]");
+  });
+
   it("downloads the HTML transcript", async () => {
     const createObjectUrl = mockDownloadUrl();
     const click = vi

@@ -242,6 +242,10 @@ function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
+  const tool = runtimeToolPart(entry);
+  if (tool !== null) {
+    return [tool];
+  }
   const approval = runtimeApprovalPart(entry);
   if (approval !== null) {
     return [approval];
@@ -416,6 +420,54 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
   };
 }
 
+function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
+  if (
+    entry.kind !== "tool_call" &&
+    entry.kind !== "tool_input_validation_failed" &&
+    entry.kind !== "tool_result"
+  ) {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null) {
+    return null;
+  }
+  const toolName = objectString(payload, "tool_name") || entry.text || "unknown_tool";
+  const callId = objectString(payload, "tool_call_id");
+  if (entry.kind === "tool_call") {
+    return {
+      action: "",
+      body: jsonValueText(payload.args ?? null),
+      callId,
+      error: false,
+      kind: "tool",
+      phase: "call",
+      toolName,
+    };
+  }
+  if (entry.kind === "tool_input_validation_failed") {
+    return {
+      action: "",
+      body: validationFailureBody(payload),
+      callId,
+      error: true,
+      kind: "tool",
+      phase: "validation",
+      toolName,
+    };
+  }
+  const result = payload.result ?? payload.content ?? null;
+  return {
+    action: "",
+    body: jsonValueText(result),
+    callId,
+    error: objectBoolean(payload, "error") || jsonObjectHasFailedOk(result),
+    kind: "tool",
+    phase: "result",
+    toolName,
+  };
+}
+
 function contentPartKind(part: ContentPart): string {
   if ("part_kind" in part) {
     return part.part_kind;
@@ -554,6 +606,13 @@ function approvalBody({
   ].filter(Boolean).join("\n");
 }
 
+function validationFailureBody(payload: Record<string, JsonValue>): string {
+  return [
+    objectString(payload, "reason"),
+    objectString(payload, "details"),
+  ].filter(Boolean).join("\n");
+}
+
 function approvalActionIsApproved(action: string): boolean {
   const normalized = action.trim().toLowerCase();
   return normalized.startsWith("approve") || normalized.startsWith("allow");
@@ -625,6 +684,13 @@ function objectString(
 ): string {
   const value = object[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function objectBoolean(
+  object: Record<string, JsonValue>,
+  key: string,
+): boolean {
+  return object[key] === true;
 }
 
 function approvalOptionLabels(value: JsonValue | undefined): string {

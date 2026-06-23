@@ -340,6 +340,86 @@ describe("MessageTimeline", () => {
     expect(screen.getByText(/Feedback: Unsafe command/)).toBeVisible();
   });
 
+  it("renders runtime tool calls, results, and validation failures", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-tools": {
+            runId: "run-tools",
+            status: "closed",
+            lastEventId: 3,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-tools:1:0",
+                sessionId: "session-1",
+                runId: "run-tools",
+                roleId: "MainAgent",
+                kind: "tool_call",
+                text: "execute_command",
+                payload: {
+                  args: { cmd: "npm test" },
+                  tool_call_id: "tool-live-1",
+                  tool_name: "execute_command",
+                },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-tools:2:1",
+                sessionId: "session-1",
+                runId: "run-tools",
+                roleId: "MainAgent",
+                kind: "tool_result",
+                text: "execute_command",
+                payload: {
+                  error: true,
+                  result: { error: "command failed", ok: false },
+                  tool_call_id: "tool-live-1",
+                  tool_name: "execute_command",
+                },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-tools:3:2",
+                sessionId: "session-1",
+                runId: "run-tools",
+                roleId: "MainAgent",
+                kind: "tool_input_validation_failed",
+                text: "execute_command",
+                payload: {
+                  details: "cmd is required",
+                  reason: "Input validation failed before tool execution.",
+                  tool_call_id: "tool-live-2",
+                  tool_name: "execute_command",
+                },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
+    expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
+    expect(screen.getByText("Tool error: execute_command")).toBeVisible();
+    expect(screen.getByText(/"ok": false/)).toBeVisible();
+    expect(screen.getByText(/"error": "command failed"/)).toBeVisible();
+    expect(screen.getByText("Tool validation: execute_command")).toBeVisible();
+    expect(
+      screen.getByText(/Input validation failed before tool execution/),
+    ).toBeVisible();
+    expect(screen.getByText(/cmd is required/)).toBeVisible();
+  });
+
   it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

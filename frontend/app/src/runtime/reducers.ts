@@ -12,6 +12,7 @@ export interface TimelineEntry {
   id: string;
   sessionId: string;
   runId: string;
+  instanceId?: string;
   roleId: string;
   kind: RunEventType | "message";
   text: string;
@@ -68,6 +69,7 @@ export function reduceRunEvent(
       id: `${runId}:${eventId}:${existing.entries.length}`,
       sessionId: event.session_id,
       runId,
+      instanceId: event.instance_id ?? "",
       roleId: event.role_id ?? event.instance_id ?? "agent",
       kind: event.event_type,
       text: eventText(event.payload, event.event_type),

@@ -381,6 +381,36 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("lo")).not.toBeInTheDocument();
   });
 
+  it("does not merge text deltas from distinct runtime instances", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        instanceId: "worker-a",
+        text: "A1",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        instanceId: "worker-b",
+        text: "B1",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        instanceId: "worker-a",
+        text: "A2",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("A1A2")).toBeVisible();
+    expect(screen.getByText("B1")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
+  });
+
   it("joins output_delta text parts onto the current runtime text segment", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({
@@ -449,6 +479,64 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
   });
 
+  it("splits runtime text around malformed text_delta fallback rows", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "before malformed text",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        payload: { parse_error: true, raw_payload_json: "{bad json" },
+        text: "malformed text fallback",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "after malformed text",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("before malformed text")).toBeVisible();
+    expect(screen.getByText("malformed text fallback")).toBeVisible();
+    expect(screen.getByText("after malformed text")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
+  it("splits runtime text around malformed output_delta fallback rows", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "before malformed output",
+      }),
+      runtimeOutputDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        payload: { output: [{ kind: "unsupported", text: "ignored" }] },
+        text: "malformed output fallback",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "after malformed output",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("before malformed output")).toBeVisible();
+    expect(screen.getByText("malformed output fallback")).toBeVisible();
+    expect(screen.getByText("after malformed output")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
   it("splits runtime text segments around tool events", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({
@@ -474,6 +562,45 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Tool call: execute_command")).toBeVisible();
     expect(screen.getByText("after tool")).toBeVisible();
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
+  it("splits runtime text segments around approval and thinking events", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "before approval",
+      }),
+      runtimeApprovalRequestEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "after approval",
+      }),
+      runtimeThinkingDeltaEntry({
+        eventId: 4,
+        id: "run-output:4:3",
+        text: "thinking split",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 5,
+        id: "run-output:5:4",
+        text: "after thinking",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("before approval")).toBeVisible();
+    expect(screen.getByText("Approval requested: execute_command")).toBeVisible();
+    expect(screen.getByText("after approval")).toBeVisible();
+    expect(screen.getByText("thinking split")).toBeVisible();
+    expect(screen.getByText("after thinking")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(5);
   });
 
   it("renders runtime output_delta media_ref parts from payload output", async () => {
@@ -1204,21 +1331,26 @@ function setRuntimeEntries(entries: TimelineEntry[]): void {
 
 function runtimeTextDeltaEntry({
   id,
+  instanceId = "",
+  payload,
   text,
   eventId,
 }: {
   id: string;
+  instanceId?: string;
+  payload?: TimelineEntry["payload"];
   text: string;
   eventId: number;
 }): TimelineEntry {
   return {
     id,
+    instanceId,
     sessionId: "session-1",
     runId: "run-output",
     roleId: "MainAgent",
     kind: "text_delta",
     text,
-    payload: { text },
+    payload: payload ?? { text },
     eventId,
     occurredAt: "2026-06-23T00:00:00Z",
   };
@@ -1226,17 +1358,20 @@ function runtimeTextDeltaEntry({
 
 function runtimeOutputDeltaEntry({
   id,
+  instanceId = "",
   payload,
   text = "output delta",
   eventId = 1,
 }: {
   id: string;
+  instanceId?: string;
   payload: TimelineEntry["payload"];
   text?: string;
   eventId?: number;
 }): TimelineEntry {
   return {
     id,
+    instanceId,
     sessionId: "session-1",
     runId: "run-output",
     roleId: "MainAgent",
@@ -1250,13 +1385,16 @@ function runtimeOutputDeltaEntry({
 
 function runtimeToolCallEntry({
   id,
+  instanceId = "",
   eventId,
 }: {
   id: string;
+  instanceId?: string;
   eventId: number;
 }): TimelineEntry {
   return {
     id,
+    instanceId,
     sessionId: "session-1",
     runId: "run-output",
     roleId: "MainAgent",
@@ -1267,6 +1405,58 @@ function runtimeToolCallEntry({
       tool_call_id: "tool-live-1",
       tool_name: "execute_command",
     },
+    eventId,
+    occurredAt: "2026-06-23T00:00:00Z",
+  };
+}
+
+function runtimeApprovalRequestEntry({
+  id,
+  instanceId = "",
+  eventId,
+}: {
+  id: string;
+  instanceId?: string;
+  eventId: number;
+}): TimelineEntry {
+  return {
+    id,
+    instanceId,
+    sessionId: "session-1",
+    runId: "run-output",
+    roleId: "MainAgent",
+    kind: "tool_approval_requested",
+    text: "execute_command",
+    payload: {
+      args_preview: "npm test",
+      tool_call_id: "approval-live-1",
+      tool_name: "execute_command",
+    },
+    eventId,
+    occurredAt: "2026-06-23T00:00:00Z",
+  };
+}
+
+function runtimeThinkingDeltaEntry({
+  id,
+  instanceId = "",
+  text,
+  eventId,
+}: {
+  id: string;
+  instanceId?: string;
+  text: string;
+  eventId: number;
+}): TimelineEntry {
+  return {
+    id,
+    instanceId,
+    sessionId: "session-1",
+    runId: "run-output",
+    roleId: "MainAgent",
+    kind: "thinking_delta",
+    text,
+    payload: { part_index: 0, text },
     eventId,
     occurredAt: "2026-06-23T00:00:00Z",
   };

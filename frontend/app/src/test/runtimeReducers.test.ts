@@ -44,6 +44,24 @@ describe("runtime reducers", () => {
     });
   });
 
+  it("preserves instance ids for runtime stream grouping", () => {
+    const state = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        instance_id: "worker-a",
+        role_id: "MainAgent",
+        payload_json: JSON.stringify({ text: "hello" }),
+      }),
+    );
+
+    expect(state.runs["run-1"].entries[0]).toMatchObject({
+      instanceId: "worker-a",
+      roleId: "MainAgent",
+    });
+  });
+
   it("reduces AG-UI envelopes without reparsing payload JSON", () => {
     const state = reduceRunEvent(initialRuntimeState, agUiEvent());
 

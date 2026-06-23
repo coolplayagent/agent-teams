@@ -439,7 +439,7 @@ function createRuntimeTextAccumulator(
   return {
     part,
     row: {
-      key: `runtime-text:${entry.runId}:${entry.roleId}:${sequence}`,
+      key: `runtime-text:${entry.runId}:${runtimeStreamKey(entry)}:${sequence}`,
       role: entry.roleId,
       text,
       kind: entry.kind,
@@ -458,7 +458,11 @@ function closeRuntimeTextSegment(
 }
 
 function runtimeTextGroupKey(entry: TimelineEntry): string {
-  return `${entry.runId}:${entry.roleId}`;
+  return `${entry.runId}:${runtimeStreamKey(entry)}`;
+}
+
+function runtimeStreamKey(entry: TimelineEntry): string {
+  return entry.instanceId || entry.roleId;
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
@@ -847,7 +851,7 @@ function runtimeThinkingRow(
     text: "",
   };
   return {
-    key: `runtime-thinking:${entry.runId}:${entry.roleId}:${partIndex}:${entry.eventId}`,
+    key: `runtime-thinking:${entry.runId}:${runtimeStreamKey(entry)}:${partIndex}:${entry.eventId}`,
     role: entry.roleId,
     text: "",
     kind: entry.kind,
@@ -858,7 +862,7 @@ function runtimeThinkingRow(
 }
 
 function runtimeThinkingGroupKey(entry: TimelineEntry, partIndex: string): string {
-  return `${entry.runId}:${entry.roleId}:${partIndex}`;
+  return `${entry.runId}:${runtimeStreamKey(entry)}:${partIndex}`;
 }
 
 function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {

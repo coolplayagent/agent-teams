@@ -109,6 +109,55 @@ describe("MessageTimeline", () => {
     );
     expect(writeText).not.toHaveBeenCalledWith("final chunk only");
   });
+
+  it("renders image media references with previewable images", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-image",
+        parts: [
+          { kind: "text", text: "Here is the chart." },
+          {
+            asset_id: "asset-1",
+            kind: "media_ref",
+            mime_type: "image/png",
+            modality: "image",
+            name: "chart.png",
+            url: "https://example.test/chart.png",
+          },
+        ],
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Here is the chart.")).toBeVisible();
+    const image = await screen.findByRole("img", { name: "chart.png" });
+    expect(image).toHaveAttribute("src", "https://example.test/chart.png");
+    expect(screen.getByText("chart.png")).toBeVisible();
+  });
+
+  it("renders non-image media references as resource links", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-audio",
+        parts: [
+          {
+            media_type: "audio/mpeg",
+            name: "voice.mp3",
+            part_kind: "media_ref",
+            url: "https://example.test/voice.mp3",
+          },
+        ],
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    const link = await screen.findByRole("link", { name: "voice.mp3" });
+    expect(link).toHaveAttribute("href", "https://example.test/voice.mp3");
+  });
 });
 
 function renderTimeline() {

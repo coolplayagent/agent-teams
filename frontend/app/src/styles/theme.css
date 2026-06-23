@@ -296,10 +296,48 @@ body {
 }
 
 .at-message-content {
+  display: grid;
+  gap: 10px;
   max-width: 920px;
-  margin: 0 !important;
   color: var(--at-text);
+}
+
+.at-message-text {
+  margin: 0 !important;
   white-space: pre-wrap;
+}
+
+.at-message-media {
+  display: inline-grid;
+  justify-items: start;
+  gap: 6px;
+  width: fit-content;
+  max-width: min(320px, 100%);
+  margin: 0;
+}
+
+.at-message-media .ant-image {
+  display: block;
+  max-width: 100%;
+}
+
+.at-message-media-image {
+  width: min(260px, 100%);
+  max-height: 132px;
+  object-fit: contain;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-surface);
+}
+
+.at-message-media figcaption,
+.at-message-media-link {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-message-media-link {
+  width: fit-content;
 }
 
 .at-token-usage {

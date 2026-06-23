@@ -103,9 +103,8 @@ function hasUsage(usage: SessionTokenUsagePayload | undefined): boolean {
 }
 
 interface ContextUsageSummary {
-  contextWindow: number;
+  contextWindow: number | null;
   latestInputTokens: number;
-  ratio: number;
   roleId: string;
 }
 
@@ -115,16 +114,15 @@ function selectContextUsage(
 ): ContextUsageSummary | null {
   const candidates = Object.values(usage?.by_role ?? {})
     .map((role) => {
-      const contextWindow = safeNumber(role.context_window);
-      if (contextWindow === 0) {
-        return null;
-      }
       const latestInputTokens =
         safeNumber(role.latest_input_tokens) || safeNumber(role.input_tokens);
+      if (latestInputTokens === 0) {
+        return null;
+      }
+      const contextWindow = safeNumber(role.context_window);
       return {
-        contextWindow,
+        contextWindow: contextWindow > 0 ? contextWindow : null,
         latestInputTokens,
-        ratio: latestInputTokens / contextWindow,
         roleId: role.role_id,
       };
     })
@@ -175,9 +173,12 @@ function buildDetailTitle(
     `output ${formatInteger(usage.total_output_tokens)}${reasoningPart}`,
   ];
   if (contextUsage !== null) {
-    details.push(
-      `context ${contextUsage.roleId} ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextUsage.contextWindow)} (${formatContextPercent(contextUsage)})`,
-    );
+    const contextWindow = contextUsage.contextWindow;
+    const contextDetail =
+      contextWindow === null
+        ? `Latest request input tokens: ${formatInteger(contextUsage.latestInputTokens)}`
+        : `Latest request input / context window: ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextWindow)}`;
+    details.push(`context ${contextUsage.roleId} ${contextDetail}`);
   }
   return details.join(" · ");
 }
@@ -186,18 +187,11 @@ function formatContextLabel(contextUsage: ContextUsageSummary | null): string {
   if (contextUsage === null) {
     return "--";
   }
-  return `${formatCompact(contextUsage.latestInputTokens)} / ${formatCompact(contextUsage.contextWindow)}`;
-}
-
-function formatContextPercent(contextUsage: ContextUsageSummary | null): string {
-  if (contextUsage === null) {
-    return "--";
-  }
-  const percent = contextUsage.ratio * 100;
-  if (percent > 0 && percent < 1) {
-    return "<1%";
-  }
-  return `${Math.round(percent)}%`;
+  const upper =
+    contextUsage.contextWindow === null
+      ? "--"
+      : formatCompact(contextUsage.contextWindow);
+  return `${formatCompact(contextUsage.latestInputTokens)} / ${upper}`;
 }
 
 function normalizeRoleId(roleId: string): string {

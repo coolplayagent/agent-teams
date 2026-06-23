@@ -354,3 +354,5 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Addressed reviewer `019ef367-7f06-75d3-9d4f-c0b9ff698349` findings by replacing highest-loaded-role selection with explicit `normal_root_role_id`/MainAgent fallback semantics.
 - Changed the visible Context value from a percentage to the V1-style `latest input / context window` label.
 - Added explicit loading, unavailable, and missing-window title coverage.
+- Addressed reviewer `019ef36e-160d-7de2-afa2-792d3c6daa86` finding by rendering `latest input / --` and the V1-style latest-input title when the selected role has no context window.
+- Re-ran `npm run test -- --run SessionTokenUsage.test.tsx`, `npm run typecheck`, `npm run lint`, and `npm run build` in `frontend/app`.

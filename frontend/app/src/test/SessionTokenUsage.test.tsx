@@ -80,9 +80,11 @@ describe("SessionTokenUsage", () => {
         total: 1500,
       }),
     );
-    expect(await screen.findByText("--")).toBeVisible();
+    expect(await screen.findByText("1k / --")).toBeVisible();
     await waitFor(() =>
-      expect(screen.getByTitle(/total 1,500/)).toHaveAttribute(
+      expect(
+        screen.getByTitle(/Latest request input tokens: 1,000/),
+      ).toHaveAttribute(
         "data-state",
         "ready",
       ),

@@ -446,16 +446,31 @@ describe("MessageTimeline", () => {
         message_id: "assistant-thinking",
         role_id: "MainAgent",
       },
+      {
+        message: {
+          parts: [
+            {
+              content: "Current shape thought",
+              kind: "thinking",
+              part_index: "3",
+            },
+          ],
+        },
+        message_id: "assistant-current-thinking",
+        role_id: "MainAgent",
+      },
     ]);
 
     const { container } = renderTimeline();
 
     expect(await screen.findByText("Final answer")).toBeVisible();
-    const thinkingBlock = container.querySelector(".at-message-thinking");
-    expect(thinkingBlock).not.toBeNull();
-    expect(thinkingBlock).toHaveAttribute("data-part-index", "2");
-    expect(thinkingBlock).toHaveTextContent("Thinking");
-    expect(thinkingBlock?.querySelector("strong")).toHaveTextContent("thought");
+    const thinkingBlocks = container.querySelectorAll(".at-message-thinking");
+    expect(thinkingBlocks).toHaveLength(2);
+    expect(thinkingBlocks[0]).toHaveAttribute("data-part-index", "2");
+    expect(thinkingBlocks[0]).toHaveTextContent("Thinking");
+    expect(thinkingBlocks[0]?.querySelector("strong")).toHaveTextContent("thought");
+    expect(thinkingBlocks[1]).toHaveAttribute("data-part-index", "3");
+    expect(thinkingBlocks[1]).toHaveTextContent("Current shape thought");
   });
 
   it("keeps live thinking open when part index is missing", async () => {
@@ -570,6 +585,102 @@ describe("MessageTimeline", () => {
     expect(thinkingBlock).toHaveAttribute("data-streaming", "false");
     expect(thinkingBlock).not.toHaveAttribute("open");
     expect(screen.queryByText("Live")).not.toBeInTheDocument();
+  });
+
+  it("drops empty thinking blocks when start is followed by finish", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-empty-thinking": {
+            runId: "run-empty-thinking",
+            status: "closed",
+            lastEventId: 2,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-empty-thinking:1:0",
+                sessionId: "session-1",
+                runId: "run-empty-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_started",
+                text: "thinking started",
+                payload: { part_index: 0 },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-empty-thinking:2:1",
+                sessionId: "session-1",
+                runId: "run-empty-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_finished",
+                text: "thinking finished",
+                payload: { part_index: 0 },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(container.querySelector(".at-message-thinking")).toBeNull();
+    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
+  });
+
+  it("drops empty thinking blocks when start is followed by a terminal event", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-empty-terminal-thinking": {
+            runId: "run-empty-terminal-thinking",
+            status: "closed",
+            lastEventId: 2,
+            seenEventKeys: [],
+            terminalEventType: "run_completed",
+            entries: [
+              {
+                id: "run-empty-terminal-thinking:1:0",
+                sessionId: "session-1",
+                runId: "run-empty-terminal-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_started",
+                text: "thinking started",
+                payload: { part_index: 0 },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-empty-terminal-thinking:2:1",
+                sessionId: "session-1",
+                runId: "run-empty-terminal-thinking",
+                roleId: "MainAgent",
+                kind: "run_completed",
+                text: "run completed",
+                payload: { message: "run completed" },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("run completed")).toBeVisible();
+    expect(container.querySelector(".at-message-thinking")).toBeNull();
+    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
   });
 
   it("falls back to runtime text for malformed thinking payloads", async () => {

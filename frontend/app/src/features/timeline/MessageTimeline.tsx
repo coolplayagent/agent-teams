@@ -216,6 +216,7 @@ interface FallbackVirtualItem {
 }
 
 interface RuntimeThinkingAccumulator {
+  inserted: boolean;
   part: TimelineThinkingPart;
   row: TimelineRow;
 }
@@ -524,12 +525,8 @@ function applyRuntimeThinkingEvent(
   const groupKey = runtimeThinkingGroupKey(entry, partIndex);
   if (entry.kind === "thinking_started") {
     if (!activeThinking.has(groupKey)) {
-      const row = runtimeThinkingRow(entry, partIndex);
-      const part = row.parts[0];
-      if (part?.kind === "thinking") {
-        rows.push(row);
-        activeThinking.set(groupKey, { part, row });
-      }
+      const accumulator = createRuntimeThinkingAccumulator(entry, partIndex);
+      activeThinking.set(groupKey, accumulator);
     }
     return true;
   }
@@ -538,14 +535,18 @@ function applyRuntimeThinkingEvent(
     if (!deltaText) {
       return false;
     }
-    const accumulator = activeThinking.get(groupKey)
-      ?? createRuntimeThinkingAccumulator(entry, partIndex, rows, activeThinking);
-    if (accumulator === null) {
-      return false;
-    }
+    const accumulator = ensureRuntimeThinkingAccumulator(
+      entry,
+      partIndex,
+      activeThinking,
+    );
     accumulator.part.text += deltaText;
     accumulator.part.streaming = true;
     accumulator.row.text = accumulator.part.text;
+    if (!accumulator.inserted) {
+      rows.push(accumulator.row);
+      accumulator.inserted = true;
+    }
     return true;
   }
   if (entry.kind === "thinking_finished") {
@@ -575,17 +576,27 @@ function closeActiveThinkingForRun(
 function createRuntimeThinkingAccumulator(
   entry: TimelineEntry,
   partIndex: string,
-  rows: TimelineRow[],
-  activeThinking: Map<string, RuntimeThinkingAccumulator>,
-): RuntimeThinkingAccumulator | null {
+): RuntimeThinkingAccumulator {
   const row = runtimeThinkingRow(entry, partIndex);
   const part = row.parts[0];
   if (part?.kind !== "thinking") {
-    return null;
+    throw new Error("Runtime thinking row must contain a thinking part.");
   }
-  rows.push(row);
-  const accumulator = { part, row };
-  activeThinking.set(runtimeThinkingGroupKey(entry, partIndex), accumulator);
+  return { inserted: false, part, row };
+}
+
+function ensureRuntimeThinkingAccumulator(
+  entry: TimelineEntry,
+  partIndex: string,
+  activeThinking: Map<string, RuntimeThinkingAccumulator>,
+): RuntimeThinkingAccumulator {
+  const groupKey = runtimeThinkingGroupKey(entry, partIndex);
+  const existing = activeThinking.get(groupKey);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const accumulator = createRuntimeThinkingAccumulator(entry, partIndex);
+  activeThinking.set(groupKey, accumulator);
   return accumulator;
 }
 

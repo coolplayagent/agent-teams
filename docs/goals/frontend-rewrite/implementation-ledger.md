@@ -390,3 +390,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
 - Reviewer subagent `019ef473-4994-7483-b51e-9e2a1560706a` returned PASS.
+
+## 2026-06-23 Recovery Paused Subagent Display Batch
+
+### Scope
+- Replaced the React recovery snapshot `paused_subagent` contract with an explicit typed shape.
+- Rendered a compact RecoveryBar paused-subagent panel from real recovery snapshot state.
+- Kept standalone Resume hidden while a paused subagent owns the follow-up path.
+- Filtered empty and reserved paused-subagent roles so dirty snapshots do not display MainAgent or Coordinator as blocked subagents.
+- Added focused React coverage for paused subagent display and reserved-role filtering.
+
+### Verification
+- `npm run test -- --run RecoveryBar.test.tsx` in `frontend/app` passed with 11 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- Reviewer subagent `019ef479-689e-7da1-9653-c7f7400bd9c9` returned PASS.

@@ -13,6 +13,7 @@ import type {
   PendingToolApproval,
   PendingUserQuestion,
   RecoveryBackgroundTask,
+  RecoveryPausedSubagent,
   ToolApprovalAction,
   ToolApprovalOption,
   UserQuestionAnswerSubmission,
@@ -53,6 +54,9 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const activeRun = recoveryQuery.data?.active_run ?? null;
   const pendingApprovals = recoveryQuery.data?.pending_tool_approvals ?? [];
   const pendingQuestions = recoveryQuery.data?.pending_user_questions ?? [];
+  const pausedSubagent = visiblePausedSubagent(
+    recoveryQuery.data?.paused_subagent ?? null,
+  );
   const activeBackgroundTasks = (recoveryQuery.data?.background_tasks ?? []).filter(
     isActiveBackgroundTask,
   );
@@ -62,7 +66,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     activeRun,
     pendingApprovals,
     pendingQuestions,
-    recoveryQuery.data?.paused_subagent ?? null,
+    pausedSubagent,
     runStreamController.activeRunId,
   );
 
@@ -202,6 +206,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
             }}
             tasks={activeBackgroundTasks}
           />
+          <PausedSubagentPanel pausedSubagent={pausedSubagent} />
           <PendingApprovals
             activeRunId={activeRun.run_id}
             approvals={pendingApprovals}
@@ -245,6 +250,36 @@ interface ApprovalActionRequest {
 interface BackgroundTaskStopRequest {
   backgroundTaskId: string;
   runId: string;
+}
+
+interface PausedSubagentPanelProps {
+  pausedSubagent: RecoveryPausedSubagent | null;
+}
+
+function PausedSubagentPanel({ pausedSubagent }: PausedSubagentPanelProps) {
+  if (pausedSubagent === null) {
+    return null;
+  }
+  const detail = pausedSubagentDetail(pausedSubagent);
+  return (
+    <div className="at-recovery-panel">
+      <div className="at-recovery-item">
+        <div className="at-recovery-copy">
+          <Typography.Text strong>
+            Paused subagent: {pausedSubagentLabel(pausedSubagent)}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            Waiting for follow-up in the paused subagent panel.
+          </Typography.Text>
+          {detail ? (
+            <Typography.Text type="secondary" ellipsis>
+              {detail}
+            </Typography.Text>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface BackgroundTasksPanelProps {
@@ -580,6 +615,55 @@ function questionOptionLabel(label: string, description: string | undefined): st
 
 function selectionKey(questionId: string, promptIndex: number): string {
   return `${questionId}:${promptIndex}`;
+}
+
+function visiblePausedSubagent(
+  pausedSubagent: RecoveryPausedSubagent | null,
+): RecoveryPausedSubagent | null {
+  if (pausedSubagent === null) {
+    return null;
+  }
+  const roleId = pausedSubagent.role_id?.trim() ?? "";
+  const instanceId = pausedSubagent.instance_id?.trim() ?? "";
+  if (isReservedPausedSubagentRole(roleId)) {
+    return null;
+  }
+  if (!roleId && !instanceId) {
+    return null;
+  }
+  return {
+    instance_id: instanceId,
+    reason: pausedSubagent.reason?.trim() || null,
+    role_id: roleId,
+    task_id: pausedSubagent.task_id?.trim() || null,
+  };
+}
+
+function pausedSubagentLabel(pausedSubagent: RecoveryPausedSubagent): string {
+  const roleId = pausedSubagent.role_id?.trim() ?? "";
+  const instanceId = pausedSubagent.instance_id?.trim() ?? "";
+  return roleId || instanceId || "unknown";
+}
+
+function isReservedPausedSubagentRole(roleId: string): boolean {
+  const compactRoleId = roleId.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  return (
+    compactRoleId === "mainagent" ||
+    compactRoleId === "coordinator" ||
+    compactRoleId === "coordinatoragent"
+  );
+}
+
+function pausedSubagentDetail(pausedSubagent: RecoveryPausedSubagent): string {
+  return [
+    pausedSubagent.instance_id?.trim()
+      ? `instance: ${pausedSubagent.instance_id.trim()}`
+      : "",
+    pausedSubagent.task_id?.trim() ? `task: ${pausedSubagent.task_id.trim()}` : "",
+    pausedSubagent.reason?.trim() ? pausedSubagent.reason.trim() : "",
+  ]
+    .filter(Boolean)
+    .join(" | ");
 }
 
 function isActiveBackgroundTask(task: RecoveryBackgroundTask): boolean {

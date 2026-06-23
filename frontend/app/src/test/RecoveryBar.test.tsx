@@ -315,6 +315,63 @@ describe("RecoveryBar", () => {
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
   });
 
+  it("shows a paused subagent recovery state instead of a standalone resume action", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "paused",
+          phase: "awaiting_subagent_followup",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+        paused_subagent: {
+          instance_id: "inst-2",
+          role_id: "spec_coder",
+          task_id: "task-7",
+          reason: "waiting for local follow-up",
+        },
+      }),
+    );
+
+    renderRecoveryBar();
+
+    await screen.findByText("Paused subagent: spec_coder");
+    expect(
+      screen.getByText("Waiting for follow-up in the paused subagent panel."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("instance: inst-2 | task: task-7 | waiting for local follow-up"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+  });
+
+  it("ignores reserved paused subagent roles from recovery snapshots", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "paused",
+          phase: "awaiting_subagent_followup",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+        paused_subagent: {
+          instance_id: "main-inst",
+          role_id: "MainAgent",
+          task_id: "task-main",
+        },
+      }),
+    );
+
+    renderRecoveryBar();
+
+    await screen.findByText("Run run-1 is awaiting_subagent_followup");
+    expect(screen.queryByText(/Paused subagent:/)).not.toBeInTheDocument();
+  });
+
   it("shows active background tasks and stops them through the run API", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

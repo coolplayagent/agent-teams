@@ -436,7 +436,7 @@ export interface RecoverySnapshot {
   background_tasks: RecoveryBackgroundTask[];
   pending_tool_approvals: PendingToolApproval[];
   pending_user_questions: PendingUserQuestion[];
-  paused_subagent: JsonValue | null;
+  paused_subagent: RecoveryPausedSubagent | null;
   round_snapshot: JsonValue | null;
 }
 
@@ -450,6 +450,13 @@ export interface RecoveryRun {
   should_show_recover?: boolean;
   pending_tool_approval_count?: number;
   pending_user_question_count?: number;
+}
+
+export interface RecoveryPausedSubagent {
+  instance_id?: string;
+  role_id?: string;
+  task_id?: string | null;
+  reason?: string | null;
 }
 
 export type RecoveryBackgroundTaskStatus =

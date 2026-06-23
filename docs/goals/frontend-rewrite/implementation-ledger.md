@@ -151,3 +151,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 15 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Timeline Copy Answer Batch
+
+### Scope
+- Added a compact timeline action for copying the latest non-user answer.
+- Disabled copy while the current session still has an open runtime stream to avoid copying stale or unstable output.
+- Added React component coverage for clipboard output from hydrated message history.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run MessageTimeline.test.tsx` in `frontend/app` passed with 1 test.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 16 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

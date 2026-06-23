@@ -1,10 +1,12 @@
-import { Empty, Skeleton, Typography } from "antd";
+import { App, Button, Empty, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Copy } from "lucide-react";
 import { useMemo, useRef } from "react";
 
 import { listSessionMessages } from "../../api/client";
 import { contentPartText, type TimelineMessage } from "../../api/contracts";
+import type { RunEventType } from "../../runtime/events";
 import type { TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 
@@ -13,6 +15,7 @@ interface MessageTimelineProps {
 }
 
 export function MessageTimeline({ sessionId }: MessageTimelineProps) {
+  const { message } = App.useApp();
   const parentRef = useRef<HTMLDivElement | null>(null);
   const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const messagesQuery = useQuery({
@@ -36,6 +39,24 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     ],
     [messages, runtimeEntries],
   );
+  const streamOpenForSession = useMemo(
+    () =>
+      Object.values(runtimeState.runs).some(
+        (runState) =>
+          runState.status !== "closed" &&
+          runState.entries.some((entry) => entry.sessionId === sessionId),
+      ),
+    [runtimeState.runs, sessionId],
+  );
+  const lastAnswer = useMemo(() => {
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const row = rows[index];
+      if (row !== undefined && row.copyable) {
+        return row;
+      }
+    }
+    return undefined;
+  }, [rows]);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -77,6 +98,24 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
 
   return (
     <div className="at-timeline" ref={parentRef}>
+      <div className="at-timeline-toolbar">
+        <Tooltip
+          title={
+            streamOpenForSession ? "Copy is available after streaming finishes" : "Copy last answer"
+          }
+        >
+          <Button
+            aria-label="Copy last answer"
+            disabled={lastAnswer === undefined || streamOpenForSession}
+            icon={<Copy size={15} />}
+            onClick={() => {
+              void copyLastAnswer(lastAnswer, message);
+            }}
+            size="small"
+            type="text"
+          />
+        </Tooltip>
+      </div>
       <div
         className="at-timeline-virtual"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
@@ -107,15 +146,21 @@ interface TimelineRow {
   key: string;
   role: string;
   text: string;
+  kind: RunEventType | "message";
   source: "message" | "runtime";
+  copyable: boolean;
 }
 
 function messageToRow(message: TimelineMessage, index: number): TimelineRow {
+  const role = message.role_id ?? message.role ?? "agent";
+  const text = messageText(message);
   return {
     key: `message:${message.message_id ?? index}`,
-    role: message.role_id ?? message.role ?? "agent",
-    text: messageText(message),
+    role,
+    text,
+    kind: "message",
     source: "message",
+    copyable: isAnswerRole(role) && text.trim().length > 0,
   };
 }
 
@@ -124,7 +169,12 @@ function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
     key: `runtime:${entry.id}`,
     role: entry.roleId,
     text: entry.text,
+    kind: entry.kind,
     source: "runtime",
+    copyable:
+      isAnswerRole(entry.roleId) &&
+      (entry.kind === "text_delta" || entry.kind === "output_delta") &&
+      entry.text.trim().length > 0,
   };
 }
 
@@ -139,4 +189,28 @@ function messageText(message: TimelineMessage): string {
     }
   }
   return message.entry_type ?? "message";
+}
+
+function isAnswerRole(role: string): boolean {
+  return role.trim().toLowerCase() !== "user";
+}
+
+async function copyLastAnswer(
+  row: TimelineRow | undefined,
+  messenger: ReturnType<typeof App.useApp>["message"],
+): Promise<void> {
+  const text = row?.text.trim() ?? "";
+  if (!text) {
+    void messenger.warning("No answer content to copy.");
+    return;
+  }
+  try {
+    if (navigator.clipboard?.writeText === undefined) {
+      throw new Error("Clipboard is unavailable.");
+    }
+    await navigator.clipboard.writeText(text);
+    void messenger.success("Last answer copied.");
+  } catch (_error) {
+    void messenger.error("Clipboard is unavailable.");
+  }
 }

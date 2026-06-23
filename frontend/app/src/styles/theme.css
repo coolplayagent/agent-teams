@@ -241,6 +241,17 @@ body {
   place-items: center;
 }
 
+.at-timeline-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+  padding: 2px 0;
+  background: var(--at-bg);
+}
+
 .at-timeline-virtual {
   position: relative;
 }

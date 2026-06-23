@@ -193,3 +193,17 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 18 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Current Session Indicator Batch
+
+### Scope
+- Replaced the hard-coded React topbar title with a current-session indicator backed by the sidebar session query cache.
+- Displayed the selected session title or id plus active run status when available.
+- Added focused React coverage for title/status rendering and selected-session fallback.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run CurrentSessionIndicator.test.tsx` in `frontend/app` passed with 2 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 20 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

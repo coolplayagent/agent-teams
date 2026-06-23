@@ -75,6 +75,13 @@ body {
   font-weight: 600;
 }
 
+.at-current-session {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .at-health-button {
   color: var(--at-text-muted);
   background: transparent;

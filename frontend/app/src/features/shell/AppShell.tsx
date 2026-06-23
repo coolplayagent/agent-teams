@@ -3,7 +3,6 @@ import {
   Layout,
   Space,
   Tooltip,
-  Typography,
   theme,
   App,
 } from "antd";
@@ -19,8 +18,9 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { getHealth, listSessionMessages } from "../../api/client";
+import { getHealth, listSessionMessages, listSidebarSessions } from "../../api/client";
 import { Composer } from "../composer/Composer";
+import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { RecoveryBar } from "../recovery/RecoveryBar";
 import { SessionTokenUsage } from "./SessionTokenUsage";
@@ -54,6 +54,10 @@ export function AppShell() {
     queryFn: getHealth,
     refetchInterval: 8000,
   });
+  const sidebarSessionsQuery = useQuery({
+    queryKey: ["sessions", "sidebar"],
+    queryFn: () => listSidebarSessions(false),
+  });
 
   const healthLabel = useMemo(() => {
     if (healthQuery.isLoading) {
@@ -64,6 +68,13 @@ export function AppShell() {
     }
     return healthQuery.data?.status ?? "Ready";
   }, [healthQuery.data?.status, healthQuery.isError, healthQuery.isLoading]);
+  const selectedSession = useMemo(
+    () =>
+      sidebarSessionsQuery.data?.find(
+        (session) => session.session_id === selectedSessionId,
+      ) ?? null,
+    [selectedSessionId, sidebarSessionsQuery.data],
+  );
 
   return (
     <Layout className="at-shell">
@@ -77,7 +88,10 @@ export function AppShell() {
               type="text"
             />
           </Tooltip>
-          <Typography.Text className="at-workspace-title">relay-teams</Typography.Text>
+          <CurrentSessionIndicator
+            selectedSessionId={selectedSessionId}
+            session={selectedSession}
+          />
         </div>
         <Space size={8} className="at-topbar-right">
           <Button

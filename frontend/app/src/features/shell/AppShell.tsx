@@ -9,8 +9,10 @@ import {
 import {
   Activity,
   Menu,
+  MessageSquare,
   Moon,
   RefreshCcw,
+  Search,
   Settings,
   Sun,
 } from "lucide-react";
@@ -29,7 +31,10 @@ import { MessageExportMenu } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { RecoveryBar } from "../recovery/RecoveryBar";
 import { SessionTokenUsage } from "./SessionTokenUsage";
-import { SessionsSidebar } from "../sessions/SessionsSidebar";
+import {
+  SessionsSidebar,
+  type SidebarNavigationItem,
+} from "../sessions/SessionsSidebar";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
@@ -91,6 +96,37 @@ export function AppShell() {
         (session) => session.session_id === selectedSessionId,
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
+  );
+  const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
+    () => [
+      {
+        active: activeView === "chat",
+        icon: <MessageSquare size={15} />,
+        key: "chat",
+        label: "Chat",
+        onSelect: () => setActiveView("chat"),
+      },
+      {
+        icon: <Search size={15} />,
+        key: "search",
+        label: "Search",
+        onSelect: () => window.dispatchEvent(new Event("agent-teams-focus-session-search")),
+      },
+      {
+        active: activeView === "observability",
+        icon: <Activity size={15} />,
+        key: "observability",
+        label: "Observability",
+        onSelect: () => setActiveView("observability"),
+      },
+      {
+        icon: <Settings size={15} />,
+        key: "settings",
+        label: "Settings",
+        onSelect: () => setSettingsOpen(true),
+      },
+    ],
+    [activeView],
   );
 
   useEffect(() => {
@@ -189,7 +225,7 @@ export function AppShell() {
             theme="light"
             width={sidebarWidth}
           >
-            <SessionsSidebar />
+            <SessionsSidebar navigationItems={sidebarNavigationItems} />
             <div
               aria-label="Resize sidebar"
               aria-orientation="vertical"

@@ -180,6 +180,61 @@ body {
   justify-content: flex-start;
 }
 
+.at-sidebar-nav {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-sidebar-nav-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-sidebar-nav-item:hover,
+.at-sidebar-nav-item:focus-visible,
+.at-sidebar-nav-item.is-active {
+  background: var(--at-surface-muted);
+  outline: none;
+}
+
+.at-sidebar-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--at-text-muted);
+}
+
+.at-sidebar-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
 .at-sidebar-search-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 32px;

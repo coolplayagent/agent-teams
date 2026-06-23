@@ -8,7 +8,10 @@ import {
   listSidebarSessions,
   listWorkspaces,
 } from "../api/client";
-import { SessionsSidebar } from "../features/sessions/SessionsSidebar";
+import {
+  SessionsSidebar,
+  type SidebarNavigationItem,
+} from "../features/sessions/SessionsSidebar";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
@@ -32,6 +35,50 @@ afterEach(() => {
 });
 
 describe("SessionsSidebar", () => {
+  it("renders real primary navigation actions and focuses search shortcuts", async () => {
+    const openObservability = vi.fn();
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar({
+      navigationItems: [
+        {
+          key: "observability",
+          label: "Observability",
+          onSelect: openObservability,
+        },
+      ],
+    });
+
+    expect(await screen.findByText("Workspaces")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Observability" }));
+
+    expect(openObservability).toHaveBeenCalledTimes(1);
+
+    const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
+    window.dispatchEvent(new Event("agent-teams-focus-session-search"));
+
+    expect(searchbox).toHaveFocus();
+
+    searchbox.blur();
+    fireEvent.keyDown(window, { ctrlKey: true, key: "k" });
+
+    expect(searchbox).toHaveFocus();
+  });
+
   it("creates a session in the selected workspace and selects it", async () => {
     listWorkspacesMock.mockResolvedValue([
       {
@@ -344,7 +391,7 @@ describe("SessionsSidebar", () => {
   });
 });
 
-function renderSidebar() {
+function renderSidebar(props?: { navigationItems?: SidebarNavigationItem[] }) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -357,7 +404,7 @@ function renderSidebar() {
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
-          <SessionsSidebar />
+          <SessionsSidebar navigationItems={props?.navigationItems} />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,

@@ -6,6 +6,7 @@ import {
   Skeleton,
   Typography,
 } from "antd";
+import type { InputRef } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -14,7 +15,8 @@ import {
   Plus,
   RefreshCcw,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
@@ -24,7 +26,19 @@ import { sessionDisplayLabel } from "./sessionLabels";
 const initialVisibleSessionsPerGroup = 10;
 const visibleSessionIncrement = 20;
 
-export function SessionsSidebar() {
+export interface SidebarNavigationItem {
+  active?: boolean;
+  icon?: ReactNode;
+  key: string;
+  label: string;
+  onSelect: () => void;
+}
+
+interface SessionsSidebarProps {
+  navigationItems?: SidebarNavigationItem[];
+}
+
+export function SessionsSidebar({ navigationItems = [] }: SessionsSidebarProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
@@ -38,6 +52,7 @@ export function SessionsSidebar() {
   const [workspaceExpanded, setWorkspaceExpanded] = useState<
     Record<string, boolean>
   >({});
+  const searchInputRef = useRef<InputRef>(null);
 
   const sessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
@@ -77,6 +92,23 @@ export function SessionsSidebar() {
     setSelectedWorkspaceId,
     workspacesQuery.data,
   ]);
+  useEffect(() => {
+    const focusSearch = (event: globalThis.Event) => {
+      if (event instanceof KeyboardEvent) {
+        if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k") {
+          return;
+        }
+        event.preventDefault();
+      }
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("agent-teams-focus-session-search", focusSearch);
+    window.addEventListener("keydown", focusSearch);
+    return () => {
+      window.removeEventListener("agent-teams-focus-session-search", focusSearch);
+      window.removeEventListener("keydown", focusSearch);
+    };
+  }, []);
 
   const createSessionMutation = useMutation({
     mutationFn: () => createSession({ workspace_id: effectiveWorkspaceId }),
@@ -139,12 +171,39 @@ export function SessionsSidebar() {
       >
         New session
       </Button>
+      {navigationItems.length > 0 ? (
+        <nav aria-label="Primary navigation" className="at-sidebar-nav">
+          {navigationItems.map((item) => (
+            <button
+              aria-current={item.active ? "page" : undefined}
+              className={
+                item.active ? "at-sidebar-nav-item is-active" : "at-sidebar-nav-item"
+              }
+              key={item.key}
+              onClick={item.onSelect}
+              type="button"
+            >
+              {item.icon !== undefined ? (
+                <span aria-hidden="true" className="at-sidebar-nav-icon">
+                  {item.icon}
+                </span>
+              ) : null}
+              <span className="at-sidebar-nav-label">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      ) : null}
+      <div className="at-sidebar-section-header">
+        <span>Workspaces</span>
+        <span>{sessionGroups.length}</span>
+      </div>
       <div className="at-sidebar-search-row">
         <Input.Search
           allowClear
           aria-label="Search sessions"
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Search sessions"
+          ref={searchInputRef}
           size="small"
           value={filter}
         />

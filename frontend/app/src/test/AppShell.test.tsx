@@ -1,6 +1,13 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -23,7 +30,23 @@ vi.mock("../features/recovery/RecoveryBar", () => ({
 }));
 
 vi.mock("../features/sessions/SessionsSidebar", () => ({
-  SessionsSidebar: () => <div data-testid="sessions-sidebar" />,
+  SessionsSidebar: ({
+    navigationItems = [],
+  }: {
+    navigationItems?: Array<{
+      key: string;
+      label: string;
+      onSelect: () => void;
+    }>;
+  }) => (
+    <div data-testid="sessions-sidebar">
+      {navigationItems.map((item) => (
+        <button key={item.key} onClick={item.onSelect} type="button">
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock("../features/shell/CurrentSessionIndicator", () => ({
@@ -122,6 +145,24 @@ describe("AppShell", () => {
     });
 
     expect(useUiStore.getState().sidebarWidth).toBe(280);
+  });
+
+  it("routes primary sidebar navigation to real shell surfaces", async () => {
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Observability" }));
+
+    expect(await screen.findByTestId("observability")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Chat" }));
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Settings");
   });
 });
 

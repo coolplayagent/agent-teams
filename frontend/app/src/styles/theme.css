@@ -10,6 +10,7 @@
   --at-text: #20231f;
   --at-text-muted: #62665f;
   --at-primary: #2f6f5e;
+  --at-danger: #b42318;
 }
 
 :root[data-theme="dark"] {
@@ -24,6 +25,7 @@
   --at-text: #f1f2ed;
   --at-text-muted: #b4b8ad;
   --at-primary: #6fa38e;
+  --at-danger: #f97066;
 }
 
 * {
@@ -338,6 +340,43 @@ body {
 
 .at-message-media-link {
   width: fit-content;
+}
+
+.at-message-tool {
+  display: grid;
+  gap: 6px;
+  max-width: 760px;
+  padding: 10px 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-surface);
+}
+
+.at-message-tool.is-error {
+  border-color: color-mix(in srgb, var(--at-danger) 45%, var(--at-border));
+}
+
+.at-message-tool-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--at-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.at-message-tool-meta {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-message-tool pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  color: var(--at-text);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .at-token-usage {

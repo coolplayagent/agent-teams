@@ -1,7 +1,7 @@
 import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Copy } from "lucide-react";
+import { Copy, Wrench } from "lucide-react";
 import { useMemo, useRef } from "react";
 
 import { listSessionMessages } from "../../api/client";
@@ -157,7 +157,7 @@ interface TimelineRow {
   copyable: boolean;
 }
 
-type TimelineRenderPart = TimelineTextPart | TimelineMediaPart;
+type TimelineRenderPart = TimelineTextPart | TimelineMediaPart | TimelineToolPart;
 
 interface TimelineTextPart {
   kind: "text";
@@ -170,6 +170,15 @@ interface TimelineMediaPart {
   modality: string;
   name: string;
   url: string;
+}
+
+interface TimelineToolPart {
+  body: string;
+  callId: string;
+  error: boolean;
+  kind: "tool";
+  phase: "call" | "result" | "validation";
+  toolName: string;
 }
 
 interface FallbackVirtualItem {
@@ -231,8 +240,27 @@ function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
             </Typography.Paragraph>
           );
         }
+        if (part.kind === "tool") {
+          return <MessageToolBlock key={`tool:${index}`} tool={part} />;
+        }
         return <MessageMediaPreview key={`media:${index}`} media={part} />;
       })}
+    </div>
+  );
+}
+
+function MessageToolBlock({ tool }: { tool: TimelineToolPart }) {
+  const title = `${toolPhaseLabel(tool.phase)}: ${tool.toolName}`;
+  return (
+    <div className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
+      <div className="at-message-tool-title">
+        <Wrench aria-hidden="true" size={14} />
+        <span>{title}</span>
+      </div>
+      {tool.callId ? (
+        <div className="at-message-tool-meta">Call id: {tool.callId}</div>
+      ) : null}
+      {tool.body ? <pre>{tool.body}</pre> : null}
     </div>
   );
 }
@@ -291,7 +319,60 @@ function contentPartToRenderParts(part: ContentPart): TimelineRenderPart[] {
   if (media !== null) {
     return [media];
   }
+  const tool = contentPartTool(part);
+  if (tool !== null) {
+    return [tool];
+  }
   return [];
+}
+
+function contentPartTool(part: ContentPart): TimelineToolPart | null {
+  const kind = contentPartKind(part);
+  if (kind === "tool-call" || contentPartHasToolCallShape(part)) {
+    return {
+      body: jsonValueText("args" in part ? part.args ?? null : null),
+      callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
+      error: false,
+      kind: "tool",
+      phase: "call",
+      toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
+    };
+  }
+  if (kind === "tool-return") {
+    return {
+      body: jsonValueText("content" in part ? part.content ?? null : null),
+      callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
+      error: "is_error" in part && part.is_error === true,
+      kind: "tool",
+      phase: "result",
+      toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
+    };
+  }
+  if (kind === "retry-prompt" && "tool_name" in part) {
+    return {
+      body: jsonValueText("content" in part ? part.content ?? null : null),
+      callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
+      error: true,
+      kind: "tool",
+      phase: "validation",
+      toolName: part.tool_name ?? "unknown_tool",
+    };
+  }
+  return null;
+}
+
+function contentPartKind(part: ContentPart): string {
+  if ("part_kind" in part) {
+    return part.part_kind;
+  }
+  if ("kind" in part) {
+    return part.kind;
+  }
+  return "";
+}
+
+function contentPartHasToolCallShape(part: ContentPart): boolean {
+  return "tool_name" in part && "args" in part && part.tool_name !== undefined;
 }
 
 function contentPartMedia(part: ContentPart): TimelineMediaPart | null {
@@ -366,8 +447,32 @@ function estimateRowSize(row: TimelineRow | undefined): number {
     return 120;
   }
   const mediaCount = row.parts.filter((part) => part.kind === "media").length;
+  const toolCount = row.parts.filter((part) => part.kind === "tool").length;
   const textLength = row.text.length;
-  return 96 + mediaCount * 138 + Math.min(160, Math.ceil(textLength / 110) * 22);
+  return 96
+    + mediaCount * 138
+    + toolCount * 118
+    + Math.min(160, Math.ceil(textLength / 110) * 22);
+}
+
+function toolPhaseLabel(phase: TimelineToolPart["phase"]): string {
+  if (phase === "call") {
+    return "Tool call";
+  }
+  if (phase === "validation") {
+    return "Tool validation";
+  }
+  return "Tool result";
+}
+
+function jsonValueText(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return JSON.stringify(value, null, 2);
 }
 
 function isAnswerRole(role: string): boolean {

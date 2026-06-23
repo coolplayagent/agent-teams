@@ -156,6 +156,43 @@ export interface UrlMediaPart {
   url?: string;
 }
 
+export interface ToolCallContentPart {
+  args?: JsonValue;
+  kind: "tool-call";
+  tool_call_id?: string;
+  tool_name?: string;
+}
+
+export interface LegacyToolCallContentPart {
+  args?: JsonValue;
+  part_kind: "tool-call";
+  tool_call_id?: string;
+  tool_name?: string;
+}
+
+export interface ToolReturnContentPart {
+  content?: JsonValue;
+  is_error?: boolean;
+  kind: "tool-return";
+  tool_call_id?: string;
+  tool_name?: string;
+}
+
+export interface LegacyToolReturnContentPart {
+  content?: JsonValue;
+  is_error?: boolean;
+  part_kind: "tool-return";
+  tool_call_id?: string;
+  tool_name?: string;
+}
+
+export interface ToolValidationContentPart {
+  content?: JsonValue;
+  kind: "retry-prompt";
+  tool_call_id?: string;
+  tool_name?: string;
+}
+
 export type RunInputPart = ContentTextPart | ContentMediaRefPart;
 export type ContentPart =
   | RunInputPart
@@ -163,6 +200,11 @@ export type ContentPart =
   | InlineMediaPart
   | LegacyContentTextPart
   | LegacyContentMediaRefPart
+  | LegacyToolCallContentPart
+  | LegacyToolReturnContentPart
+  | ToolCallContentPart
+  | ToolReturnContentPart
+  | ToolValidationContentPart
   | UrlMediaPart;
 
 export function contentPartText(part: ContentPart): string | null {

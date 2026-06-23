@@ -191,6 +191,46 @@ describe("MessageTimeline", () => {
       expect(writeText).toHaveBeenCalledWith("Nested persisted answer"),
     );
   });
+
+  it("renders tool calls, results, and validation failures from message parts", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              args: { cmd: "npm test" },
+              kind: "tool-call",
+              tool_call_id: "tool-1",
+              tool_name: "execute_command",
+            },
+            {
+              content: "tests passed",
+              kind: "tool-return",
+              tool_call_id: "tool-1",
+              tool_name: "execute_command",
+            },
+            {
+              content: "path is required",
+              kind: "retry-prompt",
+              tool_call_id: "tool-2",
+              tool_name: "read_file",
+            },
+          ],
+        },
+        message_id: "assistant-tools",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
+    expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
+    expect(screen.getByText("Tool result: execute_command")).toBeVisible();
+    expect(screen.getByText("tests passed")).toBeVisible();
+    expect(screen.getByText("Tool validation: read_file")).toBeVisible();
+    expect(screen.getByText("path is required")).toBeVisible();
+  });
 });
 
 function renderTimeline() {

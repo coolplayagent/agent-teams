@@ -8,18 +8,28 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { listSessionMessages } from "../api/client";
+import { listSessionMessages, listSessionRounds } from "../api/client";
 import { MessageTimeline } from "../features/timeline/MessageTimeline";
 import type { TimelineEntry } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 
 vi.mock("../api/client", () => ({
   listSessionMessages: vi.fn(),
+  listSessionRounds: vi.fn(),
 }));
 
 const listSessionMessagesMock = vi.mocked(listSessionMessages);
+const listSessionRoundsMock = vi.mocked(listSessionRounds);
+
+beforeEach(() => {
+  listSessionRoundsMock.mockResolvedValue({
+    has_more: false,
+    items: [],
+    next_cursor: null,
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -63,6 +73,61 @@ describe("MessageTimeline", () => {
     fireEvent.click(copyButton);
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Latest answer"));
+  });
+
+  it("renders the round rail from session rounds and marks selected rounds", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Initial answer",
+        created_at: "2026-06-23T12:42:39.262324+00:00",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+      },
+      {
+        content: "Follow-up answer",
+        created_at: "2026-06-23T12:43:10.739842+00:00",
+        message_id: "assistant-2",
+        role_id: "MainAgent",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-1",
+          run_user_message: "Initial task",
+        },
+        {
+          created_at: "2026-06-23T12:43:04Z",
+          run_id: "run-2",
+          run_user_message: "Follow-up task",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByRole("navigation", { name: "Rounds" })).toBeVisible();
+    const initialRound = await screen.findByRole("button", {
+      name: "Go to round 1: Initial task",
+    });
+    const followUpRound = await screen.findByRole("button", {
+      name: "Go to round 2: Follow-up task",
+    });
+    expect(followUpRound).toBeVisible();
+    expect(container.querySelector('article[data-run-id="run-2"]')).not.toBeNull();
+    expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
+      cursorRunId: null,
+      limit: 100,
+    });
+    expect(followUpRound).toHaveAttribute("aria-current", "step");
+
+    fireEvent.click(initialRound);
+
+    expect(initialRound).toHaveAttribute("aria-current", "step");
+    expect(followUpRound).not.toHaveAttribute("aria-current");
   });
 
   it("does not copy stale runtime delta chunks over hydrated answers", async () => {

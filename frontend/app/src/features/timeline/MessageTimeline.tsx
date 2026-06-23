@@ -2,21 +2,27 @@ import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Copy, Wrench } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { listSessionMessages } from "../../api/client";
+import { listSessionMessages, listSessionRounds } from "../../api/client";
 import {
   contentPartText,
   type ContentPart,
   type JsonValue,
+  type SessionRound,
+  type SessionRoundMessage,
+  type SessionRoundsPage,
   type TimelineMessage,
 } from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import type { TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { RoundRail } from "./RoundRail";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
+const ROUND_RAIL_PAGE_LIMIT = 100;
+const ROUND_RAIL_MAX_PAGES = 10;
 
 interface MessageTimelineProps {
   sessionId: string | null;
@@ -25,16 +31,32 @@ interface MessageTimelineProps {
 export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const { message } = App.useApp();
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const pendingRoundRunIdRef = useRef<string | null>(null);
   const scrollSessionIdRef = useRef<string | null>(sessionId);
   const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const messagesQuery = useQuery({
     queryKey: ["sessions", sessionId, "messages"],
     queryFn: () => listSessionMessages(sessionId ?? ""),
     enabled: sessionId !== null,
   });
+  const roundsQuery = useQuery({
+    queryKey: ["sessions", sessionId, "rounds", "rail"],
+    queryFn: () => collectRoundRailRounds(sessionId ?? ""),
+    enabled: sessionId !== null && !messagesQuery.isLoading && !messagesQuery.isError,
+    staleTime: 10000,
+  });
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const rounds = useMemo(
+    () => roundsQuery.data ?? [],
+    [roundsQuery.data],
+  );
+  const messageRoundLookup = useMemo(
+    () => createMessageRoundLookup(rounds),
+    [rounds],
+  );
   const runtimeEntries = useMemo(
     () =>
       Object.values(runtimeState.runs)
@@ -48,10 +70,12 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   );
   const rows = useMemo(
     () => [
-      ...messages.map(messageToRow),
+      ...messages.map((messageItem, index) =>
+        messageToRow(messageItem, index, messageRoundLookup),
+      ),
       ...runtimeRows,
     ],
-    [messages, runtimeRows],
+    [messageRoundLookup, messages, runtimeRows],
   );
   const streamOpenForSession = useMemo(
     () =>
@@ -71,6 +95,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     }
     return undefined;
   }, [rows]);
+  const activeRoundRunId = activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(rounds);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -88,8 +113,22 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     const container = parentRef.current;
     if (container !== null) {
       scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
+      syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
     }
   }, []);
+  const handleRoundSelect = useCallback((runId: string) => {
+    pendingRoundRunIdRef.current = runId;
+    setActiveRunId(runId);
+    const rowIndex = rows.findIndex((row) => row.runId === runId);
+    if (rowIndex >= 0) {
+      virtualizer.scrollToIndex(rowIndex, { align: "start" });
+    }
+  }, [rows, virtualizer]);
+
+  useEffect(() => {
+    pendingRoundRunIdRef.current = null;
+    setActiveRunId(null);
+  }, [sessionId]);
 
   useLayoutEffect(() => {
     if (scrollSessionIdRef.current !== sessionId) {
@@ -107,6 +146,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
       applyTimelineScrollSnapshot(container, snapshot);
     }
     scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
+    syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
   }, [rows, sessionId, timelineHeight]);
 
   if (sessionId === null) {
@@ -142,48 +182,58 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   }
 
   return (
-    <div className="at-timeline" onScroll={handleTimelineScroll} ref={parentRef}>
-      <div className="at-timeline-toolbar">
-        <Tooltip
-          title={
-            streamOpenForSession ? "Copy is available after streaming finishes" : "Copy last answer"
-          }
+    <div className="at-timeline-frame">
+      <div className="at-timeline" onScroll={handleTimelineScroll} ref={parentRef}>
+        <div className="at-timeline-toolbar">
+          <Tooltip
+            title={
+              streamOpenForSession ? "Copy is available after streaming finishes" : "Copy last answer"
+            }
+          >
+            <Button
+              aria-label="Copy last answer"
+              disabled={lastAnswer === undefined || streamOpenForSession}
+              icon={<Copy size={15} />}
+              onClick={() => {
+                void copyLastAnswer(lastAnswer, message);
+              }}
+              size="small"
+              type="text"
+            />
+          </Tooltip>
+        </div>
+        <div
+          className="at-timeline-virtual"
+          style={{ height: `${timelineHeight}px` }}
         >
-          <Button
-            aria-label="Copy last answer"
-            disabled={lastAnswer === undefined || streamOpenForSession}
-            icon={<Copy size={15} />}
-            onClick={() => {
-              void copyLastAnswer(lastAnswer, message);
-            }}
-            size="small"
-            type="text"
-          />
-        </Tooltip>
+          {renderedVirtualItems.map((virtualItem) => {
+            const row = rows[virtualItem.index];
+            return (
+              <article
+                className={`at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
+                data-index={virtualItem.index}
+                data-row-key={row.key}
+                data-run-id={row.runId ?? undefined}
+                key={row.key}
+                ref={virtualizer.measureElement}
+                style={{ transform: `translateY(${virtualItem.start}px)` }}
+              >
+                <Typography.Text className="at-message-role">
+                  {row.role}
+                </Typography.Text>
+                <MessageRowContent parts={row.parts} />
+              </article>
+            );
+          })}
+        </div>
       </div>
-      <div
-        className="at-timeline-virtual"
-        style={{ height: `${timelineHeight}px` }}
-      >
-        {renderedVirtualItems.map((virtualItem) => {
-          const row = rows[virtualItem.index];
-          return (
-            <article
-              className={`at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
-              data-index={virtualItem.index}
-              data-row-key={row.key}
-              key={row.key}
-              ref={virtualizer.measureElement}
-              style={{ transform: `translateY(${virtualItem.start}px)` }}
-            >
-              <Typography.Text className="at-message-role">
-                {row.role}
-              </Typography.Text>
-              <MessageRowContent parts={row.parts} />
-            </article>
-          );
-        })}
-      </div>
+      <RoundRail
+        activeRunId={activeRoundRunId}
+        error={roundsQuery.isError}
+        loading={roundsQuery.isLoading}
+        onSelectRun={handleRoundSelect}
+        rounds={rounds}
+      />
     </div>
   );
 }
@@ -194,6 +244,7 @@ interface TimelineRow {
   text: string;
   kind: RunEventType | "message";
   parts: TimelineRenderPart[];
+  runId: string | null;
   source: "message" | "runtime";
   copyable: boolean;
 }
@@ -264,6 +315,17 @@ interface TimelineScrollSnapshot {
   anchor: TimelineScrollAnchor | null;
   scrollTop: number;
   shouldFollow: boolean;
+}
+
+interface MessageRoundLookup {
+  boundaries: RoundBoundary[];
+  runIdByCreatedAt: Map<number, string>;
+  runIdByMessageId: Map<string, string>;
+}
+
+interface RoundBoundary {
+  createdAtMs: number;
+  runId: string;
 }
 
 function captureTimelineScrollSnapshot(
@@ -399,7 +461,11 @@ function fallbackTotalSize(rows: TimelineRow[]): number {
   return rows.reduce((total, row) => total + estimateRowSize(row), 0);
 }
 
-function messageToRow(message: TimelineMessage, index: number): TimelineRow {
+function messageToRow(
+  message: TimelineMessage,
+  index: number,
+  roundLookup: MessageRoundLookup,
+): TimelineRow {
   const role = message.role_id ?? message.role ?? "agent";
   const parts = messageParts(message);
   const text = rowCopyText(parts);
@@ -409,6 +475,7 @@ function messageToRow(message: TimelineMessage, index: number): TimelineRow {
     text,
     kind: "message",
     parts,
+    runId: messageRunId(message, roundLookup),
     source: "message",
     copyable: isAnswerRole(role) && text.trim().length > 0,
   };
@@ -488,9 +555,191 @@ function runtimeEntryToRowWithParts(
     text: text || entry.text,
     kind: entry.kind,
     parts,
+    runId: entry.runId,
     source: "runtime",
     copyable: false,
   };
+}
+
+async function collectRoundRailRounds(sessionId: string): Promise<SessionRound[]> {
+  const rounds: SessionRound[] = [];
+  let cursorRunId: string | null = null;
+  for (let pageIndex = 0; pageIndex < ROUND_RAIL_MAX_PAGES; pageIndex += 1) {
+    const page: SessionRoundsPage = await listSessionRounds(sessionId, {
+      cursorRunId,
+      limit: ROUND_RAIL_PAGE_LIMIT,
+    });
+    rounds.push(...page.items);
+    if (page.has_more !== true || page.next_cursor === null || page.next_cursor === undefined) {
+      break;
+    }
+    cursorRunId = page.next_cursor;
+  }
+  return sortRoundsAscending(uniqueRoundsByRunId(rounds));
+}
+
+function uniqueRoundsByRunId(rounds: SessionRound[]): SessionRound[] {
+  const byRunId = new Map<string, SessionRound>();
+  for (const round of rounds) {
+    const runId = round.run_id.trim();
+    if (runId.length > 0) {
+      byRunId.set(runId, round);
+    }
+  }
+  return Array.from(byRunId.values());
+}
+
+function sortRoundsAscending(rounds: SessionRound[]): SessionRound[] {
+  return [...rounds].sort((left, right) =>
+    roundSortKey(left).localeCompare(roundSortKey(right)),
+  );
+}
+
+function roundSortKey(round: SessionRound): string {
+  return round.created_at?.trim() || round.run_id;
+}
+
+function latestRowRunId(rows: TimelineRow[]): string | null {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const runId = rows[index]?.runId;
+    if (runId !== undefined && runId !== null && runId.trim().length > 0) {
+      return runId;
+    }
+  }
+  return null;
+}
+
+function latestRoundRunId(rounds: SessionRound[]): string | null {
+  for (let index = rounds.length - 1; index >= 0; index -= 1) {
+    const runId = rounds[index]?.run_id;
+    if (runId !== undefined && runId.trim().length > 0) {
+      return runId;
+    }
+  }
+  return null;
+}
+
+function visibleRunIdFromRenderedRows(container: HTMLElement): string | null {
+  const containerTop = container.getBoundingClientRect().top;
+  const rows = Array.from(
+    container.querySelectorAll<HTMLElement>("article.at-message[data-run-id]"),
+  );
+  for (const row of rows) {
+    const runId = row.dataset.runId;
+    if (runId === undefined || runId.trim().length === 0) {
+      continue;
+    }
+    const rowRect = row.getBoundingClientRect();
+    if (rowRect.bottom >= containerTop + 32) {
+      return runId;
+    }
+  }
+  return null;
+}
+
+function syncActiveRunIdFromViewport(
+  container: HTMLElement,
+  pendingRoundRunIdRef: { current: string | null },
+  setActiveRunId: (runId: string) => void,
+): void {
+  const visibleRunId = visibleRunIdFromRenderedRows(container);
+  if (visibleRunId === null) {
+    return;
+  }
+  const pendingRunId = pendingRoundRunIdRef.current;
+  if (pendingRunId !== null && visibleRunId !== pendingRunId) {
+    return;
+  }
+  pendingRoundRunIdRef.current = null;
+  setActiveRunId(visibleRunId);
+}
+
+function createMessageRoundLookup(rounds: SessionRound[]): MessageRoundLookup {
+  const runIdByMessageId = new Map<string, string>();
+  const runIdByCreatedAt = new Map<number, string>();
+  const boundaries: RoundBoundary[] = [];
+
+  for (const round of rounds) {
+    const runId = round.run_id.trim();
+    if (runId.length === 0) {
+      continue;
+    }
+    const roundCreatedAt = timestampMs(round.created_at);
+    if (roundCreatedAt !== null) {
+      boundaries.push({ createdAtMs: roundCreatedAt, runId });
+    }
+    for (const message of roundMessages(round)) {
+      const messageId = message.message_id?.trim();
+      if (messageId !== undefined && messageId.length > 0) {
+        runIdByMessageId.set(messageId, runId);
+      }
+      const createdAt = timestampMs(message.created_at);
+      if (createdAt !== null) {
+        runIdByCreatedAt.set(createdAt, runId);
+      }
+    }
+  }
+
+  return {
+    boundaries: boundaries.sort((left, right) => left.createdAtMs - right.createdAtMs),
+    runIdByCreatedAt,
+    runIdByMessageId,
+  };
+}
+
+function roundMessages(round: SessionRound): SessionRoundMessage[] {
+  return [
+    ...(round.coordinator_messages ?? []),
+    ...(round.injection_messages ?? []),
+  ];
+}
+
+function messageRunId(
+  message: TimelineMessage,
+  roundLookup: MessageRoundLookup,
+): string | null {
+  const explicitRunId = message.run_id?.trim();
+  if (explicitRunId !== undefined && explicitRunId.length > 0) {
+    return explicitRunId;
+  }
+  const messageId = message.message_id?.trim();
+  if (messageId !== undefined && messageId.length > 0) {
+    const runId = roundLookup.runIdByMessageId.get(messageId);
+    if (runId !== undefined) {
+      return runId;
+    }
+  }
+  const createdAt = timestampMs(message.created_at);
+  if (createdAt !== null) {
+    const exactRunId = roundLookup.runIdByCreatedAt.get(createdAt);
+    if (exactRunId !== undefined) {
+      return exactRunId;
+    }
+    return runIdForTimestamp(createdAt, roundLookup.boundaries);
+  }
+  return null;
+}
+
+function runIdForTimestamp(
+  createdAtMs: number,
+  boundaries: RoundBoundary[],
+): string | null {
+  let matchedRunId: string | null = null;
+  for (const boundary of boundaries) {
+    if (boundary.createdAtMs > createdAtMs) {
+      break;
+    }
+    matchedRunId = boundary.runId;
+  }
+  return matchedRunId;
+}
+
+function timestampMs(value: string | undefined): number | null {
+  if (value === undefined || value.trim().length === 0) {
+    return null;
+  }
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 function applyRuntimeTextDeltaEvent(
@@ -604,6 +853,7 @@ function createRuntimeTextAccumulator(
       text,
       kind: entry.kind,
       parts: [part],
+      runId: entry.runId,
       source: "runtime",
       copyable: false,
     },
@@ -1016,6 +1266,7 @@ function runtimeThinkingRow(
     text: "",
     kind: entry.kind,
     parts: [part],
+    runId: entry.runId,
     source: "runtime",
     copyable: false,
   };

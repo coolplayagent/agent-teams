@@ -47,6 +47,10 @@ import {
   readPastedImageAttachments,
   type PromptAttachment,
 } from "./PromptAttachments";
+import {
+  parseLeadingRoleMention,
+  type LeadingRoleMention,
+} from "./PromptMentions";
 
 interface ComposerProps {
   runStreamController: RunStreamController;
@@ -182,6 +186,17 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     () => buildModelProfileOptions(modelProfilesQuery.data, selectedModelProfile ?? ""),
     [modelProfilesQuery.data, selectedModelProfile],
   );
+  const leadingRoleMention = useMemo(
+    () => parseLeadingRoleMention(draft, roleOptionsQuery.data),
+    [draft, roleOptionsQuery.data],
+  );
+  const effectiveTargetRoleId = leadingRoleMention.roleId ?? targetRoleId;
+  const effectivePromptText =
+    leadingRoleMention.roleId === null ? draft.trim() : leadingRoleMention.promptText;
+  const draftValidationMessage =
+    activeRunId === null
+      ? resolveDraftValidationMessage(leadingRoleMention, promptAttachments)
+      : "";
   const attachmentValidationMessage = resolveImageInputBlockedMessage({
     activeRunId,
     attachments: promptAttachments,
@@ -190,9 +205,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     selectedModelProfile,
     selectedNormalRootRoleId,
     selectedSessionMode,
-    targetRoleId,
+    targetRoleId: effectiveTargetRoleId,
   });
-  const displayedComposerStatus = attachmentValidationMessage || composerStatus;
+  const displayedComposerStatus =
+    draftValidationMessage || attachmentValidationMessage || composerStatus;
 
   useEffect(() => {
     if (generalConfigQuery.data !== undefined) {
@@ -207,12 +223,15 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       if (sessionId === null) {
         throw new Error("Select a session before sending.");
       }
-      const inputParts = buildPromptInputParts(draft, promptAttachments);
+      if (draftValidationMessage) {
+        throw new Error(draftValidationMessage);
+      }
+      const inputParts = buildPromptInputParts(effectivePromptText, promptAttachments);
       const request: RunCreateRequest = {
         session_id: sessionId,
         input: inputParts,
         display_input: inputParts,
-        target_role_id: targetRoleId,
+        target_role_id: effectiveTargetRoleId,
         thinking,
         yolo,
       };
@@ -352,8 +371,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const canCreateRun =
     sessionId !== null &&
     activeRunId === null &&
-    (draft.trim().length > 0 || promptAttachments.length > 0) &&
+    (effectivePromptText.length > 0 || promptAttachments.length > 0) &&
     !busy &&
+    !draftValidationMessage &&
     !attachmentValidationMessage;
   const canInject =
     activeRunId !== null &&
@@ -756,6 +776,19 @@ function buildModelProfileOptions(
     });
   }
   return options;
+}
+
+function resolveDraftValidationMessage(
+  mention: LeadingRoleMention,
+  attachments: PromptAttachment[],
+): string {
+  if (mention.error) {
+    return mention.error;
+  }
+  if (mention.roleId !== null && !mention.promptText && attachments.length === 0) {
+    return "Enter a prompt after the role mention.";
+  }
+  return "";
 }
 
 function resolveImageInputBlockedMessage({

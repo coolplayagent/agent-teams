@@ -147,6 +147,207 @@ describe("Composer", () => {
     });
   });
 
+  it("uses a leading role mention as the run target and strips it from prompt text", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          description: "Writes copy",
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+      target_role_id: "Writer",
+    });
+
+    renderComposer();
+
+    await waitForRoleOption("Writer");
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "@Writer Draft the update" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(createRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: [{ kind: "text", text: "Draft the update" }],
+          target_role_id: "Writer",
+        }),
+      ),
+    );
+  });
+
+  it("supports fullwidth leading role mention triggers", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+      target_role_id: "Writer",
+    });
+
+    renderComposer();
+
+    await waitForRoleOption("Writer");
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "＠Writer Draft the update" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(createRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: [{ kind: "text", text: "Draft the update" }],
+          target_role_id: "Writer",
+        }),
+      ),
+    );
+  });
+
+  it("supports leading main agent display name mentions", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      main_agent_role_id: "MainAgent",
+      main_agent_role: {
+        role_id: "MainAgent",
+        name: "Main Agent",
+      },
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+      target_role_id: "MainAgent",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "@Main Agent Draft the update" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(createRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: [{ kind: "text", text: "Draft the update" }],
+          target_role_id: "MainAgent",
+        }),
+      ),
+    );
+  });
+
+  it("blocks ambiguous leading role mentions", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "WriterA",
+          name: "Writer",
+        },
+        {
+          role_id: "WriterB",
+          name: "Writer",
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    await waitForRoleOption("Writer");
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "@Writer Draft the update" },
+    });
+
+    expect(await screen.findByText("Mention is ambiguous: Writer, Writer.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("requires content after a leading role mention unless an attachment is present", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    await waitForRoleOption("Writer");
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "@Writer" },
+    });
+
+    expect(
+      await screen.findByText("Enter a prompt after the role mention."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("allows a leading role mention with only a pasted image attachment", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+      target_role_id: "Writer",
+    });
+
+    renderComposer();
+
+    await waitForRoleOption("Writer");
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "@Writer" },
+    });
+    pasteImage("mention-image.png");
+
+    expect(await screen.findByText("mention-image.png")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        target_role_id: "Writer",
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0].input).toHaveLength(1);
+    expect(createRunMock.mock.calls[0]?.[0].input[0]).toMatchObject({
+      kind: "inline_media",
+      name: "mention-image.png",
+    });
+  });
+
   it("submits pasted image attachments as inline media parts", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [
@@ -957,6 +1158,36 @@ describe("Composer", () => {
     expect(createRunMock).not.toHaveBeenCalled();
   });
 
+  it("keeps leading role mention text raw during runtime injection", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+    injectRunMessageMock.mockResolvedValue({
+      status: "ok",
+      run_id: "run-1",
+    });
+
+    renderComposer(runStreamController("run-1"));
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "@Writer Add a regression test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+
+    await waitFor(() =>
+      expect(injectRunMessageMock).toHaveBeenCalledWith("run-1", {
+        content: "@Writer Add a regression test",
+        mode: "queued",
+      }),
+    );
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
   it("interrupts an active run with injected content", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
@@ -1041,6 +1272,12 @@ function segmentedItem(label: string): HTMLElement {
     throw new Error(`${label} segmented item was not rendered.`);
   }
   return element as HTMLElement;
+}
+
+async function waitForRoleOption(label: string) {
+  fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Target role" }));
+  await screen.findAllByText(label);
+  fireEvent.keyDown(document.body, { key: "Escape" });
 }
 
 function pasteImage(filename: string, mimeType = "image/png"): File {

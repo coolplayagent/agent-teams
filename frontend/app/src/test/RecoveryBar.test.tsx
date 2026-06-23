@@ -9,6 +9,7 @@ import {
   getRecoverySnapshot,
   resolveToolApproval,
   resumeRun,
+  stopBackgroundTask,
 } from "../api/client";
 import type { RecoverySnapshot } from "../api/contracts";
 import { RecoveryBar } from "../features/recovery/RecoveryBar";
@@ -19,12 +20,14 @@ vi.mock("../api/client", () => ({
   getRecoverySnapshot: vi.fn(),
   resolveToolApproval: vi.fn(),
   resumeRun: vi.fn(),
+  stopBackgroundTask: vi.fn(),
 }));
 
 const getRecoverySnapshotMock = vi.mocked(getRecoverySnapshot);
 const resolveToolApprovalMock = vi.mocked(resolveToolApproval);
 const answerUserQuestionMock = vi.mocked(answerUserQuestion);
 const resumeRunMock = vi.mocked(resumeRun);
+const stopBackgroundTaskMock = vi.mocked(stopBackgroundTask);
 
 afterEach(() => {
   cleanup();
@@ -253,6 +256,96 @@ describe("RecoveryBar", () => {
 
     await screen.findByText("Run run-1 is stopped");
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+  });
+
+  it("shows active background tasks and stops them through the run API", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "command",
+            command: "npm run test",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "running",
+            recent_output: [],
+          },
+          {
+            background_task_id: "background-task-2",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "command",
+            command: "completed task",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "completed",
+            recent_output: [],
+          },
+        ],
+      }),
+    );
+    stopBackgroundTaskMock.mockResolvedValue({
+      background_task: {
+        background_task_id: "background-task-1",
+        run_id: "run-1",
+        session_id: "session-1",
+        kind: "command",
+        command: "npm run test",
+        cwd: "C:/repo",
+        execution_mode: "background",
+        status: "stopped",
+        recent_output: [],
+      },
+    });
+
+    renderRecoveryBar();
+
+    await screen.findByText("Background tasks");
+    expect(screen.getByText("1 active")).toBeInTheDocument();
+    expect(screen.getByText("npm run test")).toBeInTheDocument();
+    expect(screen.queryByText("completed task")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    await waitFor(() =>
+      expect(stopBackgroundTaskMock).toHaveBeenCalledWith(
+        "run-1",
+        "background-task-1",
+      ),
+    );
+  });
+
+  it("collapses and expands the background task list", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "command",
+            command: "uv run pytest",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "blocked",
+            recent_output: [],
+          },
+        ],
+      }),
+    );
+
+    renderRecoveryBar();
+
+    await screen.findByText("uv run pytest");
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+
+    expect(screen.queryByText("uv run pytest")).not.toBeInTheDocument();
+    expect(screen.getByText("1 active")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    expect(screen.getByText("uv run pytest")).toBeInTheDocument();
   });
 });
 

@@ -18,6 +18,7 @@ import type {
   SessionRecord,
   SessionSidebarRecord,
   TimelineMessage,
+  StopBackgroundTaskResponse,
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
   WorkspacePage,
@@ -145,6 +146,18 @@ export function stopRun(runId: string): Promise<{ status: string; scope: string 
     {
       method: "POST",
       body: JSON.stringify({ scope: "main" }),
+    },
+  );
+}
+
+export function stopBackgroundTask(
+  runId: string,
+  backgroundTaskId: string,
+): Promise<StopBackgroundTaskResponse> {
+  return requestJson<StopBackgroundTaskResponse>(
+    `/ag-ui/runs/${encodeURIComponent(runId)}/background-tasks/${encodeURIComponent(backgroundTaskId)}:stop`,
+    {
+      method: "POST",
     },
   );
 }

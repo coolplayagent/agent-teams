@@ -238,7 +238,7 @@ export interface SessionTokenUsage {
 
 export interface RecoverySnapshot {
   active_run: RecoveryRun | null;
-  background_tasks: JsonValue[];
+  background_tasks: RecoveryBackgroundTask[];
   pending_tool_approvals: PendingToolApproval[];
   pending_user_questions: PendingUserQuestion[];
   paused_subagent: JsonValue | null;
@@ -255,6 +255,49 @@ export interface RecoveryRun {
   should_show_recover?: boolean;
   pending_tool_approval_count?: number;
   pending_user_question_count?: number;
+}
+
+export type RecoveryBackgroundTaskStatus =
+  | "running"
+  | "blocked"
+  | "stopped"
+  | "failed"
+  | "completed";
+
+export interface RecoveryBackgroundTask {
+  background_task_id: string;
+  run_id: string;
+  session_id?: string;
+  kind?: "command" | "subagent" | string;
+  instance_id?: string | null;
+  role_id?: string | null;
+  tool_call_id?: string | null;
+  title?: string;
+  input_text?: string;
+  command: string;
+  cwd: string;
+  execution_mode?: "foreground" | "background" | string;
+  status: RecoveryBackgroundTaskStatus | string;
+  tty?: boolean;
+  timeout_ms?: number | null;
+  pid?: number | null;
+  exit_code?: number | null;
+  recent_output?: string[];
+  output_excerpt?: string;
+  log_path?: string;
+  subagent_role_id?: string | null;
+  subagent_run_id?: string | null;
+  subagent_task_id?: string | null;
+  subagent_instance_id?: string | null;
+  subagent_suppress_hooks?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
+  completion_notified_at?: string | null;
+}
+
+export interface StopBackgroundTaskResponse {
+  background_task: RecoveryBackgroundTask;
 }
 
 export type ToolApprovalAction =

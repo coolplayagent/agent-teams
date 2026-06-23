@@ -7,10 +7,12 @@ import {
   getRecoverySnapshot,
   resolveToolApproval,
   resumeRun,
+  stopBackgroundTask,
 } from "../../api/client";
 import type {
   PendingToolApproval,
   PendingUserQuestion,
+  RecoveryBackgroundTask,
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
   UserQuestionPrompt,
@@ -34,6 +36,12 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const [questionSupplements, setQuestionSupplements] = useState<Record<string, string>>(
     {},
   );
+  const [backgroundTaskErrors, setBackgroundTaskErrors] = useState<Record<string, string>>(
+    {},
+  );
+  const [collapsedBackgroundRunIds, setCollapsedBackgroundRunIds] = useState<
+    Record<string, boolean>
+  >({});
   const recoveryQuery = useQuery({
     queryKey: ["sessions", sessionId, "recovery"],
     queryFn: () => getRecoverySnapshot(sessionId ?? ""),
@@ -44,6 +52,9 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const activeRun = recoveryQuery.data?.active_run ?? null;
   const pendingApprovals = recoveryQuery.data?.pending_tool_approvals ?? [];
   const pendingQuestions = recoveryQuery.data?.pending_user_questions ?? [];
+  const activeBackgroundTasks = (recoveryQuery.data?.background_tasks ?? []).filter(
+    isActiveBackgroundTask,
+  );
   const recoverableRunId =
     activeRun?.should_show_recover === true ? activeRun.run_id : null;
   const showResumeAction = shouldShowResumeAction(
@@ -123,6 +134,31 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     },
   });
 
+  const stopBackgroundTaskMutation = useMutation({
+    mutationFn: (request: BackgroundTaskStopRequest) =>
+      stopBackgroundTask(request.runId, request.backgroundTaskId),
+    onMutate: (request) => {
+      setBackgroundTaskErrors((current) => {
+        const next = { ...current };
+        delete next[request.backgroundTaskId];
+        return next;
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    },
+    onError: (error, request) => {
+      const messageText =
+        error instanceof Error ? error.message : "Background task stop failed.";
+      setBackgroundTaskErrors((current) => ({
+        ...current,
+        [request.backgroundTaskId]: messageText,
+      }));
+      void message.error(messageText);
+    },
+  });
+
   if (sessionId === null || recoveryQuery.isLoading || activeRun === null) {
     return null;
   }
@@ -147,6 +183,24 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
               </Button>
             ) : null}
           </Space>
+          <BackgroundTasksPanel
+            activeRunId={activeRun.run_id}
+            busyTaskId={
+              stopBackgroundTaskMutation.isPending
+                ? stopBackgroundTaskMutation.variables?.backgroundTaskId ?? null
+                : null
+            }
+            collapsed={collapsedBackgroundRunIds[activeRun.run_id] === true}
+            errors={backgroundTaskErrors}
+            onStop={(request) => stopBackgroundTaskMutation.mutate(request)}
+            onToggle={(runId) => {
+              setCollapsedBackgroundRunIds((current) => ({
+                ...current,
+                [runId]: current[runId] !== true,
+              }));
+            }}
+            tasks={activeBackgroundTasks}
+          />
           <PendingApprovals
             activeRunId={activeRun.run_id}
             approvals={pendingApprovals}
@@ -185,6 +239,96 @@ interface ApprovalActionRequest {
   optionId?: string;
   runId: string;
   toolCallId: string;
+}
+
+interface BackgroundTaskStopRequest {
+  backgroundTaskId: string;
+  runId: string;
+}
+
+interface BackgroundTasksPanelProps {
+  activeRunId: string;
+  busyTaskId: string | null;
+  collapsed: boolean;
+  errors: Record<string, string>;
+  onStop: (request: BackgroundTaskStopRequest) => void;
+  onToggle: (runId: string) => void;
+  tasks: RecoveryBackgroundTask[];
+}
+
+function BackgroundTasksPanel({
+  activeRunId,
+  busyTaskId,
+  collapsed,
+  errors,
+  onStop,
+  onToggle,
+  tasks,
+}: BackgroundTasksPanelProps) {
+  if (tasks.length === 0) {
+    return null;
+  }
+  return (
+    <div aria-live="polite" className="at-recovery-panel at-recovery-background">
+      <div className="at-recovery-background-header">
+        <Space size={8}>
+          <Typography.Text strong>Background tasks</Typography.Text>
+          <Typography.Text type="secondary">{tasks.length} active</Typography.Text>
+        </Space>
+        <Button onClick={() => onToggle(activeRunId)} size="small">
+          {collapsed ? "Show" : "Hide"}
+        </Button>
+      </div>
+      {collapsed ? null : (
+        <div className="at-recovery-background-list">
+          {tasks.map((task) => {
+            const taskId = task.background_task_id.trim();
+            const taskRunId = task.run_id.trim() || activeRunId;
+            const busy = busyTaskId === taskId;
+            const error = errors[taskId] ?? "";
+            const statusText = error || (busy ? "Stopping" : backgroundTaskStatusLabel(task));
+            return (
+              <div
+                className="at-recovery-item at-recovery-background-item"
+                key={taskId}
+                title={backgroundTaskDetails(task, statusText)}
+              >
+                <div className="at-recovery-copy">
+                  <Space size={8} wrap>
+                    <Typography.Text strong ellipsis>
+                      {backgroundTaskTitle(task)}
+                    </Typography.Text>
+                    <Typography.Text type={error ? "danger" : "secondary"}>
+                      {statusText}
+                    </Typography.Text>
+                  </Space>
+                  {task.cwd.trim() ? (
+                    <Typography.Text type="secondary" ellipsis>
+                      {task.cwd}
+                    </Typography.Text>
+                  ) : null}
+                </div>
+                <Button
+                  danger
+                  disabled={busyTaskId !== null}
+                  loading={busy}
+                  onClick={() =>
+                    onStop({
+                      backgroundTaskId: taskId,
+                      runId: taskRunId,
+                    })
+                  }
+                  size="small"
+                >
+                  Stop
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface PendingApprovalsProps {
@@ -414,6 +558,64 @@ function questionOptionLabel(label: string, description: string | undefined): st
 
 function selectionKey(questionId: string, promptIndex: number): string {
   return `${questionId}:${promptIndex}`;
+}
+
+function isActiveBackgroundTask(task: RecoveryBackgroundTask): boolean {
+  return (
+    task.background_task_id.trim().length > 0 &&
+    task.execution_mode !== "foreground" &&
+    (task.status === "running" || task.status === "blocked")
+  );
+}
+
+function backgroundTaskTitle(task: RecoveryBackgroundTask): string {
+  const command = task.command.trim();
+  if (command) {
+    return command;
+  }
+  const title = task.title?.trim();
+  if (title) {
+    return title;
+  }
+  return shortRunId(task.background_task_id);
+}
+
+function backgroundTaskDetails(
+  task: RecoveryBackgroundTask,
+  statusText: string,
+): string {
+  return [
+    statusText,
+    backgroundTaskTitle(task),
+    task.cwd.trim() ? `cwd: ${task.cwd.trim()}` : "",
+    task.log_path?.trim() ? `log: ${task.log_path.trim()}` : "",
+    task.exit_code === null || task.exit_code === undefined
+      ? ""
+      : `exit: ${task.exit_code}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function backgroundTaskStatusLabel(task: RecoveryBackgroundTask): string {
+  switch (task.status) {
+    case "running":
+      return "Running";
+    case "blocked":
+      return "Paused";
+    case "stopped":
+      return "Stopped";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    default:
+      return "Unknown";
+  }
+}
+
+function shortRunId(runId: string): string {
+  return runId.length > 16 ? `${runId.slice(0, 8)}...${runId.slice(-4)}` : runId;
 }
 
 function shouldShowResumeAction(

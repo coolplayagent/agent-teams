@@ -315,3 +315,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run typecheck` in `frontend/app` passed.
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Recovery Background Task Controls Batch
+
+### Scope
+- Added typed React contracts and client support for stopping run background tasks through `/api/ag-ui/runs/{run_id}/background-tasks/{background_task_id}:stop`.
+- Added a compact RecoveryBar background task section for active running/blocked background tasks.
+- Preserved V1 visibility semantics by hiding terminal background tasks from the active recovery strip.
+- Added real Hide/Show collapse behavior while keeping the active task summary visible.
+- Added focused React coverage for active task display, terminal task suppression, stop actions, and collapse/expand behavior.
+
+### Verification
+- `npm run test -- --run RecoveryBar.test.tsx` in `frontend/app` passed with 8 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

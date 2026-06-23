@@ -165,6 +165,18 @@ body {
   max-width: 980px;
 }
 
+.at-recovery-background-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.at-recovery-background-list {
+  display: grid;
+  gap: 8px;
+}
+
 .at-recovery-item,
 .at-recovery-question {
   display: grid;

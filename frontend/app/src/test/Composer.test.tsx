@@ -21,6 +21,7 @@ import {
 } from "../api/speech";
 import { Composer } from "../features/composer/Composer";
 import type { SessionRecord } from "../api/contracts";
+import { useUiStore } from "../runtime/uiStore";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
 interface MockSenderProps {
@@ -86,6 +87,7 @@ const updateSessionNormalModelProfileMock = vi.mocked(
 );
 
 beforeEach(() => {
+  useUiStore.setState({ language: "en" });
   createSpeechSttWebSocketUrlMock.mockReturnValue(
     "ws://localhost/api/speech/stt/stream",
   );
@@ -122,9 +124,37 @@ afterEach(() => {
   restoreVoiceRuntime();
   vi.clearAllMocks();
   localStorage.clear();
+  useUiStore.setState({ language: "en" });
 });
 
 describe("Composer", () => {
+  it("localizes the persistent composer frame in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "MainAgent",
+          name: "Main Agent",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    expect(await screen.findByLabelText("提示词")).toHaveAttribute(
+      "placeholder",
+      "你希望这些代理帮你做什么？",
+    );
+    expect(screen.getByText("普通模式")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "根角色" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "目标角色" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "模型配置" })).toBeVisible();
+    expect(screen.getByText("思考")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Shell 安全策略" })).toBeInTheDocument();
+    expect(screen.getByText("Shell 安全")).toBeVisible();
+    expect(screen.getByRole("button", { name: "发送" })).toBeVisible();
+  });
+
   it("passes the selected target role to AG-UI run creation", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       coordinator_role_id: "Coordinator",
@@ -1543,7 +1573,7 @@ function renderComposerWithClient(
 ) {
   return render(
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider>
+      <ConfigProvider button={{ autoInsertSpace: false }}>
         <AntApp>
           <Composer runStreamController={controller} sessionId={sessionId} />
         </AntApp>

@@ -9,6 +9,7 @@ import {
   exportSessionMessages,
   type MessageExportFormat,
 } from "./messageExport";
+import { useTranslations } from "../../i18n";
 
 interface MessageExportMessenger {
   error(content: string): unknown;
@@ -21,26 +22,26 @@ interface MessageExportMenuProps {
   sessionId: string | null;
 }
 
-const EXPORT_MENU_ITEMS: MenuProps["items"] = [
-  {
-    key: "html",
-    label: "HTML",
-  },
-  {
-    key: "png",
-    label: "PNG",
-  },
-];
-
 export function MessageExportMenu({
   messenger,
   sessionId,
 }: MessageExportMenuProps) {
   const [exporting, setExporting] = useState<MessageExportFormat | null>(null);
+  const t = useTranslations();
+  const exportMenuItems: MenuProps["items"] = [
+    {
+      key: "html",
+      label: t("exportAsHtml"),
+    },
+    {
+      key: "png",
+      label: t("exportAsPng"),
+    },
+  ];
 
   const handleExport = async (format: MessageExportFormat): Promise<void> => {
     if (sessionId === null) {
-      void messenger.warning("Select a session before exporting.");
+      void messenger.warning(t("exportSelectSession"));
       return;
     }
 
@@ -52,14 +53,18 @@ export function MessageExportMenu({
         rounds,
         sessionId,
       });
-      const label = format === "html" ? "HTML" : "PNG";
       void messenger.success(
         fileCount === 1
-          ? `Messages exported as ${label}.`
-          : `Messages exported as ${label} (${fileCount} files).`,
+          ? t(format === "html" ? "exportMessagesAsHtml" : "exportMessagesAsPng")
+          : t(
+              format === "html"
+                ? "exportMessagesAsHtmlFiles"
+                : "exportMessagesAsPngFiles",
+              { count: fileCount },
+            ),
       );
     } catch (error) {
-      void messenger.error(exportErrorMessage(error));
+      void messenger.error(exportErrorMessage(error, t));
     } finally {
       setExporting(null);
     }
@@ -68,7 +73,7 @@ export function MessageExportMenu({
   return (
     <Dropdown
       menu={{
-        items: EXPORT_MENU_ITEMS,
+        items: exportMenuItems,
         onClick: ({ key }) => {
           void handleExport(key === "png" ? "png" : "html");
         },
@@ -76,9 +81,9 @@ export function MessageExportMenu({
       placement="bottomRight"
       trigger={["click"]}
     >
-      <Tooltip title="Export messages">
+      <Tooltip title={t("exportMessages")}>
         <Button
-          aria-label="Export messages"
+          aria-label={t("exportMessages")}
           icon={<Download size={17} />}
           loading={exporting !== null}
           type="text"
@@ -129,9 +134,9 @@ function sortableTimestamp(value: string | undefined): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function exportErrorMessage(error: unknown): string {
+function exportErrorMessage(error: unknown, t: ReturnType<typeof useTranslations>): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
-  return "Message export failed.";
+  return t("exportFailed");
 }

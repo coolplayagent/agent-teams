@@ -180,6 +180,20 @@ describe("AppShell", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent("Settings");
   });
 
+  it("switches shell navigation labels when language changes", async () => {
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    expect(within(sidebar).getByRole("button", { name: "Chat" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "EN" }));
+
+    expect(screen.getByRole("button", { name: "中文" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "聊天" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "观测" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "切换侧边栏" })).toBeVisible();
+  });
+
   it("opens and closes the real workspace shell surface from the sidebar", async () => {
     renderShell();
 
@@ -208,7 +222,7 @@ function renderShell() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider>
+      <ConfigProvider button={{ autoInsertSpace: false }}>
         <AntApp>{renderWithStrictModeBoundary(<AppShell />)}</AntApp>
       </ConfigProvider>
     </QueryClientProvider>,

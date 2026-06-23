@@ -29,6 +29,7 @@ import type {
   WorkspaceSnapshot,
   WorkspaceTreeNode,
 } from "../../api/contracts";
+import { useTranslations, type Translate } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
 import { sessionDisplayLabel } from "../sessions/sessionLabels";
 
@@ -49,6 +50,7 @@ export function WorkspaceProjectView({
 }: WorkspaceProjectViewProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const t = useTranslations();
   const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
   const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const [showAllRootEntries, setShowAllRootEntries] = useState(false);
@@ -85,11 +87,11 @@ export function WorkspaceProjectView({
   const openRootMutation = useMutation({
     mutationFn: () => openWorkspaceRoot(workspaceId),
     onSuccess: () => {
-      void message.success("Workspace folder opened.");
+      void message.success(t("workspaceFolderOpened"));
     },
     onError: (error) => {
       void message.error(
-        error instanceof Error ? error.message : "Could not open workspace folder.",
+        error instanceof Error ? error.message : t("workspaceOpenFolderError"),
       );
     },
   });
@@ -100,7 +102,7 @@ export function WorkspaceProjectView({
 
   if (workspacesQuery.isLoading) {
     return (
-      <section aria-label="Workspace project view" className="at-project-view">
+      <section aria-label={t("workspaceProjectView")} className="at-project-view">
         <Skeleton active paragraph={{ rows: 12 }} />
       </section>
     );
@@ -108,8 +110,8 @@ export function WorkspaceProjectView({
 
   if (workspace === null) {
     return (
-      <section aria-label="Workspace project view" className="at-project-view">
-        <Empty description="No workspace selected" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      <section aria-label={t("workspaceProjectView")} className="at-project-view">
+        <Empty description={t("workspaceNoSelected")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       </section>
     );
   }
@@ -128,7 +130,7 @@ export function WorkspaceProjectView({
     : workspaceSessions.slice(0, visibleSessionEntries);
 
   return (
-    <section aria-label="Workspace project view" className="at-project-view">
+    <section aria-label={t("workspaceProjectView")} className="at-project-view">
       <div className="at-project-toolbar">
         <div className="at-project-toolbar-copy">
           <h2>{workspaceLabel(workspace)}</h2>
@@ -143,19 +145,19 @@ export function WorkspaceProjectView({
             onClick={() => openRootMutation.mutate()}
             size="small"
           >
-            Open folder
+            {t("workspaceOpenFolder")}
           </Button>
           <Button
-            aria-label="Reload workspace view"
+            aria-label={t("workspaceReloadView")}
             icon={<RefreshCcw size={15} />}
             loading={snapshotQuery.isFetching || diffsQuery.isFetching}
             onClick={() => refreshWorkspace(workspaceId)}
             size="small"
           >
-            Reload
+            {t("workspaceReload")}
           </Button>
           <Button
-            aria-label="Back to chat"
+            aria-label={t("workspaceBackToChat")}
             icon={<ChevronLeft size={15} />}
             onClick={onBack}
             size="small"
@@ -167,32 +169,32 @@ export function WorkspaceProjectView({
       <div className="at-project-view-grid">
         <section className="at-project-panel at-project-panel-summary">
           <div className="at-project-panel-header">
-            <h3>Workspace</h3>
+            <h3>{t("workspaceTitle")}</h3>
           </div>
           {snapshotQuery.isLoading ? (
             <Skeleton active paragraph={{ rows: 4 }} />
           ) : null}
           {snapshotQuery.isError ? (
             <div className="at-project-state is-error">
-              {errorMessage(snapshotQuery.error, "Could not load workspace snapshot.")}
+              {errorMessage(snapshotQuery.error, t("workspaceLoadSnapshotError"))}
             </div>
           ) : null}
           {snapshot !== undefined ? (
             <dl className="at-project-facts">
               <div>
-                <dt>Workspace ID</dt>
+                <dt>{t("workspaceWorkspaceId")}</dt>
                 <dd>{snapshot.workspace_id}</dd>
               </div>
               <div>
-                <dt>Root</dt>
+                <dt>{t("workspaceRoot")}</dt>
                 <dd>{workspaceRoot(workspace, snapshot)}</dd>
               </div>
               <div>
-                <dt>Default mount</dt>
+                <dt>{t("workspaceDefaultMount")}</dt>
                 <dd>{snapshot.default_mount_name ?? "default"}</dd>
               </div>
               <div>
-                <dt>Root entries</dt>
+                <dt>{t("workspaceRootEntries")}</dt>
                 <dd>{rootEntries.length}</dd>
               </div>
             </dl>
@@ -201,26 +203,26 @@ export function WorkspaceProjectView({
 
         <section className="at-project-panel at-project-panel-files">
           <div className="at-project-panel-header">
-            <h3>Files</h3>
+            <h3>{t("workspaceFiles")}</h3>
             <span>{shownCountLabel(rootEntriesToRender.length, rootEntries.length)}</span>
           </div>
           {snapshotQuery.isLoading ? (
             <Skeleton active paragraph={{ rows: 8 }} />
           ) : null}
           {!snapshotQuery.isLoading && rootEntries.length === 0 ? (
-            <div className="at-project-state">No root entries loaded.</div>
+            <div className="at-project-state">{t("workspaceNoRootEntries")}</div>
           ) : null}
           {rootEntries.length > 0 ? (
             <div className="at-project-file-list">
               {rootEntriesToRender.map((entry) => (
-                <WorkspaceTreeEntry entry={entry} key={entry.path || entry.name} />
+                <WorkspaceTreeEntry entry={entry} key={entry.path || entry.name} t={t} />
               ))}
             </div>
           ) : null}
           {rootEntries.length > visibleRootEntries ? (
             <ProjectListToggle
               expanded={showAllRootEntries}
-              label="files"
+              label={t("workspaceFilesListLabel")}
               onToggle={() => setShowAllRootEntries((value) => !value)}
               total={rootEntries.length}
             />
@@ -229,18 +231,18 @@ export function WorkspaceProjectView({
 
         <section className="at-project-panel at-project-panel-changes">
           <div className="at-project-panel-header">
-            <h3>Changes</h3>
+            <h3>{t("workspaceChanges")}</h3>
             <span>{shownCountLabel(diffFilesToRender.length, diffFiles.length)}</span>
           </div>
           {diffsQuery.isLoading ? <Skeleton active paragraph={{ rows: 5 }} /> : null}
           {diffsQuery.isError ? (
             <div className="at-project-state is-error">
-              {errorMessage(diffsQuery.error, "Could not load workspace changes.")}
+              {errorMessage(diffsQuery.error, t("workspaceLoadChangesError"))}
             </div>
           ) : null}
           {diffsQuery.data !== undefined && diffFiles.length === 0 ? (
             <div className="at-project-state">
-              {diffsQuery.data.diff_message ?? "No workspace changes."}
+              {diffsQuery.data.diff_message ?? t("workspaceNoChanges")}
             </div>
           ) : null}
           {diffFiles.length > 0 ? (
@@ -253,7 +255,7 @@ export function WorkspaceProjectView({
           {diffFiles.length > visibleDiffEntries ? (
             <ProjectListToggle
               expanded={showAllDiffEntries}
-              label="changes"
+              label={t("workspaceChangesListLabel")}
               onToggle={() => setShowAllDiffEntries((value) => !value)}
               total={diffFiles.length}
             />
@@ -262,11 +264,11 @@ export function WorkspaceProjectView({
 
         <section className="at-project-panel at-project-panel-sessions">
           <div className="at-project-panel-header">
-            <h3>Sessions</h3>
+            <h3>{t("workspaceSessions")}</h3>
             <span>{shownCountLabel(sessionsToRender.length, workspaceSessions.length)}</span>
           </div>
           {workspaceSessions.length === 0 ? (
-            <div className="at-project-state">No sessions in this workspace.</div>
+            <div className="at-project-state">{t("workspaceNoSessions")}</div>
           ) : (
             <div className="at-project-session-list">
               {sessionsToRender.map((session) => (
@@ -289,7 +291,7 @@ export function WorkspaceProjectView({
           {workspaceSessions.length > visibleSessionEntries ? (
             <ProjectListToggle
               expanded={showAllSessionEntries}
-              label="sessions"
+              label={t("workspaceSessionsListLabel")}
               onToggle={() => setShowAllSessionEntries((value) => !value)}
               total={workspaceSessions.length}
             />
@@ -322,7 +324,10 @@ function ProjectListToggle({
   onToggle: () => void;
   total: number;
 }) {
-  const actionLabel = expanded ? `Show fewer ${label}` : `Show all ${label}`;
+  const t = useTranslations();
+  const actionLabel = expanded
+    ? t("workspaceShowFewerLabel", { label })
+    : t("workspaceShowAllLabel", { label });
   return (
     <div className="at-project-list-actions">
       <Button
@@ -331,20 +336,26 @@ function ProjectListToggle({
         size="small"
         type="text"
       >
-        {expanded ? "Show fewer" : `Show all ${total}`}
+        {expanded ? t("workspaceShowFewer") : t("workspaceShowAll", { count: total })}
       </Button>
     </div>
   );
 }
 
-function WorkspaceTreeEntry({ entry }: { entry: WorkspaceTreeNode }) {
+function WorkspaceTreeEntry({
+  entry,
+  t,
+}: {
+  entry: WorkspaceTreeNode;
+  t: Translate;
+}) {
   const Icon = entry.kind === "directory" ? FolderClosed : File;
   return (
     <div className="at-project-file-row" title={entry.path}>
       <Icon aria-hidden="true" size={15} />
       <span>{entry.name}</span>
       {entry.kind === "directory" && entry.has_children === true ? (
-        <span className="at-project-file-meta">contains items</span>
+        <span className="at-project-file-meta">{t("workspaceContainsItems")}</span>
       ) : null}
     </div>
   );

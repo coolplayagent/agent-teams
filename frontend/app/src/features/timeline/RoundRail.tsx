@@ -1,4 +1,5 @@
 import type { SessionRound } from "../../api/contracts";
+import type { Translate } from "../../i18n";
 import { roundTimeLabel, roundTitle } from "./roundMetadata";
 
 interface RoundRailProps {
@@ -7,6 +8,7 @@ interface RoundRailProps {
   loading: boolean;
   onSelectRun: (runId: string) => void;
   rounds: SessionRound[];
+  t: Translate;
 }
 
 export function RoundRail({
@@ -15,18 +17,19 @@ export function RoundRail({
   loading,
   onSelectRun,
   rounds,
+  t,
 }: RoundRailProps) {
   if (!loading && !error && rounds.length === 0) {
     return null;
   }
 
   return (
-    <nav aria-label="Rounds" className="at-round-rail">
+    <nav aria-label={t("timelineRounds")} className="at-round-rail">
       {loading ? (
-        <div className="at-round-rail-state">Loading rounds</div>
+        <div className="at-round-rail-state">{t("timelineRoundsLoading")}</div>
       ) : null}
       {error ? (
-        <div className="at-round-rail-state">Rounds unavailable</div>
+        <div className="at-round-rail-state">{t("timelineRoundsUnavailable")}</div>
       ) : null}
       {!loading && !error ? (
         <div className="at-round-rail-list">
@@ -37,7 +40,10 @@ export function RoundRail({
             return (
               <button
                 aria-current={active ? "step" : undefined}
-                aria-label={`Go to round ${index + 1}: ${title}`}
+                aria-label={t("timelineGoToRound", {
+                  round: index + 1,
+                  title,
+                })}
                 className={active ? "at-round-rail-item is-active" : "at-round-rail-item"}
                 key={round.run_id}
                 onClick={() => onSelectRun(round.run_id)}

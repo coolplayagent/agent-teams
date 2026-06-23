@@ -40,6 +40,7 @@ import { MessageTimeline } from "../timeline/MessageTimeline";
 import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
 import { useUiStore } from "../../runtime/uiStore";
+import { useTranslations } from "../../i18n";
 
 const { Header, Sider, Content } = Layout;
 
@@ -47,6 +48,7 @@ export function AppShell() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const { token } = theme.useToken();
+  const t = useTranslations();
   const [activeView, setActiveView] = useState<
     "chat" | "observability" | "workspace"
   >("chat");
@@ -87,13 +89,13 @@ export function AppShell() {
 
   const healthLabel = useMemo(() => {
     if (healthQuery.isLoading) {
-      return "Checking";
+      return t("healthChecking");
     }
     if (healthQuery.isError) {
-      return "Offline";
+      return t("healthOffline");
     }
-    return healthQuery.data?.status ?? "Ready";
-  }, [healthQuery.data?.status, healthQuery.isError, healthQuery.isLoading]);
+    return healthQuery.data?.status ?? t("healthReady");
+  }, [healthQuery.data?.status, healthQuery.isError, healthQuery.isLoading, t]);
   const selectedSession = useMemo(
     () =>
       sidebarSessionsQuery.data?.find(
@@ -107,30 +109,30 @@ export function AppShell() {
         active: activeView === "chat",
         icon: <MessageSquare size={15} />,
         key: "chat",
-        label: "Chat",
+        label: t("appChat"),
         onSelect: () => setActiveView("chat"),
       },
       {
         icon: <Search size={15} />,
         key: "search",
-        label: "Search",
+        label: t("appSearch"),
         onSelect: () => window.dispatchEvent(new Event("agent-teams-focus-session-search")),
       },
       {
         active: activeView === "observability",
         icon: <Activity size={15} />,
         key: "observability",
-        label: "Observability",
+        label: t("appObservability"),
         onSelect: () => setActiveView("observability"),
       },
       {
         icon: <Settings size={15} />,
         key: "settings",
-        label: "Settings",
+        label: t("appSettings"),
         onSelect: () => setSettingsOpen(true),
       },
     ],
-    [activeView],
+    [activeView, t],
   );
 
   useEffect(() => {
@@ -162,9 +164,9 @@ export function AppShell() {
     <Layout className="at-shell">
       <Header className="at-topbar">
         <div className="at-topbar-left">
-          <Tooltip title="Toggle sidebar">
+          <Tooltip title={t("appToggleSidebar")}>
             <Button
-              aria-label="Toggle sidebar"
+              aria-label={t("appToggleSidebar")}
               icon={<Menu size={17} />}
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               type="text"
@@ -180,28 +182,28 @@ export function AppShell() {
             onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}
             size="small"
           >
-            {language === "zh-CN" ? "中文" : "EN"}
+            {language === "zh-CN" ? t("languageChinese") : t("languageEnglish")}
           </Button>
-          <Tooltip title="Observability">
+          <Tooltip title={t("appObservability")}>
             <Button
-              aria-label="Observability"
+              aria-label={t("appObservability")}
               icon={<Activity size={17} />}
               onClick={() => setActiveView("observability")}
               type={activeView === "observability" ? "default" : "text"}
             />
           </Tooltip>
           <MessageExportMenu messenger={message} sessionId={selectedSessionId} />
-          <Tooltip title="Settings">
+          <Tooltip title={t("appSettings")}>
             <Button
-              aria-label="Settings"
+              aria-label={t("appSettings")}
               icon={<Settings size={17} />}
               onClick={() => setSettingsOpen(true)}
               type="text"
             />
           </Tooltip>
-          <Tooltip title="Toggle theme">
+          <Tooltip title={t("appToggleTheme")}>
             <Button
-              aria-label="Toggle theme"
+              aria-label={t("appToggleTheme")}
               icon={themeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
               onClick={() => setThemeMode(themeMode === "dark" ? "light" : "dark")}
               type="text"

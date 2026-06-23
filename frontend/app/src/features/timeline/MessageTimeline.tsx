@@ -17,6 +17,7 @@ import {
 import type { RunEventType } from "../../runtime/events";
 import type { TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
+import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
@@ -32,6 +33,7 @@ interface MessageTimelineProps {
 
 export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const { message } = App.useApp();
+  const t = useTranslations();
   const parentRef = useRef<HTMLDivElement | null>(null);
   const pendingRoundRunIdRef = useRef<string | null>(null);
   const scrollSessionIdRef = useRef<string | null>(sessionId);
@@ -154,7 +156,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   if (sessionId === null) {
     return (
       <div className="at-timeline at-timeline-empty">
-        <Empty description="Select a session" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("timelineSelectSession")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       </div>
     );
   }
@@ -170,7 +172,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   if (messagesQuery.isError) {
     return (
       <div className="at-timeline at-timeline-empty">
-        <Empty description="Could not load messages" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("timelineLoadError")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       </div>
     );
   }
@@ -178,7 +180,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   if (rows.length === 0) {
     return (
       <div className="at-timeline at-timeline-empty">
-        <Empty description="No messages yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("timelineNoMessages")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       </div>
     );
   }
@@ -189,11 +191,11 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
         <div className="at-timeline-toolbar">
           <Tooltip
             title={
-              streamOpenForSession ? "Copy is available after streaming finishes" : "Copy last answer"
+              streamOpenForSession ? t("timelineCopyAfterStream") : t("timelineCopyLastAnswer")
             }
           >
             <Button
-              aria-label="Copy last answer"
+              aria-label={t("timelineCopyLastAnswer")}
               disabled={lastAnswer === undefined || streamOpenForSession}
               icon={<Copy size={15} />}
               onClick={() => {
@@ -214,6 +216,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
               virtualItem.index,
               virtualItem.start,
               virtualizer.measureElement,
+              t,
             ),
           )}
         </div>
@@ -224,6 +227,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
         loading={roundsQuery.isLoading}
         onSelectRun={handleRoundSelect}
         rounds={rounds}
+        t={t}
       />
     </div>
   );
@@ -463,6 +467,7 @@ function timelineRowElement(
   index: number,
   start: number,
   measureElement: (element: Element | null) => void,
+  t: Translate,
 ) {
   const style = { transform: `translateY(${start}px)` };
   if (row.roundMarker !== null) {
@@ -476,7 +481,7 @@ function timelineRowElement(
         ref={measureElement}
         style={style}
       >
-        <RoundMarker index={row.roundMarker.index} round={row.roundMarker.round} />
+        <RoundMarker index={row.roundMarker.index} round={row.roundMarker.round} t={t} />
       </section>
     );
   }
@@ -491,9 +496,9 @@ function timelineRowElement(
       style={style}
     >
       <Typography.Text className="at-message-role">
-        {row.role}
+        {displayRole(row.role, t)}
       </Typography.Text>
-      <MessageRowContent parts={row.parts} />
+      <MessageRowContent parts={row.parts} t={t} />
     </article>
   );
 }
@@ -1029,7 +1034,13 @@ function outputDeltaMediaPart(
   });
 }
 
-function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
+function MessageRowContent({
+  parts,
+  t,
+}: {
+  parts: TimelineRenderPart[];
+  t: Translate;
+}) {
   return (
     <div className="at-message-content">
       {parts.map((part, index) => {
@@ -1039,23 +1050,30 @@ function MessageRowContent({ parts }: { parts: TimelineRenderPart[] }) {
           );
         }
         if (part.kind === "tool") {
-          return <MessageToolBlock key={`tool:${index}`} tool={part} />;
+          return <MessageToolBlock key={`tool:${index}`} tool={part} t={t} />;
         }
         if (part.kind === "thinking") {
           return (
             <MessageThinkingBlock
               key={`thinking:${index}`}
               thinking={part}
+              t={t}
             />
           );
         }
-        return <MessageMediaPreview key={`media:${index}`} media={part} />;
+        return <MessageMediaPreview key={`media:${index}`} media={part} t={t} />;
       })}
     </div>
   );
 }
 
-function MessageThinkingBlock({ thinking }: { thinking: TimelineThinkingPart }) {
+function MessageThinkingBlock({
+  thinking,
+  t,
+}: {
+  thinking: TimelineThinkingPart;
+  t: Translate;
+}) {
   const hasText = thinking.text.trim().length > 0;
   return (
     <details
@@ -1065,9 +1083,9 @@ function MessageThinkingBlock({ thinking }: { thinking: TimelineThinkingPart }) 
       open={thinking.streaming ? true : undefined}
     >
       <summary className="at-message-thinking-summary">
-        <span className="at-message-thinking-label">Thinking</span>
+        <span className="at-message-thinking-label">{t("timelineThinking")}</span>
         {thinking.streaming ? (
-          <span className="at-message-thinking-live">Live</span>
+          <span className="at-message-thinking-live">{t("timelineLive")}</span>
         ) : null}
       </summary>
       {hasText ? (
@@ -1079,8 +1097,14 @@ function MessageThinkingBlock({ thinking }: { thinking: TimelineThinkingPart }) 
   );
 }
 
-function MessageToolBlock({ tool }: { tool: TimelineToolPart }) {
-  const title = `${toolPhaseLabel(tool)}: ${tool.toolName}`;
+function MessageToolBlock({
+  tool,
+  t,
+}: {
+  tool: TimelineToolPart;
+  t: Translate;
+}) {
+  const title = `${toolPhaseLabel(tool, t)}: ${tool.toolName}`;
   return (
     <div className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
       <div className="at-message-tool-title">
@@ -1088,14 +1112,20 @@ function MessageToolBlock({ tool }: { tool: TimelineToolPart }) {
         <span>{title}</span>
       </div>
       {tool.callId ? (
-        <div className="at-message-tool-meta">Call id: {tool.callId}</div>
+        <div className="at-message-tool-meta">{t("timelineCallId")}: {tool.callId}</div>
       ) : null}
       {tool.body ? <pre>{tool.body}</pre> : null}
     </div>
   );
 }
 
-function MessageMediaPreview({ media }: { media: TimelineMediaPart }) {
+function MessageMediaPreview({
+  media,
+  t,
+}: {
+  media: TimelineMediaPart;
+  t: Translate;
+}) {
   const label = media.name || media.modality || "media";
   if (media.modality === "image" || media.mimeType.startsWith("image/")) {
     return (
@@ -1103,7 +1133,7 @@ function MessageMediaPreview({ media }: { media: TimelineMediaPart }) {
         <Image
           alt={label}
           className="at-message-media-image"
-          preview={{ mask: "Preview" }}
+          preview={{ mask: t("timelinePreview") }}
           src={media.url}
         />
         <figcaption>{label}</figcaption>
@@ -1572,29 +1602,43 @@ function entryClosesThinking(kind: RunEventType | "message"): boolean {
   );
 }
 
-function toolPhaseLabel(tool: TimelineToolPart): string {
+function toolPhaseLabel(tool: TimelineToolPart, t: Translate): string {
   if (tool.phase === "approval-requested") {
-    return "Approval requested";
+    return t("timelineApprovalRequested");
   }
   if (tool.phase === "approval-resolved") {
     if (approvalActionIsError(tool.action)) {
-      return approvalDeniedLabel(tool.action);
+      return t("timelineApprovalDenied");
     }
     if (approvalActionIsApproved(tool.action)) {
-      return "Approval approved";
+      return t("timelineApprovalApproved");
     }
-    return "Approval resolved";
+    return t("timelineApprovalResolved");
   }
   if (tool.phase === "call") {
-    return "Tool call";
+    return t("timelineToolCall");
   }
   if (tool.phase === "validation") {
-    return "Tool validation";
+    return t("timelineToolValidation");
   }
   if (tool.error) {
-    return "Tool error";
+    return t("timelineToolError");
   }
-  return "Tool result";
+  return t("timelineToolResult");
+}
+
+function displayRole(role: string, t: Translate): string {
+  const normalized = role.trim().toLowerCase();
+  if (normalized === "user") {
+    return t("timelineRoleUser");
+  }
+  if (normalized === "assistant") {
+    return t("timelineRoleAssistant");
+  }
+  if (normalized === "agent") {
+    return t("timelineRoleAgent");
+  }
+  return role;
 }
 
 function approvalBody({

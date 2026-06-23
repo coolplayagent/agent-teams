@@ -8,12 +8,14 @@ import {
   jsonRecord,
 } from "../../api/client";
 import type { JsonValue } from "../../api/contracts";
+import { useTranslations } from "../../i18n";
 
 interface ObservabilityPanelProps {
   sessionId: string | null;
 }
 
 export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
+  const t = useTranslations();
   const [scope, setScope] = useState<"global" | "session">("global");
   const effectiveScope = scope === "session" && sessionId === null ? "global" : scope;
   const scopeId = effectiveScope === "session" ? sessionId ?? "" : "";
@@ -33,42 +35,42 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
     <section className="at-surface-view">
       <div className="at-surface-toolbar">
         <div>
-          <Typography.Title level={3}>Observability</Typography.Title>
+          <Typography.Title level={3}>{t("observabilityTitle")}</Typography.Title>
           <Typography.Text type="secondary">
-            {overviewQuery.data?.updated_at ?? "Metrics for the last 24 hours"}
+            {overviewQuery.data?.updated_at ?? t("observabilityLast24Hours")}
           </Typography.Text>
         </div>
         <Segmented
           onChange={(value) => setScope(value as "global" | "session")}
           options={[
-            { label: "Global", value: "global" },
-            { disabled: sessionId === null, label: "Session", value: "session" },
+            { label: t("observabilityGlobal"), value: "global" },
+            { disabled: sessionId === null, label: t("observabilitySession"), value: "session" },
           ]}
           value={effectiveScope}
         />
       </div>
       {overviewQuery.isError || breakdownsQuery.isError ? (
-        <Alert message="Could not load observability metrics" type="error" showIcon />
+        <Alert message={t("observabilityError")} type="error" showIcon />
       ) : null}
       {Object.keys(kpis).length === 0 && !overviewQuery.isLoading ? (
-        <Empty description="No metrics in this window" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("observabilityNoMetrics")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Space className="at-stat-grid" size={12} wrap>
-          {stat("Steps", kpis.steps)}
-          {stat("Input tokens", kpis.input_tokens)}
-          {stat("Output tokens", kpis.output_tokens)}
-          {stat("Tool calls", kpis.tool_calls)}
-          {stat("Tool success", kpis.tool_success_rate, "percent")}
-          {stat("Avg tool ms", kpis.tool_avg_duration_ms)}
+          {stat(t("observabilitySteps"), kpis.steps)}
+          {stat(t("observabilityInputTokens"), kpis.input_tokens)}
+          {stat(t("observabilityOutputTokens"), kpis.output_tokens)}
+          {stat(t("observabilityToolCalls"), kpis.tool_calls)}
+          {stat(t("observabilityToolSuccess"), kpis.tool_success_rate, "percent")}
+          {stat(t("observabilityAvgToolMs"), kpis.tool_avg_duration_ms)}
         </Space>
       )}
       <Table
         className="at-breakdown-table"
         columns={[
-          { dataIndex: "name", key: "name", title: "Breakdown" },
-          { dataIndex: "calls", key: "calls", title: "Calls" },
-          { dataIndex: "success", key: "success", title: "Success" },
-          { dataIndex: "duration", key: "duration", title: "Avg ms" },
+          { dataIndex: "name", key: "name", title: t("observabilityBreakdown") },
+          { dataIndex: "calls", key: "calls", title: t("observabilityCalls") },
+          { dataIndex: "success", key: "success", title: t("observabilitySuccess") },
+          { dataIndex: "duration", key: "duration", title: t("observabilityAvgMs") },
         ]}
         dataSource={rows}
         loading={breakdownsQuery.isLoading}

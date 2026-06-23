@@ -28,6 +28,7 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   useUiStore.setState({
+    language: "en",
     selectedSessionId: null,
     selectedWorkspaceId: null,
   });
@@ -118,6 +119,35 @@ describe("SessionsSidebar", () => {
     );
     expect(useUiStore.getState().selectedSessionId).toBe("session-new");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+  });
+
+  it("localizes the persistent sidebar frame in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar({
+      onOpenWorkspaceView: vi.fn(),
+    });
+
+    expect(await screen.findByText("工作空间")).toBeVisible();
+    expect(screen.getByRole("button", { name: "新建会话" })).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "搜索会话" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "刷新会话" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开工作区视图" })).toBeVisible();
   });
 
   it("ignores a stale stored workspace id when creating a session", async () => {

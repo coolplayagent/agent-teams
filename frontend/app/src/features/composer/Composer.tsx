@@ -41,6 +41,7 @@ import type {
   ThinkingEffort,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
+import { useTranslations, type Translate } from "../../i18n";
 import {
   buildPromptInputParts,
   PromptAttachments,
@@ -64,17 +65,6 @@ interface ComposerProps {
 const THINKING_MODE_STORAGE_KEY = "agent_teams_thinking_enabled";
 const THINKING_EFFORT_STORAGE_KEY = "agent_teams_thinking_effort";
 const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
-const THINKING_EFFORT_OPTIONS: Array<{ label: string; value: ThinkingEffort }> = [
-  { label: "Minimal", value: "minimal" },
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-];
-const DEFAULT_MODEL_PROFILE_OPTION = { label: "Default", value: "" };
-const SESSION_MODE_OPTIONS: Array<{ label: string; value: SessionMode }> = [
-  { label: "Normal", value: "normal" },
-  { label: "Orchestration", value: "orchestration" },
-];
 
 interface ModelProfileOption {
   label: string;
@@ -98,6 +88,7 @@ function sessionTopologyLockQueryKey(sessionId: string | null) {
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const t = useTranslations();
   const inputRef = useRef<SenderRef | null>(null);
   const [draft, setDraft] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
@@ -189,8 +180,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       ? null
       : normalizeProfileName(sessionQuery.data.normal_model_profile);
   const modelProfileOptions = useMemo(
-    () => buildModelProfileOptions(modelProfilesQuery.data, selectedModelProfile ?? ""),
-    [modelProfilesQuery.data, selectedModelProfile],
+    () => buildModelProfileOptions(
+      modelProfilesQuery.data,
+      selectedModelProfile ?? "",
+      t,
+    ),
+    [modelProfilesQuery.data, selectedModelProfile, t],
   );
   const leadingRoleMention = useMemo(
     () => parseLeadingRoleMention(draft, roleOptionsQuery.data),
@@ -208,7 +203,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     leadingRoleMention.roleId === null ? draft.trim() : leadingRoleMention.promptText;
   const draftValidationMessage =
     activeRunId === null
-      ? resolveDraftValidationMessage(leadingRoleMention, promptAttachments)
+      ? resolveDraftValidationMessage(leadingRoleMention, promptAttachments, t)
       : "";
   const attachmentValidationMessage = resolveImageInputBlockedMessage({
     activeRunId,
@@ -219,6 +214,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     selectedNormalRootRoleId,
     selectedSessionMode,
     targetRoleId: effectiveTargetRoleId,
+    t,
   });
   const displayedComposerStatus =
     draftValidationMessage || attachmentValidationMessage || composerStatus;
@@ -238,7 +234,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const createRunMutation = useMutation({
     mutationFn: async () => {
       if (sessionId === null) {
-        throw new Error("Select a session before sending.");
+        throw new Error(t("composerSelectSessionBeforeSending"));
       }
       if (draftValidationMessage) {
         throw new Error(draftValidationMessage);
@@ -275,14 +271,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
     onError: (error) => {
-      void message.error(error instanceof Error ? error.message : "Run creation failed.");
+      void message.error(error instanceof Error ? error.message : t("composerRunCreationFailed"));
     },
   });
 
   const stopRunMutation = useMutation({
     mutationFn: async () => {
       if (activeRunId === null) {
-        throw new Error("No active run to stop.");
+        throw new Error(t("composerNoActiveRunStop"));
       }
       return stopRun(activeRunId);
     },
@@ -294,18 +290,18 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       }
     },
     onError: (error) => {
-      void message.error(error instanceof Error ? error.message : "Stop failed.");
+      void message.error(error instanceof Error ? error.message : t("composerStopFailed"));
     },
   });
 
   const injectMessageMutation = useMutation({
     mutationFn: async (mode: InjectionDeliveryMode) => {
       if (activeRunId === null) {
-        throw new Error("No active run to inject into.");
+        throw new Error(t("composerNoActiveRunInject"));
       }
       const content = draft.trim();
       if (!content) {
-        throw new Error("Injection content cannot be empty.");
+        throw new Error(t("composerInjectEmpty"));
       }
       return injectRunMessage(activeRunId, { content, mode });
     },
@@ -316,14 +312,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       }
     },
     onError: (error) => {
-      void message.error(error instanceof Error ? error.message : "Injection failed.");
+      void message.error(error instanceof Error ? error.message : t("composerInjectionFailed"));
     },
   });
 
   const updateModelProfileMutation = useMutation({
     mutationFn: async (modelProfile: string) => {
       if (sessionId === null) {
-        throw new Error("Select a session before changing the model.");
+        throw new Error(t("composerSelectSessionBeforeModel"));
       }
       return updateSessionNormalModelProfile(
         sessionId,
@@ -338,13 +334,13 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       void message.success(
         updated.normal_model_profile
-          ? `Model profile set to ${updated.normal_model_profile}.`
-          : "Model profile reset.",
+          ? t("composerModelProfileSet", { profile: updated.normal_model_profile })
+          : t("composerModelProfileReset"),
       );
     },
     onError: (error) => {
       void message.error(
-        error instanceof Error ? error.message : "Model profile update failed.",
+        error instanceof Error ? error.message : t("composerModelProfileUpdateFailed"),
       );
     },
   });
@@ -352,7 +348,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const updateTopologyMutation = useMutation({
     mutationFn: async (patch: TopologyPatch) => {
       if (sessionId === null) {
-        throw new Error("Select a session before changing mode.");
+        throw new Error(t("composerSelectSessionBeforeMode"));
       }
       return updateSessionTopology(sessionId, {
         session_mode: patch.sessionMode,
@@ -370,11 +366,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         queryKey: sessionDetailQueryKey(updated.session_id),
       });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-      void message.success("Session topology updated.");
+      void message.success(t("composerSessionTopologyUpdated"));
     },
     onError: (error) => {
       void message.error(
-        error instanceof Error ? error.message : "Session mode update failed.",
+        error instanceof Error ? error.message : t("composerTopologyUpdateFailed"),
       );
     },
   });
@@ -434,7 +430,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       <div className="at-composer-inner">
         <Sender
           ref={inputRef}
-          aria-label="Prompt"
+          aria-label={t("composerPrompt")}
           autoSize={{ minRows: 1, maxRows: 7 }}
           disabled={busy || sessionId === null}
           className="at-composer-sender"
@@ -460,7 +456,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               injectMessageMutation.mutate("queued");
             }
           }}
-          placeholder="What would you like the agents to do?"
+          placeholder={t("composerPromptPlaceholder")}
           submitType="enter"
           value={draft}
           actions={false}
@@ -487,7 +483,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         <div className="at-composer-controls">
           <Space className="at-composer-control-set" size={8} wrap>
             <Segmented<SessionMode>
-              aria-label="Session mode"
+              aria-label={t("composerSessionMode")}
               className="at-session-mode-control"
               disabled={!canChangeTopology}
               onChange={(mode) => {
@@ -495,7 +491,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                   updateSessionTopologyMode(mode);
                 }
               }}
-              options={SESSION_MODE_OPTIONS.map((option) => ({
+              options={sessionModeOptions(t).map((option) => ({
                 ...option,
                 disabled:
                   option.value === "orchestration" &&
@@ -505,7 +501,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               value={selectedSessionMode}
             />
             <Select
-              aria-label="Root role"
+              aria-label={t("composerRootRole")}
               className="at-normal-root-role-select"
               disabled={
                 !canChangeTopology ||
@@ -523,14 +519,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               }}
               optionFilterProp="label"
               options={normalRootRoleOptions}
-              placeholder="Root role"
+              placeholder={t("composerRootRole")}
               popupMatchSelectWidth={false}
               showSearch
               size="small"
               value={selectedNormalRootRoleId || undefined}
             />
             <Select
-              aria-label="Orchestration preset"
+              aria-label={t("composerOrchestrationPreset")}
               className="at-orchestration-preset-select"
               disabled={
                 !canChangeTopology ||
@@ -550,7 +546,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               }}
               optionFilterProp="label"
               options={orchestrationPresetOptions}
-              placeholder="Preset"
+              placeholder={t("composerPreset")}
               popupMatchSelectWidth={false}
               showSearch
               size="small"
@@ -558,21 +554,21 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             />
             <Select
               allowClear
-              aria-label="Target role"
+              aria-label={t("composerTargetRole")}
               className="at-role-select"
               disabled={busy || activeRunId !== null}
               loading={roleOptionsQuery.isLoading}
               onChange={(value) => setTargetRoleId(value ?? null)}
               optionFilterProp="label"
               options={roleOptions}
-              placeholder="Role"
+              placeholder={t("composerTargetRole")}
               showSearch
               size="small"
               value={targetRoleId ?? undefined}
             />
             <Select
               allowClear
-              aria-label="Model profile"
+              aria-label={t("composerModelProfile")}
               className="at-model-profile-select"
               disabled={busy || activeRunId !== null || !canChangeModelProfile}
               loading={
@@ -591,7 +587,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               }}
               optionFilterProp="label"
               options={modelProfileOptions}
-              placeholder="Model"
+              placeholder={t("composerModel")}
               popupMatchSelectWidth={false}
               showSearch
               size="small"
@@ -599,7 +595,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             />
             <Space className="at-thinking-control" size={6}>
               <Typography.Text className="at-control-label" id="at-thinking-label">
-                Thinking
+                {t("composerThinking")}
               </Typography.Text>
               <Switch
                 aria-labelledby="at-thinking-label"
@@ -610,11 +606,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               />
               {thinking.enabled ? (
                 <Select
-                  aria-label="Thinking effort"
+                  aria-label={t("composerThinkingEffort")}
                   className="at-thinking-effort-select"
                   disabled={busy || activeRunId !== null}
                   onChange={(effort) => updateThinking({ effort })}
-                  options={THINKING_EFFORT_OPTIONS}
+                  options={thinkingEffortOptions(t)}
                   popupMatchSelectWidth={false}
                   size="small"
                   value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
@@ -622,7 +618,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               ) : null}
             </Space>
             <Checkbox
-              aria-label="Shell safety policy"
+              aria-label={t("composerShellSafetyPolicy")}
               checked={shellSafetyPolicyEnabled}
               disabled={
                 busy || activeRunId !== null || !canOverrideShellSafetyPolicy
@@ -631,14 +627,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 setShellSafetyPolicyEnabled(event.target.checked)
               }
             >
-              Shell safety
+              {t("composerShellSafety")}
             </Checkbox>
             <Checkbox
               checked={yolo}
               disabled={busy || activeRunId !== null}
               onChange={(event) => setYolo(event.target.checked)}
             >
-              YOLO
+              {t("composerYolo")}
             </Checkbox>
           </Space>
           <Space size={8}>
@@ -662,14 +658,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               </Tooltip>
             ) : null}
             {activeRunId !== null ? (
-              <Tooltip title="Stop run">
+              <Tooltip title={t("composerStopRun")}>
                 <Button
                   danger
                   icon={<Pause size={16} />}
                   loading={stopRunMutation.isPending}
                   onClick={() => stopRunMutation.mutate()}
                 >
-                  Stop
+                  {t("composerStop")}
                 </Button>
               </Tooltip>
             ) : null}
@@ -684,7 +680,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                   }
                   onClick={() => injectMessageMutation.mutate("queued")}
                 >
-                  Queue
+                  {t("composerQueue")}
                 </Button>
                 <Button
                   danger
@@ -696,7 +692,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                   }
                   onClick={() => injectMessageMutation.mutate("interrupt")}
                 >
-                  Interrupt
+                  {t("composerInterrupt")}
                 </Button>
               </>
             ) : (
@@ -707,7 +703,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 type="primary"
                 disabled={!canCreateRun}
               >
-                Send
+                {t("composerSend")}
               </Button>
             )}
           </Space>
@@ -790,11 +786,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       overrides.orchestrationPresetId ?? selectedOrchestrationPresetId,
     );
     if (sessionMode === "normal" && !normalRootRoleId) {
-      void message.warning("No root role is available.");
+      void message.warning(t("composerNoRootRole"));
       return;
     }
     if (sessionMode === "orchestration" && !orchestrationPresetId) {
-      void message.warning("No orchestration preset is available.");
+      void message.warning(t("composerNoOrchestrationPreset"));
       return;
     }
     updateTopologyMutation.mutate({
@@ -851,6 +847,7 @@ function normalizeThinkingEffort(value: string | null | undefined): ThinkingEffo
 function buildModelProfileOptions(
   profiles: ModelProfilesPayload | undefined,
   selectedProfile: string,
+  t: Translate,
 ): ModelProfileOption[] {
   const profileOptions = Object.entries(profiles ?? {})
     .map(([name, profile]) => {
@@ -863,7 +860,7 @@ function buildModelProfileOptions(
     })
     .filter((profile) => profile.value.length > 0)
     .sort((left, right) => left.value.localeCompare(right.value));
-  const options = [DEFAULT_MODEL_PROFILE_OPTION, ...profileOptions];
+  const options = [{ label: t("composerDefault"), value: "" }, ...profileOptions];
   const knownProfiles = new Set(options.map((option) => option.value));
   if (selectedProfile && !knownProfiles.has(selectedProfile)) {
     options.push({
@@ -877,12 +874,13 @@ function buildModelProfileOptions(
 function resolveDraftValidationMessage(
   mention: LeadingRoleMention,
   attachments: PromptAttachment[],
+  t: Translate,
 ): string {
   if (mention.error) {
     return mention.error;
   }
   if (mention.roleId !== null && !mention.promptText && attachments.length === 0) {
-    return "Enter a prompt after the role mention.";
+    return t("composerPromptAfterMention");
   }
   return "";
 }
@@ -896,6 +894,7 @@ function resolveImageInputBlockedMessage({
   selectedNormalRootRoleId,
   selectedSessionMode,
   targetRoleId,
+  t,
 }: {
   activeRunId: string | null;
   attachments: PromptAttachment[];
@@ -905,12 +904,13 @@ function resolveImageInputBlockedMessage({
   selectedNormalRootRoleId: string;
   selectedSessionMode: SessionMode;
   targetRoleId: string | null;
+  t: Translate;
 }): string {
   if (attachments.length === 0) {
     return "";
   }
   if (activeRunId !== null) {
-    return "Runtime injections support text only.";
+    return t("composerRuntimeTextOnly");
   }
   const resolvedTargetRoleId = resolveValidationRoleId(
     selectedSessionMode,
@@ -942,11 +942,33 @@ function resolveImageInputBlockedMessage({
     selectedProfileSupport.label ||
     roleSupport.label ||
     resolvedTargetRoleId ||
-    "the selected agent";
+    t("composerSelectedAgent");
   if (imageSupport === null) {
-    return `Image input support for ${targetLabel} is unknown.`;
+    return t("composerImageSupportUnknown", { target: targetLabel });
   }
-  return `${targetLabel} does not support image input.`;
+  return t("composerImageUnsupported", { target: targetLabel });
+}
+
+function thinkingEffortOptions(t: Translate): Array<{
+  label: string;
+  value: ThinkingEffort;
+}> {
+  return [
+    { label: t("composerMinimal"), value: "minimal" },
+    { label: t("composerLow"), value: "low" },
+    { label: t("composerMedium"), value: "medium" },
+    { label: t("composerHigh"), value: "high" },
+  ];
+}
+
+function sessionModeOptions(t: Translate): Array<{
+  label: string;
+  value: SessionMode;
+}> {
+  return [
+    { label: t("composerNormal"), value: "normal" },
+    { label: t("composerOrchestration"), value: "orchestration" },
+  ];
 }
 
 function resolveValidationRoleId(
@@ -1092,7 +1114,7 @@ function readPromptSelection(
 ) {
   const promptInput =
     composerRoot?.querySelector<HTMLTextAreaElement>("textarea") ??
-    document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]');
+    document.querySelector<HTMLTextAreaElement>("textarea");
   if (promptInput !== null) {
     return {
       selectionEnd: promptInput.selectionEnd,

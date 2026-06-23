@@ -79,5 +79,8 @@ function storedThemeMode(): ThemeMode {
 
 function storedLanguage(): Language {
   const raw = window.localStorage.getItem("agentTeams.language");
-  return raw === "zh-CN" ? "zh-CN" : "en";
+  if (raw === "zh-CN" || raw === "en") {
+    return raw;
+  }
+  return window.navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
 }

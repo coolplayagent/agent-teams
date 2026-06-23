@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { getGeneralConfig, saveGeneralConfig } from "../../api/client";
 import type { GeneralConfig } from "../../api/contracts";
+import { useTranslations } from "../../i18n";
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -13,6 +14,7 @@ interface SettingsDrawerProps {
 export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const t = useTranslations();
   const [form] = Form.useForm<GeneralConfig>();
   const configQuery = useQuery({
     queryKey: ["settings", "general"],
@@ -22,11 +24,11 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
   const saveMutation = useMutation({
     mutationFn: saveGeneralConfig,
     onSuccess: () => {
-      void message.success("Settings saved.");
+      void message.success(t("settingsSaved"));
       void queryClient.invalidateQueries({ queryKey: ["settings", "general"] });
     },
     onError: (error) => {
-      void message.error(error instanceof Error ? error.message : "Settings save failed.");
+      void message.error(error instanceof Error ? error.message : t("settingsSaveFailed"));
     },
   });
 
@@ -41,7 +43,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
       destroyOnClose
       onClose={onClose}
       open={open}
-      title="Settings"
+      title={t("settingsTitle")}
       width={420}
     >
       {configQuery.isLoading ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
@@ -52,7 +54,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
           onFinish={(values) => saveMutation.mutate(values)}
         >
           <Form.Item
-            label="Shell safety policy"
+            label={t("settingsShellSafetyPolicy")}
             name="shell_safety_policy_enabled"
             valuePropName="checked"
           >
@@ -63,7 +65,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
             loading={saveMutation.isPending}
             type="primary"
           >
-            Save
+            {t("settingsSave")}
           </Button>
         </Form>
       ) : null}

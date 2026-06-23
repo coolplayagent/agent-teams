@@ -29,6 +29,7 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   useUiStore.setState({
+    language: "en",
     selectedSessionId: null,
     selectedWorkspaceId: null,
   });
@@ -159,6 +160,45 @@ describe("WorkspaceProjectView", () => {
 
     expect(useUiStore.getState().selectedSessionId).toBe("session-14");
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("localizes the project view shell actions in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    const onBack = vi.fn();
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/work/agent-teams",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [],
+      },
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/agent-teams",
+      is_git_repository: true,
+      diff_files: [],
+    });
+
+    renderProjectView(onBack);
+
+    expect(await screen.findByRole("button", { name: "打开文件夹" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "刷新工作区视图" })).toBeVisible();
+    expect(screen.getByText("工作区")).toBeVisible();
+    expect(screen.getByText("文件")).toBeVisible();
+    expect(screen.getByText("变更")).toBeVisible();
+    expect(screen.getByText("会话")).toBeVisible();
   });
 });
 

@@ -36,6 +36,7 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider
+        button={{ autoInsertSpace: false }}
         theme={{
           algorithm,
           token: tokens,

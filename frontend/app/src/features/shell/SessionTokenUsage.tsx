@@ -5,6 +5,7 @@ import { useMemo } from "react";
 
 import { getSessionTokenUsage } from "../../api/client";
 import type { SessionTokenUsage as SessionTokenUsagePayload } from "../../api/contracts";
+import { useTranslations, type Translate } from "../../i18n";
 
 interface SessionTokenUsageProps {
   primaryRoleId?: string | null;
@@ -16,6 +17,7 @@ export function SessionTokenUsage({
   sessionId,
 }: SessionTokenUsageProps) {
   const queryClient = useQueryClient();
+  const t = useTranslations();
   const queryKey = ["sessions", sessionId, "token-usage"];
   const usageQuery = useQuery({
     queryKey,
@@ -26,7 +28,7 @@ export function SessionTokenUsage({
   const refreshMutation = useMutation({
     mutationFn: async () => {
       if (sessionId === null) {
-        throw new Error("Select a session before refreshing token usage.");
+        throw new Error(t("tokenSelectSessionBeforeRefresh"));
       }
       return getSessionTokenUsage(sessionId, true);
     },
@@ -47,25 +49,25 @@ export function SessionTokenUsage({
         ? "ready"
         : "idle";
   const detailTitle = useMemo(
-    () => buildDetailTitle(usage, contextUsage, state),
-    [contextUsage, state, usage],
+    () => buildDetailTitle(usage, contextUsage, state, t),
+    [contextUsage, state, t, usage],
   );
 
   return (
     <div className="at-token-usage" data-state={state} title={detailTitle}>
       <Space size={10} wrap>
-        <Typography.Text className="at-token-usage-label">Tokens</Typography.Text>
-        <TokenUsagePair label="Input" value={usage?.total_input_tokens ?? 0} />
-        <TokenUsagePair label="Output" value={usage?.total_output_tokens ?? 0} />
-        <TokenUsagePair label="Total" value={usage?.total_tokens ?? 0} />
+        <Typography.Text className="at-token-usage-label">{t("tokenUsage")}</Typography.Text>
+        <TokenUsagePair label={t("tokenInput")} value={usage?.total_input_tokens ?? 0} />
+        <TokenUsagePair label={t("tokenOutput")} value={usage?.total_output_tokens ?? 0} />
+        <TokenUsagePair label={t("tokenTotal")} value={usage?.total_tokens ?? 0} />
         <TokenUsagePair
-          label="Context"
+          label={t("tokenContext")}
           value={formatContextLabel(contextUsage)}
         />
       </Space>
-      <Tooltip title="Refresh token usage">
+      <Tooltip title={t("tokenRefresh")}>
         <Button
-          aria-label="Refresh token usage"
+          aria-label={t("tokenRefresh")}
           disabled={sessionId === null}
           icon={<RefreshCcw size={14} />}
           loading={usageQuery.isFetching || refreshMutation.isPending}
@@ -152,15 +154,16 @@ function buildDetailTitle(
   usage: SessionTokenUsagePayload | undefined,
   contextUsage: ContextUsageSummary | null,
   state: "error" | "idle" | "loading" | "ready",
+  t: Translate,
 ): string {
   if (state === "loading") {
-    return "Loading token usage";
+    return t("tokenLoading");
   }
   if (state === "error") {
-    return "Token usage unavailable";
+    return t("tokenUnavailable");
   }
   if (usage === undefined || !hasUsage(usage)) {
-    return "Token usage";
+    return t("tokenTitle");
   }
   const cached = safeNumber(usage.total_cached_input_tokens);
   const reasoning = safeNumber(usage.total_reasoning_output_tokens);
@@ -176,8 +179,8 @@ function buildDetailTitle(
     const contextWindow = contextUsage.contextWindow;
     const contextDetail =
       contextWindow === null
-        ? `Latest request input tokens: ${formatInteger(contextUsage.latestInputTokens)}`
-        : `Latest request input / context window: ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextWindow)}`;
+        ? `${t("tokenLatestInput")}: ${formatInteger(contextUsage.latestInputTokens)}`
+        : `${t("tokenLatestContext")}: ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextWindow)}`;
     details.push(`context ${contextUsage.roleId} ${contextDetail}`);
   }
   return details.join(" · ");

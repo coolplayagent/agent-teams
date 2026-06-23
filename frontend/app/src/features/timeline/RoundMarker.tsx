@@ -1,18 +1,24 @@
 import type { SessionRound } from "../../api/contracts";
+import type { Translate } from "../../i18n";
 import { formatRoundTokens, roundSummary } from "./roundMetadata";
 
 interface RoundMarkerProps {
   index: number;
   round: SessionRound;
+  t: Translate;
 }
 
-export function RoundMarker({ index, round }: RoundMarkerProps) {
+export function RoundMarker({ index, round, t }: RoundMarkerProps) {
   const summary = roundSummary(round, index);
   const metaItems = [
     summary.timeLabel,
-    summary.inputTokens > 0 ? `Input ${formatRoundTokens(summary.inputTokens)}` : "",
-    summary.outputTokens > 0 ? `Output ${formatRoundTokens(summary.outputTokens)}` : "",
-    summary.toolCount > 0 ? `Tools ${summary.toolCount}` : "",
+    summary.inputTokens > 0
+      ? `${t("tokenInput")} ${formatRoundTokens(summary.inputTokens)}`
+      : "",
+    summary.outputTokens > 0
+      ? `${t("tokenOutput")} ${formatRoundTokens(summary.outputTokens)}`
+      : "",
+    summary.toolCount > 0 ? `${t("timelineTools")} ${summary.toolCount}` : "",
     summary.statusLabel ?? "",
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);

@@ -22,7 +22,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
-import { useUiStore } from "../../runtime/uiStore";
+import { useUiStore, type Language } from "../../runtime/uiStore";
+import { useTranslations, type Translate } from "../../i18n";
 import { sessionDisplayLabel } from "./sessionLabels";
 
 const initialVisibleSessionsPerGroup = 10;
@@ -51,6 +52,8 @@ export function SessionsSidebar({
 }: SessionsSidebarProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const t = useTranslations();
+  const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
@@ -128,11 +131,11 @@ export function SessionsSidebar({
       onSessionSelected?.();
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", session.session_id] });
-      void message.success("Session created.");
+      void message.success(t("sidebarCreated"));
     },
     onError: (error) => {
       void message.error(
-        error instanceof Error ? error.message : "Session creation failed.",
+        error instanceof Error ? error.message : t("sidebarCreateFailed"),
       );
     },
   });
@@ -180,10 +183,10 @@ export function SessionsSidebar({
         onClick={() => createSessionMutation.mutate()}
         type="primary"
       >
-        New session
+        {t("sidebarNewSession")}
       </Button>
       {navigationItems.length > 0 ? (
-        <nav aria-label="Primary navigation" className="at-sidebar-nav">
+        <nav aria-label={t("sidebarPrimaryNavigation")} className="at-sidebar-nav">
           {navigationItems.map((item) => (
             <button
               aria-current={item.active ? "page" : undefined}
@@ -205,13 +208,13 @@ export function SessionsSidebar({
         </nav>
       ) : null}
       <div className="at-sidebar-section-header">
-        <span>Workspaces</span>
+        <span>{t("sidebarWorkspaces")}</span>
         <div className="at-sidebar-section-actions">
           <span>{sessionGroups.length}</span>
           {onOpenWorkspaceView !== undefined ? (
-            <Tooltip title="Open workspace view">
+            <Tooltip title={t("sidebarOpenWorkspaceView")}>
               <Button
-                aria-label="Open workspace view"
+                aria-label={t("sidebarOpenWorkspaceView")}
                 aria-pressed={workspaceViewActive}
                 className={workspaceViewActive ? "is-active" : undefined}
                 disabled={workspaceOptions.length === 0}
@@ -227,15 +230,15 @@ export function SessionsSidebar({
       <div className="at-sidebar-search-row">
         <Input.Search
           allowClear
-          aria-label="Search sessions"
+          aria-label={t("sidebarSearchSessions")}
           onChange={(event) => setFilter(event.target.value)}
-          placeholder="Search sessions"
+          placeholder={t("sidebarSearchSessions")}
           ref={searchInputRef}
           size="small"
           value={filter}
         />
         <Button
-          aria-label="Refresh sessions"
+          aria-label={t("sidebarRefreshSessions")}
           icon={<RefreshCcw size={15} />}
           loading={sessionsQuery.isFetching}
           onClick={() => queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] })}
@@ -245,13 +248,13 @@ export function SessionsSidebar({
       </div>
       {sessionsQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
       {sessionsQuery.isError ? (
-        <Empty description="Could not load sessions" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("sidebarSessionsLoadError")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : null}
       {!sessionsQuery.isLoading &&
       !sessionsQuery.isError &&
       totalVisibleSessions === 0 &&
       sessionGroups.length === 0 ? (
-        <Empty description="No sessions" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t("sidebarNoSessions")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : null}
       <div className="at-session-list">
         {sessionGroups.map((group) => {
@@ -275,7 +278,10 @@ export function SessionsSidebar({
               >
                 <button
                   aria-expanded={groupExpanded}
-                  aria-label={`${groupExpanded ? "Collapse" : "Expand"} ${group.label}`}
+                  aria-label={t(
+                    groupExpanded ? "sidebarCollapse" : "sidebarExpand",
+                    { label: group.label },
+                  )}
                   className="at-workspace-group-toggle"
                   onClick={() => toggleWorkspaceGroup(group.id)}
                   type="button"
@@ -297,7 +303,7 @@ export function SessionsSidebar({
                 <span className="at-workspace-group-count">{group.sessions.length}</span>
               </div>
               {groupExpanded && group.sessions.length === 0 ? (
-                <div className="at-workspace-group-empty">No sessions</div>
+                <div className="at-workspace-group-empty">{t("sidebarNoSessions")}</div>
               ) : null}
               {groupExpanded && group.sessions.length > 0 ? (
                 <div className="at-workspace-group-sessions">
@@ -330,19 +336,21 @@ export function SessionsSidebar({
                         >
                           {sessionLabel(session)}
                         </Typography.Text>
-                        {sessionMeta(session)}
+                        {sessionMeta(session, t, language)}
                       </div>
                     </button>
                   ))}
                   {hiddenSessionCount > 0 ? (
                     <button
-                      aria-label={`Show more sessions in ${group.label}`}
+                      aria-label={t("sidebarShowMoreInWorkspace", {
+                        label: group.label,
+                      })}
                       className="at-workspace-group-more"
                       onClick={() => showMoreSessions(group.id)}
                       type="button"
                     >
                       <ChevronDown aria-hidden="true" size={14} />
-                      <span>Show more</span>
+                      <span>{t("sidebarShowMore")}</span>
                       <span className="at-workspace-group-more-count">
                         {visibleSessions.length}/{group.sessions.length}
                       </span>
@@ -490,9 +498,9 @@ function sessionTimestampValue(session: SessionSidebarRecord): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function sessionMeta(session: SessionSidebarRecord) {
+function sessionMeta(session: SessionSidebarRecord, t: Translate, language: Language) {
   const status = session.active_run_status || "";
-  const updatedAt = formatRelativeTime(session.updated_at);
+  const updatedAt = formatRelativeTime(session.updated_at, language);
   const backgroundTaskCount = positiveCount(session.background_task_count);
   const pendingApprovalCount = positiveCount(session.pending_tool_approval_count);
   const pendingQuestionCount = positiveCount(session.pending_user_question_count);
@@ -510,7 +518,7 @@ function sessionMeta(session: SessionSidebarRecord) {
       {status ? (
         <span
           className={`at-session-status is-${status}`}
-          title={`Run status: ${status}`}
+          title={t("sidebarRunStatus", { status })}
         >
           {status}
         </span>
@@ -518,7 +526,7 @@ function sessionMeta(session: SessionSidebarRecord) {
       {backgroundTaskCount > 0 ? (
         <span
           className="at-session-background"
-          title={`${backgroundTaskCount} background tasks`}
+          title={t("sidebarBackgroundTasks", { count: backgroundTaskCount })}
         >
           bg {backgroundTaskCount}
         </span>
@@ -526,7 +534,7 @@ function sessionMeta(session: SessionSidebarRecord) {
       {pendingApprovalCount > 0 ? (
         <span
           className="at-session-background"
-          title={`${pendingApprovalCount} pending approvals`}
+          title={t("sidebarPendingApprovals", { count: pendingApprovalCount })}
         >
           ap {pendingApprovalCount}
         </span>
@@ -534,7 +542,7 @@ function sessionMeta(session: SessionSidebarRecord) {
       {pendingQuestionCount > 0 ? (
         <span
           className="at-session-background"
-          title={`${pendingQuestionCount} pending questions`}
+          title={t("sidebarPendingQuestions", { count: pendingQuestionCount })}
         >
           q {pendingQuestionCount}
         </span>
@@ -551,7 +559,7 @@ function positiveCount(value: number | undefined): number {
   return Math.max(0, Math.floor(value));
 }
 
-function formatRelativeTime(value: string | undefined): string {
+function formatRelativeTime(value: string | undefined, language: Language): string {
   if (value === undefined || !value.trim()) {
     return "";
   }
@@ -564,18 +572,24 @@ function formatRelativeTime(value: string | undefined): string {
   const hourMs = 60 * minuteMs;
   const dayMs = 24 * hourMs;
   if (elapsedMs < minuteMs) {
-    return "now";
+    return language === "zh-CN" ? "现在" : "now";
   }
   if (elapsedMs < hourMs) {
-    return `${Math.floor(elapsedMs / minuteMs)}m`;
+    return language === "zh-CN"
+      ? `${Math.floor(elapsedMs / minuteMs)}分`
+      : `${Math.floor(elapsedMs / minuteMs)}m`;
   }
   if (elapsedMs < dayMs) {
-    return `${Math.floor(elapsedMs / hourMs)}h`;
+    return language === "zh-CN"
+      ? `${Math.floor(elapsedMs / hourMs)}时`
+      : `${Math.floor(elapsedMs / hourMs)}h`;
   }
   if (elapsedMs < 7 * dayMs) {
-    return `${Math.floor(elapsedMs / dayMs)}d`;
+    return language === "zh-CN"
+      ? `${Math.floor(elapsedMs / dayMs)}天`
+      : `${Math.floor(elapsedMs / dayMs)}d`;
   }
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(language, {
     day: "numeric",
     month: "short",
   }).format(new Date(timestamp));

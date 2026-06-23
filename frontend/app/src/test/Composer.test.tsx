@@ -1,10 +1,17 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { createRun, getRoleConfigOptions, injectRunMessage } from "../api/client";
+import {
+  createRun,
+  getModelProfiles,
+  getRoleConfigOptions,
+  getSession,
+  injectRunMessage,
+  updateSessionNormalModelProfile,
+} from "../api/client";
 import { Composer } from "../features/composer/Composer";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
@@ -30,14 +37,36 @@ vi.mock("@ant-design/x", () => ({
 
 vi.mock("../api/client", () => ({
   createRun: vi.fn(),
+  getModelProfiles: vi.fn(),
   getRoleConfigOptions: vi.fn(),
+  getSession: vi.fn(),
   injectRunMessage: vi.fn(),
   stopRun: vi.fn(),
+  updateSessionNormalModelProfile: vi.fn(),
 }));
 
 const createRunMock = vi.mocked(createRun);
+const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
+const getSessionMock = vi.mocked(getSession);
 const injectRunMessageMock = vi.mocked(injectRunMessage);
+const updateSessionNormalModelProfileMock = vi.mocked(
+  updateSessionNormalModelProfile,
+);
+
+beforeEach(() => {
+  getSessionMock.mockResolvedValue({
+    session_id: "session-1",
+    workspace_id: "workspace-1",
+    normal_model_profile: null,
+  });
+  getModelProfilesMock.mockResolvedValue({
+    default: {
+      model: "gpt-4o-mini",
+      is_default: true,
+    },
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -93,6 +122,40 @@ describe("Composer", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
+  });
+
+  it("updates the current session model profile", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    getModelProfilesMock.mockResolvedValue({
+      default: {
+        model: "gpt-4o-mini",
+        is_default: true,
+      },
+      precise: {
+        model: "gpt-4.1",
+      },
+    });
+    updateSessionNormalModelProfileMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      normal_model_profile: "precise",
+    });
+
+    renderComposer();
+
+    fireEvent.mouseDown(
+      await screen.findByRole("combobox", { name: "Model profile" }),
+    );
+    fireEvent.click(await screen.findByText("precise - gpt-4.1"));
+
+    await waitFor(() =>
+      expect(updateSessionNormalModelProfileMock).toHaveBeenCalledWith(
+        "session-1",
+        "precise",
+      ),
+    );
   });
 
   it("passes selected thinking settings to AG-UI run creation", async () => {

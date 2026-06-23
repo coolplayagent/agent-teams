@@ -3,6 +3,7 @@ import type {
   AgUiActionResponse,
   RunInjectionRequest,
   JsonValue,
+  ModelProfilesPayload,
   ObservabilityBreakdowns,
   ObservabilityOverview,
   RecoverySnapshot,
@@ -37,6 +38,10 @@ export function getRoleConfigOptions(): Promise<RoleConfigOptions> {
   return requestJson<RoleConfigOptions>("/roles:options");
 }
 
+export function getModelProfiles(): Promise<ModelProfilesPayload> {
+  return requestJson<ModelProfilesPayload>("/system/configs/model/profiles");
+}
+
 export function listSidebarSessions(forceRefresh = false): Promise<SessionSidebarRecord[]> {
   const params = new URLSearchParams();
   if (forceRefresh) {
@@ -55,6 +60,19 @@ export function createSession(request: SessionCreateRequest): Promise<SessionRec
     method: "POST",
     body: JSON.stringify(request),
   });
+}
+
+export function updateSessionNormalModelProfile(
+  sessionId: string,
+  normalModelProfile: string | null,
+): Promise<SessionRecord> {
+  return requestJson<SessionRecord>(
+    `/sessions/${encodeURIComponent(sessionId)}/normal-model-profile`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ normal_model_profile: normalModelProfile }),
+    },
+  );
 }
 
 export function listSessionMessages(sessionId: string): Promise<TimelineMessage[]> {

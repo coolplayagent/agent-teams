@@ -16,12 +16,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   createRun,
+  getModelProfiles,
   getRoleConfigOptions,
+  getSession,
   injectRunMessage,
   stopRun,
+  updateSessionNormalModelProfile,
 } from "../../api/client";
 import type {
   InjectionDeliveryMode,
+  ModelProfilesPayload,
   RunThinkingConfig,
   ThinkingEffort,
 } from "../../api/contracts";
@@ -41,6 +45,12 @@ const THINKING_EFFORT_OPTIONS: Array<{ label: string; value: ThinkingEffort }> =
   { label: "Medium", value: "medium" },
   { label: "High", value: "high" },
 ];
+const DEFAULT_MODEL_PROFILE_OPTION = { label: "Default", value: "" };
+
+interface ModelProfileOption {
+  label: string;
+  value: string;
+}
 
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const { message } = App.useApp();
@@ -58,6 +68,22 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     queryFn: getRoleConfigOptions,
     staleTime: 30000,
   });
+  const sessionQuery = useQuery({
+    queryKey: ["sessions", sessionId],
+    queryFn: () => {
+      if (sessionId === null) {
+        throw new Error("Session is required.");
+      }
+      return getSession(sessionId);
+    },
+    enabled: sessionId !== null,
+    staleTime: 10000,
+  });
+  const modelProfilesQuery = useQuery({
+    queryKey: ["model-profiles"],
+    queryFn: getModelProfiles,
+    staleTime: 30000,
+  });
   const roleOptions = useMemo(
     () =>
       (roleOptionsQuery.data?.normal_mode_roles ?? []).map((role) => ({
@@ -65,6 +91,13 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         value: role.role_id,
       })),
     [roleOptionsQuery.data?.normal_mode_roles],
+  );
+  const selectedModelProfile = normalizeProfileName(
+    sessionQuery.data?.normal_model_profile,
+  );
+  const modelProfileOptions = useMemo(
+    () => buildModelProfileOptions(modelProfilesQuery.data, selectedModelProfile),
+    [modelProfilesQuery.data, selectedModelProfile],
   );
 
   const createRunMutation = useMutation({
@@ -136,10 +169,38 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
   });
 
+  const updateModelProfileMutation = useMutation({
+    mutationFn: async (modelProfile: string) => {
+      if (sessionId === null) {
+        throw new Error("Select a session before changing the model.");
+      }
+      return updateSessionNormalModelProfile(
+        sessionId,
+        normalizeProfileName(modelProfile) || null,
+      );
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["sessions", updated.session_id], updated);
+      void queryClient.invalidateQueries({ queryKey: ["sessions", updated.session_id] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void message.success(
+        updated.normal_model_profile
+          ? `Model profile set to ${updated.normal_model_profile}.`
+          : "Model profile reset.",
+      );
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : "Model profile update failed.",
+      );
+    },
+  });
+
   const busy =
     createRunMutation.isPending ||
     stopRunMutation.isPending ||
-    injectMessageMutation.isPending;
+    injectMessageMutation.isPending ||
+    updateModelProfileMutation.isPending;
   const canCreateRun =
     sessionId !== null && activeRunId === null && draft.trim().length > 0 && !busy;
   const canInject = activeRunId !== null && draft.trim().length > 0 && !busy;
@@ -195,6 +256,30 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             showSearch
             size="small"
             value={targetRoleId ?? undefined}
+          />
+          <Select
+            allowClear
+            aria-label="Model profile"
+            className="at-model-profile-select"
+            disabled={busy || activeRunId !== null || sessionId === null}
+            loading={
+              sessionQuery.isLoading ||
+              modelProfilesQuery.isLoading ||
+              updateModelProfileMutation.isPending
+            }
+            onChange={(value) => {
+              const nextProfile = normalizeProfileName(value);
+              if (nextProfile !== selectedModelProfile) {
+                updateModelProfileMutation.mutate(nextProfile);
+              }
+            }}
+            optionFilterProp="label"
+            options={modelProfileOptions}
+            placeholder="Model"
+            popupMatchSelectWidth={false}
+            showSearch
+            size="small"
+            value={selectedModelProfile}
           />
           <Space className="at-thinking-control" size={6}>
             <Typography.Text className="at-control-label" id="at-thinking-label">
@@ -336,4 +421,34 @@ function normalizeThinkingEffort(value: string | null | undefined): ThinkingEffo
     return normalized;
   }
   return DEFAULT_THINKING_EFFORT;
+}
+
+function buildModelProfileOptions(
+  profiles: ModelProfilesPayload | undefined,
+  selectedProfile: string,
+): ModelProfileOption[] {
+  const profileOptions = Object.entries(profiles ?? {})
+    .map(([name, profile]) => {
+      const profileName = normalizeProfileName(name);
+      const modelName = normalizeProfileName(profile.model);
+      return {
+        label: modelName ? `${profileName} - ${modelName}` : profileName,
+        value: profileName,
+      };
+    })
+    .filter((profile) => profile.value.length > 0)
+    .sort((left, right) => left.value.localeCompare(right.value));
+  const options = [DEFAULT_MODEL_PROFILE_OPTION, ...profileOptions];
+  const knownProfiles = new Set(options.map((option) => option.value));
+  if (selectedProfile && !knownProfiles.has(selectedProfile)) {
+    options.push({
+      label: `${selectedProfile} (missing)`,
+      value: selectedProfile,
+    });
+  }
+  return options;
+}
+
+function normalizeProfileName(value: string | null | undefined): string {
+  return String(value ?? "").trim();
 }

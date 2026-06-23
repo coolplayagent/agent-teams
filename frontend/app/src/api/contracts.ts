@@ -56,6 +56,15 @@ export interface RoleConfigOptions {
   subagent_roles?: RoleOption[];
 }
 
+export interface ModelProfileRecord {
+  provider?: string;
+  model?: string;
+  is_default?: boolean;
+  input_modalities?: string[];
+}
+
+export type ModelProfilesPayload = Record<string, ModelProfileRecord>;
+
 export interface SessionSidebarRecord {
   session_id: string;
   workspace_id?: string;
@@ -77,6 +86,7 @@ export interface SessionRecord {
   title?: string;
   session_mode?: SessionMode;
   normal_root_role_id?: string | null;
+  normal_model_profile?: string | null;
   orchestration_preset_id?: string | null;
 }
 

@@ -221,3 +221,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 21 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Composer Model Profile Batch
+
+### Scope
+- Added React API contracts and client support for model profile listing and `/api/sessions/{session_id}/normal-model-profile`.
+- Added a compact composer model profile selector backed by the selected session record and existing model profile config.
+- Kept the saved selected profile visible even when the profile no longer appears in the current config list.
+- Added focused React coverage proving model profile changes patch the current session.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 5 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 22 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.

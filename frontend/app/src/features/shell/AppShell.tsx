@@ -43,6 +43,7 @@ import { useUiStore } from "../../runtime/uiStore";
 import { useTranslations } from "../../i18n";
 
 const { Header, Sider, Content } = Layout;
+const narrowViewportQuery = "(max-width: 760px)";
 
 export function AppShell() {
   const { message } = App.useApp();
@@ -65,6 +66,7 @@ export function AppShell() {
   const setThemeMode = useUiStore((state) => state.setThemeMode);
   const setLanguage = useUiStore((state) => state.setLanguage);
   const [sidebarResizing, setSidebarResizing] = useState(false);
+  const isNarrowViewport = useNarrowViewport();
 
   const healthQuery = useQuery({
     queryKey: ["server-health"],
@@ -110,7 +112,10 @@ export function AppShell() {
         icon: <MessageSquare size={15} />,
         key: "chat",
         label: t("appChat"),
-        onSelect: () => setActiveView("chat"),
+        onSelect: () => {
+          setActiveView("chat");
+          closeSidebarOnNarrow();
+        },
       },
       {
         icon: <Search size={15} />,
@@ -123,7 +128,10 @@ export function AppShell() {
         icon: <Activity size={15} />,
         key: "observability",
         label: t("appObservability"),
-        onSelect: () => setActiveView("observability"),
+        onSelect: () => {
+          setActiveView("observability");
+          closeSidebarOnNarrow();
+        },
       },
       {
         icon: <Settings size={15} />,
@@ -132,8 +140,28 @@ export function AppShell() {
         onSelect: () => setSettingsOpen(true),
       },
     ],
-    [activeView, t],
+    [activeView, isNarrowViewport, setSidebarCollapsed, t],
   );
+
+  useEffect(() => {
+    if (isNarrowViewport) {
+      setSidebarCollapsed(true);
+    }
+  }, [isNarrowViewport, setSidebarCollapsed]);
+
+  useEffect(() => {
+    if (!isNarrowViewport || sidebarCollapsed) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSidebarCollapsed(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isNarrowViewport, setSidebarCollapsed, sidebarCollapsed]);
 
   useEffect(() => {
     if (!sidebarResizing) {
@@ -225,16 +253,30 @@ export function AppShell() {
         </Space>
       </Header>
       <Layout className="at-body">
+        {!sidebarCollapsed && isNarrowViewport ? (
+          <button
+            aria-label={t("appCloseSidebar")}
+            className="at-sidebar-scrim"
+            onClick={() => setSidebarCollapsed(true)}
+            type="button"
+          />
+        ) : null}
         {!sidebarCollapsed ? (
           <Sider
             className={sidebarResizing ? "at-sidebar is-resizing" : "at-sidebar"}
             theme="light"
-            width={sidebarWidth}
+            width={isNarrowViewport ? 0 : sidebarWidth}
           >
             <SessionsSidebar
               navigationItems={sidebarNavigationItems}
-              onOpenWorkspaceView={() => setActiveView("workspace")}
-              onSessionSelected={() => setActiveView("chat")}
+              onOpenWorkspaceView={() => {
+                setActiveView("workspace");
+                closeSidebarOnNarrow();
+              }}
+              onSessionSelected={() => {
+                setActiveView("chat");
+                closeSidebarOnNarrow();
+              }}
               workspaceViewActive={activeView === "workspace"}
             />
             <div
@@ -303,4 +345,28 @@ export function AppShell() {
       setSidebarWidth(sidebarWidth + 16);
     }
   }
+
+  function closeSidebarOnNarrow() {
+    if (isNarrowViewport) {
+      setSidebarCollapsed(true);
+    }
+  }
+}
+
+function useNarrowViewport(): boolean {
+  const [isNarrow, setIsNarrow] = useState(
+    () => window.matchMedia(narrowViewportQuery).matches,
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(narrowViewportQuery);
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsNarrow(event.matches);
+    };
+    setIsNarrow(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  return isNarrow;
 }

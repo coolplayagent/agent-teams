@@ -6,6 +6,7 @@ const messages = {
   en: {
     appBackToChat: "Back to chat",
     appChat: "Chat",
+    appCloseSidebar: "Close sidebar",
     appObservability: "Observability",
     appSearch: "Search",
     appSettings: "Settings",
@@ -184,6 +185,7 @@ const messages = {
   "zh-CN": {
     appBackToChat: "返回聊天",
     appChat: "聊天",
+    appCloseSidebar: "关闭侧边栏",
     appObservability: "观测",
     appSearch: "搜索",
     appSettings: "设置",

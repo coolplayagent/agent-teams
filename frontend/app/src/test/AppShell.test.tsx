@@ -94,6 +94,7 @@ const getSessionMock = vi.mocked(getSession);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 
 beforeEach(() => {
+  mockViewportMatch(false);
   getHealthMock.mockResolvedValue({ status: "ok" });
   getSessionMock.mockResolvedValue({
     session_id: "session-1",
@@ -134,6 +135,29 @@ describe("AppShell", () => {
 
     await waitFor(() =>
       expect(screen.queryByTestId("sessions-sidebar")).toBeNull(),
+    );
+    expect(screen.getByTestId("timeline")).toBeVisible();
+  });
+
+  it("collapses the mobile sidebar by default and reopens it as an overlay", async () => {
+    mockViewportMatch(true);
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+
+    expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
+    const closeOverlay = screen.getByRole("button", { name: "Close sidebar" });
+    expect(closeOverlay).toBeVisible();
+
+    fireEvent.click(closeOverlay);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
     );
     expect(screen.getByTestId("timeline")).toBeVisible();
   });
@@ -231,4 +255,17 @@ function renderShell() {
 
 function renderWithStrictModeBoundary(children: ReactNode) {
   return children;
+}
+
+function mockViewportMatch(matches: boolean) {
+  vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+    addEventListener: vi.fn(),
+    addListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+    matches,
+    media: query,
+    onchange: null,
+    removeEventListener: vi.fn(),
+    removeListener: vi.fn(),
+  }));
 }

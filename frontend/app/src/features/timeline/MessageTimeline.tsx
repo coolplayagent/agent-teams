@@ -258,6 +258,9 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
       }
       continue;
     }
+    if (entryClosesThinking(entry.kind)) {
+      closeActiveThinkingForRun(entry.runId, activeThinking);
+    }
     rows.push(runtimeEntryToRow(entry));
   }
   return rows;
@@ -531,12 +534,16 @@ function applyRuntimeThinkingEvent(
     return true;
   }
   if (entry.kind === "thinking_delta") {
+    const deltaText = thinkingDeltaText(entry);
+    if (!deltaText) {
+      return false;
+    }
     const accumulator = activeThinking.get(groupKey)
       ?? createRuntimeThinkingAccumulator(entry, partIndex, rows, activeThinking);
     if (accumulator === null) {
       return false;
     }
-    accumulator.part.text += thinkingDeltaText(entry);
+    accumulator.part.text += deltaText;
     accumulator.part.streaming = true;
     accumulator.row.text = accumulator.part.text;
     return true;
@@ -550,6 +557,19 @@ function applyRuntimeThinkingEvent(
     return true;
   }
   return false;
+}
+
+function closeActiveThinkingForRun(
+  runId: string,
+  activeThinking: Map<string, RuntimeThinkingAccumulator>,
+): void {
+  for (const [groupKey, accumulator] of activeThinking) {
+    if (!groupKey.startsWith(`${runId}:`)) {
+      continue;
+    }
+    accumulator.part.streaming = false;
+    activeThinking.delete(groupKey);
+  }
 }
 
 function createRuntimeThinkingAccumulator(
@@ -787,6 +807,15 @@ function isThinkingEvent(kind: RunEventType | "message"): boolean {
     kind === "thinking_started" ||
     kind === "thinking_delta" ||
     kind === "thinking_finished"
+  );
+}
+
+function entryClosesThinking(kind: RunEventType | "message"): boolean {
+  return (
+    kind === "run_completed" ||
+    kind === "run_failed" ||
+    kind === "run_paused" ||
+    kind === "run_stopped"
   );
 }
 

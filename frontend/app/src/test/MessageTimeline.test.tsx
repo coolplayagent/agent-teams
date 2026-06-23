@@ -509,6 +509,69 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("live thought")).toBeVisible();
   });
 
+  it("closes live thinking blocks on terminal run events", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-failed-thinking": {
+            runId: "run-failed-thinking",
+            status: "closed",
+            lastEventId: 3,
+            seenEventKeys: [],
+            terminalEventType: "run_failed",
+            entries: [
+              {
+                id: "run-failed-thinking:1:0",
+                sessionId: "session-1",
+                runId: "run-failed-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_started",
+                text: "thinking started",
+                payload: { part_index: 0 },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-failed-thinking:2:1",
+                sessionId: "session-1",
+                runId: "run-failed-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_delta",
+                text: "thought before failure",
+                payload: { part_index: 0, text: "thought before failure" },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-failed-thinking:3:2",
+                sessionId: "session-1",
+                runId: "run-failed-thinking",
+                roleId: "MainAgent",
+                kind: "run_failed",
+                text: "run failed",
+                payload: { message: "run failed" },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await screen.findByText("thought before failure");
+    expect(screen.getByText("run failed")).toBeVisible();
+    const thinkingBlock = container.querySelector(".at-message-thinking");
+    expect(thinkingBlock).toHaveTextContent("thought before failure");
+    expect(thinkingBlock).toHaveAttribute("data-streaming", "false");
+    expect(thinkingBlock).not.toHaveAttribute("open");
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+  });
+
   it("falls back to runtime text for malformed thinking payloads", async () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -517,7 +580,7 @@ describe("MessageTimeline", () => {
           "run-malformed-thinking": {
             runId: "run-malformed-thinking",
             status: "closed",
-            lastEventId: 1,
+            lastEventId: 3,
             seenEventKeys: [],
             terminalEventType: null,
             entries: [
@@ -532,6 +595,28 @@ describe("MessageTimeline", () => {
                 eventId: 1,
                 occurredAt: "2026-06-23T00:00:00Z",
               },
+              {
+                id: "run-malformed-thinking:2:1",
+                sessionId: "session-1",
+                runId: "run-malformed-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_delta",
+                text: "thinking delta missing text fallback",
+                payload: { part_index: 0 },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-malformed-thinking:3:2",
+                sessionId: "session-1",
+                runId: "run-malformed-thinking",
+                roleId: "MainAgent",
+                kind: "thinking_delta",
+                text: "thinking delta number fallback",
+                payload: { part_index: 1, text: 123 },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
             ],
           },
         },
@@ -542,6 +627,8 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("thinking payload fallback")).toBeVisible();
+    expect(screen.getByText("thinking delta missing text fallback")).toBeVisible();
+    expect(screen.getByText("thinking delta number fallback")).toBeVisible();
     expect(container.querySelector(".at-message-thinking")).toBeNull();
   });
 

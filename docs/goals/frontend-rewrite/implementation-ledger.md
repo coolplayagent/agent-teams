@@ -319,7 +319,7 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ## 2026-06-23 Recovery Background Task Controls Batch
 
 ### Scope
-- Added typed React contracts and client support for stopping run background tasks through `/api/ag-ui/runs/{run_id}/background-tasks/{background_task_id}:stop`.
+- Added typed React contracts and client support for stopping run background tasks through `/api/runs/{run_id}/background-tasks/{background_task_id}:stop`.
 - Added a compact RecoveryBar background task section for active running/blocked background tasks.
 - Preserved V1 visibility semantics by hiding terminal background tasks from the active recovery strip.
 - Added real Hide/Show collapse behavior while keeping the active task summary visible.
@@ -330,3 +330,8 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run typecheck` in `frontend/app` passed.
 - `npm run lint` in `frontend/app` passed.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer Remediation
+- Addressed reviewer `019ef35b-543e-7663-b602-37e95e8e9a39` finding by switching the React stop client from the AG-UI run path to the real `/api/runs/{run_id}/background-tasks/{background_task_id}:stop` endpoint.
+- Added `apiClient.test.ts` coverage that asserts the concrete background task stop URL.
+- Re-ran `npm run test -- --run apiClient.test.ts RecoveryBar.test.tsx`, `npm run typecheck`, `npm run lint`, and `npm run build` in `frontend/app`.

@@ -155,7 +155,7 @@ export function stopBackgroundTask(
   backgroundTaskId: string,
 ): Promise<StopBackgroundTaskResponse> {
   return requestJson<StopBackgroundTaskResponse>(
-    `/ag-ui/runs/${encodeURIComponent(runId)}/background-tasks/${encodeURIComponent(backgroundTaskId)}:stop`,
+    `/runs/${encodeURIComponent(runId)}/background-tasks/${encodeURIComponent(backgroundTaskId)}:stop`,
     {
       method: "POST",
     },

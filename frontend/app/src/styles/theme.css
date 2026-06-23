@@ -1015,6 +1015,15 @@ body {
   padding-left: 10px;
 }
 
+.at-message.is-tool-only {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.at-message.is-tool-only .at-message-role {
+  display: none;
+}
+
 .at-message-role {
   color: var(--at-text-muted);
   font-size: 12px;

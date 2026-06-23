@@ -103,6 +103,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
+    getItemKey: (index) => rows[index]?.key ?? index,
     estimateSize: (index) => estimateRowSize(rows[index]),
     overscan: 8,
   });
@@ -485,9 +486,15 @@ function timelineRowElement(
       </section>
     );
   }
+  const toolOnly = timelineRowIsToolOnly(row);
   return (
     <article
-      className={`at-timeline-row at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
+      className={[
+        "at-timeline-row",
+        "at-message",
+        row.source === "runtime" ? "is-runtime" : "",
+        toolOnly ? "is-tool-only" : "",
+      ].filter(Boolean).join(" ")}
       data-index={index}
       data-row-key={row.key}
       data-run-id={row.runId ?? undefined}
@@ -1582,14 +1589,21 @@ function estimateRowSize(row: TimelineRow | undefined): number {
   const thinkingCount = row.parts.filter((part) => part.kind === "thinking").length;
   const thinkingTextLength = row.parts
     .filter((part): part is TimelineThinkingPart => part.kind === "thinking")
-    .reduce((total, part) => total + part.text.length, 0);
+    .reduce((total, part) => total + (part.streaming ? part.text.length : 0), 0);
   const toolCount = row.parts.filter((part) => part.kind === "tool").length;
-  const textLength = row.text.length + thinkingTextLength;
-  return 96
+  const visibleTextLength = row.parts
+    .filter((part): part is TimelineTextPart => part.kind === "text")
+    .reduce((total, part) => total + part.text.length, 0);
+  const textLength = visibleTextLength + thinkingTextLength;
+  return 64
     + mediaCount * 138
-    + thinkingCount * 42
-    + toolCount * 46
+    + thinkingCount * 52
+    + toolCount * 38
     + Math.min(160, Math.ceil(textLength / 110) * 22);
+}
+
+function timelineRowIsToolOnly(row: TimelineRow): boolean {
+  return row.parts.length > 0 && row.parts.every((part) => part.kind === "tool");
 }
 
 function isThinkingEvent(kind: RunEventType | "message"): boolean {

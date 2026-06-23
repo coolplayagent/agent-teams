@@ -18,7 +18,9 @@ import type { RunEventType } from "../../runtime/events";
 import type { TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
+import { roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const ROUND_RAIL_PAGE_LIMIT = 100;
@@ -69,13 +71,13 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     [runtimeEntries],
   );
   const rows = useMemo(
-    () => [
+    () => insertRoundMarkerRows([
       ...messages.map((messageItem, index) =>
         messageToRow(messageItem, index, messageRoundLookup),
       ),
       ...runtimeRows,
-    ],
-    [messageRoundLookup, messages, runtimeRows],
+    ], rounds),
+    [messageRoundLookup, messages, rounds, runtimeRows],
   );
   const streamOpenForSession = useMemo(
     () =>
@@ -206,25 +208,14 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
           className="at-timeline-virtual"
           style={{ height: `${timelineHeight}px` }}
         >
-          {renderedVirtualItems.map((virtualItem) => {
-            const row = rows[virtualItem.index];
-            return (
-              <article
-                className={`at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
-                data-index={virtualItem.index}
-                data-row-key={row.key}
-                data-run-id={row.runId ?? undefined}
-                key={row.key}
-                ref={virtualizer.measureElement}
-                style={{ transform: `translateY(${virtualItem.start}px)` }}
-              >
-                <Typography.Text className="at-message-role">
-                  {row.role}
-                </Typography.Text>
-                <MessageRowContent parts={row.parts} />
-              </article>
-            );
-          })}
+          {renderedVirtualItems.map((virtualItem) =>
+            timelineRowElement(
+              rows[virtualItem.index],
+              virtualItem.index,
+              virtualItem.start,
+              virtualizer.measureElement,
+            ),
+          )}
         </div>
       </div>
       <RoundRail
@@ -242,11 +233,17 @@ interface TimelineRow {
   key: string;
   role: string;
   text: string;
-  kind: RunEventType | "message";
+  kind: RunEventType | "message" | "round";
   parts: TimelineRenderPart[];
+  roundMarker: TimelineRoundMarker | null;
   runId: string | null;
   source: "message" | "runtime";
   copyable: boolean;
+}
+
+interface TimelineRoundMarker {
+  index: number;
+  round: SessionRound;
 }
 
 type TimelineRenderPart =
@@ -357,7 +354,7 @@ function captureTimelineScrollAnchor(
   scrollTop: number,
 ): TimelineScrollAnchor | null {
   const rows = Array.from(
-    container.querySelectorAll<HTMLElement>("article.at-message[data-row-key]"),
+    container.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
   );
   for (const row of rows) {
     const rowKey = row.dataset.rowKey;
@@ -395,7 +392,7 @@ function findTimelineAnchorRow(
   rowKey: string,
 ): HTMLElement | null {
   const rows = Array.from(
-    container.querySelectorAll<HTMLElement>("article.at-message[data-row-key]"),
+    container.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
   );
   return rows.find((row) => row.dataset.rowKey === rowKey) ?? null;
 }
@@ -461,6 +458,46 @@ function fallbackTotalSize(rows: TimelineRow[]): number {
   return rows.reduce((total, row) => total + estimateRowSize(row), 0);
 }
 
+function timelineRowElement(
+  row: TimelineRow,
+  index: number,
+  start: number,
+  measureElement: (element: Element | null) => void,
+) {
+  const style = { transform: `translateY(${start}px)` };
+  if (row.roundMarker !== null) {
+    return (
+      <section
+        className="at-timeline-row at-round-marker"
+        data-index={index}
+        data-row-key={row.key}
+        data-run-id={row.runId ?? undefined}
+        key={row.key}
+        ref={measureElement}
+        style={style}
+      >
+        <RoundMarker index={row.roundMarker.index} round={row.roundMarker.round} />
+      </section>
+    );
+  }
+  return (
+    <article
+      className={`at-timeline-row at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
+      data-index={index}
+      data-row-key={row.key}
+      data-run-id={row.runId ?? undefined}
+      key={row.key}
+      ref={measureElement}
+      style={style}
+    >
+      <Typography.Text className="at-message-role">
+        {row.role}
+      </Typography.Text>
+      <MessageRowContent parts={row.parts} />
+    </article>
+  );
+}
+
 function messageToRow(
   message: TimelineMessage,
   index: number,
@@ -475,9 +512,57 @@ function messageToRow(
     text,
     kind: "message",
     parts,
+    roundMarker: null,
     runId: messageRunId(message, roundLookup),
     source: "message",
     copyable: isAnswerRole(role) && text.trim().length > 0,
+  };
+}
+
+function insertRoundMarkerRows(
+  baseRows: TimelineRow[],
+  rounds: SessionRound[],
+): TimelineRow[] {
+  const markersByRunId = new Map<string, TimelineRow>();
+  rounds.forEach((round, index) => {
+    const runId = round.run_id.trim();
+    if (runId.length > 0) {
+      markersByRunId.set(runId, roundMarkerRow(round, index));
+    }
+  });
+  if (markersByRunId.size === 0) {
+    return baseRows;
+  }
+
+  const insertedRunIds = new Set<string>();
+  const rows: TimelineRow[] = [];
+  for (const row of baseRows) {
+    const runId = row.runId;
+    if (runId !== null && !insertedRunIds.has(runId)) {
+      const marker = markersByRunId.get(runId);
+      if (marker !== undefined) {
+        rows.push(marker);
+        insertedRunIds.add(runId);
+      }
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function roundMarkerRow(round: SessionRound, index: number): TimelineRow {
+  const runId = round.run_id.trim();
+  const title = roundTitle(round, index);
+  return {
+    key: `round:${runId}`,
+    role: "round",
+    text: title,
+    kind: "round",
+    parts: [],
+    roundMarker: { index, round },
+    runId,
+    source: "message",
+    copyable: false,
   };
 }
 
@@ -555,6 +640,7 @@ function runtimeEntryToRowWithParts(
     text: text || entry.text,
     kind: entry.kind,
     parts,
+    roundMarker: null,
     runId: entry.runId,
     source: "runtime",
     copyable: false,
@@ -622,7 +708,7 @@ function latestRoundRunId(rounds: SessionRound[]): string | null {
 function visibleRunIdFromRenderedRows(container: HTMLElement): string | null {
   const containerTop = container.getBoundingClientRect().top;
   const rows = Array.from(
-    container.querySelectorAll<HTMLElement>("article.at-message[data-run-id]"),
+    container.querySelectorAll<HTMLElement>(".at-timeline-row[data-run-id]"),
   );
   for (const row of rows) {
     const runId = row.dataset.runId;
@@ -698,7 +784,7 @@ function messageRunId(
   message: TimelineMessage,
   roundLookup: MessageRoundLookup,
 ): string | null {
-  const explicitRunId = message.run_id?.trim();
+  const explicitRunId = (message.run_id ?? message.trace_id)?.trim();
   if (explicitRunId !== undefined && explicitRunId.length > 0) {
     return explicitRunId;
   }
@@ -853,6 +939,7 @@ function createRuntimeTextAccumulator(
       text,
       kind: entry.kind,
       parts: [part],
+      roundMarker: null,
       runId: entry.runId,
       source: "runtime",
       copyable: false,
@@ -1266,6 +1353,7 @@ function runtimeThinkingRow(
     text: "",
     kind: entry.kind,
     parts: [part],
+    roundMarker: null,
     runId: entry.runId,
     source: "runtime",
     copyable: false,
@@ -1449,6 +1537,9 @@ function rowCopyText(parts: TimelineRenderPart[]): string {
 function estimateRowSize(row: TimelineRow | undefined): number {
   if (row === undefined) {
     return 120;
+  }
+  if (row.roundMarker !== null) {
+    return 84;
   }
   const mediaCount = row.parts.filter((part) => part.kind === "media").length;
   const thinkingCount = row.parts.filter((part) => part.kind === "thinking").length;

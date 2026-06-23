@@ -335,6 +335,7 @@ export interface TimelineMessage {
   parts?: ContentPart[];
   created_at?: string;
   run_id?: string;
+  trace_id?: string;
   entry_type?: string;
 }
 
@@ -357,6 +358,24 @@ export interface SessionRoundMessagePart {
 export interface SessionRoundMessageBody {
   content?: JsonValue;
   parts?: SessionRoundMessagePart[];
+  usage?: SessionRoundMessageUsage;
+}
+
+export interface SessionRoundMessageUsage {
+  cache_audio_read_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  details?: SessionRoundMessageUsageDetails;
+  input_audio_tokens?: number;
+  input_tokens?: number;
+  output_audio_tokens?: number;
+  output_tokens?: number;
+}
+
+export interface SessionRoundMessageUsageDetails {
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  reasoning_tokens?: number;
 }
 
 export interface SessionRoundMessage {
@@ -394,7 +413,9 @@ export interface SessionRound {
   run_error_code?: string | null;
   run_id: string;
   run_phase?: string | null;
+  run_started_at?: string | null;
   run_status?: string | null;
+  run_updated_at?: string | null;
   run_user_message?: string | null;
   verification_status?: string | null;
 }

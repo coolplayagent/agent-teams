@@ -79,15 +79,15 @@ describe("MessageTimeline", () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         content: "Initial answer",
-        created_at: "2026-06-23T12:42:39.262324+00:00",
         message_id: "assistant-1",
         role_id: "MainAgent",
+        trace_id: "run-1",
       },
       {
         content: "Follow-up answer",
-        created_at: "2026-06-23T12:43:10.739842+00:00",
         message_id: "assistant-2",
         role_id: "MainAgent",
+        trace_id: "run-2",
       },
     ]);
     listSessionRoundsMock.mockResolvedValue({
@@ -95,12 +95,32 @@ describe("MessageTimeline", () => {
       items: [
         {
           created_at: "2026-06-23T12:42:33Z",
+          coordinator_messages: [
+            {
+              message: {
+                parts: [{ part_kind: "tool-call", tool_name: "read" }],
+                usage: { input_tokens: 1532, output_tokens: 42 },
+              },
+            },
+          ],
           run_id: "run-1",
+          run_started_at: "2026-06-23T12:42:50Z",
+          run_status: "completed",
+          run_updated_at: "2026-06-23T12:42:56Z",
           run_user_message: "Initial task",
         },
         {
           created_at: "2026-06-23T12:43:04Z",
+          coordinator_messages: [
+            {
+              message: {
+                parts: [{ part_kind: "tool-call", tool_name: "shell" }],
+                usage: { input_tokens: 2048, output_tokens: 80 },
+              },
+            },
+          ],
           run_id: "run-2",
+          run_status: "completed",
           run_user_message: "Follow-up task",
         },
       ],
@@ -118,6 +138,11 @@ describe("MessageTimeline", () => {
     });
     expect(followUpRound).toBeVisible();
     expect(container.querySelector('article[data-run-id="run-2"]')).not.toBeNull();
+    expect(container.querySelectorAll(".at-round-marker")).toHaveLength(2);
+    expect(screen.getAllByText("Input 1.5k")[0]).toBeVisible();
+    expect(screen.getAllByText("Tools 1")[0]).toBeVisible();
+    expect(screen.getAllByText("completed")[0]).toBeVisible();
+    expect(screen.getByText("6s")).toBeVisible();
     expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
       cursorRunId: null,
       limit: 100,

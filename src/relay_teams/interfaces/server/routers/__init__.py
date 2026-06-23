@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from relay_teams.interfaces.server.routers import (
     a2a_internal,
+    ag_ui,
     artifacts_router,
     audit,
     auto_harness,
@@ -31,6 +32,7 @@ from relay_teams.interfaces.server.routers import (
 
 __all__ = [
     "a2a_internal",
+    "ag_ui",
     "artifacts_router",
     "audit",
     "auto_harness",

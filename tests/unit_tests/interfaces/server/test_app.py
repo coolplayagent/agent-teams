@@ -1138,6 +1138,7 @@ def test_runtime_bundle_wires_runtime_app_with_fake_modules(
     fake_routers_package = ModuleType("relay_teams.interfaces.server.routers")
     for name in (
         "a2a_internal",
+        "ag_ui",
         "artifacts_router",
         "audit",
         "auto_harness",

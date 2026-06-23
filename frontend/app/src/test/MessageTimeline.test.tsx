@@ -358,6 +358,124 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("output delta")).not.toBeInTheDocument();
   });
 
+  it("aggregates sequential runtime text deltas into one message row", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Hel",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        text: "lo",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Hello")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(screen.queryByText("Hel")).not.toBeInTheDocument();
+    expect(screen.queryByText("lo")).not.toBeInTheDocument();
+  });
+
+  it("joins output_delta text parts onto the current runtime text segment", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Hello",
+      }),
+      runtimeOutputDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        payload: {
+          output: [{ kind: "text", text: " world" }],
+        },
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "!",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Hello world!")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(screen.queryByText("output delta")).not.toBeInTheDocument();
+  });
+
+  it("closes runtime text before rendering media_ref output parts", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "before media",
+      }),
+      runtimeOutputDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        payload: {
+          output: [
+            {
+              kind: "media_ref",
+              mime_type: "image/png",
+              modality: "image",
+              name: "runtime-media.png",
+              url: "https://example.test/runtime-media.png",
+            },
+          ],
+        },
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "after media",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("before media")).toBeVisible();
+    expect(screen.getByText("after media")).toBeVisible();
+    const image = screen.getByRole("img", { name: "runtime-media.png" });
+    expect(image).toHaveAttribute("src", "https://example.test/runtime-media.png");
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
+  it("splits runtime text segments around tool events", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "before tool",
+      }),
+      runtimeToolCallEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "after tool",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("before tool")).toBeVisible();
+    expect(screen.getByText("Tool call: execute_command")).toBeVisible();
+    expect(screen.getByText("after tool")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
   it("renders runtime output_delta media_ref parts from payload output", async () => {
     setRuntimeEntries([
       runtimeOutputDeltaEntry({
@@ -1084,6 +1202,28 @@ function setRuntimeEntries(entries: TimelineEntry[]): void {
   });
 }
 
+function runtimeTextDeltaEntry({
+  id,
+  text,
+  eventId,
+}: {
+  id: string;
+  text: string;
+  eventId: number;
+}): TimelineEntry {
+  return {
+    id,
+    sessionId: "session-1",
+    runId: "run-output",
+    roleId: "MainAgent",
+    kind: "text_delta",
+    text,
+    payload: { text },
+    eventId,
+    occurredAt: "2026-06-23T00:00:00Z",
+  };
+}
+
 function runtimeOutputDeltaEntry({
   id,
   payload,
@@ -1103,6 +1243,30 @@ function runtimeOutputDeltaEntry({
     kind: "output_delta",
     text,
     payload,
+    eventId,
+    occurredAt: "2026-06-23T00:00:00Z",
+  };
+}
+
+function runtimeToolCallEntry({
+  id,
+  eventId,
+}: {
+  id: string;
+  eventId: number;
+}): TimelineEntry {
+  return {
+    id,
+    sessionId: "session-1",
+    runId: "run-output",
+    roleId: "MainAgent",
+    kind: "tool_call",
+    text: "execute_command",
+    payload: {
+      args: { cmd: "npm test" },
+      tool_call_id: "tool-live-1",
+      tool_name: "execute_command",
+    },
     eventId,
     occurredAt: "2026-06-23T00:00:00Z",
   };

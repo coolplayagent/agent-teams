@@ -221,6 +221,11 @@ interface RuntimeThinkingAccumulator {
   row: TimelineRow;
 }
 
+interface RuntimeTextAccumulator {
+  part: TimelineTextPart;
+  row: TimelineRow;
+}
+
 function fallbackVirtualItems(rows: TimelineRow[]): FallbackVirtualItem[] {
   let start = 0;
   return rows.map((row, index) => {
@@ -252,8 +257,46 @@ function messageToRow(message: TimelineMessage, index: number): TimelineRow {
 function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
+  const activeText = new Map<string, RuntimeTextAccumulator>();
+  let textSegmentSequence = 0;
+  const nextTextSegmentSequence = () => {
+    const sequence = textSegmentSequence;
+    textSegmentSequence += 1;
+    return sequence;
+  };
   for (const entry of entries) {
+    if (entry.kind === "text_delta") {
+      if (
+        applyRuntimeTextDeltaEvent(
+          entry,
+          rows,
+          activeText,
+          nextTextSegmentSequence,
+        )
+      ) {
+        continue;
+      }
+      closeRuntimeTextSegment(entry, activeText);
+      rows.push(runtimeEntryToRow(entry));
+      continue;
+    }
+    if (entry.kind === "output_delta") {
+      if (
+        applyRuntimeOutputDeltaEvent(
+          entry,
+          rows,
+          activeText,
+          nextTextSegmentSequence,
+        )
+      ) {
+        continue;
+      }
+      closeRuntimeTextSegment(entry, activeText);
+      rows.push(runtimeEntryToRow(entry));
+      continue;
+    }
     if (isThinkingEvent(entry.kind)) {
+      closeRuntimeTextSegment(entry, activeText);
       if (!applyRuntimeThinkingEvent(entry, rows, activeThinking)) {
         rows.push(runtimeEntryToRow(entry));
       }
@@ -262,6 +305,7 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
     if (entryClosesThinking(entry.kind)) {
       closeActiveThinkingForRun(entry.runId, activeThinking);
     }
+    closeRuntimeTextSegment(entry, activeText);
     rows.push(runtimeEntryToRow(entry));
   }
   return rows;
@@ -269,15 +313,152 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
 
 function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
   const parts = runtimeEntryParts(entry);
+  return runtimeEntryToRowWithParts(entry, parts, `runtime:${entry.id}`);
+}
+
+function runtimeEntryToRowWithParts(
+  entry: TimelineEntry,
+  parts: TimelineRenderPart[],
+  key: string,
+): TimelineRow {
+  const text = rowCopyText(parts);
   return {
-    key: `runtime:${entry.id}`,
+    key,
     role: entry.roleId,
-    text: entry.text,
+    text: text || entry.text,
     kind: entry.kind,
     parts,
     source: "runtime",
     copyable: false,
   };
+}
+
+function applyRuntimeTextDeltaEvent(
+  entry: TimelineEntry,
+  rows: TimelineRow[],
+  activeText: Map<string, RuntimeTextAccumulator>,
+  nextTextSegmentSequence: () => number,
+): boolean {
+  const text = runtimeTextDeltaText(entry);
+  return appendRuntimeTextSegment(
+    entry,
+    text,
+    rows,
+    activeText,
+    nextTextSegmentSequence,
+  );
+}
+
+function applyRuntimeOutputDeltaEvent(
+  entry: TimelineEntry,
+  rows: TimelineRow[],
+  activeText: Map<string, RuntimeTextAccumulator>,
+  nextTextSegmentSequence: () => number,
+): boolean {
+  const parts = runtimeOutputParts(entry);
+  if (parts === null || parts.length === 0) {
+    return false;
+  }
+  let rendered = false;
+  let structuredParts: TimelineRenderPart[] = [];
+  let structuredRowSequence = 0;
+
+  const flushStructuredParts = () => {
+    if (structuredParts.length === 0) {
+      return;
+    }
+    rows.push(runtimeEntryToRowWithParts(
+      entry,
+      structuredParts,
+      `runtime-output:${entry.id}:${structuredRowSequence}`,
+    ));
+    structuredParts = [];
+    structuredRowSequence += 1;
+  };
+
+  for (const part of parts) {
+    if (part.kind === "text") {
+      flushStructuredParts();
+      if (
+        appendRuntimeTextSegment(
+          entry,
+          part.text,
+          rows,
+          activeText,
+          nextTextSegmentSequence,
+        )
+      ) {
+        rendered = true;
+      }
+      continue;
+    }
+    closeRuntimeTextSegment(entry, activeText);
+    structuredParts.push(part);
+    rendered = true;
+  }
+  flushStructuredParts();
+  return rendered;
+}
+
+function appendRuntimeTextSegment(
+  entry: TimelineEntry,
+  text: string,
+  rows: TimelineRow[],
+  activeText: Map<string, RuntimeTextAccumulator>,
+  nextTextSegmentSequence: () => number,
+): boolean {
+  if (!text) {
+    return false;
+  }
+  const groupKey = runtimeTextGroupKey(entry);
+  const existing = activeText.get(groupKey);
+  if (existing !== undefined) {
+    existing.part.text += text;
+    existing.row.text = existing.part.text;
+    return true;
+  }
+  const accumulator = createRuntimeTextAccumulator(
+    entry,
+    text,
+    nextTextSegmentSequence(),
+  );
+  activeText.set(groupKey, accumulator);
+  rows.push(accumulator.row);
+  return true;
+}
+
+function createRuntimeTextAccumulator(
+  entry: TimelineEntry,
+  text: string,
+  sequence: number,
+): RuntimeTextAccumulator {
+  const part: TimelineTextPart = {
+    kind: "text",
+    text,
+  };
+  return {
+    part,
+    row: {
+      key: `runtime-text:${entry.runId}:${entry.roleId}:${sequence}`,
+      role: entry.roleId,
+      text,
+      kind: entry.kind,
+      parts: [part],
+      source: "runtime",
+      copyable: false,
+    },
+  };
+}
+
+function closeRuntimeTextSegment(
+  entry: TimelineEntry,
+  activeText: Map<string, RuntimeTextAccumulator>,
+): void {
+  activeText.delete(runtimeTextGroupKey(entry));
+}
+
+function runtimeTextGroupKey(entry: TimelineEntry): string {
+  return `${entry.runId}:${entry.roleId}`;
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
@@ -948,6 +1129,17 @@ function thinkingPartIndex(payload: Record<string, JsonValue>): string {
 }
 
 function thinkingDeltaText(entry: TimelineEntry): string {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return "";
+  }
+  return objectRawString(payload, "text")
+    || objectRawString(payload, "delta")
+    || objectRawString(payload, "content")
+    || objectRawString(payload, "message");
+}
+
+function runtimeTextDeltaText(entry: TimelineEntry): string {
   const payload = jsonObject(entry.payload);
   if (payload === null || payloadHasParseError(payload)) {
     return "";

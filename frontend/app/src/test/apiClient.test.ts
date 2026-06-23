@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deleteSession,
   getWorkspaceDiffs,
   getWorkspaceSnapshot,
   listSessionRounds,
@@ -12,6 +13,7 @@ import {
   saveProxyConfig,
   saveWebConfig,
   stopBackgroundTask,
+  updateSession,
 } from "../api/client";
 import { saveSpeechConfig } from "../api/speech";
 
@@ -48,6 +50,39 @@ describe("api client", () => {
       "/api/workspaces?limit=200",
       expect.objectContaining({
         headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("updates and deletes sessions through the session metadata endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      updateSession("session-1", { title: "Readable name" }),
+    ).resolves.toEqual({ status: "ok" });
+    await expect(deleteSession("session-1")).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/sessions/session-1",
+      expect.objectContaining({
+        body: JSON.stringify({ title: "Readable name" }),
+        method: "PATCH",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/sessions/session-1",
+      expect.objectContaining({
+        body: JSON.stringify({ cascade: true, force: true }),
+        method: "DELETE",
       }),
     );
   });

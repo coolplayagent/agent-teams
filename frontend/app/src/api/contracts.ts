@@ -82,6 +82,19 @@ export interface SessionCreateRequest {
   } | null;
 }
 
+export interface SessionMetadataPatch {
+  title?: string | null;
+  title_source?: string | null;
+  source_label?: string | null;
+  source_icon?: string | null;
+  custom_metadata?: Record<string, string> | null;
+}
+
+export interface DeleteSessionRequest {
+  cascade?: boolean;
+  force?: boolean;
+}
+
 export interface RoleOption {
   role_id: string;
   name: string;

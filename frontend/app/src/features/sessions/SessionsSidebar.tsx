@@ -3,6 +3,7 @@ import {
   Button,
   Empty,
   Input,
+  Modal,
   Skeleton,
   Tooltip,
   Typography,
@@ -14,13 +15,21 @@ import {
   ChevronRight,
   FolderClosed,
   FolderSearch,
+  Pencil,
   Plus,
   RefreshCcw,
+  Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { createSession, listSidebarSessions, listWorkspaces } from "../../api/client";
+import {
+  createSession,
+  deleteSession,
+  listSidebarSessions,
+  listWorkspaces,
+  updateSession,
+} from "../../api/client";
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { useTranslations, type Translate } from "../../i18n";
@@ -44,6 +53,11 @@ interface SessionsSidebarProps {
   workspaceViewActive?: boolean;
 }
 
+interface RenameSessionPayload {
+  sessionId: string;
+  title: string;
+}
+
 export function SessionsSidebar({
   navigationItems = [],
   onOpenWorkspaceView,
@@ -65,6 +79,9 @@ export function SessionsSidebar({
   const [workspaceExpanded, setWorkspaceExpanded] = useState<
     Record<string, boolean>
   >({});
+  const [renameTarget, setRenameTarget] = useState<SessionSidebarRecord | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<SessionSidebarRecord | null>(null);
   const searchInputRef = useRef<InputRef>(null);
 
   const sessionsQuery = useQuery({
@@ -136,6 +153,37 @@ export function SessionsSidebar({
     onError: (error) => {
       void message.error(
         error instanceof Error ? error.message : t("sidebarCreateFailed"),
+      );
+    },
+  });
+  const renameSessionMutation = useMutation({
+    mutationFn: ({ sessionId, title }: RenameSessionPayload) =>
+      updateSession(sessionId, { title }),
+    onSuccess: (_result, payload) => {
+      resetRenameSession();
+      invalidateSessionCaches(payload.sessionId);
+      void message.success(t("sidebarRenameSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarRenameFailed"),
+      );
+    },
+  });
+  const deleteSessionMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      deleteSession(sessionId, { cascade: true, force: true }),
+    onSuccess: (_result, sessionId) => {
+      resetDeleteSession();
+      if (selectedSessionId === sessionId) {
+        setSelectedSessionId(null);
+      }
+      invalidateSessionCaches(sessionId);
+      void message.success(t("sidebarDeleteSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarDeleteFailed"),
       );
     },
   });
@@ -338,37 +386,60 @@ export function SessionsSidebar({
               {groupExpanded && group.sessions.length > 0 ? (
                 <div className="at-workspace-group-sessions">
                   {visibleSessions.map((session) => (
-                    <button
-                      aria-current={
-                        session.session_id === selectedSessionId ? "page" : undefined
-                      }
+                    <div
                       className={
                         session.session_id === selectedSessionId
                           ? "at-session-item is-selected"
                           : "at-session-item"
                       }
                       key={session.session_id}
-                      onClick={() => {
-                        if (session.workspace_id) {
-                          setSelectedWorkspaceId(session.workspace_id);
-                        }
-                        setSelectedSessionId(session.session_id);
-                        onSessionSelected?.();
-                      }}
-                      title={sessionLabel(session)}
-                      type="button"
                     >
-                      <div className="at-session-copy">
-                        <Typography.Text
-                          className="at-session-label"
-                          ellipsis
-                          title={sessionLabel(session)}
-                        >
-                          {sessionLabel(session)}
-                        </Typography.Text>
-                        {sessionMeta(session, t, language)}
+                      <button
+                        aria-current={
+                          session.session_id === selectedSessionId
+                            ? "page"
+                            : undefined
+                        }
+                        className="at-session-select"
+                        onClick={() => selectSession(session)}
+                        title={sessionLabel(session)}
+                        type="button"
+                      >
+                        <div className="at-session-copy">
+                          <Typography.Text
+                            className="at-session-label"
+                            ellipsis
+                            title={sessionLabel(session)}
+                          >
+                            {sessionLabel(session)}
+                          </Typography.Text>
+                          {sessionMeta(session, t, language)}
+                        </div>
+                      </button>
+                      <div className="at-session-actions">
+                        <Tooltip title={t("sidebarRenameSession")}>
+                          <Button
+                            aria-label={t("sidebarRenameSession")}
+                            className="at-session-action-button"
+                            icon={<Pencil size={13} />}
+                            onClick={() => openRenameSession(session)}
+                            size="small"
+                            type="text"
+                          />
+                        </Tooltip>
+                        <Tooltip title={t("sidebarDeleteSession")}>
+                          <Button
+                            aria-label={t("sidebarDeleteSession")}
+                            className="at-session-action-button"
+                            danger
+                            icon={<Trash2 size={13} />}
+                            onClick={() => openDeleteSession(session)}
+                            size="small"
+                            type="text"
+                          />
+                        </Tooltip>
                       </div>
-                    </button>
+                    </div>
                   ))}
                   {hiddenSessionCount > 0 ? (
                     <button
@@ -392,8 +463,124 @@ export function SessionsSidebar({
           );
         })}
       </div>
+      <Modal
+        cancelText={t("sidebarRenameCancel")}
+        destroyOnHidden
+        okButtonProps={{
+          disabled: renameValue.trim().length === 0,
+          loading: renameSessionMutation.isPending,
+        }}
+        okText={t("sidebarRenameSave")}
+        onCancel={closeRenameSession}
+        onOk={submitRenameSession}
+        open={renameTarget !== null}
+        title={t("sidebarRenameTitle")}
+      >
+        <Typography.Paragraph className="at-session-modal-copy">
+          {t("sidebarRenameMessage")}
+        </Typography.Paragraph>
+        <Input
+          aria-label={t("sidebarRenameInput")}
+          autoFocus
+          onChange={(event) => setRenameValue(event.target.value)}
+          onPressEnter={submitRenameSession}
+          value={renameValue}
+        />
+      </Modal>
+      <Modal
+        cancelText={t("sidebarDeleteCancel")}
+        destroyOnHidden
+        okButtonProps={{
+          danger: true,
+          loading: deleteSessionMutation.isPending,
+        }}
+        okText={t("sidebarDeleteConfirm")}
+        onCancel={closeDeleteSession}
+        onOk={submitDeleteSession}
+        open={deleteTarget !== null}
+        title={t("sidebarDeleteTitle")}
+      >
+        <Typography.Paragraph className="at-session-modal-copy">
+          {t("sidebarDeleteMessage", {
+            label:
+              deleteTarget === null
+                ? ""
+                : sessionLabel(deleteTarget) || deleteTarget.session_id,
+          })}
+        </Typography.Paragraph>
+      </Modal>
     </div>
   );
+
+  function selectSession(session: SessionSidebarRecord) {
+    if (session.workspace_id) {
+      setSelectedWorkspaceId(session.workspace_id);
+    }
+    setSelectedSessionId(session.session_id);
+    onSessionSelected?.();
+  }
+
+  function openRenameSession(session: SessionSidebarRecord) {
+    setRenameTarget(session);
+    setRenameValue(sessionLabel(session));
+  }
+
+  function closeRenameSession() {
+    if (renameSessionMutation.isPending) {
+      return;
+    }
+    resetRenameSession();
+  }
+
+  function resetRenameSession() {
+    setRenameTarget(null);
+    setRenameValue("");
+  }
+
+  function submitRenameSession() {
+    const title = renameValue.trim();
+    if (renameTarget === null || !title || renameSessionMutation.isPending) {
+      return;
+    }
+    if (title === sessionLabel(renameTarget)) {
+      closeRenameSession();
+      return;
+    }
+    renameSessionMutation.mutate({
+      sessionId: renameTarget.session_id,
+      title,
+    });
+  }
+
+  function openDeleteSession(session: SessionSidebarRecord) {
+    setDeleteTarget(session);
+  }
+
+  function closeDeleteSession() {
+    if (deleteSessionMutation.isPending) {
+      return;
+    }
+    resetDeleteSession();
+  }
+
+  function resetDeleteSession() {
+    setDeleteTarget(null);
+  }
+
+  function submitDeleteSession() {
+    if (deleteTarget === null || deleteSessionMutation.isPending) {
+      return;
+    }
+    deleteSessionMutation.mutate(deleteTarget.session_id);
+  }
+
+  function invalidateSessionCaches(sessionId: string) {
+    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
+    void queryClient.invalidateQueries({
+      queryKey: ["sessions", "detail", sessionId],
+    });
+  }
 
   function showMoreSessions(groupId: string) {
     setVisibleSessionLimits((current) => ({

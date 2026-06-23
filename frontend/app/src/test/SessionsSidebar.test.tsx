@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createSession,
+  deleteSession,
   listSidebarSessions,
   listWorkspaces,
+  updateSession,
 } from "../api/client";
 import {
   SessionsSidebar,
@@ -16,13 +18,17 @@ import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   createSession: vi.fn(),
+  deleteSession: vi.fn(),
   listSidebarSessions: vi.fn(),
   listWorkspaces: vi.fn(),
+  updateSession: vi.fn(),
 }));
 
 const createSessionMock = vi.mocked(createSession);
+const deleteSessionMock = vi.mocked(deleteSession);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
+const updateSessionMock = vi.mocked(updateSession);
 
 afterEach(() => {
   cleanup();
@@ -155,6 +161,86 @@ describe("SessionsSidebar", () => {
     );
     expect(useUiStore.getState().selectedSessionId).toBe("session-new");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
+  });
+
+  it("renames a session through the real session metadata endpoint", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        metadata: {
+          title: "Old readable name",
+        },
+        session_id: "session-a",
+        title: "Legacy title",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    updateSessionMock.mockResolvedValue({ status: "ok" });
+
+    renderSidebar();
+
+    expect(await screen.findByText("Old readable name")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
+
+    const nameInput = await screen.findByRole("textbox", {
+      name: "Session name",
+    });
+    expect(nameInput).toHaveValue("Old readable name");
+    fireEvent.change(nameInput, { target: { value: "Next readable name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateSessionMock).toHaveBeenCalledWith("session-a", {
+        title: "Next readable name",
+      }),
+    );
+  });
+
+  it("confirms session deletion before calling the cascading delete endpoint", async () => {
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "workspace-1",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    deleteSessionMock.mockResolvedValue({ status: "ok" });
+
+    renderSidebar();
+
+    expect(await screen.findByText("Alpha")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Delete session" }));
+
+    expect(deleteSessionMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Delete Alpha/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(deleteSessionMock).toHaveBeenCalledWith("session-a", {
+        cascade: true,
+        force: true,
+      }),
+    );
+    expect(useUiStore.getState().selectedSessionId).toBeNull();
   });
 
   it("localizes the persistent sidebar frame in Chinese", async () => {

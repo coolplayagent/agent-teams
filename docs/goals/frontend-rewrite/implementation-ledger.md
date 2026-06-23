@@ -969,3 +969,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this sidebar workspace structure slice. No Application Shell, Sessions, or Workspace subsystem completion is claimed from this batch; remaining work includes missing V1 sidebar management actions, broader project/workspace interaction parity, composer density, streaming/recovery parity, and reviewer sign-off.
+
+## 2026-06-24 Sidebar Session Management Actions Batch
+
+### Scope
+- Closed a V1/V2 parity gap in the workspace sidebar: V2 session rows now expose real rename and delete actions instead of only selecting sessions.
+- Added typed V2 API client methods for the existing backend `PATCH /api/sessions/{session_id}` metadata route and `DELETE /api/sessions/{session_id}` route.
+- Split the session row into a primary select button plus compact action buttons, avoiding nested button markup while keeping the V1-style row density.
+- Added controlled Ant modal flows for renaming and destructive deletion confirmation, with localized English and Chinese copy.
+- Deleting the selected session clears the selected session state and invalidates session caches; deleting uses the same `force` and `cascade` request body as V1.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-session-actions/`.
+- V2 sidebar screenshot: `v2-sidebar-actions.png`.
+- V2 rename modal screenshot: `v2-rename-modal.png`.
+- Browser DOM verification found one selected-row rename button, one selected-row delete button, 48 rendered session action buttons, and one visible rename input after opening the modal.
+- Browser layout metrics kept body/document fixed to the viewport (`1272 / 1272`) while validating the sidebar action UI.
+- `npm run test -- src/test/SessionsSidebar.test.tsx` in `frontend/app` passed with 13 tests.
+- `npm run test -- src/test/apiClient.test.ts` in `frontend/app` passed with 6 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this sidebar session-management slice. No Sessions subsystem completion is claimed from this batch; remaining work includes the broader screenshot-first framework pass the user requested, workspace visual structure polish, composer density, streaming/recovery parity, and reviewer sign-off.

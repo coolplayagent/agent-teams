@@ -421,20 +421,20 @@ body {
 }
 
 .at-session-item {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 2px;
   width: 100%;
-  cursor: pointer;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--at-text);
-  font: inherit;
-  padding: 4px 7px !important;
-  text-align: left;
+  padding: 1px 2px !important;
 }
 
 .at-session-item:hover,
-.at-session-item:focus-visible {
+.at-session-item:focus-within {
   background: var(--at-surface-muted);
   outline: none;
 }
@@ -444,12 +444,56 @@ body {
   background: var(--at-surface-muted);
 }
 
+.at-session-select {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  cursor: pointer;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 3px 5px;
+  text-align: left;
+}
+
+.at-session-select:focus-visible {
+  outline: none;
+}
+
 .at-session-copy {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
   gap: 8px;
   width: 100%;
+}
+
+.at-session-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.at-session-item:hover .at-session-actions,
+.at-session-item:focus-within .at-session-actions,
+.at-session-item.is-selected .at-session-actions {
+  opacity: 1;
+}
+
+.at-session-action-button.ant-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+}
+
+.at-session-action-button .ant-btn-icon {
+  display: inline-flex;
+  align-items: center;
 }
 
 .at-session-label {
@@ -482,6 +526,11 @@ body {
 
 .at-session-status.is-failed {
   color: var(--at-danger);
+}
+
+.at-session-modal-copy {
+  margin-bottom: 8px !important;
+  color: var(--at-text-muted);
 }
 
 .at-workspace {

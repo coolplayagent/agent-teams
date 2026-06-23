@@ -13,8 +13,10 @@ import type {
   RoleConfigOptions,
   RunCreateRequest,
   RunCreateResponse,
+  DeleteSessionRequest,
   SessionRound,
   SessionRoundsPage,
+  SessionMetadataPatch,
   SessionTokenUsage,
   ServerHealthPayload,
   SessionCreateRequest,
@@ -153,6 +155,32 @@ export function createSession(request: SessionCreateRequest): Promise<SessionRec
     method: "POST",
     body: JSON.stringify(request),
   });
+}
+
+export function updateSession(
+  sessionId: string,
+  request: SessionMetadataPatch,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteSession(
+  sessionId: string,
+  request: DeleteSessionRequest = { cascade: true, force: true },
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export function updateSessionNormalModelProfile(

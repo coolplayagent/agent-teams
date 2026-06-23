@@ -68,6 +68,63 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("resolves explicit ACP approval options with their option ids", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_tool_approvals: [
+          {
+            tool_call_id: "tool-call-1",
+            tool_name: "execute_command",
+            acp_options: [
+              {
+                kind: "allow_always",
+                name: "Allow always",
+                optionId: "allow_always",
+              },
+              {
+                kind: "reject_once",
+                name: "Reject once",
+                optionId: "reject_once",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    resolveToolApprovalMock.mockResolvedValue({ status: "ok" });
+
+    renderRecoveryBar();
+
+    await screen.findByRole("button", { name: "Allow always" });
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Allow always" }));
+
+    await waitFor(() =>
+      expect(resolveToolApprovalMock).toHaveBeenCalledWith(
+        "run-1",
+        "tool-call-1",
+        "approve",
+        "allow_always",
+      ),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Reject once" })).not.toBeDisabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Reject once" }));
+
+    await waitFor(() =>
+      expect(resolveToolApprovalMock).toHaveBeenLastCalledWith(
+        "run-1",
+        "tool-call-1",
+        "deny",
+        "reject_once",
+      ),
+    );
+  });
+
   it("submits selected answers for pending user questions", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

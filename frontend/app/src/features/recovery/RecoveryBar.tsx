@@ -14,6 +14,7 @@ import type {
   PendingUserQuestion,
   RecoveryBackgroundTask,
   ToolApprovalAction,
+  ToolApprovalOption,
   UserQuestionAnswerSubmission,
   UserQuestionPrompt,
   RecoveryRun,
@@ -349,50 +350,71 @@ function PendingApprovals({
   }
   return (
     <div className="at-recovery-panel">
-      {approvals.map((approval) => (
-        <div className="at-recovery-item" key={approval.tool_call_id}>
-          <div className="at-recovery-copy">
-            <Typography.Text strong>
-              {approval.tool_name?.trim() || approval.tool_call_id}
-            </Typography.Text>
-            {approval.args_preview?.trim() ? (
-              <Typography.Text type="secondary" ellipsis>
-                {approval.args_preview}
+      {approvals.map((approval) => {
+        const approvalOptions = normalizedApprovalOptions(approval.acp_options);
+        return (
+          <div className="at-recovery-item" key={approval.tool_call_id}>
+            <div className="at-recovery-copy">
+              <Typography.Text strong>
+                {approval.tool_name?.trim() || approval.tool_call_id}
               </Typography.Text>
-            ) : null}
+              {approval.args_preview?.trim() ? (
+                <Typography.Text type="secondary" ellipsis>
+                  {approval.args_preview}
+                </Typography.Text>
+              ) : null}
+            </div>
+            <Space size={6} wrap>
+              {approvalOptions.map((option) => (
+                <Button
+                  danger={option.action === "deny"}
+                  disabled={busy}
+                  key={`${option.optionId}:${option.action}`}
+                  onClick={() =>
+                    onResolve({
+                      action: option.action,
+                      optionId: option.optionId,
+                      runId: activeRunId,
+                      toolCallId: approval.tool_call_id,
+                    })
+                  }
+                  size="small"
+                >
+                  {option.label}
+                </Button>
+              ))}
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  onResolve({
+                    action: "approve",
+                    runId: activeRunId,
+                    toolCallId: approval.tool_call_id,
+                  })
+                }
+                size="small"
+                type="primary"
+              >
+                Approve
+              </Button>
+              <Button
+                danger
+                disabled={busy}
+                onClick={() =>
+                  onResolve({
+                    action: "deny",
+                    runId: activeRunId,
+                    toolCallId: approval.tool_call_id,
+                  })
+                }
+                size="small"
+              >
+                Deny
+              </Button>
+            </Space>
           </div>
-          <Space size={6}>
-            <Button
-              disabled={busy}
-              onClick={() =>
-                onResolve({
-                  action: "approve",
-                  runId: activeRunId,
-                  toolCallId: approval.tool_call_id,
-                })
-              }
-              size="small"
-              type="primary"
-            >
-              Approve
-            </Button>
-            <Button
-              danger
-              disabled={busy}
-              onClick={() =>
-                onResolve({
-                  action: "deny",
-                  runId: activeRunId,
-                  toolCallId: approval.tool_call_id,
-                })
-              }
-              size="small"
-            >
-              Deny
-            </Button>
-          </Space>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -654,4 +676,82 @@ function shouldResumeBeforeApproval(
     activeRun.run_id === runId &&
     (activeRun.status === "stopped" || activeRun.phase === "stopped")
   );
+}
+
+interface NormalizedApprovalOption {
+  action: ToolApprovalAction;
+  label: string;
+  optionId: string;
+}
+
+function normalizedApprovalOptions(
+  options: ToolApprovalOption[] | undefined,
+): NormalizedApprovalOption[] {
+  if (options === undefined) {
+    return [];
+  }
+  return options
+    .map(normalizedApprovalOption)
+    .filter((option): option is NormalizedApprovalOption => option !== null);
+}
+
+function normalizedApprovalOption(
+  option: ToolApprovalOption,
+): NormalizedApprovalOption | null {
+  const optionId =
+    approvalOptionText(option.optionId) ||
+    approvalOptionText(option.option_id) ||
+    approvalOptionText(option.id);
+  const label = approvalOptionLabel(option);
+  if (!optionId || !label) {
+    return null;
+  }
+  return {
+    action: approvalActionForAcpOption(option.kind),
+    label,
+    optionId,
+  };
+}
+
+function approvalActionForAcpOption(kind: string | undefined): ToolApprovalAction {
+  const normalizedKind = approvalOptionText(kind).toLowerCase();
+  if (
+    normalizedKind === "reject_once" ||
+    normalizedKind === "reject_always" ||
+    normalizedKind === "deny"
+  ) {
+    return "deny";
+  }
+  return "approve";
+}
+
+function approvalOptionLabel(option: ToolApprovalOption): string {
+  const rawLabel =
+    approvalOptionText(option.label) ||
+    approvalOptionText(option.name) ||
+    approvalOptionText(option.kind) ||
+    approvalOptionText(option.optionId) ||
+    approvalOptionText(option.option_id) ||
+    approvalOptionText(option.id);
+  return humanizeApprovalOptionLabel(rawLabel);
+}
+
+function approvalOptionText(value: string | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function humanizeApprovalOptionLabel(value: string): string {
+  if (!value.includes("_") && !value.includes("-")) {
+    return value;
+  }
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      if (index > 0) {
+        return word;
+      }
+      return `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`;
+    })
+    .join(" ");
 }

@@ -1,6 +1,13 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listSessionMessages } from "../api/client";
@@ -1247,6 +1254,93 @@ describe("MessageTimeline", () => {
     expect(codeBlock?.querySelector(".hljs-keyword")).not.toBeNull();
   });
 
+  it("keeps the timeline pinned to bottom when new rows arrive near bottom", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 320,
+      rowHeight: 120,
+    });
+    try {
+      listSessionMessagesMock.mockResolvedValue(
+        Array.from({ length: 6 }, (_, index) => ({
+          content: `Persisted message ${index + 1}`,
+          message_id: `assistant-${index + 1}`,
+          role_id: "MainAgent",
+        })),
+      );
+
+      const { container } = renderTimeline();
+
+      expect(await screen.findByText("Persisted message 6")).toBeVisible();
+      const timeline = timelineElement(container);
+      await waitFor(() =>
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(0),
+      );
+      timeline.scrollTop = timelineMaxScrollTop(timeline) - 24;
+      fireEvent.scroll(timeline);
+
+      act(() => {
+        setRuntimeEntries([
+          runtimeTextDeltaEntry({
+            eventId: 1,
+            id: "run-output:1:0",
+            text: "New runtime row",
+          }),
+        ]);
+      });
+
+      expect(await screen.findByText("New runtime row")).toBeVisible();
+      await waitFor(() =>
+        expect(timeline.scrollTop).toBe(timelineMaxScrollTop(timeline)),
+      );
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
+  it("preserves scroll position when new rows arrive away from bottom", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 320,
+      rowHeight: 120,
+    });
+    try {
+      listSessionMessagesMock.mockResolvedValue(
+        Array.from({ length: 6 }, (_, index) => ({
+          content: `Persisted message ${index + 1}`,
+          message_id: `assistant-${index + 1}`,
+          role_id: "MainAgent",
+        })),
+      );
+
+      const { container } = renderTimeline();
+
+      expect(await screen.findByText("Persisted message 6")).toBeVisible();
+      const timeline = timelineElement(container);
+      await waitFor(() =>
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(240),
+      );
+      timeline.scrollTop = 80;
+      fireEvent.scroll(timeline);
+      const previousMaxScrollTop = timelineMaxScrollTop(timeline);
+
+      act(() => {
+        setRuntimeEntries([
+          runtimeTextDeltaEntry({
+            eventId: 1,
+            id: "run-output:1:0",
+            text: "Away-from-bottom runtime row",
+          }),
+        ]);
+      });
+
+      await waitFor(() =>
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(previousMaxScrollTop),
+      );
+      expect(timeline.scrollTop).toBe(80);
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
   it("measures markdown rows so long blocks do not overlap following messages", async () => {
     const restoreMeasurements = mockElementMeasurements();
     try {
@@ -1462,23 +1556,59 @@ function runtimeThinkingDeltaEntry({
   };
 }
 
-function mockElementMeasurements(): () => void {
+interface MockElementMeasurementsOptions {
+  clientHeight?: number;
+  rowHeight?: number;
+}
+
+function mockElementMeasurements(
+  options: MockElementMeasurementsOptions = {},
+): () => void {
+  const clientHeightDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  );
   const heightDescriptor = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
     "offsetHeight",
+  );
+  const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "scrollHeight",
   );
   const widthDescriptor = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
     "offsetWidth",
   );
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get() {
+      if (this instanceof HTMLElement && this.classList.contains("at-timeline")) {
+        return options.clientHeight ?? 720;
+      }
+      return 0;
+    },
+  });
   Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
     configurable: true,
     get() {
       if (this instanceof HTMLElement && this.classList.contains("at-timeline")) {
-        return 720;
+        return options.clientHeight ?? 720;
       }
       if (this instanceof HTMLElement && this.classList.contains("at-message")) {
+        if (options.rowHeight !== undefined) {
+          return options.rowHeight;
+        }
         return this.dataset.index === "0" ? 640 : 88;
+      }
+      return 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get() {
+      if (this instanceof HTMLElement && this.classList.contains("at-timeline")) {
+        return timelineVirtualHeight(this);
       }
       return 0;
     },
@@ -1490,9 +1620,28 @@ function mockElementMeasurements(): () => void {
     },
   });
   return () => {
+    restoreProperty(HTMLElement.prototype, "clientHeight", clientHeightDescriptor);
     restoreProperty(HTMLElement.prototype, "offsetHeight", heightDescriptor);
+    restoreProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
     restoreProperty(HTMLElement.prototype, "offsetWidth", widthDescriptor);
   };
+}
+
+function timelineElement(container: HTMLElement): HTMLElement {
+  const timeline = container.querySelector(".at-timeline");
+  if (!(timeline instanceof HTMLElement)) {
+    throw new Error("Timeline element was not rendered.");
+  }
+  return timeline;
+}
+
+function timelineMaxScrollTop(timeline: HTMLElement): number {
+  return Math.max(0, timeline.scrollHeight - timeline.clientHeight);
+}
+
+function timelineVirtualHeight(timeline: HTMLElement): number {
+  const virtualElement = timeline.querySelector<HTMLElement>(".at-timeline-virtual");
+  return Number.parseFloat(virtualElement?.style.height ?? "") || 0;
 }
 
 function restoreProperty<TObject extends object, TKey extends keyof TObject>(

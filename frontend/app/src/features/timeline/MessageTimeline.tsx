@@ -2,7 +2,7 @@ import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Copy, Wrench } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 import { listSessionMessages } from "../../api/client";
 import {
@@ -16,6 +16,8 @@ import type { TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import { MarkdownMessage } from "./MarkdownMessage";
 
+const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
+
 interface MessageTimelineProps {
   sessionId: string | null;
 }
@@ -23,6 +25,8 @@ interface MessageTimelineProps {
 export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const { message } = App.useApp();
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const scrollSessionIdRef = useRef<string | null>(sessionId);
+  const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
   const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const messagesQuery = useQuery({
     queryKey: ["sessions", sessionId, "messages"],
@@ -80,6 +84,30 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const timelineHeight = virtualItems.length > 0
     ? virtualizer.getTotalSize()
     : fallbackTotalSize(rows);
+  const handleTimelineScroll = useCallback(() => {
+    const container = parentRef.current;
+    if (container !== null) {
+      scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (scrollSessionIdRef.current !== sessionId) {
+      scrollSessionIdRef.current = sessionId;
+      scrollSnapshotRef.current = null;
+    }
+    const container = parentRef.current;
+    if (container === null) {
+      return;
+    }
+    const snapshot = scrollSnapshotRef.current;
+    if (snapshot === null) {
+      scrollTimelineToBottom(container);
+    } else {
+      applyTimelineScrollSnapshot(container, snapshot);
+    }
+    scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
+  }, [rows, sessionId, timelineHeight]);
 
   if (sessionId === null) {
     return (
@@ -114,7 +142,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   }
 
   return (
-    <div className="at-timeline" ref={parentRef}>
+    <div className="at-timeline" onScroll={handleTimelineScroll} ref={parentRef}>
       <div className="at-timeline-toolbar">
         <Tooltip
           title={
@@ -143,6 +171,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
             <article
               className={`at-message ${row.source === "runtime" ? "is-runtime" : ""}`}
               data-index={virtualItem.index}
+              data-row-key={row.key}
               key={row.key}
               ref={virtualizer.measureElement}
               style={{ transform: `translateY(${virtualItem.start}px)` }}
@@ -224,6 +253,137 @@ interface RuntimeThinkingAccumulator {
 interface RuntimeTextAccumulator {
   part: TimelineTextPart;
   row: TimelineRow;
+}
+
+interface TimelineScrollAnchor {
+  offset: number;
+  rowKey: string;
+}
+
+interface TimelineScrollSnapshot {
+  anchor: TimelineScrollAnchor | null;
+  scrollTop: number;
+  shouldFollow: boolean;
+}
+
+function captureTimelineScrollSnapshot(
+  container: HTMLElement,
+): TimelineScrollSnapshot {
+  const scrollTop = scrollMetric(container.scrollTop);
+  const shouldFollow = isTimelineNearBottom(container);
+  return {
+    anchor: shouldFollow ? null : captureTimelineScrollAnchor(container, scrollTop),
+    scrollTop,
+    shouldFollow,
+  };
+}
+
+function applyTimelineScrollSnapshot(
+  container: HTMLElement,
+  snapshot: TimelineScrollSnapshot,
+): void {
+  if (snapshot.shouldFollow) {
+    scrollTimelineToBottom(container);
+    return;
+  }
+  const anchoredScrollTop = timelineAnchorScrollTop(container, snapshot);
+  container.scrollTop = clampScrollTop(container, anchoredScrollTop);
+}
+
+function captureTimelineScrollAnchor(
+  container: HTMLElement,
+  scrollTop: number,
+): TimelineScrollAnchor | null {
+  const rows = Array.from(
+    container.querySelectorAll<HTMLElement>("article.at-message[data-row-key]"),
+  );
+  for (const row of rows) {
+    const rowKey = row.dataset.rowKey;
+    if (rowKey === undefined) {
+      continue;
+    }
+    const rowTop = timelineRowTop(row);
+    const rowBottom = rowTop + timelineRowHeight(row);
+    if (rowBottom >= scrollTop) {
+      return {
+        offset: scrollTop - rowTop,
+        rowKey,
+      };
+    }
+  }
+  return null;
+}
+
+function timelineAnchorScrollTop(
+  container: HTMLElement,
+  snapshot: TimelineScrollSnapshot,
+): number {
+  if (snapshot.anchor === null) {
+    return snapshot.scrollTop;
+  }
+  const row = findTimelineAnchorRow(container, snapshot.anchor.rowKey);
+  if (row === null) {
+    return snapshot.scrollTop;
+  }
+  return timelineRowTop(row) + snapshot.anchor.offset;
+}
+
+function findTimelineAnchorRow(
+  container: HTMLElement,
+  rowKey: string,
+): HTMLElement | null {
+  const rows = Array.from(
+    container.querySelectorAll<HTMLElement>("article.at-message[data-row-key]"),
+  );
+  return rows.find((row) => row.dataset.rowKey === rowKey) ?? null;
+}
+
+function scrollTimelineToBottom(container: HTMLElement): void {
+  container.scrollTop = timelineMaxScrollTop(container);
+}
+
+function isTimelineNearBottom(container: HTMLElement): boolean {
+  return timelineMaxScrollTop(container) - scrollMetric(container.scrollTop)
+    <= TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX;
+}
+
+function clampScrollTop(container: HTMLElement, scrollTop: number): number {
+  return Math.min(
+    timelineMaxScrollTop(container),
+    Math.max(0, scrollMetric(scrollTop)),
+  );
+}
+
+function timelineMaxScrollTop(container: HTMLElement): number {
+  return Math.max(
+    0,
+    scrollMetric(container.scrollHeight) - scrollMetric(container.clientHeight),
+  );
+}
+
+function timelineRowTop(row: HTMLElement): number {
+  const virtualHost = row.closest(".at-timeline-virtual");
+  const hostTop = virtualHost instanceof HTMLElement
+    ? scrollMetric(virtualHost.offsetTop)
+    : 0;
+  return hostTop + translateY(row.style.transform);
+}
+
+function timelineRowHeight(row: HTMLElement): number {
+  const offsetHeight = scrollMetric(row.offsetHeight);
+  if (offsetHeight > 0) {
+    return offsetHeight;
+  }
+  return scrollMetric(row.getBoundingClientRect().height);
+}
+
+function translateY(transform: string): number {
+  const match = transform.match(/translateY\(([-\d.]+)px\)/);
+  return match?.[1] === undefined ? 0 : Number(match[1]);
+}
+
+function scrollMetric(value: number): number {
+  return Number.isFinite(value) ? value : 0;
 }
 
 function fallbackVirtualItems(rows: TimelineRow[]): FallbackVirtualItem[] {

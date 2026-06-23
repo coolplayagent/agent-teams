@@ -264,23 +264,23 @@ body {
 
 .at-workspace-group {
   display: grid;
-  gap: 2px;
-  padding: 2px 0 6px;
+  gap: 3px;
+  padding: 3px 0 7px;
 }
 
 .at-workspace-group + .at-workspace-group {
   border-top: 1px solid var(--at-border);
-  padding-top: 8px;
+  padding-top: 9px;
 }
 
 .at-workspace-group-header {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) max-content;
+  grid-template-columns: 30px minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 4px;
-  min-height: 28px;
+  gap: 6px;
+  min-height: 40px;
   width: 100%;
-  padding: 3px 6px;
+  padding: 5px 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -311,15 +311,17 @@ body {
 
 .at-workspace-group-toggle {
   display: inline-grid;
-  grid-template-columns: 16px 12px;
+  grid-template-columns: 15px 10px;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   height: 22px;
   color: var(--at-text-muted);
 }
 
 .at-workspace-group-title-button {
-  display: block;
+  display: grid;
+  gap: 1px;
+  min-width: 0;
   text-align: left;
 }
 
@@ -338,16 +340,51 @@ body {
   font-weight: 520;
 }
 
+.at-workspace-group-path {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text-muted);
+  font-family: var(--at-font-mono);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-workspace-group-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: max-content;
+}
+
 .at-workspace-group-count,
 .at-workspace-group-empty {
   color: var(--at-text-muted);
   font-size: 11px;
 }
 
+.at-workspace-group-actions .ant-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--at-text-muted);
+}
+
+.at-workspace-group-actions .ant-btn.is-active,
+.at-workspace-group-actions .ant-btn:hover,
+.at-workspace-group-actions .ant-btn:focus-visible {
+  background: var(--at-surface-muted);
+  color: var(--at-text);
+}
+
 .at-workspace-group-sessions {
   display: grid;
   gap: 1px;
-  padding-left: 16px;
+  padding-left: 24px;
 }
 
 .at-workspace-group-empty {
@@ -392,7 +429,7 @@ body {
   background: transparent;
   color: var(--at-text);
   font: inherit;
-  padding: 6px 8px !important;
+  padding: 4px 7px !important;
   text-align: left;
 }
 
@@ -403,8 +440,8 @@ body {
 }
 
 .at-session-item.is-selected {
-  border-color: var(--at-border-strong);
-  background: var(--at-surface);
+  border-color: transparent;
+  background: var(--at-surface-muted);
 }
 
 .at-session-copy {

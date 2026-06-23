@@ -124,7 +124,7 @@ export function SessionsSidebar({
   }, []);
 
   const createSessionMutation = useMutation({
-    mutationFn: () => createSession({ workspace_id: effectiveWorkspaceId }),
+    mutationFn: (workspaceId: string) => createSession({ workspace_id: workspaceId }),
     onSuccess: (session) => {
       setSelectedWorkspaceId(session.workspace_id);
       setSelectedSessionId(session.session_id);
@@ -180,7 +180,7 @@ export function SessionsSidebar({
         disabled={workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()}
         icon={<Plus size={15} />}
         loading={createSessionMutation.isPending}
-        onClick={() => createSessionMutation.mutate()}
+        onClick={() => createSessionMutation.mutate(effectiveWorkspaceId)}
         type="primary"
       >
         {t("sidebarNewSession")}
@@ -211,20 +211,6 @@ export function SessionsSidebar({
         <span>{t("sidebarWorkspaces")}</span>
         <div className="at-sidebar-section-actions">
           <span>{sessionGroups.length}</span>
-          {onOpenWorkspaceView !== undefined ? (
-            <Tooltip title={t("sidebarOpenWorkspaceView")}>
-              <Button
-                aria-label={t("sidebarOpenWorkspaceView")}
-                aria-pressed={workspaceViewActive}
-                className={workspaceViewActive ? "is-active" : undefined}
-                disabled={workspaceOptions.length === 0}
-                icon={<FolderSearch size={14} />}
-                onClick={onOpenWorkspaceView}
-                size="small"
-                type="text"
-              />
-            </Tooltip>
-          ) : null}
         </div>
       </div>
       <div className="at-sidebar-search-row">
@@ -299,8 +285,52 @@ export function SessionsSidebar({
                   type="button"
                 >
                   <span className="at-workspace-group-title">{group.label}</span>
+                  {group.pathHint ? (
+                    <span className="at-workspace-group-path">{group.pathHint}</span>
+                  ) : null}
                 </button>
-                <span className="at-workspace-group-count">{group.sessions.length}</span>
+                <div className="at-workspace-group-actions">
+                  {onOpenWorkspaceView !== undefined ? (
+                    <Tooltip
+                      title={t("sidebarOpenWorkspaceViewFor", { label: group.label })}
+                    >
+                      <Button
+                        aria-label={t("sidebarOpenWorkspaceViewFor", {
+                          label: group.label,
+                        })}
+                        aria-pressed={workspaceViewActive && group.id === selectedWorkspaceId}
+                        className={
+                          workspaceViewActive && group.id === selectedWorkspaceId
+                            ? "is-active"
+                            : undefined
+                        }
+                        disabled={workspaceOptions.length === 0}
+                        icon={<FolderSearch size={14} />}
+                        onClick={() => {
+                          setSelectedWorkspaceId(group.id);
+                          onOpenWorkspaceView();
+                        }}
+                        size="small"
+                        type="text"
+                      />
+                    </Tooltip>
+                  ) : null}
+                  <Tooltip
+                    title={t("sidebarNewSessionInWorkspace", { label: group.label })}
+                  >
+                    <Button
+                      aria-label={t("sidebarNewSessionInWorkspace", {
+                        label: group.label,
+                      })}
+                      disabled={!group.id.trim()}
+                      icon={<Plus size={14} />}
+                      loading={createSessionMutation.isPending}
+                      onClick={() => createSessionMutation.mutate(group.id)}
+                      size="small"
+                      type="text"
+                    />
+                  </Tooltip>
+                </div>
               </div>
               {groupExpanded && group.sessions.length === 0 ? (
                 <div className="at-workspace-group-empty">{t("sidebarNoSessions")}</div>

@@ -74,13 +74,14 @@ describe("SessionsSidebar", () => {
     expect(openObservability).toHaveBeenCalledTimes(1);
 
     const workspaceViewButton = screen.getByRole("button", {
-      name: "Open workspace view",
+      name: "Open workspace view for Agent Teams",
     });
     expect(workspaceViewButton).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(workspaceViewButton).toBeEnabled());
     fireEvent.click(workspaceViewButton);
 
     expect(openWorkspaceView).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("C:/work/agent-teams")).toBeVisible();
 
     const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
     window.dispatchEvent(new Event("agent-teams-focus-session-search"));
@@ -121,6 +122,41 @@ describe("SessionsSidebar", () => {
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
   });
 
+  it("creates a session from a workspace project row", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/desktop",
+        display_name: "Desktop",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([]);
+    createSessionMock.mockResolvedValue({
+      session_id: "session-new",
+      workspace_id: "workspace-2",
+    });
+
+    renderSidebar();
+
+    await screen.findByText("Desktop");
+    fireEvent.click(screen.getByRole("button", {
+      name: "New session in Desktop",
+    }));
+
+    await waitFor(() =>
+      expect(createSessionMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-2",
+      }),
+    );
+    expect(useUiStore.getState().selectedSessionId).toBe("session-new");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
+  });
+
   it("localizes the persistent sidebar frame in Chinese", async () => {
     useUiStore.setState({ language: "zh-CN" });
     listWorkspacesMock.mockResolvedValue([
@@ -147,7 +183,9 @@ describe("SessionsSidebar", () => {
     expect(screen.getByRole("button", { name: "新建会话" })).toBeVisible();
     expect(screen.getByRole("searchbox", { name: "搜索会话" })).toBeVisible();
     expect(screen.getByRole("button", { name: "刷新会话" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "打开工作区视图" })).toBeVisible();
+    expect(await screen.findByRole("button", {
+      name: "打开 Agent Teams 的工作区视图",
+    })).toBeVisible();
   });
 
   it("ignores a stale stored workspace id when creating a session", async () => {

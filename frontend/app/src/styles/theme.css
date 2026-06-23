@@ -357,6 +357,15 @@ body {
   font-size: 12px;
 }
 
+.at-session-mode-control {
+  min-width: 188px;
+}
+
+.at-normal-root-role-select,
+.at-orchestration-preset-select {
+  width: 164px;
+}
+
 .at-role-select {
   width: 180px;
 }

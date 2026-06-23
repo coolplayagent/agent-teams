@@ -4,6 +4,7 @@ import type {
   RunInjectionRequest,
   JsonValue,
   ModelProfilesPayload,
+  OrchestrationConfig,
   ObservabilityBreakdowns,
   ObservabilityOverview,
   RecoverySnapshot,
@@ -13,6 +14,7 @@ import type {
   SessionTokenUsage,
   ServerHealthPayload,
   SessionCreateRequest,
+  SessionMode,
   SessionRecord,
   SessionSidebarRecord,
   TimelineMessage,
@@ -40,6 +42,10 @@ export function getRoleConfigOptions(): Promise<RoleConfigOptions> {
 
 export function getModelProfiles(): Promise<ModelProfilesPayload> {
   return requestJson<ModelProfilesPayload>("/system/configs/model/profiles");
+}
+
+export function getOrchestrationConfig(): Promise<OrchestrationConfig> {
+  return requestJson<OrchestrationConfig>("/system/configs/orchestration");
 }
 
 export function listSidebarSessions(forceRefresh = false): Promise<SessionSidebarRecord[]> {
@@ -71,6 +77,23 @@ export function updateSessionNormalModelProfile(
     {
       method: "PATCH",
       body: JSON.stringify({ normal_model_profile: normalModelProfile }),
+    },
+  );
+}
+
+export function updateSessionTopology(
+  sessionId: string,
+  request: {
+    session_mode: SessionMode;
+    normal_root_role_id?: string | null;
+    orchestration_preset_id?: string | null;
+  },
+): Promise<SessionRecord> {
+  return requestJson<SessionRecord>(
+    `/sessions/${encodeURIComponent(sessionId)}/topology`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
     },
   );
 }

@@ -251,3 +251,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run lint` in `frontend/app` passed.
 - `npm run test -- --run` in `frontend/app` passed with 24 tests.
 - `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+## 2026-06-23 Composer Session Topology Batch
+
+### Scope
+- Added React API contracts and client support for `/api/system/configs/orchestration` and `/api/sessions/{session_id}/topology`.
+- Added compact composer session topology controls for normal versus orchestration mode, normal root role, and orchestration preset.
+- Respected backend `can_switch_mode` so started sessions do not expose misleading topology edits.
+- Added focused React coverage for orchestration mode switching, normal root role selection, and locked started-session controls.
+
+### Verification
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- --run Composer.test.tsx` in `frontend/app` passed with 10 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run test -- --run` in `frontend/app` passed with 27 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check --fix` passed.
+- `uv run --extra dev ruff format --no-cache --force-exclude` passed.
+- `uv run --extra dev basedpyright` passed.
+- `uv run --extra dev pytest -q tests/unit_tests` passed.
+- `uv run --extra dev pytest -q tests/integration_tests` passed with 1052 passed and 9 skipped.

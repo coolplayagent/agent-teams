@@ -7,9 +7,11 @@ import type { ReactNode } from "react";
 import {
   createRun,
   getModelProfiles,
+  getOrchestrationConfig,
   getRoleConfigOptions,
   getSession,
   injectRunMessage,
+  updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../api/client";
 import { Composer } from "../features/composer/Composer";
@@ -38,18 +40,22 @@ vi.mock("@ant-design/x", () => ({
 vi.mock("../api/client", () => ({
   createRun: vi.fn(),
   getModelProfiles: vi.fn(),
+  getOrchestrationConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getSession: vi.fn(),
   injectRunMessage: vi.fn(),
   stopRun: vi.fn(),
+  updateSessionTopology: vi.fn(),
   updateSessionNormalModelProfile: vi.fn(),
 }));
 
 const createRunMock = vi.mocked(createRun);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
+const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getSessionMock = vi.mocked(getSession);
 const injectRunMessageMock = vi.mocked(injectRunMessage);
+const updateSessionTopologyMock = vi.mocked(updateSessionTopology);
 const updateSessionNormalModelProfileMock = vi.mocked(
   updateSessionNormalModelProfile,
 );
@@ -58,13 +64,21 @@ beforeEach(() => {
   getSessionMock.mockResolvedValue({
     session_id: "session-1",
     workspace_id: "workspace-1",
+    session_mode: "normal",
+    normal_root_role_id: null,
     normal_model_profile: null,
+    orchestration_preset_id: null,
+    can_switch_mode: true,
   });
   getModelProfilesMock.mockResolvedValue({
     default: {
       model: "gpt-4o-mini",
       is_default: true,
     },
+  });
+  getOrchestrationConfigMock.mockResolvedValue({
+    default_orchestration_preset_id: "team",
+    presets: [{ preset_id: "team", name: "Team" }],
   });
 });
 
@@ -159,6 +173,112 @@ describe("Composer", () => {
         "precise",
       ),
     );
+  });
+
+  it("switches the current session to orchestration mode with the default preset", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+    updateSessionTopologyMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "orchestration",
+      orchestration_preset_id: "team",
+      can_switch_mode: true,
+    });
+
+    renderComposer();
+
+    await waitFor(() =>
+      expect(segmentedItem("Orchestration")).not.toHaveClass(
+        "ant-segmented-item-disabled",
+      ),
+    );
+    fireEvent.click(segmentedItem("Orchestration"));
+
+    await waitFor(() =>
+      expect(updateSessionTopologyMock).toHaveBeenCalledWith("session-1", {
+        session_mode: "orchestration",
+        normal_root_role_id: null,
+        orchestration_preset_id: "team",
+      }),
+    );
+  });
+
+  it("updates the current session normal root role", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+        {
+          role_id: "Reviewer",
+          name: "Reviewer",
+        },
+      ],
+    });
+    updateSessionTopologyMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: "Reviewer",
+      can_switch_mode: true,
+    });
+
+    renderComposer();
+
+    await waitFor(() =>
+      expect(selectRoot("Root role")).not.toHaveClass("ant-select-disabled"),
+    );
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Root role" }));
+    const reviewerOptions = await screen.findAllByText("Reviewer");
+    const visibleReviewerOption = reviewerOptions.at(-1);
+    if (visibleReviewerOption === undefined) {
+      throw new Error("Reviewer option was not rendered.");
+    }
+    fireEvent.click(visibleReviewerOption);
+
+    await waitFor(() =>
+      expect(updateSessionTopologyMock).toHaveBeenCalledWith("session-1", {
+        session_mode: "normal",
+        normal_root_role_id: "Reviewer",
+        orchestration_preset_id: null,
+      }),
+    );
+  });
+
+  it("locks session topology controls after the session has started", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: null,
+      normal_model_profile: null,
+      orchestration_preset_id: null,
+      can_switch_mode: false,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    await screen.findByText("Orchestration");
+    expect(selectRoot("Root role")).toHaveClass("ant-select-disabled");
+    fireEvent.click(screen.getByText("Orchestration"));
+
+    expect(updateSessionTopologyMock).not.toHaveBeenCalled();
   });
 
   it("keeps model profile updates out of the sidebar cache namespace", async () => {
@@ -345,6 +465,14 @@ function selectRoot(label: string): HTMLElement {
   const element = screen.getByRole("combobox", { name: label }).closest(".ant-select");
   if (element === null) {
     throw new Error(`${label} select root was not rendered.`);
+  }
+  return element as HTMLElement;
+}
+
+function segmentedItem(label: string): HTMLElement {
+  const element = screen.getByText(label).closest(".ant-segmented-item");
+  if (element === null) {
+    throw new Error(`${label} segmented item was not rendered.`);
   }
   return element as HTMLElement;
 }

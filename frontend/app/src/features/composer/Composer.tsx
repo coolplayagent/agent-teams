@@ -2,6 +2,7 @@ import {
   App,
   Button,
   Checkbox,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -17,16 +18,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createRun,
   getModelProfiles,
+  getOrchestrationConfig,
   getRoleConfigOptions,
   getSession,
   injectRunMessage,
   stopRun,
+  updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../../api/client";
 import type {
   InjectionDeliveryMode,
   ModelProfilesPayload,
+  OrchestrationConfig,
   RunThinkingConfig,
+  SessionMode,
   ThinkingEffort,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
@@ -46,10 +51,20 @@ const THINKING_EFFORT_OPTIONS: Array<{ label: string; value: ThinkingEffort }> =
   { label: "High", value: "high" },
 ];
 const DEFAULT_MODEL_PROFILE_OPTION = { label: "Default", value: "" };
+const SESSION_MODE_OPTIONS: Array<{ label: string; value: SessionMode }> = [
+  { label: "Normal", value: "normal" },
+  { label: "Orchestration", value: "orchestration" },
+];
 
 interface ModelProfileOption {
   label: string;
   value: string;
+}
+
+interface TopologyPatch {
+  sessionMode: SessionMode;
+  normalRootRoleId: string | null;
+  orchestrationPresetId: string | null;
 }
 
 function sessionDetailQueryKey(sessionId: string) {
@@ -91,6 +106,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     queryFn: getModelProfiles,
     staleTime: 30000,
   });
+  const orchestrationQuery = useQuery({
+    queryKey: ["orchestration", "config"],
+    queryFn: getOrchestrationConfig,
+    staleTime: 30000,
+  });
   const roleOptions = useMemo(
     () =>
       (roleOptionsQuery.data?.normal_mode_roles ?? []).map((role) => ({
@@ -98,6 +118,29 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         value: role.role_id,
       })),
     [roleOptionsQuery.data?.normal_mode_roles],
+  );
+  const normalRootRoleOptions = useMemo(
+    () =>
+      (roleOptionsQuery.data?.normal_mode_roles ?? [])
+        .map((role) => ({
+          label: role.name || role.role_id,
+          value: normalizeProfileName(role.role_id),
+        }))
+        .filter((role) => role.value.length > 0),
+    [roleOptionsQuery.data?.normal_mode_roles],
+  );
+  const orchestrationPresetOptions = useMemo(
+    () => buildOrchestrationPresetOptions(orchestrationQuery.data),
+    [orchestrationQuery.data],
+  );
+  const selectedSessionMode = sessionQuery.data?.session_mode ?? "normal";
+  const selectedNormalRootRoleId = resolveSelectedNormalRootRoleId(
+    sessionQuery.data?.normal_root_role_id,
+    normalRootRoleOptions,
+  );
+  const selectedOrchestrationPresetId = resolveSelectedOrchestrationPresetId(
+    sessionQuery.data?.orchestration_preset_id,
+    orchestrationQuery.data,
   );
   const selectedModelProfile =
     sessionQuery.data === undefined
@@ -206,16 +249,51 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
   });
 
+  const updateTopologyMutation = useMutation({
+    mutationFn: async (patch: TopologyPatch) => {
+      if (sessionId === null) {
+        throw new Error("Select a session before changing mode.");
+      }
+      return updateSessionTopology(sessionId, {
+        session_mode: patch.sessionMode,
+        normal_root_role_id:
+          patch.sessionMode === "normal" ? patch.normalRootRoleId : null,
+        orchestration_preset_id:
+          patch.sessionMode === "orchestration"
+            ? patch.orchestrationPresetId
+            : null,
+      });
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(sessionDetailQueryKey(updated.session_id), updated);
+      void queryClient.invalidateQueries({
+        queryKey: sessionDetailQueryKey(updated.session_id),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void message.success("Session topology updated.");
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : "Session mode update failed.",
+      );
+    },
+  });
+
   const busy =
     createRunMutation.isPending ||
     stopRunMutation.isPending ||
     injectMessageMutation.isPending ||
-    updateModelProfileMutation.isPending;
+    updateModelProfileMutation.isPending ||
+    updateTopologyMutation.isPending;
   const canCreateRun =
     sessionId !== null && activeRunId === null && draft.trim().length > 0 && !busy;
   const canInject = activeRunId !== null && draft.trim().length > 0 && !busy;
   const canChangeModelProfile =
     sessionId !== null && sessionQuery.data !== undefined && !sessionQuery.isError;
+  const canChangeTopology =
+    canChangeModelProfile &&
+    activeRunId === null &&
+    sessionQuery.data?.can_switch_mode !== false;
 
   return (
     <form
@@ -255,6 +333,76 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       />
       <div className="at-composer-controls">
         <Space className="at-composer-control-set" size={8} wrap>
+          <Segmented<SessionMode>
+            aria-label="Session mode"
+            className="at-session-mode-control"
+            disabled={!canChangeTopology}
+            onChange={(mode) => {
+              if (mode !== selectedSessionMode) {
+                updateSessionTopologyMode(mode);
+              }
+            }}
+            options={SESSION_MODE_OPTIONS.map((option) => ({
+              ...option,
+              disabled:
+                option.value === "orchestration" &&
+                orchestrationPresetOptions.length === 0,
+            }))}
+            size="small"
+            value={selectedSessionMode}
+          />
+          <Select
+            aria-label="Root role"
+            className="at-normal-root-role-select"
+            disabled={
+              !canChangeTopology ||
+              selectedSessionMode !== "normal" ||
+              normalRootRoleOptions.length === 0
+            }
+            loading={roleOptionsQuery.isLoading || updateTopologyMutation.isPending}
+            onChange={(roleId) => {
+              const nextRoleId = normalizeProfileName(roleId);
+              if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
+                updateSessionTopologyMode("normal", {
+                  normalRootRoleId: nextRoleId,
+                });
+              }
+            }}
+            optionFilterProp="label"
+            options={normalRootRoleOptions}
+            placeholder="Root role"
+            popupMatchSelectWidth={false}
+            showSearch
+            size="small"
+            value={selectedNormalRootRoleId || undefined}
+          />
+          <Select
+            aria-label="Orchestration preset"
+            className="at-orchestration-preset-select"
+            disabled={
+              !canChangeTopology ||
+              selectedSessionMode !== "orchestration" ||
+              orchestrationPresetOptions.length === 0
+            }
+            loading={
+              orchestrationQuery.isLoading || updateTopologyMutation.isPending
+            }
+            onChange={(presetId) => {
+              const nextPresetId = normalizeProfileName(presetId);
+              if (nextPresetId && nextPresetId !== selectedOrchestrationPresetId) {
+                updateSessionTopologyMode("orchestration", {
+                  orchestrationPresetId: nextPresetId,
+                });
+              }
+            }}
+            optionFilterProp="label"
+            options={orchestrationPresetOptions}
+            placeholder="Preset"
+            popupMatchSelectWidth={false}
+            showSearch
+            size="small"
+            value={selectedOrchestrationPresetId || undefined}
+          />
           <Select
             allowClear
             aria-label="Target role"
@@ -393,6 +541,31 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       return updated;
     });
   }
+
+  function updateSessionTopologyMode(
+    sessionMode: SessionMode,
+    overrides: Partial<Omit<TopologyPatch, "sessionMode">> = {},
+  ) {
+    const normalRootRoleId = normalizeOptionalId(
+      overrides.normalRootRoleId ?? selectedNormalRootRoleId,
+    );
+    const orchestrationPresetId = normalizeOptionalId(
+      overrides.orchestrationPresetId ?? selectedOrchestrationPresetId,
+    );
+    if (sessionMode === "normal" && !normalRootRoleId) {
+      void message.warning("No root role is available.");
+      return;
+    }
+    if (sessionMode === "orchestration" && !orchestrationPresetId) {
+      void message.warning("No orchestration preset is available.");
+      return;
+    }
+    updateTopologyMutation.mutate({
+      sessionMode,
+      normalRootRoleId,
+      orchestrationPresetId,
+    });
+  }
 }
 
 function readSavedThinkingState(): RunThinkingConfig {
@@ -466,4 +639,59 @@ function buildModelProfileOptions(
 
 function normalizeProfileName(value: string | null | undefined): string {
   return String(value ?? "").trim();
+}
+
+function normalizeOptionalId(value: string | null | undefined): string | null {
+  return normalizeProfileName(value) || null;
+}
+
+function buildOrchestrationPresetOptions(
+  config: OrchestrationConfig | undefined,
+): ModelProfileOption[] {
+  return (config?.presets ?? [])
+    .map((preset) => {
+      const presetId = normalizeProfileName(preset.preset_id);
+      const label = normalizeProfileName(preset.name) || presetId;
+      return {
+        label: label !== presetId ? `${label} - ${presetId}` : label,
+        value: presetId,
+      };
+    })
+    .filter((preset) => preset.value.length > 0)
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function resolveSelectedNormalRootRoleId(
+  currentRoleId: string | null | undefined,
+  options: ModelProfileOption[],
+): string {
+  const normalized = normalizeProfileName(currentRoleId);
+  if (normalized && options.some((option) => option.value === normalized)) {
+    return normalized;
+  }
+  return options[0]?.value ?? "";
+}
+
+function resolveSelectedOrchestrationPresetId(
+  currentPresetId: string | null | undefined,
+  config: OrchestrationConfig | undefined,
+): string {
+  const presets = config?.presets ?? [];
+  const normalized = normalizeProfileName(currentPresetId);
+  if (
+    normalized &&
+    presets.some((preset) => normalizeProfileName(preset.preset_id) === normalized)
+  ) {
+    return normalized;
+  }
+  const defaultPresetId = normalizeProfileName(
+    config?.default_orchestration_preset_id,
+  );
+  if (
+    defaultPresetId &&
+    presets.some((preset) => normalizeProfileName(preset.preset_id) === defaultPresetId)
+  ) {
+    return defaultPresetId;
+  }
+  return normalizeProfileName(presets[0]?.preset_id);
 }

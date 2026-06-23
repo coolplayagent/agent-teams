@@ -56,6 +56,18 @@ export interface RoleConfigOptions {
   subagent_roles?: RoleOption[];
 }
 
+export interface OrchestrationPreset {
+  preset_id: string;
+  name?: string;
+  description?: string;
+  role_ids?: string[];
+}
+
+export interface OrchestrationConfig {
+  default_orchestration_preset_id?: string;
+  presets?: OrchestrationPreset[];
+}
+
 export interface ModelProfileRecord {
   provider?: string;
   model?: string;
@@ -88,6 +100,7 @@ export interface SessionRecord {
   normal_root_role_id?: string | null;
   normal_model_profile?: string | null;
   orchestration_preset_id?: string | null;
+  can_switch_mode?: boolean;
 }
 
 export interface ContentTextPart {

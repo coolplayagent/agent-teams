@@ -271,6 +271,10 @@ function roundMessageText(message: SessionRoundMessage): string {
   if (partTexts.length > 0) {
     return partTexts.join("\n\n");
   }
+  const nestedContent = normalizedText(message.message?.content);
+  if (nestedContent) {
+    return nestedContent;
+  }
   const content = normalizedText(message.content);
   if (content) {
     return content;

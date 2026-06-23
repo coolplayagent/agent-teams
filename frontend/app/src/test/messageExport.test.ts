@@ -63,6 +63,25 @@ describe("messageExport", () => {
     expect(html).toContain("Injected note");
   });
 
+  it("exports coordinator messages that store content on the nested message object", () => {
+    const html = buildMessagesHtml("session-1", [
+      {
+        coordinator_messages: [
+          {
+            message: {
+              content: "Nested final output",
+            },
+            role_id: "MainAgent",
+          },
+        ],
+        run_id: "run-1",
+      },
+    ]);
+
+    expect(html).toContain("MainAgent");
+    expect(html).toContain("Nested final output");
+  });
+
   it("downloads the HTML transcript", async () => {
     const createObjectUrl = mockDownloadUrl();
     const click = vi

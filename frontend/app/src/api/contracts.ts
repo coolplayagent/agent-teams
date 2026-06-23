@@ -225,6 +225,7 @@ export interface SessionRoundMessagePart {
 }
 
 export interface SessionRoundMessageBody {
+  content?: JsonValue;
   parts?: SessionRoundMessagePart[];
 }
 

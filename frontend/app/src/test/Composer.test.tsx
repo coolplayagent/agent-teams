@@ -15,6 +15,10 @@ import {
   updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../api/client";
+import {
+  createSpeechSttWebSocketUrl,
+  fetchSpeechConfig,
+} from "../api/speech";
 import { Composer } from "../features/composer/Composer";
 import type { SessionRecord } from "../api/contracts";
 import type { RunStreamController } from "../runtime/useRunStreamController";
@@ -62,7 +66,14 @@ vi.mock("../api/client", () => ({
   updateSessionNormalModelProfile: vi.fn(),
 }));
 
+vi.mock("../api/speech", () => ({
+  createSpeechSttWebSocketUrl: vi.fn(),
+  fetchSpeechConfig: vi.fn(),
+}));
+
 const createRunMock = vi.mocked(createRun);
+const createSpeechSttWebSocketUrlMock = vi.mocked(createSpeechSttWebSocketUrl);
+const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
@@ -75,6 +86,13 @@ const updateSessionNormalModelProfileMock = vi.mocked(
 );
 
 beforeEach(() => {
+  createSpeechSttWebSocketUrlMock.mockReturnValue(
+    "ws://localhost/api/speech/stt/stream",
+  );
+  fetchSpeechConfigMock.mockResolvedValue({
+    configured: false,
+    stt_profile_name: null,
+  });
   getSessionMock.mockResolvedValue({
     session_id: "session-1",
     workspace_id: "workspace-1",
@@ -101,6 +119,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  restoreVoiceRuntime();
   vi.clearAllMocks();
   localStorage.clear();
 });
@@ -1214,6 +1233,200 @@ describe("Composer", () => {
     );
   });
 
+  it("hides voice input when speech is not configured", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    await waitFor(() => expect(fetchSpeechConfigMock).toHaveBeenCalledOnce());
+    expect(
+      screen.queryByRole("button", { name: "Configure speech to text before using voice input" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Voice input unsupported" })).toBeNull();
+  });
+
+  it("keeps voice input disabled when configured speech runtime is unavailable", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    const voiceButton = await screen.findByRole("button", {
+      name: "Voice input unsupported",
+    });
+    expect(voiceButton).toBeDisabled();
+  });
+
+  it("enables voice input when speech is configured and runtime support exists", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    const voiceButton = await screen.findByRole("button", {
+      name: "Voice input",
+    });
+    await waitFor(() => expect(voiceButton).toBeEnabled());
+  });
+
+  it("cancels voice input while the WebSocket is still connecting", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    const voiceRuntime = installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Voice input" }));
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
+    const socket = voiceRuntime.sockets[0];
+    const connectingButton = await screen.findByRole("button", {
+      name: "Voice input connecting",
+    });
+
+    expect(connectingButton).toBeEnabled();
+    fireEvent.click(connectingButton);
+
+    await waitFor(() => expect(socket.readyState).toBe(WebSocket.CLOSED));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Voice input" })).toBeEnabled(),
+    );
+  });
+
+  it("stops voice input while the WebSocket is open but not ready", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    const voiceRuntime = installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Voice input" }));
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
+    const socket = voiceRuntime.sockets[0];
+    socket.open();
+    const connectingButton = await screen.findByRole("button", {
+      name: "Voice input connecting",
+    });
+
+    expect(connectingButton).toBeEnabled();
+    fireEvent.click(connectingButton);
+
+    expect(socket.sent).toContain(JSON.stringify({ type: "stop" }));
+  });
+
+  it("writes completed voice transcription into the prompt draft", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    const voiceRuntime = installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    const prompt = (await screen.findByLabelText("Prompt")) as HTMLTextAreaElement;
+    fireEvent.change(prompt, {
+      target: { value: "Before  after" },
+    });
+    prompt.focus();
+    prompt.setSelectionRange(7, 7);
+    const voiceButton = await screen.findByRole("button", { name: "Voice input" });
+    voiceButton.focus();
+    fireEvent.click(voiceButton);
+
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
+    const socket = voiceRuntime.sockets[0];
+    socket.open();
+    socket.message({ type: "status", status: "ready", sample_rate: 16000 });
+    await screen.findByRole("button", { name: "Stop voice input" });
+    socket.message({ type: "completed", text: "dictated" });
+
+    await waitFor(() => expect(prompt).toHaveValue("Before dictated after"));
+  });
+
+  it("stops voice input when the prompt is manually edited", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    const voiceRuntime = installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.click(await screen.findByRole("button", { name: "Voice input" }));
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
+    const socket = voiceRuntime.sockets[0];
+    socket.open();
+    socket.message({ type: "status", status: "ready", sample_rate: 16000 });
+    await screen.findByRole("button", { name: "Stop voice input" });
+
+    fireEvent.change(prompt, {
+      target: { value: "Manual edit" },
+    });
+
+    await waitFor(() =>
+      expect(socket.sent).toContain(JSON.stringify({ type: "stop" })),
+    );
+    expect(prompt).toHaveValue("Manual edit");
+    socket.message({ type: "completed", text: "late transcript" });
+    expect(prompt).toHaveValue("Manual edit");
+  });
+
+  it("drops pre-ready voice audio when the server sample rate changes", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    const voiceRuntime = installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Voice input" }));
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
+    await waitFor(() => expect(voiceRuntime.contexts[0]?.processors).toHaveLength(1));
+    const socket = voiceRuntime.sockets[0];
+    const processor = voiceRuntime.contexts[0]?.processors[0];
+    if (processor === undefined) {
+      throw new Error("Voice processor was not created.");
+    }
+    processor.emit(new Float32Array([0.1, 0.2, 0.3]));
+    socket.open();
+    socket.message({ type: "status", status: "ready", sample_rate: 24000 });
+
+    expect(socket.sent.every((item) => typeof item === "string")).toBe(true);
+  });
+
   it("queues an injection instead of creating a run while a run is active", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
@@ -1374,4 +1587,158 @@ function pasteImage(filename: string, mimeType = "image/png"): File {
     },
   });
   return file;
+}
+
+interface VoiceRuntimeFixture {
+  contexts: MockAudioContext[];
+  sockets: MockVoiceWebSocket[];
+}
+
+const originalAudioContext = window.AudioContext;
+const originalMediaDevices = navigator.mediaDevices;
+const originalWebSocket = window.WebSocket;
+
+class MockVoiceWebSocket extends EventTarget {
+  binaryType: BinaryType = "blob";
+  readonly sent: Parameters<WebSocket["send"]>[0][] = [];
+  readyState: number = WebSocket.CONNECTING;
+  readonly url: string;
+
+  constructor(url: string, private readonly sockets: MockVoiceWebSocket[]) {
+    super();
+    this.url = url;
+    this.sockets.push(this);
+  }
+
+  close() {
+    this.readyState = WebSocket.CLOSED;
+    this.dispatchEvent(new Event("close"));
+  }
+
+  message(payload: Record<string, unknown>) {
+    this.dispatchEvent(
+      new MessageEvent("message", { data: JSON.stringify(payload) }),
+    );
+  }
+
+  open() {
+    this.readyState = WebSocket.OPEN;
+    this.dispatchEvent(new Event("open"));
+  }
+
+  send(data: Parameters<WebSocket["send"]>[0]) {
+    this.sent.push(data);
+  }
+}
+
+function installVoiceRuntime(): VoiceRuntimeFixture {
+  const fixture: VoiceRuntimeFixture = {
+    contexts: [],
+    sockets: [],
+  };
+  const mediaDevices = {
+    getUserMedia: vi.fn(async () => mockMediaStream()),
+  };
+  class RuntimeWebSocket extends MockVoiceWebSocket {
+    static readonly CLOSED = 3;
+    static readonly CLOSING = 2;
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+
+    constructor(url: string | URL) {
+      super(String(url), fixture.sockets);
+    }
+  }
+  class RuntimeAudioContext extends MockAudioContext {
+    constructor() {
+      super();
+      fixture.contexts.push(this);
+    }
+  }
+
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: mediaDevices,
+  });
+  Object.defineProperty(window, "AudioContext", {
+    configurable: true,
+    value: RuntimeAudioContext,
+  });
+  Object.defineProperty(window, "WebSocket", {
+    configurable: true,
+    value: RuntimeWebSocket as unknown as typeof WebSocket,
+  });
+  return fixture;
+}
+
+function restoreVoiceRuntime() {
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: originalMediaDevices,
+  });
+  Object.defineProperty(window, "AudioContext", {
+    configurable: true,
+    value: originalAudioContext,
+  });
+  Object.defineProperty(window, "WebSocket", {
+    configurable: true,
+    value: originalWebSocket,
+  });
+}
+
+class MockAudioContext {
+  readonly destination = mockAudioNode() as AudioDestinationNode;
+  readonly processors: MockScriptProcessorNode[] = [];
+  readonly sampleRate = 16000;
+  readonly state: AudioContextState = "running";
+
+  close = vi.fn(async () => undefined);
+  createGain = vi.fn(() => mockGainNode());
+  createMediaStreamSource = vi.fn(() => mockAudioNode() as MediaStreamAudioSourceNode);
+  createScriptProcessor = vi.fn(() => {
+    const processor = new MockScriptProcessorNode();
+    this.processors.push(processor);
+    return processor as unknown as ScriptProcessorNode;
+  });
+  resume = vi.fn(async () => undefined);
+}
+
+function mockAudioNode(): Pick<AudioNode, "connect" | "disconnect"> {
+  return {
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  };
+}
+
+function mockGainNode(): GainNode {
+  return {
+    ...mockAudioNode(),
+    gain: {
+      value: 1,
+    },
+  } as unknown as GainNode;
+}
+
+class MockScriptProcessorNode {
+  connect = vi.fn();
+  disconnect = vi.fn();
+  onaudioprocess: ((event: AudioProcessingEvent) => void) | null = null;
+
+  emit(input: Float32Array) {
+    this.onaudioprocess?.({
+      inputBuffer: {
+        getChannelData: () => input,
+      } as unknown as AudioBuffer,
+    } as unknown as AudioProcessingEvent);
+  }
+}
+
+function mockMediaStream(): MediaStream {
+  return {
+    getTracks: () => [
+      {
+        stop: vi.fn(),
+      } as unknown as MediaStreamTrack,
+    ],
+  } as unknown as MediaStream;
 }

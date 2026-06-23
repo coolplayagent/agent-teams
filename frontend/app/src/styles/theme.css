@@ -762,6 +762,16 @@ body {
   width: 112px;
 }
 
+.at-voice-input-button[data-voice-state="listening"] {
+  border-color: var(--at-primary);
+  color: var(--at-primary);
+}
+
+.at-voice-input-button[data-voice-state="error"] {
+  border-color: color-mix(in srgb, var(--at-danger) 55%, var(--at-border));
+  color: var(--at-danger);
+}
+
 @media (max-width: 760px) {
   .at-topbar {
     gap: 8px;

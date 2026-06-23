@@ -11,7 +11,7 @@ import {
 } from "antd";
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
-import { Pause, Play, Send } from "lucide-react";
+import { Mic, MicOff, Pause, Play, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,6 +54,7 @@ import {
   type LeadingRoleMention,
   type PromptMentionOption,
 } from "./PromptMentions";
+import { useVoiceInput } from "./useVoiceInput";
 
 interface ComposerProps {
   runStreamController: RunStreamController;
@@ -407,6 +408,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     activeRunId === null &&
     !isTopologyLocallyLocked &&
     sessionQuery.data?.can_switch_mode !== false;
+  const voiceInput = useVoiceInput({
+    disabled: busy || sessionId === null,
+    onError: (errorMessage) => {
+      setComposerStatus(errorMessage);
+      void message.error(errorMessage);
+    },
+    onTextChange: setDraft,
+  });
 
   return (
     <form
@@ -429,7 +438,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         disabled={busy || sessionId === null}
         className="at-composer-sender"
         loading={createRunMutation.isPending || injectMessageMutation.isPending}
-        onChange={setDraft}
+        onChange={(value) => {
+          if (voiceInput.isBusy) {
+            voiceInput.stop({ ignoreTextUpdates: true });
+          }
+          setDraft(value);
+        }}
         onPaste={(event) => {
           void handlePromptPaste(event);
         }}
@@ -627,6 +641,25 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           </Checkbox>
         </Space>
         <Space size={8}>
+          {voiceInput.visible ? (
+            <Tooltip title={voiceInput.tooltip}>
+              <Button
+                aria-label={voiceInput.ariaLabel}
+                className="at-voice-input-button"
+                data-voice-state={voiceInput.state}
+                disabled={voiceInput.disabled}
+                icon={
+                  voiceInput.isAvailable ? <Mic size={16} /> : <MicOff size={16} />
+                }
+                loading={voiceInput.state === "transcribing"}
+                onClick={() =>
+                  voiceInput.toggle(
+                    readPromptSelection(draft, inputRef.current?.nativeElement),
+                  )
+                }
+              />
+            </Tooltip>
+          ) : null}
           {activeRunId !== null ? (
             <Tooltip title="Stop run">
               <Button
@@ -1049,6 +1082,27 @@ function normalizeProfileName(value: string | null | undefined): string {
 
 function normalizeOptionalId(value: string | null | undefined): string | null {
   return normalizeProfileName(value) || null;
+}
+
+function readPromptSelection(
+  draft: string,
+  composerRoot: HTMLElement | undefined,
+) {
+  const promptInput =
+    composerRoot?.querySelector<HTMLTextAreaElement>("textarea") ??
+    document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]');
+  if (promptInput !== null) {
+    return {
+      selectionEnd: promptInput.selectionEnd,
+      selectionStart: promptInput.selectionStart,
+      text: draft,
+    };
+  }
+  return {
+    selectionEnd: draft.length,
+    selectionStart: draft.length,
+    text: draft,
+  };
 }
 
 function buildOrchestrationPresetOptions(

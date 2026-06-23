@@ -30,6 +30,50 @@ export interface WorkspacePage {
   has_more?: boolean;
 }
 
+export type WorkspaceTreeNodeKind = "directory" | "file";
+
+export interface WorkspaceTreeNode {
+  name: string;
+  path: string;
+  kind: WorkspaceTreeNodeKind;
+  has_children?: boolean;
+  children?: WorkspaceTreeNode[];
+}
+
+export interface WorkspaceSnapshot {
+  workspace_id: string;
+  default_mount_name?: string;
+  default_mount_root?: string | null;
+  root_path?: string | null;
+  tree: WorkspaceTreeNode;
+}
+
+export type WorkspaceDiffChangeType =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "untracked"
+  | "conflicted"
+  | "type_changed";
+
+export interface WorkspaceDiffFileSummary {
+  path: string;
+  change_type: WorkspaceDiffChangeType;
+  previous_path?: string | null;
+}
+
+export interface WorkspaceDiffListing {
+  workspace_id: string;
+  mount_name?: string;
+  root_path?: string | null;
+  diff_files: WorkspaceDiffFileSummary[];
+  is_git_repository?: boolean;
+  git_root_path?: string | null;
+  diff_message?: string | null;
+}
+
 export interface SessionCreateRequest {
   workspace_id: string;
   normal_model_profile?: string | null;

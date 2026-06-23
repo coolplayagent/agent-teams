@@ -4,6 +4,7 @@ import {
   Empty,
   Input,
   Skeleton,
+  Tooltip,
   Typography,
 } from "antd";
 import type { InputRef } from "antd";
@@ -12,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderClosed,
+  FolderSearch,
   Plus,
   RefreshCcw,
 } from "lucide-react";
@@ -36,9 +38,17 @@ export interface SidebarNavigationItem {
 
 interface SessionsSidebarProps {
   navigationItems?: SidebarNavigationItem[];
+  onOpenWorkspaceView?: () => void;
+  onSessionSelected?: () => void;
+  workspaceViewActive?: boolean;
 }
 
-export function SessionsSidebar({ navigationItems = [] }: SessionsSidebarProps) {
+export function SessionsSidebar({
+  navigationItems = [],
+  onOpenWorkspaceView,
+  onSessionSelected,
+  workspaceViewActive = false,
+}: SessionsSidebarProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
@@ -115,6 +125,7 @@ export function SessionsSidebar({ navigationItems = [] }: SessionsSidebarProps) 
     onSuccess: (session) => {
       setSelectedWorkspaceId(session.workspace_id);
       setSelectedSessionId(session.session_id);
+      onSessionSelected?.();
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", session.session_id] });
       void message.success("Session created.");
@@ -195,7 +206,23 @@ export function SessionsSidebar({ navigationItems = [] }: SessionsSidebarProps) 
       ) : null}
       <div className="at-sidebar-section-header">
         <span>Workspaces</span>
-        <span>{sessionGroups.length}</span>
+        <div className="at-sidebar-section-actions">
+          <span>{sessionGroups.length}</span>
+          {onOpenWorkspaceView !== undefined ? (
+            <Tooltip title="Open workspace view">
+              <Button
+                aria-label="Open workspace view"
+                aria-pressed={workspaceViewActive}
+                className={workspaceViewActive ? "is-active" : undefined}
+                disabled={workspaceOptions.length === 0}
+                icon={<FolderSearch size={14} />}
+                onClick={onOpenWorkspaceView}
+                size="small"
+                type="text"
+              />
+            </Tooltip>
+          ) : null}
+        </div>
       </div>
       <div className="at-sidebar-search-row">
         <Input.Search
@@ -290,6 +317,7 @@ export function SessionsSidebar({ navigationItems = [] }: SessionsSidebarProps) 
                           setSelectedWorkspaceId(session.workspace_id);
                         }
                         setSelectedSessionId(session.session_id);
+                        onSessionSelected?.();
                       }}
                       title={sessionLabel(session)}
                       type="button"

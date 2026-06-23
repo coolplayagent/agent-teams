@@ -37,6 +37,7 @@ afterEach(() => {
 describe("SessionsSidebar", () => {
   it("renders real primary navigation actions and focuses search shortcuts", async () => {
     const openObservability = vi.fn();
+    const openWorkspaceView = vi.fn();
     listWorkspacesMock.mockResolvedValue([
       {
         workspace_id: "workspace-1",
@@ -61,12 +62,24 @@ describe("SessionsSidebar", () => {
           onSelect: openObservability,
         },
       ],
+      onOpenWorkspaceView: openWorkspaceView,
+      workspaceViewActive: true,
     });
 
     expect(await screen.findByText("Workspaces")).toBeVisible();
+    expect(await screen.findByText("Alpha")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Observability" }));
 
     expect(openObservability).toHaveBeenCalledTimes(1);
+
+    const workspaceViewButton = screen.getByRole("button", {
+      name: "Open workspace view",
+    });
+    expect(workspaceViewButton).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(workspaceViewButton).toBeEnabled());
+    fireEvent.click(workspaceViewButton);
+
+    expect(openWorkspaceView).toHaveBeenCalledTimes(1);
 
     const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
     window.dispatchEvent(new Event("agent-teams-focus-session-search"));
@@ -391,7 +404,12 @@ describe("SessionsSidebar", () => {
   });
 });
 
-function renderSidebar(props?: { navigationItems?: SidebarNavigationItem[] }) {
+function renderSidebar(props?: {
+  navigationItems?: SidebarNavigationItem[];
+  onOpenWorkspaceView?: () => void;
+  onSessionSelected?: () => void;
+  workspaceViewActive?: boolean;
+}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -404,7 +422,12 @@ function renderSidebar(props?: { navigationItems?: SidebarNavigationItem[] }) {
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
-          <SessionsSidebar navigationItems={props?.navigationItems} />
+          <SessionsSidebar
+            navigationItems={props?.navigationItems}
+            onOpenWorkspaceView={props?.onOpenWorkspaceView}
+            onSessionSelected={props?.onSessionSelected}
+            workspaceViewActive={props?.workspaceViewActive}
+          />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,

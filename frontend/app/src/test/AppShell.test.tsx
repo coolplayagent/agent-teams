@@ -32,12 +32,14 @@ vi.mock("../features/recovery/RecoveryBar", () => ({
 vi.mock("../features/sessions/SessionsSidebar", () => ({
   SessionsSidebar: ({
     navigationItems = [],
+    onOpenWorkspaceView,
   }: {
     navigationItems?: Array<{
       key: string;
       label: string;
       onSelect: () => void;
     }>;
+    onOpenWorkspaceView?: () => void;
   }) => (
     <div data-testid="sessions-sidebar">
       {navigationItems.map((item) => (
@@ -45,6 +47,9 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
           {item.label}
         </button>
       ))}
+      <button onClick={onOpenWorkspaceView} type="button">
+        Open workspace view
+      </button>
     </div>
   ),
 }));
@@ -72,6 +77,16 @@ vi.mock("../features/shell/SettingsDrawer", () => ({
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
   MessageTimeline: () => <div data-testid="timeline" />,
+}));
+
+vi.mock("../features/workspaces/WorkspaceProjectView", () => ({
+  WorkspaceProjectView: ({ onBack }: { onBack: () => void }) => (
+    <div data-testid="workspace-project-view">
+      <button onClick={onBack} type="button">
+        Back to chat
+      </button>
+    </div>
+  ),
 }));
 
 const getHealthMock = vi.mocked(getHealth);
@@ -163,6 +178,22 @@ describe("AppShell", () => {
     fireEvent.click(within(sidebar).getByRole("button", { name: "Settings" }));
 
     expect(await screen.findByRole("dialog")).toHaveTextContent("Settings");
+  });
+
+  it("opens and closes the real workspace shell surface from the sidebar", async () => {
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: "Open workspace view" }),
+    );
+
+    expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
   });
 });
 

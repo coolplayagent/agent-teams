@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { listSessionRounds, listWorkspaces, stopBackgroundTask } from "../api/client";
+import {
+  getWorkspaceDiffs,
+  getWorkspaceSnapshot,
+  listSessionRounds,
+  listWorkspaces,
+  openWorkspaceRoot,
+  stopBackgroundTask,
+} from "../api/client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -94,6 +101,75 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/sessions/session-1/rounds?limit=50&cursor_run_id=run-2",
       expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("reads workspace project view data and opens the workspace root", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workspace_id: "workspace-1",
+            default_mount_name: "default",
+            default_mount_root: "C:/work/agent-teams",
+            tree: {
+              name: ".",
+              path: ".",
+              kind: "directory",
+              children: [],
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workspace_id: "workspace-1",
+            mount_name: "default",
+            root_path: "C:/work/agent-teams",
+            diff_files: [],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getWorkspaceSnapshot("workspace-1")).resolves.toMatchObject({
+      workspace_id: "workspace-1",
+    });
+    await expect(getWorkspaceDiffs("workspace-1")).resolves.toMatchObject({
+      root_path: "C:/work/agent-teams",
+    });
+    await expect(openWorkspaceRoot("workspace-1")).resolves.toEqual({
+      status: "ok",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/workspaces/workspace-1/snapshot",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/workspaces/workspace-1/diffs",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/workspaces/workspace-1:open-root",
+      expect.objectContaining({
+        method: "POST",
         headers: expect.any(Headers),
       }),
     );

@@ -25,6 +25,8 @@ import type {
   UserQuestionAnswerSubmission,
   WorkspacePage,
   WorkspaceRecord,
+  WorkspaceDiffListing,
+  WorkspaceSnapshot,
 } from "./contracts";
 import { requestJson } from "./http";
 
@@ -37,6 +39,33 @@ export async function listWorkspaces(): Promise<WorkspaceRecord[]> {
     "/workspaces?limit=200",
   );
   return Array.isArray(payload) ? payload : payload.items;
+}
+
+export function getWorkspaceSnapshot(
+  workspaceId: string,
+): Promise<WorkspaceSnapshot> {
+  return requestJson<WorkspaceSnapshot>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/snapshot`,
+  );
+}
+
+export function getWorkspaceDiffs(
+  workspaceId: string,
+): Promise<WorkspaceDiffListing> {
+  return requestJson<WorkspaceDiffListing>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/diffs`,
+  );
+}
+
+export function openWorkspaceRoot(
+  workspaceId: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}:open-root`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function getRoleConfigOptions(): Promise<RoleConfigOptions> {

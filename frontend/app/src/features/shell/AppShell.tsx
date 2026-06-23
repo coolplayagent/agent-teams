@@ -37,6 +37,7 @@ import {
 } from "../sessions/SessionsSidebar";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { MessageTimeline } from "../timeline/MessageTimeline";
+import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
 import { useUiStore } from "../../runtime/uiStore";
 
@@ -46,7 +47,9 @@ export function AppShell() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const { token } = theme.useToken();
-  const [activeView, setActiveView] = useState<"chat" | "observability">("chat");
+  const [activeView, setActiveView] = useState<
+    "chat" | "observability" | "workspace"
+  >("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
@@ -54,6 +57,7 @@ export function AppShell() {
   const themeMode = useUiStore((state) => state.themeMode);
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
+  const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
@@ -225,7 +229,12 @@ export function AppShell() {
             theme="light"
             width={sidebarWidth}
           >
-            <SessionsSidebar navigationItems={sidebarNavigationItems} />
+            <SessionsSidebar
+              navigationItems={sidebarNavigationItems}
+              onOpenWorkspaceView={() => setActiveView("workspace")}
+              onSessionSelected={() => setActiveView("chat")}
+              workspaceViewActive={activeView === "workspace"}
+            />
             <div
               aria-label="Resize sidebar"
               aria-orientation="vertical"
@@ -243,6 +252,12 @@ export function AppShell() {
         <Content className="at-workspace">
           {activeView === "observability" ? (
             <ObservabilityPanel sessionId={selectedSessionId} />
+          ) : activeView === "workspace" ? (
+            <WorkspaceProjectView
+              onBack={() => setActiveView("chat")}
+              selectedWorkspaceId={selectedWorkspaceId}
+              sessions={sidebarSessionsQuery.data ?? []}
+            />
           ) : (
             <>
               <RecoveryBar

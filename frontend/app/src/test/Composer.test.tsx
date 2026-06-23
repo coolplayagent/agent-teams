@@ -195,8 +195,9 @@ describe("Composer", () => {
       session_id: "session-1",
     });
     const controller = runStreamController();
+    const queryClient = createComposerQueryClient();
 
-    renderComposer(controller);
+    const firstRender = renderComposerWithClient(queryClient, controller);
 
     fireEvent.change(await screen.findByLabelText("Prompt"), {
       target: { value: "Start before session detail returns" },
@@ -223,6 +224,20 @@ describe("Composer", () => {
       can_switch_mode: true,
     });
 
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<SessionRecord>([
+          "sessions",
+          "detail",
+          "session-1",
+        ])?.can_switch_mode,
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(selectRoot("Root role")).toHaveClass("ant-select-disabled"),
+    );
+    firstRender.unmount();
+    renderComposerWithClient(queryClient, runStreamController());
     await waitFor(() =>
       expect(selectRoot("Root role")).toHaveClass("ant-select-disabled"),
     );
@@ -527,7 +542,13 @@ function renderComposer(
   controller = runStreamController(),
   sessionId = "session-1",
 ) {
-  const queryClient = new QueryClient({
+  const queryClient = createComposerQueryClient();
+  renderComposerWithClient(queryClient, controller, sessionId);
+  return queryClient;
+}
+
+function createComposerQueryClient() {
+  return new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
@@ -535,7 +556,14 @@ function renderComposer(
       },
     },
   });
-  render(
+}
+
+function renderComposerWithClient(
+  queryClient: QueryClient,
+  controller = runStreamController(),
+  sessionId = "session-1",
+) {
+  return render(
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
@@ -544,7 +572,6 @@ function renderComposer(
       </ConfigProvider>
     </QueryClientProvider>,
   );
-  return queryClient;
 }
 
 function runStreamController(activeRunId: string | null = null): RunStreamController {

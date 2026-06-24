@@ -16,7 +16,6 @@ import {
   ExternalLink,
   Languages,
   Menu,
-  MessageSquare,
   Moon,
   MoreHorizontal,
   PlugZap,
@@ -146,22 +145,12 @@ export function AppShell() {
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [
       {
-        active: activeView === "chat",
-        icon: <MessageSquare size={15} />,
-        key: "chat",
-        label: t("appChat"),
+        active: activeView === "search",
+        icon: <Search size={15} />,
+        key: "search",
+        label: t("appSearch"),
         onSelect: () => {
-          setActiveView("chat");
-          closeSidebarOnNarrow();
-        },
-      },
-      {
-        active: activeView === "automation",
-        icon: <CalendarClock size={15} />,
-        key: "automation",
-        label: t("appAutomation"),
-        onSelect: () => {
-          setActiveView("automation");
+          setActiveView("search");
           closeSidebarOnNarrow();
         },
       },
@@ -176,22 +165,12 @@ export function AppShell() {
         },
       },
       {
-        active: activeView === "board",
-        icon: <SquareKanban size={15} />,
-        key: "board",
-        label: t("appBoard"),
+        active: activeView === "automation",
+        icon: <CalendarClock size={15} />,
+        key: "automation",
+        label: t("appAutomation"),
         onSelect: () => {
-          setActiveView("board");
-          closeSidebarOnNarrow();
-        },
-      },
-      {
-        active: activeView === "search",
-        icon: <Search size={15} />,
-        key: "search",
-        label: t("appSearch"),
-        onSelect: () => {
-          setActiveView("search");
+          setActiveView("automation");
           closeSidebarOnNarrow();
         },
       },
@@ -206,6 +185,16 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "board",
+        icon: <SquareKanban size={15} />,
+        key: "board",
+        label: t("appBoard"),
+        onSelect: () => {
+          setActiveView("board");
+          closeSidebarOnNarrow();
+        },
+      },
+      {
         active: activeView === "memory",
         icon: <Database size={15} />,
         key: "memory",
@@ -214,22 +203,6 @@ export function AppShell() {
           setActiveView("memory");
           closeSidebarOnNarrow();
         },
-      },
-      {
-        active: activeView === "observability",
-        icon: <Activity size={15} />,
-        key: "observability",
-        label: t("appObservability"),
-        onSelect: () => {
-          setActiveView("observability");
-          closeSidebarOnNarrow();
-        },
-      },
-      {
-        icon: <Settings size={15} />,
-        key: "settings",
-        label: t("appSettings"),
-        onSelect: () => setSettingsOpen(true),
       },
     ],
     [activeView, isNarrowViewport, setSidebarCollapsed, t],

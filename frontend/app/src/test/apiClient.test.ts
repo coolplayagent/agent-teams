@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deleteEnvironmentVariable,
   deleteSshProfile,
+  getEnvironmentVariables,
   deleteSession,
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
@@ -16,6 +18,7 @@ import {
   probeWebConnectivity,
   revealSshProfilePassword,
   reloadProxyConfig,
+  saveEnvironmentVariable,
   saveNotificationConfig,
   saveProxyConfig,
   saveSshProfile,
@@ -537,6 +540,94 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
       "/api/system/configs/workspace/ssh-profiles/prod",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("manages environment variables through the system config endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            app: [
+              {
+                key: "OPENAI_API_KEY",
+                scope: "app",
+                value: "saved-key",
+                value_kind: "string",
+              },
+            ],
+            system: [
+              {
+                key: "PATH",
+                scope: "system",
+                value: "C:/Windows/System32",
+                value_kind: "expandable",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            key: "ANTHROPIC_API_KEY",
+            scope: "app",
+            value: "saved-anthropic-key",
+            value_kind: "string",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getEnvironmentVariables()).resolves.toMatchObject({
+      app: [expect.objectContaining({ key: "OPENAI_API_KEY" })],
+      system: [expect.objectContaining({ key: "PATH" })],
+    });
+    await expect(
+      saveEnvironmentVariable("app", "ANTHROPIC_API_KEY", {
+        source_key: null,
+        value: "saved-anthropic-key",
+      }),
+    ).resolves.toMatchObject({
+      key: "ANTHROPIC_API_KEY",
+      value: "saved-anthropic-key",
+    });
+    await expect(
+      deleteEnvironmentVariable("app", "ANTHROPIC_API_KEY"),
+    ).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/environment-variables",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/environment-variables/app/ANTHROPIC_API_KEY",
+      expect.objectContaining({
+        body: JSON.stringify({
+          source_key: null,
+          value: "saved-anthropic-key",
+        }),
+        method: "PUT",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/environment-variables/app/ANTHROPIC_API_KEY",
       expect.objectContaining({
         method: "DELETE",
         headers: expect.any(Headers),

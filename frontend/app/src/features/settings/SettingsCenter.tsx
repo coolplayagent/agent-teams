@@ -28,6 +28,7 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
+import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
@@ -37,6 +38,7 @@ import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 
 type SettingsSection =
   | "appearance"
+  | "environment"
   | "general"
   | "notifications"
   | "roles"
@@ -117,6 +119,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
       { key: "web" as const, label: t("settingsWeb") },
       { key: "proxy" as const, label: t("settingsProxy") },
       { key: "workspace" as const, label: t("settingsWorkspace") },
+      { key: "environment" as const, label: t("settingsEnvironment") },
       { key: "system" as const, label: t("settingsSystem") },
     ],
     [t],
@@ -185,6 +188,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
         {activeSection === "web" ? <WebSettingsSection /> : null}
         {activeSection === "proxy" ? <ProxySettingsSection /> : null}
         {activeSection === "workspace" ? <WorkspaceSettingsSection /> : null}
+        {activeSection === "environment" ? <EnvironmentSettingsSection /> : null}
         {activeSection === "system" ? (
           <SettingsSystem
             error={healthQuery.error}

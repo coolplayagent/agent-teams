@@ -12,7 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
+  deleteEnvironmentVariable,
   deleteSshProfile,
+  getEnvironmentVariables,
   getGeneralConfig,
   getHealth,
   getModelProfiles,
@@ -26,6 +28,7 @@ import {
   probeWebConnectivity,
   revealSshProfilePassword,
   reloadProxyConfig,
+  saveEnvironmentVariable,
   saveGeneralConfig,
   saveNotificationConfig,
   saveProxyConfig,
@@ -37,7 +40,9 @@ import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  deleteEnvironmentVariable: vi.fn(),
   deleteSshProfile: vi.fn(),
+  getEnvironmentVariables: vi.fn(),
   getGeneralConfig: vi.fn(),
   getHealth: vi.fn(),
   getModelProfiles: vi.fn(),
@@ -51,6 +56,7 @@ vi.mock("../api/client", () => ({
   probeWebConnectivity: vi.fn(),
   revealSshProfilePassword: vi.fn(),
   reloadProxyConfig: vi.fn(),
+  saveEnvironmentVariable: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveNotificationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
@@ -63,7 +69,9 @@ vi.mock("../api/speech", () => ({
   saveSpeechConfig: vi.fn(),
 }));
 
+const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
+const getEnvironmentVariablesMock = vi.mocked(getEnvironmentVariables);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getHealthMock = vi.mocked(getHealth);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
@@ -77,6 +85,7 @@ const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
+const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
@@ -211,6 +220,30 @@ beforeEach(() => {
     proxy_username: "alice",
     ssl_verify: false,
   });
+  getEnvironmentVariablesMock.mockResolvedValue({
+    app: [
+      {
+        key: "OPENAI_API_KEY",
+        scope: "app",
+        value: "saved-openai-key",
+        value_kind: "string",
+      },
+      {
+        key: "HTTP_PROXY",
+        scope: "app",
+        value: "http://hidden-proxy.example:8080",
+        value_kind: "string",
+      },
+    ],
+    system: [
+      {
+        key: "PATH",
+        scope: "system",
+        value: "C:/Windows/System32",
+        value_kind: "expandable",
+      },
+    ],
+  });
   probeWebConnectivityMock.mockResolvedValue({
     diagnostics: {
       endpoint_reachable: true,
@@ -266,6 +299,13 @@ beforeEach(() => {
     vad_threshold: 0.5,
   });
   saveProxyConfigMock.mockResolvedValue({ status: "ok" });
+  saveEnvironmentVariableMock.mockResolvedValue({
+    key: "ANTHROPIC_API_KEY",
+    scope: "app",
+    value: "saved-anthropic-key",
+    value_kind: "string",
+  });
+  deleteEnvironmentVariableMock.mockResolvedValue({ status: "ok" });
   saveSshProfileMock.mockResolvedValue({
     ssh_profile_id: "devbox",
     host: "edited.example.com",
@@ -304,6 +344,7 @@ describe("SettingsDrawer", () => {
     expect(within(sections).getByRole("button", { name: "Web" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Proxy" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Remote workspace" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Environment variables" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "System" })).toBeVisible();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
@@ -387,6 +428,43 @@ describe("SettingsDrawer", () => {
       }),
     );
   }, 12000);
+
+  it("manages app environment variables through the environment config clients", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(
+      within(sections).getByRole("button", { name: "Environment variables" }),
+    );
+
+    expect(await screen.findByText("OPENAI_API_KEY")).toBeVisible();
+    expect(screen.getByText("saved-openai-key")).toBeVisible();
+    expect(screen.queryByText("http://hidden-proxy.example:8080")).toBeNull();
+    expect(getEnvironmentVariablesMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "New variable" }));
+    const keyInput = await screen.findByLabelText("Key");
+    fireEvent.change(keyInput, {
+      target: { value: "ANTHROPIC_API_KEY" },
+    });
+    fireEvent.change(screen.getByLabelText("Value"), {
+      target: { value: "saved-anthropic-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveEnvironmentVariableMock).toHaveBeenCalledWith(
+        "app",
+        "ANTHROPIC_API_KEY",
+        {
+          source_key: null,
+          value: "saved-anthropic-key",
+        },
+      ),
+    );
+  });
 
   it("saves the general shell policy through the real general config client", async () => {
     renderDrawer();

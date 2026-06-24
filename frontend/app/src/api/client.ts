@@ -1,6 +1,10 @@
 import type {
   GeneralConfig,
   AgUiActionResponse,
+  EnvironmentVariableCatalog,
+  EnvironmentVariableSaveRequest,
+  EnvironmentVariableScope,
+  EnvironmentVariableRecord,
   RunInjectionRequest,
   JsonValue,
   ModelProfilesPayload,
@@ -457,6 +461,38 @@ export function answerUserQuestion(
 
 export function getGeneralConfig(): Promise<GeneralConfig> {
   return requestJson<GeneralConfig>("/system/configs/general");
+}
+
+export function getEnvironmentVariables(): Promise<EnvironmentVariableCatalog> {
+  return requestJson<EnvironmentVariableCatalog>(
+    "/system/configs/environment-variables",
+  );
+}
+
+export function saveEnvironmentVariable(
+  scope: EnvironmentVariableScope,
+  key: string,
+  request: EnvironmentVariableSaveRequest,
+): Promise<EnvironmentVariableRecord> {
+  return requestJson<EnvironmentVariableRecord>(
+    `/system/configs/environment-variables/${encodeURIComponent(scope)}/${encodeURIComponent(key)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteEnvironmentVariable(
+  scope: EnvironmentVariableScope,
+  key: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/system/configs/environment-variables/${encodeURIComponent(scope)}/${encodeURIComponent(key)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export function listSshProfiles(): Promise<SshProfileRecord[]> {

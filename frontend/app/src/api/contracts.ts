@@ -790,6 +790,26 @@ export interface GeneralConfig {
   shell_safety_policy_enabled: boolean;
 }
 
+export type EnvironmentVariableScope = "app" | "system";
+export type EnvironmentVariableValueKind = "expandable" | "string";
+
+export interface EnvironmentVariableRecord {
+  key: string;
+  scope: EnvironmentVariableScope;
+  value: string;
+  value_kind: EnvironmentVariableValueKind;
+}
+
+export interface EnvironmentVariableCatalog {
+  app: EnvironmentVariableRecord[];
+  system: EnvironmentVariableRecord[];
+}
+
+export interface EnvironmentVariableSaveRequest {
+  source_key?: string | null;
+  value: string;
+}
+
 export type WebProvider = "exa";
 export type WebFallbackProvider = "disabled" | "searxng";
 

@@ -1170,3 +1170,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this remote-workspace settings slice. No Settings subsystem completion is claimed from this batch; remaining work includes MCP, plugin, Commands, Hooks, Agent Runtime, environment variables, deeper settings form parity, streaming/recovery scenarios, and reviewer sign-off.
+
+## 2026-06-24 Environment Variables Settings Batch
+
+### Scope
+- Continued Settings parity from the V1 reference surface instead of adding a placeholder settings tab.
+- Added typed V2 client contracts for `GET`, `PUT`, and `DELETE /api/system/configs/environment-variables`.
+- Added a componentized `EnvironmentSettingsSection` under the V2 Settings drawer with a real `环境变量` / `Environment variables` nav item.
+- The new section lists editable app variables and read-only system variables, keeps proxy-related app keys out of this panel because the dedicated proxy settings surface owns them, opens a real add/edit variable form, preserves backend rename semantics through `source_key`, and deletes app variables through the real delete endpoint with confirmation.
+- User-reported large-frame blocker remains explicitly next: the workspace/session/chat shell must be rechecked with screenshots first, especially fixed one-page ownership and preventing chat scroll from carrying workspace sessions.
+
+### Verification
+- Browser screenshots were captured under `.tmp/frontend-v2-environment-settings/`.
+- V2 final screenshots: `v2-environment-settings-panel.png` and `v2-environment-settings-editor.png`.
+- Final V2 browser state loaded rebuilt assets `index-ZjT6Slvw.js` and `index-CQBkVBnX.css`.
+- Final V2 Settings nav included `环境变量`; the panel showed app/system counts, real app records, edit/delete actions for app records, and a collapsed system group.
+- The add-variable editor rendered real localized fields for key and value plus `取消` and `保存` actions.
+- Browser verification confirmed the environment section, new-variable button, and key field existed in the actual in-app browser at `http://127.0.0.1:8000/app/`.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- src/test/SettingsDrawer.test.tsx src/test/apiClient.test.ts` in `frontend/app` passed with 18 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this environment-variable settings slice. No Settings subsystem completion is claimed from this batch; remaining work includes MCP, plugin, Commands, Hooks, Agent Runtime, deeper settings form parity, the user-reported framework scroll/layout pass, streaming/recovery scenarios, and reviewer sign-off.

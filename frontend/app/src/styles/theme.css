@@ -2362,6 +2362,72 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
 }
 
+.at-settings-env-group {
+  min-width: 0;
+}
+
+.at-settings-env-list {
+  max-width: 920px;
+}
+
+.at-settings-env-row {
+  grid-template-columns: minmax(0, 1fr) minmax(168px, 260px);
+}
+
+.at-settings-env-meta {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  min-width: 0;
+}
+
+.at-settings-env-meta > span {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-settings-env-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.at-settings-env-system {
+  display: grid;
+  gap: 10px;
+  max-width: 920px;
+}
+
+.at-settings-env-system-toggle {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.at-settings-env-system-toggle:hover,
+.at-settings-env-system-toggle:focus-visible {
+  border-color: color-mix(in srgb, var(--at-accent) 45%, var(--at-border));
+  outline: none;
+}
+
+.at-settings-env-system-toggle .ant-typography {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
 .at-settings-probe-result {
   max-width: 760px;
 }
@@ -2603,6 +2669,19 @@ body {
 
   .at-settings-workspace-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-settings-env-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .at-settings-env-meta {
+    justify-items: start;
+  }
+
+  .at-settings-env-actions {
+    justify-content: flex-start;
   }
 
   .at-settings-detail-header {

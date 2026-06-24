@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deleteSshProfile,
   deleteSession,
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
@@ -11,10 +12,13 @@ import {
   listSessionRounds,
   listWorkspaces,
   openWorkspaceRoot,
+  probeSshProfileConnection,
   probeWebConnectivity,
+  revealSshProfilePassword,
   reloadProxyConfig,
   saveNotificationConfig,
   saveProxyConfig,
+  saveSshProfile,
   saveWebConfig,
   searchWorkspacePaths,
   stopBackgroundTask,
@@ -414,6 +418,127 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/system/configs/workspace/ssh-profiles",
       expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("manages SSH profiles through the workspace settings endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ssh_profile_id: "prod",
+            host: "prod.example.com",
+            username: "deploy",
+            has_password: true,
+            has_private_key: false,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ password: "secret" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            checked_at: "2026-06-24T00:00:00Z",
+            diagnostics: {
+              binary_available: true,
+              host_reachable: true,
+              used_password: true,
+              used_private_key: false,
+              used_system_config: false,
+            },
+            host: "prod.example.com",
+            latency_ms: 51,
+            ok: true,
+            username: "deploy",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      saveSshProfile("prod", {
+        host: "prod.example.com",
+        username: "deploy",
+        password: "secret",
+        port: 22,
+        remote_shell: "/bin/bash",
+        connect_timeout_seconds: 15,
+        private_key: null,
+        private_key_name: null,
+      }),
+    ).resolves.toMatchObject({
+      ssh_profile_id: "prod",
+      has_password: true,
+    });
+    await expect(revealSshProfilePassword("prod")).resolves.toEqual({
+      password: "secret",
+    });
+    await expect(
+      probeSshProfileConnection({
+        ssh_profile_id: "prod",
+        timeout_ms: 15000,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      latency_ms: 51,
+    });
+    await expect(deleteSshProfile("prod")).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/workspace/ssh-profiles/prod",
+      expect.objectContaining({
+        body: JSON.stringify({
+          config: {
+            host: "prod.example.com",
+            username: "deploy",
+            password: "secret",
+            port: 22,
+            remote_shell: "/bin/bash",
+            connect_timeout_seconds: 15,
+            private_key: null,
+            private_key_name: null,
+          },
+        }),
+        method: "PUT",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/workspace/ssh-profiles/prod:reveal-password",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/workspace/ssh-profiles:probe",
+      expect.objectContaining({
+        body: JSON.stringify({
+          ssh_profile_id: "prod",
+          timeout_ms: 15000,
+        }),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/configs/workspace/ssh-profiles/prod",
+      expect.objectContaining({
+        method: "DELETE",
         headers: expect.any(Headers),
       }),
     );

@@ -1143,3 +1143,30 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this workspace mount-action slice. No Workspace subsystem completion is claimed from this batch; remaining work includes full SSH profile management surfaces, richer project actions, file/image preview parity, streaming/recovery scenarios, and reviewer sign-off.
+
+## 2026-06-24 Remote Workspace Settings Batch
+
+### Scope
+- Rechecked V1 and V2 Settings in the real in-app browser before editing.
+- V1 Settings exposed a full settings workbench with entries including MCP, plugins, Commands, Hooks, Agent Runtime, remote workspace, and environment variables.
+- V2 before this batch exposed a smaller Settings drawer and had no remote workspace settings surface, even though workspace SSH profiles are a real backend capability and V1 has a dedicated `远端工作区` settings entry.
+- Added typed V2 client contracts for SSH profile save, delete, password reveal, and connectivity probe in addition to list.
+- Added a componentized `WorkspaceSettingsSection` under the V2 Settings drawer with a real `远端工作区` / `Remote workspace` nav item.
+- The new section lists SSH profiles, shows authentication metadata, opens a real add/edit profile form, preserves saved secrets when fields are left blank, can reveal a saved password on explicit user action, can test saved or draft profile values through the probe endpoint, and deletes profiles through the real delete endpoint with confirmation.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-settings-parity/`.
+- V1 reference screenshot: `v1-settings-reference.png`.
+- V2 before screenshot: `v2-settings-clean-click.png`.
+- V2 final screenshots: `v2-remote-workspace-settings-final.png` and `v2-remote-workspace-profile-editor-final.png`.
+- Final V2 browser state loaded rebuilt assets `index-BGHLisR6.js` and `index-7F-Qfyb2.css`.
+- Final V2 Settings nav included `远端工作区`; the remote workspace panel showed a localized empty state `暂无 SSH 配置。` with no `No data` text.
+- The add-profile editor rendered real fields for profile id, host, username, port, connect timeout, remote shell, password, private key name, private key, plus `测试草稿` and `保存` actions.
+- Body/document stayed fixed to the viewport (`1272 / 1272`) while the drawer/editor owned their own frame.
+- Browser console verification returned no warnings or errors after opening the new settings section and editor.
+- `npm run test -- src/test/SettingsDrawer.test.tsx src/test/apiClient.test.ts` in `frontend/app` passed with 16 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this remote-workspace settings slice. No Settings subsystem completion is claimed from this batch; remaining work includes MCP, plugin, Commands, Hooks, Agent Runtime, environment variables, deeper settings form parity, streaming/recovery scenarios, and reviewer sign-off.

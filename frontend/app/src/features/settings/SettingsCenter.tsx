@@ -33,6 +33,7 @@ import { ProxySettingsSection } from "./ProxySettingsSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
+import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 
 type SettingsSection =
   | "appearance"
@@ -44,7 +45,8 @@ type SettingsSection =
   | "proxy"
   | "speech"
   | "system"
-  | "web";
+  | "web"
+  | "workspace";
 
 interface SettingsCenterProps {
   open: boolean;
@@ -114,6 +116,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
       { key: "orchestration" as const, label: t("settingsOrchestration") },
       { key: "web" as const, label: t("settingsWeb") },
       { key: "proxy" as const, label: t("settingsProxy") },
+      { key: "workspace" as const, label: t("settingsWorkspace") },
       { key: "system" as const, label: t("settingsSystem") },
     ],
     [t],
@@ -181,6 +184,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
         ) : null}
         {activeSection === "web" ? <WebSettingsSection /> : null}
         {activeSection === "proxy" ? <ProxySettingsSection /> : null}
+        {activeSection === "workspace" ? <WorkspaceSettingsSection /> : null}
         {activeSection === "system" ? (
           <SettingsSystem
             error={healthQuery.error}

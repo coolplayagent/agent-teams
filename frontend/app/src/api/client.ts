@@ -23,6 +23,10 @@ import type {
   SessionMode,
   SessionRecord,
   SessionSidebarRecord,
+  SshProfileConfig,
+  SshProfileConnectivityProbeRequest,
+  SshProfileConnectivityProbeResult,
+  SshProfilePasswordRevealView,
   SshProfileRecord,
   TimelineMessage,
   StopBackgroundTaskResponse,
@@ -457,6 +461,51 @@ export function getGeneralConfig(): Promise<GeneralConfig> {
 
 export function listSshProfiles(): Promise<SshProfileRecord[]> {
   return requestJson<SshProfileRecord[]>("/system/configs/workspace/ssh-profiles");
+}
+
+export function saveSshProfile(
+  sshProfileId: string,
+  config: SshProfileConfig,
+): Promise<SshProfileRecord> {
+  return requestJson<SshProfileRecord>(
+    `/system/configs/workspace/ssh-profiles/${encodeURIComponent(sshProfileId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ config }),
+    },
+  );
+}
+
+export function revealSshProfilePassword(
+  sshProfileId: string,
+): Promise<SshProfilePasswordRevealView> {
+  return requestJson<SshProfilePasswordRevealView>(
+    `/system/configs/workspace/ssh-profiles/${encodeURIComponent(sshProfileId)}:reveal-password`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function probeSshProfileConnection(
+  request: SshProfileConnectivityProbeRequest,
+): Promise<SshProfileConnectivityProbeResult> {
+  return requestJson<SshProfileConnectivityProbeResult>(
+    "/system/configs/workspace/ssh-profiles:probe",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteSshProfile(sshProfileId: string): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/system/configs/workspace/ssh-profiles/${encodeURIComponent(sshProfileId)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export function saveGeneralConfig(config: GeneralConfig): Promise<{ status: string }> {

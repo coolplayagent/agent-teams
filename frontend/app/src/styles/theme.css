@@ -2297,6 +2297,75 @@ body {
   font-size: 12px;
 }
 
+.at-settings-section-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.at-settings-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.at-settings-list-button {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--at-border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-settings-list-button:hover,
+.at-settings-list-button:focus-visible,
+.at-settings-list-button.is-active {
+  background: var(--at-surface-muted);
+  outline: none;
+}
+
+.at-settings-workspace-detail {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+}
+
+.at-settings-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.at-settings-detail-header h4.ant-typography {
+  margin: 0 0 4px;
+  color: var(--at-text);
+  font-size: 15px;
+}
+
+.at-settings-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.at-settings-workspace-facts {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+
+.at-settings-probe-result {
+  max-width: 760px;
+}
+
 .at-settings-empty {
   padding: 14px 12px;
   border: 1px solid var(--at-border);
@@ -2530,6 +2599,18 @@ body {
   .at-settings-list-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
+  }
+
+  .at-settings-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-settings-detail-header {
+    display: grid;
+  }
+
+  .at-settings-detail-actions {
+    justify-content: flex-start;
   }
 
   .at-notification-row {

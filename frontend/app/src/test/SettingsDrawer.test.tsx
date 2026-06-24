@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
+  deleteSshProfile,
   getGeneralConfig,
   getHealth,
   getModelProfiles,
@@ -20,11 +21,15 @@ import {
   getProxyConfig,
   getRoleConfigOptions,
   getWebConfig,
+  listSshProfiles,
+  probeSshProfileConnection,
   probeWebConnectivity,
+  revealSshProfilePassword,
   reloadProxyConfig,
   saveGeneralConfig,
   saveNotificationConfig,
   saveProxyConfig,
+  saveSshProfile,
   saveWebConfig,
 } from "../api/client";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
@@ -32,6 +37,7 @@ import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  deleteSshProfile: vi.fn(),
   getGeneralConfig: vi.fn(),
   getHealth: vi.fn(),
   getModelProfiles: vi.fn(),
@@ -40,11 +46,15 @@ vi.mock("../api/client", () => ({
   getProxyConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
+  listSshProfiles: vi.fn(),
+  probeSshProfileConnection: vi.fn(),
   probeWebConnectivity: vi.fn(),
+  revealSshProfilePassword: vi.fn(),
   reloadProxyConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveNotificationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
+  saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
 }));
 
@@ -53,6 +63,7 @@ vi.mock("../api/speech", () => ({
   saveSpeechConfig: vi.fn(),
 }));
 
+const deleteSshProfileMock = vi.mocked(deleteSshProfile);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getHealthMock = vi.mocked(getHealth);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
@@ -61,11 +72,15 @@ const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
+const listSshProfilesMock = vi.mocked(listSshProfiles);
+const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
+const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
+const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
@@ -208,6 +223,35 @@ beforeEach(() => {
     status_code: 200,
     used_method: "HEAD",
   });
+  listSshProfilesMock.mockResolvedValue([
+    {
+      ssh_profile_id: "devbox",
+      host: "dev.example.com",
+      username: "yex",
+      port: 22,
+      remote_shell: "/bin/bash",
+      connect_timeout_seconds: 15,
+      has_password: true,
+      has_private_key: false,
+      private_key_name: null,
+    },
+  ]);
+  probeSshProfileConnectionMock.mockResolvedValue({
+    checked_at: "2026-06-24T00:00:00Z",
+    diagnostics: {
+      binary_available: true,
+      host_reachable: true,
+      used_password: true,
+      used_private_key: false,
+      used_system_config: false,
+    },
+    host: "dev.example.com",
+    latency_ms: 44,
+    ok: true,
+    port: 22,
+    username: "yex",
+  });
+  revealSshProfilePasswordMock.mockResolvedValue({ password: "saved-password" });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
   saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
   reloadProxyConfigMock.mockResolvedValue({ status: "ok" });
@@ -222,6 +266,15 @@ beforeEach(() => {
     vad_threshold: 0.5,
   });
   saveProxyConfigMock.mockResolvedValue({ status: "ok" });
+  saveSshProfileMock.mockResolvedValue({
+    ssh_profile_id: "devbox",
+    host: "edited.example.com",
+    username: "deploy",
+    port: 2222,
+    has_password: true,
+    has_private_key: false,
+  });
+  deleteSshProfileMock.mockResolvedValue({ status: "ok" });
   saveWebConfigMock.mockResolvedValue({ status: "ok" });
   useUiStore.setState({
     language: "en",
@@ -250,6 +303,7 @@ describe("SettingsDrawer", () => {
     expect(within(sections).getByRole("button", { name: "Orchestration" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Web" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Proxy" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Remote workspace" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "System" })).toBeVisible();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
@@ -281,6 +335,58 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("Run completed")).toBeVisible();
     expect(getNotificationConfigMock).toHaveBeenCalledTimes(1);
   });
+
+  it("manages remote workspace SSH profiles through the workspace config clients", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Remote workspace" }));
+
+    await waitFor(() => expect(screen.getAllByText("devbox").length).toBeGreaterThan(0));
+    expect(screen.getAllByText("dev.example.com · yex · 22").length).toBeGreaterThan(0);
+    expect(listSshProfilesMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Test" }));
+    await waitFor(() =>
+      expect(probeSshProfileConnectionMock).toHaveBeenCalledWith({
+        ssh_profile_id: "devbox",
+        timeout_ms: 15000,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByText("devbox connected in 44ms.").length).toBeGreaterThan(0),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByLabelText("Host"), {
+      target: { value: "edited.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "deploy" },
+    });
+    fireEvent.change(screen.getByLabelText("Port"), {
+      target: { value: 2222 },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "changed-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveSshProfileMock).toHaveBeenCalledWith("devbox", {
+        connect_timeout_seconds: 15,
+        host: "edited.example.com",
+        password: "changed-secret",
+        port: 2222,
+        private_key: null,
+        private_key_name: null,
+        remote_shell: "/bin/bash",
+        username: "deploy",
+      }),
+    );
+  }, 12000);
 
   it("saves the general shell policy through the real general config client", async () => {
     renderDrawer();

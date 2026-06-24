@@ -158,6 +158,50 @@ export interface SshProfileRecord {
   updated_at?: string;
 }
 
+export interface SshProfileConfig {
+  host: string;
+  username: string;
+  password?: string | null;
+  port?: number | null;
+  remote_shell?: string | null;
+  connect_timeout_seconds?: number | null;
+  private_key?: string | null;
+  private_key_name?: string | null;
+}
+
+export interface SshProfilePasswordRevealView {
+  password: string | null;
+}
+
+export interface SshProfileConnectivityDiagnostics {
+  binary_available: boolean;
+  host_reachable: boolean;
+  used_password: boolean;
+  used_private_key: boolean;
+  used_system_config: boolean;
+  exit_code?: number | null;
+}
+
+export interface SshProfileConnectivityProbeRequest {
+  ssh_profile_id?: string | null;
+  override?: SshProfileConfig | null;
+  timeout_ms?: number | null;
+}
+
+export interface SshProfileConnectivityProbeResult {
+  ok: boolean;
+  ssh_profile_id?: string | null;
+  host: string;
+  port?: number | null;
+  username: string;
+  latency_ms: number;
+  checked_at: string;
+  diagnostics: SshProfileConnectivityDiagnostics;
+  error_code?: string | null;
+  error_message?: string | null;
+  retryable?: boolean;
+}
+
 export interface WorkspaceDiffListing {
   workspace_id: string;
   mount_name?: string;

@@ -239,44 +239,39 @@ describe("AppShell", () => {
     expect(screen.getByText("Session 1")).toBeVisible();
   });
 
-  it("collapses the mobile sidebar by default and reopens it as an overlay", async () => {
+  it("keeps the narrow sidebar visible in the V1 workspace frame", async () => {
     mockViewportMatch(true);
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
-    await waitFor(() =>
-      expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
-    );
+    expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Close sidebar" }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
-
-    expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
-    const closeOverlay = screen.getByRole("button", { name: "Close sidebar" });
-    expect(closeOverlay).toBeVisible();
-
-    fireEvent.click(closeOverlay);
 
     await waitFor(() =>
       expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
     );
     expect(screen.getByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+
+    expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
   });
 
-  it("routes the mobile sidebar board item and closes the overlay", async () => {
+  it("routes narrow sidebar entries without closing the sidebar", async () => {
     mockViewportMatch(true);
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
     const sidebar = await screen.findByTestId("sessions-sidebar");
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
 
     expect(await screen.findByTestId("board-todos-view")).toBeVisible();
-    await waitFor(() =>
-      expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
-    );
+    expect(screen.getByTestId("sessions-sidebar")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
   });
 
@@ -315,29 +310,17 @@ describe("AppShell", () => {
     expect(within(sidebar).queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
-  it("keeps secondary actions in a compact mobile topbar menu", async () => {
+  it("keeps V1 topbar actions visible in the narrow shell", async () => {
     mockViewportMatch(true);
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
     expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "More actions" })).toBeVisible();
-    expect(screen.queryByRole("link", { name: "V1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+    expect(screen.getByRole("link", { name: "V1" })).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Observability" }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-
-    expect(await screen.findByText("Board")).toBeInTheDocument();
-    expect(await screen.findByText("Automation")).toBeInTheDocument();
-    expect(await screen.findByText("Skills")).toBeInTheDocument();
-    expect(await screen.findByText("Observability")).toBeInTheDocument();
-    expect(screen.getByText("Connectors")).toBeInTheDocument();
-    expect(screen.getByText("Memory")).toBeInTheDocument();
-    expect(screen.getByText("Export messages (HTML)")).toBeInTheDocument();
-    expect(screen.getByText("Export messages (PNG)")).toBeInTheDocument();
-    expect(screen.getByText("V1")).toBeInTheDocument();
+      screen.getByRole("button", { name: "Observability" }),
+    ).toBeVisible();
   });
 
   it("resizes the sidebar from the keyboard-accessible separator", async () => {

@@ -5556,42 +5556,6 @@ body {
     max-width: 112px;
   }
 
-  .at-sidebar {
-    position: fixed !important;
-    z-index: 20;
-    inset: 52px auto 0 0;
-    flex: 0 0 0 !important;
-    height: calc(100vh - 52px);
-    height: calc(100dvh - 52px);
-    min-width: 0 !important;
-    max-width: 0 !important;
-    width: 0 !important;
-    overflow: visible;
-    border-right: 0;
-    background: transparent !important;
-  }
-
-  .at-sidebar-scrim {
-    position: fixed;
-    z-index: 19;
-    inset: 52px 0 0;
-    display: block;
-    padding: 0;
-    border: 0;
-    background: rgba(32, 35, 31, 0.16);
-  }
-
-  .at-sidebar .ant-layout-sider-children {
-    width: min(86vw, 320px);
-    max-width: calc(100vw - 48px);
-    border-right: 1px solid var(--at-border);
-    background: var(--at-sidebar);
-  }
-
-  .at-sidebar-resizer {
-    display: none;
-  }
-
   .at-workspace-title {
     max-width: 112px;
     font-size: 14px;

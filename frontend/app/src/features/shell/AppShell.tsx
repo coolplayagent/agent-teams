@@ -4,28 +4,21 @@ import {
   Space,
   Tooltip,
   App,
-  Dropdown,
 } from "antd";
-import type { MenuProps } from "antd";
 import {
   Activity,
   CalendarClock,
   Database,
-  Download,
-  ExternalLink,
-  Languages,
   Menu,
   Moon,
-  MoreHorizontal,
   PlugZap,
-  RefreshCcw,
   Search,
   Settings,
   SquareKanban,
   Sun,
   Wrench,
 } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 
@@ -64,12 +57,10 @@ import {
 import { useTranslations } from "../../i18n";
 
 const { Header, Sider, Content } = Layout;
-const narrowViewportQuery = "(max-width: 760px)";
 const healthyBackendStatuses = new Set(["alive", "ok", "ready"]);
 
 export function AppShell() {
   const { message } = App.useApp();
-  const queryClient = useQueryClient();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<
     | "automation"
@@ -100,7 +91,6 @@ export function AppShell() {
   const setThemeMode = useUiStore((state) => state.setThemeMode);
   const setLanguage = useUiStore((state) => state.setLanguage);
   const [sidebarResizing, setSidebarResizing] = useState(false);
-  const isNarrowViewport = useNarrowViewport();
   const messageExporter = useMessageExporter({
     messenger: message,
     sessionId: selectedSessionId,
@@ -188,7 +178,6 @@ export function AppShell() {
         onSelect: () => {
           setActiveSubagent(null);
           setActiveView("search");
-          closeSidebarOnNarrow();
         },
         shortcut: "Ctrl+K",
       },
@@ -200,7 +189,6 @@ export function AppShell() {
         onSelect: () => {
           setActiveSubagent(null);
           setActiveView("skills");
-          closeSidebarOnNarrow();
         },
       },
       {
@@ -211,7 +199,6 @@ export function AppShell() {
         onSelect: () => {
           setActiveSubagent(null);
           setActiveView("automation");
-          closeSidebarOnNarrow();
         },
       },
       {
@@ -222,7 +209,6 @@ export function AppShell() {
         onSelect: () => {
           setActiveSubagent(null);
           setActiveView("connectors");
-          closeSidebarOnNarrow();
         },
       },
       {
@@ -233,7 +219,6 @@ export function AppShell() {
         onSelect: () => {
           setActiveSubagent(null);
           setActiveView("board");
-          closeSidebarOnNarrow();
         },
       },
       {
@@ -244,103 +229,11 @@ export function AppShell() {
         onSelect: () => {
           setActiveSubagent(null);
           setActiveView("memory");
-          closeSidebarOnNarrow();
         },
       },
     ],
-    [activeView, isNarrowViewport, setSidebarCollapsed, t],
+    [activeView, t],
   );
-  const mobileActionItems = useMemo<MenuProps["items"]>(
-    () => [
-      {
-        icon: <Languages size={15} />,
-        key: "language",
-        label:
-          language === "zh-CN" ? t("languageChinese") : t("languageEnglish"),
-      },
-      {
-        icon: <CalendarClock size={15} />,
-        key: "automation",
-        label: t("appAutomation"),
-      },
-      {
-        icon: <Wrench size={15} />,
-        key: "skills",
-        label: t("appSkills"),
-      },
-      {
-        icon: <SquareKanban size={15} />,
-        key: "board",
-        label: t("appBoard"),
-      },
-      {
-        icon: <Activity size={15} />,
-        key: "observability",
-        label: t("appObservability"),
-      },
-      {
-        icon: <PlugZap size={15} />,
-        key: "connectors",
-        label: t("appConnectors"),
-      },
-      {
-        icon: <Database size={15} />,
-        key: "memory",
-        label: t("appMemory"),
-      },
-      {
-        disabled: messageExporter.exporting !== null,
-        icon: <Download size={15} />,
-        key: "export-html",
-        label: `${t("exportMessages")} (${t("exportAsHtml")})`,
-      },
-      {
-        disabled: messageExporter.exporting !== null,
-        icon: <Download size={15} />,
-        key: "export-png",
-        label: `${t("exportMessages")} (${t("exportAsPng")})`,
-      },
-      {
-        icon: themeMode === "dark" ? <Sun size={15} /> : <Moon size={15} />,
-        key: "theme",
-        label: t("appToggleTheme"),
-      },
-      {
-        icon: <RefreshCcw size={15} />,
-        key: "health",
-        label: `${t("settingsServerStatus")}: ${healthLabel}`,
-      },
-      {
-        type: "divider",
-      },
-      {
-        icon: <ExternalLink size={15} />,
-        key: "v1",
-        label: "V1",
-      },
-    ],
-    [healthLabel, language, messageExporter.exporting, t, themeMode],
-  );
-
-  useEffect(() => {
-    if (isNarrowViewport) {
-      setSidebarCollapsed(true);
-    }
-  }, [isNarrowViewport, setSidebarCollapsed]);
-
-  useEffect(() => {
-    if (!isNarrowViewport || sidebarCollapsed) {
-      return undefined;
-    }
-
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setSidebarCollapsed(true);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isNarrowViewport, setSidebarCollapsed, sidebarCollapsed]);
 
   useEffect(() => {
     const handleSearchShortcut = (event: globalThis.KeyboardEvent) => {
@@ -349,13 +242,10 @@ export function AppShell() {
       }
       event.preventDefault();
       setActiveView("search");
-      if (isNarrowViewport) {
-        setSidebarCollapsed(true);
-      }
     };
     window.addEventListener("keydown", handleSearchShortcut);
     return () => window.removeEventListener("keydown", handleSearchShortcut);
-  }, [isNarrowViewport, setSidebarCollapsed]);
+  }, []);
 
   useEffect(() => {
     if (!sidebarResizing) {
@@ -401,95 +291,55 @@ export function AppShell() {
           />
         </div>
         <Space size={8} className="at-topbar-right">
-          {isNarrowViewport ? (
-            <>
-              <Tooltip title={t("appSettings")}>
-                <Button
-                  aria-label={t("appSettings")}
-                  icon={<Settings size={17} />}
-                  onClick={() => setSettingsOpen(true)}
-                  type="text"
-                />
-              </Tooltip>
-              <Dropdown
-                menu={{
-                  items: mobileActionItems,
-                  onClick: handleMobileActionClick,
-                }}
-                placement="bottomRight"
-                trigger={["click"]}
-              >
-                <Tooltip title={t("appMoreActions")}>
-                  <Button
-                    aria-label={t("appMoreActions")}
-                    icon={<MoreHorizontal size={17} />}
-                    loading={messageExporter.exporting !== null}
-                    type="text"
-                  />
-                </Tooltip>
-              </Dropdown>
-            </>
-          ) : (
-            <>
-              <Button
-                onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}
-                size="small"
-              >
-                {language === "zh-CN"
-                  ? t("languageChinese")
-                  : t("languageEnglish")}
-              </Button>
-              <Tooltip title={t("appObservability")}>
-                <Button
-                  aria-label={t("appObservability")}
-                  icon={<Activity size={17} />}
-                  onClick={() => {
-                    setActiveSubagent(null);
-                    setActiveView("observability");
-                  }}
-                  type={activeView === "observability" ? "default" : "text"}
-                />
-              </Tooltip>
-              <MessageExportMenu messenger={message} sessionId={selectedSessionId} />
-              <Tooltip title={t("appSettings")}>
-                <Button
-                  aria-label={t("appSettings")}
-                  icon={<Settings size={17} />}
-                  onClick={() => setSettingsOpen(true)}
-                  type="text"
-                />
-              </Tooltip>
-              <Tooltip title={t("appToggleTheme")}>
-                <Button
-                  aria-label={t("appToggleTheme")}
-                  icon={themeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-                  onClick={() =>
-                    setThemeMode(themeMode === "dark" ? "light" : "dark")
-                  }
-                  type="text"
-                />
-              </Tooltip>
-              <Button href="/" size="small">
-                V1
-              </Button>
-            </>
-          )}
+          <Button
+            onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}
+            size="small"
+          >
+            {language === "zh-CN"
+              ? t("languageChinese")
+              : t("languageEnglish")}
+          </Button>
+          <Tooltip title={t("appObservability")}>
+            <Button
+              aria-label={t("appObservability")}
+              icon={<Activity size={17} />}
+              onClick={() => {
+                setActiveSubagent(null);
+                setActiveView("observability");
+              }}
+              type={activeView === "observability" ? "default" : "text"}
+            />
+          </Tooltip>
+          <MessageExportMenu messenger={message} sessionId={selectedSessionId} />
+          <Tooltip title={t("appSettings")}>
+            <Button
+              aria-label={t("appSettings")}
+              icon={<Settings size={17} />}
+              onClick={() => setSettingsOpen(true)}
+              type="text"
+            />
+          </Tooltip>
+          <Tooltip title={t("appToggleTheme")}>
+            <Button
+              aria-label={t("appToggleTheme")}
+              icon={themeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              onClick={() =>
+                setThemeMode(themeMode === "dark" ? "light" : "dark")
+              }
+              type="text"
+            />
+          </Tooltip>
+          <Button href="/" size="small">
+            V1
+          </Button>
         </Space>
       </Header>
       <Layout className="at-body">
-        {!sidebarCollapsed && isNarrowViewport ? (
-          <button
-            aria-label={t("appCloseSidebar")}
-            className="at-sidebar-scrim"
-            onClick={() => setSidebarCollapsed(true)}
-            type="button"
-          />
-        ) : null}
         {!sidebarCollapsed ? (
           <Sider
             className={sidebarResizing ? "at-sidebar is-resizing" : "at-sidebar"}
             theme="light"
-            width={isNarrowViewport ? 0 : sidebarWidth}
+            width={sidebarWidth}
           >
             <SessionsSidebar
               activeSubagent={activeSubagent}
@@ -498,17 +348,14 @@ export function AppShell() {
               onOpenWorkspaceView={() => {
                 setActiveSubagent(null);
                 setActiveView("workspace");
-                closeSidebarOnNarrow();
               }}
               onSessionSelected={() => {
                 setActiveSubagent(null);
                 setActiveView("chat");
-                closeSidebarOnNarrow();
               }}
               onSubagentSelected={(subagent) => {
                 setActiveSubagent(subagent);
                 setActiveView("subagent-session");
-                closeSidebarOnNarrow();
               }}
               workspaceViewActive={activeView === "workspace"}
             />
@@ -603,12 +450,6 @@ export function AppShell() {
     }
   }
 
-  function closeSidebarOnNarrow() {
-    if (isNarrowViewport) {
-      setSidebarCollapsed(true);
-    }
-  }
-
   function handleSearchSessionSelected(session: SessionSidebarRecord) {
     if (session.workspace_id !== undefined && session.workspace_id.trim()) {
       setSelectedWorkspaceId(session.workspace_id);
@@ -616,69 +457,6 @@ export function AppShell() {
     setSelectedSessionId(session.session_id);
     setActiveSubagent(null);
     setActiveView("chat");
-    closeSidebarOnNarrow();
-  }
-
-  function handleMobileActionClick({ key }: { key: string }) {
-    if (key === "language") {
-      setLanguage(language === "zh-CN" ? "en" : "zh-CN");
-      return;
-    }
-    if (key === "observability") {
-      setActiveSubagent(null);
-      setActiveView("observability");
-      closeSidebarOnNarrow();
-      return;
-    }
-    if (key === "automation") {
-      setActiveSubagent(null);
-      setActiveView("automation");
-      closeSidebarOnNarrow();
-      return;
-    }
-    if (key === "skills") {
-      setActiveSubagent(null);
-      setActiveView("skills");
-      closeSidebarOnNarrow();
-      return;
-    }
-    if (key === "board") {
-      setActiveSubagent(null);
-      setActiveView("board");
-      closeSidebarOnNarrow();
-      return;
-    }
-    if (key === "connectors") {
-      setActiveSubagent(null);
-      setActiveView("connectors");
-      closeSidebarOnNarrow();
-      return;
-    }
-    if (key === "memory") {
-      setActiveSubagent(null);
-      setActiveView("memory");
-      closeSidebarOnNarrow();
-      return;
-    }
-    if (key === "export-html") {
-      void messageExporter.exportMessages("html");
-      return;
-    }
-    if (key === "export-png") {
-      void messageExporter.exportMessages("png");
-      return;
-    }
-    if (key === "theme") {
-      setThemeMode(themeMode === "dark" ? "light" : "dark");
-      return;
-    }
-    if (key === "health") {
-      void queryClient.invalidateQueries({ queryKey: ["server-health"] });
-      return;
-    }
-    if (key === "v1") {
-      window.location.assign("/");
-    }
   }
 
   function handleAutomationSessionSelected(
@@ -691,7 +469,6 @@ export function AppShell() {
     setSelectedSessionId(sessionId);
     setActiveSubagent(null);
     setActiveView("chat");
-    closeSidebarOnNarrow();
   }
 }
 
@@ -706,22 +483,4 @@ function workspaceDisplayLabel(
     workspaceId?.trim() ||
     "Agent Teams"
   );
-}
-
-function useNarrowViewport(): boolean {
-  const [isNarrow, setIsNarrow] = useState(
-    () => window.matchMedia(narrowViewportQuery).matches,
-  );
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(narrowViewportQuery);
-    const handleChange = (event: MediaQueryListEvent) => {
-      setIsNarrow(event.matches);
-    };
-    setIsNarrow(mediaQuery.matches);
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  }, []);
-
-  return isNarrow;
 }

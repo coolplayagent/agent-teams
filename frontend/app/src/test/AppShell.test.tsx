@@ -47,6 +47,10 @@ vi.mock("../features/memory/MemoryView", () => ({
   MemoryView: () => <div data-testid="memory-view" />,
 }));
 
+vi.mock("../features/skills/SkillsView", () => ({
+  SkillsView: () => <div data-testid="skills-view" />,
+}));
+
 vi.mock("../features/recovery/RecoveryBar", () => ({
   RecoveryBar: () => <div data-testid="recovery" />,
 }));
@@ -252,6 +256,7 @@ describe("AppShell", () => {
 
     expect(await screen.findByText("Board")).toBeInTheDocument();
     expect(await screen.findByText("Automation")).toBeInTheDocument();
+    expect(await screen.findByText("Skills")).toBeInTheDocument();
     expect(await screen.findByText("Observability")).toBeInTheDocument();
     expect(screen.getByText("Connectors")).toBeInTheDocument();
     expect(screen.getByText("Memory")).toBeInTheDocument();
@@ -291,6 +296,11 @@ describe("AppShell", () => {
     fireEvent.click(within(sidebar).getByRole("button", { name: "Automation" }));
 
     expect(await screen.findByTestId("automation-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
+
+    expect(await screen.findByTestId("skills-view")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
@@ -350,6 +360,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("button", { name: "中文" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "聊天" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "自动化" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "技能" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "看板" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "连接器" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "记忆" })).toBeVisible();

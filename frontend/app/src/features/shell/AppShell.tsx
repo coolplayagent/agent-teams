@@ -25,6 +25,7 @@ import {
   Settings,
   SquareKanban,
   Sun,
+  Wrench,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -46,6 +47,7 @@ import { MemoryView } from "../memory/MemoryView";
 import { MessageExportMenu, useMessageExporter } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { SessionSearchView } from "../search/SessionSearchView";
+import { SkillsView } from "../skills/SkillsView";
 import {
   SessionsSidebar,
   type SidebarNavigationItem,
@@ -76,6 +78,7 @@ export function AppShell() {
     | "memory"
     | "observability"
     | "search"
+    | "skills"
     | "workspace"
   >("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -163,6 +166,16 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "skills",
+        icon: <Wrench size={15} />,
+        key: "skills",
+        label: t("appSkills"),
+        onSelect: () => {
+          setActiveView("skills");
+          closeSidebarOnNarrow();
+        },
+      },
+      {
         active: activeView === "board",
         icon: <SquareKanban size={15} />,
         key: "board",
@@ -233,6 +246,11 @@ export function AppShell() {
         icon: <CalendarClock size={15} />,
         key: "automation",
         label: t("appAutomation"),
+      },
+      {
+        icon: <Wrench size={15} />,
+        key: "skills",
+        label: t("appSkills"),
       },
       {
         icon: <SquareKanban size={15} />,
@@ -507,6 +525,8 @@ export function AppShell() {
             <ConnectorsView />
           ) : activeView === "memory" ? (
             <MemoryView selectedWorkspaceId={selectedWorkspaceId} />
+          ) : activeView === "skills" ? (
+            <SkillsView />
           ) : activeView === "workspace" ? (
             <WorkspaceProjectView
               onBack={() => setActiveView("chat")}
@@ -582,6 +602,11 @@ export function AppShell() {
     }
     if (key === "automation") {
       setActiveView("automation");
+      closeSidebarOnNarrow();
+      return;
+    }
+    if (key === "skills") {
+      setActiveView("skills");
       closeSidebarOnNarrow();
       return;
     }

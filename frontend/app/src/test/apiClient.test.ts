@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  browseClawHubSkillMarket,
   disableAutomationProject,
   deleteEnvironmentVariable,
   deleteSshProfile,
   enableAutomationProject,
+  getClawHubSkillMarketDetail,
+  getConfigStatus,
   getAutomationProject,
   getEnvironmentVariables,
   getMemory,
+  getRuntimeSkillDetail,
   deleteSession,
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
@@ -27,11 +31,13 @@ import {
   probeWebConnectivity,
   revealSshProfilePassword,
   reloadProxyConfig,
+  reloadSkillsConfig,
   saveEnvironmentVariable,
   saveNotificationConfig,
   saveProxyConfig,
   saveSshProfile,
   saveWebConfig,
+  searchClawHubSkillMarket,
   searchMemories,
   searchWorkspacePaths,
   stopBackgroundTask,
@@ -39,6 +45,9 @@ import {
   runAutomationProject,
   syncBoardTodos,
   testConnector,
+  installClawHubMarketSkill,
+  uninstallClawHubMarketSkill,
+  uninstallRuntimeSkill,
   updateSession,
   updateWorkspace,
 } from "../api/client";
@@ -283,6 +292,173 @@ describe("api client", () => {
         body: JSON.stringify({}),
         method: "POST",
       }),
+    );
+  });
+
+  it("uses the skills status, market, detail, install, uninstall, and reload endpoints", async () => {
+    const statusPayload = {
+      skills: {
+        loaded: true,
+        skills: [
+          {
+            description: "Create skills.",
+            name: "skill-creator",
+            ref: "skill-creator",
+            source: "builtin",
+          },
+        ],
+      },
+    };
+    const marketPayload = {
+      items: [{ installed: false, slug: "skill-creator", summary: "", title: "Skill Creator" }],
+      ok: true,
+      query: "",
+    };
+    const detailPayload = {
+      directory: "C:/skills/skill-creator",
+      instructions: "Use this skill.",
+      manifest_path: "C:/skills/skill-creator/SKILL.md",
+      name: "skill-creator",
+      ref: "skill-creator",
+      source: "builtin",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(statusPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(marketPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(marketPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            slug: "skill-creator",
+            title: "Skill Creator",
+            summary: "Create skills.",
+            files: [],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(detailPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            diagnostics: {
+              binary_available: true,
+              endpoint_fallback_used: false,
+              installation_attempted: true,
+              installed_during_install: true,
+              skills_reloaded: true,
+              token_configured: true,
+            },
+            latency_ms: 12,
+            ok: true,
+            retryable: false,
+            slug: "skill-creator",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            skills_reloaded: true,
+            slug: "skill-creator",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            ref: "skill-creator",
+            skills_reloaded: true,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getConfigStatus()).resolves.toEqual(statusPayload);
+    await expect(
+      browseClawHubSkillMarket({ cursor: "next", limit: 12, sort: "popular" }),
+    ).resolves.toEqual(marketPayload);
+    await expect(searchClawHubSkillMarket("skill creator", 8)).resolves.toEqual(
+      marketPayload,
+    );
+    await expect(
+      getClawHubSkillMarketDetail("skill-creator", "1.0.0"),
+    ).resolves.toMatchObject({ slug: "skill-creator" });
+    await expect(getRuntimeSkillDetail("skill-creator")).resolves.toEqual(detailPayload);
+    await expect(
+      installClawHubMarketSkill({
+        force: false,
+        slug: "skill-creator",
+        version: null,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(uninstallClawHubMarketSkill("skill-creator")).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(uninstallRuntimeSkill("skill-creator")).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(reloadSkillsConfig()).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/skills/market/clawhub?limit=12&cursor=next&sort=popular",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/skills/market/clawhub/search?query=skill+creator&limit=8",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/skills/market/clawhub/skill-creator?version=1.0.0",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/system/skills/skill-creator",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/system/skills/market/clawhub/install",
+      expect.objectContaining({
+        body: JSON.stringify({
+          force: false,
+          slug: "skill-creator",
+          version: null,
+        }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/system/skills/market/clawhub/skill-creator",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "/api/system/skills/skill-creator",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      "/api/system/configs/skills:reload",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 

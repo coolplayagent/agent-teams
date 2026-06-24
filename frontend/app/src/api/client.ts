@@ -5,6 +5,11 @@ import type {
   AutomationProjectSessionRecord,
   AutomationRunNowResult,
   BoardTodoBoardResponse,
+  ClawHubSkillMarketDetail,
+  ClawHubSkillMarketInstallRequest,
+  ClawHubSkillMarketInstallResponse,
+  ClawHubSkillMarketSearchResponse,
+  ClawHubSkillMarketUninstallResponse,
   ConnectorListResponse,
   ConnectorTestResult,
   EnvironmentVariableCatalog,
@@ -30,6 +35,7 @@ import type {
   ObservabilityOverview,
   RecoverySnapshot,
   RoleConfigOptions,
+  RuntimeSkillDetail,
   RunCreateRequest,
   RunCreateResponse,
   DeleteSessionRequest,
@@ -47,8 +53,10 @@ import type {
   SshProfileConnectivityProbeResult,
   SshProfilePasswordRevealView,
   SshProfileRecord,
+  SkillUninstallResponse,
   TimelineMessage,
   StopBackgroundTaskResponse,
+  SystemConfigStatus,
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
   WorkspacePage,
@@ -273,6 +281,106 @@ export function disableAutomationProject(
       body: JSON.stringify({}),
     },
   );
+}
+
+export function getConfigStatus(): Promise<SystemConfigStatus> {
+  return requestJson<SystemConfigStatus>("/system/configs");
+}
+
+export interface BrowseClawHubSkillMarketOptions {
+  cursor?: string | null;
+  limit?: number;
+  sort?: string;
+}
+
+export function browseClawHubSkillMarket(
+  options: BrowseClawHubSkillMarketOptions = {},
+): Promise<ClawHubSkillMarketSearchResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(options.limit ?? 24));
+  const cursor = options.cursor?.trim() ?? "";
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  params.set("sort", options.sort?.trim() || "popular");
+  return requestJson<ClawHubSkillMarketSearchResponse>(
+    `/system/skills/market/clawhub?${params.toString()}`,
+  );
+}
+
+export function searchClawHubSkillMarket(
+  query: string,
+  limit = 24,
+): Promise<ClawHubSkillMarketSearchResponse> {
+  const params = new URLSearchParams();
+  params.set("query", query.trim());
+  params.set("limit", String(limit));
+  return requestJson<ClawHubSkillMarketSearchResponse>(
+    `/system/skills/market/clawhub/search?${params.toString()}`,
+  );
+}
+
+export function getClawHubSkillMarketDetail(
+  slug: string,
+  version?: string | null,
+): Promise<ClawHubSkillMarketDetail> {
+  const params = new URLSearchParams();
+  const trimmedVersion = version?.trim() ?? "";
+  if (trimmedVersion) {
+    params.set("version", trimmedVersion);
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return requestJson<ClawHubSkillMarketDetail>(
+    `/system/skills/market/clawhub/${encodeURIComponent(slug.trim())}${query}`,
+  );
+}
+
+export function installClawHubMarketSkill(
+  request: ClawHubSkillMarketInstallRequest,
+): Promise<ClawHubSkillMarketInstallResponse> {
+  return requestJson<ClawHubSkillMarketInstallResponse>(
+    "/system/skills/market/clawhub/install",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function uninstallClawHubMarketSkill(
+  slug: string,
+): Promise<ClawHubSkillMarketUninstallResponse> {
+  return requestJson<ClawHubSkillMarketUninstallResponse>(
+    `/system/skills/market/clawhub/${encodeURIComponent(slug.trim())}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function getRuntimeSkillDetail(
+  skillRef: string,
+): Promise<RuntimeSkillDetail> {
+  return requestJson<RuntimeSkillDetail>(
+    `/system/skills/${encodeURIComponent(skillRef.trim())}`,
+  );
+}
+
+export function uninstallRuntimeSkill(
+  skillRef: string,
+): Promise<SkillUninstallResponse> {
+  return requestJson<SkillUninstallResponse>(
+    `/system/skills/${encodeURIComponent(skillRef.trim())}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function reloadSkillsConfig(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/skills:reload", {
+    method: "POST",
+  });
 }
 
 export function getRoleConfigOptions(): Promise<RoleConfigOptions> {

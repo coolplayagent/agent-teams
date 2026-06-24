@@ -313,6 +313,162 @@ export interface AutomationProjectSessionRecord {
   workspace_id?: string;
 }
 
+export type SkillSource =
+  | "builtin"
+  | "plugin"
+  | "project_agents"
+  | "project_claude"
+  | "project_codex"
+  | "project_opencode"
+  | "project_relay_teams"
+  | "user_agents"
+  | "user_claude"
+  | "user_codex"
+  | "user_opencode"
+  | "user_relay_teams";
+
+export interface RuntimeSkillSummary {
+  description: string;
+  name: string;
+  ref: string;
+  source: SkillSource;
+}
+
+export interface RuntimeSkillDetail extends RuntimeSkillSummary {
+  directory: string;
+  instructions: string;
+  manifest_content?: string | null;
+  manifest_path: string;
+}
+
+export interface SkillConfigStatus {
+  loaded?: boolean;
+  skills?: RuntimeSkillSummary[];
+}
+
+export interface SystemConfigStatus {
+  skills?: SkillConfigStatus;
+}
+
+export interface SkillUninstallResponse {
+  error_code?: string | null;
+  error_message?: string | null;
+  ok: boolean;
+  ref: string;
+  skills_reloaded: boolean;
+}
+
+export interface ClawHubSkillMarketStats {
+  comments?: number | null;
+  downloads?: number | null;
+  installs_all_time?: number | null;
+  installs_current?: number | null;
+  stars?: number | null;
+  versions?: number | null;
+}
+
+export interface ClawHubSkillMarketSearchItem {
+  created_at_ms?: number | null;
+  installed: boolean;
+  owner_display_name?: string | null;
+  owner_handle?: string | null;
+  owner_image?: string | null;
+  score?: number | null;
+  slug: string;
+  stats?: ClawHubSkillMarketStats | null;
+  summary: string;
+  title: string;
+  updated_at_ms?: number | null;
+  version?: string | null;
+}
+
+export interface ClawHubSkillMarketSearchResponse {
+  error_message?: string | null;
+  items: ClawHubSkillMarketSearchItem[];
+  next_cursor?: string | null;
+  ok: boolean;
+  query: string;
+  sort?: string | null;
+}
+
+export interface ClawHubSkillMarketFile {
+  content_type?: string | null;
+  path: string;
+  sha256?: string | null;
+  size?: number | null;
+}
+
+export interface ClawHubSkillMarketDetail {
+  changelog?: string | null;
+  created_at_ms?: number | null;
+  error_message?: string | null;
+  files: ClawHubSkillMarketFile[];
+  license?: string | null;
+  manifest_content?: string | null;
+  ok: boolean;
+  owner_display_name?: string | null;
+  owner_handle?: string | null;
+  owner_image?: string | null;
+  slug: string;
+  stats?: ClawHubSkillMarketStats | null;
+  summary: string;
+  title: string;
+  updated_at_ms?: number | null;
+  version?: string | null;
+}
+
+export interface ClawHubSkillMarketInstallRequest {
+  force?: boolean;
+  slug: string;
+  version?: string | null;
+}
+
+export interface ClawHubSkillMarketInstalledSkill {
+  description: string;
+  directory: string;
+  error?: string | null;
+  manifest_path: string;
+  ref?: string | null;
+  runtime_name?: string | null;
+  skill_id: string;
+  source: SkillSource;
+  valid: boolean;
+}
+
+export interface ClawHubSkillMarketInstallDiagnostics {
+  binary_available: boolean;
+  checked_at?: string | null;
+  endpoint_fallback_used: boolean;
+  installation_attempted: boolean;
+  installed_during_install: boolean;
+  registry?: string | null;
+  skills_reloaded: boolean;
+  token_configured: boolean;
+  workdir?: string | null;
+}
+
+export interface ClawHubSkillMarketInstallResponse {
+  checked_at?: string | null;
+  clawhub_path?: string | null;
+  diagnostics: ClawHubSkillMarketInstallDiagnostics;
+  error_code?: string | null;
+  error_message?: string | null;
+  installed_skill?: ClawHubSkillMarketInstalledSkill | null;
+  latency_ms: number;
+  ok: boolean;
+  requested_version?: string | null;
+  retryable: boolean;
+  slug: string;
+}
+
+export interface ClawHubSkillMarketUninstallResponse {
+  error_code?: string | null;
+  error_message?: string | null;
+  ok: boolean;
+  skills_reloaded: boolean;
+  slug: string;
+}
+
 export interface SshProfileRecord {
   ssh_profile_id: string;
   host: string;

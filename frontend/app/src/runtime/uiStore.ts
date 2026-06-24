@@ -18,12 +18,13 @@ interface UiState {
   setSelectedWorkspaceId: (workspaceId: string | null) => void;
 }
 
-const sidebarWidthMin = 220;
-const sidebarWidthMax = 360;
+export const sidebarWidthDefault = 220;
+export const sidebarWidthMin = 220;
+export const sidebarWidthMax = 360;
 
 export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: false,
-  sidebarWidth: storedNumber("agentTeams.sidebarWidth", 280),
+  sidebarWidth: storedSidebarWidth(),
   themeMode: storedThemeMode(),
   language: storedLanguage(),
   selectedSessionId: window.localStorage.getItem("agentTeams.selectedSessionId"),
@@ -60,13 +61,19 @@ export const useUiStore = create<UiState>((set) => ({
   },
 }));
 
-function storedNumber(key: string, fallback: number): number {
-  const raw = window.localStorage.getItem(key);
+function storedSidebarWidth(): number {
+  const raw = window.localStorage.getItem("agentTeams.sidebarWidth");
   if (raw === null) {
-    return fallback;
+    return sidebarWidthDefault;
   }
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (!Number.isFinite(parsed)) {
+    return sidebarWidthDefault;
+  }
+  if (parsed === 280) {
+    return sidebarWidthDefault;
+  }
+  return Math.min(sidebarWidthMax, Math.max(sidebarWidthMin, parsed));
 }
 
 function storedThemeMode(): ThemeMode {

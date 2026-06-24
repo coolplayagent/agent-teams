@@ -48,7 +48,11 @@ import { SettingsDrawer } from "./SettingsDrawer";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
-import { useUiStore } from "../../runtime/uiStore";
+import {
+  sidebarWidthMax,
+  sidebarWidthMin,
+  useUiStore,
+} from "../../runtime/uiStore";
 import { useTranslations } from "../../i18n";
 
 const { Header, Sider, Content } = Layout;
@@ -404,8 +408,8 @@ export function AppShell() {
             <div
               aria-label="Resize sidebar"
               aria-orientation="vertical"
-              aria-valuemax={360}
-              aria-valuemin={220}
+              aria-valuemax={sidebarWidthMax}
+              aria-valuemin={sidebarWidthMin}
               aria-valuenow={sidebarWidth}
               className="at-sidebar-resizer"
               onKeyDown={handleSidebarResizeKeyDown}

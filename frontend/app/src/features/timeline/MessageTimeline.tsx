@@ -100,6 +100,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     return undefined;
   }, [rows]);
   const activeRoundRunId = activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(rounds);
+  const hasRoundRail = !roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 1;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -187,7 +188,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   }
 
   return (
-    <div className="at-timeline-frame">
+    <div className={hasRoundRail ? "at-timeline-frame has-round-rail" : "at-timeline-frame"}>
       <div className="at-timeline" onScroll={handleTimelineScroll} ref={parentRef}>
         <div className="at-timeline-toolbar">
           <Tooltip
@@ -222,7 +223,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
           )}
         </div>
       </div>
-      {!roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 1 ? (
+      {hasRoundRail ? (
         <RoundRail
           activeRunId={activeRoundRunId}
           onSelectRun={handleRoundSelect}

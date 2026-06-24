@@ -129,7 +129,10 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByRole("navigation", { name: "Rounds" })).toBeVisible();
+    const roundRail = await screen.findByRole("navigation", { name: "Rounds" });
+    expect(roundRail).toBeVisible();
+    expect(container.querySelector(".at-timeline-frame")).toHaveClass("has-round-rail");
+    expect(roundRail.closest(".at-timeline-frame")).toHaveClass("has-round-rail");
     const initialRound = await screen.findByRole("button", {
       name: "Go to round 1: Initial task",
     });
@@ -183,6 +186,7 @@ describe("MessageTimeline", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".at-round-marker")).toHaveLength(1);
     });
+    expect(container.querySelector(".at-timeline-frame")).not.toHaveClass("has-round-rail");
     expect(screen.queryByRole("navigation", { name: "Rounds" })).toBeNull();
   });
 

@@ -18,7 +18,7 @@ import {
   listWorkspaces,
 } from "../api/client";
 import { AppShell } from "../features/shell/AppShell";
-import { useUiStore } from "../runtime/uiStore";
+import { sidebarWidthDefault, useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   getHealth: vi.fn(),
@@ -131,7 +131,7 @@ beforeEach(() => {
     selectedSessionId: "session-1",
     selectedWorkspaceId: "workspace-1",
     sidebarCollapsed: false,
-    sidebarWidth: 280,
+    sidebarWidth: sidebarWidthDefault,
     themeMode: "light",
   });
 });
@@ -156,6 +156,27 @@ describe("AppShell", () => {
       expect(screen.queryByTestId("sessions-sidebar")).toBeNull(),
     );
     expect(screen.getByTestId("timeline")).toBeVisible();
+  });
+
+  it("renders the desktop chat as one fixed workspace frame", async () => {
+    renderShell();
+
+    const sidebar = htmlElement(
+      (await screen.findByTestId("sessions-sidebar")).closest(".at-sidebar"),
+      "sidebar",
+    );
+    const timeline = screen.getByTestId("timeline");
+    const workspace = htmlElement(timeline.closest(".at-workspace"), "workspace");
+    const chatView = htmlElement(timeline.closest(".at-chat-view"), "chat view");
+    const bodyFrame = htmlElement(timeline.closest(".at-body"), "body frame");
+    const shell = htmlElement(document.querySelector(".at-shell"), "shell");
+
+    expect(shell).toContainElement(bodyFrame);
+    expect(bodyFrame).toContainElement(sidebar);
+    expect(bodyFrame).toContainElement(workspace);
+    expect(chatView).toContainElement(screen.getByTestId("composer"));
+    expect(screen.getByRole("separator", { name: "Resize sidebar" }))
+      .toHaveAttribute("aria-valuenow", String(sidebarWidthDefault));
   });
 
   it("collapses the mobile sidebar by default and reopens it as an overlay", async () => {
@@ -207,22 +228,22 @@ describe("AppShell", () => {
     const resizer = await screen.findByRole("separator", {
       name: "Resize sidebar",
     });
-    expect(resizer).toHaveAttribute("aria-valuenow", "280");
+    expect(resizer).toHaveAttribute("aria-valuenow", String(sidebarWidthDefault));
 
     fireEvent.keyDown(resizer, { key: "ArrowRight" });
 
-    expect(useUiStore.getState().sidebarWidth).toBe(296);
+    expect(useUiStore.getState().sidebarWidth).toBe(sidebarWidthDefault + 16);
     await waitFor(() =>
       expect(
         screen.getByRole("separator", { name: "Resize sidebar" }),
-      ).toHaveAttribute("aria-valuenow", "296"),
+      ).toHaveAttribute("aria-valuenow", String(sidebarWidthDefault + 16)),
     );
 
     fireEvent.keyDown(screen.getByRole("separator", { name: "Resize sidebar" }), {
       key: "ArrowLeft",
     });
 
-    expect(useUiStore.getState().sidebarWidth).toBe(280);
+    expect(useUiStore.getState().sidebarWidth).toBe(sidebarWidthDefault);
   });
 
   it("routes primary sidebar navigation to real shell surfaces", async () => {
@@ -313,6 +334,13 @@ function renderShell() {
 
 function renderWithStrictModeBoundary(children: ReactNode) {
   return children;
+}
+
+function htmlElement(element: Element | null, label: string): HTMLElement {
+  if (element instanceof HTMLElement) {
+    return element;
+  }
+  throw new Error(`${label} element not found.`);
 }
 
 function mockViewportMatch(matches: boolean) {

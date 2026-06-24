@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteSession,
+  getWorkspaceDiffFile,
   getWorkspaceDiffs,
   getWorkspaceSnapshot,
   listSessionRounds,
@@ -178,6 +179,18 @@ describe("api client", () => {
         ),
       )
       .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            mount_name: "default",
+            path: "src/file.ts",
+            change_type: "modified",
+            diff: "+changed",
+            is_binary: false,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
         new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
@@ -187,6 +200,12 @@ describe("api client", () => {
     });
     await expect(getWorkspaceDiffs("workspace-1")).resolves.toMatchObject({
       root_path: "C:/work/agent-teams",
+    });
+    await expect(
+      getWorkspaceDiffFile("workspace-1", "src/file.ts", "default"),
+    ).resolves.toMatchObject({
+      diff: "+changed",
+      path: "src/file.ts",
     });
     await expect(openWorkspaceRoot("workspace-1")).resolves.toEqual({
       status: "ok",
@@ -208,6 +227,13 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
+      "/api/workspaces/workspace-1/diff?path=src%2Ffile.ts&mount=default",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
       "/api/workspaces/workspace-1:open-root",
       expect.objectContaining({
         method: "POST",

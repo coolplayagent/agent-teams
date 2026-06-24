@@ -1039,3 +1039,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this session-search slice. No Search, Application Shell, or full frontend subsystem completion is claimed from this batch; the next pass should start screenshot-first on the broader fixed-page workspace/chat framework issues reported by the user.
+
+## 2026-06-24 Workspace Workbench Framework Batch
+
+### Scope
+- Rechecked V1 and built V2 in the real in-app browser before and after editing, focusing on the user-reported fixed-page framework issues instead of small style polish.
+- Confirmed with browser metrics that the current long-chat V2 shell keeps body/document fixed while `.at-timeline` and `.at-session-list` own their own scrolling.
+- Replaced the V2 workspace four-panel card dashboard with a V1-shaped workbench frame: top project toolbar, file/change tabs, mount selector, change list, and diff preview.
+- Added a typed V2 client contract for the real workspace diff-file endpoint so the preview renders actual file diffs rather than summary-only placeholder content.
+- Removed the project view's duplicated session panel; workspace/session navigation remains owned by the left workspace sidebar, matching the one-page frame and preventing project content from dragging the session list.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-framework-fixed-page/`.
+- V1 reference screenshots: `v1-frame-reference.png` and `v1-project-view-reference.png`.
+- V2 before screenshots: `v2-long-chat-before.png`, `v2-workspace-before.png`, and `v2-workspace-settled-before.png`.
+- V2 after screenshots: `v2-workspace-workbench-after.png`, `v2-workspace-files-after.png`, and `v2-long-chat-after.png`.
+- Workspace workbench metrics at `1248x679` kept body/document fixed to `679 / 679`, kept `.at-project-view` fixed at `627px`, and made `.at-workspace-diff-list` plus `.at-workspace-diff-preview` the scroll owners while `.at-project-view-grid` no longer existed.
+- Long-chat metrics after rebuilding kept body/document fixed to `679 / 679`; scrolling `.at-timeline` to the bottom did not move `.at-session-list`, which remained at `scrollTop=0`.
+- Browser console verification found only a pre-existing `/favicon.ico` 404 and no workspace or chat interface errors.
+- `npm run test -- src/test/WorkspaceProjectView.test.tsx src/test/AppShell.test.tsx src/test/apiClient.test.ts` in `frontend/app` passed with 17 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this fixed-page workspace/chat framework slice. No Workspace, Application Shell, or Message Timeline subsystem completion is claimed from this batch; remaining work includes broader V1 project interaction parity, detailed workspace actions, streaming/recovery scenarios, and reviewer sign-off.

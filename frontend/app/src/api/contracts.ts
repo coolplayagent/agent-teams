@@ -64,6 +64,15 @@ export interface WorkspaceDiffFileSummary {
   previous_path?: string | null;
 }
 
+export interface WorkspaceDiffFile {
+  mount_name?: string;
+  path: string;
+  change_type: WorkspaceDiffChangeType;
+  previous_path?: string | null;
+  diff: string;
+  is_binary?: boolean;
+}
+
 export interface WorkspaceDiffListing {
   workspace_id: string;
   mount_name?: string;

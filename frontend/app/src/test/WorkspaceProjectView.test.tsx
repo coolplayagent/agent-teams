@@ -4,22 +4,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getWorkspaceDiffFile,
   getWorkspaceDiffs,
   getWorkspaceSnapshot,
   listWorkspaces,
   openWorkspaceRoot,
 } from "../api/client";
-import type { SessionSidebarRecord } from "../api/contracts";
 import { WorkspaceProjectView } from "../features/workspaces/WorkspaceProjectView";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  getWorkspaceDiffFile: vi.fn(),
   getWorkspaceDiffs: vi.fn(),
   getWorkspaceSnapshot: vi.fn(),
   listWorkspaces: vi.fn(),
   openWorkspaceRoot: vi.fn(),
 }));
 
+const getWorkspaceDiffFileMock = vi.mocked(getWorkspaceDiffFile);
 const getWorkspaceDiffsMock = vi.mocked(getWorkspaceDiffs);
 const getWorkspaceSnapshotMock = vi.mocked(getWorkspaceSnapshot);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
@@ -37,8 +39,7 @@ afterEach(() => {
 });
 
 describe("WorkspaceProjectView", () => {
-  it("renders real workspace snapshot, changes, sessions, and actions", async () => {
-    const onBack = vi.fn();
+  it("renders a V1-shaped workspace workbench with real file and diff data", async () => {
     listWorkspacesMock.mockResolvedValue([
       {
         workspace_id: "workspace-1",
@@ -81,32 +82,40 @@ describe("WorkspaceProjectView", () => {
         },
       ],
     });
+    getWorkspaceDiffFileMock.mockResolvedValue({
+      mount_name: "default",
+      path: "frontend/app/src/App.tsx",
+      change_type: "modified",
+      diff: "--- a/frontend/app/src/App.tsx\n+++ b/frontend/app/src/App.tsx\n@@ -1 +1 @@\n-old\n+new",
+      is_binary: false,
+    });
     openWorkspaceRootMock.mockResolvedValue({ status: "ok" });
 
-    renderProjectView(onBack);
+    renderProjectView();
 
     expect(await screen.findByText("Agent Teams")).toBeVisible();
-    expect(screen.getAllByText("C:/work/agent-teams")).toHaveLength(2);
+    expect(screen.getByText("Mount")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Changes 1" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByText("frontend/app/src/App.tsx")).toBeVisible();
+    expect(await screen.findByText("+new")).toBeVisible();
+    expect(screen.getByText("-old")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+
     expect(await screen.findByText("frontend")).toBeVisible();
     expect(screen.getByText("README.md")).toBeVisible();
-    expect(screen.getByText("modified")).toBeVisible();
-    expect(screen.getByText("frontend/app/src/App.tsx")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Open folder" })[0]);
 
     await waitFor(() =>
       expect(openWorkspaceRootMock).toHaveBeenCalledWith("workspace-1"),
     );
-
-    fireEvent.click(screen.getByText("Workspace session"));
-
-    expect(useUiStore.getState().selectedSessionId).toBe("session-1");
-    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
-    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("shows capped counts and reveals later changes and sessions", async () => {
-    const onBack = vi.fn();
+  it("loads the selected changed file diff", async () => {
     listWorkspacesMock.mockResolvedValue([
       {
         workspace_id: "workspace-1",
@@ -130,41 +139,50 @@ describe("WorkspaceProjectView", () => {
       mount_name: "default",
       root_path: "C:/work/agent-teams",
       is_git_repository: true,
-      diff_files: Array.from({ length: 14 }, (_, index) => ({
-        path: `src/file-${index + 1}.ts`,
-        change_type: "modified" as const,
-      })),
+      diff_files: [
+        {
+          path: "src/file-1.ts",
+          change_type: "modified",
+        },
+        {
+          path: "src/file-2.ts",
+          change_type: "added",
+        },
+      ],
     });
+    getWorkspaceDiffFileMock
+      .mockResolvedValueOnce({
+        mount_name: "default",
+        path: "src/file-1.ts",
+        change_type: "modified",
+        diff: "--- a/src/file-1.ts\n+++ b/src/file-1.ts\n+first",
+        is_binary: false,
+      })
+      .mockResolvedValueOnce({
+        mount_name: "default",
+        path: "src/file-2.ts",
+        change_type: "added",
+        diff: "--- a/src/file-2.ts\n+++ b/src/file-2.ts\n+second",
+        is_binary: false,
+      });
 
-    renderProjectView(
-      onBack,
-      Array.from({ length: 14 }, (_, index) => ({
-        session_id: `session-${index + 1}`,
-        title: `Workspace session ${index + 1}`,
-        updated_at: "2026-06-23T10:00:00Z",
-        workspace_id: "workspace-1",
-      })),
-    );
+    renderProjectView();
 
-    expect(await screen.findByText("Agent Teams")).toBeVisible();
     expect(await screen.findByText("src/file-1.ts")).toBeVisible();
-    expect(screen.getAllByText("12/14")).toHaveLength(2);
-    expect(screen.queryByText("src/file-14.ts")).not.toBeInTheDocument();
-    expect(screen.queryByText("Workspace session 14")).not.toBeInTheDocument();
+    expect(await screen.findByText("+first")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show all changes" }));
-    fireEvent.click(screen.getByRole("button", { name: "Show all sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "added src/file-2.ts" }));
 
-    expect(screen.getByText("src/file-14.ts")).toBeVisible();
-    fireEvent.click(screen.getByText("Workspace session 14"));
-
-    expect(useUiStore.getState().selectedSessionId).toBe("session-14");
-    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("+second")).toBeVisible();
+    expect(getWorkspaceDiffFileMock).toHaveBeenLastCalledWith(
+      "workspace-1",
+      "src/file-2.ts",
+      "default",
+    );
   });
 
-  it("localizes the project view shell actions in Chinese", async () => {
+  it("localizes the project workbench shell actions in Chinese", async () => {
     useUiStore.setState({ language: "zh-CN" });
-    const onBack = vi.fn();
     listWorkspacesMock.mockResolvedValue([
       {
         workspace_id: "workspace-1",
@@ -191,28 +209,17 @@ describe("WorkspaceProjectView", () => {
       diff_files: [],
     });
 
-    renderProjectView(onBack);
+    renderProjectView();
 
-    expect(await screen.findByRole("button", { name: "打开文件夹" })).toBeVisible();
+    expect(await screen.findAllByRole("button", { name: "打开文件夹" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "刷新工作区视图" })).toBeVisible();
-    expect(screen.getByText("工作区")).toBeVisible();
-    expect(screen.getByText("文件")).toBeVisible();
-    expect(screen.getByText("变更")).toBeVisible();
-    expect(screen.getByText("会话")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "文件" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "变更 0" })).toBeVisible();
+    expect(screen.getByText("挂载")).toBeVisible();
   });
 });
 
-function renderProjectView(
-  onBack: () => void,
-  sessions: SessionSidebarRecord[] = [
-    {
-      session_id: "session-1",
-      title: "Workspace session",
-      updated_at: "2026-06-23T10:00:00Z",
-      workspace_id: "workspace-1",
-    },
-  ],
-) {
+function renderProjectView() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -226,9 +233,8 @@ function renderProjectView(
       <ConfigProvider>
         <AntApp>
           <WorkspaceProjectView
-            onBack={onBack}
+            onBack={vi.fn()}
             selectedWorkspaceId="workspace-1"
-            sessions={sessions}
           />
         </AntApp>
       </ConfigProvider>

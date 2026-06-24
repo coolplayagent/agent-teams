@@ -29,6 +29,7 @@ import type {
   UserQuestionAnswerSubmission,
   WorkspacePage,
   WorkspaceRecord,
+  WorkspaceDiffFile,
   WorkspaceDiffListing,
   WorkspaceSnapshot,
   WebConfig,
@@ -61,6 +62,20 @@ export function getWorkspaceDiffs(
 ): Promise<WorkspaceDiffListing> {
   return requestJson<WorkspaceDiffListing>(
     `/workspaces/${encodeURIComponent(workspaceId)}/diffs`,
+  );
+}
+
+export function getWorkspaceDiffFile(
+  workspaceId: string,
+  path: string,
+  mountName?: string | null,
+): Promise<WorkspaceDiffFile> {
+  const params = new URLSearchParams({ path });
+  if (mountName !== undefined && mountName !== null && mountName.trim()) {
+    params.set("mount", mountName);
+  }
+  return requestJson<WorkspaceDiffFile>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/diff?${params.toString()}`,
   );
 }
 

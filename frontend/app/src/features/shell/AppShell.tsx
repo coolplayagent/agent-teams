@@ -422,7 +422,6 @@ export function AppShell() {
             <WorkspaceProjectView
               onBack={() => setActiveView("chat")}
               selectedWorkspaceId={selectedWorkspaceId}
-              sessions={sidebarSessionsQuery.data ?? []}
             />
           ) : activeView === "search" ? (
             <SessionSearchView

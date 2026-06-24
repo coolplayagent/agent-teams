@@ -14,6 +14,7 @@ from relay_teams.mcp.mcp_registry import build_mcp_server
 
 
 def _clear_proxy_env(monkeypatch) -> None:
+    runtime_env.SYNCED_APP_ENV_KEYS.clear()
     for key in (
         "HTTP_PROXY",
         "http_proxy",

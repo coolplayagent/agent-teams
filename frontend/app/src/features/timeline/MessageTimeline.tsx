@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Copy, Wrench } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { listSessionMessages, listSessionRounds } from "../../api/client";
 import {
@@ -157,33 +158,33 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
 
   if (sessionId === null) {
     return (
-      <div className="at-timeline at-timeline-empty">
+      <TimelineStateFrame>
         <Empty description={t("timelineSelectSession")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      </div>
+      </TimelineStateFrame>
     );
   }
 
   if (messagesQuery.isLoading) {
     return (
-      <div className="at-timeline">
+      <TimelineStateFrame>
         <Skeleton active paragraph={{ rows: 10 }} />
-      </div>
+      </TimelineStateFrame>
     );
   }
 
   if (messagesQuery.isError) {
     return (
-      <div className="at-timeline at-timeline-empty">
+      <TimelineStateFrame>
         <Empty description={t("timelineLoadError")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      </div>
+      </TimelineStateFrame>
     );
   }
 
   if (rows.length === 0) {
     return (
-      <div className="at-timeline at-timeline-empty">
+      <TimelineStateFrame>
         <Empty description={t("timelineNoMessages")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      </div>
+      </TimelineStateFrame>
     );
   }
 
@@ -231,6 +232,16 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
           t={t}
         />
       ) : null}
+    </div>
+  );
+}
+
+function TimelineStateFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="at-timeline-frame">
+      <div className="at-timeline at-timeline-empty">
+        {children}
+      </div>
     </div>
   );
 }

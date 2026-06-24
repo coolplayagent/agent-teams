@@ -38,6 +38,29 @@ afterEach(() => {
 });
 
 describe("MessageTimeline", () => {
+  it("keeps the no-session state inside the timeline frame slot", () => {
+    const { container } = renderTimeline(null);
+
+    expect(screen.getByText("Select a session")).toBeVisible();
+    expect(container.querySelector(".at-timeline-frame")).not.toBeNull();
+    expect(
+      container.querySelector(".at-timeline")?.closest(".at-timeline-frame"),
+    ).not.toBeNull();
+    expect(listSessionMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the empty message state inside the timeline frame slot", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(container.querySelector(".at-timeline-frame")).not.toBeNull();
+    expect(
+      container.querySelector(".at-timeline")?.closest(".at-timeline-frame"),
+    ).not.toBeNull();
+  });
+
   it("copies the latest non-user answer", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -1532,7 +1555,7 @@ describe("MessageTimeline", () => {
   });
 });
 
-function renderTimeline() {
+function renderTimeline(sessionId: string | null = "session-1") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -1545,7 +1568,7 @@ function renderTimeline() {
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
-          <MessageTimeline sessionId="session-1" />
+          <MessageTimeline sessionId={sessionId} />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,

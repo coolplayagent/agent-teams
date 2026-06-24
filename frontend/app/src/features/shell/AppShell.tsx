@@ -35,21 +35,18 @@ import {
   listWorkspaces,
 } from "../../api/client";
 import type { SessionSidebarRecord } from "../../api/contracts";
-import { Composer } from "../composer/Composer";
 import { ConnectorsView } from "../connectors/ConnectorsView";
+import { ChatWorkspace } from "./ChatWorkspace";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
 import { MemoryView } from "../memory/MemoryView";
 import { MessageExportMenu, useMessageExporter } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
-import { RecoveryBar } from "../recovery/RecoveryBar";
 import { SessionSearchView } from "../search/SessionSearchView";
-import { SessionTokenUsage } from "./SessionTokenUsage";
 import {
   SessionsSidebar,
   type SidebarNavigationItem,
 } from "../sessions/SessionsSidebar";
 import { SettingsDrawer } from "./SettingsDrawer";
-import { MessageTimeline } from "../timeline/MessageTimeline";
 import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
 import {
@@ -475,21 +472,11 @@ export function AppShell() {
               workspaces={workspacesQuery.data ?? []}
             />
           ) : (
-            <div className="at-chat-view">
-              <RecoveryBar
-                runStreamController={runStreamController}
-                sessionId={selectedSessionId}
-              />
-              <MessageTimeline sessionId={selectedSessionId} />
-              <SessionTokenUsage
-                primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
-                sessionId={selectedSessionId}
-              />
-              <Composer
-                runStreamController={runStreamController}
-                sessionId={selectedSessionId}
-              />
-            </div>
+            <ChatWorkspace
+              primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
+              runStreamController={runStreamController}
+              sessionId={selectedSessionId}
+            />
           )}
         </Content>
       </Layout>

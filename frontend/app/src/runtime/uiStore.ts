@@ -18,9 +18,9 @@ interface UiState {
   setSelectedWorkspaceId: (workspaceId: string | null) => void;
 }
 
-export const sidebarWidthDefault = 274;
+export const sidebarWidthDefault = 248;
 export const sidebarWidthMin = 220;
-export const sidebarWidthMax = 360;
+export const sidebarWidthMax = 320;
 
 export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: false,
@@ -70,7 +70,7 @@ function storedSidebarWidth(): number {
   if (!Number.isFinite(parsed)) {
     return sidebarWidthDefault;
   }
-  if (parsed === 220 || parsed === 280) {
+  if (parsed === 220 || parsed === 274 || parsed === 280) {
     return sidebarWidthDefault;
   }
   return Math.min(sidebarWidthMax, Math.max(sidebarWidthMin, parsed));

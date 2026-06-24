@@ -226,30 +226,31 @@ body {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  padding: 10px;
-  gap: 10px;
+  padding: 8px;
+  gap: 6px;
 }
 
 .at-sidebar-new-session {
   flex: 0 0 auto;
   justify-content: flex-start;
+  height: 36px;
 }
 
 .at-sidebar-nav {
   display: grid;
-  gap: 2px;
-  padding-bottom: 8px;
+  gap: 1px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--at-border);
 }
 
 .at-sidebar-nav-item {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 17px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
-  min-height: 30px;
-  padding: 5px 8px;
+  min-height: 28px;
+  padding: 3px 7px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -285,7 +286,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 24px;
+  min-height: 22px;
   color: var(--at-text-muted);
   font-size: 12px;
 }
@@ -315,22 +316,22 @@ body {
 .at-workspace-group {
   display: grid;
   gap: 3px;
-  padding: 3px 0 7px;
+  padding: 2px 0 5px;
 }
 
 .at-workspace-group + .at-workspace-group {
   border-top: 1px solid var(--at-border);
-  padding-top: 9px;
+  padding-top: 6px;
 }
 
 .at-workspace-group-header {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) max-content;
+  grid-template-columns: 28px minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 6px;
-  min-height: 40px;
+  gap: 5px;
+  min-height: 34px;
   width: 100%;
-  padding: 5px 6px;
+  padding: 3px 5px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -364,7 +365,7 @@ body {
   grid-template-columns: 15px 10px;
   align-items: center;
   gap: 1px;
-  height: 22px;
+  height: 20px;
   color: var(--at-text-muted);
 }
 
@@ -417,9 +418,9 @@ body {
 }
 
 .at-workspace-group-actions .ant-btn {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
   padding: 0;
   color: var(--at-text-muted);
 }

@@ -4389,19 +4389,19 @@ body {
 
 .at-appearance-page {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   width: min(100%, 690px);
 }
 
 .at-appearance-theme-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .at-appearance-theme-card {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -4424,7 +4424,7 @@ body {
 .at-appearance-theme-preview {
   position: relative;
   display: block;
-  height: 152px;
+  height: clamp(92px, 18vh, 152px);
   overflow: hidden;
   border: 2px solid transparent;
   border-radius: 8px;
@@ -4451,8 +4451,8 @@ body {
   position: absolute;
   right: 8px;
   bottom: 0;
-  left: 28px;
-  height: 86px;
+  left: clamp(20px, 13%, 28px);
+  height: 56%;
   border-radius: 8px 8px 0 0;
   background: #ffffff;
 }
@@ -4474,46 +4474,46 @@ body {
 }
 
 .at-appearance-preview-window span:nth-child(1) {
-  top: 20px;
-  left: 26px;
-  width: 58px;
-  height: 7px;
+  top: 24%;
+  left: 18%;
+  width: 32%;
+  height: clamp(4px, 0.8vh, 7px);
 }
 
 .at-appearance-preview-window span:nth-child(2) {
-  top: 48px;
-  left: 26px;
-  width: 52px;
-  height: 7px;
+  top: 56%;
+  left: 18%;
+  width: 30%;
+  height: clamp(4px, 0.8vh, 7px);
 }
 
 .at-appearance-preview-window span:nth-child(3) {
-  top: 68px;
-  left: 26px;
-  width: 64px;
-  height: 7px;
+  top: 78%;
+  left: 18%;
+  width: 36%;
+  height: clamp(4px, 0.8vh, 7px);
 }
 
 .at-appearance-preview-lines {
   position: absolute;
-  top: 30px;
+  top: 20%;
   left: 28%;
   width: 48%;
-  height: 30px;
+  height: 22%;
 }
 
 .at-appearance-preview-lines span:nth-child(1) {
   top: 0;
   left: 22%;
   width: 56%;
-  height: 7px;
+  height: clamp(4px, 0.8vh, 7px);
 }
 
 .at-appearance-preview-lines span:nth-child(2) {
-  top: 15px;
+  top: 54%;
   left: 8%;
   width: 84%;
-  height: 5px;
+  height: clamp(3px, 0.6vh, 5px);
 }
 
 .at-appearance-preview-lines span:nth-child(3) {
@@ -4529,18 +4529,18 @@ body {
   background: var(--at-surface);
   color: var(--at-text);
   font-family: var(--at-font-mono);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .at-appearance-diff-side {
   min-width: 0;
-  padding: 2px 0 8px;
+  padding: 1px 0 5px;
 }
 
 .at-appearance-code-line {
   display: grid;
-  grid-template-columns: 42px 18px minmax(0, 1fr);
-  min-height: 21px;
+  grid-template-columns: 38px 16px minmax(0, 1fr);
+  min-height: clamp(16px, 3vh, 21px);
   align-items: center;
   color: var(--at-text);
 }
@@ -4754,6 +4754,11 @@ body {
 .at-appearance-number-pill span {
   color: var(--at-text-muted);
   font-size: 12px;
+}
+
+.at-appearance-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .at-settings-native-select {

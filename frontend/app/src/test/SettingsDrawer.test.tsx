@@ -818,6 +818,12 @@ describe("SettingsDrawer", () => {
     fireEvent.change(screen.getByLabelText("UI font size"), {
       target: { value: "16" },
     });
+    fireEvent.change(screen.getByLabelText("Line height"), {
+      target: { value: "160" },
+    });
+    fireEvent.change(screen.getByLabelText("Message spacing"), {
+      target: { value: "95" },
+    });
     fireEvent.click(screen.getByRole("switch", { name: "Translucent sidebar" }));
     fireEvent.change(screen.getByLabelText("Contrast"), {
       target: { value: "60" },
@@ -835,6 +841,12 @@ describe("SettingsDrawer", () => {
     expect(document.documentElement.style.getPropertyValue("--at-ui-font-size")).toBe(
       "16px",
     );
+    expect(document.documentElement.style.getPropertyValue("--at-message-line-height")).toBe(
+      "1.60",
+    );
+    expect(document.documentElement.style.getPropertyValue("--at-message-gap")).toBe(
+      "0.95rem",
+    );
     expect(document.documentElement.style.getPropertyValue("--at-contrast-filter")).toBe(
       "contrast(1.15)",
     );
@@ -845,11 +857,34 @@ describe("SettingsDrawer", () => {
       accent: "#336699",
       contrast: 60,
       diffMarker: "sign",
+      lineHeight: 160,
+      messageDensity: 95,
       motion: "reduce",
       translucentSidebar: true,
       uiFont: '"Inter", sans-serif',
       uiFontSize: 16,
     });
+  });
+
+  it("resets local appearance overrides from the appearance page", async () => {
+    renderDrawer();
+
+    fireEvent.change(await screen.findByLabelText("Accent color value"), {
+      target: { value: "#336699" },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Translucent sidebar" }));
+
+    expect(window.localStorage.getItem(appearanceStorageKey)).not.toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--at-primary")).toBe(
+      "#336699",
+    );
+    expect(document.documentElement.dataset.translucentSidebar).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
+
+    expect(window.localStorage.getItem(appearanceStorageKey)).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--at-primary")).toBe("");
+    expect(document.documentElement.dataset.translucentSidebar).toBeUndefined();
   });
 
   it("saves web settings while preserving the saved Exa key when the key field is blank", async () => {

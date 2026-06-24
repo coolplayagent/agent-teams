@@ -8,6 +8,7 @@ import {
   appearanceChangedEvent,
   applyAppearanceSettings,
   readAppearanceSettings,
+  resetAppearanceSettings,
   saveAppearanceSettings,
 } from "../../runtime/appearance";
 import type { ThemeMode } from "../../runtime/uiStore";
@@ -180,6 +181,9 @@ export function SettingsAppearanceSection({
   const contrastValue = appearance.contrast > 0 ? appearance.contrast : 45;
   const uiFontSize = appearance.uiFontSize > 0 ? appearance.uiFontSize : 14;
   const codeFontSize = appearance.codeFontSize > 0 ? appearance.codeFontSize : 12;
+  const lineHeightValue = appearance.lineHeight > 0 ? appearance.lineHeight : 148;
+  const messageDensityValue =
+    appearance.messageDensity > 0 ? appearance.messageDensity : 85;
   const activeThemeLabel = themeLabel(themeMode, t);
   const themeCards: ThemeCard[] = [
     { key: "system", label: t("settingsAppearanceThemeSystem") },
@@ -250,6 +254,12 @@ export function SettingsAppearanceSection({
     } catch {
       void message.error(t("settingsAppearanceImportFailed"));
     }
+  }
+
+  function resetAppearance(): void {
+    resetAppearanceSettings();
+    setAppearance(readAppearanceSettings());
+    void message.success(t("settingsAppearanceReset"));
   }
 
   return (
@@ -432,6 +442,36 @@ export function SettingsAppearanceSection({
               value={codeFontSize}
             />
           </SettingsTableRow>
+          <SettingsTableRow label={t("settingsAppearanceLineHeight")}>
+            <div className="at-appearance-inline-range">
+              <input
+                aria-label={t("settingsAppearanceLineHeight")}
+                max={180}
+                min={120}
+                onChange={(event) =>
+                  updateAppearance("lineHeight", Number(event.target.value))
+                }
+                type="range"
+                value={lineHeightValue}
+              />
+              <output>{formatRatio(lineHeightValue)}</output>
+            </div>
+          </SettingsTableRow>
+          <SettingsTableRow label={t("settingsAppearanceMessageDensity")}>
+            <div className="at-appearance-inline-range">
+              <input
+                aria-label={t("settingsAppearanceMessageDensity")}
+                max={130}
+                min={60}
+                onChange={(event) =>
+                  updateAppearance("messageDensity", Number(event.target.value))
+                }
+                type="range"
+                value={messageDensityValue}
+              />
+              <output>{formatRatio(messageDensityValue)}</output>
+            </div>
+          </SettingsTableRow>
           <SettingsTableRow
             description={t("settingsAppearanceDiffMarkerHelp")}
             label={t("settingsAppearanceDiffMarkers")}
@@ -447,6 +487,10 @@ export function SettingsAppearanceSection({
               value={appearance.diffMarker}
             />
           </SettingsTableRow>
+        </div>
+
+        <div className="at-appearance-footer">
+          <Button onClick={resetAppearance}>{t("settingsAppearanceReset")}</Button>
         </div>
       </div>
     </SettingsSection>
@@ -608,6 +652,10 @@ function themeLabel(themeMode: ThemeMode, t: ReturnType<typeof useTranslations>)
 
 function colorInputValue(value: string, fallback: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value : fallback;
+}
+
+function formatRatio(value: number): string {
+  return (value / 100).toFixed(2);
 }
 
 function fallbackCopy(value: string): void {

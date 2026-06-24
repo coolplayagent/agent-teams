@@ -385,9 +385,10 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("Readable running session")).toBeVisible();
     expect(screen.queryByText("Legacy title")).not.toBeInTheDocument();
-    expect(screen.getByText("running")).toHaveAttribute(
-      "title",
-      "Run status: running",
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(screen.getByTitle("Running")).toHaveClass(
+      "at-session-run-indicator",
+      "is-running",
     );
     expect(screen.getByText("bg 2")).toHaveAttribute(
       "title",
@@ -402,6 +403,48 @@ describe("SessionsSidebar", () => {
       "1 pending questions",
     );
     expect(screen.getByTitle("2026-06-23T00:00:00Z")).toBeVisible();
+  });
+
+  it("uses V1-style terminal run indicators in the session status slot", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        active_run_status: "failed",
+        session_id: "session-failed",
+        title: "Failed session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        active_run_status: "stopped",
+        session_id: "session-stopped",
+        title: "Stopped session",
+        updated_at: "2026-06-23T09:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    const failedRow = (await screen.findByText("Failed session")).closest(
+      ".at-session-item",
+    );
+    const stoppedRow = screen.getByText("Stopped session").closest(
+      ".at-session-item",
+    );
+
+    expect(failedRow).toHaveClass("has-run-indicator-failed");
+    expect(stoppedRow).toHaveClass("has-run-indicator-stopped");
+    expect(screen.getByTitle("Run failed")).toHaveClass("is-failed");
+    expect(screen.getByTitle("Run stopped")).toHaveClass("is-stopped");
+    expect(screen.queryByText("failed")).not.toBeInTheDocument();
+    expect(screen.queryByText("stopped")).not.toBeInTheDocument();
   });
 
   it("groups sessions by workspace and switches workspace with the selected session", async () => {

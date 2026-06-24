@@ -11,6 +11,7 @@
   --at-text-muted: #62665f;
   --at-primary: #2f6f5e;
   --at-accent: var(--at-primary);
+  --at-warning: #a16207;
   --at-danger: #b42318;
   --at-font-ui: "Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --at-font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
@@ -39,6 +40,7 @@
   --at-text: #f1f2ed;
   --at-text-muted: #b4b8ad;
   --at-primary: #6fa38e;
+  --at-warning: #d99a2b;
   --at-danger: #f97066;
   --at-code-bg: #242721;
   --at-code-keyword: #d6a4ff;
@@ -616,27 +618,77 @@ body {
   align-items: center;
   justify-content: flex-end;
   gap: 5px;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: 38px;
   color: var(--at-text-muted);
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
 }
 
-.at-session-status,
 .at-session-background {
   max-width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.at-session-status.is-running,
-.at-session-status.is-queued {
-  color: var(--at-primary);
+.at-session-run-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 
-.at-session-status.is-failed {
-  color: var(--at-danger);
+.at-session-run-indicator-glyph {
+  display: block;
+}
+
+.at-session-run-indicator.is-running .at-session-run-indicator-glyph {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--at-primary) 18%, var(--at-border));
+  border-top-color: var(--at-primary);
+  border-radius: 50%;
+  animation: at-session-run-indicator-spin 0.82s linear infinite;
+}
+
+.at-session-run-indicator.is-failed .at-session-run-indicator-glyph,
+.at-session-run-indicator.is-stopped .at-session-run-indicator-glyph {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.at-session-run-indicator.is-failed .at-session-run-indicator-glyph {
+  background: var(--at-danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--at-danger) 12%, transparent);
+}
+
+.at-session-run-indicator.is-stopped .at-session-run-indicator-glyph {
+  background: var(--at-warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--at-warning) 14%, transparent);
+}
+
+.at-session-item.has-run-indicator .at-session-time {
+  display: none;
+}
+
+.at-session-item.is-selected.has-run-indicator-failed .at-session-time,
+.at-session-item.is-selected.has-run-indicator-stopped .at-session-time {
+  display: inline;
+}
+
+.at-session-item.is-selected.has-run-indicator-failed .at-session-run-indicator,
+.at-session-item.is-selected.has-run-indicator-stopped .at-session-run-indicator {
+  display: none;
+}
+
+@keyframes at-session-run-indicator-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .at-session-modal-copy {

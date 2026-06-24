@@ -38,6 +38,9 @@ import { sessionDisplayLabel } from "./sessionLabels";
 
 const initialVisibleSessionsPerGroup = 10;
 const visibleSessionIncrement = 20;
+const activeRunIndicatorStatuses = new Set(["queued", "running", "stopping"]);
+
+type SessionRunIndicatorType = "failed" | "running" | "stopped";
 
 export interface SidebarNavigationItem {
   active?: boolean;
@@ -427,62 +430,58 @@ export function SessionsSidebar({
               ) : null}
               {groupExpanded && group.sessions.length > 0 ? (
                 <div className="at-workspace-group-sessions">
-                  {visibleSessions.map((session) => (
-                    <div
-                      className={
-                        session.session_id === selectedSessionId
-                          ? "at-session-item is-selected"
-                          : "at-session-item"
-                      }
-                      key={session.session_id}
-                    >
-                      <button
-                        aria-current={
-                          session.session_id === selectedSessionId
-                            ? "page"
-                            : undefined
-                        }
-                        className="at-session-select"
-                        onClick={() => selectSession(session)}
-                        title={sessionLabel(session)}
-                        type="button"
+                  {visibleSessions.map((session) => {
+                    const indicatorType = sessionRunIndicatorType(session);
+                    const selected = session.session_id === selectedSessionId;
+                    return (
+                      <div
+                        className={sessionItemClassName(selected, indicatorType)}
+                        key={session.session_id}
                       >
-                        <div className="at-session-copy">
-                          <Typography.Text
-                            className="at-session-label"
-                            ellipsis
-                            title={sessionLabel(session)}
-                          >
-                            {sessionLabel(session)}
-                          </Typography.Text>
-                          {sessionMeta(session, t, language)}
+                        <button
+                          aria-current={selected ? "page" : undefined}
+                          className="at-session-select"
+                          onClick={() => selectSession(session)}
+                          title={sessionLabel(session)}
+                          type="button"
+                        >
+                          <div className="at-session-copy">
+                            <Typography.Text
+                              className="at-session-label"
+                              ellipsis
+                              title={sessionLabel(session)}
+                            >
+                              {sessionLabel(session)}
+                            </Typography.Text>
+                            {sessionMeta(session, t, language, indicatorType)}
+                          </div>
+                        </button>
+                        <div className="at-session-actions">
+                          <Tooltip title={t("sidebarRenameSession")}>
+                            <Button
+                              aria-label={t("sidebarRenameSession")}
+                              className="at-session-action-button"
+                              icon={<Pencil size={13} />}
+                              onClick={() => openRenameSession(session)}
+                              size="small"
+                              type="text"
+                            />
+                          </Tooltip>
+                          <Tooltip title={t("sidebarDeleteSession")}>
+                            <Button
+                              aria-label={t("sidebarDeleteSession")}
+                              className="at-session-action-button"
+                              danger
+                              icon={<Trash2 size={13} />}
+                              onClick={() => openDeleteSession(session)}
+                              size="small"
+                              type="text"
+                            />
+                          </Tooltip>
                         </div>
-                      </button>
-                      <div className="at-session-actions">
-                        <Tooltip title={t("sidebarRenameSession")}>
-                          <Button
-                            aria-label={t("sidebarRenameSession")}
-                            className="at-session-action-button"
-                            icon={<Pencil size={13} />}
-                            onClick={() => openRenameSession(session)}
-                            size="small"
-                            type="text"
-                          />
-                        </Tooltip>
-                        <Tooltip title={t("sidebarDeleteSession")}>
-                          <Button
-                            aria-label={t("sidebarDeleteSession")}
-                            className="at-session-action-button"
-                            danger
-                            icon={<Trash2 size={13} />}
-                            onClick={() => openDeleteSession(session)}
-                            size="small"
-                            type="text"
-                          />
-                        </Tooltip>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {hiddenSessionCount > 0 ? (
                     <button
                       aria-label={t("sidebarShowMoreInWorkspace", {
@@ -784,14 +783,59 @@ function sessionTimestampValue(session: SessionSidebarRecord): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function sessionMeta(session: SessionSidebarRecord, t: Translate, language: Language) {
-  const status = session.active_run_status || "";
+function sessionItemClassName(
+  selected: boolean,
+  indicatorType: SessionRunIndicatorType | null,
+): string {
+  return [
+    "at-session-item",
+    selected ? "is-selected" : "",
+    indicatorType === null ? "" : "has-run-indicator",
+    indicatorType === null ? "" : `has-run-indicator-${indicatorType}`,
+  ].filter(Boolean).join(" ");
+}
+
+function sessionRunIndicatorType(
+  session: SessionSidebarRecord,
+): SessionRunIndicatorType | null {
+  const status = (session.active_run_status ?? "").trim().toLowerCase();
+  if (activeRunIndicatorStatuses.has(status)) {
+    return "running";
+  }
+  if (status === "failed") {
+    return "failed";
+  }
+  if (status === "stopped") {
+    return "stopped";
+  }
+  return null;
+}
+
+function sessionRunIndicatorLabel(
+  indicatorType: SessionRunIndicatorType,
+  t: Translate,
+): string {
+  if (indicatorType === "running") {
+    return t("sidebarSessionRunning");
+  }
+  if (indicatorType === "failed") {
+    return t("sidebarSessionFailed");
+  }
+  return t("sidebarSessionStopped");
+}
+
+function sessionMeta(
+  session: SessionSidebarRecord,
+  t: Translate,
+  language: Language,
+  indicatorType: SessionRunIndicatorType | null,
+) {
   const updatedAt = formatRelativeTime(session.updated_at, language);
   const backgroundTaskCount = positiveCount(session.background_task_count);
   const pendingApprovalCount = positiveCount(session.pending_tool_approval_count);
   const pendingQuestionCount = positiveCount(session.pending_user_question_count);
   if (
-    !status &&
+    indicatorType === null &&
     !updatedAt &&
     backgroundTaskCount === 0 &&
     pendingApprovalCount === 0 &&
@@ -801,14 +845,6 @@ function sessionMeta(session: SessionSidebarRecord, t: Translate, language: Lang
   }
   return (
     <span className="at-session-meta">
-      {status ? (
-        <span
-          className={`at-session-status is-${status}`}
-          title={t("sidebarRunStatus", { status })}
-        >
-          {status}
-        </span>
-      ) : null}
       {backgroundTaskCount > 0 ? (
         <span
           className="at-session-background"
@@ -833,7 +869,20 @@ function sessionMeta(session: SessionSidebarRecord, t: Translate, language: Lang
           q {pendingQuestionCount}
         </span>
       ) : null}
-      {updatedAt ? <span title={session.updated_at}>{updatedAt}</span> : null}
+      {indicatorType !== null ? (
+        <span
+          aria-label={sessionRunIndicatorLabel(indicatorType, t)}
+          className={`at-session-run-indicator is-${indicatorType}`}
+          title={sessionRunIndicatorLabel(indicatorType, t)}
+        >
+          <span aria-hidden="true" className="at-session-run-indicator-glyph" />
+        </span>
+      ) : null}
+      {updatedAt ? (
+        <span className="at-session-time" title={session.updated_at}>
+          {updatedAt}
+        </span>
+      ) : null}
     </span>
   );
 }

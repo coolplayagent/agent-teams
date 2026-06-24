@@ -10,6 +10,7 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  listConnectors,
   listSshProfiles,
   listSessionRounds,
   listWorkspaces,
@@ -25,6 +26,7 @@ import {
   saveWebConfig,
   searchWorkspacePaths,
   stopBackgroundTask,
+  testConnector,
   updateSession,
   updateWorkspace,
 } from "../api/client";
@@ -130,6 +132,87 @@ describe("api client", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("lists and tests connectors through connector endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            summary: {
+              connected: 1,
+              disabled: 0,
+              error: 0,
+              needs_config: 0,
+              total: 1,
+            },
+            items: [
+              {
+                account_count: 1,
+                auth_type: "api_token",
+                capabilities: ["repositories"],
+                category: "development",
+                connector_id: "github",
+                description: "GitHub connector",
+                display_name: "GitHub",
+                enabled_count: 1,
+                last_activity_at: null,
+                last_error: null,
+                provider: "github",
+                status: "connected",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            account_count: 1,
+            capabilities: ["repositories"],
+            checked_at: "2026-06-24T00:00:00Z",
+            checks: [],
+            connector_id: "github",
+            enabled_count: 1,
+            last_error: null,
+            login_active: null,
+            message: "ok",
+            ok: true,
+            provider: "github",
+            runtime_running: null,
+            status: "connected",
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listConnectors()).resolves.toMatchObject({
+      items: [expect.objectContaining({ connector_id: "github" })],
+      summary: expect.objectContaining({ connected: 1 }),
+    });
+    await expect(testConnector("github")).resolves.toMatchObject({
+      connector_id: "github",
+      ok: true,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/connectors",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/connectors/github:test",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "POST",
       }),
     );
   });

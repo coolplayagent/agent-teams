@@ -1,6 +1,8 @@
 import type {
   GeneralConfig,
   AgUiActionResponse,
+  ConnectorListResponse,
+  ConnectorTestResult,
   EnvironmentVariableCatalog,
   EnvironmentVariableSaveRequest,
   EnvironmentVariableScope,
@@ -225,6 +227,19 @@ export function probeWebConnectivity(
 
 export function getNotificationConfig(): Promise<NotificationConfig> {
   return requestJson<NotificationConfig>("/system/configs/notifications");
+}
+
+export function listConnectors(): Promise<ConnectorListResponse> {
+  return requestJson<ConnectorListResponse>("/connectors");
+}
+
+export function testConnector(connectorId: string): Promise<ConnectorTestResult> {
+  return requestJson<ConnectorTestResult>(
+    `/connectors/${encodeURIComponent(connectorId)}:test`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function saveNotificationConfig(

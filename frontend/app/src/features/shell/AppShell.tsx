@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Moon,
   MoreHorizontal,
+  PlugZap,
   RefreshCcw,
   Search,
   Settings,
@@ -34,6 +35,7 @@ import {
 } from "../../api/client";
 import type { SessionSidebarRecord } from "../../api/contracts";
 import { Composer } from "../composer/Composer";
+import { ConnectorsView } from "../connectors/ConnectorsView";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
 import { MessageExportMenu, useMessageExporter } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
@@ -64,7 +66,7 @@ export function AppShell() {
   const { token } = theme.useToken();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<
-    "chat" | "observability" | "search" | "workspace"
+    "chat" | "connectors" | "observability" | "search" | "workspace"
   >("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const runStreamController = useRunStreamController();
@@ -151,6 +153,16 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "connectors",
+        icon: <PlugZap size={15} />,
+        key: "connectors",
+        label: t("appConnectors"),
+        onSelect: () => {
+          setActiveView("connectors");
+          closeSidebarOnNarrow();
+        },
+      },
+      {
         active: activeView === "observability",
         icon: <Activity size={15} />,
         key: "observability",
@@ -181,6 +193,11 @@ export function AppShell() {
         icon: <Activity size={15} />,
         key: "observability",
         label: t("appObservability"),
+      },
+      {
+        icon: <PlugZap size={15} />,
+        key: "connectors",
+        label: t("appConnectors"),
       },
       {
         disabled: messageExporter.exporting !== null,
@@ -422,6 +439,8 @@ export function AppShell() {
         <Content className="at-workspace">
           {activeView === "observability" ? (
             <ObservabilityPanel sessionId={selectedSessionId} />
+          ) : activeView === "connectors" ? (
+            <ConnectorsView />
           ) : activeView === "workspace" ? (
             <WorkspaceProjectView
               onBack={() => setActiveView("chat")}
@@ -502,6 +521,11 @@ export function AppShell() {
     }
     if (key === "observability") {
       setActiveView("observability");
+      closeSidebarOnNarrow();
+      return;
+    }
+    if (key === "connectors") {
+      setActiveView("connectors");
       closeSidebarOnNarrow();
       return;
     }

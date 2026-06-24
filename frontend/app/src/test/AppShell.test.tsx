@@ -31,6 +31,10 @@ vi.mock("../features/composer/Composer", () => ({
   Composer: () => <div data-testid="composer" />,
 }));
 
+vi.mock("../features/connectors/ConnectorsView", () => ({
+  ConnectorsView: () => <div data-testid="connectors-view" />,
+}));
+
 vi.mock("../features/recovery/RecoveryBar", () => ({
   RecoveryBar: () => <div data-testid="recovery" />,
 }));
@@ -217,6 +221,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
 
     expect(await screen.findByText("Observability")).toBeInTheDocument();
+    expect(screen.getByText("Connectors")).toBeInTheDocument();
     expect(screen.getByText("Export messages (HTML)")).toBeInTheDocument();
     expect(screen.getByText("Export messages (PNG)")).toBeInTheDocument();
     expect(screen.getByText("V1")).toBeInTheDocument();
@@ -255,6 +260,11 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("observability")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
 
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Connectors" }));
+
+    expect(await screen.findByTestId("connectors-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
     fireEvent.click(within(sidebar).getByRole("button", { name: "Search" }));
 
     expect(await screen.findByTestId("session-search-view")).toBeVisible();
@@ -291,6 +301,7 @@ describe("AppShell", () => {
 
     expect(screen.getByRole("button", { name: "中文" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "聊天" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "连接器" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "观测" })).toBeVisible();
     expect(screen.getByRole("button", { name: "切换侧边栏" })).toBeVisible();
   });

@@ -875,6 +875,82 @@ export interface NotificationRule {
 
 export type NotificationConfig = Record<NotificationTypeId, NotificationRule>;
 
+export type ConnectorProvider =
+  | "discord"
+  | "feishu"
+  | "github"
+  | "relay-knowledge"
+  | "w3"
+  | "wechat"
+  | "xiaoluban";
+
+export type ConnectorCategory = "auth" | "development" | "im" | "models";
+
+export type ConnectorStatus =
+  | "connected"
+  | "disabled"
+  | "error"
+  | "needs_config";
+
+export type ConnectorAuthType =
+  | "api_key"
+  | "api_token"
+  | "cli"
+  | "oauth"
+  | "qr_login"
+  | "username_password"
+  | "webhook";
+
+export interface ConnectorSummary {
+  connected: number;
+  disabled: number;
+  error: number;
+  needs_config: number;
+  total: number;
+}
+
+export interface ConnectorItem {
+  account_count: number;
+  auth_type: ConnectorAuthType;
+  capabilities: string[];
+  category: ConnectorCategory;
+  connector_id: string;
+  description: string;
+  display_name: string;
+  enabled_count: number;
+  last_activity_at?: string | null;
+  last_error?: string | null;
+  provider: ConnectorProvider;
+  status: ConnectorStatus;
+}
+
+export interface ConnectorListResponse {
+  items: ConnectorItem[];
+  summary: ConnectorSummary;
+}
+
+export interface ConnectorHealthCheck {
+  message: string;
+  name: string;
+  ok: boolean;
+}
+
+export interface ConnectorTestResult {
+  account_count: number;
+  capabilities: string[];
+  checked_at: string;
+  checks: ConnectorHealthCheck[];
+  connector_id: string;
+  enabled_count: number;
+  last_error?: string | null;
+  login_active?: boolean | null;
+  message: string;
+  ok: boolean;
+  provider: ConnectorProvider;
+  runtime_running?: boolean | null;
+  status: ConnectorStatus;
+}
+
 export interface ObservabilityOverview {
   updated_at?: string;
   scope?: string;

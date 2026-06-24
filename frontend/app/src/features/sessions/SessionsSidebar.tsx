@@ -28,10 +28,15 @@ import {
   createSession,
   deleteSession,
   listSidebarSessions,
+  listSessionSubagents,
   listWorkspaces,
   updateSession,
 } from "../../api/client";
-import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
+import type {
+  SessionSidebarRecord,
+  SessionSubagentRecord,
+  WorkspaceRecord,
+} from "../../api/contracts";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { useTranslations, type Translate } from "../../i18n";
 import { sessionDisplayLabel } from "./sessionLabels";
@@ -58,11 +63,28 @@ export interface SidebarBackendStatus {
   tone: SidebarBackendStatusTone;
 }
 
+export interface ActiveSubagentSession {
+  createdAt: string;
+  instanceId: string;
+  interactive: boolean;
+  roleId: string;
+  runId: string;
+  runPhase: string;
+  runStatus: string;
+  sessionId: string;
+  status: string;
+  subagentKind: string;
+  title: string;
+  updatedAt: string;
+}
+
 interface SessionsSidebarProps {
+  activeSubagent?: ActiveSubagentSession | null;
   backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
+  onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
   workspaceViewActive?: boolean;
 }
 
@@ -72,10 +94,12 @@ interface RenameSessionPayload {
 }
 
 export function SessionsSidebar({
+  activeSubagent = null,
   backendStatus,
   navigationItems = [],
   onOpenWorkspaceView,
   onSessionSelected,
+  onSubagentSelected,
   workspaceViewActive = false,
 }: SessionsSidebarProps) {
   const { message } = App.useApp();
@@ -92,6 +116,9 @@ export function SessionsSidebar({
     Record<string, number>
   >({});
   const [workspaceExpanded, setWorkspaceExpanded] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedSubagentSessions, setExpandedSubagentSessions] = useState<
     Record<string, boolean>
   >({});
   const [renameTarget, setRenameTarget] = useState<SessionSidebarRecord | null>(null);
@@ -433,52 +460,83 @@ export function SessionsSidebar({
                   {visibleSessions.map((session) => {
                     const indicatorType = sessionRunIndicatorType(session);
                     const selected = session.session_id === selectedSessionId;
+                    const subagentCount = positiveCount(session.subagent_count);
+                    const subagentsExpanded =
+                      expandedSubagentSessions[session.session_id] === true;
                     return (
-                      <div
-                        className={sessionItemClassName(selected, indicatorType)}
-                        key={session.session_id}
-                      >
-                        <button
-                          aria-current={selected ? "page" : undefined}
-                          className="at-session-select"
-                          onClick={() => selectSession(session)}
-                          title={sessionLabel(session)}
-                          type="button"
+                      <div className="at-session-stack" key={session.session_id}>
+                        <div
+                          className={sessionItemClassName(selected, indicatorType)}
                         >
                           <div className="at-session-copy">
-                            <Typography.Text
-                              className="at-session-label"
-                              ellipsis
+                            <button
+                              aria-current={selected ? "page" : undefined}
+                              className="at-session-select"
+                              onClick={() => selectSession(session)}
                               title={sessionLabel(session)}
+                              type="button"
                             >
-                              {sessionLabel(session)}
-                            </Typography.Text>
-                            {sessionMeta(session, t, language, indicatorType)}
+                              <Typography.Text
+                                className="at-session-label"
+                                ellipsis
+                                title={sessionLabel(session)}
+                              >
+                                {sessionLabel(session)}
+                              </Typography.Text>
+                            </button>
+                            <div className="at-session-meta-slot">
+                              {sessionMeta(session, t, language, indicatorType)}
+                              {subagentCount > 0 ? (
+                                <Tooltip title={t("sidebarSubagentSessionsToggle")}>
+                                  <button
+                                    aria-expanded={subagentsExpanded}
+                                    aria-label={t("sidebarSubagentSessionsToggle")}
+                                    className="at-session-subagent-toggle"
+                                    onClick={() => toggleSessionSubagents(session.session_id)}
+                                    type="button"
+                                  >
+                                    {subagentsExpanded ? (
+                                      <ChevronDown aria-hidden="true" size={12} />
+                                    ) : (
+                                      <ChevronRight aria-hidden="true" size={12} />
+                                    )}
+                                    <span>{subagentCount}</span>
+                                  </button>
+                                </Tooltip>
+                              ) : null}
+                            </div>
                           </div>
-                        </button>
-                        <div className="at-session-actions">
-                          <Tooltip title={t("sidebarRenameSession")}>
-                            <Button
-                              aria-label={t("sidebarRenameSession")}
-                              className="at-session-action-button"
-                              icon={<Pencil size={13} />}
-                              onClick={() => openRenameSession(session)}
-                              size="small"
-                              type="text"
-                            />
-                          </Tooltip>
-                          <Tooltip title={t("sidebarDeleteSession")}>
-                            <Button
-                              aria-label={t("sidebarDeleteSession")}
-                              className="at-session-action-button"
-                              danger
-                              icon={<Trash2 size={13} />}
-                              onClick={() => openDeleteSession(session)}
-                              size="small"
-                              type="text"
-                            />
-                          </Tooltip>
+                          <div className="at-session-actions">
+                            <Tooltip title={t("sidebarRenameSession")}>
+                              <Button
+                                aria-label={t("sidebarRenameSession")}
+                                className="at-session-action-button"
+                                icon={<Pencil size={13} />}
+                                onClick={() => openRenameSession(session)}
+                                size="small"
+                                type="text"
+                              />
+                            </Tooltip>
+                            <Tooltip title={t("sidebarDeleteSession")}>
+                              <Button
+                                aria-label={t("sidebarDeleteSession")}
+                                className="at-session-action-button"
+                                danger
+                                icon={<Trash2 size={13} />}
+                                onClick={() => openDeleteSession(session)}
+                                size="small"
+                                type="text"
+                              />
+                            </Tooltip>
+                          </div>
                         </div>
+                        {subagentsExpanded ? (
+                          <SessionSubagentList
+                            activeSubagent={activeSubagent}
+                            onSubagentSelected={selectSubagent}
+                            parentSession={session}
+                          />
+                        ) : null}
                       </div>
                     );
                   })}
@@ -576,6 +634,17 @@ export function SessionsSidebar({
     onSessionSelected?.();
   }
 
+  function selectSubagent(subagent: ActiveSubagentSession) {
+    const parent = sessionsQuery.data?.find(
+      (session) => session.session_id === subagent.sessionId,
+    );
+    if (parent?.workspace_id) {
+      setSelectedWorkspaceId(parent.workspace_id);
+    }
+    setSelectedSessionId(subagent.sessionId);
+    onSubagentSelected?.(subagent);
+  }
+
   function openRenameSession(session: SessionSidebarRecord) {
     setRenameTarget(session);
     setRenameValue(sessionLabel(session));
@@ -665,6 +734,114 @@ export function SessionsSidebar({
       [groupId]: current[groupId] === false,
     }));
   }
+
+  function toggleSessionSubagents(sessionId: string) {
+    setExpandedSubagentSessions((current) => ({
+      ...current,
+      [sessionId]: current[sessionId] !== true,
+    }));
+  }
+}
+
+interface SessionSubagentListProps {
+  activeSubagent: ActiveSubagentSession | null;
+  onSubagentSelected: (subagent: ActiveSubagentSession) => void;
+  parentSession: SessionSidebarRecord;
+}
+
+function SessionSubagentList({
+  activeSubagent,
+  onSubagentSelected,
+  parentSession,
+}: SessionSubagentListProps) {
+  const t = useTranslations();
+  const language = useUiStore((state) => state.language);
+  const subagentsQuery = useQuery({
+    queryKey: ["sessions", parentSession.session_id, "subagents"],
+    queryFn: () => listSessionSubagents(parentSession.session_id, false),
+    staleTime: 5000,
+  });
+  const subagents = useMemo(
+    () =>
+      (subagentsQuery.data ?? [])
+        .map((record) => normalizeSessionSubagent(record, parentSession.session_id))
+        .filter((record): record is ActiveSubagentSession => record !== null)
+        .sort((left, right) =>
+          String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")),
+        ),
+    [parentSession.session_id, subagentsQuery.data],
+  );
+
+  if (subagentsQuery.isLoading) {
+    return (
+      <div className="at-session-subagent-list" role="status">
+        <div className="at-session-subagent-empty">
+          {t("sidebarSubagentSessionsLoading")}
+        </div>
+      </div>
+    );
+  }
+  if (subagentsQuery.isError) {
+    return (
+      <div className="at-session-subagent-list" role="status">
+        <div className="at-session-subagent-empty is-error">
+          {t("sidebarSubagentSessionsLoadError")}
+        </div>
+      </div>
+    );
+  }
+  if (subagents.length === 0) {
+    return (
+      <div className="at-session-subagent-list">
+        <div className="at-session-subagent-empty">
+          {t("sidebarSubagentSessionsEmpty")}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      aria-label={t("sidebarSubagentSessionsList", {
+        label: sessionLabel(parentSession),
+      })}
+      className="at-session-subagent-list"
+      role="group"
+    >
+      {subagents.map((subagent) => {
+        const label = subagentSessionLabel(subagent);
+        const active =
+          activeSubagent?.sessionId === subagent.sessionId &&
+          activeSubagent.instanceId === subagent.instanceId;
+        return (
+          <button
+            aria-current={active ? "page" : undefined}
+            aria-label={t("sidebarOpenSubagentSession", { label })}
+            className={
+              active
+                ? "at-session-subagent-item is-active"
+                : "at-session-subagent-item"
+            }
+            key={subagent.instanceId}
+            onClick={() => onSubagentSelected(subagent)}
+            title={label}
+            type="button"
+          >
+            <span className="at-session-subagent-label">{label}</span>
+            <span className="at-session-subagent-meta">
+              <span className={subagentStatusClassName(subagent)}>
+                {subagentStatusLabel(subagent)}
+              </span>
+              {subagent.updatedAt ? (
+                <span title={subagent.updatedAt}>
+                  {formatRelativeTime(subagent.updatedAt, language)}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 interface SessionGroup {
@@ -677,6 +854,122 @@ interface SessionGroup {
 
 function sessionLabel(session: SessionSidebarRecord): string {
   return sessionDisplayLabel(session, session.session_id);
+}
+
+function normalizeSessionSubagent(
+  record: SessionSubagentRecord,
+  fallbackSessionId: string,
+): ActiveSubagentSession | null {
+  const sessionId = firstTrimmed(
+    record.session_id,
+    fallbackSessionId,
+  );
+  const instanceId = firstTrimmed(
+    record.subagent_instance_id,
+    record.instance_id,
+  );
+  const roleId = firstTrimmed(record.subagent_role_id, record.role_id);
+  const runId = firstTrimmed(record.subagent_run_id, record.run_id);
+  const subagentKind = normalizeSubagentKind(record);
+  if (!sessionId || !instanceId || !roleId || !runId) {
+    return null;
+  }
+  if (subagentKind === "normal" && !runId.startsWith("subagent_run_")) {
+    return null;
+  }
+  const status = normalizeSubagentStatus(record.status);
+  return {
+    createdAt: firstTrimmed(record.created_at),
+    instanceId,
+    interactive: record.interactive === true || subagentKind === "orchestration",
+    roleId,
+    runId,
+    runPhase: firstTrimmed(record.run_phase),
+    runStatus: normalizeSubagentStatus(record.run_status, status),
+    sessionId,
+    status,
+    subagentKind,
+    title: firstTrimmed(record.title),
+    updatedAt: firstTrimmed(record.updated_at, record.created_at),
+  };
+}
+
+function normalizeSubagentKind(record: SessionSubagentRecord): string {
+  const explicit = firstTrimmed(record.subagent_kind).toLowerCase();
+  if (explicit === "orchestration" || explicit === "live") {
+    return "orchestration";
+  }
+  if (explicit === "normal" || explicit === "session") {
+    return "normal";
+  }
+  const runId = firstTrimmed(record.subagent_run_id, record.run_id);
+  return runId.startsWith("subagent_run_") ? "normal" : "orchestration";
+}
+
+function normalizeSubagentStatus(
+  status: string | undefined,
+  fallback = "idle",
+): string {
+  const safeStatus = firstTrimmed(status, fallback).toLowerCase();
+  if (safeStatus === "started" || safeStatus === "pending") {
+    return "running";
+  }
+  return safeStatus || "idle";
+}
+
+function subagentSessionLabel(subagent: ActiveSubagentSession): string {
+  return (
+    subagent.title ||
+    humanizeRoleId(subagent.roleId) ||
+    shortIdentifier(subagent.instanceId)
+  );
+}
+
+function humanizeRoleId(roleId: string): string {
+  const safeRoleId = roleId.trim();
+  if (!safeRoleId) {
+    return "";
+  }
+  return safeRoleId
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function subagentStatusLabel(subagent: ActiveSubagentSession): string {
+  return subagent.runStatus || subagent.status || "idle";
+}
+
+function subagentStatusClassName(subagent: ActiveSubagentSession): string {
+  const status = subagentStatusLabel(subagent).toLowerCase();
+  if (activeRunIndicatorStatuses.has(status)) {
+    return "at-session-subagent-status is-running";
+  }
+  if (status === "failed" || status === "error") {
+    return "at-session-subagent-status is-failed";
+  }
+  if (status === "stopped" || status === "cancelled" || status === "canceled") {
+    return "at-session-subagent-status is-stopped";
+  }
+  return "at-session-subagent-status";
+}
+
+function firstTrimmed(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    const trimmed = value?.trim() ?? "";
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
+function shortIdentifier(value: string): string {
+  const safeValue = value.trim();
+  if (!safeValue) {
+    return "unknown";
+  }
+  return safeValue.length > 8 ? safeValue.slice(0, 8) : safeValue;
 }
 
 function workspaceLabel(workspace: WorkspaceRecord): string {

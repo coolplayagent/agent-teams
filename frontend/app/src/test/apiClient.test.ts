@@ -23,8 +23,10 @@ import {
   listAutomationProjects,
   listBoardTodos,
   listConnectors,
+  listAgentMessages,
   listMemories,
   listSshProfiles,
+  listSessionSubagents,
   listSessionRounds,
   listWorkspaces,
   openWorkspaceRoot,
@@ -122,6 +124,66 @@ describe("api client", () => {
       expect.objectContaining({
         body: JSON.stringify({ cascade: true, force: true }),
         method: "DELETE",
+      }),
+    );
+  });
+
+  it("loads nested subagent sessions and agent messages through session-scoped endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              instance_id: "subagent-instance-1",
+              role_id: "explorer",
+              run_id: "subagent_run_1",
+            },
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              message_id: "message-1",
+              role: "assistant",
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listSessionSubagents("session-1", true)).resolves.toEqual([
+      {
+        instance_id: "subagent-instance-1",
+        role_id: "explorer",
+        run_id: "subagent_run_1",
+      },
+    ]);
+    await expect(
+      listAgentMessages("session-1", "subagent-instance-1"),
+    ).resolves.toEqual([
+      {
+        message_id: "message-1",
+        role: "assistant",
+      },
+    ]);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/sessions/session-1/subagents?force_refresh=true",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/sessions/session-1/agents/subagent-instance-1/messages",
+      expect.objectContaining({
+        headers: expect.any(Headers),
       }),
     );
   });

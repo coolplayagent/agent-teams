@@ -60,6 +60,7 @@ import type {
   SessionRound,
   SessionRoundsPage,
   SessionMetadataPatch,
+  SessionSubagentRecord,
   SessionTokenUsage,
   ServerHealthPayload,
   SessionCreateRequest,
@@ -686,6 +687,20 @@ export function listSidebarSessions(forceRefresh = false): Promise<SessionSideba
   return requestJson<SessionSidebarRecord[]>(`/sessions/sidebar${suffix}`);
 }
 
+export function listSessionSubagents(
+  sessionId: string,
+  forceRefresh = false,
+): Promise<SessionSubagentRecord[]> {
+  const params = new URLSearchParams();
+  if (forceRefresh) {
+    params.set("force_refresh", "true");
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return requestJson<SessionSubagentRecord[]>(
+    `/sessions/${encodeURIComponent(sessionId)}/subagents${suffix}`,
+  );
+}
+
 export function getSession(sessionId: string): Promise<SessionRecord> {
   return requestJson<SessionRecord>(`/sessions/${encodeURIComponent(sessionId)}`);
 }
@@ -756,6 +771,15 @@ export function updateSessionTopology(
 export function listSessionMessages(sessionId: string): Promise<TimelineMessage[]> {
   return requestJson<TimelineMessage[]>(
     `/sessions/${encodeURIComponent(sessionId)}/messages`,
+  );
+}
+
+export function listAgentMessages(
+  sessionId: string,
+  instanceId: string,
+): Promise<TimelineMessage[]> {
+  return requestJson<TimelineMessage[]>(
+    `/sessions/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(instanceId)}/messages`,
   );
 }
 

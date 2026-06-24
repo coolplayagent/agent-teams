@@ -858,6 +858,30 @@ export interface SessionSidebarRecord {
   subagent_count?: number;
 }
 
+export interface SessionSubagentRecord {
+  checkpoint_event_id?: number;
+  conversation_id?: string;
+  created_at?: string;
+  deletable?: boolean;
+  instance_id?: string;
+  interactive?: boolean;
+  last_event_id?: number;
+  role_id?: string;
+  run_id?: string;
+  run_phase?: string;
+  run_status?: string;
+  session_id?: string;
+  status?: string;
+  stream_connected?: boolean;
+  subagent_instance_id?: string;
+  subagent_kind?: string;
+  subagent_role_id?: string;
+  subagent_run_id?: string;
+  title?: string;
+  updated_at?: string;
+  workspace_id?: string;
+}
+
 export interface SessionRecord {
   session_id: string;
   workspace_id: string;

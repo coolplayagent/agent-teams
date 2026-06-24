@@ -14,11 +14,13 @@ import {
   createSession,
   deleteSession,
   listSidebarSessions,
+  listSessionSubagents,
   listWorkspaces,
   updateSession,
 } from "../api/client";
 import {
   SessionsSidebar,
+  type ActiveSubagentSession,
   type SidebarBackendStatus,
   type SidebarNavigationItem,
 } from "../features/sessions/SessionsSidebar";
@@ -28,6 +30,7 @@ vi.mock("../api/client", () => ({
   createSession: vi.fn(),
   deleteSession: vi.fn(),
   listSidebarSessions: vi.fn(),
+  listSessionSubagents: vi.fn(),
   listWorkspaces: vi.fn(),
   updateSession: vi.fn(),
 }));
@@ -35,6 +38,7 @@ vi.mock("../api/client", () => ({
 const createSessionMock = vi.mocked(createSession);
 const deleteSessionMock = vi.mocked(deleteSession);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
+const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 const updateSessionMock = vi.mocked(updateSession);
 
@@ -447,6 +451,64 @@ describe("SessionsSidebar", () => {
     expect(screen.queryByText("stopped")).not.toBeInTheDocument();
   });
 
+  it("keeps subagent sessions nested under their parent and opens a secondary selection", async () => {
+    const onSubagentSelected = vi.fn();
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-parent",
+        subagent_count: 1,
+        title: "Parent session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-1",
+        role_id: "explorer",
+        run_id: "subagent_run_1",
+        run_status: "stopped",
+        session_id: "session-parent",
+        status: "stopped",
+        subagent_kind: "normal",
+        title: "Explorer review",
+        updated_at: "2026-06-23T10:03:00Z",
+      },
+    ]);
+
+    renderSidebar({ onSubagentSelected });
+
+    expect(await screen.findByText("Parent session")).toBeVisible();
+    expect(screen.queryByText("Explorer review")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Toggle subagent sessions",
+    }));
+
+    expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(listSessionSubagentsMock).toHaveBeenCalledWith("session-parent", false);
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Open subagent session Explorer review",
+    }));
+
+    expect(useUiStore.getState().selectedSessionId).toBe("session-parent");
+    expect(onSubagentSelected).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "subagent-instance-1",
+      roleId: "explorer",
+      runId: "subagent_run_1",
+      sessionId: "session-parent",
+    }));
+  });
+
   it("groups sessions by workspace and switches workspace with the selected session", async () => {
     listWorkspacesMock.mockResolvedValue([
       {
@@ -660,6 +722,7 @@ function renderSidebar(props?: {
   navigationItems?: SidebarNavigationItem[];
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
+  onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
   workspaceViewActive?: boolean;
 }) {
   const queryClient = new QueryClient({
@@ -679,6 +742,7 @@ function renderSidebar(props?: {
             navigationItems={props?.navigationItems}
             onOpenWorkspaceView={props?.onOpenWorkspaceView}
             onSessionSelected={props?.onSessionSelected}
+            onSubagentSelected={props?.onSubagentSelected}
             workspaceViewActive={props?.workspaceViewActive}
           />
         </AntApp>

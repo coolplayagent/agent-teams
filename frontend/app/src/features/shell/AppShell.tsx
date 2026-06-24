@@ -48,9 +48,11 @@ import { SessionSearchView } from "../search/SessionSearchView";
 import { SkillsView } from "../skills/SkillsView";
 import {
   SessionsSidebar,
+  type ActiveSubagentSession,
   type SidebarBackendStatus,
   type SidebarNavigationItem,
 } from "../sessions/SessionsSidebar";
+import { SubagentSessionView } from "../sessions/SubagentSessionView";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
@@ -78,8 +80,11 @@ export function AppShell() {
     | "observability"
     | "search"
     | "skills"
+    | "subagent-session"
     | "workspace"
   >("chat");
+  const [activeSubagent, setActiveSubagent] =
+    useState<ActiveSubagentSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
@@ -165,6 +170,7 @@ export function AppShell() {
         key: "search",
         label: t("appSearch"),
         onSelect: () => {
+          setActiveSubagent(null);
           setActiveView("search");
           closeSidebarOnNarrow();
         },
@@ -176,6 +182,7 @@ export function AppShell() {
         key: "skills",
         label: t("appSkills"),
         onSelect: () => {
+          setActiveSubagent(null);
           setActiveView("skills");
           closeSidebarOnNarrow();
         },
@@ -186,6 +193,7 @@ export function AppShell() {
         key: "automation",
         label: t("appAutomation"),
         onSelect: () => {
+          setActiveSubagent(null);
           setActiveView("automation");
           closeSidebarOnNarrow();
         },
@@ -196,6 +204,7 @@ export function AppShell() {
         key: "connectors",
         label: t("appConnectors"),
         onSelect: () => {
+          setActiveSubagent(null);
           setActiveView("connectors");
           closeSidebarOnNarrow();
         },
@@ -206,6 +215,7 @@ export function AppShell() {
         key: "board",
         label: t("appBoard"),
         onSelect: () => {
+          setActiveSubagent(null);
           setActiveView("board");
           closeSidebarOnNarrow();
         },
@@ -216,6 +226,7 @@ export function AppShell() {
         key: "memory",
         label: t("appMemory"),
         onSelect: () => {
+          setActiveSubagent(null);
           setActiveView("memory");
           closeSidebarOnNarrow();
         },
@@ -415,7 +426,10 @@ export function AppShell() {
                 <Button
                   aria-label={t("appObservability")}
                   icon={<Activity size={17} />}
-                  onClick={() => setActiveView("observability")}
+                  onClick={() => {
+                    setActiveSubagent(null);
+                    setActiveView("observability");
+                  }}
                   type={activeView === "observability" ? "default" : "text"}
                 />
               </Tooltip>
@@ -461,14 +475,22 @@ export function AppShell() {
             width={isNarrowViewport ? 0 : sidebarWidth}
           >
             <SessionsSidebar
+              activeSubagent={activeSubagent}
               backendStatus={sidebarBackendStatus}
               navigationItems={sidebarNavigationItems}
               onOpenWorkspaceView={() => {
+                setActiveSubagent(null);
                 setActiveView("workspace");
                 closeSidebarOnNarrow();
               }}
               onSessionSelected={() => {
+                setActiveSubagent(null);
                 setActiveView("chat");
+                closeSidebarOnNarrow();
+              }}
+              onSubagentSelected={(subagent) => {
+                setActiveSubagent(subagent);
+                setActiveView("subagent-session");
                 closeSidebarOnNarrow();
               }}
               workspaceViewActive={activeView === "workspace"}
@@ -507,7 +529,10 @@ export function AppShell() {
             <SkillsView />
           ) : activeView === "workspace" ? (
             <WorkspaceProjectView
-              onBack={() => setActiveView("chat")}
+              onBack={() => {
+                setActiveSubagent(null);
+                setActiveView("chat");
+              }}
               selectedWorkspaceId={selectedWorkspaceId}
             />
           ) : activeView === "search" ? (
@@ -518,6 +543,14 @@ export function AppShell() {
               selectedSessionId={selectedSessionId}
               sessions={sidebarSessionsQuery.data ?? []}
               workspaces={workspacesQuery.data ?? []}
+            />
+          ) : activeView === "subagent-session" && activeSubagent !== null ? (
+            <SubagentSessionView
+              onBack={() => {
+                setActiveSubagent(null);
+                setActiveView("chat");
+              }}
+              subagent={activeSubagent}
             />
           ) : (
             <ChatWorkspace
@@ -564,6 +597,7 @@ export function AppShell() {
       setSelectedWorkspaceId(session.workspace_id);
     }
     setSelectedSessionId(session.session_id);
+    setActiveSubagent(null);
     setActiveView("chat");
     closeSidebarOnNarrow();
   }
@@ -574,31 +608,37 @@ export function AppShell() {
       return;
     }
     if (key === "observability") {
+      setActiveSubagent(null);
       setActiveView("observability");
       closeSidebarOnNarrow();
       return;
     }
     if (key === "automation") {
+      setActiveSubagent(null);
       setActiveView("automation");
       closeSidebarOnNarrow();
       return;
     }
     if (key === "skills") {
+      setActiveSubagent(null);
       setActiveView("skills");
       closeSidebarOnNarrow();
       return;
     }
     if (key === "board") {
+      setActiveSubagent(null);
       setActiveView("board");
       closeSidebarOnNarrow();
       return;
     }
     if (key === "connectors") {
+      setActiveSubagent(null);
       setActiveView("connectors");
       closeSidebarOnNarrow();
       return;
     }
     if (key === "memory") {
+      setActiveSubagent(null);
       setActiveView("memory");
       closeSidebarOnNarrow();
       return;
@@ -632,6 +672,7 @@ export function AppShell() {
       setSelectedWorkspaceId(workspaceId);
     }
     setSelectedSessionId(sessionId);
+    setActiveSubagent(null);
     setActiveView("chat");
     closeSidebarOnNarrow();
   }

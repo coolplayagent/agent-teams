@@ -546,6 +546,12 @@ body {
   padding: 1px 2px !important;
 }
 
+.at-session-stack {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
 .at-session-item:hover,
 .at-session-item:focus-within {
   background: var(--at-surface-muted);
@@ -571,6 +577,10 @@ body {
   text-align: left;
 }
 
+.at-session-select .ant-typography {
+  display: block;
+}
+
 .at-session-select:focus-visible {
   outline: none;
 }
@@ -581,6 +591,14 @@ body {
   align-items: center;
   gap: 8px;
   width: 100%;
+}
+
+.at-session-meta-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 0;
 }
 
 .at-session-actions {
@@ -611,6 +629,33 @@ body {
 
 .at-session-label {
   min-width: 0;
+}
+
+.at-session-subagent-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 28px;
+  height: 20px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--at-text-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 3px;
+}
+
+.at-session-subagent-toggle:hover,
+.at-session-subagent-toggle:focus-visible,
+.at-session-subagent-toggle[aria-expanded="true"] {
+  border-color: var(--at-border);
+  background: var(--at-surface);
+  color: var(--at-text);
+  outline: none;
 }
 
 .at-session-meta {
@@ -696,6 +741,85 @@ body {
   color: var(--at-text-muted);
 }
 
+.at-session-subagent-list {
+  display: grid;
+  gap: 1px;
+  margin: 0 2px 2px 18px;
+  padding-left: 8px;
+  border-left: 1px solid var(--at-border);
+}
+
+.at-session-subagent-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--at-text);
+  font: inherit;
+  padding: 4px 5px;
+  text-align: left;
+}
+
+.at-session-subagent-item:hover,
+.at-session-subagent-item:focus-visible,
+.at-session-subagent-item.is-active {
+  background: var(--at-surface-muted);
+  outline: none;
+}
+
+.at-session-subagent-item.is-active {
+  border-color: var(--at-border);
+}
+
+.at-session-subagent-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-session-subagent-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--at-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.at-session-subagent-status {
+  color: var(--at-text-muted);
+}
+
+.at-session-subagent-status.is-running {
+  color: var(--at-primary);
+}
+
+.at-session-subagent-status.is-failed {
+  color: var(--at-danger);
+}
+
+.at-session-subagent-status.is-stopped {
+  color: var(--at-warning);
+}
+
+.at-session-subagent-empty {
+  padding: 4px 5px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-session-subagent-empty.is-error {
+  color: var(--at-danger);
+}
+
 .at-workspace {
   display: flex;
   flex-direction: column;
@@ -716,6 +840,150 @@ body {
   max-height: 100%;
   overflow: hidden;
   background: var(--at-bg);
+}
+
+.at-subagent-session-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--at-bg);
+}
+
+.at-subagent-session-header {
+  display: grid;
+  gap: 6px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--at-border);
+  background: var(--at-surface);
+}
+
+.at-subagent-session-title-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+}
+
+.at-subagent-session-title.ant-typography {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--at-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-subagent-session-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-surface-muted);
+  color: var(--at-text-muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 7px;
+}
+
+.at-subagent-session-badge.is-running {
+  border-color: color-mix(in srgb, var(--at-primary) 36%, var(--at-border));
+  color: var(--at-primary);
+}
+
+.at-subagent-session-badge.is-failed {
+  border-color: color-mix(in srgb, var(--at-danger) 36%, var(--at-border));
+  color: var(--at-danger);
+}
+
+.at-subagent-session-badge.is-stopped {
+  border-color: color-mix(in srgb, var(--at-warning) 38%, var(--at-border));
+  color: var(--at-warning);
+}
+
+.at-subagent-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-subagent-session-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px 24px;
+}
+
+.at-subagent-message-list {
+  display: grid;
+  gap: 12px;
+  max-width: 920px;
+}
+
+.at-subagent-message {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-subagent-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-subagent-message-header span {
+  color: var(--at-text);
+  font-weight: 600;
+}
+
+.at-subagent-message-content {
+  min-width: 0;
+}
+
+.at-subagent-message-thinking,
+.at-subagent-message-tool {
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-surface);
+}
+
+.at-subagent-message-thinking summary,
+.at-subagent-message-tool summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.at-subagent-message-thinking .at-message-markdown,
+.at-subagent-message-tool pre {
+  margin: 0;
+  padding: 8px;
+}
+
+.at-subagent-message-tool pre {
+  overflow: auto;
+  border-top: 1px solid var(--at-border);
+  color: var(--at-text);
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
 }
 
 .at-recovery {

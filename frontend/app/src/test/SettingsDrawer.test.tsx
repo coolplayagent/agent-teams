@@ -14,10 +14,14 @@ import type { ReactNode } from "react";
 import {
   addMcpServer,
   createCommand,
+  deleteAgentRuntime,
   deleteEnvironmentVariable,
   deleteMcpServer,
   deleteSshProfile,
+  getAgentRuntime,
+  getAgentRuntimeRegistry,
   getAgentRuntimes,
+  getAgentRuntimeTestJob,
   getClawHubConfig,
   getCommandCatalog,
   getConfigStatus,
@@ -35,6 +39,7 @@ import {
   getRoleConfig,
   getRoleConfigOptions,
   getWebConfig,
+  installAgentRuntimeFromRegistry,
   listRoleConfigs,
   listSshProfiles,
   listMcpServers,
@@ -42,10 +47,12 @@ import {
   probeClawHubConnectivity,
   probeWebConnectivity,
   revealSshProfilePassword,
+  refreshAgentRuntimeRegistry,
   refreshMcpServerTools,
   reloadMcpConfig,
   reloadProxyConfig,
   saveEnvironmentVariable,
+  saveAgentRuntime,
   saveClawHubConfig,
   saveGeneralConfig,
   saveNotificationConfig,
@@ -55,6 +62,7 @@ import {
   saveSshProfile,
   saveWebConfig,
   setMcpServerEnabled,
+  startAgentRuntimeTestJob,
   testMcpServerConnection,
   updateCommand,
   updateMcpServer,
@@ -71,10 +79,14 @@ import { useUiStore } from "../runtime/uiStore";
 vi.mock("../api/client", () => ({
   addMcpServer: vi.fn(),
   createCommand: vi.fn(),
+  deleteAgentRuntime: vi.fn(),
   deleteEnvironmentVariable: vi.fn(),
   deleteMcpServer: vi.fn(),
   deleteSshProfile: vi.fn(),
+  getAgentRuntime: vi.fn(),
+  getAgentRuntimeRegistry: vi.fn(),
   getAgentRuntimes: vi.fn(),
+  getAgentRuntimeTestJob: vi.fn(),
   getClawHubConfig: vi.fn(),
   getCommandCatalog: vi.fn(),
   getConfigStatus: vi.fn(),
@@ -92,6 +104,7 @@ vi.mock("../api/client", () => ({
   getRoleConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
+  installAgentRuntimeFromRegistry: vi.fn(),
   listRoleConfigs: vi.fn(),
   listMcpServers: vi.fn(),
   listSshProfiles: vi.fn(),
@@ -99,10 +112,12 @@ vi.mock("../api/client", () => ({
   probeClawHubConnectivity: vi.fn(),
   probeWebConnectivity: vi.fn(),
   revealSshProfilePassword: vi.fn(),
+  refreshAgentRuntimeRegistry: vi.fn(),
   refreshMcpServerTools: vi.fn(),
   reloadMcpConfig: vi.fn(),
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
+  saveAgentRuntime: vi.fn(),
   saveClawHubConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveNotificationConfig: vi.fn(),
@@ -112,6 +127,7 @@ vi.mock("../api/client", () => ({
   saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
   setMcpServerEnabled: vi.fn(),
+  startAgentRuntimeTestJob: vi.fn(),
   testMcpServerConnection: vi.fn(),
   updateCommand: vi.fn(),
   updateMcpServer: vi.fn(),
@@ -126,10 +142,14 @@ vi.setConfig({ testTimeout: 15000 });
 
 const addMcpServerMock = vi.mocked(addMcpServer);
 const createCommandMock = vi.mocked(createCommand);
+const deleteAgentRuntimeMock = vi.mocked(deleteAgentRuntime);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteMcpServerMock = vi.mocked(deleteMcpServer);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
+const getAgentRuntimeMock = vi.mocked(getAgentRuntime);
+const getAgentRuntimeRegistryMock = vi.mocked(getAgentRuntimeRegistry);
 const getAgentRuntimesMock = vi.mocked(getAgentRuntimes);
+const getAgentRuntimeTestJobMock = vi.mocked(getAgentRuntimeTestJob);
 const getClawHubConfigMock = vi.mocked(getClawHubConfig);
 const getCommandCatalogMock = vi.mocked(getCommandCatalog);
 const getConfigStatusMock = vi.mocked(getConfigStatus);
@@ -147,6 +167,7 @@ const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigMock = vi.mocked(getRoleConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
+const installAgentRuntimeFromRegistryMock = vi.mocked(installAgentRuntimeFromRegistry);
 const listRoleConfigsMock = vi.mocked(listRoleConfigs);
 const listMcpServersMock = vi.mocked(listMcpServers);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
@@ -154,10 +175,12 @@ const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeClawHubConnectivityMock = vi.mocked(probeClawHubConnectivity);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
+const refreshAgentRuntimeRegistryMock = vi.mocked(refreshAgentRuntimeRegistry);
 const refreshMcpServerToolsMock = vi.mocked(refreshMcpServerTools);
 const reloadMcpConfigMock = vi.mocked(reloadMcpConfig);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
+const saveAgentRuntimeMock = vi.mocked(saveAgentRuntime);
 const saveClawHubConfigMock = vi.mocked(saveClawHubConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
@@ -167,6 +190,7 @@ const saveRoleConfigMock = vi.mocked(saveRoleConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
 const setMcpServerEnabledMock = vi.mocked(setMcpServerEnabled);
+const startAgentRuntimeTestJobMock = vi.mocked(startAgentRuntimeTestJob);
 const testMcpServerConnectionMock = vi.mocked(testMcpServerConnection);
 const updateCommandMock = vi.mocked(updateCommand);
 const updateMcpServerMock = vi.mocked(updateMcpServer);
@@ -596,6 +620,103 @@ beforeEach(() => {
       transport: "registry",
     },
   ]);
+  getAgentRuntimeMock.mockResolvedValue({
+    agent_id: "codex-acp",
+    description: "ACP adapter for OpenAI's coding assistant",
+    name: "Codex CLI",
+    native_config_enabled: false,
+    native_config_provider: "",
+    protocol: "acp",
+    skill_bridge_enabled: false,
+    skill_bridge_mode: "inline",
+    skill_bridge_skills: [],
+    transport: {
+      distribution: "auto",
+      env: [
+        {
+          configured: true,
+          name: "OPENAI_API_KEY",
+          secret: true,
+          value: "",
+        },
+      ],
+      registry_id: "openai/codex",
+      registry_version: "1.0.0",
+      transport: "registry",
+    },
+  });
+  getAgentRuntimeRegistryMock.mockResolvedValue({
+    agents: [
+      {
+        description: "Runs Codex from the ACP registry.",
+        distributions: ["npx"],
+        installed: false,
+        name: "Codex Runtime",
+        registry_id: "openai/codex",
+        supports_current_platform: true,
+        update_available: false,
+        version: "1.0.0",
+      },
+    ],
+    cache_path: "C:/cache/acp-registry.json",
+    registry_version: "2026.06",
+    source_url: "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json",
+    stale: false,
+  });
+  refreshAgentRuntimeRegistryMock.mockResolvedValue({
+    agents: [],
+    cache_path: "C:/cache/acp-registry.json",
+  });
+  installAgentRuntimeFromRegistryMock.mockResolvedValue({
+    agent: {
+      agent_id: "codex-acp",
+      description: "Runs Codex from the ACP registry.",
+      name: "Codex Runtime",
+      protocol: "acp",
+      transport: {
+        distribution: "auto",
+        registry_id: "openai/codex",
+        transport: "registry",
+      },
+    },
+    message: "Installed",
+    registry_agent: {
+      distributions: ["npx"],
+      installed: true,
+      name: "Codex Runtime",
+      registry_id: "openai/codex",
+      version: "1.0.0",
+    },
+    status: "ok",
+  });
+  saveAgentRuntimeMock.mockImplementation((_agentId, payload) => Promise.resolve(payload));
+  deleteAgentRuntimeMock.mockResolvedValue({ status: "ok" });
+  startAgentRuntimeTestJobMock.mockResolvedValue({
+    agent_id: "codex-acp",
+    job_id: "job-1",
+    message: "Connected",
+    phase: "completed",
+    progress_percent: 100,
+    result: {
+      message: "Connected",
+      ok: true,
+      protocol: "acp",
+    },
+    status: "succeeded",
+  });
+  getAgentRuntimeTestJobMock.mockResolvedValue({
+    agent_id: "codex-acp",
+    job_id: "job-1",
+    message: "Connected",
+    phase: "completed",
+    progress_percent: 100,
+    result: {
+      message: "Connected",
+      ok: true,
+      protocol: "acp",
+    },
+    status: "succeeded",
+  });
   probeWebConnectivityMock.mockResolvedValue({
     diagnostics: {
       endpoint_reachable: true,
@@ -849,11 +970,54 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("Codex CLI")).toBeVisible();
     expect(screen.getByText("acp · registry")).toBeVisible();
     expect(getAgentRuntimesMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText("Codex CLI").closest("button") as HTMLElement);
+    expect(await screen.findByText("Agent ID")).toBeVisible();
+    expect(screen.getByDisplayValue("Codex CLI")).toBeVisible();
+    expect(screen.getByDisplayValue("openai/codex")).toBeVisible();
+    expect(screen.getByDisplayValue("OPENAI_API_KEY")).toBeVisible();
+    expect(getAgentRuntimeMock).toHaveBeenCalledWith("codex-acp");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAgentRuntimeMock).toHaveBeenCalledTimes(1));
+    expect(saveAgentRuntimeMock.mock.calls[0]?.[0]).toBe("codex-acp");
+    expect(saveAgentRuntimeMock.mock.calls[0]?.[1]).toMatchObject({
+      agent_id: "codex-acp",
+      transport: {
+        env: [
+          {
+            configured: true,
+            name: "OPENAI_API_KEY",
+            secret: true,
+            value: "",
+          },
+        ],
+        registry_id: "openai/codex",
+        transport: "registry",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test" }));
+    await waitFor(() => expect(startAgentRuntimeTestJobMock).toHaveBeenCalledWith("codex-acp"));
+    fireEvent.click(lastBackButton());
+    expect(await screen.findByText("Codex CLI")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "ACP registry" }));
+    expect(await screen.findByText("Codex Runtime")).toBeVisible();
+    expect(screen.getByText("1.0.0 · npx · Available")).toBeVisible();
+    expect(getAgentRuntimeRegistryMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    await waitFor(() =>
+      expect(installAgentRuntimeFromRegistryMock).toHaveBeenCalledWith(
+        "openai/codex",
+        {
+          distribution: "auto",
+          env: {},
+        },
+      ),
+    );
+    fireEvent.click(lastBackButton());
 
     fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
-  }, 45000);
+  }, 70000);
 
   it("saves editable role configs from the role detail page", async () => {
     renderDrawer();
@@ -958,7 +1122,7 @@ describe("SettingsDrawer", () => {
         overwrite: false,
       }),
     );
-  }, 20000);
+  }, 35000);
 
   it("manages remote workspace SSH profiles through the workspace config clients", async () => {
     renderDrawer();
@@ -1047,7 +1211,7 @@ describe("SettingsDrawer", () => {
         },
       ),
     );
-  }, 10000);
+  }, 20000);
 
   it("saves the general shell policy through the real general config client", async () => {
     renderDrawer();
@@ -1320,6 +1484,11 @@ function renderDrawer() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+function lastBackButton(): HTMLElement {
+  const buttons = screen.getAllByRole("button", { name: "Back" });
+  return buttons[buttons.length - 1] as HTMLElement;
 }
 
 function renderWithStrictModeBoundary(children: ReactNode) {

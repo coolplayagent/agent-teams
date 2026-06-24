@@ -16,7 +16,12 @@ import type {
   CommandCreateRequest,
   CommandMutationResponse,
   CommandUpdateRequest,
+  AcpRegistryCatalogResponse,
+  AcpRegistryInstallRequest,
+  AcpRegistryInstallResult,
+  AgentRuntimeConfig,
   AgentRuntimeSummary,
+  AgentRuntimeTestJob,
   ClawHubSkillMarketDetail,
   ClawHubSkillMarketInstallRequest,
   ClawHubSkillMarketInstallResponse,
@@ -1022,6 +1027,76 @@ export function getHookRuntimeView(): Promise<HookRuntimeViewPayload> {
 
 export function getAgentRuntimes(): Promise<AgentRuntimeSummary[]> {
   return requestJson<AgentRuntimeSummary[]>("/system/configs/agent-runtimes");
+}
+
+export function getAgentRuntime(agentId: string): Promise<AgentRuntimeConfig> {
+  return requestJson<AgentRuntimeConfig>(
+    `/system/configs/agent-runtimes/${encodeURIComponent(agentId)}`,
+  );
+}
+
+export function saveAgentRuntime(
+  agentId: string,
+  payload: AgentRuntimeConfig,
+): Promise<AgentRuntimeConfig> {
+  return requestJson<AgentRuntimeConfig>(
+    `/system/configs/agent-runtimes/${encodeURIComponent(agentId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function deleteAgentRuntime(agentId: string): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/system/configs/agent-runtimes/${encodeURIComponent(agentId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function getAgentRuntimeRegistry(
+  refresh = false,
+): Promise<AcpRegistryCatalogResponse> {
+  const suffix = refresh ? "?refresh=true" : "";
+  return requestJson<AcpRegistryCatalogResponse>(
+    `/system/configs/agent-runtime-registry${suffix}`,
+  );
+}
+
+export function refreshAgentRuntimeRegistry(): Promise<AcpRegistryCatalogResponse> {
+  return requestJson<AcpRegistryCatalogResponse>(
+    "/system/configs/agent-runtime-registry:refresh",
+    { method: "POST" },
+  );
+}
+
+export function installAgentRuntimeFromRegistry(
+  registryId: string,
+  payload: AcpRegistryInstallRequest,
+): Promise<AcpRegistryInstallResult> {
+  return requestJson<AcpRegistryInstallResult>(
+    `/system/configs/agent-runtime-registry/${encodeURIComponent(registryId)}:install`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function startAgentRuntimeTestJob(
+  agentId: string,
+): Promise<AgentRuntimeTestJob> {
+  return requestJson<AgentRuntimeTestJob>(
+    `/system/configs/agent-runtimes/${encodeURIComponent(agentId)}:test-job`,
+    { method: "POST" },
+  );
+}
+
+export function getAgentRuntimeTestJob(jobId: string): Promise<AgentRuntimeTestJob> {
+  return requestJson<AgentRuntimeTestJob>(
+    `/system/configs/agent-runtime-test-jobs/${encodeURIComponent(jobId)}`,
+  );
 }
 
 export function getEnvironmentVariables(): Promise<EnvironmentVariableCatalog> {

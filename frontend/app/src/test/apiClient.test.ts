@@ -3,10 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   browseClawHubSkillMarket,
   addRuntimeToolsSystemPath,
+  deleteAgentRuntime,
   disableAutomationProject,
   deleteEnvironmentVariable,
   deleteSshProfile,
   enableAutomationProject,
+  getAgentRuntime,
+  getAgentRuntimeRegistry,
+  getAgentRuntimes,
+  getAgentRuntimeTestJob,
   getClawHubConfig,
   getClawHubSkillMarketDetail,
   getConfigStatus,
@@ -22,6 +27,7 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  installAgentRuntimeFromRegistry,
   listAutomationProjectSessions,
   listAutomationProjects,
   listBoardTodos,
@@ -40,9 +46,11 @@ import {
   probeClawHubConnectivity,
   probeWebConnectivity,
   revealSshProfilePassword,
+  refreshAgentRuntimeRegistry,
   reloadProxyConfig,
   reloadSkillsConfig,
   saveEnvironmentVariable,
+  saveAgentRuntime,
   saveClawHubConfig,
   saveNotificationConfig,
   saveOrchestrationConfig,
@@ -54,6 +62,7 @@ import {
   searchMemories,
   searchWorkspacePaths,
   stopBackgroundTask,
+  startAgentRuntimeTestJob,
   startRuntimeToolDownload,
   rebuildMemoryIndex,
   runAutomationProject,
@@ -1561,6 +1570,154 @@ describe("api client", () => {
         method: "DELETE",
         headers: expect.any(Headers),
       }),
+    );
+  });
+
+  it("manages agent runtimes through the system config endpoints", async () => {
+    const runtimeConfig = {
+      agent_id: "codex-acp",
+      description: "ACP adapter",
+      name: "Codex CLI",
+      protocol: "acp" as const,
+      transport: {
+        distribution: "auto" as const,
+        env: [
+          {
+            configured: true,
+            name: "OPENAI_API_KEY",
+            secret: true,
+            value: "",
+          },
+        ],
+        registry_id: "openai/codex",
+        transport: "registry" as const,
+      },
+    };
+    const registryPayload = {
+      agents: [
+        {
+          distributions: ["npx"],
+          installed: false,
+          name: "Codex Runtime",
+          registry_id: "openai/codex",
+          version: "1.0.0",
+        },
+      ],
+      cache_path: "C:/cache/acp-registry.json",
+      registry_version: "2026.06",
+    };
+    const testJob = {
+      agent_id: "codex-acp",
+      job_id: "job-1",
+      message: "Connected",
+      progress_percent: 100,
+      status: "succeeded",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              agent_id: "codex-acp",
+              description: "ACP adapter",
+              name: "Codex CLI",
+              protocol: "acp",
+              transport: "registry",
+            },
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(runtimeConfig), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(runtimeConfig), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(registryPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(registryPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            agent: runtimeConfig,
+            message: "Installed",
+            registry_agent: registryPayload.agents[0],
+            status: "ok",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(testJob), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(testJob), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getAgentRuntimes()).resolves.toEqual([
+      expect.objectContaining({ agent_id: "codex-acp" }),
+    ]);
+    await expect(getAgentRuntime("codex-acp")).resolves.toEqual(runtimeConfig);
+    await expect(saveAgentRuntime("codex-acp", runtimeConfig)).resolves.toEqual(
+      runtimeConfig,
+    );
+    await expect(deleteAgentRuntime("codex-acp")).resolves.toEqual({ status: "ok" });
+    await expect(getAgentRuntimeRegistry()).resolves.toEqual(registryPayload);
+    await expect(refreshAgentRuntimeRegistry()).resolves.toEqual(registryPayload);
+    await expect(
+      installAgentRuntimeFromRegistry("openai/codex", {
+        distribution: "auto",
+        env: {},
+      }),
+    ).resolves.toMatchObject({ message: "Installed" });
+    await expect(startAgentRuntimeTestJob("codex-acp")).resolves.toEqual(testJob);
+    await expect(getAgentRuntimeTestJob("job-1")).resolves.toEqual(testJob);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/agent-runtimes",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/agent-runtimes/codex-acp",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/agent-runtimes/codex-acp",
+      expect.objectContaining({
+        body: JSON.stringify(runtimeConfig),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/configs/agent-runtimes/codex-acp",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/system/configs/agent-runtime-registry",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/system/configs/agent-runtime-registry:refresh",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/system/configs/agent-runtime-registry/openai%2Fcodex:install",
+      expect.objectContaining({
+        body: JSON.stringify({ distribution: "auto", env: {} }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "/api/system/configs/agent-runtimes/codex-acp:test-job",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      "/api/system/configs/agent-runtime-test-jobs/job-1",
+      expect.objectContaining({ headers: expect.any(Headers) }),
     );
   });
 

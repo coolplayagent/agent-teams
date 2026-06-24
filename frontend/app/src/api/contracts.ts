@@ -209,6 +209,174 @@ export interface AgentRuntimeSummary {
   transport?: string | null;
 }
 
+export type AgentRuntimeProtocol = "acp" | "a2a" | "cli";
+
+export type AgentRuntimeTransportType =
+  | "stdio"
+  | "streamable_http"
+  | "custom"
+  | "registry";
+
+export interface AgentRuntimeSecretBinding {
+  configured?: boolean;
+  name: string;
+  secret?: boolean;
+  value?: string | null;
+}
+
+export interface AgentRuntimeStdioTransport {
+  args?: string[];
+  command: string;
+  env?: AgentRuntimeSecretBinding[];
+  transport: "stdio";
+}
+
+export interface AgentRuntimeHttpTransport {
+  headers?: AgentRuntimeSecretBinding[];
+  ssl_verify?: boolean | null;
+  transport: "streamable_http";
+  url: string;
+}
+
+export interface AgentRuntimeCustomTransport {
+  adapter_id: string;
+  config?: Record<string, JsonValue>;
+  transport: "custom";
+}
+
+export type AcpRegistryDistribution = "auto" | "binary" | "npx" | "uvx";
+
+export interface RegistryBinaryTargetSnapshot {
+  archive: string;
+  args?: string[];
+  cmd: string;
+  env?: Record<string, string>;
+  sha256?: string | null;
+}
+
+export interface RegistryPackageDistributionSnapshot {
+  args?: string[];
+  env?: Record<string, string>;
+  package: string;
+}
+
+export interface RegistryDistributionSetSnapshot {
+  binary?: Record<string, RegistryBinaryTargetSnapshot>;
+  npx?: RegistryPackageDistributionSnapshot | null;
+  uvx?: RegistryPackageDistributionSnapshot | null;
+}
+
+export interface RegistryEntrySnapshot {
+  authors?: string[];
+  description?: string;
+  distribution: RegistryDistributionSetSnapshot;
+  icon?: string | null;
+  id: string;
+  license?: string | null;
+  name: string;
+  repository?: string | null;
+  version: string;
+  website?: string | null;
+}
+
+export interface AgentRuntimeRegistryTransport {
+  distribution?: AcpRegistryDistribution;
+  env?: AgentRuntimeSecretBinding[];
+  registry_entry?: RegistryEntrySnapshot | null;
+  registry_id: string;
+  registry_version?: string;
+  transport: "registry";
+}
+
+export type AgentRuntimeTransportConfig =
+  | AgentRuntimeStdioTransport
+  | AgentRuntimeHttpTransport
+  | AgentRuntimeCustomTransport
+  | AgentRuntimeRegistryTransport;
+
+export interface AgentRuntimeConfig {
+  agent_id: string;
+  description?: string;
+  name: string;
+  native_config_enabled?: boolean;
+  native_config_provider?: string;
+  protocol?: AgentRuntimeProtocol;
+  skill_bridge_enabled?: boolean;
+  skill_bridge_mode?: "inline" | "directory";
+  skill_bridge_skills?: string[];
+  transport: AgentRuntimeTransportConfig;
+}
+
+export interface AcpRegistryAgentView {
+  authors?: string[];
+  description?: string;
+  distributions?: AcpRegistryDistribution[];
+  icon?: string | null;
+  installed?: boolean;
+  installed_agent_id?: string | null;
+  installed_version?: string | null;
+  license?: string | null;
+  name: string;
+  registry_id: string;
+  repository?: string | null;
+  selected_distribution?: AcpRegistryDistribution | null;
+  supports_current_platform?: boolean;
+  update_available?: boolean;
+  version: string;
+  website?: string | null;
+}
+
+export interface AcpRegistryCatalogResponse {
+  agents?: AcpRegistryAgentView[];
+  cache_path: string;
+  error_message?: string | null;
+  fetched_at?: string | null;
+  registry_version?: string;
+  source_url?: string;
+  stale?: boolean;
+}
+
+export interface AcpRegistryInstallRequest {
+  agent_id?: string | null;
+  distribution?: AcpRegistryDistribution | null;
+  env?: Record<string, string> | null;
+}
+
+export interface AcpRegistryInstallResult {
+  agent: AgentRuntimeConfig;
+  installed_at?: string;
+  message: string;
+  registry_agent: AcpRegistryAgentView;
+  status: string;
+}
+
+export interface AgentRuntimeTestResult {
+  agent_name?: string | null;
+  agent_version?: string | null;
+  message?: string;
+  ok: boolean;
+  protocol?: AgentRuntimeProtocol;
+  protocol_version?: number | null;
+  protocol_version_text?: string | null;
+}
+
+export interface AgentRuntimeTestJob {
+  agent_id: string;
+  created_at?: string;
+  distribution?: string;
+  downloaded_bytes?: number;
+  error_message?: string | null;
+  job_id: string;
+  message?: string;
+  phase?: string;
+  progress_percent?: number | null;
+  registry_id?: string;
+  result?: AgentRuntimeTestResult | null;
+  status?: "queued" | "running" | "succeeded" | "failed";
+  total_bytes?: number | null;
+  updated_at?: string;
+}
+
 export interface WorkspaceRecord {
   workspace_id: string;
   root_path: string;

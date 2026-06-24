@@ -5133,6 +5133,66 @@ body {
   min-height: 0;
 }
 
+.at-agent-runtime-toolbar {
+  margin-bottom: 12px;
+}
+
+.at-agent-runtime-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.at-agent-runtime-registry-actions {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.at-agent-runtime-bindings {
+  display: grid;
+  gap: 10px;
+}
+
+.at-agent-runtime-bindings-head {
+  display: grid;
+  gap: 10px;
+}
+
+.at-agent-runtime-bindings-head > button {
+  justify-self: start;
+}
+
+.at-agent-runtime-binding-list {
+  display: grid;
+  gap: 8px;
+}
+
+.at-agent-runtime-binding-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(160px, 1.1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.at-agent-runtime-binding-row .ant-form-item {
+  margin-bottom: 0;
+}
+
+.at-agent-runtime-test-status {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface-muted);
+}
+
+.at-agent-runtime-test-status.is-danger {
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
 .at-settings-property-row {
   display: grid;
   grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
@@ -6134,6 +6194,19 @@ body {
 
   .at-commands-editor-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-agent-runtime-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-agent-runtime-registry-actions {
+    justify-items: start;
+  }
+
+  .at-agent-runtime-binding-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
 
   .at-mcp-server-head,

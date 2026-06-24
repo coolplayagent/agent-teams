@@ -11,6 +11,7 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  listBoardTodos,
   listConnectors,
   listMemories,
   listSshProfiles,
@@ -30,6 +31,7 @@ import {
   searchWorkspacePaths,
   stopBackgroundTask,
   rebuildMemoryIndex,
+  syncBoardTodos,
   testConnector,
   updateSession,
   updateWorkspace,
@@ -102,6 +104,87 @@ describe("api client", () => {
       expect.objectContaining({
         body: JSON.stringify({ cascade: true, force: true }),
         method: "DELETE",
+      }),
+    );
+  });
+
+  it("lists and syncs board TODOs through board endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            board_workspace_id: "workspace-1",
+            diagnostics: [],
+            is_fork_view: false,
+            items: [],
+            repository_full_name: "openai/agent-teams",
+            revision: 4,
+            source_groups: [],
+            status_counts: {
+              archived: 0,
+              done: 0,
+              in_progress: 0,
+              review: 0,
+              todo: 0,
+            },
+            synced_at: null,
+            view_workspace_id: "workspace-1",
+            workspace_id: "workspace-1",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            board_workspace_id: "workspace-1",
+            diagnostics: [],
+            is_fork_view: false,
+            items: [],
+            repository_full_name: "openai/agent-teams",
+            revision: 5,
+            source_groups: [],
+            status_counts: {
+              archived: 0,
+              done: 0,
+              in_progress: 0,
+              review: 0,
+              todo: 0,
+            },
+            synced_at: "2026-06-24T00:00:00Z",
+            view_workspace_id: "workspace-1",
+            workspace_id: "workspace-1",
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listBoardTodos({ includeArchived: true, workspaceId: "workspace-1" }),
+    ).resolves.toMatchObject({ revision: 4, workspace_id: "workspace-1" });
+    await expect(
+      syncBoardTodos({ includeArchived: false, workspaceId: "workspace-1" }),
+    ).resolves.toMatchObject({ revision: 5, workspace_id: "workspace-1" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/boards/todos?workspace_id=workspace-1&include_archived=true",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/boards/todos:sync",
+      expect.objectContaining({
+        body: JSON.stringify({
+          include_archived: false,
+          workspace_id: "workspace-1",
+        }),
+        headers: expect.any(Headers),
+        method: "POST",
       }),
     );
   });

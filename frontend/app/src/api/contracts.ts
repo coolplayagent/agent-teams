@@ -144,6 +144,88 @@ export interface WorkspaceUpdateRequest {
   mounts: WorkspaceMountRecord[];
 }
 
+export type BoardTodoStatus =
+  | "todo"
+  | "in_progress"
+  | "review"
+  | "done"
+  | "archived";
+export type BoardTodoSourceProvider = "local" | "github";
+export type BoardTodoSourceType =
+  | "manual"
+  | "github_issue"
+  | "github_pull_request";
+
+export interface BoardTodoStatusCounts {
+  todo: number;
+  in_progress: number;
+  review: number;
+  done: number;
+  archived: number;
+}
+
+export interface BoardTodoSourceGroup {
+  display_name: string;
+  enabled: boolean;
+  group_id: string;
+  kind: string;
+  repository_full_name?: string | null;
+  source_id?: string | null;
+}
+
+export interface BoardTodoItem {
+  active_attempt_id?: string | null;
+  archived_at?: string | null;
+  body: string;
+  created_at: string;
+  current_attempt_id?: string | null;
+  execution_policy?: string | null;
+  execution_workspace_id?: string | null;
+  html_url?: string | null;
+  issue_number?: number | null;
+  item_revision: number;
+  last_status_reason?: string | null;
+  last_synced_at?: string | null;
+  linked_pr_number?: number | null;
+  linked_pr_url?: string | null;
+  pull_request_number?: number | null;
+  queue_ticket_id?: string | null;
+  repository_full_name?: string | null;
+  run_id?: string | null;
+  run_last_error?: string | null;
+  run_phase?: string | null;
+  run_recoverable: boolean;
+  run_status?: string | null;
+  runtime_target_id?: string | null;
+  runtime_target_kind?: string | null;
+  session_id?: string | null;
+  source_id?: string | null;
+  source_key: string;
+  source_provider: BoardTodoSourceProvider;
+  source_type: BoardTodoSourceType;
+  source_updated_at?: string | null;
+  status: BoardTodoStatus;
+  title: string;
+  todo_id: string;
+  updated_at: string;
+  workspace_id: string;
+}
+
+export interface BoardTodoBoardResponse {
+  board_workspace_id?: string | null;
+  diagnostics: string[];
+  forked_from_workspace_id?: string | null;
+  is_fork_view: boolean;
+  items: BoardTodoItem[];
+  repository_full_name?: string | null;
+  revision: number;
+  source_groups: BoardTodoSourceGroup[];
+  status_counts: BoardTodoStatusCounts;
+  synced_at?: string | null;
+  view_workspace_id?: string | null;
+  workspace_id: string;
+}
+
 export interface SshProfileRecord {
   ssh_profile_id: string;
   host: string;

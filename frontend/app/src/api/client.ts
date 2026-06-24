@@ -1,6 +1,7 @@
 import type {
   GeneralConfig,
   AgUiActionResponse,
+  BoardTodoBoardResponse,
   ConnectorListResponse,
   ConnectorTestResult,
   EnvironmentVariableCatalog,
@@ -183,6 +184,36 @@ export function openWorkspaceRoot(
       method: "POST",
     },
   );
+}
+
+export interface ListBoardTodosOptions {
+  includeArchived?: boolean;
+  workspaceId: string;
+}
+
+export function listBoardTodos(
+  options: ListBoardTodosOptions,
+): Promise<BoardTodoBoardResponse> {
+  const params = new URLSearchParams();
+  params.set("workspace_id", options.workspaceId);
+  if (options.includeArchived === true) {
+    params.set("include_archived", "true");
+  }
+  return requestJson<BoardTodoBoardResponse>(
+    `/boards/todos?${params.toString()}`,
+  );
+}
+
+export function syncBoardTodos(
+  options: ListBoardTodosOptions,
+): Promise<BoardTodoBoardResponse> {
+  return requestJson<BoardTodoBoardResponse>("/boards/todos:sync", {
+    method: "POST",
+    body: JSON.stringify({
+      include_archived: options.includeArchived === true,
+      workspace_id: options.workspaceId,
+    }),
+  });
 }
 
 export function getRoleConfigOptions(): Promise<RoleConfigOptions> {

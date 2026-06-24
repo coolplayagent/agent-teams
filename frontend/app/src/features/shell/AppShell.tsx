@@ -22,6 +22,7 @@ import {
   RefreshCcw,
   Search,
   Settings,
+  SquareKanban,
   Sun,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -35,6 +36,7 @@ import {
   listWorkspaces,
 } from "../../api/client";
 import type { SessionSidebarRecord } from "../../api/contracts";
+import { BoardTodosView } from "../boards/BoardTodosView";
 import { ConnectorsView } from "../connectors/ConnectorsView";
 import { ChatWorkspace } from "./ChatWorkspace";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
@@ -65,7 +67,13 @@ export function AppShell() {
   const { token } = theme.useToken();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<
-    "chat" | "connectors" | "memory" | "observability" | "search" | "workspace"
+    | "board"
+    | "chat"
+    | "connectors"
+    | "memory"
+    | "observability"
+    | "search"
+    | "workspace"
   >("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const runStreamController = useRunStreamController();
@@ -142,6 +150,16 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "board",
+        icon: <SquareKanban size={15} />,
+        key: "board",
+        label: t("appBoard"),
+        onSelect: () => {
+          setActiveView("board");
+          closeSidebarOnNarrow();
+        },
+      },
+      {
         active: activeView === "search",
         icon: <Search size={15} />,
         key: "search",
@@ -197,6 +215,11 @@ export function AppShell() {
         key: "language",
         label:
           language === "zh-CN" ? t("languageChinese") : t("languageEnglish"),
+      },
+      {
+        icon: <SquareKanban size={15} />,
+        key: "board",
+        label: t("appBoard"),
       },
       {
         icon: <Activity size={15} />,
@@ -453,6 +476,13 @@ export function AppShell() {
         <Content className="at-workspace">
           {activeView === "observability" ? (
             <ObservabilityPanel sessionId={selectedSessionId} />
+          ) : activeView === "board" ? (
+            <BoardTodosView
+              loadingWorkspaces={workspacesQuery.isLoading}
+              onWorkspaceSelected={setSelectedWorkspaceId}
+              selectedWorkspaceId={selectedWorkspaceId}
+              workspaces={workspacesQuery.data ?? []}
+            />
           ) : activeView === "connectors" ? (
             <ConnectorsView />
           ) : activeView === "memory" ? (
@@ -527,6 +557,11 @@ export function AppShell() {
     }
     if (key === "observability") {
       setActiveView("observability");
+      closeSidebarOnNarrow();
+      return;
+    }
+    if (key === "board") {
+      setActiveView("board");
       closeSidebarOnNarrow();
       return;
     }

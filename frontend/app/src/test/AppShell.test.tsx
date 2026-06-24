@@ -31,6 +31,10 @@ vi.mock("../features/composer/Composer", () => ({
   Composer: () => <div data-testid="composer" />,
 }));
 
+vi.mock("../features/boards/BoardTodosView", () => ({
+  BoardTodosView: () => <div data-testid="board-todos-view" />,
+}));
+
 vi.mock("../features/connectors/ConnectorsView", () => ({
   ConnectorsView: () => <div data-testid="connectors-view" />,
 }));
@@ -210,6 +214,24 @@ describe("AppShell", () => {
     expect(screen.getByTestId("timeline")).toBeVisible();
   });
 
+  it("routes the mobile sidebar board item and closes the overlay", async () => {
+    mockViewportMatch(true);
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
+
+    expect(await screen.findByTestId("board-todos-view")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+  });
+
   it("keeps secondary actions in a compact mobile topbar menu", async () => {
     mockViewportMatch(true);
     renderShell();
@@ -224,6 +246,7 @@ describe("AppShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
 
+    expect(await screen.findByText("Board")).toBeInTheDocument();
     expect(await screen.findByText("Observability")).toBeInTheDocument();
     expect(screen.getByText("Connectors")).toBeInTheDocument();
     expect(screen.getByText("Memory")).toBeInTheDocument();
@@ -260,6 +283,11 @@ describe("AppShell", () => {
     renderShell();
 
     const sidebar = await screen.findByTestId("sessions-sidebar");
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
+
+    expect(await screen.findByTestId("board-todos-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
     fireEvent.click(within(sidebar).getByRole("button", { name: "Observability" }));
 
     expect(await screen.findByTestId("observability")).toBeVisible();
@@ -311,6 +339,7 @@ describe("AppShell", () => {
 
     expect(screen.getByRole("button", { name: "中文" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "聊天" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "看板" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "连接器" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "记忆" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "观测" })).toBeVisible();

@@ -123,20 +123,12 @@ export function SessionsSidebar({
     workspacesQuery.data,
   ]);
   useEffect(() => {
-    const focusSearch = (event: globalThis.Event) => {
-      if (event instanceof KeyboardEvent) {
-        if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k") {
-          return;
-        }
-        event.preventDefault();
-      }
+    const focusSearch = () => {
       searchInputRef.current?.focus();
     };
     window.addEventListener("agent-teams-focus-session-search", focusSearch);
-    window.addEventListener("keydown", focusSearch);
     return () => {
       window.removeEventListener("agent-teams-focus-session-search", focusSearch);
-      window.removeEventListener("keydown", focusSearch);
     };
   }, []);
 

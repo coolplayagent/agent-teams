@@ -93,11 +93,6 @@ describe("SessionsSidebar", () => {
     window.dispatchEvent(new Event("agent-teams-focus-session-search"));
 
     expect(searchbox).toHaveFocus();
-
-    searchbox.blur();
-    fireEvent.keyDown(window, { ctrlKey: true, key: "k" });
-
-    expect(searchbox).toHaveFocus();
   });
 
   it("creates a session in the selected workspace and selects it", async () => {

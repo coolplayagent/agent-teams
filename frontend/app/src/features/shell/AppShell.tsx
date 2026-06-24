@@ -30,12 +30,15 @@ import {
   getHealth,
   getSession,
   listSidebarSessions,
+  listWorkspaces,
 } from "../../api/client";
+import type { SessionSidebarRecord } from "../../api/contracts";
 import { Composer } from "../composer/Composer";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
 import { MessageExportMenu, useMessageExporter } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { RecoveryBar } from "../recovery/RecoveryBar";
+import { SessionSearchView } from "../search/SessionSearchView";
 import { SessionTokenUsage } from "./SessionTokenUsage";
 import {
   SessionsSidebar,
@@ -57,7 +60,7 @@ export function AppShell() {
   const { token } = theme.useToken();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<
-    "chat" | "observability" | "workspace"
+    "chat" | "observability" | "search" | "workspace"
   >("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const runStreamController = useRunStreamController();
@@ -69,6 +72,8 @@ export function AppShell() {
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
+  const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
+  const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
   const setLanguage = useUiStore((state) => state.setLanguage);
   const [sidebarResizing, setSidebarResizing] = useState(false);
@@ -86,6 +91,10 @@ export function AppShell() {
   const sidebarSessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
     queryFn: () => listSidebarSessions(false),
+  });
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: listWorkspaces,
   });
   const sessionDetailQuery = useQuery({
     queryKey: ["sessions", "detail", selectedSessionId],
@@ -128,10 +137,14 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "search",
         icon: <Search size={15} />,
         key: "search",
         label: t("appSearch"),
-        onSelect: () => window.dispatchEvent(new Event("agent-teams-focus-session-search")),
+        onSelect: () => {
+          setActiveView("search");
+          closeSidebarOnNarrow();
+        },
       },
       {
         active: activeView === "observability",
@@ -218,6 +231,21 @@ export function AppShell() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isNarrowViewport, setSidebarCollapsed, sidebarCollapsed]);
+
+  useEffect(() => {
+    const handleSearchShortcut = (event: globalThis.KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k") {
+        return;
+      }
+      event.preventDefault();
+      setActiveView("search");
+      if (isNarrowViewport) {
+        setSidebarCollapsed(true);
+      }
+    };
+    window.addEventListener("keydown", handleSearchShortcut);
+    return () => window.removeEventListener("keydown", handleSearchShortcut);
+  }, [isNarrowViewport, setSidebarCollapsed]);
 
   useEffect(() => {
     if (!sidebarResizing) {
@@ -396,6 +424,15 @@ export function AppShell() {
               selectedWorkspaceId={selectedWorkspaceId}
               sessions={sidebarSessionsQuery.data ?? []}
             />
+          ) : activeView === "search" ? (
+            <SessionSearchView
+              hasError={sidebarSessionsQuery.isError || workspacesQuery.isError}
+              loading={sidebarSessionsQuery.isLoading || workspacesQuery.isLoading}
+              onSessionSelected={handleSearchSessionSelected}
+              selectedSessionId={selectedSessionId}
+              sessions={sidebarSessionsQuery.data ?? []}
+              workspaces={workspacesQuery.data ?? []}
+            />
           ) : (
             <div className="at-chat-view">
               <RecoveryBar
@@ -444,6 +481,15 @@ export function AppShell() {
     if (isNarrowViewport) {
       setSidebarCollapsed(true);
     }
+  }
+
+  function handleSearchSessionSelected(session: SessionSidebarRecord) {
+    if (session.workspace_id !== undefined && session.workspace_id.trim()) {
+      setSelectedWorkspaceId(session.workspace_id);
+    }
+    setSelectedSessionId(session.session_id);
+    setActiveView("chat");
+    closeSidebarOnNarrow();
   }
 
   function handleMobileActionClick({ key }: { key: string }) {

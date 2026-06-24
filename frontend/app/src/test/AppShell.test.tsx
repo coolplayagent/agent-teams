@@ -11,7 +11,12 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { getHealth, getSession, listSidebarSessions } from "../api/client";
+import {
+  getHealth,
+  getSession,
+  listSidebarSessions,
+  listWorkspaces,
+} from "../api/client";
 import { AppShell } from "../features/shell/AppShell";
 import { useUiStore } from "../runtime/uiStore";
 
@@ -19,6 +24,7 @@ vi.mock("../api/client", () => ({
   getHealth: vi.fn(),
   getSession: vi.fn(),
   listSidebarSessions: vi.fn(),
+  listWorkspaces: vi.fn(),
 }));
 
 vi.mock("../features/composer/Composer", () => ({
@@ -96,6 +102,7 @@ vi.mock("../features/workspaces/WorkspaceProjectView", () => ({
 const getHealthMock = vi.mocked(getHealth);
 const getSessionMock = vi.mocked(getSession);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
+const listWorkspacesMock = vi.mocked(listWorkspaces);
 
 beforeEach(() => {
   mockViewportMatch(false);
@@ -110,6 +117,13 @@ beforeEach(() => {
       session_id: "session-1",
       workspace_id: "workspace-1",
       title: "Session 1",
+    },
+  ]);
+  listWorkspacesMock.mockResolvedValue([
+    {
+      workspace_id: "workspace-1",
+      root_path: "C:/work/agent-teams",
+      display_name: "Agent Teams",
     },
   ]);
   useUiStore.setState({
@@ -220,6 +234,12 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("observability")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
 
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByTestId("session-search-view")).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "Search sessions" })).toBeVisible();
+    expect(screen.getByText("Session 1")).toBeVisible();
+
     fireEvent.click(within(sidebar).getByRole("button", { name: "Chat" }));
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
@@ -227,6 +247,17 @@ describe("AppShell", () => {
     fireEvent.click(within(sidebar).getByRole("button", { name: "Settings" }));
 
     expect(await screen.findByRole("dialog")).toHaveTextContent("Settings");
+  });
+
+  it("opens the real session search surface from the keyboard shortcut", async () => {
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+
+    fireEvent.keyDown(window, { ctrlKey: true, key: "k" });
+
+    expect(await screen.findByTestId("session-search-view")).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: "Search sessions" })).toHaveFocus();
   });
 
   it("switches shell navigation labels when language changes", async () => {

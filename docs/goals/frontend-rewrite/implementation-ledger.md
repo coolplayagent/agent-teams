@@ -1014,3 +1014,28 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this composer-density framework slice. No Composer subsystem completion is claimed from this batch; remaining work includes broader V1/V2 framework parity, runtime streaming/recovery scenarios, missing V1 management surfaces, desktop checks, and reviewer sign-off.
+
+## 2026-06-24 Session Search Surface Batch
+
+### Scope
+- Rechecked V1 and V2 in the real in-app browser before editing, focusing on the primary `Search` navigation item from the V2 sidebar.
+- V1 opened a dedicated recent-conversation search panel with focused input, session title rows, workspace labels, shortcut-style keyboard selection, and result filtering.
+- V2 before this batch only dispatched a focus event to the sidebar `Search sessions` input, leaving no real search workspace surface and no active navigation state.
+- Added a componentized V2 `SessionSearchView` that searches real sidebar session records against session title, session id, workspace label, and workspace root path.
+- Wired the primary `Search` navigation item and `Ctrl/Cmd+K` to the real search surface, with keyboard result selection returning to the chat view and selecting the matched session/workspace.
+- Kept the legacy sidebar focus event for callers that explicitly target the sidebar filter, but removed the sidebar's global `Ctrl/Cmd+K` listener so the shell owns the command-palette shortcut.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-search-surface/`.
+- V1 reference screenshot: `v1-after-search-click.png`.
+- V2 before screenshot: `v2-after-search-click-before-fix.png`; browser state showed `hasSearchView=false` and focus on the sidebar `Search sessions` input.
+- V2 after screenshots: `v2-search-view-after-fix.png` and final rebuild smoke screenshot `v2-search-view-final.png`; browser state showed `hasSearchView=true`, `optionCount=20`, timeline hidden, and focus inside the new search view rather than the sidebar.
+- V2 filtered screenshot: `v2-search-filtered-after-fix.png`; browser state showed `desktop` filtering with highlighted matches and real workspace-root result rows.
+- Enter selection screenshot: `v2-search-select-after-fix.png`; browser state showed the search view closed, timeline visible again, one selected sidebar session row, and body/document fixed to the viewport (`1272 / 1272`, `windowScrollY=0`).
+- Shortcut screenshot: `v2-search-shortcut-after-fix.png`; browser state showed `Ctrl+K` opened the same search surface with focus inside its input.
+- Browser console checks returned no warnings or errors after the search interactions and final rebuilt-page smoke test.
+- `npm run test -- src/test/SessionSearchView.test.tsx src/test/AppShell.test.tsx src/test/SessionsSidebar.test.tsx` in `frontend/app` passed with 24 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this session-search slice. No Search, Application Shell, or full frontend subsystem completion is claimed from this batch; the next pass should start screenshot-first on the broader fixed-page workspace/chat framework issues reported by the user.

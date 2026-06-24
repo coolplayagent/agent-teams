@@ -27,6 +27,7 @@ import { useTranslations } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
 import { CommandsSettingsSection } from "./CommandsSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
+import { McpSettingsSection } from "./McpSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
@@ -38,6 +39,7 @@ type SettingsSection =
   | "commands"
   | "environment"
   | "general"
+  | "mcp"
   | "roles"
   | "models"
   | "orchestration"
@@ -99,8 +101,9 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
     () => [
       { key: "appearance" as const, label: t("settingsAppearance") },
       { key: "general" as const, label: t("settingsGeneral") },
-      { key: "commands" as const, label: t("settingsCommands") },
       { key: "models" as const, label: t("settingsModels") },
+      { key: "mcp" as const, label: t("settingsMcp") },
+      { key: "commands" as const, label: t("settingsCommands") },
       { key: "roles" as const, label: t("settingsRoles") },
       { key: "orchestration" as const, label: t("settingsOrchestration") },
       { key: "web" as const, label: t("settingsWeb") },
@@ -147,6 +150,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           />
         ) : null}
         {activeSection === "commands" ? <CommandsSettingsSection /> : null}
+        {activeSection === "mcp" ? <McpSettingsSection /> : null}
         {activeSection === "roles" ? (
           <SettingsRoles
             error={rolesQuery.error}

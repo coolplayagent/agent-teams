@@ -35,6 +35,13 @@ import type {
   MemoryScope,
   MemorySearchResult,
   MemoryTier,
+  McpServerAddRequest,
+  McpServerAddResult,
+  McpServerConfigResult,
+  McpServerConnectionTestResult,
+  McpServerSummary,
+  McpServerToolsSummary,
+  McpServerUpdateRequest,
   ModelProfilesPayload,
   NotificationConfig,
   OrchestrationConfig,
@@ -314,6 +321,96 @@ export function updateCommand(
   return requestJson<CommandMutationResponse>("/system/commands", {
     method: "PUT",
     body: JSON.stringify(request),
+  });
+}
+
+export function listMcpServers(): Promise<McpServerSummary[]> {
+  return requestJson<McpServerSummary[]>("/mcp/servers");
+}
+
+export function addMcpServer(
+  request: McpServerAddRequest,
+): Promise<McpServerAddResult> {
+  return requestJson<McpServerAddResult>("/mcp/servers", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function getMcpServer(serverName: string): Promise<McpServerConfigResult> {
+  return requestJson<McpServerConfigResult>(
+    `/mcp/servers/${encodeURIComponent(serverName)}`,
+  );
+}
+
+export function updateMcpServer(
+  serverName: string,
+  request: McpServerUpdateRequest,
+): Promise<McpServerConfigResult> {
+  return requestJson<McpServerConfigResult>(
+    `/mcp/servers/${encodeURIComponent(serverName)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteMcpServer(serverName: string): Promise<McpServerSummary> {
+  return requestJson<McpServerSummary>(
+    `/mcp/servers/${encodeURIComponent(serverName)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function setMcpServerEnabled(
+  serverName: string,
+  enabled: boolean,
+): Promise<McpServerSummary> {
+  return requestJson<McpServerSummary>(
+    `/mcp/servers/${encodeURIComponent(serverName)}/enabled`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    },
+  );
+}
+
+export function testMcpServerConnection(
+  serverName: string,
+): Promise<McpServerConnectionTestResult> {
+  return requestJson<McpServerConnectionTestResult>(
+    `/mcp/servers/${encodeURIComponent(serverName)}/test`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function getMcpServerTools(
+  serverName: string,
+): Promise<McpServerToolsSummary> {
+  return requestJson<McpServerToolsSummary>(
+    `/mcp/servers/${encodeURIComponent(serverName)}/tools`,
+  );
+}
+
+export function refreshMcpServerTools(
+  serverName: string,
+): Promise<McpServerToolsSummary> {
+  return requestJson<McpServerToolsSummary>(
+    `/mcp/servers/${encodeURIComponent(serverName)}/tools:refresh`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function reloadMcpConfig(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/mcp:reload", {
+    method: "POST",
   });
 }
 

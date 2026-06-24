@@ -84,6 +84,72 @@ export interface CommandMutationResponse {
   workspace_id?: string | null;
 }
 
+export type McpConfigScope = "app" | "plugin" | "session";
+export type McpDiscoveryStatus =
+  | "disabled"
+  | "pending"
+  | "loading"
+  | "ready"
+  | "failed";
+
+export interface McpToolInfo {
+  description: string;
+  name: string;
+}
+
+export interface McpServerSummary {
+  discovery_status?: McpDiscoveryStatus;
+  enabled?: boolean;
+  error?: string | null;
+  last_checked_at?: string | null;
+  name: string;
+  source: McpConfigScope;
+  tool_count?: number;
+  transport: string;
+}
+
+export interface McpServerToolsSummary {
+  enabled?: boolean;
+  error?: string | null;
+  last_checked_at?: string | null;
+  server: string;
+  source: McpConfigScope;
+  status?: McpDiscoveryStatus;
+  tools?: McpToolInfo[];
+  transport: string;
+}
+
+export interface McpServerAddRequest {
+  config: Record<string, JsonValue>;
+  name: string;
+  overwrite?: boolean;
+}
+
+export interface McpServerAddResult {
+  config_path: string;
+  server: McpServerSummary;
+}
+
+export interface McpServerConfigResult {
+  config: Record<string, JsonValue>;
+  server: McpServerSummary;
+}
+
+export interface McpServerUpdateRequest {
+  config: Record<string, JsonValue>;
+}
+
+export interface McpServerConnectionTestResult {
+  enabled?: boolean;
+  error?: string | null;
+  ok: boolean;
+  server: string;
+  source: McpConfigScope;
+  tool_count?: number;
+  tools?: McpToolInfo[];
+  transport: string;
+}
+
 export interface WorkspaceRecord {
   workspace_id: string;
   root_path: string;

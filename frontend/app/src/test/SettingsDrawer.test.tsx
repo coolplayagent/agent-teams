@@ -12,28 +12,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
+  addMcpServer,
   createCommand,
   deleteEnvironmentVariable,
+  deleteMcpServer,
   deleteSshProfile,
   getCommandCatalog,
   getEnvironmentVariables,
   getGeneralConfig,
+  getMcpServer,
+  getMcpServerTools,
   getModelProfiles,
   getOrchestrationConfig,
   getProxyConfig,
   getRoleConfigOptions,
   getWebConfig,
   listSshProfiles,
+  listMcpServers,
   probeSshProfileConnection,
   probeWebConnectivity,
   revealSshProfilePassword,
+  refreshMcpServerTools,
+  reloadMcpConfig,
   reloadProxyConfig,
   saveEnvironmentVariable,
   saveGeneralConfig,
   saveProxyConfig,
   saveSshProfile,
   saveWebConfig,
+  setMcpServerEnabled,
+  testMcpServerConnection,
   updateCommand,
+  updateMcpServer,
 } from "../api/client";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
 import {
@@ -44,54 +54,74 @@ import {
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  addMcpServer: vi.fn(),
   createCommand: vi.fn(),
   deleteEnvironmentVariable: vi.fn(),
+  deleteMcpServer: vi.fn(),
   deleteSshProfile: vi.fn(),
   getCommandCatalog: vi.fn(),
   getEnvironmentVariables: vi.fn(),
   getGeneralConfig: vi.fn(),
+  getMcpServer: vi.fn(),
+  getMcpServerTools: vi.fn(),
   getModelProfiles: vi.fn(),
   getOrchestrationConfig: vi.fn(),
   getProxyConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
+  listMcpServers: vi.fn(),
   listSshProfiles: vi.fn(),
   probeSshProfileConnection: vi.fn(),
   probeWebConnectivity: vi.fn(),
   revealSshProfilePassword: vi.fn(),
+  refreshMcpServerTools: vi.fn(),
+  reloadMcpConfig: vi.fn(),
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
   saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
+  setMcpServerEnabled: vi.fn(),
+  testMcpServerConnection: vi.fn(),
   updateCommand: vi.fn(),
+  updateMcpServer: vi.fn(),
 }));
 
 vi.setConfig({ testTimeout: 15000 });
 
+const addMcpServerMock = vi.mocked(addMcpServer);
 const createCommandMock = vi.mocked(createCommand);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
+const deleteMcpServerMock = vi.mocked(deleteMcpServer);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
 const getCommandCatalogMock = vi.mocked(getCommandCatalog);
 const getEnvironmentVariablesMock = vi.mocked(getEnvironmentVariables);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
+const getMcpServerMock = vi.mocked(getMcpServer);
+const getMcpServerToolsMock = vi.mocked(getMcpServerTools);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
+const listMcpServersMock = vi.mocked(listMcpServers);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
+const refreshMcpServerToolsMock = vi.mocked(refreshMcpServerTools);
+const reloadMcpConfigMock = vi.mocked(reloadMcpConfig);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
+const setMcpServerEnabledMock = vi.mocked(setMcpServerEnabled);
+const testMcpServerConnectionMock = vi.mocked(testMcpServerConnection);
 const updateCommandMock = vi.mocked(updateCommand);
+const updateMcpServerMock = vi.mocked(updateMcpServer);
 
 beforeEach(() => {
   getGeneralConfigMock.mockResolvedValue({ shell_safety_policy_enabled: true });
@@ -156,6 +186,123 @@ beforeEach(() => {
         workspace_id: "workspace-1",
       },
     ],
+  });
+  listMcpServersMock.mockResolvedValue([
+    {
+      discovery_status: "ready",
+      enabled: true,
+      last_checked_at: "2026-06-24T00:00:00Z",
+      name: "filesystem",
+      source: "app",
+      tool_count: 2,
+      transport: "stdio",
+    },
+    {
+      discovery_status: "disabled",
+      enabled: false,
+      name: "github",
+      source: "plugin",
+      tool_count: 0,
+      transport: "streamable-http",
+    },
+  ]);
+  getMcpServerToolsMock.mockResolvedValue({
+    enabled: true,
+    last_checked_at: "2026-06-24T00:00:00Z",
+    server: "filesystem",
+    source: "app",
+    status: "ready",
+    tools: [
+      { description: "Read a file", name: "read_file" },
+      { description: "Write a file", name: "write_file" },
+    ],
+    transport: "stdio",
+  });
+  getMcpServerMock.mockResolvedValue({
+    config: {
+      args: ["server.js"],
+      command: "node",
+      env: {
+        MCP_LOG: "info",
+      },
+      transport: "stdio",
+    },
+    server: {
+      discovery_status: "ready",
+      enabled: true,
+      name: "filesystem",
+      source: "app",
+      tool_count: 2,
+      transport: "stdio",
+    },
+  });
+  testMcpServerConnectionMock.mockResolvedValue({
+    enabled: true,
+    ok: true,
+    server: "filesystem",
+    source: "app",
+    tool_count: 2,
+    tools: [
+      { description: "Read a file", name: "read_file" },
+      { description: "Write a file", name: "write_file" },
+    ],
+    transport: "stdio",
+  });
+  refreshMcpServerToolsMock.mockResolvedValue({
+    enabled: true,
+    last_checked_at: "2026-06-24T00:00:00Z",
+    server: "filesystem",
+    source: "app",
+    status: "ready",
+    tools: [
+      { description: "Read a file", name: "read_file" },
+      { description: "Write a file", name: "write_file" },
+      { description: "List files", name: "list_files" },
+    ],
+    transport: "stdio",
+  });
+  setMcpServerEnabledMock.mockResolvedValue({
+    discovery_status: "disabled",
+    enabled: false,
+    name: "filesystem",
+    source: "app",
+    tool_count: 2,
+    transport: "stdio",
+  });
+  reloadMcpConfigMock.mockResolvedValue({ status: "ok" });
+  addMcpServerMock.mockResolvedValue({
+    config_path: "C:/config/mcp.json",
+    server: {
+      discovery_status: "pending",
+      enabled: true,
+      name: "demo",
+      source: "app",
+      tool_count: 0,
+      transport: "stdio",
+    },
+  });
+  updateMcpServerMock.mockResolvedValue({
+    config: {
+      args: ["server.js"],
+      command: "node",
+      transport: "stdio",
+    },
+    server: {
+      discovery_status: "pending",
+      enabled: true,
+      name: "filesystem",
+      source: "app",
+      tool_count: 0,
+      transport: "stdio",
+    },
+  });
+  deleteMcpServerMock.mockResolvedValue({
+    discovery_status: "disabled",
+    enabled: false,
+    name: "filesystem",
+    source: "app",
+    tool_count: 0,
+    transport: "stdio",
   });
   getOrchestrationConfigMock.mockResolvedValue({
     default_orchestration_preset_id: "default",
@@ -350,8 +497,9 @@ describe("SettingsDrawer", () => {
     ).toEqual([
       "Appearance",
       "General",
-      "Commands",
       "Models",
+      "MCP",
+      "Commands",
       "Roles",
       "Orchestration",
       "Web",
@@ -389,6 +537,68 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
   });
+
+  it("manages MCP servers through the MCP config clients", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "MCP" }));
+
+    expect(await screen.findByText("filesystem")).toBeVisible();
+    expect(screen.getByText("github")).toBeVisible();
+    expect(listMcpServersMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("read_file")).toBeVisible();
+    expect(getMcpServerToolsMock).toHaveBeenCalledWith("filesystem");
+
+    fireEvent.click(screen.getByRole("button", { name: "Test filesystem" }));
+    await waitFor(() =>
+      expect(testMcpServerConnectionMock).toHaveBeenCalledWith("filesystem"),
+    );
+    expect(await screen.findByText("filesystem connected with 2 tools.")).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh tools for filesystem" }),
+    );
+    await waitFor(() =>
+      expect(refreshMcpServerToolsMock).toHaveBeenCalledWith("filesystem"),
+    );
+    expect(await screen.findByText("list_files")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Disable filesystem" }));
+    await waitFor(() =>
+      expect(setMcpServerEnabledMock).toHaveBeenCalledWith("filesystem", false),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Server" }));
+    fireEvent.change(await screen.findByLabelText("Server name"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Command"), {
+      target: { value: "npx" },
+    });
+    fireEvent.change(screen.getByLabelText("Arguments"), {
+      target: { value: "@modelcontextprotocol/server-filesystem\nC:/repo" },
+    });
+    fireEvent.change(screen.getByLabelText("Environment"), {
+      target: { value: "MCP_LOG=debug" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        config: {
+          args: ["@modelcontextprotocol/server-filesystem", "C:/repo"],
+          command: "npx",
+          env: { MCP_LOG: "debug" },
+          transport: "stdio",
+        },
+        name: "demo",
+        overwrite: false,
+      }),
+    );
+  }, 12000);
 
   it("manages remote workspace SSH profiles through the workspace config clients", async () => {
     renderDrawer();

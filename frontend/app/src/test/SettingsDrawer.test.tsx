@@ -12,34 +12,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
+  createCommand,
   deleteEnvironmentVariable,
   deleteSshProfile,
-  getClawHubConfig,
+  getCommandCatalog,
   getEnvironmentVariables,
   getGeneralConfig,
-  getHealth,
   getModelProfiles,
-  getNotificationConfig,
   getOrchestrationConfig,
   getProxyConfig,
   getRoleConfigOptions,
   getWebConfig,
   listSshProfiles,
-  probeClawHubConnectivity,
   probeSshProfileConnection,
   probeWebConnectivity,
   revealSshProfilePassword,
   reloadProxyConfig,
   saveEnvironmentVariable,
   saveGeneralConfig,
-  saveClawHubConfig,
-  saveNotificationConfig,
   saveProxyConfig,
   saveSshProfile,
   saveWebConfig,
+  updateCommand,
 } from "../api/client";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
-import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import {
   appearanceStorageKey,
   applyAppearanceSettings,
@@ -48,78 +44,57 @@ import {
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  createCommand: vi.fn(),
   deleteEnvironmentVariable: vi.fn(),
   deleteSshProfile: vi.fn(),
-  getClawHubConfig: vi.fn(),
+  getCommandCatalog: vi.fn(),
   getEnvironmentVariables: vi.fn(),
   getGeneralConfig: vi.fn(),
-  getHealth: vi.fn(),
   getModelProfiles: vi.fn(),
-  getNotificationConfig: vi.fn(),
   getOrchestrationConfig: vi.fn(),
   getProxyConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
   listSshProfiles: vi.fn(),
-  probeClawHubConnectivity: vi.fn(),
   probeSshProfileConnection: vi.fn(),
   probeWebConnectivity: vi.fn(),
   revealSshProfilePassword: vi.fn(),
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
   saveGeneralConfig: vi.fn(),
-  saveClawHubConfig: vi.fn(),
-  saveNotificationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
   saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
-}));
-
-vi.mock("../api/speech", () => ({
-  fetchSpeechConfig: vi.fn(),
-  saveSpeechConfig: vi.fn(),
+  updateCommand: vi.fn(),
 }));
 
 vi.setConfig({ testTimeout: 15000 });
 
+const createCommandMock = vi.mocked(createCommand);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
-const getClawHubConfigMock = vi.mocked(getClawHubConfig);
+const getCommandCatalogMock = vi.mocked(getCommandCatalog);
 const getEnvironmentVariablesMock = vi.mocked(getEnvironmentVariables);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
-const getHealthMock = vi.mocked(getHealth);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
-const getNotificationConfigMock = vi.mocked(getNotificationConfig);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
-const probeClawHubConnectivityMock = vi.mocked(probeClawHubConnectivity);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
-const saveClawHubConfigMock = vi.mocked(saveClawHubConfig);
-const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
-const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
-const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
+const updateCommandMock = vi.mocked(updateCommand);
 
 beforeEach(() => {
   getGeneralConfigMock.mockResolvedValue({ shell_safety_policy_enabled: true });
-  getHealthMock.mockResolvedValue({
-    components: {
-      database: { status: "ok" },
-      runtime: "ready",
-    },
-    status: "ok",
-    version: "2.0-test",
-  });
   getModelProfilesMock.mockResolvedValue({
     default: {
       is_default: true,
@@ -147,16 +122,40 @@ beforeEach(() => {
       },
     },
   });
-  fetchSpeechConfigMock.mockResolvedValue({
-    configured: false,
-    language: null,
-    noise_reduction: "near_field",
-    prompt: null,
-    stt_profile_name: null,
-    supported_models: ["whisper-1", "gpt-4o-transcribe"],
-    vad_prefix_padding_ms: 300,
-    vad_silence_duration_ms: 500,
-    vad_threshold: 0.5,
+  getCommandCatalogMock.mockResolvedValue({
+    app_commands: [
+      {
+        aliases: ["g"],
+        allowed_modes: ["normal"],
+        argument_hint: "",
+        description: "Global command",
+        discovery_source: "app",
+        name: "global",
+        scope: "app",
+        source_path: "C:/config/commands/global.md",
+        template: "Global {{args}}",
+      },
+    ],
+    workspaces: [
+      {
+        can_create_commands: true,
+        commands: [
+          {
+            aliases: ["opsx/propose"],
+            allowed_modes: ["normal"],
+            argument_hint: "<change-id>",
+            description: "Create an OpenSpec proposal",
+            discovery_source: "project_claude",
+            name: "opsx:propose",
+            scope: "project",
+            source_path: "C:/repo/.claude/commands/opsx/propose.md",
+            template: "Propose {{args}}",
+          },
+        ],
+        root_path: "C:/repo",
+        workspace_id: "workspace-1",
+      },
+    ],
   });
   getOrchestrationConfigMock.mockResolvedValue({
     default_orchestration_preset_id: "default",
@@ -168,28 +167,6 @@ beforeEach(() => {
         role_ids: ["main", "reviewer"],
       },
     ],
-  });
-  getNotificationConfigMock.mockResolvedValue({
-    monitor_triggered: {
-      channels: ["browser", "toast"],
-      enabled: true,
-    },
-    run_completed: {
-      channels: ["toast", "feishu"],
-      enabled: true,
-    },
-    run_failed: {
-      channels: ["browser", "toast", "feishu"],
-      enabled: true,
-    },
-    run_stopped: {
-      channels: ["toast"],
-      enabled: false,
-    },
-    tool_approval_requested: {
-      channels: ["browser", "toast"],
-      enabled: true,
-    },
   });
   getRoleConfigOptionsMock.mockResolvedValue({
     coordinator_role: {
@@ -236,7 +213,6 @@ beforeEach(() => {
     proxy_username: "alice",
     ssl_verify: false,
   });
-  getClawHubConfigMock.mockResolvedValue({ token: "saved-clawhub-token" });
   getEnvironmentVariablesMock.mockResolvedValue({
     app: [
       {
@@ -273,25 +249,6 @@ beforeEach(() => {
     status_code: 200,
     used_method: "HEAD",
   });
-  probeClawHubConnectivityMock.mockResolvedValue({
-    checked_at: "2026-06-24T00:00:00Z",
-    clawhub_path: "C:/Users/yex/.local/bin/clawhub.exe",
-    clawhub_version: "1.2.3",
-    diagnostics: {
-      binary_available: true,
-      endpoint_fallback_used: false,
-      installation_attempted: false,
-      installed_during_probe: false,
-      registry: "https://clawhub.ai",
-      token_configured: true,
-    },
-    error_code: null,
-    error_message: null,
-    exit_code: 0,
-    latency_ms: 51,
-    ok: true,
-    retryable: false,
-  });
   listSshProfilesMock.mockResolvedValue([
     {
       ssh_profile_id: "devbox",
@@ -322,20 +279,36 @@ beforeEach(() => {
   });
   revealSshProfilePasswordMock.mockResolvedValue({ password: "saved-password" });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
-  saveClawHubConfigMock.mockResolvedValue({ status: "ok" });
-  saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
   reloadProxyConfigMock.mockResolvedValue({ status: "ok" });
-  saveSpeechConfigMock.mockResolvedValue({
-    configured: true,
-    language: "zh-CN",
-    noise_reduction: "near_field",
-    prompt: "domain terms",
-    stt_profile_name: "stt",
-    vad_prefix_padding_ms: 300,
-    vad_silence_duration_ms: 500,
-    vad_threshold: 0.5,
-  });
   saveProxyConfigMock.mockResolvedValue({ status: "ok" });
+  createCommandMock.mockResolvedValue({
+    command: {
+      aliases: [],
+      allowed_modes: ["normal"],
+      argument_hint: "",
+      description: "Created command",
+      discovery_source: "project_relay_teams",
+      name: "opsx:review",
+      scope: "project",
+      source_path: "C:/repo/.relay-teams/commands/opsx/review.md",
+      template: "Review {{args}}",
+    },
+    workspace_id: "workspace-1",
+  });
+  updateCommandMock.mockResolvedValue({
+    command: {
+      aliases: ["opsx/propose"],
+      allowed_modes: ["normal", "orchestration"],
+      argument_hint: "<change-id>",
+      description: "Updated proposal command",
+      discovery_source: "project_claude",
+      name: "opsx:propose",
+      scope: "project",
+      source_path: "C:/repo/.claude/commands/opsx/propose.md",
+      template: "Updated {{args}}",
+    },
+    workspace_id: "workspace-1",
+  });
   saveEnvironmentVariableMock.mockResolvedValue({
     key: "ANTHROPIC_API_KEY",
     scope: "app",
@@ -372,24 +345,28 @@ describe("SettingsDrawer", () => {
 
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeVisible();
     const sections = screen.getByRole("navigation", { name: "Settings sections" });
-    expect(within(sections).getByRole("button", { name: "Appearance" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "General" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Speech" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Notifications" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Models" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Roles" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Orchestration" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Web" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "ClawHub" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Proxy" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Remote workspace" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "Environment variables" })).toBeVisible();
-    expect(within(sections).getByRole("button", { name: "System" })).toBeVisible();
+    expect(
+      within(sections).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual([
+      "Appearance",
+      "General",
+      "Commands",
+      "Models",
+      "Roles",
+      "Orchestration",
+      "Web",
+      "Proxy",
+      "Remote workspace",
+      "Environment variables",
+    ]);
+    expect(within(sections).queryByRole("button", { name: "Speech" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "Notifications" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "ClawHub" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "System" })).toBeNull();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
     expect(getModelProfilesMock).toHaveBeenCalledTimes(1);
     expect(getOrchestrationConfigMock).toHaveBeenCalledTimes(1);
-    expect(getHealthMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
     await waitFor(() => expect(screen.getAllByText("default").length).toBeGreaterThan(0));
@@ -403,17 +380,14 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("Default")).toBeVisible();
     expect(screen.getByText("2 roles · Main plus reviewer")).toBeVisible();
 
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    expect(await screen.findByText("2.0-test")).toBeVisible();
-    expect(screen.getByText("database")).toBeVisible();
+    fireEvent.click(within(sections).getByRole("button", { name: "Commands" }));
+    expect(await screen.findByText("/opsx:propose")).toBeVisible();
+    expect(screen.getByText("Global commands")).toBeVisible();
+    expect(getCommandCatalogMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(within(sections).getByRole("button", { name: "Notifications" }));
-    expect(await screen.findByText("Run completed")).toBeVisible();
-    expect(getNotificationConfigMock).toHaveBeenCalledTimes(1);
   });
 
   it("manages remote workspace SSH profiles through the workspace config clients", async () => {
@@ -603,38 +577,69 @@ describe("SettingsDrawer", () => {
     );
   });
 
-  it("saves and probes ClawHub settings through the settings center", async () => {
+  it("creates and edits commands through the command settings clients", async () => {
     renderDrawer();
 
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "ClawHub" }));
+    fireEvent.click(within(sections).getByRole("button", { name: "Commands" }));
 
-    expect(await screen.findByText("clawhub.ai")).toBeVisible();
-    expect(screen.getByLabelText("Token")).toHaveAttribute(
-      "placeholder",
-      "************",
+    expect(await screen.findByText("/opsx:propose")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit /opsx:propose" }),
     );
-    expect(getClawHubConfigMock).toHaveBeenCalledTimes(1);
-
-    fireEvent.change(screen.getByLabelText("Token"), {
-      target: { value: "next-clawhub-token" },
+    fireEvent.change(await screen.findByLabelText("Description"), {
+      target: { value: "Updated proposal command" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-
-    await waitFor(() =>
-      expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
-        token: "next-clawhub-token",
-      }),
-    );
-    expect(await screen.findByText("Connected with 1.2.3 in 51 ms.")).toBeVisible();
-
+    fireEvent.change(screen.getByLabelText("Allowed modes"), {
+      target: { value: "normal, orchestration" },
+    });
+    fireEvent.change(screen.getByLabelText("Prompt template"), {
+      target: { value: "Updated {{args}}" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
-        token: "next-clawhub-token",
+      expect(updateCommandMock).toHaveBeenCalledWith({
+        aliases: ["opsx/propose"],
+        allowed_modes: ["normal", "orchestration"],
+        argument_hint: "<change-id>",
+        description: "Updated proposal command",
+        name: "opsx:propose",
+        source_path: "C:/repo/.claude/commands/opsx/propose.md",
+        template: "Updated {{args}}",
+      }),
+    );
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Commands" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add Command" }));
+    fireEvent.change(await screen.findByLabelText("Command name"), {
+      target: { value: "opsx:review" },
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText("File path")).toHaveValue("opsx/review.md"),
+    );
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Created command" },
+    });
+    fireEvent.change(screen.getByLabelText("Prompt template"), {
+      target: { value: "Review {{args}}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(createCommandMock).toHaveBeenCalledWith({
+        aliases: [],
+        allowed_modes: ["normal"],
+        argument_hint: "",
+        description: "Created command",
+        name: "opsx:review",
+        relative_path: "opsx/review.md",
+        scope: "project",
+        source: "relay_teams",
+        template: "Review {{args}}",
+        workspace_id: "workspace-1",
       }),
     );
   }, 10000);
@@ -692,64 +697,6 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(reloadProxyConfigMock).toHaveBeenCalledTimes(1));
   }, 10000);
 
-  it("saves notification settings without dropping hidden delivery channels", async () => {
-    renderDrawer();
-
-    const sections = await screen.findByRole("navigation", {
-      name: "Settings sections",
-    });
-    fireEvent.click(within(sections).getByRole("button", { name: "Notifications" }));
-
-    const runCompleted = await screen.findByText("Run completed");
-    const row = runCompleted.closest(".at-notification-row");
-    if (!(row instanceof HTMLElement)) {
-      throw new Error("Run completed notification row was not rendered.");
-    }
-    fireEvent.click(within(row).getByLabelText("Browser"));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(saveNotificationConfigMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          run_completed: expect.objectContaining({
-            channels: ["feishu", "browser", "toast"],
-            enabled: true,
-          }),
-        }),
-      ),
-    );
-  });
-
-  it("saves speech settings through the speech config API", async () => {
-    renderDrawer();
-
-    const sections = await screen.findByRole("navigation", {
-      name: "Settings sections",
-    });
-    fireEvent.click(within(sections).getByRole("button", { name: "Speech" }));
-
-    const profile = await screen.findByLabelText("STT profile");
-    fireEvent.change(profile, { target: { value: "stt" } });
-    fireEvent.change(screen.getByLabelText("Language"), {
-      target: { value: "zh-CN" },
-    });
-    fireEvent.change(screen.getByLabelText("Prompt"), {
-      target: { value: "domain terms" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(saveSpeechConfigMock).toHaveBeenCalledWith({
-        language: "zh-CN",
-        noise_reduction: "near_field",
-        prompt: "domain terms",
-        stt_profile_name: "stt",
-        vad_prefix_padding_ms: 300,
-        vad_silence_duration_ms: 500,
-        vad_threshold: 0.5,
-      }),
-    );
-  });
 });
 
 function renderDrawer() {

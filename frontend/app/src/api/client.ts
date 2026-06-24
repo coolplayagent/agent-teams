@@ -9,6 +9,10 @@ import type {
   ClawHubConfigSaveResponse,
   ClawHubConnectivityProbeRequest,
   ClawHubConnectivityProbeResult,
+  CommandCatalogResponse,
+  CommandCreateRequest,
+  CommandMutationResponse,
+  CommandUpdateRequest,
   ClawHubSkillMarketDetail,
   ClawHubSkillMarketInstallRequest,
   ClawHubSkillMarketInstallResponse,
@@ -289,6 +293,28 @@ export function disableAutomationProject(
 
 export function getConfigStatus(): Promise<SystemConfigStatus> {
   return requestJson<SystemConfigStatus>("/system/configs");
+}
+
+export function getCommandCatalog(): Promise<CommandCatalogResponse> {
+  return requestJson<CommandCatalogResponse>("/system/commands:catalog");
+}
+
+export function createCommand(
+  request: CommandCreateRequest,
+): Promise<CommandMutationResponse> {
+  return requestJson<CommandMutationResponse>("/system/commands", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function updateCommand(
+  request: CommandUpdateRequest,
+): Promise<CommandMutationResponse> {
+  return requestJson<CommandMutationResponse>("/system/commands", {
+    method: "PUT",
+    body: JSON.stringify(request),
+  });
 }
 
 export function getClawHubConfig(): Promise<ClawHubConfig> {

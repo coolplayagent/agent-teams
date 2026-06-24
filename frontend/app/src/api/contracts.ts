@@ -17,6 +17,73 @@ export interface ServerHealthPayload {
   components?: Record<string, JsonValue>;
 }
 
+export type CommandScope = "app" | "project";
+export type CommandDiscoverySource =
+  | "app"
+  | "plugin"
+  | "project_codex"
+  | "project_claude"
+  | "project_opencode"
+  | "project_relay_teams";
+export type CommandCreateScope = "global" | "project";
+export type CommandCreateSource =
+  | "claude"
+  | "codex"
+  | "opencode"
+  | "relay_teams";
+
+export interface CommandDetail {
+  name: string;
+  aliases?: string[];
+  description?: string;
+  argument_hint?: string;
+  allowed_modes?: string[];
+  scope: CommandScope;
+  discovery_source: CommandDiscoverySource;
+  source_path: string;
+  template: string;
+}
+
+export interface CommandCatalogWorkspace {
+  workspace_id: string;
+  root_path?: string | null;
+  can_create_commands?: boolean;
+  commands?: CommandDetail[];
+}
+
+export interface CommandCatalogResponse {
+  app_commands?: CommandDetail[];
+  workspaces?: CommandCatalogWorkspace[];
+}
+
+export interface CommandCreateRequest {
+  scope: CommandCreateScope;
+  workspace_id: string | null;
+  source: CommandCreateSource | null;
+  relative_path: string;
+  name: string;
+  aliases: string[];
+  description: string;
+  argument_hint: string;
+  allowed_modes: string[];
+  template: string;
+}
+
+export interface CommandUpdateRequest {
+  source_path: string;
+  name: string;
+  aliases: string[];
+  description: string;
+  argument_hint: string;
+  allowed_modes: string[];
+  template: string;
+}
+
+export interface CommandMutationResponse {
+  command: CommandDetail;
+  workspace_id?: string | null;
+}
+
 export interface WorkspaceRecord {
   workspace_id: string;
   root_path: string;

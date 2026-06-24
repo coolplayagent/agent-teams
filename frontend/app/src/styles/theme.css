@@ -4469,6 +4469,117 @@ body {
   font-size: 13px;
 }
 
+.at-commands-toolbar {
+  align-items: center;
+  max-width: 920px;
+}
+
+.at-commands-search {
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
+.at-commands-groups {
+  display: grid;
+  gap: 12px;
+  max-width: 980px;
+}
+
+.at-commands-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.at-commands-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.at-commands-group-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.at-commands-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.at-commands-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text-muted);
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-commands-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.at-commands-editor {
+  max-width: 920px;
+}
+
+.at-commands-editor-head {
+  display: grid;
+  gap: 3px;
+}
+
+.at-commands-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.at-commands-source-path,
+.at-commands-template-field {
+  grid-column: 1 / -1;
+}
+
+.at-commands-source-path {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-surface-muted);
+}
+
+.at-commands-source-path code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text);
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-commands-preview {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-bg);
+  color: var(--at-text);
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 760px) {
   .at-shell,
   .at-topbar,
@@ -5048,6 +5159,10 @@ body {
 
   .at-settings-env-actions {
     justify-content: flex-start;
+  }
+
+  .at-commands-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .at-settings-detail-header {

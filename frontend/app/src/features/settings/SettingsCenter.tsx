@@ -11,7 +11,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   getGeneralConfig,
-  getHealth,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfigOptions,
@@ -19,7 +18,6 @@ import {
 } from "../../api/client";
 import type {
   GeneralConfig,
-  JsonValue,
   ModalityCapabilities,
   ModelProfileRecord,
   OrchestrationPreset,
@@ -27,28 +25,23 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
-import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
+import { CommandsSettingsSection } from "./CommandsSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
-import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
-import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 
 type SettingsSection =
   | "appearance"
-  | "clawhub"
+  | "commands"
   | "environment"
   | "general"
-  | "notifications"
   | "roles"
   | "models"
   | "orchestration"
   | "proxy"
-  | "speech"
-  | "system"
   | "web"
   | "workspace";
 
@@ -85,11 +78,6 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
     queryFn: getOrchestrationConfig,
     enabled: open,
   });
-  const healthQuery = useQuery({
-    queryKey: ["server-health"],
-    queryFn: getHealth,
-    enabled: open,
-  });
   const saveMutation = useMutation({
     mutationFn: (values: GeneralConfig) => saveGeneralConfig(values),
     onSuccess: () => {
@@ -111,17 +99,14 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
     () => [
       { key: "appearance" as const, label: t("settingsAppearance") },
       { key: "general" as const, label: t("settingsGeneral") },
-      { key: "speech" as const, label: t("settingsSpeech") },
-      { key: "notifications" as const, label: t("settingsNotifications") },
+      { key: "commands" as const, label: t("settingsCommands") },
       { key: "models" as const, label: t("settingsModels") },
       { key: "roles" as const, label: t("settingsRoles") },
       { key: "orchestration" as const, label: t("settingsOrchestration") },
       { key: "web" as const, label: t("settingsWeb") },
-      { key: "clawhub" as const, label: t("settingsClawHub") },
       { key: "proxy" as const, label: t("settingsProxy") },
       { key: "workspace" as const, label: t("settingsWorkspace") },
       { key: "environment" as const, label: t("settingsEnvironment") },
-      { key: "system" as const, label: t("settingsSystem") },
     ],
     [t],
   );
@@ -161,8 +146,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             saving={saveMutation.isPending}
           />
         ) : null}
-        {activeSection === "speech" ? <SpeechSettingsSection /> : null}
-        {activeSection === "notifications" ? <NotificationSettingsSection /> : null}
+        {activeSection === "commands" ? <CommandsSettingsSection /> : null}
         {activeSection === "roles" ? (
           <SettingsRoles
             error={rolesQuery.error}
@@ -185,17 +169,9 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           />
         ) : null}
         {activeSection === "web" ? <WebSettingsSection /> : null}
-        {activeSection === "clawhub" ? <ClawHubSettingsSection /> : null}
         {activeSection === "proxy" ? <ProxySettingsSection /> : null}
         {activeSection === "workspace" ? <WorkspaceSettingsSection /> : null}
         {activeSection === "environment" ? <EnvironmentSettingsSection /> : null}
-        {activeSection === "system" ? (
-          <SettingsSystem
-            error={healthQuery.error}
-            health={healthQuery.data}
-            loading={healthQuery.isLoading}
-          />
-        ) : null}
       </section>
     </div>
   );
@@ -352,42 +328,6 @@ function SettingsOrchestration({
   );
 }
 
-function SettingsSystem({
-  error,
-  health,
-  loading,
-}: {
-  error: Error | null;
-  health: Awaited<ReturnType<typeof getHealth>> | undefined;
-  loading: boolean;
-}) {
-  const t = useTranslations();
-  const components = Object.entries(health?.components ?? {});
-  return (
-    <SettingsSection title={t("settingsSystem")}>
-      <SettingsQueryState error={error} loading={loading} />
-      {!loading && health !== undefined ? (
-        <>
-          <div className="at-settings-facts">
-            <Fact label={t("settingsServerStatus")} value={health.status ?? "-"} />
-            <Fact label={t("settingsVersion")} value={health.version ?? "-"} />
-            <Fact label={t("settingsComponents")} value={String(components.length)} />
-          </div>
-          <SettingsList
-            emptyText={t("settingsNoComponents")}
-            items={components.map(([name, value]) => ({
-              detail: jsonSummary(value),
-              key: name,
-              meta: t("settingsComponent"),
-              title: name,
-            }))}
-          />
-        </>
-      ) : null}
-    </SettingsSection>
-  );
-}
-
 function SettingsList({
   emptyText,
   items,
@@ -488,34 +428,4 @@ function capabilityModes(modes: ModalityCapabilities | undefined): string {
     .filter(([, enabled]) => enabled === true)
     .map(([name]) => name)
     .join(", ");
-}
-
-function jsonSummary(value: JsonValue): string {
-  if (value === null) {
-    return "null";
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return `${value.length} items`;
-  }
-  const entries = Object.entries(value);
-  return entries
-    .slice(0, 4)
-    .map(([key, entry]) => `${key}: ${jsonScalar(entry)}`)
-    .join(", ") || "{}";
-}
-
-function jsonScalar(value: JsonValue): string {
-  if (value === null) {
-    return "null";
-  }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return `${value.length} items`;
-  }
-  return "{...}";
 }

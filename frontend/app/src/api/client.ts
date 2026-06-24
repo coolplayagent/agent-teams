@@ -49,6 +49,7 @@ import type {
   ModelProfilesPayload,
   NotificationConfig,
   OrchestrationConfig,
+  PickWorkspaceResponse,
   ProxyConfig,
   ObservabilityBreakdowns,
   ObservabilityOverview,
@@ -106,6 +107,16 @@ export async function listWorkspaces(): Promise<WorkspaceRecord[]> {
     "/workspaces?limit=200",
   );
   return Array.isArray(payload) ? payload : payload.items;
+}
+
+export function pickWorkspace(rootPath?: string | null): Promise<PickWorkspaceResponse> {
+  const trimmedRootPath = rootPath?.trim() ?? "";
+  return requestJson<PickWorkspaceResponse>("/workspaces/pick", {
+    method: "POST",
+    body: trimmedRootPath
+      ? JSON.stringify({ root_path: trimmedRootPath })
+      : undefined,
+  });
 }
 
 export function getWorkspaceSnapshot(

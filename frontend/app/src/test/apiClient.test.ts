@@ -33,6 +33,7 @@ import {
   listSessionRounds,
   listWorkspaces,
   openWorkspaceRoot,
+  pickWorkspace,
   probeSshProfileConnection,
   probeClawHubConnectivity,
   probeWebConnectivity,
@@ -95,6 +96,53 @@ describe("api client", () => {
       "/api/workspaces?limit=200",
       expect.objectContaining({
         headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("picks workspaces with the optional root path payload", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            workspace: {
+              workspace_id: "workspace-1",
+              root_path: "C:/work/agent-teams",
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(pickWorkspace(" C:/work/agent-teams ")).resolves.toEqual({
+      workspace: {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+      },
+    });
+    await expect(pickWorkspace()).resolves.toEqual({
+      workspace: {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/workspaces/pick",
+      expect.objectContaining({
+        body: JSON.stringify({ root_path: "C:/work/agent-teams" }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/workspaces/pick",
+      expect.objectContaining({
+        body: undefined,
+        method: "POST",
       }),
     );
   });

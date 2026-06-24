@@ -1,6 +1,7 @@
 import {
   App,
   Button,
+  Dropdown,
   Empty,
   Input,
   Modal,
@@ -8,17 +9,16 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import type { InputRef } from "antd";
+import type { InputRef, MenuProps } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowDownUp,
   ChevronDown,
   ChevronRight,
   FolderClosed,
   FolderSearch,
   Pencil,
   Plus,
-  RefreshCcw,
-  Search,
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -30,6 +30,7 @@ import {
   listSidebarSessions,
   listSessionSubagents,
   listWorkspaces,
+  pickWorkspace,
   updateSession,
 } from "../../api/client";
 import type {
@@ -46,6 +47,7 @@ const visibleSessionIncrement = 20;
 const activeRunIndicatorStatuses = new Set(["queued", "running", "stopping"]);
 
 type SessionRunIndicatorType = "failed" | "running" | "stopped";
+type WorkspaceSortMode = "project_updated" | "project_created";
 
 export interface SidebarNavigationItem {
   active?: boolean;
@@ -112,6 +114,8 @@ export function SessionsSidebar({
   const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const [filter, setFilter] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [workspaceSortMode, setWorkspaceSortMode] =
+    useState<WorkspaceSortMode>("project_updated");
   const [visibleSessionLimits, setVisibleSessionLimits] = useState<
     Record<string, number>
   >({});
@@ -203,6 +207,27 @@ export function SessionsSidebar({
       );
     },
   });
+  const pickWorkspaceMutation = useMutation({
+    mutationFn: () => pickWorkspace(),
+    onSuccess: (response) => {
+      const workspace = response.workspace;
+      if (workspace === null) {
+        return;
+      }
+      setSelectedWorkspaceId(workspace.workspace_id);
+      queryClient.setQueryData<WorkspaceRecord[]>(["workspaces"], (current) =>
+        upsertWorkspace(current ?? [], workspace),
+      );
+      void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void message.success(t("sidebarNewProjectSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarNewProjectFailed"),
+      );
+    },
+  });
   const renameSessionMutation = useMutation({
     mutationFn: ({ sessionId, title }: RenameSessionPayload) =>
       updateSession(sessionId, { title }),
@@ -259,14 +284,31 @@ export function SessionsSidebar({
   const isFiltering = filter.trim().length > 0;
   const includeEmptyWorkspaces = !isFiltering;
   const sessionGroups = useMemo(
-    () => buildSessionGroups(workspaceOptions, filteredSessions, includeEmptyWorkspaces),
-    [filteredSessions, includeEmptyWorkspaces, workspaceOptions],
+    () =>
+      buildSessionGroups(
+        workspaceOptions,
+        filteredSessions,
+        includeEmptyWorkspaces,
+        workspaceSortMode,
+      ),
+    [filteredSessions, includeEmptyWorkspaces, workspaceOptions, workspaceSortMode],
   );
   const totalVisibleSessions = sessionGroups.reduce(
     (total, group) => total + group.sessions.length,
     0,
   );
   const showSearchRow = searchExpanded || isFiltering;
+  const sortLabel = workspaceSortLabel(workspaceSortMode, t);
+  const sortMenuItems: MenuProps["items"] = [
+    {
+      key: "project_updated",
+      label: t("sidebarSortProjectUpdated"),
+    },
+    {
+      key: "project_created",
+      label: t("sidebarSortProjectCreated"),
+    },
+  ];
 
   return (
     <div className="at-sidebar-inner">
@@ -310,33 +352,38 @@ export function SessionsSidebar({
       <div className="at-sidebar-section-header">
         <span>{t("sidebarWorkspaces")}</span>
         <div className="at-sidebar-section-actions">
-          <span>{sessionGroups.length}</span>
-          <Tooltip
-            title={t(showSearchRow ? "sidebarHideSessionFilter" : "sidebarShowSessionFilter")}
+          <Tooltip title={t("sidebarNewProject")}>
+            <Button
+              aria-label={t("sidebarNewProject")}
+              icon={<Plus size={14} />}
+              loading={pickWorkspaceMutation.isPending}
+              onClick={() => pickWorkspaceMutation.mutate()}
+              size="small"
+              type="text"
+            />
+          </Tooltip>
+          <Dropdown
+            menu={{
+              items: sortMenuItems,
+              onClick: ({ key }) => {
+                if (key === "project_created" || key === "project_updated") {
+                  setWorkspaceSortMode(key);
+                }
+              },
+              selectedKeys: [workspaceSortMode],
+            }}
+            placement="bottomRight"
+            trigger={["click"]}
           >
             <Button
-              aria-label={t(
-                showSearchRow ? "sidebarHideSessionFilter" : "sidebarShowSessionFilter",
-              )}
-              className={showSearchRow ? "is-active" : undefined}
-              icon={<Search size={14} />}
-              onClick={() => toggleSessionFilter()}
+              aria-haspopup="menu"
+              aria-label={sortLabel}
+              icon={<ArrowDownUp size={14} />}
               size="small"
+              title={sortLabel}
               type="text"
             />
-          </Tooltip>
-          <Tooltip title={t("sidebarRefreshSessions")}>
-            <Button
-              aria-label={t("sidebarRefreshSessions")}
-              icon={<RefreshCcw size={14} />}
-              loading={sessionsQuery.isFetching}
-              onClick={() =>
-                queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] })
-              }
-              size="small"
-              type="text"
-            />
-          </Tooltip>
+          </Dropdown>
         </div>
       </div>
       {showSearchRow ? (
@@ -662,18 +709,6 @@ export function SessionsSidebar({
     setRenameValue("");
   }
 
-  function toggleSessionFilter() {
-    setSearchExpanded((expanded) => {
-      const nextExpanded = !expanded;
-      if (!nextExpanded) {
-        setFilter("");
-      } else {
-        focusSearchOnExpandRef.current = true;
-      }
-      return nextExpanded;
-    });
-  }
-
   function submitRenameSession() {
     const title = renameValue.trim();
     if (renameTarget === null || !title || renameSessionMutation.isPending) {
@@ -845,6 +880,7 @@ function SessionSubagentList({
 }
 
 interface SessionGroup {
+  createdAt: number;
   id: string;
   label: string;
   pathHint: string;
@@ -980,10 +1016,41 @@ function workspaceLabel(workspace: WorkspaceRecord): string {
   );
 }
 
+function workspaceSortLabel(sortMode: WorkspaceSortMode, t: Translate): string {
+  if (sortMode === "project_created") {
+    return t("sidebarSortProjectCreated");
+  }
+  return t("sidebarSortProjectUpdated");
+}
+
+function upsertWorkspace(
+  workspaces: WorkspaceRecord[],
+  workspace: WorkspaceRecord,
+): WorkspaceRecord[] {
+  const existingIndex = workspaces.findIndex(
+    (item) => item.workspace_id === workspace.workspace_id,
+  );
+  if (existingIndex === -1) {
+    return [workspace, ...workspaces];
+  }
+  return workspaces.map((item, index) =>
+    index === existingIndex ? workspace : item,
+  );
+}
+
+function workspaceCreatedTimestampValue(workspace: WorkspaceRecord): number {
+  return timestampValue(workspace.created_at) || workspaceUpdatedTimestampValue(workspace);
+}
+
+function workspaceUpdatedTimestampValue(workspace: WorkspaceRecord): number {
+  return timestampValue(workspace.updated_at) || timestampValue(workspace.created_at);
+}
+
 function buildSessionGroups(
   workspaces: WorkspaceRecord[],
   sessions: SessionSidebarRecord[],
   includeEmptyWorkspaces: boolean,
+  sortMode: WorkspaceSortMode,
 ): SessionGroup[] {
   const groups = new Map<string, SessionGroup>();
   const workspaceById = new Map(
@@ -992,11 +1059,12 @@ function buildSessionGroups(
   if (includeEmptyWorkspaces) {
     workspaces.forEach((workspace) => {
       groups.set(workspace.workspace_id, {
+        createdAt: workspaceCreatedTimestampValue(workspace),
         id: workspace.workspace_id,
         label: workspaceLabel(workspace),
         pathHint: workspace.root_path,
         sessions: [],
-        updatedAt: 0,
+        updatedAt: workspaceUpdatedTimestampValue(workspace),
       });
     });
   }
@@ -1005,11 +1073,14 @@ function buildSessionGroups(
     const existing = groups.get(workspaceId);
     const workspace = workspaceById.get(workspaceId);
     const group = existing ?? {
+      createdAt:
+        workspace === undefined ? 0 : workspaceCreatedTimestampValue(workspace),
       id: workspaceId,
       label: workspace === undefined ? workspaceId : workspaceLabel(workspace),
       pathHint: workspace?.root_path ?? "",
       sessions: [],
-      updatedAt: 0,
+      updatedAt:
+        workspace === undefined ? 0 : workspaceUpdatedTimestampValue(workspace),
     };
     group.sessions.push(session);
     group.updatedAt = Math.max(group.updatedAt, sessionTimestampValue(session));
@@ -1025,10 +1096,14 @@ function buildSessionGroups(
       };
     })
     .sort((left, right) => (
-      right.updatedAt - left.updatedAt ||
+      groupSortValue(right, sortMode) - groupSortValue(left, sortMode) ||
       left.label.localeCompare(right.label) ||
       left.id.localeCompare(right.id)
     ));
+}
+
+function groupSortValue(group: SessionGroup, sortMode: WorkspaceSortMode): number {
+  return sortMode === "project_created" ? group.createdAt : group.updatedAt;
 }
 
 function sortSessions(sessions: SessionSidebarRecord[]): SessionSidebarRecord[] {
@@ -1068,7 +1143,10 @@ function visibleSessionsForGroup(
 }
 
 function sessionTimestampValue(session: SessionSidebarRecord): number {
-  const value = session.updated_at;
+  return timestampValue(session.updated_at);
+}
+
+function timestampValue(value: string | undefined): number {
   if (value === undefined || !value.trim()) {
     return 0;
   }

@@ -16,6 +16,7 @@ import {
   listSidebarSessions,
   listSessionSubagents,
   listWorkspaces,
+  pickWorkspace,
   updateSession,
 } from "../api/client";
 import {
@@ -32,6 +33,7 @@ vi.mock("../api/client", () => ({
   listSidebarSessions: vi.fn(),
   listSessionSubagents: vi.fn(),
   listWorkspaces: vi.fn(),
+  pickWorkspace: vi.fn(),
   updateSession: vi.fn(),
 }));
 
@@ -40,6 +42,7 @@ const deleteSessionMock = vi.mocked(deleteSession);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
+const pickWorkspaceMock = vi.mocked(pickWorkspace);
 const updateSessionMock = vi.mocked(updateSession);
 
 afterEach(() => {
@@ -87,6 +90,16 @@ describe("SessionsSidebar", () => {
     });
 
     expect(await screen.findByText("Workspaces")).toBeVisible();
+    expect(screen.getByRole("button", { name: "New project" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Sort by project update" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Filter sessions" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Refresh sessions" }),
+    ).not.toBeInTheDocument();
     const navigation = screen.getByRole("navigation", {
       name: "Primary navigation",
     });
@@ -179,6 +192,80 @@ describe("SessionsSidebar", () => {
     );
     expect(useUiStore.getState().selectedSessionId).toBe("session-new");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+  });
+
+  it("adds a picked project through the V1 workspace toolbar action", async () => {
+    const initialWorkspace = {
+      workspace_id: "workspace-1",
+      root_path: "C:/work/agent-teams",
+      display_name: "Agent Teams",
+    };
+    const pickedWorkspace = {
+      workspace_id: "workspace-2",
+      root_path: "C:/work/desktop",
+      display_name: "Desktop",
+    };
+    listWorkspacesMock
+      .mockResolvedValueOnce([initialWorkspace])
+      .mockResolvedValue([initialWorkspace, pickedWorkspace]);
+    listSidebarSessionsMock.mockResolvedValue([]);
+    pickWorkspaceMock.mockResolvedValue({
+      workspace: pickedWorkspace,
+    });
+
+    renderSidebar();
+
+    await screen.findByText("Agent Teams");
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+
+    await waitFor(() => expect(pickWorkspaceMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Desktop")).toBeVisible();
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
+  });
+
+  it("sorts projects from the V1 workspace toolbar menu", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/desktop",
+        display_name: "Desktop",
+        created_at: "2026-06-01T00:00:00Z",
+        updated_at: "2026-06-01T00:00:00Z",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    const agentTeams = await screen.findByText("Agent Teams");
+    const desktop = screen.getByText("Desktop");
+    expect(appearsBefore(agentTeams, desktop)).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by project update" }));
+    fireEvent.click(await screen.findByText("Sort by project creation"));
+
+    await waitFor(() =>
+      expect(
+        appearsBefore(screen.getByText("Desktop"), screen.getByText("Agent Teams")),
+      ).toBe(true),
+    );
+    expect(
+      screen.getByRole("button", { name: "Sort by project creation" }),
+    ).toBeVisible();
   });
 
   it("creates a session from a workspace project row", async () => {
@@ -320,10 +407,11 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("工作空间")).toBeVisible();
     expect(screen.getByRole("button", { name: "新建会话" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "新建项目" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "按项目更新时间" })).toBeVisible();
     expect(screen.queryByRole("searchbox", { name: "搜索会话" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "筛选会话" }));
-    expect(screen.getByRole("searchbox", { name: "搜索会话" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "刷新会话" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "筛选会话" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "刷新会话" })).not.toBeInTheDocument();
     expect(await screen.findByRole("button", {
       name: "打开 Agent Teams 的工作区视图",
     })).toBeVisible();
@@ -582,8 +670,9 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("Agent Teams")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
+    window.dispatchEvent(new Event("agent-teams-focus-session-search"));
+    const searchbox = await screen.findByRole("searchbox", { name: "Search sessions" });
+    fireEvent.change(searchbox, {
       target: { value: "desktop" },
     });
 
@@ -627,8 +716,9 @@ describe("SessionsSidebar", () => {
       "false",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
+    window.dispatchEvent(new Event("agent-teams-focus-session-search"));
+    const searchbox = await screen.findByRole("searchbox", { name: "Search sessions" });
+    fireEvent.change(searchbox, {
       target: { value: "alpha" },
     });
 
@@ -704,8 +794,9 @@ describe("SessionsSidebar", () => {
     expect(await screen.findByText("Filtered result 12")).toBeVisible();
     expect(screen.queryByText("Filtered result 01")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
+    window.dispatchEvent(new Event("agent-teams-focus-session-search"));
+    const searchbox = await screen.findByRole("searchbox", { name: "Search sessions" });
+    fireEvent.change(searchbox, {
       target: { value: "filtered" },
     });
 
@@ -714,7 +805,7 @@ describe("SessionsSidebar", () => {
     expect(screen.queryByRole("button", {
       name: "Show more sessions in Agent Teams",
     })).not.toBeInTheDocument();
-  });
+  }, 10000);
 });
 
 function renderSidebar(props?: {
@@ -748,5 +839,11 @@ function renderSidebar(props?: {
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,
+  );
+}
+
+function appearsBefore(left: HTMLElement, right: HTMLElement): boolean {
+  return (
+    (left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
   );
 }

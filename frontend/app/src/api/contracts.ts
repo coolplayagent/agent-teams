@@ -216,6 +216,8 @@ export interface WorkspaceRecord {
   name?: string;
   display_name?: string;
   mounts?: WorkspaceMountRecord[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type WorkspaceMountProvider = "local" | "ssh";
@@ -255,6 +257,10 @@ export interface WorkspacePage {
   items: WorkspaceRecord[];
   next_cursor?: string | null;
   has_more?: boolean;
+}
+
+export interface PickWorkspaceResponse {
+  workspace: WorkspaceRecord | null;
 }
 
 export type WorkspaceTreeNodeKind = "directory" | "file";

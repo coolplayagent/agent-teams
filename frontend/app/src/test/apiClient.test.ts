@@ -13,6 +13,7 @@ import {
   getAutomationProject,
   getEnvironmentVariables,
   getMemory,
+  getRoleConfig,
   getRuntimeToolDownload,
   getRuntimeSkillDetail,
   deleteSession,
@@ -25,6 +26,7 @@ import {
   listAutomationProjects,
   listBoardTodos,
   listConnectors,
+  listRoleConfigs,
   listRuntimeTools,
   listAgentMessages,
   listMemories,
@@ -45,6 +47,7 @@ import {
   saveNotificationConfig,
   saveOrchestrationConfig,
   saveProxyConfig,
+  saveRoleConfig,
   saveSshProfile,
   saveWebConfig,
   searchClawHubSkillMarket,
@@ -1557,6 +1560,82 @@ describe("api client", () => {
       expect.objectContaining({
         method: "DELETE",
         headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("manages editable role configs through the role config endpoints", async () => {
+    const roleConfig = {
+      bound_agent_id: "codex-local",
+      contract: {
+        invariants: [{ invariant: "must_review" }],
+      },
+      description: "Review changes",
+      file_name: "reviewer.md",
+      mcp_servers: ["filesystem"],
+      memory_profile: {
+        enabled: true,
+      },
+      mode: "subagent",
+      model_profile: "default",
+      name: "Reviewer",
+      role_id: "reviewer",
+      skills: ["review"],
+      source: "project",
+      source_role_id: "reviewer",
+      system_prompt: "Review carefully.",
+      tools: ["read_file"],
+      version: "1.0.0",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              description: "Review changes",
+              mode: "subagent",
+              model_profile: "default",
+              name: "Reviewer",
+              role_id: "reviewer",
+              source: "project",
+              version: "1.0.0",
+            },
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(roleConfig), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(roleConfig), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listRoleConfigs()).resolves.toEqual([
+      expect.objectContaining({ role_id: "reviewer" }),
+    ]);
+    await expect(getRoleConfig("reviewer")).resolves.toEqual(roleConfig);
+    await expect(saveRoleConfig("reviewer", roleConfig)).resolves.toEqual(roleConfig);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/roles/configs",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/roles/configs/reviewer",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/roles/configs/reviewer",
+      expect.objectContaining({
+        body: JSON.stringify(roleConfig),
+        headers: expect.any(Headers),
+        method: "PUT",
       }),
     );
   });

@@ -29,8 +29,10 @@ import {
   getOrchestrationConfig,
   getPluginsRuntime,
   getProxyConfig,
+  getRoleConfig,
   getRoleConfigOptions,
   getWebConfig,
+  listRoleConfigs,
   listSshProfiles,
   listMcpServers,
   probeSshProfileConnection,
@@ -43,6 +45,7 @@ import {
   saveGeneralConfig,
   saveOrchestrationConfig,
   saveProxyConfig,
+  saveRoleConfig,
   saveSshProfile,
   saveWebConfig,
   setMcpServerEnabled,
@@ -76,8 +79,10 @@ vi.mock("../api/client", () => ({
   getOrchestrationConfig: vi.fn(),
   getPluginsRuntime: vi.fn(),
   getProxyConfig: vi.fn(),
+  getRoleConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
+  listRoleConfigs: vi.fn(),
   listMcpServers: vi.fn(),
   listSshProfiles: vi.fn(),
   probeSshProfileConnection: vi.fn(),
@@ -90,6 +95,7 @@ vi.mock("../api/client", () => ({
   saveGeneralConfig: vi.fn(),
   saveOrchestrationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
+  saveRoleConfig: vi.fn(),
   saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
   setMcpServerEnabled: vi.fn(),
@@ -117,8 +123,10 @@ const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getPluginsRuntimeMock = vi.mocked(getPluginsRuntime);
 const getProxyConfigMock = vi.mocked(getProxyConfig);
+const getRoleConfigMock = vi.mocked(getRoleConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
+const listRoleConfigsMock = vi.mocked(listRoleConfigs);
 const listMcpServersMock = vi.mocked(listMcpServers);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
@@ -131,6 +139,7 @@ const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveOrchestrationConfigMock = vi.mocked(saveOrchestrationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
+const saveRoleConfigMock = vi.mocked(saveRoleConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
 const setMcpServerEnabledMock = vi.mocked(setMcpServerEnabled);
@@ -365,6 +374,52 @@ beforeEach(() => {
       },
     ],
   });
+  listRoleConfigsMock.mockResolvedValue([
+    {
+      description: "Main role",
+      mode: "primary",
+      model_profile: "default",
+      name: "Main Agent",
+      role_id: "main",
+      source: "app",
+      version: "1.0.0",
+    },
+    {
+      bound_agent_id: "codex-local",
+      description: "Review changes",
+      mode: "subagent",
+      model_profile: "default",
+      name: "Reviewer",
+      role_id: "reviewer",
+      source: "project",
+      version: "1.0.0",
+    },
+  ]);
+  getRoleConfigMock.mockImplementation((roleId) =>
+    Promise.resolve({
+      bound_agent_id: roleId === "reviewer" ? "codex-local" : null,
+      content: "---\nname: Reviewer\n---\nReview carefully.",
+      contract: {
+        invariants: [{ invariant: "must_review" }],
+      },
+      description: roleId === "reviewer" ? "Review changes" : "Main role",
+      file_name: `${roleId}.md`,
+      mcp_servers: ["filesystem"],
+      memory_profile: {
+        enabled: true,
+      },
+      mode: roleId === "reviewer" ? "subagent" : "primary",
+      model_profile: "default",
+      name: roleId === "reviewer" ? "Reviewer" : "Main Agent",
+      role_id: roleId,
+      skills: ["review"],
+      source: "project",
+      source_role_id: roleId,
+      system_prompt: roleId === "reviewer" ? "Review carefully." : "Handle work.",
+      tools: ["read_file"],
+      version: "1.0.0",
+    }),
+  );
   getWebConfigMock.mockResolvedValue({
     exa_api_key: "saved-exa-key",
     fallback_provider: "searxng",
@@ -496,6 +551,9 @@ beforeEach(() => {
   revealSshProfilePasswordMock.mockResolvedValue({ password: "saved-password" });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
   saveOrchestrationConfigMock.mockResolvedValue({ status: "ok" });
+  saveRoleConfigMock.mockImplementation((_roleId, document) =>
+    Promise.resolve(document),
+  );
   reloadProxyConfigMock.mockResolvedValue({ status: "ok" });
   saveProxyConfigMock.mockResolvedValue({ status: "ok" });
   createCommandMock.mockResolvedValue({
@@ -604,14 +662,17 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("vision")).toBeVisible();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+    await waitFor(() => expect(listRoleConfigsMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getAllByText("Coordinator").length).toBeGreaterThan(0));
     expect(screen.getByText("Reviewer")).toBeVisible();
     const reviewerRoleRow = screen.getByText("Reviewer").closest("button");
     expect(reviewerRoleRow).not.toBeNull();
     fireEvent.click(reviewerRoleRow as HTMLElement);
     expect(await screen.findByText("Role ID")).toBeVisible();
+    expect(getRoleConfigMock).toHaveBeenCalledWith("reviewer");
     expect(screen.getByText("reviewer")).toBeVisible();
-    expect(screen.getByText("Subagent roles")).toBeVisible();
+    expect(screen.getByDisplayValue("Review carefully.")).toBeVisible();
+    expect(screen.getByDisplayValue("subagent")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() => expect(screen.getAllByText("Main Agent").length).toBeGreaterThan(0));
 
@@ -682,6 +743,48 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
   }, 30000);
+
+  it("saves editable role configs from the role detail page", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+
+    const reviewerRoleRow = (await screen.findByText("Reviewer")).closest("button");
+    expect(reviewerRoleRow).not.toBeNull();
+    fireEvent.click(reviewerRoleRow as HTMLElement);
+
+    fireEvent.change(await screen.findByDisplayValue("Review changes"), {
+      target: { value: "Review changes carefully" },
+    });
+    fireEvent.change(screen.getByDisplayValue("Review carefully."), {
+      target: { value: "Review deeply before approving." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveRoleConfigMock).toHaveBeenCalledTimes(1));
+    expect(saveRoleConfigMock).toHaveBeenCalledWith(
+      "reviewer",
+      expect.objectContaining({
+        bound_agent_id: "codex-local",
+        contract: {
+          invariants: [{ invariant: "must_review" }],
+        },
+        description: "Review changes carefully",
+        mcp_servers: ["filesystem"],
+        memory_profile: {
+          enabled: true,
+        },
+        role_id: "reviewer",
+        skills: ["review"],
+        source_role_id: "reviewer",
+        system_prompt: "Review deeply before approving.",
+        tools: ["read_file"],
+      }),
+    );
+  }, 15000);
 
   it("manages MCP servers through the MCP config clients", async () => {
     renderDrawer();

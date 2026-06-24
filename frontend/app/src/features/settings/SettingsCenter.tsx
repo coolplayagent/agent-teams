@@ -14,9 +14,12 @@ import {
   getGeneralConfig,
   getModelProfiles,
   getOrchestrationConfig,
+  getRoleConfig,
   getRoleConfigOptions,
+  listRoleConfigs,
   saveGeneralConfig,
   saveOrchestrationConfig,
+  saveRoleConfig,
 } from "../../api/client";
 import type {
   GeneralConfig,
@@ -25,6 +28,8 @@ import type {
   OrchestrationConfig,
   OrchestrationPreset,
   OrchestrationPolicy,
+  RoleConfigDocument,
+  RoleConfigSummary,
   RoleOption,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
@@ -250,51 +255,201 @@ function SettingsRoles({
   loading: boolean;
   roles: Awaited<ReturnType<typeof getRoleConfigOptions>> | undefined;
 }) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const t = useTranslations();
-  const [selectedRoleKey, setSelectedRoleKey] = useState<string | null>(null);
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const roleConfigsQuery = useQuery({
+    queryKey: ["settings", "roles", "configs"],
+    queryFn: listRoleConfigs,
+  });
+  const selectedRoleQuery = useQuery({
+    queryKey: ["settings", "roles", "configs", selectedRoleId],
+    queryFn: () => getRoleConfig(selectedRoleId ?? ""),
+    enabled: selectedRoleId !== null,
+  });
+  const saveMutation = useMutation({
+    mutationFn: (document: RoleConfigDocument) =>
+      saveRoleConfig(document.role_id, document),
+    onSuccess: (document) => {
+      void message.success(t("settingsSaved"));
+      queryClient.setQueryData(
+        ["settings", "roles", "configs", document.role_id],
+        document,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["settings", "roles"] });
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
+      );
+    },
+  });
   const normalRoles = roles?.normal_mode_roles ?? [];
   const subagentRoles = roles?.subagent_roles ?? [];
   const roleItems = useMemo(
-    () => [
-      ...normalRoles.map((role) => roleListItem(role, t("settingsNormalRoles"), "normal")),
-      ...subagentRoles.map((role) => roleListItem(role, t("settingsSubagentRoles"), "subagent")),
-    ],
-    [normalRoles, subagentRoles, t],
+    () => (roleConfigsQuery.data ?? []).map((role) => roleConfigListItem(role)),
+    [roleConfigsQuery.data],
   );
-  const selectedRole =
-    selectedRoleKey !== null
-      ? roleItems.find((item) => item.key === selectedRoleKey)
+  const selectedRoleSummary =
+    selectedRoleId !== null
+      ? roleConfigsQuery.data?.find((role) => role.role_id === selectedRoleId)
       : undefined;
 
   useEffect(() => {
-    if (selectedRoleKey !== null && selectedRole === undefined) {
-      setSelectedRoleKey(null);
+    if (
+      selectedRoleId !== null
+      && roleConfigsQuery.data !== undefined
+      && selectedRoleSummary === undefined
+    ) {
+      setSelectedRoleId(null);
     }
-  }, [selectedRole, selectedRoleKey]);
+  }, [roleConfigsQuery.data, selectedRoleId, selectedRoleSummary]);
 
   return (
     <SettingsSection title={t("settingsRoles")}>
-      <SettingsQueryState error={error} loading={loading} />
-      {!loading && roles !== undefined ? (
-        selectedRole !== undefined ? (
-          <RoleOptionDetail item={selectedRole} onBack={() => setSelectedRoleKey(null)} />
-        ) : (
-          <>
-            <div className="at-settings-facts">
-              <Fact label={t("settingsCoordinator")} value={roleName(roles.coordinator_role)} />
-              <Fact label={t("settingsMainAgent")} value={roleName(roles.main_agent_role)} />
-              <Fact label={t("settingsNormalRoles")} value={String(normalRoles.length)} />
-              <Fact label={t("settingsSubagentRoles")} value={String(subagentRoles.length)} />
-            </div>
-            <SettingsList
-              emptyText={t("settingsNoRoles")}
-              items={roleItems}
-              onSelect={(item) => setSelectedRoleKey(item.key)}
-            />
-          </>
-        )
+      <SettingsQueryState
+        error={roleConfigsQuery.error ?? error}
+        loading={roleConfigsQuery.isLoading || loading}
+      />
+      {selectedRoleId !== null ? (
+        <RoleConfigDetail
+          document={selectedRoleQuery.data}
+          error={selectedRoleQuery.error}
+          loading={selectedRoleQuery.isLoading}
+          onBack={() => setSelectedRoleId(null)}
+          onSave={(document) => saveMutation.mutate(document)}
+          roleId={selectedRoleId}
+          saving={saveMutation.isPending}
+          summary={selectedRoleSummary}
+        />
+      ) : !roleConfigsQuery.isLoading && roleConfigsQuery.data !== undefined ? (
+        <>
+          <div className="at-settings-facts">
+            <Fact label={t("settingsCoordinator")} value={roleName(roles?.coordinator_role)} />
+            <Fact label={t("settingsMainAgent")} value={roleName(roles?.main_agent_role)} />
+            <Fact label={t("settingsNormalRoles")} value={String(normalRoles.length)} />
+            <Fact label={t("settingsSubagentRoles")} value={String(subagentRoles.length)} />
+          </div>
+          <SettingsList
+            emptyText={t("settingsNoRoleConfigs")}
+            items={roleItems}
+            onSelect={(item) => setSelectedRoleId(item.key)}
+          />
+        </>
       ) : null}
     </SettingsSection>
+  );
+}
+
+function RoleConfigDetail({
+  document,
+  error,
+  loading,
+  onBack,
+  onSave,
+  roleId,
+  saving,
+  summary,
+}: {
+  document: RoleConfigDocument | undefined;
+  error: Error | null;
+  loading: boolean;
+  onBack: () => void;
+  onSave: (document: RoleConfigDocument) => void;
+  roleId: string;
+  saving: boolean;
+  summary: RoleConfigSummary | undefined;
+}) {
+  const t = useTranslations();
+  const [form] = Form.useForm<RoleConfigForm>();
+  const formId = `at-role-config-form-${roleId}`;
+
+  useEffect(() => {
+    if (document !== undefined) {
+      form.setFieldsValue(roleConfigFormValues(document));
+    }
+  }, [document, form]);
+
+  const title = document?.name?.trim() || summary?.name?.trim() || roleId;
+  const detail = roleConfigDetail(document ?? summary);
+
+  return (
+    <div className="at-settings-detail-page at-role-config-detail">
+      <div className="at-settings-detail-header">
+        <div className="at-settings-list-main">
+          <span>{title}</span>
+          <Typography.Text>{detail}</Typography.Text>
+        </div>
+        <div className="at-settings-detail-actions">
+          {document !== undefined ? (
+            <Button form={formId} htmlType="submit" loading={saving} type="primary">
+              {t("settingsSave")}
+            </Button>
+          ) : null}
+          <Button onClick={onBack}>{t("settingsBack")}</Button>
+        </div>
+      </div>
+      <SettingsQueryState error={error} loading={loading} />
+      {document !== undefined ? (
+        <>
+          <div className="at-settings-facts at-settings-workspace-facts">
+            <Fact label={t("settingsRoleId")} value={document.role_id} />
+            <Fact label={t("settingsRoleSource")} value={document.source ?? "-"} />
+            <Fact label={t("settingsRoleFile")} value={document.file_name ?? "-"} />
+            <Fact
+              label={t("settingsRoleModelProfile")}
+              value={document.model_profile ?? "-"}
+            />
+          </div>
+          <Form
+            className="at-settings-form at-settings-wide-form at-role-config-form"
+            form={form}
+            id={formId}
+            layout="vertical"
+            onFinish={(values) => {
+              onSave(updateRoleConfigDocument(document, values));
+            }}
+          >
+            <Form.Item label={t("settingsRoleName")} name="name">
+              <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item label={t("settingsRoleDescription")} name="description">
+              <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
+            </Form.Item>
+            <Form.Item label={t("settingsRoleVersion")} name="version">
+              <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item label={t("settingsRoleModelProfile")} name="model_profile">
+              <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item label={t("settingsRoleBoundAgent")} name="bound_agent_id">
+              <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item label={t("settingsRoleMode")} name="mode">
+              <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item label={t("settingsRoleSystemPrompt")} name="system_prompt">
+              <Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} />
+            </Form.Item>
+          </Form>
+          <div className="at-settings-list at-role-config-properties">
+            <PropertyRow
+              label={t("settingsMcpToolCount")}
+              value={String(document.tools?.length ?? 0)}
+            />
+            <PropertyRow
+              label={t("settingsMcpServers")}
+              value={modalityList(document.mcp_servers ?? []) || "-"}
+            />
+            <PropertyRow
+              label={t("settingsSkills")}
+              value={modalityList(document.skills ?? []) || "-"}
+            />
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -515,16 +670,21 @@ interface SettingsListItem {
   title: string;
 }
 
-interface RoleListItem extends SettingsListItem {
-  category: string;
-  role: RoleOption;
-}
-
 interface OrchestrationPresetForm {
   description?: string;
   name?: string;
   orchestration_prompt?: string;
   role_ids?: string;
+}
+
+interface RoleConfigForm {
+  bound_agent_id?: string;
+  description?: string;
+  mode?: string;
+  model_profile?: string;
+  name?: string;
+  system_prompt?: string;
+  version?: string;
 }
 
 function SettingsList({
@@ -573,46 +733,6 @@ function SettingsList({
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function RoleOptionDetail({
-  item,
-  onBack,
-}: {
-  item: RoleListItem;
-  onBack: () => void;
-}) {
-  const t = useTranslations();
-  const role = item.role;
-  const input = capabilityModes(role.capabilities?.input) || modalityList(role.input_modalities ?? []);
-  const output = capabilityModes(role.capabilities?.output);
-  return (
-    <div className="at-settings-detail-page at-role-detail">
-      <div className="at-settings-detail-header">
-        <div className="at-settings-list-main">
-          <span>{role.name || role.role_id}</span>
-          <Typography.Text>{roleDetail(role)}</Typography.Text>
-        </div>
-        <div className="at-settings-detail-actions">
-          <Button onClick={onBack}>{t("settingsBack")}</Button>
-        </div>
-      </div>
-      <div className="at-settings-facts at-settings-workspace-facts">
-        <Fact label={t("settingsRoleId")} value={role.role_id} />
-        <Fact label={t("settingsRoleCategory")} value={item.category} />
-        <Fact label={t("settingsRoleModelProfile")} value={role.model_profile ?? "-"} />
-        <Fact label={t("settingsRoleModel")} value={role.model_name ?? "-"} />
-      </div>
-      <div className="at-settings-list at-role-properties">
-        <PropertyRow
-          label={t("settingsRoleDescription")}
-          value={role.description?.trim() || "-"}
-        />
-        <PropertyRow label={t("settingsModelInput")} value={input || "-"} />
-        <PropertyRow label={t("settingsModelOutput")} value={output || "-"} />
-      </div>
     </div>
   );
 }
@@ -719,23 +839,53 @@ function roleName(role: RoleOption | null | undefined): string {
   return role?.name?.trim() || role?.role_id || "-";
 }
 
-function roleListItem(role: RoleOption, category: string, keyPrefix: string): RoleListItem {
+function roleConfigListItem(role: RoleConfigSummary): SettingsListItem {
   return {
-    category,
-    detail: roleDetail(role),
-    key: `${keyPrefix}:${role.role_id}`,
-    meta: role.role_id,
-    role,
-    title: role.name || role.role_id,
+    detail: roleConfigDetail(role),
+    key: role.role_id,
+    meta: role.mode?.trim() || role.source?.trim() || "-",
+    title: role.name?.trim() || role.role_id,
   };
 }
 
-function roleDetail(role: RoleOption): string {
+function roleConfigDetail(role: RoleConfigSummary | undefined): string {
+  if (role === undefined) {
+    return "-";
+  }
   return [
+    role.description?.trim() || "",
     role.model_profile?.trim() || "",
-    role.model_name?.trim() || "",
-    modalityList(role.input_modalities ?? []),
+    role.bound_agent_id?.trim() || "",
   ].filter(Boolean).join(" · ") || "-";
+}
+
+function roleConfigFormValues(document: RoleConfigDocument): RoleConfigForm {
+  return {
+    bound_agent_id: document.bound_agent_id ?? "",
+    description: document.description ?? "",
+    mode: document.mode ?? "",
+    model_profile: document.model_profile ?? "",
+    name: document.name ?? "",
+    system_prompt: document.system_prompt ?? "",
+    version: document.version ?? "",
+  };
+}
+
+function updateRoleConfigDocument(
+  document: RoleConfigDocument,
+  values: RoleConfigForm,
+): RoleConfigDocument {
+  const mode = textValue(values.mode);
+  return {
+    ...document,
+    bound_agent_id: nullableText(values.bound_agent_id),
+    description: textValue(values.description),
+    mode: mode || document.mode,
+    model_profile: nullableText(values.model_profile),
+    name: textValue(values.name),
+    system_prompt: values.system_prompt ?? "",
+    version: textValue(values.version),
+  };
 }
 
 function defaultProfile(entries: Array<[string, ModelProfileRecord]>): string {
@@ -794,6 +944,15 @@ function updateOrchestrationPreset(
 function optionalText(value: string | undefined): string | undefined {
   const trimmed = value?.trim() ?? "";
   return trimmed || undefined;
+}
+
+function nullableText(value: string | undefined): string | null {
+  const trimmed = textValue(value);
+  return trimmed || null;
+}
+
+function textValue(value: string | undefined): string {
+  return value?.trim() ?? "";
 }
 
 function parseRoleIds(value: string | undefined): string[] {

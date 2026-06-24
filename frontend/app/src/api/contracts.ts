@@ -810,6 +810,35 @@ export interface RoleConfigOptions {
   subagent_roles?: RoleOption[];
 }
 
+export type RoleConfigMode = "primary" | "subagent" | "all" | (string & {});
+
+export interface RoleMemoryProfile {
+  enabled?: boolean | null;
+}
+
+export interface RoleConfigSummary {
+  role_id: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  model_profile?: string | null;
+  bound_agent_id?: string | null;
+  mode?: RoleConfigMode | null;
+  source?: string | null;
+}
+
+export interface RoleConfigDocument extends RoleConfigSummary {
+  source_role_id?: string | null;
+  tools?: string[];
+  mcp_servers?: string[];
+  skills?: string[];
+  memory_profile?: RoleMemoryProfile | null;
+  contract?: JsonValue | null;
+  system_prompt?: string;
+  file_name?: string | null;
+  content?: string | null;
+}
+
 export interface OrchestrationPreset {
   preset_id: string;
   name?: string;

@@ -54,7 +54,9 @@ import type {
   ObservabilityBreakdowns,
   ObservabilityOverview,
   RecoverySnapshot,
+  RoleConfigDocument,
   RoleConfigOptions,
+  RoleConfigSummary,
   RuntimeSkillDetail,
   HooksConfigPayload,
   HookRuntimeViewPayload,
@@ -556,6 +558,29 @@ export function reloadSkillsConfig(): Promise<{ status: string }> {
 
 export function getRoleConfigOptions(): Promise<RoleConfigOptions> {
   return requestJson<RoleConfigOptions>("/roles:options");
+}
+
+export function listRoleConfigs(): Promise<RoleConfigSummary[]> {
+  return requestJson<RoleConfigSummary[]>("/roles/configs");
+}
+
+export function getRoleConfig(roleId: string): Promise<RoleConfigDocument> {
+  return requestJson<RoleConfigDocument>(
+    `/roles/configs/${encodeURIComponent(roleId.trim())}`,
+  );
+}
+
+export function saveRoleConfig(
+  roleId: string,
+  config: RoleConfigDocument,
+): Promise<RoleConfigDocument> {
+  return requestJson<RoleConfigDocument>(
+    `/roles/configs/${encodeURIComponent(roleId.trim())}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(config),
+    },
+  );
 }
 
 export function getModelProfiles(): Promise<ModelProfilesPayload> {

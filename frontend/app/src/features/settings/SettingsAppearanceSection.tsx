@@ -1,5 +1,5 @@
 import { App, Button, Input, Segmented, Switch, Typography } from "antd";
-import type { ChangeEvent, CSSProperties, ReactNode } from "react";
+import type { ChangeEvent, CSSProperties, FocusEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { useTranslations } from "../../i18n";
@@ -161,7 +161,9 @@ export function SettingsAppearanceSection({
   const { message } = App.useApp();
   const t = useTranslations();
   const importInputRef = useRef<HTMLInputElement>(null);
+  const presetMenuRef = useRef<HTMLDivElement>(null);
   const [appearance, setAppearance] = useState(readAppearanceSettings);
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false);
 
   useEffect(() => {
     applyAppearanceSettings(appearance);
@@ -178,12 +180,11 @@ export function SettingsAppearanceSection({
   }, []);
 
   const activePresetKey = appearance.themePreset || defaultPresetKey(themeMode);
+  const activePresetLabel =
+    themePresets.find((preset) => preset.key === activePresetKey)?.label ?? activePresetKey;
   const contrastValue = appearance.contrast > 0 ? appearance.contrast : 45;
   const uiFontSize = appearance.uiFontSize > 0 ? appearance.uiFontSize : 14;
   const codeFontSize = appearance.codeFontSize > 0 ? appearance.codeFontSize : 12;
-  const lineHeightValue = appearance.lineHeight > 0 ? appearance.lineHeight : 148;
-  const messageDensityValue =
-    appearance.messageDensity > 0 ? appearance.messageDensity : 85;
   const activeThemeLabel = themeLabel(themeMode, t);
   const themeCards: ThemeCard[] = [
     { key: "system", label: t("settingsAppearanceThemeSystem") },
@@ -200,6 +201,7 @@ export function SettingsAppearanceSection({
       saveAppearanceSettings(next);
       return next;
     });
+    setPresetMenuOpen(false);
   }
 
   function applyPreset(key: string): void {
@@ -262,6 +264,29 @@ export function SettingsAppearanceSection({
     void message.success(t("settingsAppearanceReset"));
   }
 
+  function togglePresetMenu(): void {
+    const settingsBody = presetMenuRef.current?.closest(".at-settings-section-body");
+    const scrollContainer = settingsBody instanceof HTMLElement ? settingsBody : null;
+    const scrollTop = scrollContainer?.scrollTop ?? null;
+    setPresetMenuOpen((open) => !open);
+    if (scrollContainer !== null && scrollTop !== null) {
+      const restoreScroll = () => {
+        scrollContainer.scrollTop = scrollTop;
+      };
+      window.requestAnimationFrame(restoreScroll);
+      window.setTimeout(restoreScroll, 0);
+      window.setTimeout(restoreScroll, 80);
+    }
+  }
+
+  function handlePresetMenuBlur(event: FocusEvent<HTMLDivElement>): void {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+    setPresetMenuOpen(false);
+  }
+
   return (
     <SettingsSection title={t("settingsAppearance")}>
       <div className="at-appearance-page">
@@ -296,22 +321,50 @@ export function SettingsAppearanceSection({
               <Button onClick={() => void copyTheme()} type="text">
                 {t("settingsAppearanceCopyTheme")}
               </Button>
-              <label className="at-appearance-preset-select">
-                <span aria-hidden="true" className="at-appearance-preset-icon">
-                  Aa
-                </span>
-                <select
+              <div
+                className="at-appearance-preset-select"
+                onBlur={handlePresetMenuBlur}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setPresetMenuOpen(false);
+                  }
+                }}
+                ref={presetMenuRef}
+              >
+                <button
+                  aria-expanded={presetMenuOpen}
+                  aria-haspopup="listbox"
                   aria-label={t("settingsAppearanceThemePreset")}
-                  onChange={(event) => applyPreset(event.target.value)}
-                  value={activePresetKey}
+                  className="at-appearance-preset-trigger"
+                  onClick={togglePresetMenu}
+                  onMouseDown={(event) => event.preventDefault()}
+                  type="button"
                 >
-                  {themePresets.map((preset) => (
-                    <option key={preset.key} value={preset.key}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <PresetOptionLabel label={activePresetLabel} />
+                  <span aria-hidden="true" className="at-appearance-preset-arrow" />
+                </button>
+                {presetMenuOpen ? (
+                  <div className="at-appearance-preset-menu" role="listbox">
+                    {themePresets.map((preset) => (
+                      <button
+                        aria-selected={activePresetKey === preset.key}
+                        className={
+                          activePresetKey === preset.key
+                            ? "at-appearance-preset-menu-option is-selected"
+                            : "at-appearance-preset-menu-option"
+                        }
+                        key={preset.key}
+                        onClick={() => applyPreset(preset.key)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        role="option"
+                        type="button"
+                      >
+                        <PresetOptionLabel label={preset.label} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <input
                 accept="application/json"
                 className="at-appearance-import-input"
@@ -442,36 +495,6 @@ export function SettingsAppearanceSection({
               value={codeFontSize}
             />
           </SettingsTableRow>
-          <SettingsTableRow label={t("settingsAppearanceLineHeight")}>
-            <div className="at-appearance-inline-range">
-              <input
-                aria-label={t("settingsAppearanceLineHeight")}
-                max={180}
-                min={120}
-                onChange={(event) =>
-                  updateAppearance("lineHeight", Number(event.target.value))
-                }
-                type="range"
-                value={lineHeightValue}
-              />
-              <output>{formatRatio(lineHeightValue)}</output>
-            </div>
-          </SettingsTableRow>
-          <SettingsTableRow label={t("settingsAppearanceMessageDensity")}>
-            <div className="at-appearance-inline-range">
-              <input
-                aria-label={t("settingsAppearanceMessageDensity")}
-                max={130}
-                min={60}
-                onChange={(event) =>
-                  updateAppearance("messageDensity", Number(event.target.value))
-                }
-                type="range"
-                value={messageDensityValue}
-              />
-              <output>{formatRatio(messageDensityValue)}</output>
-            </div>
-          </SettingsTableRow>
           <SettingsTableRow
             description={t("settingsAppearanceDiffMarkerHelp")}
             label={t("settingsAppearanceDiffMarkers")}
@@ -494,6 +517,17 @@ export function SettingsAppearanceSection({
         </div>
       </div>
     </SettingsSection>
+  );
+}
+
+function PresetOptionLabel({ label }: { label: string }) {
+  return (
+    <span className="at-appearance-preset-option">
+      <span aria-hidden="true" className="at-appearance-preset-icon">
+        Aa
+      </span>
+      <span>{label}</span>
+    </span>
   );
 }
 
@@ -652,10 +686,6 @@ function themeLabel(themeMode: ThemeMode, t: ReturnType<typeof useTranslations>)
 
 function colorInputValue(value: string, fallback: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value : fallback;
-}
-
-function formatRatio(value: number): string {
-  return (value / 100).toFixed(2);
 }
 
 function fallbackCopy(value: string): void {

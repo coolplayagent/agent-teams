@@ -6,6 +6,24 @@ import { describe, expect, it } from "vitest";
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
 
 describe("shell layout CSS", () => {
+  it("keeps settings navigation and content scrolling independently", () => {
+    expect(themeCss).toMatch(
+      /\.at-settings-drawer \.ant-drawer-body\s*{[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-settings-center\s*{[\s\S]*?grid-template-columns:\s*190px minmax\(0, 1fr\);[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-settings-nav\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-settings-content\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-settings-section-body\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
+    );
+  });
+
   it("keeps the timeline reading column narrower than the composer", () => {
     expect(themeCss).toMatch(/--at-timeline-column-width:\s*760px;/);
     expect(themeCss).toMatch(

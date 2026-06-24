@@ -4591,7 +4591,7 @@ body {
 }
 
 .at-appearance-panel {
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--at-border);
   border-radius: 8px;
   background: var(--at-surface);
@@ -4641,30 +4641,55 @@ body {
 }
 
 .at-appearance-preset-select {
+  position: relative;
   flex: 0 0 236px;
+  width: 236px;
+}
+
+.at-appearance-preset-trigger {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 14px;
   align-items: center;
   gap: 8px;
-  width: 236px;
+  width: 100%;
   min-height: 32px;
   padding: 3px 10px 3px 8px;
   border: 1px solid var(--at-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--at-surface-muted) 72%, var(--at-surface));
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
-.at-appearance-preset-select select {
+.at-appearance-preset-option {
+  display: inline-flex;
   min-width: 0;
-  border: 0;
-  background: transparent;
+  align-items: center;
+  gap: 8px;
   color: var(--at-text);
-  font: inherit;
-  outline: none;
+}
+
+.at-appearance-preset-option > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-appearance-preset-arrow {
+  width: 7px;
+  height: 7px;
+  justify-self: end;
+  border-right: 1.5px solid var(--at-text-muted);
+  border-bottom: 1.5px solid var(--at-text-muted);
+  transform: rotate(45deg) translateY(-2px);
 }
 
 .at-appearance-preset-icon {
   display: inline-grid;
+  flex: 0 0 auto;
   width: 24px;
   height: 24px;
   place-items: center;
@@ -4673,6 +4698,43 @@ body {
   color: var(--at-primary);
   font-size: 11px;
   font-weight: 600;
+}
+
+.at-appearance-preset-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  width: 236px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  box-shadow: 0 2px 8px rgba(32, 35, 31, 0.12);
+}
+
+.at-appearance-preset-menu-option {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-appearance-preset-menu-option:hover,
+.at-appearance-preset-menu-option:focus-visible,
+.at-appearance-preset-menu-option.is-selected {
+  background: var(--at-surface-muted);
+  outline: none;
 }
 
 .at-appearance-import-input {

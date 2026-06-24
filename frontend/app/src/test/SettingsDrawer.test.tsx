@@ -1816,18 +1816,14 @@ describe("SettingsDrawer", () => {
     fireEvent.change(screen.getByLabelText("UI font size"), {
       target: { value: "16" },
     });
-    fireEvent.change(screen.getByLabelText("Line height"), {
-      target: { value: "160" },
-    });
-    fireEvent.change(screen.getByLabelText("Message spacing"), {
-      target: { value: "95" },
-    });
     fireEvent.click(screen.getByRole("switch", { name: "Translucent sidebar" }));
     fireEvent.change(screen.getByLabelText("Contrast"), {
       target: { value: "60" },
     });
     fireEvent.click(screen.getByText("On"));
     fireEvent.click(screen.getByText("+/-"));
+    expect(screen.queryByLabelText("Line height")).toBeNull();
+    expect(screen.queryByLabelText("Message spacing")).toBeNull();
 
     expect(document.documentElement.style.getPropertyValue("--at-primary")).toBe(
       "#336699",
@@ -1839,12 +1835,6 @@ describe("SettingsDrawer", () => {
     expect(document.documentElement.style.getPropertyValue("--at-ui-font-size")).toBe(
       "16px",
     );
-    expect(document.documentElement.style.getPropertyValue("--at-message-line-height")).toBe(
-      "1.60",
-    );
-    expect(document.documentElement.style.getPropertyValue("--at-message-gap")).toBe(
-      "0.95rem",
-    );
     expect(document.documentElement.style.getPropertyValue("--at-contrast-filter")).toBe(
       "contrast(1.15)",
     );
@@ -1855,8 +1845,6 @@ describe("SettingsDrawer", () => {
       accent: "#336699",
       contrast: 60,
       diffMarker: "sign",
-      lineHeight: 160,
-      messageDensity: 95,
       motion: "reduce",
       translucentSidebar: true,
       uiFont: '"Inter", sans-serif',

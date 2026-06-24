@@ -815,6 +815,18 @@ export interface OrchestrationPreset {
   name?: string;
   description?: string;
   role_ids?: string[];
+  orchestration_prompt?: string;
+  policy?: OrchestrationPolicy;
+}
+
+export interface OrchestrationPolicy {
+  auto_plan_long_tasks?: boolean | null;
+  coordinator_inline_budget_steps?: number | null;
+  max_orchestration_cycles?: number | null;
+  max_parallel_delegated_tasks?: number | null;
+  max_temporary_roles_per_run?: number | null;
+  planner_role_id?: string | null;
+  prefer_temporary_roles_for_long_tasks?: boolean | null;
 }
 
 export interface OrchestrationConfig {

@@ -21,6 +21,7 @@ import type {
   ModalityCapabilities,
   ModelProfileRecord,
   OrchestrationPreset,
+  OrchestrationPolicy,
   RoleOption,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
@@ -247,29 +248,48 @@ function SettingsRoles({
   roles: Awaited<ReturnType<typeof getRoleConfigOptions>> | undefined;
 }) {
   const t = useTranslations();
+  const [selectedRoleKey, setSelectedRoleKey] = useState<string | null>(null);
   const normalRoles = roles?.normal_mode_roles ?? [];
   const subagentRoles = roles?.subagent_roles ?? [];
+  const roleItems = useMemo(
+    () => [
+      ...normalRoles.map((role) => roleListItem(role, t("settingsNormalRoles"), "normal")),
+      ...subagentRoles.map((role) => roleListItem(role, t("settingsSubagentRoles"), "subagent")),
+    ],
+    [normalRoles, subagentRoles, t],
+  );
+  const selectedRole =
+    selectedRoleKey !== null
+      ? roleItems.find((item) => item.key === selectedRoleKey)
+      : undefined;
+
+  useEffect(() => {
+    if (selectedRoleKey !== null && selectedRole === undefined) {
+      setSelectedRoleKey(null);
+    }
+  }, [selectedRole, selectedRoleKey]);
+
   return (
     <SettingsSection title={t("settingsRoles")}>
       <SettingsQueryState error={error} loading={loading} />
       {!loading && roles !== undefined ? (
-        <>
-          <div className="at-settings-facts">
-            <Fact label={t("settingsCoordinator")} value={roleName(roles.coordinator_role)} />
-            <Fact label={t("settingsMainAgent")} value={roleName(roles.main_agent_role)} />
-            <Fact label={t("settingsNormalRoles")} value={String(normalRoles.length)} />
-            <Fact label={t("settingsSubagentRoles")} value={String(subagentRoles.length)} />
-          </div>
-          <SettingsList
-            emptyText={t("settingsNoRoles")}
-            items={[...normalRoles, ...subagentRoles].map((role) => ({
-              detail: roleDetail(role),
-              key: role.role_id,
-              meta: role.role_id,
-              title: role.name || role.role_id,
-            }))}
-          />
-        </>
+        selectedRole !== undefined ? (
+          <RoleOptionDetail item={selectedRole} onBack={() => setSelectedRoleKey(null)} />
+        ) : (
+          <>
+            <div className="at-settings-facts">
+              <Fact label={t("settingsCoordinator")} value={roleName(roles.coordinator_role)} />
+              <Fact label={t("settingsMainAgent")} value={roleName(roles.main_agent_role)} />
+              <Fact label={t("settingsNormalRoles")} value={String(normalRoles.length)} />
+              <Fact label={t("settingsSubagentRoles")} value={String(subagentRoles.length)} />
+            </div>
+            <SettingsList
+              emptyText={t("settingsNoRoles")}
+              items={roleItems}
+              onSelect={(item) => setSelectedRoleKey(item.key)}
+            />
+          </>
+        )
       ) : null}
     </SettingsSection>
   );
@@ -364,8 +384,12 @@ function ModelProfileDetail({
   profileId: string;
 }) {
   const t = useTranslations();
-  const input = capabilityModes(profile.resolved_capabilities?.input ?? profile.capabilities?.input);
-  const output = capabilityModes(profile.resolved_capabilities?.output ?? profile.capabilities?.output);
+  const input = capabilityModes(
+    profile.resolved_capabilities?.input ?? profile.capabilities?.input,
+  );
+  const output = capabilityModes(
+    profile.resolved_capabilities?.output ?? profile.capabilities?.output,
+  );
   return (
     <div className="at-settings-detail-page at-model-profile-detail">
       <div className="at-settings-detail-header">
@@ -414,64 +438,205 @@ function SettingsOrchestration({
   loading: boolean;
 }) {
   const t = useTranslations();
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const presets = config?.presets ?? [];
+  const selectedPreset =
+    selectedPresetId !== null
+      ? presets.find((preset) => preset.preset_id === selectedPresetId)
+      : undefined;
+
+  useEffect(() => {
+    if (selectedPresetId !== null && selectedPreset === undefined) {
+      setSelectedPresetId(null);
+    }
+  }, [selectedPreset, selectedPresetId]);
+
   return (
     <SettingsSection title={t("settingsOrchestration")}>
       <SettingsQueryState error={error} loading={loading} />
       {!loading && config !== undefined ? (
-        <>
-          <div className="at-settings-facts">
-            <Fact
-              label={t("settingsDefaultPreset")}
-              value={config.default_orchestration_preset_id ?? "-"}
-            />
-            <Fact label={t("settingsPresetCount")} value={String(presets.length)} />
-          </div>
-          <SettingsList
-            emptyText={t("settingsNoOrchestrationPresets")}
-            items={presets.map((preset) => ({
-              detail: orchestrationPresetDetail(preset),
-              key: preset.preset_id,
-              meta: preset.preset_id,
-              title: preset.name ?? preset.preset_id,
-            }))}
+        selectedPreset !== undefined ? (
+          <OrchestrationPresetDetail
+            defaultPresetId={config.default_orchestration_preset_id}
+            onBack={() => setSelectedPresetId(null)}
+            preset={selectedPreset}
           />
-        </>
+        ) : (
+          <>
+            <div className="at-settings-facts">
+              <Fact
+                label={t("settingsDefaultPreset")}
+                value={config.default_orchestration_preset_id ?? "-"}
+              />
+              <Fact label={t("settingsPresetCount")} value={String(presets.length)} />
+            </div>
+            <SettingsList
+              emptyText={t("settingsNoOrchestrationPresets")}
+              items={presets.map((preset) => ({
+                detail: orchestrationPresetDetail(preset),
+                key: preset.preset_id,
+                meta: preset.preset_id,
+                title: preset.name ?? preset.preset_id,
+              }))}
+              onSelect={(item) => setSelectedPresetId(item.key)}
+            />
+          </>
+        )
       ) : null}
     </SettingsSection>
   );
 }
 
+interface SettingsListItem {
+  detail: string;
+  key: string;
+  meta: string;
+  title: string;
+}
+
+interface RoleListItem extends SettingsListItem {
+  category: string;
+  role: RoleOption;
+}
+
 function SettingsList({
   emptyText,
   items,
+  onSelect,
 }: {
   emptyText: string;
-  items: Array<{
-    detail: string;
-    key: string;
-    meta: string;
-    title: string;
-  }>;
+  items: SettingsListItem[];
+  onSelect?: (item: SettingsListItem) => void;
 }) {
   if (items.length === 0) {
     return <div className="at-settings-empty">{emptyText}</div>;
   }
   return (
     <div className="at-settings-list">
-      {items.map((item) => (
-        <div className="at-settings-list-row" key={item.key}>
-          <div className="at-settings-list-main">
-            <span>{item.title}</span>
-            <Typography.Text ellipsis title={item.detail}>
-              {item.detail}
+      {items.map((item) => {
+        const content = (
+          <>
+            <div className="at-settings-list-main">
+              <span>{item.title}</span>
+              <Typography.Text ellipsis title={item.detail}>
+                {item.detail}
+              </Typography.Text>
+            </div>
+            <Typography.Text className="at-settings-list-meta" ellipsis title={item.meta}>
+              {item.meta}
             </Typography.Text>
+          </>
+        );
+        if (onSelect !== undefined) {
+          return (
+            <button
+              className="at-settings-list-button at-settings-list-row"
+              key={item.key}
+              onClick={() => onSelect(item)}
+              type="button"
+            >
+              {content}
+            </button>
+          );
+        }
+        return (
+          <div className="at-settings-list-row" key={item.key}>
+            {content}
           </div>
-          <Typography.Text className="at-settings-list-meta" ellipsis title={item.meta}>
-            {item.meta}
-          </Typography.Text>
+        );
+      })}
+    </div>
+  );
+}
+
+function RoleOptionDetail({
+  item,
+  onBack,
+}: {
+  item: RoleListItem;
+  onBack: () => void;
+}) {
+  const t = useTranslations();
+  const role = item.role;
+  const input = capabilityModes(role.capabilities?.input) || modalityList(role.input_modalities ?? []);
+  const output = capabilityModes(role.capabilities?.output);
+  return (
+    <div className="at-settings-detail-page at-role-detail">
+      <div className="at-settings-detail-header">
+        <div className="at-settings-list-main">
+          <span>{role.name || role.role_id}</span>
+          <Typography.Text>{roleDetail(role)}</Typography.Text>
         </div>
-      ))}
+        <div className="at-settings-detail-actions">
+          <Button onClick={onBack}>{t("settingsBack")}</Button>
+        </div>
+      </div>
+      <div className="at-settings-facts at-settings-workspace-facts">
+        <Fact label={t("settingsRoleId")} value={role.role_id} />
+        <Fact label={t("settingsRoleCategory")} value={item.category} />
+        <Fact label={t("settingsRoleModelProfile")} value={role.model_profile ?? "-"} />
+        <Fact label={t("settingsRoleModel")} value={role.model_name ?? "-"} />
+      </div>
+      <div className="at-settings-list at-role-properties">
+        <PropertyRow
+          label={t("settingsRoleDescription")}
+          value={role.description?.trim() || "-"}
+        />
+        <PropertyRow label={t("settingsModelInput")} value={input || "-"} />
+        <PropertyRow label={t("settingsModelOutput")} value={output || "-"} />
+      </div>
+    </div>
+  );
+}
+
+function OrchestrationPresetDetail({
+  defaultPresetId,
+  onBack,
+  preset,
+}: {
+  defaultPresetId: string | undefined;
+  onBack: () => void;
+  preset: OrchestrationPreset;
+}) {
+  const t = useTranslations();
+  const roleIds = preset.role_ids?.map((roleId) => roleId.trim()).filter(Boolean) ?? [];
+  const policyRows = orchestrationPolicyRows(preset.policy);
+  return (
+    <div className="at-settings-detail-page at-orchestration-preset-detail">
+      <div className="at-settings-detail-header">
+        <div className="at-settings-list-main">
+          <span>{preset.name ?? preset.preset_id}</span>
+          <Typography.Text>{orchestrationPresetDetail(preset)}</Typography.Text>
+        </div>
+        <div className="at-settings-detail-actions">
+          <Button onClick={onBack}>{t("settingsBack")}</Button>
+        </div>
+      </div>
+      <div className="at-settings-facts at-settings-workspace-facts">
+        <Fact label={t("settingsOrchestrationPresetId")} value={preset.preset_id} />
+        <Fact
+          label={t("settingsModelDefault")}
+          value={preset.preset_id === defaultPresetId ? t("settingsEnabled") : t("settingsDisabled")}
+        />
+        <Fact label={t("settingsOrchestrationRoles")} value={String(roleIds.length)} />
+      </div>
+      <div className="at-settings-list at-orchestration-preset-properties">
+        <PropertyRow
+          label={t("settingsRoleDescription")}
+          value={preset.description?.trim() || "-"}
+        />
+        <PropertyRow
+          label={t("settingsOrchestrationRoles")}
+          value={roleIds.length > 0 ? roleIds.join(", ") : "-"}
+        />
+        <PropertyRow
+          label={t("settingsOrchestrationPrompt")}
+          value={preset.orchestration_prompt?.trim() || "-"}
+        />
+        {policyRows.map((row) => (
+          <PropertyRow key={row.label} label={row.label} value={row.value} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -500,6 +665,17 @@ function roleName(role: RoleOption | null | undefined): string {
   return role?.name?.trim() || role?.role_id || "-";
 }
 
+function roleListItem(role: RoleOption, category: string, keyPrefix: string): RoleListItem {
+  return {
+    category,
+    detail: roleDetail(role),
+    key: `${keyPrefix}:${role.role_id}`,
+    meta: role.role_id,
+    role,
+    title: role.name || role.role_id,
+  };
+}
+
 function roleDetail(role: RoleOption): string {
   return [
     role.model_profile?.trim() || "",
@@ -526,6 +702,41 @@ function orchestrationPresetDetail(preset: OrchestrationPreset): string {
     roleCount > 0 ? `${roleCount} roles` : "",
     preset.description?.trim() || "",
   ].filter(Boolean).join(" · ") || "-";
+}
+
+function orchestrationPolicyRows(
+  policy: OrchestrationPolicy | undefined,
+): Array<{ label: string; value: string }> {
+  if (policy === undefined) {
+    return [];
+  }
+  return [
+    ["max_orchestration_cycles", policy.max_orchestration_cycles],
+    ["max_parallel_delegated_tasks", policy.max_parallel_delegated_tasks],
+    ["auto_plan_long_tasks", policy.auto_plan_long_tasks],
+    ["planner_role_id", policy.planner_role_id],
+    ["coordinator_inline_budget_steps", policy.coordinator_inline_budget_steps],
+    ["max_temporary_roles_per_run", policy.max_temporary_roles_per_run],
+    [
+      "prefer_temporary_roles_for_long_tasks",
+      policy.prefer_temporary_roles_for_long_tasks,
+    ],
+  ]
+    .map(([label, value]) => ({
+      label: String(label),
+      value: policyValue(value),
+    }))
+    .filter((row) => row.value !== "");
+}
+
+function policyValue(value: boolean | number | string | null | undefined): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return String(value);
 }
 
 function modalityList(values: string[]): string {

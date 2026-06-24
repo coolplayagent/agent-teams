@@ -5118,12 +5118,19 @@ body {
 
 .at-settings-property-row {
   display: grid;
-  grid-template-columns: minmax(128px, 0.32fr) minmax(0, 1fr);
+  grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   min-height: 42px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-property-row > .at-settings-list-meta:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .at-settings-property-row:last-child {

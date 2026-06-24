@@ -596,10 +596,25 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
     await waitFor(() => expect(screen.getAllByText("Coordinator").length).toBeGreaterThan(0));
     expect(screen.getByText("Reviewer")).toBeVisible();
+    const reviewerRoleRow = screen.getByText("Reviewer").closest("button");
+    expect(reviewerRoleRow).not.toBeNull();
+    fireEvent.click(reviewerRoleRow as HTMLElement);
+    expect(await screen.findByText("Role ID")).toBeVisible();
+    expect(screen.getByText("reviewer")).toBeVisible();
+    expect(screen.getByText("Subagent roles")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getAllByText("Main Agent").length).toBeGreaterThan(0));
 
     fireEvent.click(within(sections).getByRole("button", { name: "Orchestration" }));
     expect(await screen.findByText("Default")).toBeVisible();
     expect(screen.getByText("2 roles · Main plus reviewer")).toBeVisible();
+    const defaultPresetRow = screen.getByText("Default").closest("button");
+    expect(defaultPresetRow).not.toBeNull();
+    fireEvent.click(defaultPresetRow as HTMLElement);
+    expect(await screen.findByText("Preset ID")).toBeVisible();
+    expect(screen.getByText("main, reviewer")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("2 roles · Main plus reviewer")).toBeVisible();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Commands" }));
     expect(await screen.findByText("/opsx:propose")).toBeVisible();

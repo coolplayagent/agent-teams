@@ -42,6 +42,9 @@ describe("shell layout CSS", () => {
       /@media \(max-width: 760px\)[\s\S]*?\.at-body\s*{[\s\S]*?position:\s*relative;/,
     );
     expect(themeCss).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.at-sidebar-scrim\s*{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*11;[\s\S]*?inset:\s*0;[\s\S]*?display:\s*block;/,
+    );
+    expect(themeCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.at-sidebar\s*{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*12;[\s\S]*?inset:\s*0 auto 0 0;[\s\S]*?max-width:\s*calc\(100vw - 44px\);/,
     );
     expect(themeCss).toMatch(

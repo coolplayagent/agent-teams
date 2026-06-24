@@ -59,6 +59,7 @@ import { useTranslations } from "../../i18n";
 
 const { Header, Sider, Content } = Layout;
 const healthyBackendStatuses = new Set(["alive", "ok", "ready"]);
+const sidebarOverlayMediaQuery = "(max-width: 760px)";
 
 export function AppShell() {
   const { message } = App.useApp();
@@ -92,6 +93,7 @@ export function AppShell() {
   const setThemeMode = useUiStore((state) => state.setThemeMode);
   const setLanguage = useUiStore((state) => state.setLanguage);
   const [sidebarResizing, setSidebarResizing] = useState(false);
+  const [sidebarOverlayMode, setSidebarOverlayMode] = useState(readSidebarOverlayMode);
   const messageExporter = useMessageExporter({
     messenger: message,
     sessionId: selectedSessionId,
@@ -275,6 +277,17 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia(sidebarOverlayMediaQuery);
+    const handleSidebarOverlayModeChange = (event: MediaQueryListEvent) => {
+      setSidebarOverlayMode(event.matches);
+    };
+    setSidebarOverlayMode(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleSidebarOverlayModeChange);
+    return () =>
+      mediaQuery.removeEventListener("change", handleSidebarOverlayModeChange);
+  }, []);
+
+  useEffect(() => {
     if (!sidebarResizing) {
       return undefined;
     }
@@ -362,6 +375,17 @@ export function AppShell() {
         </Space>
       </Header>
       <Layout className="at-body">
+        {!sidebarCollapsed && sidebarOverlayMode ? (
+          <button
+            aria-label={t("appCloseSidebar")}
+            className="at-sidebar-scrim"
+            onClick={() => setSidebarCollapsed(true)}
+            style={{
+              left: `min(${sidebarWidth}px, calc(100vw - 44px))`,
+            }}
+            type="button"
+          />
+        ) : null}
         {!sidebarCollapsed ? (
           <Sider
             className={sidebarResizing ? "at-sidebar is-resizing" : "at-sidebar"}
@@ -510,4 +534,8 @@ function workspaceDisplayLabel(
     workspaceId?.trim() ||
     "Agent Teams"
   );
+}
+
+function readSidebarOverlayMode(): boolean {
+  return window.matchMedia(sidebarOverlayMediaQuery).matches;
 }

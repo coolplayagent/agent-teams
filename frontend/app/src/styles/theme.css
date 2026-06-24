@@ -5756,6 +5756,16 @@ body {
     position: relative;
   }
 
+  .at-sidebar-scrim {
+    position: absolute;
+    z-index: 11;
+    inset: 0;
+    display: block;
+    padding: 0;
+    border: 0;
+    background: color-mix(in srgb, #000 18%, transparent);
+  }
+
   .at-sidebar {
     position: absolute;
     z-index: 12;

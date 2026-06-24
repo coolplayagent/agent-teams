@@ -202,6 +202,8 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Close sidebar" }))
+      .not.toBeInTheDocument();
     expect(screen.getByTestId("timeline")).toBeVisible();
     expect(screen.getByTestId("timeline").closest(".at-chat-view")).not.toBeNull();
 
@@ -247,9 +249,25 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
     expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
-    expect(
-      screen.queryByRole("button", { name: "Close sidebar" }),
-    ).not.toBeInTheDocument();
+    const closeSidebarScrim = screen.getByRole("button", { name: "Close sidebar" });
+    expect(closeSidebarScrim).toHaveClass("at-sidebar-scrim");
+    expect(closeSidebarScrim).toHaveStyle({
+      left: `min(${sidebarWidthDefault}px, calc(100vw - 44px))`,
+    });
+
+    fireEvent.click(closeSidebarScrim);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("sessions-sidebar")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+
+    expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Close sidebar" })).toHaveClass(
+      "at-sidebar-scrim",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
 

@@ -31,6 +31,10 @@ vi.mock("../features/composer/Composer", () => ({
   Composer: () => <div data-testid="composer" />,
 }));
 
+vi.mock("../features/automation/AutomationView", () => ({
+  AutomationView: () => <div data-testid="automation-view" />,
+}));
+
 vi.mock("../features/boards/BoardTodosView", () => ({
   BoardTodosView: () => <div data-testid="board-todos-view" />,
 }));
@@ -247,6 +251,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
 
     expect(await screen.findByText("Board")).toBeInTheDocument();
+    expect(await screen.findByText("Automation")).toBeInTheDocument();
     expect(await screen.findByText("Observability")).toBeInTheDocument();
     expect(screen.getByText("Connectors")).toBeInTheDocument();
     expect(screen.getByText("Memory")).toBeInTheDocument();
@@ -283,6 +288,11 @@ describe("AppShell", () => {
     renderShell();
 
     const sidebar = await screen.findByTestId("sessions-sidebar");
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Automation" }));
+
+    expect(await screen.findByTestId("automation-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
     fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
 
     expect(await screen.findByTestId("board-todos-view")).toBeVisible();
@@ -339,6 +349,7 @@ describe("AppShell", () => {
 
     expect(screen.getByRole("button", { name: "中文" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "聊天" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "自动化" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "看板" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "连接器" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "记忆" })).toBeVisible();

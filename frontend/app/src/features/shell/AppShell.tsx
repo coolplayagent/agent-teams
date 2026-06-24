@@ -10,6 +10,7 @@ import {
 import type { MenuProps } from "antd";
 import {
   Activity,
+  CalendarClock,
   Database,
   Download,
   ExternalLink,
@@ -36,6 +37,7 @@ import {
   listWorkspaces,
 } from "../../api/client";
 import type { SessionSidebarRecord } from "../../api/contracts";
+import { AutomationView } from "../automation/AutomationView";
 import { BoardTodosView } from "../boards/BoardTodosView";
 import { ConnectorsView } from "../connectors/ConnectorsView";
 import { ChatWorkspace } from "./ChatWorkspace";
@@ -67,6 +69,7 @@ export function AppShell() {
   const { token } = theme.useToken();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<
+    | "automation"
     | "board"
     | "chat"
     | "connectors"
@@ -150,6 +153,16 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "automation",
+        icon: <CalendarClock size={15} />,
+        key: "automation",
+        label: t("appAutomation"),
+        onSelect: () => {
+          setActiveView("automation");
+          closeSidebarOnNarrow();
+        },
+      },
+      {
         active: activeView === "board",
         icon: <SquareKanban size={15} />,
         key: "board",
@@ -215,6 +228,11 @@ export function AppShell() {
         key: "language",
         label:
           language === "zh-CN" ? t("languageChinese") : t("languageEnglish"),
+      },
+      {
+        icon: <CalendarClock size={15} />,
+        key: "automation",
+        label: t("appAutomation"),
       },
       {
         icon: <SquareKanban size={15} />,
@@ -476,6 +494,8 @@ export function AppShell() {
         <Content className="at-workspace">
           {activeView === "observability" ? (
             <ObservabilityPanel sessionId={selectedSessionId} />
+          ) : activeView === "automation" ? (
+            <AutomationView onSessionSelected={handleAutomationSessionSelected} />
           ) : activeView === "board" ? (
             <BoardTodosView
               loadingWorkspaces={workspacesQuery.isLoading}
@@ -560,6 +580,11 @@ export function AppShell() {
       closeSidebarOnNarrow();
       return;
     }
+    if (key === "automation") {
+      setActiveView("automation");
+      closeSidebarOnNarrow();
+      return;
+    }
     if (key === "board") {
       setActiveView("board");
       closeSidebarOnNarrow();
@@ -594,6 +619,18 @@ export function AppShell() {
     if (key === "v1") {
       window.location.assign("/");
     }
+  }
+
+  function handleAutomationSessionSelected(
+    sessionId: string,
+    workspaceId?: string | null,
+  ) {
+    if (workspaceId !== undefined && workspaceId !== null && workspaceId.trim()) {
+      setSelectedWorkspaceId(workspaceId);
+    }
+    setSelectedSessionId(sessionId);
+    setActiveView("chat");
+    closeSidebarOnNarrow();
   }
 }
 

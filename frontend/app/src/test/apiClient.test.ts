@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  disableAutomationProject,
   deleteEnvironmentVariable,
   deleteSshProfile,
+  enableAutomationProject,
+  getAutomationProject,
   getEnvironmentVariables,
   getMemory,
   deleteSession,
@@ -11,6 +14,8 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  listAutomationProjectSessions,
+  listAutomationProjects,
   listBoardTodos,
   listConnectors,
   listMemories,
@@ -31,6 +36,7 @@ import {
   searchWorkspacePaths,
   stopBackgroundTask,
   rebuildMemoryIndex,
+  runAutomationProject,
   syncBoardTodos,
   testConnector,
   updateSession,
@@ -184,6 +190,97 @@ describe("api client", () => {
           workspace_id: "workspace-1",
         }),
         headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("uses the automation project endpoints for list, detail, sessions, and actions", async () => {
+    const projectPayload = {
+      automation_project_id: "aut-1",
+      created_at: "2026-06-24T00:00:00Z",
+      delivery_events: [],
+      display_name: "Daily triage",
+      name: "daily_triage",
+      prompt: "Summarize daily status.",
+      run_config: { session_mode: "normal" },
+      schedule_mode: "cron",
+      status: "enabled",
+      timezone: "UTC",
+      trigger_id: "schedule-aut-1",
+      updated_at: "2026-06-24T00:00:00Z",
+      workspace_id: "workspace-1",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([projectPayload]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ session_id: "session-1" }]), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            automation_project_id: "aut-1",
+            queued: false,
+            reused_bound_session: false,
+            run_id: "run-1",
+            session_id: "session-1",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listAutomationProjects()).resolves.toEqual([projectPayload]);
+    await expect(getAutomationProject("aut-1")).resolves.toEqual(projectPayload);
+    await expect(listAutomationProjectSessions("aut-1")).resolves.toEqual([
+      { session_id: "session-1" },
+    ]);
+    await expect(runAutomationProject("aut-1")).resolves.toMatchObject({
+      run_id: "run-1",
+    });
+    await expect(enableAutomationProject("aut-1")).resolves.toEqual(projectPayload);
+    await expect(disableAutomationProject("aut-1")).resolves.toEqual(projectPayload);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/automation/projects",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/automation/projects/aut-1",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/automation/projects/aut-1/sessions",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/automation/projects/aut-1:run",
+      expect.objectContaining({
+        body: JSON.stringify({}),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/automation/projects/aut-1:enable",
+      expect.objectContaining({
+        body: JSON.stringify({}),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/automation/projects/aut-1:disable",
+      expect.objectContaining({
+        body: JSON.stringify({}),
         method: "POST",
       }),
     );

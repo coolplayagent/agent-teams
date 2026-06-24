@@ -1,6 +1,9 @@
 import type {
   GeneralConfig,
   AgUiActionResponse,
+  AutomationProjectRecord,
+  AutomationProjectSessionRecord,
+  AutomationRunNowResult,
   BoardTodoBoardResponse,
   ConnectorListResponse,
   ConnectorTestResult,
@@ -214,6 +217,62 @@ export function syncBoardTodos(
       workspace_id: options.workspaceId,
     }),
   });
+}
+
+export function listAutomationProjects(): Promise<AutomationProjectRecord[]> {
+  return requestJson<AutomationProjectRecord[]>("/automation/projects");
+}
+
+export function getAutomationProject(
+  automationProjectId: string,
+): Promise<AutomationProjectRecord> {
+  return requestJson<AutomationProjectRecord>(
+    `/automation/projects/${encodeURIComponent(automationProjectId)}`,
+  );
+}
+
+export function listAutomationProjectSessions(
+  automationProjectId: string,
+): Promise<AutomationProjectSessionRecord[]> {
+  return requestJson<AutomationProjectSessionRecord[]>(
+    `/automation/projects/${encodeURIComponent(automationProjectId)}/sessions`,
+  );
+}
+
+export function runAutomationProject(
+  automationProjectId: string,
+): Promise<AutomationRunNowResult> {
+  return requestJson<AutomationRunNowResult>(
+    `/automation/projects/${encodeURIComponent(automationProjectId)}:run`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+export function enableAutomationProject(
+  automationProjectId: string,
+): Promise<AutomationProjectRecord> {
+  return requestJson<AutomationProjectRecord>(
+    `/automation/projects/${encodeURIComponent(automationProjectId)}:enable`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+export function disableAutomationProject(
+  automationProjectId: string,
+): Promise<AutomationProjectRecord> {
+  return requestJson<AutomationProjectRecord>(
+    `/automation/projects/${encodeURIComponent(automationProjectId)}:disable`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
 }
 
 export function getRoleConfigOptions(): Promise<RoleConfigOptions> {

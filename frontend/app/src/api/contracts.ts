@@ -226,6 +226,93 @@ export interface BoardTodoBoardResponse {
   workspace_id: string;
 }
 
+export type AutomationProjectStatus = "enabled" | "disabled";
+export type AutomationScheduleMode = "cron" | "interval" | "one_shot";
+export type AutomationIntervalUnit = "minutes" | "hours" | "days";
+export type AutomationDeliveryEvent = "started" | "completed" | "failed";
+
+export interface AutomationRunConfig {
+  session_mode?: SessionMode;
+  normal_root_role_id?: string | null;
+  orchestration_preset_id?: string | null;
+  execution_mode?: string;
+  yolo?: boolean;
+  thinking?: {
+    enabled?: boolean;
+    effort?: string | null;
+  };
+}
+
+export interface AutomationFeishuBinding {
+  provider: "feishu";
+  trigger_id: string;
+  tenant_key: string;
+  chat_id: string;
+  session_id?: string | null;
+  chat_type: string;
+  source_label: string;
+}
+
+export interface AutomationXiaolubanBinding {
+  provider: "xiaoluban";
+  account_id: string;
+  display_name: string;
+  derived_uid: string;
+  source_label: string;
+}
+
+export type AutomationDeliveryBinding =
+  | AutomationFeishuBinding
+  | AutomationXiaolubanBinding;
+
+export interface AutomationProjectRecord {
+  active_run_status?: string | null;
+  automation_project_id: string;
+  created_at: string;
+  cron_expression?: string | null;
+  delivery_binding?: AutomationDeliveryBinding | null;
+  delivery_events: AutomationDeliveryEvent[];
+  display_name: string;
+  interval_every?: number | null;
+  interval_unit?: AutomationIntervalUnit | null;
+  last_error?: string | null;
+  last_run_started_at?: string | null;
+  last_session_id?: string | null;
+  latest_terminal_run_status?: string | null;
+  latest_terminal_run_verification_status?: string | null;
+  name: string;
+  next_run_at?: string | null;
+  prompt: string;
+  run_at?: string | null;
+  run_config: AutomationRunConfig;
+  schedule_mode: AutomationScheduleMode;
+  status: AutomationProjectStatus;
+  timezone: string;
+  trigger_id: string;
+  updated_at: string;
+  workspace_id: string;
+}
+
+export interface AutomationRunNowResult {
+  automation_project_id: string;
+  queued: boolean;
+  reused_bound_session: boolean;
+  run_id: string;
+  session_id: string;
+}
+
+export interface AutomationProjectSessionRecord {
+  active_run_status?: string | null;
+  latest_terminal_run_status?: string | null;
+  latest_terminal_run_updated_at?: string | null;
+  latest_terminal_run_verification_status?: string | null;
+  metadata?: Record<string, string | null | undefined>;
+  session_id: string;
+  title?: string;
+  updated_at?: string;
+  workspace_id?: string;
+}
+
 export interface SshProfileRecord {
   ssh_profile_id: string;
   host: string;

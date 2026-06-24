@@ -1,0 +1,634 @@
+import {
+  App,
+  Button,
+  Empty,
+  Input,
+  Skeleton,
+  Tooltip,
+  Typography,
+} from "antd";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
+import {
+  PauseCircle,
+  Play,
+  RefreshCcw,
+  RotateCw,
+  Search,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+
+import {
+  disableAutomationProject,
+  enableAutomationProject,
+  getAutomationProject,
+  listAutomationProjects,
+  listAutomationProjectSessions,
+  listWorkspaces,
+  runAutomationProject,
+} from "../../api/client";
+import type {
+  AutomationProjectRecord,
+  AutomationProjectSessionRecord,
+  WorkspaceRecord,
+} from "../../api/contracts";
+import { useTranslations, type Translate } from "../../i18n";
+
+interface AutomationViewProps {
+  onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
+}
+
+export function AutomationView({ onSessionSelected }: AutomationViewProps) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const t = useTranslations();
+  const [filter, setFilter] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+
+  const projectsQuery = useQuery({
+    queryKey: ["automation", "projects"],
+    queryFn: listAutomationProjects,
+  });
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: listWorkspaces,
+  });
+
+  const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
+  const filteredProjects = useMemo(
+    () => filterAutomationProjects(projects, filter),
+    [filter, projects],
+  );
+  const currentProjectId =
+    selectedProjectId !== null &&
+    projects.some((project) => project.automation_project_id === selectedProjectId)
+      ? selectedProjectId
+      : (filteredProjects[0]?.automation_project_id ?? projects[0]?.automation_project_id ?? null);
+
+  useEffect(() => {
+    if (currentProjectId !== null && currentProjectId !== selectedProjectId) {
+      setSelectedProjectId(currentProjectId);
+    }
+  }, [currentProjectId, selectedProjectId]);
+
+  const projectQuery = useQuery({
+    queryKey: ["automation", "projects", currentProjectId],
+    queryFn: () => getAutomationProject(currentProjectId ?? ""),
+    enabled: currentProjectId !== null,
+  });
+  const sessionsQuery = useQuery({
+    queryKey: ["automation", "projects", currentProjectId, "sessions"],
+    queryFn: () => listAutomationProjectSessions(currentProjectId ?? ""),
+    enabled: currentProjectId !== null,
+  });
+
+  const workspacesById = useMemo(
+    () =>
+      new Map(
+        (workspacesQuery.data ?? []).map((workspace) => [
+          workspace.workspace_id,
+          workspace,
+        ]),
+      ),
+    [workspacesQuery.data],
+  );
+  const selectedProject =
+    projectQuery.data ??
+    projects.find((project) => project.automation_project_id === currentProjectId) ??
+    null;
+  const selectedSessions = sessionsQuery.data ?? [];
+
+  const runMutation = useMutation({
+    mutationFn: (automationProjectId: string) =>
+      runAutomationProject(automationProjectId),
+    onSuccess: (result) => {
+      void message.success(t("automationRunStarted"));
+      void queryClient.invalidateQueries({ queryKey: ["automation", "projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      if (result.session_id.trim()) {
+        onSessionSelected?.(result.session_id);
+      }
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("automationRunFailed"),
+      );
+    },
+  });
+  const enableMutation = useMutation({
+    mutationFn: (automationProjectId: string) =>
+      enableAutomationProject(automationProjectId),
+    onSuccess: () => {
+      void message.success(t("automationEnabled"));
+      void queryClient.invalidateQueries({ queryKey: ["automation", "projects"] });
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("automationToggleFailed"),
+      );
+    },
+  });
+  const disableMutation = useMutation({
+    mutationFn: (automationProjectId: string) =>
+      disableAutomationProject(automationProjectId),
+    onSuccess: () => {
+      void message.success(t("automationDisabled"));
+      void queryClient.invalidateQueries({ queryKey: ["automation", "projects"] });
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("automationToggleFailed"),
+      );
+    },
+  });
+
+  if (projectsQuery.isLoading) {
+    return (
+      <div className="at-automation-view">
+        <AutomationToolbar
+          filter={filter}
+          onFilterChange={setFilter}
+          onRefresh={() => void refreshAutomation(queryClient)}
+          refreshing={projectsQuery.isFetching}
+          t={t}
+        />
+        <div className="at-automation-loading">
+          <Skeleton active paragraph={{ rows: 8 }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (projectsQuery.isError) {
+    return (
+      <div className="at-automation-view">
+        <AutomationToolbar
+          filter={filter}
+          onFilterChange={setFilter}
+          onRefresh={() => void refreshAutomation(queryClient)}
+          refreshing={projectsQuery.isFetching}
+          t={t}
+        />
+        <div className="at-automation-state">
+          <Empty
+            description={t("automationLoadError")}
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="at-automation-view">
+      <AutomationToolbar
+        filter={filter}
+        onFilterChange={setFilter}
+        onRefresh={() => void refreshAutomation(queryClient)}
+        refreshing={projectsQuery.isFetching}
+        t={t}
+      />
+      <div className="at-automation-content">
+        <aside className="at-automation-list" aria-label={t("automationProjects")}>
+          {filteredProjects.length === 0 ? (
+            <div className="at-automation-state">
+              <Empty
+                description={
+                  projects.length === 0
+                    ? t("automationEmpty")
+                    : t("automationNoMatches")
+                }
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            </div>
+          ) : (
+            filteredProjects.map((project) => (
+              <AutomationProjectButton
+                key={project.automation_project_id}
+                onSelect={() => setSelectedProjectId(project.automation_project_id)}
+                project={project}
+                selected={project.automation_project_id === currentProjectId}
+                t={t}
+              />
+            ))
+          )}
+        </aside>
+        <main className="at-automation-detail">
+          {selectedProject === null ? (
+            <div className="at-automation-state">
+              <Empty
+                description={t("automationSelectProject")}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            </div>
+          ) : (
+            <AutomationProjectDetail
+              busy={
+                runMutation.isPending ||
+                enableMutation.isPending ||
+                disableMutation.isPending
+              }
+              loading={projectQuery.isLoading || sessionsQuery.isLoading}
+              onRun={() => runMutation.mutate(selectedProject.automation_project_id)}
+              onSessionSelected={onSessionSelected}
+              onToggle={() => {
+                if (selectedProject.status === "enabled") {
+                  disableMutation.mutate(selectedProject.automation_project_id);
+                } else {
+                  enableMutation.mutate(selectedProject.automation_project_id);
+                }
+              }}
+              project={selectedProject}
+              sessions={selectedSessions}
+              t={t}
+              workspace={workspacesById.get(selectedProject.workspace_id) ?? null}
+            />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function AutomationToolbar({
+  filter,
+  onFilterChange,
+  onRefresh,
+  refreshing,
+  t,
+}: {
+  filter: string;
+  onFilterChange: (value: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+  t: Translate;
+}) {
+  return (
+    <div className="at-automation-toolbar">
+      <div className="at-automation-title">
+        <h3>{t("automationTitle")}</h3>
+        <Typography.Text type="secondary">{t("automationSubtitle")}</Typography.Text>
+      </div>
+      <div className="at-automation-actions">
+        <Input
+          allowClear
+          aria-label={t("automationSearchLabel")}
+          className="at-automation-search"
+          onChange={(event) => onFilterChange(event.target.value)}
+          placeholder={t("automationSearchPlaceholder")}
+          prefix={<Search size={14} />}
+          value={filter}
+        />
+        <Tooltip title={t("automationRefresh")}>
+          <Button
+            aria-label={t("automationRefresh")}
+            icon={<RefreshCcw size={15} />}
+            loading={refreshing}
+            onClick={onRefresh}
+          />
+        </Tooltip>
+      </div>
+    </div>
+  );
+}
+
+function AutomationProjectButton({
+  onSelect,
+  project,
+  selected,
+  t,
+}: {
+  onSelect: () => void;
+  project: AutomationProjectRecord;
+  selected: boolean;
+  t: Translate;
+}) {
+  return (
+    <button
+      aria-label={automationTitle(project)}
+      aria-current={selected ? "page" : undefined}
+      className={
+        selected ? "at-automation-project is-selected" : "at-automation-project"
+      }
+      onClick={onSelect}
+      type="button"
+    >
+      <span className="at-automation-project-main">
+        <strong>{automationTitle(project)}</strong>
+        <span>{project.workspace_id}</span>
+      </span>
+      <span className="at-automation-project-meta">
+        <span className={`at-automation-status is-${project.status}`}>
+          {automationStatusLabel(project.status, t)}
+        </span>
+        <span>{scheduleSummary(project, t)}</span>
+      </span>
+    </button>
+  );
+}
+
+function AutomationProjectDetail({
+  busy,
+  loading,
+  onRun,
+  onSessionSelected,
+  onToggle,
+  project,
+  sessions,
+  t,
+  workspace,
+}: {
+  busy: boolean;
+  loading: boolean;
+  onRun: () => void;
+  onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
+  onToggle: () => void;
+  project: AutomationProjectRecord;
+  sessions: AutomationProjectSessionRecord[];
+  t: Translate;
+  workspace: WorkspaceRecord | null;
+}) {
+  if (loading) {
+    return (
+      <div className="at-automation-detail-loading">
+        <Skeleton active paragraph={{ rows: 8 }} />
+      </div>
+    );
+  }
+
+  const runMode =
+    project.run_config.session_mode === "orchestration"
+      ? t("composerOrchestration")
+      : t("composerNormal");
+  const roleOrPreset =
+    project.run_config.session_mode === "orchestration"
+      ? (project.run_config.orchestration_preset_id ?? t("automationNone"))
+      : (project.run_config.normal_root_role_id ?? t("automationNone"));
+  const deliveryLabel = project.delivery_binding
+    ? deliveryBindingLabel(project.delivery_binding)
+    : t("automationDeliveryDisabled");
+
+  return (
+    <div className="at-automation-detail-grid">
+      <section className="at-automation-document">
+        <div className="at-automation-detail-head">
+          <div>
+            <h3>{automationTitle(project)}</h3>
+            <Typography.Text type="secondary">
+              {project.automation_project_id}
+            </Typography.Text>
+          </div>
+          <div className="at-automation-detail-actions">
+            <Button
+              disabled={busy}
+              icon={<Play size={15} />}
+              loading={busy}
+              onClick={onRun}
+            >
+              {t("automationRunNow")}
+            </Button>
+            <Button
+              disabled={busy}
+              icon={
+                project.status === "enabled" ? (
+                  <PauseCircle size={15} />
+                ) : (
+                  <RotateCw size={15} />
+                )
+              }
+              onClick={onToggle}
+            >
+              {project.status === "enabled"
+                ? t("automationDisable")
+                : t("automationEnable")}
+            </Button>
+          </div>
+        </div>
+        <section className="at-automation-section">
+          <h4>{t("automationPrompt")}</h4>
+          <p>{project.prompt}</p>
+        </section>
+        <section className="at-automation-section">
+          <div className="at-automation-section-title">
+            <h4>{t("automationRecentRuns")}</h4>
+            <span>{t("automationRunsCount").replace("{count}", String(sessions.length))}</span>
+          </div>
+          {sessions.length === 0 ? (
+            <div className="at-automation-inline-empty">
+              {t("automationNoRuns")}
+            </div>
+          ) : (
+            <div className="at-automation-runs">
+              {sessions.map((session) => (
+                <button
+                  className="at-automation-run"
+                  key={session.session_id}
+                  onClick={() =>
+                    onSessionSelected?.(session.session_id, session.workspace_id ?? null)
+                  }
+                  type="button"
+                >
+                  <span>
+                    <strong>{sessionTitle(session)}</strong>
+                    <span>{session.session_id}</span>
+                  </span>
+                  <span>
+                    {runStatusLabel(session, t)}
+                    {session.updated_at ? ` · ${formatDateTime(session.updated_at)}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      </section>
+      <aside className="at-automation-properties">
+        <h4>{t("automationConfiguration")}</h4>
+        <PropertyRow
+          label={t("automationStatus")}
+          value={automationStatusLabel(project.status, t)}
+        />
+        <PropertyRow label={t("automationSchedule")} value={scheduleText(project, t)} />
+        <PropertyRow label={t("automationScheduleSummary")} value={scheduleSummary(project, t)} />
+        <PropertyRow label={t("automationTimezone")} value={project.timezone} />
+        <PropertyRow
+          label={t("automationNextRun")}
+          value={formatOptionalDate(project.next_run_at, t("automationNotScheduled"))}
+        />
+        <PropertyRow
+          label={t("automationLastRun")}
+          value={formatOptionalDate(project.last_run_started_at, t("automationNever"))}
+        />
+        <PropertyRow
+          label={t("automationLastError")}
+          value={project.last_error?.trim() || t("automationNone")}
+          warning={Boolean(project.last_error?.trim())}
+        />
+        <h4>{t("automationRuntime")}</h4>
+        <PropertyRow label={t("composerSessionMode")} value={runMode} />
+        <PropertyRow label={t("composerRootRole")} value={roleOrPreset} />
+        <PropertyRow label={t("automationDelivery")} value={deliveryLabel} />
+        <h4>{t("automationWorkspace")}</h4>
+        <PropertyRow label={t("automationWorkspaceId")} value={project.workspace_id} />
+        <PropertyRow
+          code
+          label={t("automationWorkspaceRoot")}
+          value={workspace?.root_path ?? t("automationWorkspaceMissing")}
+        />
+      </aside>
+    </div>
+  );
+}
+
+function PropertyRow({
+  code = false,
+  label,
+  value,
+  warning = false,
+}: {
+  code?: boolean;
+  label: string;
+  value: string;
+  warning?: boolean;
+}) {
+  return (
+    <div className="at-automation-property-row">
+      <span>{label}</span>
+      {code ? (
+        <code>{value}</code>
+      ) : (
+        <strong className={warning ? "is-warning" : undefined}>{value}</strong>
+      )}
+    </div>
+  );
+}
+
+function filterAutomationProjects(
+  projects: AutomationProjectRecord[],
+  filter: string,
+): AutomationProjectRecord[] {
+  const normalized = filter.trim().toLowerCase();
+  if (!normalized) {
+    return projects;
+  }
+  return projects.filter((project) =>
+    [
+      project.automation_project_id,
+      project.display_name,
+      project.name,
+      project.prompt,
+      project.workspace_id,
+      project.status,
+      project.cron_expression ?? "",
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalized),
+  );
+}
+
+function automationTitle(project: AutomationProjectRecord): string {
+  return project.display_name.trim() || project.name.trim() || project.automation_project_id;
+}
+
+function automationStatusLabel(status: string, t: Translate): string {
+  return status === "enabled" ? t("automationEnabledStatus") : t("automationDisabledStatus");
+}
+
+function scheduleText(project: AutomationProjectRecord, t: Translate): string {
+  if (project.schedule_mode === "interval") {
+    const unit = project.interval_unit ?? "minutes";
+    return t("automationIntervalSchedule")
+      .replace("{count}", String(project.interval_every ?? 1))
+      .replace("{unit}", intervalUnitLabel(unit, t));
+  }
+  if (project.schedule_mode === "one_shot") {
+    return project.run_at ?? t("automationNotScheduled");
+  }
+  return project.cron_expression ?? t("automationNotScheduled");
+}
+
+function scheduleSummary(project: AutomationProjectRecord, t: Translate): string {
+  if (project.schedule_mode === "one_shot") {
+    return t("automationOneShot");
+  }
+  if (project.schedule_mode === "interval") {
+    return scheduleText(project, t);
+  }
+  return t("automationCronSchedule").replace(
+    "{expression}",
+    project.cron_expression ?? t("automationNotScheduled"),
+  );
+}
+
+function intervalUnitLabel(unit: string, t: Translate): string {
+  if (unit === "hours") {
+    return t("automationHours");
+  }
+  if (unit === "days") {
+    return t("automationDays");
+  }
+  return t("automationMinutes");
+}
+
+function sessionTitle(session: AutomationProjectSessionRecord): string {
+  return (
+    session.title?.trim() ||
+    session.metadata?.title?.trim() ||
+    session.session_id
+  );
+}
+
+function runStatusLabel(
+  session: AutomationProjectSessionRecord,
+  t: Translate,
+): string {
+  const status =
+    session.active_run_status ??
+    session.latest_terminal_run_status ??
+    (session.latest_terminal_run_verification_status === "failed" ? "warning" : "");
+  if (status === "running") {
+    return t("automationRunStatusRunning");
+  }
+  if (status === "queued") {
+    return t("automationRunStatusQueued");
+  }
+  if (status === "failed") {
+    return t("automationRunStatusFailed");
+  }
+  if (status === "stopped") {
+    return t("automationRunStatusStopped");
+  }
+  if (status === "warning") {
+    return t("automationRunStatusWarning");
+  }
+  return t("automationRunStatusCompleted");
+}
+
+function deliveryBindingLabel(
+  binding: NonNullable<AutomationProjectRecord["delivery_binding"]>,
+): string {
+  if (binding.provider === "feishu") {
+    return `Feishu / ${binding.source_label}`;
+  }
+  return `Xiaoluban / ${binding.display_name}`;
+}
+
+function formatOptionalDate(value: string | null | undefined, fallback: string): string {
+  return value?.trim() ? formatDateTime(value) : fallback;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
+async function refreshAutomation(queryClient: QueryClient): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["automation", "projects"] }),
+    queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
+  ]);
+}

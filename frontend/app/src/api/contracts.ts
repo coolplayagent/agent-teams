@@ -1743,6 +1743,70 @@ export interface FeishuGatewayAccountUpdateInput {
   target_config?: FeishuTriggerTargetConfig | null;
 }
 
+export type WeChatGatewayAccountStatus = "disabled" | "enabled";
+
+export interface WeChatGatewayAccountRecord {
+  account_id: string;
+  base_url: string;
+  cdn_base_url: string;
+  created_at: string;
+  display_name: string;
+  last_error?: string | null;
+  last_event_at?: string | null;
+  last_inbound_at?: string | null;
+  last_login_at?: string | null;
+  last_outbound_at?: string | null;
+  normal_root_role_id?: string | null;
+  orchestration_preset_id?: string | null;
+  remote_user_id?: string | null;
+  route_tag?: string | null;
+  running: boolean;
+  session_mode: SessionMode;
+  status: WeChatGatewayAccountStatus;
+  sync_cursor: string;
+  thinking: RunThinkingConfig;
+  updated_at: string;
+  workspace_id: string;
+  yolo: boolean;
+}
+
+export interface WeChatGatewayAccountUpdateInput {
+  base_url?: string | null;
+  cdn_base_url?: string | null;
+  display_name?: string | null;
+  enabled?: boolean | null;
+  normal_root_role_id?: string | null;
+  orchestration_preset_id?: string | null;
+  route_tag?: string | null;
+  session_mode?: SessionMode | null;
+  thinking?: RunThinkingConfig | null;
+  workspace_id?: string | null;
+  yolo?: boolean | null;
+}
+
+export interface WeChatLoginStartRequest {
+  base_url?: string | null;
+  bot_type?: string;
+  route_tag?: string | null;
+}
+
+export interface WeChatLoginStartResponse {
+  message: string;
+  qr_code_url?: string | null;
+  session_key: string;
+}
+
+export interface WeChatLoginWaitRequest {
+  session_key: string;
+  timeout_ms?: number;
+}
+
+export interface WeChatLoginWaitResponse {
+  account_id?: string | null;
+  connected: boolean;
+  message: string;
+}
+
 export type LocalhostRunTunnelStatusValue =
   | "active"
   | "failed"

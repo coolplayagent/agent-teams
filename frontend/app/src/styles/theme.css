@@ -5079,6 +5079,58 @@ body {
   text-align: right;
 }
 
+.at-trigger-provider-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.at-trigger-provider-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+}
+
+.at-trigger-provider-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.at-trigger-provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.at-trigger-notice {
+  margin-top: -2px;
+}
+
+.at-trigger-login-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface-muted);
+}
+
+.at-trigger-login-qr {
+  width: 96px;
+  height: 96px;
+  flex: 0 0 auto;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: #fff;
+  object-fit: contain;
+}
+
 .at-settings-section-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6220,6 +6272,16 @@ body {
   .at-trigger-row-actions .at-settings-list-meta {
     flex-basis: 100%;
     text-align: left;
+  }
+
+  .at-trigger-provider-head,
+  .at-trigger-login-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .at-trigger-provider-actions {
+    justify-content: flex-start;
   }
 
   .at-settings-property-row,

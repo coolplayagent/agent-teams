@@ -115,6 +115,12 @@ import type {
   WebConfig,
   WebConnectivityProbeRequest,
   WebConnectivityProbeResult,
+  WeChatGatewayAccountRecord,
+  WeChatGatewayAccountUpdateInput,
+  WeChatLoginStartRequest,
+  WeChatLoginStartResponse,
+  WeChatLoginWaitRequest,
+  WeChatLoginWaitResponse,
 } from "./contracts";
 import { requestJson } from "./http";
 
@@ -760,6 +766,77 @@ export function disableFeishuGatewayAccount(
 
 export function reloadFeishuGateway(): Promise<{ status: string }> {
   return requestJson<{ status: string }>("/gateway/feishu/reload", {
+    method: "POST",
+  });
+}
+
+export function listWeChatGatewayAccounts(): Promise<WeChatGatewayAccountRecord[]> {
+  return requestJson<WeChatGatewayAccountRecord[]>("/gateway/wechat/accounts");
+}
+
+export function startWeChatGatewayLogin(
+  request: WeChatLoginStartRequest = {},
+): Promise<WeChatLoginStartResponse> {
+  return requestJson<WeChatLoginStartResponse>("/gateway/wechat/login/start", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function waitWeChatGatewayLogin(
+  request: WeChatLoginWaitRequest,
+): Promise<WeChatLoginWaitResponse> {
+  return requestJson<WeChatLoginWaitResponse>("/gateway/wechat/login/wait", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function updateWeChatGatewayAccount(
+  accountId: string,
+  request: WeChatGatewayAccountUpdateInput,
+): Promise<WeChatGatewayAccountRecord> {
+  return requestJson<WeChatGatewayAccountRecord>(
+    `/gateway/wechat/accounts/${encodeURIComponent(accountId.trim())}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteWeChatGatewayAccount(
+  accountId: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/gateway/wechat/accounts/${encodeURIComponent(accountId.trim())}`,
+    {
+      method: "DELETE",
+      body: JSON.stringify({ force: true }),
+    },
+  );
+}
+
+export function enableWeChatGatewayAccount(
+  accountId: string,
+): Promise<WeChatGatewayAccountRecord> {
+  return requestJson<WeChatGatewayAccountRecord>(
+    `/gateway/wechat/accounts/${encodeURIComponent(accountId.trim())}:enable`,
+    { method: "POST" },
+  );
+}
+
+export function disableWeChatGatewayAccount(
+  accountId: string,
+): Promise<WeChatGatewayAccountRecord> {
+  return requestJson<WeChatGatewayAccountRecord>(
+    `/gateway/wechat/accounts/${encodeURIComponent(accountId.trim())}:disable`,
+    { method: "POST" },
+  );
+}
+
+export function reloadWeChatGateway(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/gateway/wechat/reload", {
     method: "POST",
   });
 }

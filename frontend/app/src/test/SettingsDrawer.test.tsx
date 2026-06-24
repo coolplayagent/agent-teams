@@ -17,11 +17,14 @@ import {
   createCommand,
   deleteAgentRuntime,
   deleteFeishuGatewayAccount,
+  deleteWeChatGatewayAccount,
   deleteEnvironmentVariable,
   deleteMcpServer,
   deleteSshProfile,
   disableFeishuGatewayAccount,
+  disableWeChatGatewayAccount,
   enableFeishuGatewayAccount,
+  enableWeChatGatewayAccount,
   getAgentRuntime,
   getAgentRuntimeRegistry,
   getAgentRuntimes,
@@ -36,6 +39,7 @@ import {
   getHookRuntimeView,
   getHooksConfig,
   listFeishuGatewayAccounts,
+  listWeChatGatewayAccounts,
   getMcpServer,
   getMcpServerTools,
   getModelProfiles,
@@ -61,6 +65,7 @@ import {
   refreshAgentRuntimeRegistry,
   refreshMcpServerTools,
   reloadFeishuGateway,
+  reloadWeChatGateway,
   reloadMcpConfig,
   reloadProxyConfig,
   saveEnvironmentVariable,
@@ -75,13 +80,16 @@ import {
   saveSshProfile,
   saveWebConfig,
   setMcpServerEnabled,
+  startWeChatGatewayLogin,
   startAgentRuntimeTestJob,
   startGitHubWebhookTunnel,
   stopGitHubWebhookTunnel,
   testMcpServerConnection,
   updateCommand,
   updateFeishuGatewayAccount,
+  updateWeChatGatewayAccount,
   updateMcpServer,
+  waitWeChatGatewayLogin,
 } from "../api/client";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
@@ -98,11 +106,14 @@ vi.mock("../api/client", () => ({
   createCommand: vi.fn(),
   deleteAgentRuntime: vi.fn(),
   deleteFeishuGatewayAccount: vi.fn(),
+  deleteWeChatGatewayAccount: vi.fn(),
   deleteEnvironmentVariable: vi.fn(),
   deleteMcpServer: vi.fn(),
   deleteSshProfile: vi.fn(),
   disableFeishuGatewayAccount: vi.fn(),
+  disableWeChatGatewayAccount: vi.fn(),
   enableFeishuGatewayAccount: vi.fn(),
+  enableWeChatGatewayAccount: vi.fn(),
   getAgentRuntime: vi.fn(),
   getAgentRuntimeRegistry: vi.fn(),
   getAgentRuntimes: vi.fn(),
@@ -117,6 +128,7 @@ vi.mock("../api/client", () => ({
   getHookRuntimeView: vi.fn(),
   getHooksConfig: vi.fn(),
   listFeishuGatewayAccounts: vi.fn(),
+  listWeChatGatewayAccounts: vi.fn(),
   getMcpServer: vi.fn(),
   getMcpServerTools: vi.fn(),
   getModelProfiles: vi.fn(),
@@ -142,6 +154,7 @@ vi.mock("../api/client", () => ({
   refreshAgentRuntimeRegistry: vi.fn(),
   refreshMcpServerTools: vi.fn(),
   reloadFeishuGateway: vi.fn(),
+  reloadWeChatGateway: vi.fn(),
   reloadMcpConfig: vi.fn(),
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
@@ -156,13 +169,16 @@ vi.mock("../api/client", () => ({
   saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
   setMcpServerEnabled: vi.fn(),
+  startWeChatGatewayLogin: vi.fn(),
   startAgentRuntimeTestJob: vi.fn(),
   startGitHubWebhookTunnel: vi.fn(),
   stopGitHubWebhookTunnel: vi.fn(),
   testMcpServerConnection: vi.fn(),
   updateCommand: vi.fn(),
   updateFeishuGatewayAccount: vi.fn(),
+  updateWeChatGatewayAccount: vi.fn(),
   updateMcpServer: vi.fn(),
+  waitWeChatGatewayLogin: vi.fn(),
 }));
 
 vi.mock("../api/speech", () => ({
@@ -177,11 +193,14 @@ const createFeishuGatewayAccountMock = vi.mocked(createFeishuGatewayAccount);
 const createCommandMock = vi.mocked(createCommand);
 const deleteAgentRuntimeMock = vi.mocked(deleteAgentRuntime);
 const deleteFeishuGatewayAccountMock = vi.mocked(deleteFeishuGatewayAccount);
+const deleteWeChatGatewayAccountMock = vi.mocked(deleteWeChatGatewayAccount);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteMcpServerMock = vi.mocked(deleteMcpServer);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
 const disableFeishuGatewayAccountMock = vi.mocked(disableFeishuGatewayAccount);
+const disableWeChatGatewayAccountMock = vi.mocked(disableWeChatGatewayAccount);
 const enableFeishuGatewayAccountMock = vi.mocked(enableFeishuGatewayAccount);
+const enableWeChatGatewayAccountMock = vi.mocked(enableWeChatGatewayAccount);
 const getAgentRuntimeMock = vi.mocked(getAgentRuntime);
 const getAgentRuntimeRegistryMock = vi.mocked(getAgentRuntimeRegistry);
 const getAgentRuntimesMock = vi.mocked(getAgentRuntimes);
@@ -196,6 +215,7 @@ const getGitHubWebhookTunnelStatusMock = vi.mocked(getGitHubWebhookTunnelStatus)
 const getHookRuntimeViewMock = vi.mocked(getHookRuntimeView);
 const getHooksConfigMock = vi.mocked(getHooksConfig);
 const listFeishuGatewayAccountsMock = vi.mocked(listFeishuGatewayAccounts);
+const listWeChatGatewayAccountsMock = vi.mocked(listWeChatGatewayAccounts);
 const getMcpServerMock = vi.mocked(getMcpServer);
 const getMcpServerToolsMock = vi.mocked(getMcpServerTools);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
@@ -221,6 +241,7 @@ const revealGitHubTokenMock = vi.mocked(revealGitHubToken);
 const refreshAgentRuntimeRegistryMock = vi.mocked(refreshAgentRuntimeRegistry);
 const refreshMcpServerToolsMock = vi.mocked(refreshMcpServerTools);
 const reloadFeishuGatewayMock = vi.mocked(reloadFeishuGateway);
+const reloadWeChatGatewayMock = vi.mocked(reloadWeChatGateway);
 const reloadMcpConfigMock = vi.mocked(reloadMcpConfig);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
@@ -235,13 +256,16 @@ const saveRoleConfigMock = vi.mocked(saveRoleConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
 const setMcpServerEnabledMock = vi.mocked(setMcpServerEnabled);
+const startWeChatGatewayLoginMock = vi.mocked(startWeChatGatewayLogin);
 const startAgentRuntimeTestJobMock = vi.mocked(startAgentRuntimeTestJob);
 const startGitHubWebhookTunnelMock = vi.mocked(startGitHubWebhookTunnel);
 const stopGitHubWebhookTunnelMock = vi.mocked(stopGitHubWebhookTunnel);
 const testMcpServerConnectionMock = vi.mocked(testMcpServerConnection);
 const updateCommandMock = vi.mocked(updateCommand);
 const updateFeishuGatewayAccountMock = vi.mocked(updateFeishuGatewayAccount);
+const updateWeChatGatewayAccountMock = vi.mocked(updateWeChatGatewayAccount);
 const updateMcpServerMock = vi.mocked(updateMcpServer);
+const waitWeChatGatewayLoginMock = vi.mocked(waitWeChatGatewayLogin);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
 
@@ -519,6 +543,118 @@ beforeEach(() => {
   });
   deleteFeishuGatewayAccountMock.mockResolvedValue({ status: "ok" });
   reloadFeishuGatewayMock.mockResolvedValue({ status: "ok" });
+  listWeChatGatewayAccountsMock.mockResolvedValue([
+    {
+      account_id: "wechat-main",
+      base_url: "http://127.0.0.1:5900",
+      cdn_base_url: "http://127.0.0.1:5901",
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: "WeChat Main",
+      last_error: null,
+      last_event_at: null,
+      last_inbound_at: null,
+      last_login_at: "2026-06-24T00:00:00Z",
+      last_outbound_at: null,
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      remote_user_id: "wxid_main",
+      route_tag: "desktop",
+      running: true,
+      session_mode: "normal",
+      status: "enabled",
+      sync_cursor: "",
+      thinking: { enabled: false, effort: null },
+      updated_at: "2026-06-24T00:00:00Z",
+      workspace_id: "workspace-1",
+      yolo: true,
+    },
+  ]);
+  updateWeChatGatewayAccountMock.mockImplementation((accountId, request) =>
+    Promise.resolve({
+      account_id: accountId,
+      base_url: request.base_url ?? "http://127.0.0.1:5900",
+      cdn_base_url: request.cdn_base_url ?? "http://127.0.0.1:5901",
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: request.display_name ?? "WeChat Main",
+      last_error: null,
+      last_event_at: null,
+      last_inbound_at: null,
+      last_login_at: "2026-06-24T00:00:00Z",
+      last_outbound_at: null,
+      normal_root_role_id: request.normal_root_role_id ?? "main",
+      orchestration_preset_id: request.orchestration_preset_id ?? null,
+      remote_user_id: "wxid_main",
+      route_tag: request.route_tag ?? "desktop",
+      running: true,
+      session_mode: request.session_mode ?? "normal",
+      status: "enabled",
+      sync_cursor: "",
+      thinking: request.thinking ?? { enabled: false, effort: null },
+      updated_at: "2026-06-24T00:00:00Z",
+      workspace_id: request.workspace_id ?? "workspace-1",
+      yolo: request.yolo === true,
+    }),
+  );
+  enableWeChatGatewayAccountMock.mockResolvedValue({
+    account_id: "wechat-main",
+    base_url: "http://127.0.0.1:5900",
+    cdn_base_url: "http://127.0.0.1:5901",
+    created_at: "2026-06-24T00:00:00Z",
+    display_name: "WeChat Main",
+    last_error: null,
+    last_event_at: null,
+    last_inbound_at: null,
+    last_login_at: "2026-06-24T00:00:00Z",
+    last_outbound_at: null,
+    normal_root_role_id: "main",
+    orchestration_preset_id: null,
+    remote_user_id: "wxid_main",
+    route_tag: "desktop",
+    running: true,
+    session_mode: "normal",
+    status: "enabled",
+    sync_cursor: "",
+    thinking: { enabled: false, effort: null },
+    updated_at: "2026-06-24T00:00:00Z",
+    workspace_id: "workspace-1",
+    yolo: true,
+  });
+  disableWeChatGatewayAccountMock.mockResolvedValue({
+    account_id: "wechat-main",
+    base_url: "http://127.0.0.1:5900",
+    cdn_base_url: "http://127.0.0.1:5901",
+    created_at: "2026-06-24T00:00:00Z",
+    display_name: "WeChat Main",
+    last_error: null,
+    last_event_at: null,
+    last_inbound_at: null,
+    last_login_at: "2026-06-24T00:00:00Z",
+    last_outbound_at: null,
+    normal_root_role_id: "main",
+    orchestration_preset_id: null,
+    remote_user_id: "wxid_main",
+    route_tag: "desktop",
+    running: false,
+    session_mode: "normal",
+    status: "disabled",
+    sync_cursor: "",
+    thinking: { enabled: false, effort: null },
+    updated_at: "2026-06-24T00:00:00Z",
+    workspace_id: "workspace-1",
+    yolo: true,
+  });
+  deleteWeChatGatewayAccountMock.mockResolvedValue({ status: "ok" });
+  reloadWeChatGatewayMock.mockResolvedValue({ status: "ok" });
+  startWeChatGatewayLoginMock.mockResolvedValue({
+    message: "Scan the QR code.",
+    qr_code_url: "data:image/png;base64,abc",
+    session_key: "wechat-session",
+  });
+  waitWeChatGatewayLoginMock.mockResolvedValue({
+    account_id: "wechat-main",
+    connected: true,
+    message: "Connected.",
+  });
   getCommandCatalogMock.mockResolvedValue({
     app_commands: [
       {
@@ -1334,7 +1470,7 @@ describe("SettingsDrawer", () => {
     );
   }, 45000);
 
-  it("manages Feishu trigger accounts from the System secondary page", async () => {
+  it("manages trigger gateway accounts from the System secondary page", async () => {
     renderDrawer();
 
     const sections = await screen.findByRole("navigation", {
@@ -1348,13 +1484,30 @@ describe("SettingsDrawer", () => {
     fireEvent.click(triggersRow as HTMLElement);
 
     expect(await screen.findByText("Feishu Main")).toBeVisible();
+    expect(await screen.findByText("WeChat Main")).toBeVisible();
     expect(screen.getByText("Relay Bot · workspace-1 · mention_only")).toBeVisible();
+    expect(screen.getByText("workspace-1 · desktop · Running")).toBeVisible();
     expect(listFeishuGatewayAccountsMock).toHaveBeenCalledTimes(1);
+    expect(listWeChatGatewayAccountsMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Reload gateway" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reload Feishu gateway" }));
     await waitFor(() => expect(reloadFeishuGatewayMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reload WeChat gateway" }));
+    await waitFor(() => expect(reloadWeChatGatewayMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect WeChat" }));
+    await waitFor(() => expect(startWeChatGatewayLoginMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(waitWeChatGatewayLoginMock).toHaveBeenCalledWith({
+        session_key: "wechat-session",
+        timeout_ms: 480000,
+      }),
+    );
+
+    const feishuRow = screen.getByText("Feishu Main").closest(".at-trigger-row");
+    expect(feishuRow).not.toBeNull();
+    fireEvent.click(within(feishuRow as HTMLElement).getByRole("button", { name: "Disable" }));
     await waitFor(() =>
       expect(disableFeishuGatewayAccountMock).toHaveBeenCalledWith("feishu-main"),
     );
@@ -1395,6 +1548,38 @@ describe("SettingsDrawer", () => {
       },
     });
     expect(updatePayload).not.toHaveProperty("secret_config");
+
+    expect(await screen.findByText("WeChat Main")).toBeVisible();
+    const wechatRowMain = screen.getByText("WeChat Main").closest("button");
+    expect(wechatRowMain).not.toBeNull();
+    fireEvent.click(wechatRowMain as HTMLElement);
+
+    expect(await screen.findByText("WeChat gateway account and session target.")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "WeChat Updated" },
+    });
+    fireEvent.change(screen.getByLabelText("Route tag"), {
+      target: { value: "mobile" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateWeChatGatewayAccountMock).toHaveBeenCalledTimes(1));
+    expect(updateWeChatGatewayAccountMock.mock.calls[0]?.[0]).toBe("wechat-main");
+    expect(updateWeChatGatewayAccountMock.mock.calls[0]?.[1]).toMatchObject({
+      base_url: "http://127.0.0.1:5900",
+      cdn_base_url: "http://127.0.0.1:5901",
+      display_name: "WeChat Updated",
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      route_tag: "mobile",
+      session_mode: "normal",
+      thinking: {
+        enabled: false,
+        effort: null,
+      },
+      workspace_id: "workspace-1",
+      yolo: true,
+    });
   }, 45000);
 
   it("saves editable role configs from the role detail page", async () => {

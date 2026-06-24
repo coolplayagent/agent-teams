@@ -7,10 +7,13 @@ import {
   deleteAgentRuntime,
   disableAutomationProject,
   deleteFeishuGatewayAccount,
+  deleteWeChatGatewayAccount,
   deleteEnvironmentVariable,
   deleteSshProfile,
   disableFeishuGatewayAccount,
+  disableWeChatGatewayAccount,
   enableFeishuGatewayAccount,
+  enableWeChatGatewayAccount,
   enableAutomationProject,
   getAgentRuntime,
   getAgentRuntimeRegistry,
@@ -24,6 +27,7 @@ import {
   getGitHubConfig,
   getGitHubWebhookTunnelStatus,
   listFeishuGatewayAccounts,
+  listWeChatGatewayAccounts,
   getMemory,
   getRoleConfig,
   getRuntimeToolDownload,
@@ -59,6 +63,7 @@ import {
   refreshAgentRuntimeRegistry,
   reloadProxyConfig,
   reloadFeishuGateway,
+  reloadWeChatGateway,
   reloadSkillsConfig,
   saveEnvironmentVariable,
   saveAgentRuntime,
@@ -75,6 +80,7 @@ import {
   searchWorkspacePaths,
   stopBackgroundTask,
   stopGitHubWebhookTunnel,
+  startWeChatGatewayLogin,
   startAgentRuntimeTestJob,
   startGitHubWebhookTunnel,
   startRuntimeToolDownload,
@@ -87,7 +93,9 @@ import {
   uninstallRuntimeSkill,
   updateSession,
   updateFeishuGatewayAccount,
+  updateWeChatGatewayAccount,
   updateWorkspace,
+  waitWeChatGatewayLogin,
 } from "../api/client";
 import { saveSpeechConfig } from "../api/speech";
 
@@ -2015,6 +2023,140 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       7,
       "/api/gateway/feishu/reload",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("manages WeChat gateway accounts through trigger endpoints", async () => {
+    const accountPayload = {
+      account_id: "wechat-main",
+      base_url: "http://127.0.0.1:5900",
+      cdn_base_url: "http://127.0.0.1:5901",
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: "WeChat Main",
+      last_error: null,
+      last_event_at: null,
+      last_inbound_at: null,
+      last_login_at: "2026-06-24T00:00:00Z",
+      last_outbound_at: null,
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      remote_user_id: "wxid_main",
+      route_tag: "desktop",
+      running: true,
+      session_mode: "normal",
+      status: "enabled",
+      sync_cursor: "",
+      thinking: { enabled: false, effort: null },
+      updated_at: "2026-06-24T00:00:00Z",
+      workspace_id: "default",
+      yolo: true,
+    };
+    const updatePayload = {
+      base_url: "http://127.0.0.1:5900",
+      cdn_base_url: "http://127.0.0.1:5901",
+      display_name: "WeChat Main",
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      route_tag: "desktop",
+      session_mode: "normal" as const,
+      thinking: { enabled: false, effort: null },
+      workspace_id: "default",
+      yolo: true,
+    };
+    const startPayload = {
+      message: "Scan the QR code.",
+      qr_code_url: "data:image/png;base64,abc",
+      session_key: "wechat-session",
+    };
+    const waitPayload = {
+      account_id: "wechat-main",
+      connected: true,
+      message: "Connected.",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([accountPayload]), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(startPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(waitPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listWeChatGatewayAccounts()).resolves.toEqual([accountPayload]);
+    await expect(startWeChatGatewayLogin({})).resolves.toEqual(startPayload);
+    await expect(
+      waitWeChatGatewayLogin({ session_key: "wechat-session", timeout_ms: 480000 }),
+    ).resolves.toEqual(waitPayload);
+    await expect(
+      updateWeChatGatewayAccount("wechat-main", updatePayload),
+    ).resolves.toEqual(accountPayload);
+    await expect(enableWeChatGatewayAccount("wechat-main")).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(disableWeChatGatewayAccount("wechat-main")).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(deleteWeChatGatewayAccount("wechat-main")).resolves.toEqual({
+      status: "ok",
+    });
+    await expect(reloadWeChatGateway()).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/gateway/wechat/accounts",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/gateway/wechat/login/start",
+      expect.objectContaining({
+        body: JSON.stringify({}),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/gateway/wechat/login/wait",
+      expect.objectContaining({
+        body: JSON.stringify({ session_key: "wechat-session", timeout_ms: 480000 }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/gateway/wechat/accounts/wechat-main",
+      expect.objectContaining({
+        body: JSON.stringify(updatePayload),
+        method: "PATCH",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/gateway/wechat/accounts/wechat-main:enable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/gateway/wechat/accounts/wechat-main:disable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/gateway/wechat/accounts/wechat-main",
+      expect.objectContaining({
+        body: JSON.stringify({ force: true }),
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "/api/gateway/wechat/reload",
       expect.objectContaining({ method: "POST" }),
     );
   });

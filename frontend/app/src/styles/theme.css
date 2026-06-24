@@ -19,6 +19,7 @@
   --at-code-font-size: 0.93em;
   --at-message-line-height: 1.55;
   --at-message-gap: 6px;
+  --at-timeline-column-width: 760px;
   --at-contrast-filter: none;
   --at-diff-added-bg: color-mix(in srgb, var(--at-primary) 9%, transparent);
   --at-diff-deleted-bg: color-mix(in srgb, var(--at-danger) 8%, transparent);
@@ -3575,7 +3576,7 @@ body {
   z-index: 2;
   display: flex;
   justify-content: flex-end;
-  width: min(940px, 100%);
+  width: min(var(--at-timeline-column-width), 100%);
   margin: 0 auto 8px;
   padding: 2px 0;
   background: var(--at-bg);
@@ -3583,7 +3584,7 @@ body {
 
 .at-timeline-virtual {
   position: relative;
-  width: min(940px, 100%);
+  width: min(var(--at-timeline-column-width), 100%);
   margin: 0 auto;
 }
 

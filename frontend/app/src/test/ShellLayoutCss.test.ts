@@ -6,6 +6,19 @@ import { describe, expect, it } from "vitest";
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
 
 describe("shell layout CSS", () => {
+  it("keeps the timeline reading column narrower than the composer", () => {
+    expect(themeCss).toMatch(/--at-timeline-column-width:\s*760px;/);
+    expect(themeCss).toMatch(
+      /\.at-timeline-toolbar\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?margin:\s*0 auto 8px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?margin:\s*0 auto;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-composer-inner\s*{[\s\S]*?width:\s*min\(940px, 100%\);/,
+    );
+  });
+
   it("keeps the narrow workspace full width behind the sidebar overlay", () => {
     expect(themeCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.at-body\s*{[\s\S]*?position:\s*relative;/,

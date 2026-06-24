@@ -27,6 +27,8 @@ import {
   getConfigStatus,
   getEnvironmentVariables,
   getGeneralConfig,
+  getGitHubConfig,
+  getGitHubWebhookTunnelStatus,
   getHookRuntimeView,
   getHooksConfig,
   getMcpServer,
@@ -45,8 +47,11 @@ import {
   listMcpServers,
   probeSshProfileConnection,
   probeClawHubConnectivity,
+  probeGitHubConnectivity,
+  probeGitHubWebhookConnectivity,
   probeWebConnectivity,
   revealSshProfilePassword,
+  revealGitHubToken,
   refreshAgentRuntimeRegistry,
   refreshMcpServerTools,
   reloadMcpConfig,
@@ -55,6 +60,7 @@ import {
   saveAgentRuntime,
   saveClawHubConfig,
   saveGeneralConfig,
+  saveGitHubConfig,
   saveNotificationConfig,
   saveOrchestrationConfig,
   saveProxyConfig,
@@ -63,6 +69,8 @@ import {
   saveWebConfig,
   setMcpServerEnabled,
   startAgentRuntimeTestJob,
+  startGitHubWebhookTunnel,
+  stopGitHubWebhookTunnel,
   testMcpServerConnection,
   updateCommand,
   updateMcpServer,
@@ -92,6 +100,8 @@ vi.mock("../api/client", () => ({
   getConfigStatus: vi.fn(),
   getEnvironmentVariables: vi.fn(),
   getGeneralConfig: vi.fn(),
+  getGitHubConfig: vi.fn(),
+  getGitHubWebhookTunnelStatus: vi.fn(),
   getHookRuntimeView: vi.fn(),
   getHooksConfig: vi.fn(),
   getMcpServer: vi.fn(),
@@ -110,8 +120,11 @@ vi.mock("../api/client", () => ({
   listSshProfiles: vi.fn(),
   probeSshProfileConnection: vi.fn(),
   probeClawHubConnectivity: vi.fn(),
+  probeGitHubConnectivity: vi.fn(),
+  probeGitHubWebhookConnectivity: vi.fn(),
   probeWebConnectivity: vi.fn(),
   revealSshProfilePassword: vi.fn(),
+  revealGitHubToken: vi.fn(),
   refreshAgentRuntimeRegistry: vi.fn(),
   refreshMcpServerTools: vi.fn(),
   reloadMcpConfig: vi.fn(),
@@ -120,6 +133,7 @@ vi.mock("../api/client", () => ({
   saveAgentRuntime: vi.fn(),
   saveClawHubConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
+  saveGitHubConfig: vi.fn(),
   saveNotificationConfig: vi.fn(),
   saveOrchestrationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
@@ -128,6 +142,8 @@ vi.mock("../api/client", () => ({
   saveWebConfig: vi.fn(),
   setMcpServerEnabled: vi.fn(),
   startAgentRuntimeTestJob: vi.fn(),
+  startGitHubWebhookTunnel: vi.fn(),
+  stopGitHubWebhookTunnel: vi.fn(),
   testMcpServerConnection: vi.fn(),
   updateCommand: vi.fn(),
   updateMcpServer: vi.fn(),
@@ -155,6 +171,8 @@ const getCommandCatalogMock = vi.mocked(getCommandCatalog);
 const getConfigStatusMock = vi.mocked(getConfigStatus);
 const getEnvironmentVariablesMock = vi.mocked(getEnvironmentVariables);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
+const getGitHubConfigMock = vi.mocked(getGitHubConfig);
+const getGitHubWebhookTunnelStatusMock = vi.mocked(getGitHubWebhookTunnelStatus);
 const getHookRuntimeViewMock = vi.mocked(getHookRuntimeView);
 const getHooksConfigMock = vi.mocked(getHooksConfig);
 const getMcpServerMock = vi.mocked(getMcpServer);
@@ -173,8 +191,11 @@ const listMcpServersMock = vi.mocked(listMcpServers);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeClawHubConnectivityMock = vi.mocked(probeClawHubConnectivity);
+const probeGitHubConnectivityMock = vi.mocked(probeGitHubConnectivity);
+const probeGitHubWebhookConnectivityMock = vi.mocked(probeGitHubWebhookConnectivity);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
+const revealGitHubTokenMock = vi.mocked(revealGitHubToken);
 const refreshAgentRuntimeRegistryMock = vi.mocked(refreshAgentRuntimeRegistry);
 const refreshMcpServerToolsMock = vi.mocked(refreshMcpServerTools);
 const reloadMcpConfigMock = vi.mocked(reloadMcpConfig);
@@ -183,6 +204,7 @@ const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveAgentRuntimeMock = vi.mocked(saveAgentRuntime);
 const saveClawHubConfigMock = vi.mocked(saveClawHubConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
+const saveGitHubConfigMock = vi.mocked(saveGitHubConfig);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveOrchestrationConfigMock = vi.mocked(saveOrchestrationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
@@ -191,6 +213,8 @@ const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
 const setMcpServerEnabledMock = vi.mocked(setMcpServerEnabled);
 const startAgentRuntimeTestJobMock = vi.mocked(startAgentRuntimeTestJob);
+const startGitHubWebhookTunnelMock = vi.mocked(startGitHubWebhookTunnel);
+const stopGitHubWebhookTunnelMock = vi.mocked(stopGitHubWebhookTunnel);
 const testMcpServerConnectionMock = vi.mocked(testMcpServerConnection);
 const updateCommandMock = vi.mocked(updateCommand);
 const updateMcpServerMock = vi.mocked(updateMcpServer);
@@ -287,6 +311,56 @@ beforeEach(() => {
     latency_ms: 31,
     ok: true,
     retryable: false,
+  });
+  getGitHubConfigMock.mockResolvedValue({
+    token_configured: true,
+    webhook_base_url: "https://hooks.example",
+  });
+  revealGitHubTokenMock.mockResolvedValue({ token: "ghp_saved" });
+  saveGitHubConfigMock.mockResolvedValue({ status: "ok" });
+  probeGitHubConnectivityMock.mockResolvedValue({
+    checked_at: "2026-06-24T00:00:00Z",
+    diagnostics: {
+      auth_valid: true,
+      binary_available: true,
+      bundled_binary: true,
+      used_proxy: false,
+    },
+    gh_version: "gh version 2.0.0",
+    host: "github.com",
+    latency_ms: 21,
+    ok: true,
+    retryable: false,
+    username: "octocat",
+  });
+  probeGitHubWebhookConnectivityMock.mockResolvedValue({
+    callback_url: "https://hooks.example/api/triggers/github/deliveries",
+    checked_at: "2026-06-24T00:00:00Z",
+    diagnostics: {
+      endpoint_reachable: true,
+      redirected: false,
+      used_proxy: false,
+    },
+    latency_ms: 34,
+    ok: true,
+    retryable: false,
+    status_code: 200,
+    webhook_base_url: "https://hooks.example",
+  });
+  getGitHubWebhookTunnelStatusMock.mockResolvedValue({
+    provider: "localhost.run",
+    public_url: null,
+    status: "idle",
+  });
+  startGitHubWebhookTunnelMock.mockResolvedValue({
+    provider: "localhost.run",
+    public_url: "https://relay.localhost.run",
+    status: "active",
+  });
+  stopGitHubWebhookTunnelMock.mockResolvedValue({
+    provider: "localhost.run",
+    public_url: "https://relay.localhost.run",
+    status: "stopped",
   });
   getCommandCatalogMock.mockResolvedValue({
     app_commands: [
@@ -851,6 +925,7 @@ describe("SettingsDrawer", () => {
     expect(within(sections).queryByRole("button", { name: "Commands" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "Hooks" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "Agent Runtime" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "GitHub" })).toBeNull();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
     expect(getModelProfilesMock).toHaveBeenCalledTimes(1);
@@ -945,6 +1020,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(sections).getByRole("button", { name: "System" }));
     expect(await screen.findByText("MCP")).toBeVisible();
     expect(screen.getByText("Global and workspace command files.")).toBeVisible();
+    expect(screen.getByText("GitHub CLI token, webhook callback, and tunnel.")).toBeVisible();
     expect(getConfigStatusMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByText("Commands").closest("button") as HTMLElement);
@@ -1018,6 +1094,86 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
   }, 70000);
+
+  it("manages GitHub settings from the System secondary page", async () => {
+    getGitHubWebhookTunnelStatusMock.mockResolvedValue({
+      provider: "localhost.run",
+      public_url: "https://relay.localhost.run",
+      status: "active",
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    expect(within(sections).queryByRole("button", { name: "GitHub" })).toBeNull();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    const githubRow = (await screen.findByText("GitHub")).closest("button");
+    expect(githubRow).not.toBeNull();
+    fireEvent.click(githubRow as HTMLElement);
+
+    expect(await screen.findByText("GitHub CLI")).toBeVisible();
+    expect(screen.getByText("https://hooks.example/api/triggers/github/deliveries")).toBeVisible();
+    expect(getGitHubConfigMock).toHaveBeenCalledTimes(1);
+    expect(getGitHubWebhookTunnelStatusMock).toHaveBeenCalledTimes(1);
+    expect(startGitHubWebhookTunnelMock).not.toHaveBeenCalled();
+    expect(stopGitHubWebhookTunnelMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reveal token" }));
+    await waitFor(() => expect(revealGitHubTokenMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByDisplayValue("ghp_saved")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Token"), {
+      target: { value: "ghp_next" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test GitHub CLI" }));
+    await waitFor(() =>
+      expect(probeGitHubConnectivityMock).toHaveBeenCalledWith({
+        token: "ghp_next",
+      }),
+    );
+    expect(await screen.findByText("Connected as octocat in 21 ms.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
+    await waitFor(() => expect(saveGitHubConfigMock).toHaveBeenCalledTimes(1));
+    expect(saveGitHubConfigMock).toHaveBeenNthCalledWith(1, {
+      token: "ghp_next",
+    });
+
+    fireEvent.change(screen.getByLabelText("Webhook base URL"), {
+      target: { value: "https://changed.example" },
+    });
+    expect(screen.getByText("https://changed.example/api/triggers/github/deliveries")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Test callback" }));
+    await waitFor(() =>
+      expect(probeGitHubWebhookConnectivityMock).toHaveBeenCalledWith({
+        webhook_base_url: "https://changed.example",
+      }),
+    );
+    expect(await screen.findByText("Callback returned 200 in 34 ms.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save webhook" }));
+    await waitFor(() => expect(saveGitHubConfigMock).toHaveBeenCalledTimes(2));
+    expect(saveGitHubConfigMock).toHaveBeenNthCalledWith(2, {
+      webhook_base_url: "https://changed.example",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop tunnel" }));
+    await waitFor(() =>
+      expect(stopGitHubWebhookTunnelMock).toHaveBeenCalledWith({
+        clear_webhook_base_url_if_matching: true,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start tunnel" }));
+    await waitFor(() =>
+      expect(startGitHubWebhookTunnelMock).toHaveBeenCalledWith({
+        auto_save_webhook_base_url: true,
+      }),
+    );
+  }, 45000);
 
   it("saves editable role configs from the role detail page", async () => {
     renderDrawer();

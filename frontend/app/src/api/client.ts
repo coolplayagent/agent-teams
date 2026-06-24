@@ -34,6 +34,16 @@ import type {
   EnvironmentVariableScope,
   EnvironmentVariableRecord,
   GlobalMemorySearchRequest,
+  GitHubConfigUpdate,
+  GitHubConfigView,
+  GitHubConnectivityProbeRequest,
+  GitHubConnectivityProbeResult,
+  GitHubTokenRevealView,
+  GitHubWebhookConnectivityProbeRequest,
+  GitHubWebhookConnectivityProbeResult,
+  LocalhostRunTunnelStartRequest,
+  LocalhostRunTunnelStatus,
+  LocalhostRunTunnelStopRequest,
   RunInjectionRequest,
   JsonValue,
   MemoryEntry,
@@ -614,6 +624,79 @@ export function saveWebConfig(config: WebConfig): Promise<{ status: string }> {
     method: "PUT",
     body: JSON.stringify(config),
   });
+}
+
+export function getGitHubConfig(): Promise<GitHubConfigView> {
+  return requestJson<GitHubConfigView>("/system/configs/github");
+}
+
+export function revealGitHubToken(): Promise<GitHubTokenRevealView> {
+  return requestJson<GitHubTokenRevealView>("/system/configs/github:reveal", {
+    method: "POST",
+  });
+}
+
+export function saveGitHubConfig(
+  config: GitHubConfigUpdate,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/github", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export function probeGitHubConnectivity(
+  request: GitHubConnectivityProbeRequest,
+): Promise<GitHubConnectivityProbeResult> {
+  return requestJson<GitHubConnectivityProbeResult>(
+    "/system/configs/github:probe",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function probeGitHubWebhookConnectivity(
+  request: GitHubWebhookConnectivityProbeRequest,
+): Promise<GitHubWebhookConnectivityProbeResult> {
+  return requestJson<GitHubWebhookConnectivityProbeResult>(
+    "/system/configs/github/webhook:probe",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function getGitHubWebhookTunnelStatus(): Promise<LocalhostRunTunnelStatus> {
+  return requestJson<LocalhostRunTunnelStatus>(
+    "/system/configs/github/webhook/tunnel",
+  );
+}
+
+export function startGitHubWebhookTunnel(
+  request: LocalhostRunTunnelStartRequest = {},
+): Promise<LocalhostRunTunnelStatus> {
+  return requestJson<LocalhostRunTunnelStatus>(
+    "/system/configs/github/webhook/tunnel:start",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function stopGitHubWebhookTunnel(
+  request: LocalhostRunTunnelStopRequest = {},
+): Promise<LocalhostRunTunnelStatus> {
+  return requestJson<LocalhostRunTunnelStatus>(
+    "/system/configs/github/webhook/tunnel:stop",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export function getProxyConfig(): Promise<ProxyConfig> {

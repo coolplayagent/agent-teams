@@ -1612,6 +1612,108 @@ export interface WebConfig {
   searxng_instance_url?: string | null;
 }
 
+export interface GitHubConfigView {
+  token_configured: boolean;
+  webhook_base_url?: string | null;
+}
+
+export interface GitHubConfigUpdate {
+  token?: string | null;
+  webhook_base_url?: string | null;
+}
+
+export interface GitHubTokenRevealView {
+  token?: string | null;
+}
+
+export interface GitHubConnectivityProbeRequest {
+  timeout_ms?: number | null;
+  token?: string | null;
+}
+
+export interface GitHubConnectivityProbeDiagnostics {
+  auth_valid: boolean;
+  binary_available: boolean;
+  bundled_binary: boolean;
+  used_proxy: boolean;
+}
+
+export interface GitHubConnectivityProbeResult {
+  checked_at: string;
+  diagnostics: GitHubConnectivityProbeDiagnostics;
+  error_code?: string | null;
+  error_message?: string | null;
+  exit_code?: number | null;
+  gh_path?: string | null;
+  gh_version?: string | null;
+  host: string;
+  latency_ms: number;
+  ok: boolean;
+  retryable: boolean;
+  status_code?: number | null;
+  username?: string | null;
+}
+
+export interface GitHubWebhookConnectivityProbeRequest {
+  timeout_ms?: number | null;
+  webhook_base_url?: string | null;
+}
+
+export interface GitHubWebhookConnectivityProbeDiagnostics {
+  endpoint_reachable: boolean;
+  redirected: boolean;
+  used_proxy: boolean;
+}
+
+export interface GitHubWebhookConnectivityProbeResult {
+  callback_url?: string | null;
+  checked_at: string;
+  diagnostics: GitHubWebhookConnectivityProbeDiagnostics;
+  error_code?: string | null;
+  error_message?: string | null;
+  final_url?: string | null;
+  health_url?: string | null;
+  latency_ms: number;
+  ok: boolean;
+  retryable: boolean;
+  status_code?: number | null;
+  webhook_base_url?: string | null;
+}
+
+export type LocalhostRunTunnelStatusValue =
+  | "active"
+  | "failed"
+  | "idle"
+  | "starting"
+  | "stopped";
+
+export interface LocalhostRunTunnelStartRequest {
+  auto_save_webhook_base_url?: boolean;
+  local_host?: string | null;
+  local_port?: number | null;
+  wait_timeout_ms?: number;
+}
+
+export interface LocalhostRunTunnelStopRequest {
+  clear_webhook_base_url_if_matching?: boolean;
+}
+
+export interface LocalhostRunTunnelStatus {
+  address?: string | null;
+  connection_id?: string | null;
+  error_message?: string | null;
+  last_event?: string | null;
+  last_message?: string | null;
+  local_host?: string | null;
+  local_port?: number | null;
+  pid?: number | null;
+  provider: string;
+  public_url?: string | null;
+  started_at?: string | null;
+  status: LocalhostRunTunnelStatusValue;
+  stopped_at?: string | null;
+}
+
 export interface ProxyConfig {
   all_proxy?: string | null;
   http_proxy?: string | null;

@@ -17,6 +17,8 @@ import {
   getConfigStatus,
   getAutomationProject,
   getEnvironmentVariables,
+  getGitHubConfig,
+  getGitHubWebhookTunnelStatus,
   getMemory,
   getRoleConfig,
   getRuntimeToolDownload,
@@ -44,14 +46,18 @@ import {
   pickWorkspace,
   probeSshProfileConnection,
   probeClawHubConnectivity,
+  probeGitHubConnectivity,
+  probeGitHubWebhookConnectivity,
   probeWebConnectivity,
   revealSshProfilePassword,
+  revealGitHubToken,
   refreshAgentRuntimeRegistry,
   reloadProxyConfig,
   reloadSkillsConfig,
   saveEnvironmentVariable,
   saveAgentRuntime,
   saveClawHubConfig,
+  saveGitHubConfig,
   saveNotificationConfig,
   saveOrchestrationConfig,
   saveProxyConfig,
@@ -62,7 +68,9 @@ import {
   searchMemories,
   searchWorkspacePaths,
   stopBackgroundTask,
+  stopGitHubWebhookTunnel,
   startAgentRuntimeTestJob,
+  startGitHubWebhookTunnel,
   startRuntimeToolDownload,
   rebuildMemoryIndex,
   runAutomationProject,
@@ -1718,6 +1726,159 @@ describe("api client", () => {
       9,
       "/api/system/configs/agent-runtime-test-jobs/job-1",
       expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it("manages GitHub settings through the system config endpoints", async () => {
+    const configPayload = {
+      token_configured: true,
+      webhook_base_url: "https://hooks.example",
+    };
+    const cliProbePayload = {
+      checked_at: "2026-06-24T00:00:00Z",
+      diagnostics: {
+        auth_valid: true,
+        binary_available: true,
+        bundled_binary: true,
+        used_proxy: false,
+      },
+      gh_path: "C:/tools/gh.exe",
+      gh_version: "gh version 2.0.0",
+      host: "github.com",
+      latency_ms: 18,
+      ok: true,
+      retryable: false,
+      username: "octocat",
+    };
+    const webhookProbePayload = {
+      callback_url: "https://hooks.example/api/triggers/github/deliveries",
+      checked_at: "2026-06-24T00:00:00Z",
+      diagnostics: {
+        endpoint_reachable: true,
+        redirected: false,
+        used_proxy: false,
+      },
+      latency_ms: 26,
+      ok: true,
+      retryable: false,
+      status_code: 200,
+      webhook_base_url: "https://hooks.example",
+    };
+    const activeTunnelPayload = {
+      provider: "localhost.run",
+      public_url: "https://relay.localhost.run",
+      status: "active",
+    };
+    const stoppedTunnelPayload = {
+      provider: "localhost.run",
+      public_url: "https://relay.localhost.run",
+      status: "stopped",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(configPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "ghp_secret" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(cliProbePayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(webhookProbePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(activeTunnelPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(activeTunnelPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(stoppedTunnelPayload), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGitHubConfig()).resolves.toEqual(configPayload);
+    await expect(revealGitHubToken()).resolves.toEqual({ token: "ghp_secret" });
+    await expect(
+      saveGitHubConfig({
+        token: "ghp_secret",
+        webhook_base_url: "https://hooks.example",
+      }),
+    ).resolves.toEqual({ status: "ok" });
+    await expect(
+      probeGitHubConnectivity({ token: "ghp_secret" }),
+    ).resolves.toEqual(cliProbePayload);
+    await expect(
+      probeGitHubWebhookConnectivity({
+        webhook_base_url: "https://hooks.example",
+      }),
+    ).resolves.toEqual(webhookProbePayload);
+    await expect(getGitHubWebhookTunnelStatus()).resolves.toEqual(
+      activeTunnelPayload,
+    );
+    await expect(
+      startGitHubWebhookTunnel({ auto_save_webhook_base_url: true }),
+    ).resolves.toEqual(activeTunnelPayload);
+    await expect(
+      stopGitHubWebhookTunnel({ clear_webhook_base_url_if_matching: true }),
+    ).resolves.toEqual(stoppedTunnelPayload);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/github",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/github:reveal",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/github",
+      expect.objectContaining({
+        body: JSON.stringify({
+          token: "ghp_secret",
+          webhook_base_url: "https://hooks.example",
+        }),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/configs/github:probe",
+      expect.objectContaining({
+        body: JSON.stringify({ token: "ghp_secret" }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/system/configs/github/webhook:probe",
+      expect.objectContaining({
+        body: JSON.stringify({ webhook_base_url: "https://hooks.example" }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/system/configs/github/webhook/tunnel",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/system/configs/github/webhook/tunnel:start",
+      expect.objectContaining({
+        body: JSON.stringify({ auto_save_webhook_base_url: true }),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "/api/system/configs/github/webhook/tunnel:stop",
+      expect.objectContaining({
+        body: JSON.stringify({ clear_webhook_base_url_if_matching: true }),
+        method: "POST",
+      }),
     );
   });
 

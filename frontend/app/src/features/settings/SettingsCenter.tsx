@@ -38,6 +38,7 @@ import { useUiStore } from "../../runtime/uiStore";
 import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
 import { CommandsSettingsSection } from "./CommandsSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
+import { GitHubSettingsSection } from "./GitHubSettingsSection";
 import { McpSettingsSection } from "./McpSettingsSection";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
@@ -73,6 +74,7 @@ const SYSTEM_SETTINGS_PAGE_IDS = [
   "commands",
   "hooks",
   "agent-runtime",
+  "github",
 ] as const;
 
 type SystemSettingsPage = (typeof SYSTEM_SETTINGS_PAGE_IDS)[number];
@@ -255,6 +257,12 @@ function SettingsSystem() {
         meta: t("settingsSystem"),
         title: t("settingsAgentRuntime"),
       },
+      {
+        detail: t("settingsSystemGitHubDetail"),
+        key: "github",
+        meta: t("settingsSystem"),
+        title: t("settingsGitHub"),
+      },
     ],
     [t],
   );
@@ -315,7 +323,10 @@ function SystemSettingsPageContent({ page }: { page: SystemSettingsPage }) {
   if (page === "hooks") {
     return <HooksSettingsSection />;
   }
-  return <AgentRuntimeSettingsSection />;
+  if (page === "agent-runtime") {
+    return <AgentRuntimeSettingsSection />;
+  }
+  return <GitHubSettingsSection />;
 }
 
 function isSystemSettingsPage(key: string): key is SystemSettingsPage {

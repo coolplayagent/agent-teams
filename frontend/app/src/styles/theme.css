@@ -1868,6 +1868,182 @@ body {
   flex: 0 0 auto;
 }
 
+.at-connectors-workbench {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.at-connectors-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.at-connectors-card {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  color: var(--at-text);
+  text-align: left;
+}
+
+.at-connectors-card:hover,
+.at-connectors-card.is-selected {
+  border-color: var(--at-border-strong);
+  background: var(--at-surface-muted);
+}
+
+.at-connectors-card.is-selected {
+  box-shadow: inset 3px 0 0 var(--at-primary);
+}
+
+.at-connectors-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--at-border);
+  border-radius: 7px;
+  background: var(--at-bg);
+  color: var(--at-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.at-connectors-card-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.at-connectors-card-body strong,
+.at-connectors-card-body span,
+.at-connectors-card-body em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-connectors-card-body strong {
+  font-weight: 650;
+}
+
+.at-connectors-card-body span {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-connectors-card-body em {
+  color: var(--at-danger);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.at-connectors-card-footer {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.at-connectors-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  padding: 14px;
+}
+
+.at-connectors-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.at-connectors-detail-title {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.at-connectors-detail-title h4 {
+  margin: 0 0 2px !important;
+}
+
+.at-connectors-detail-title .ant-typography {
+  display: block;
+  max-width: 620px;
+}
+
+.at-connectors-detail-error {
+  margin-top: 12px;
+}
+
+.at-connectors-detail-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.at-connectors-detail-facts > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 7px;
+  background: var(--at-bg);
+}
+
+.at-connectors-detail-facts dt {
+  margin-bottom: 4px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-connectors-detail-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--at-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-connectors-detail-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--at-border);
+}
+
+.at-connectors-detail-section-title {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
 .at-connectors-table-frame {
   flex: 1 1 auto;
   min-height: 0;
@@ -5457,6 +5633,24 @@ body {
   .at-connectors-controls .ant-segmented {
     max-width: 100%;
     overflow-x: auto;
+  }
+
+  .at-connectors-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-connectors-card-list,
+  .at-connectors-detail {
+    overflow: visible;
+  }
+
+  .at-connectors-detail-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .at-connectors-detail-facts {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .at-connectors-table-frame {

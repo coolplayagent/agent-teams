@@ -79,13 +79,14 @@ afterEach(() => {
 });
 
 describe("ConnectorsView", () => {
-  it("renders connector summary and searchable connector rows", async () => {
+  it("renders connector summary with searchable cards and a detail panel", async () => {
     renderView();
 
     expect(await screen.findByTestId("connectors-view")).toBeVisible();
-    expect(await screen.findByText("GitHub")).toBeVisible();
-    expect(screen.getByText("W3")).toBeVisible();
-    expect(screen.getByText("1/2")).toBeVisible();
+    expect(await screen.findByTestId("connector-card-github")).toBeVisible();
+    expect(screen.getByTestId("connector-card-w3")).toBeVisible();
+    expect(screen.getByTestId("connector-detail-github")).toBeVisible();
+    expect(screen.getAllByText("1/2").length).toBeGreaterThan(0);
     expect(screen.getByText("repositories")).toBeVisible();
     expect(screen.getByText("pull requests")).toBeVisible();
 
@@ -94,9 +95,12 @@ describe("ConnectorsView", () => {
       { target: { value: "w3" } },
     );
 
-    expect(screen.queryByText("GitHub")).not.toBeInTheDocument();
-    expect(screen.getByText("W3")).toBeVisible();
-    expect(screen.getByText("Missing credentials")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByTestId("connector-card-github")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("connector-card-w3")).toBeVisible();
+    expect(screen.getByTestId("connector-detail-w3")).toBeVisible();
+    expect(screen.getAllByText("Missing credentials").length).toBeGreaterThan(0);
   });
 
   it("runs a real connector test action and displays the probe result", async () => {

@@ -11,7 +11,7 @@ import {
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlugZap, RefreshCcw, Search, TestTube2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { listConnectors, testConnector } from "../../api/client";
 import type {
@@ -41,6 +41,7 @@ export function ConnectorsView() {
   const language = useUiStore((state) => state.language);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ConnectorFilter>("all");
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
   const [latestResult, setLatestResult] = useState<ConnectorTestResult | null>(
     null,
   );
@@ -53,6 +54,7 @@ export function ConnectorsView() {
     mutationFn: (connectorId: string) => testConnector(connectorId),
     onSuccess: (result) => {
       setLatestResult(result);
+      setSelectedConnectorId(result.connector_id);
       void queryClient.invalidateQueries({ queryKey: ["connectors"] });
     },
   });
@@ -63,9 +65,30 @@ export function ConnectorsView() {
     () => filterConnectors(items, query, statusFilter),
     [items, query, statusFilter],
   );
+  const selectedConnector = useMemo(
+    () =>
+      filteredItems.find((item) => item.connector_id === selectedConnectorId) ??
+      null,
+    [filteredItems, selectedConnectorId],
+  );
   const testingConnectorId = testMutation.isPending
     ? testMutation.variables
     : null;
+
+  useEffect(() => {
+    if (filteredItems.length === 0) {
+      if (selectedConnectorId !== null) {
+        setSelectedConnectorId(null);
+      }
+      return;
+    }
+    if (
+      selectedConnectorId === null ||
+      filteredItems.every((item) => item.connector_id !== selectedConnectorId)
+    ) {
+      setSelectedConnectorId(filteredItems[0].connector_id);
+    }
+  }, [filteredItems, selectedConnectorId]);
 
   return (
     <section
@@ -188,41 +211,25 @@ export function ConnectorsView() {
           />
         ) : null}
         {filteredItems.length > 0 ? (
-          <div className="at-connectors-table-frame">
-            <table className="at-connectors-table">
-              <colgroup>
-                <col className="at-connectors-col-main" />
-                <col className="at-connectors-col-status" />
-                <col className="at-connectors-col-accounts" />
-                <col className="at-connectors-col-auth" />
-                <col className="at-connectors-col-capabilities" />
-                <col className="at-connectors-col-activity" />
-                <col className="at-connectors-col-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">{t("connectorsColumnConnector")}</th>
-                  <th scope="col">{t("connectorsColumnStatus")}</th>
-                  <th scope="col">{t("connectorsColumnAccounts")}</th>
-                  <th scope="col">{t("connectorsColumnAuth")}</th>
-                  <th scope="col">{t("connectorsColumnCapabilities")}</th>
-                  <th scope="col">{t("connectorsColumnActivity")}</th>
-                  <th scope="col">{t("connectorsColumnActions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item) => (
-                  <ConnectorRow
-                    item={item}
-                    key={item.connector_id}
-                    language={language}
-                    onTest={() => testMutation.mutate(item.connector_id)}
-                    t={t}
-                    testing={testingConnectorId === item.connector_id}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="at-connectors-workbench">
+            <div className="at-connectors-card-list" aria-label={t("connectorsList")}>
+              {filteredItems.map((item) => (
+                <ConnectorCard
+                  item={item}
+                  key={item.connector_id}
+                  onSelect={() => setSelectedConnectorId(item.connector_id)}
+                  selected={item.connector_id === selectedConnectorId}
+                  t={t}
+                />
+              ))}
+            </div>
+            <ConnectorDetail
+              item={selectedConnector}
+              language={language}
+              onTest={(connectorId) => testMutation.mutate(connectorId)}
+              t={t}
+              testingConnectorId={testingConnectorId}
+            />
           </div>
         ) : null}
       </div>
@@ -247,51 +254,144 @@ function SummaryCell({
   );
 }
 
-function ConnectorRow({
+function ConnectorCard({
   item,
-  language,
-  onTest,
+  onSelect,
+  selected,
   t,
-  testing,
 }: {
   item: ConnectorItem;
-  language: Language;
-  onTest: () => void;
+  onSelect: () => void;
+  selected: boolean;
   t: ReturnType<typeof useTranslations>;
-  testing: boolean;
 }) {
   return (
-    <tr data-testid={`connector-row-${item.connector_id}`}>
-      <td>
-        <div className="at-connectors-main-cell">
-          <strong>{item.display_name}</strong>
-          <span>{item.description}</span>
-          {item.last_error ? (
-            <em title={item.last_error}>{item.last_error}</em>
-          ) : null}
-        </div>
-      </td>
-      <td>
+    <button
+      aria-label={t("connectorsOpenDetails", { connector: item.display_name })}
+      aria-pressed={selected}
+      className={selected ? "at-connectors-card is-selected" : "at-connectors-card"}
+      data-testid={`connector-card-${item.connector_id}`}
+      onClick={onSelect}
+      type="button"
+    >
+      <span aria-hidden="true" className="at-connectors-card-icon">
+        {connectorInitial(item)}
+      </span>
+      <span className="at-connectors-card-body">
+        <strong>{item.display_name}</strong>
+        <span>{item.description}</span>
+        {item.last_error ? <em title={item.last_error}>{item.last_error}</em> : null}
+      </span>
+      <span className="at-connectors-card-footer">
         <span className={`at-connectors-status is-${item.status}`}>
           <span aria-hidden="true" />
           {connectorStatusLabel(item.status, t)}
         </span>
-      </td>
-      <td>
         <span className="at-connectors-account-count">
           {t("connectorsAccountsValue", {
             enabled: item.enabled_count,
             total: item.account_count,
           })}
         </span>
-      </td>
-      <td>
-        <div className="at-connectors-meta-cell">
-          <span>{connectorAuthLabel(item.auth_type, t)}</span>
-          <small>{connectorCategoryLabel(item.category, t)}</small>
+      </span>
+    </button>
+  );
+}
+
+function ConnectorDetail({
+  item,
+  language,
+  onTest,
+  t,
+  testingConnectorId,
+}: {
+  item: ConnectorItem | null;
+  language: Language;
+  onTest: (connectorId: string) => void;
+  t: ReturnType<typeof useTranslations>;
+  testingConnectorId: string | null | undefined;
+}) {
+  if (item === null) {
+    return (
+      <aside className="at-connectors-detail">
+        <Empty
+          description={t("connectorsSelectConnector")}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
+      </aside>
+    );
+  }
+
+  const testing = testingConnectorId === item.connector_id;
+  return (
+    <aside
+      aria-label={t("connectorsDetailLabel", { connector: item.display_name })}
+      className="at-connectors-detail"
+      data-testid={`connector-detail-${item.connector_id}`}
+    >
+      <div className="at-connectors-detail-header">
+        <div className="at-connectors-detail-title">
+          <span aria-hidden="true" className="at-connectors-card-icon">
+            {connectorInitial(item)}
+          </span>
+          <div>
+            <Typography.Title level={4}>{item.display_name}</Typography.Title>
+            <Typography.Text type="secondary">{item.description}</Typography.Text>
+          </div>
         </div>
-      </td>
-      <td>
+        <Tooltip title={t("connectorsTestTooltip")}>
+          <Button
+            aria-label={t("connectorsTestAria", {
+              connector: item.display_name,
+            })}
+            icon={<TestTube2 size={15} />}
+            loading={testing}
+            onClick={() => onTest(item.connector_id)}
+          >
+            {t("connectorsTest")}
+          </Button>
+        </Tooltip>
+      </div>
+
+      {item.last_error ? (
+        <Alert
+          className="at-connectors-detail-error"
+          message={item.last_error}
+          showIcon
+          type="warning"
+        />
+      ) : null}
+
+      <dl className="at-connectors-detail-facts">
+        <Fact
+          label={t("connectorsColumnStatus")}
+          value={connectorStatusLabel(item.status, t)}
+        />
+        <Fact
+          label={t("connectorsColumnAccounts")}
+          value={t("connectorsAccountsValue", {
+            enabled: item.enabled_count,
+            total: item.account_count,
+          })}
+        />
+        <Fact
+          label={t("connectorsColumnAuth")}
+          value={connectorAuthLabel(item.auth_type, t)}
+        />
+        <Fact
+          label={t("connectorsCategory")}
+          value={connectorCategoryLabel(item.category, t)}
+        />
+        <Fact
+          label={t("connectorsColumnActivity")}
+          value={formatDateTime(item.last_activity_at, language, t("connectorsNever"))}
+        />
+      </dl>
+
+      <section className="at-connectors-detail-section">
+        <Typography.Text className="at-connectors-detail-section-title">
+          {t("connectorsColumnCapabilities")}
+        </Typography.Text>
         <div className="at-connectors-capabilities">
           {item.capabilities.length === 0 ? (
             <span className="at-connectors-muted">{t("connectorsValueNone")}</span>
@@ -301,28 +401,17 @@ function ConnectorRow({
             ))
           )}
         </div>
-      </td>
-      <td>
-        <span className="at-connectors-muted">
-          {formatDateTime(item.last_activity_at, language, t("connectorsNever"))}
-        </span>
-      </td>
-      <td>
-        <Tooltip title={t("connectorsTestTooltip")}>
-          <Button
-            aria-label={t("connectorsTestAria", {
-              connector: item.display_name,
-            })}
-            icon={<TestTube2 size={15} />}
-            loading={testing}
-            onClick={onTest}
-            size="small"
-          >
-            {t("connectorsTest")}
-          </Button>
-        </Tooltip>
-      </td>
-    </tr>
+      </section>
+    </aside>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
   );
 }
 
@@ -430,6 +519,11 @@ function connectorCategoryLabel(
     return t("connectorsCategoryModels");
   }
   return t("connectorsCategoryIm");
+}
+
+function connectorInitial(item: ConnectorItem): string {
+  const source = item.display_name.trim() || item.connector_id.trim();
+  return source.slice(0, 2).toUpperCase();
 }
 
 function formatDateTime(

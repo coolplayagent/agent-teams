@@ -43,6 +43,7 @@ import {
   saveEnvironmentVariable,
   saveClawHubConfig,
   saveNotificationConfig,
+  saveOrchestrationConfig,
   saveProxyConfig,
   saveSshProfile,
   saveWebConfig,
@@ -1633,6 +1634,23 @@ describe("api client", () => {
         stt_profile_name: "alibaba-cn-qwen3-omni-flash",
       }),
     ).resolves.toEqual({ status: "ok" });
+    await expect(
+      saveOrchestrationConfig({
+        default_orchestration_preset_id: "default",
+        presets: [
+          {
+            description: "Main plus reviewer",
+            name: "Default",
+            orchestration_prompt: "Coordinate.",
+            policy: {
+              max_orchestration_cycles: 8,
+            },
+            preset_id: "default",
+            role_ids: ["main", "reviewer"],
+          },
+        ],
+      }),
+    ).resolves.toEqual({ status: "ok" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -1703,6 +1721,28 @@ describe("api client", () => {
           language: "zh-CN",
           prompt: "domain terms",
           stt_profile_name: "alibaba-cn-qwen3-omni-flash",
+        }),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/system/configs/orchestration",
+      expect.objectContaining({
+        body: JSON.stringify({
+          default_orchestration_preset_id: "default",
+          presets: [
+            {
+              description: "Main plus reviewer",
+              name: "Default",
+              orchestration_prompt: "Coordinate.",
+              policy: {
+                max_orchestration_cycles: 8,
+              },
+              preset_id: "default",
+              role_ids: ["main", "reviewer"],
+            },
+          ],
         }),
         method: "PUT",
       }),

@@ -2,6 +2,7 @@ import {
   App,
   Button,
   Form,
+  Input,
   Switch,
   Typography,
 } from "antd";
@@ -15,11 +16,13 @@ import {
   getOrchestrationConfig,
   getRoleConfigOptions,
   saveGeneralConfig,
+  saveOrchestrationConfig,
 } from "../../api/client";
 import type {
   GeneralConfig,
   ModalityCapabilities,
   ModelProfileRecord,
+  OrchestrationConfig,
   OrchestrationPreset,
   OrchestrationPolicy,
   RoleOption,
@@ -437,6 +440,8 @@ function SettingsOrchestration({
   error: Error | null;
   loading: boolean;
 }) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const t = useTranslations();
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const presets = config?.presets ?? [];
@@ -451,15 +456,31 @@ function SettingsOrchestration({
     }
   }, [selectedPreset, selectedPresetId]);
 
+  const saveMutation = useMutation({
+    mutationFn: (nextConfig: OrchestrationConfig) => saveOrchestrationConfig(nextConfig),
+    onSuccess: () => {
+      void message.success(t("settingsSaved"));
+      void queryClient.invalidateQueries({ queryKey: ["settings", "orchestration"] });
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
+      );
+    },
+  });
+
   return (
     <SettingsSection title={t("settingsOrchestration")}>
       <SettingsQueryState error={error} loading={loading} />
       {!loading && config !== undefined ? (
         selectedPreset !== undefined ? (
           <OrchestrationPresetDetail
+            config={config}
             defaultPresetId={config.default_orchestration_preset_id}
             onBack={() => setSelectedPresetId(null)}
+            onSave={(nextConfig) => saveMutation.mutate(nextConfig)}
             preset={selectedPreset}
+            saving={saveMutation.isPending}
           />
         ) : (
           <>
@@ -497,6 +518,13 @@ interface SettingsListItem {
 interface RoleListItem extends SettingsListItem {
   category: string;
   role: RoleOption;
+}
+
+interface OrchestrationPresetForm {
+  description?: string;
+  name?: string;
+  orchestration_prompt?: string;
+  role_ids?: string;
 }
 
 function SettingsList({
@@ -590,17 +618,30 @@ function RoleOptionDetail({
 }
 
 function OrchestrationPresetDetail({
+  config,
   defaultPresetId,
   onBack,
+  onSave,
   preset,
+  saving,
 }: {
+  config: OrchestrationConfig;
   defaultPresetId: string | undefined;
   onBack: () => void;
+  onSave: (config: OrchestrationConfig) => void;
   preset: OrchestrationPreset;
+  saving: boolean;
 }) {
   const t = useTranslations();
+  const [form] = Form.useForm<OrchestrationPresetForm>();
+  const formId = "at-orchestration-preset-form";
   const roleIds = preset.role_ids?.map((roleId) => roleId.trim()).filter(Boolean) ?? [];
   const policyRows = orchestrationPolicyRows(preset.policy);
+
+  useEffect(() => {
+    form.setFieldsValue(orchestrationPresetFormValues(preset));
+  }, [form, preset]);
+
   return (
     <div className="at-settings-detail-page at-orchestration-preset-detail">
       <div className="at-settings-detail-header">
@@ -609,6 +650,9 @@ function OrchestrationPresetDetail({
           <Typography.Text>{orchestrationPresetDetail(preset)}</Typography.Text>
         </div>
         <div className="at-settings-detail-actions">
+          <Button form={formId} htmlType="submit" loading={saving} type="primary">
+            {t("settingsSave")}
+          </Button>
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
       </div>
@@ -620,19 +664,29 @@ function OrchestrationPresetDetail({
         />
         <Fact label={t("settingsOrchestrationRoles")} value={String(roleIds.length)} />
       </div>
+      <Form
+        className="at-settings-form at-orchestration-preset-form"
+        form={form}
+        id={formId}
+        layout="vertical"
+        onFinish={(values) => {
+          onSave(updateOrchestrationPreset(config, preset.preset_id, values));
+        }}
+      >
+        <Form.Item label={t("settingsPresetName")} name="name">
+          <Input autoComplete="off" />
+        </Form.Item>
+        <Form.Item label={t("settingsRoleDescription")} name="description">
+          <Input autoComplete="off" />
+        </Form.Item>
+        <Form.Item label={t("settingsOrchestrationRoles")} name="role_ids">
+          <Input autoComplete="off" />
+        </Form.Item>
+        <Form.Item label={t("settingsOrchestrationPrompt")} name="orchestration_prompt">
+          <Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} />
+        </Form.Item>
+      </Form>
       <div className="at-settings-list at-orchestration-preset-properties">
-        <PropertyRow
-          label={t("settingsRoleDescription")}
-          value={preset.description?.trim() || "-"}
-        />
-        <PropertyRow
-          label={t("settingsOrchestrationRoles")}
-          value={roleIds.length > 0 ? roleIds.join(", ") : "-"}
-        />
-        <PropertyRow
-          label={t("settingsOrchestrationPrompt")}
-          value={preset.orchestration_prompt?.trim() || "-"}
-        />
         {policyRows.map((row) => (
           <PropertyRow key={row.label} label={row.label} value={row.value} />
         ))}
@@ -702,6 +756,58 @@ function orchestrationPresetDetail(preset: OrchestrationPreset): string {
     roleCount > 0 ? `${roleCount} roles` : "",
     preset.description?.trim() || "",
   ].filter(Boolean).join(" · ") || "-";
+}
+
+function orchestrationPresetFormValues(
+  preset: OrchestrationPreset,
+): OrchestrationPresetForm {
+  return {
+    description: preset.description ?? "",
+    name: preset.name ?? "",
+    orchestration_prompt: preset.orchestration_prompt ?? "",
+    role_ids: preset.role_ids?.join(", ") ?? "",
+  };
+}
+
+function updateOrchestrationPreset(
+  config: OrchestrationConfig,
+  presetId: string,
+  values: OrchestrationPresetForm,
+): OrchestrationConfig {
+  return {
+    ...config,
+    presets: (config.presets ?? []).map((preset) => {
+      if (preset.preset_id !== presetId) {
+        return preset;
+      }
+      return {
+        ...preset,
+        description: optionalText(values.description),
+        name: optionalText(values.name),
+        orchestration_prompt: optionalText(values.orchestration_prompt),
+        role_ids: parseRoleIds(values.role_ids),
+      };
+    }),
+  };
+}
+
+function optionalText(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || undefined;
+}
+
+function parseRoleIds(value: string | undefined): string[] {
+  const seen = new Set<string>();
+  const roleIds: string[] = [];
+  for (const part of (value ?? "").split(/[\n,]+/)) {
+    const roleId = part.trim();
+    if (!roleId || seen.has(roleId)) {
+      continue;
+    }
+    seen.add(roleId);
+    roleIds.push(roleId);
+  }
+  return roleIds;
 }
 
 function orchestrationPolicyRows(

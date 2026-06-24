@@ -566,6 +566,15 @@ export function getOrchestrationConfig(): Promise<OrchestrationConfig> {
   return requestJson<OrchestrationConfig>("/system/configs/orchestration");
 }
 
+export function saveOrchestrationConfig(
+  config: OrchestrationConfig,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/orchestration", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
 export function getWebConfig(): Promise<WebConfig> {
   return requestJson<WebConfig>("/system/configs/web");
 }

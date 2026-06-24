@@ -41,6 +41,7 @@ import {
   reloadProxyConfig,
   saveEnvironmentVariable,
   saveGeneralConfig,
+  saveOrchestrationConfig,
   saveProxyConfig,
   saveSshProfile,
   saveWebConfig,
@@ -87,6 +88,7 @@ vi.mock("../api/client", () => ({
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
   saveGeneralConfig: vi.fn(),
+  saveOrchestrationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
   saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
@@ -127,6 +129,7 @@ const reloadMcpConfigMock = vi.mocked(reloadMcpConfig);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
+const saveOrchestrationConfigMock = vi.mocked(saveOrchestrationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
@@ -322,6 +325,12 @@ beforeEach(() => {
       {
         description: "Main plus reviewer",
         name: "Default",
+        orchestration_prompt: "Coordinate the work.",
+        policy: {
+          auto_plan_long_tasks: true,
+          max_orchestration_cycles: 8,
+          planner_role_id: "planner",
+        },
         preset_id: "default",
         role_ids: ["main", "reviewer"],
       },
@@ -486,6 +495,7 @@ beforeEach(() => {
   });
   revealSshProfilePasswordMock.mockResolvedValue({ password: "saved-password" });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
+  saveOrchestrationConfigMock.mockResolvedValue({ status: "ok" });
   reloadProxyConfigMock.mockResolvedValue({ status: "ok" });
   saveProxyConfigMock.mockResolvedValue({ status: "ok" });
   createCommandMock.mockResolvedValue({
@@ -612,7 +622,38 @@ describe("SettingsDrawer", () => {
     expect(defaultPresetRow).not.toBeNull();
     fireEvent.click(defaultPresetRow as HTMLElement);
     expect(await screen.findByText("Preset ID")).toBeVisible();
-    expect(screen.getByText("main, reviewer")).toBeVisible();
+    const presetNameInput = screen.getByDisplayValue("Default");
+    const presetDescriptionInput = screen.getByDisplayValue("Main plus reviewer");
+    const presetRolesInput = screen.getByDisplayValue("main, reviewer");
+    const presetPromptInput = screen.getByDisplayValue("Coordinate the work.");
+    expect(presetRolesInput).toBeVisible();
+    fireEvent.change(presetNameInput, { target: { value: "Edited Default" } });
+    fireEvent.change(presetDescriptionInput, { target: { value: "Edited reviewer flow" } });
+    fireEvent.change(presetRolesInput, {
+      target: { value: "main, reviewer, qa, reviewer" },
+    });
+    fireEvent.change(presetPromptInput, {
+      target: { value: "Coordinate edited work." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(1));
+    expect(saveOrchestrationConfigMock.mock.calls[0]?.[0]).toEqual({
+      default_orchestration_preset_id: "default",
+      presets: [
+        {
+          description: "Edited reviewer flow",
+          name: "Edited Default",
+          orchestration_prompt: "Coordinate edited work.",
+          policy: {
+            auto_plan_long_tasks: true,
+            max_orchestration_cycles: 8,
+            planner_role_id: "planner",
+          },
+          preset_id: "default",
+          role_ids: ["main", "reviewer", "qa"],
+        },
+      ],
+    });
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText("2 roles · Main plus reviewer")).toBeVisible();
 
@@ -640,7 +681,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
-  });
+  }, 30000);
 
   it("manages MCP servers through the MCP config clients", async () => {
     renderDrawer();

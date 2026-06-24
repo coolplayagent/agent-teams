@@ -151,8 +151,8 @@ describe("WorkspaceProjectView", () => {
 
     expect(await screen.findByText("Agent Teams")).toBeVisible();
     expect(screen.getByText("Mount")).toBeVisible();
-    expect(screen.getByRole("button", { name: "wsl-home" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Changes 1" })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: "wsl-home" })).toBeVisible();
+    expect(await screen.findByRole("tab", { name: "Changes 1" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -189,7 +189,7 @@ describe("WorkspaceProjectView", () => {
       "default",
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Open folder" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
 
     await waitFor(() =>
       expect(openWorkspaceRootMock).toHaveBeenCalledWith("workspace-1", "default"),
@@ -651,7 +651,7 @@ describe("WorkspaceProjectView", () => {
 
     renderProjectView();
 
-    expect(await screen.findAllByRole("button", { name: "打开文件夹" })).toHaveLength(2);
+    expect(await screen.findByRole("button", { name: "打开文件夹" })).toBeVisible();
     expect(screen.getByRole("button", { name: "刷新工作区视图" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "文件" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "变更 0" })).toBeVisible();

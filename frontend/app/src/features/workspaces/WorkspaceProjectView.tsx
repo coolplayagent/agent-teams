@@ -10,6 +10,7 @@ import {
   Modal,
   Select,
   Skeleton,
+  Tooltip,
   Typography,
 } from "antd";
 import type { FormInstance } from "antd";
@@ -375,51 +376,47 @@ export function WorkspaceProjectView({
             ))}
           </div>
           <div className="at-workspace-mount-actions">
-            <Button
-              icon={<Plus size={14} />}
-              onClick={() => setMountDialog({ mode: "create", mount: null })}
-              size="small"
-              type="text"
-            >
-              {t("workspaceMountAdd")}
-            </Button>
-            <Button
-              disabled={activeMount === null}
-              icon={<Pencil size={14} />}
-              onClick={() => setMountDialog({ mode: "edit", mount: activeMount })}
-              size="small"
-              type="text"
-            >
-              {t("workspaceMountEdit")}
-            </Button>
-            <Button
-              icon={<Server size={14} />}
-              onClick={() => setSshProfilesOpen(true)}
-              size="small"
-              type="text"
-            >
-              {t("workspaceSshProfiles")}
-            </Button>
-            <Button
-              danger
-              disabled={activeMount === null || workspaceMounts.length <= 1}
-              icon={<Trash2 size={14} />}
-              onClick={handleRemoveWorkspaceMount}
-              size="small"
-              type="text"
-            >
-              {t("workspaceMountRemove")}
-            </Button>
+            <Tooltip title={t("workspaceMountAdd")}>
+              <Button
+                aria-label={t("workspaceMountAdd")}
+                icon={<Plus size={14} />}
+                onClick={() => setMountDialog({ mode: "create", mount: null })}
+                size="small"
+                type="text"
+              />
+            </Tooltip>
+            <Tooltip title={t("workspaceMountEdit")}>
+              <Button
+                aria-label={t("workspaceMountEdit")}
+                disabled={activeMount === null}
+                icon={<Pencil size={14} />}
+                onClick={() => setMountDialog({ mode: "edit", mount: activeMount })}
+                size="small"
+                type="text"
+              />
+            </Tooltip>
+            <Tooltip title={t("workspaceSshProfiles")}>
+              <Button
+                aria-label={t("workspaceSshProfiles")}
+                icon={<Server size={14} />}
+                onClick={() => setSshProfilesOpen(true)}
+                size="small"
+                type="text"
+              />
+            </Tooltip>
+            <Tooltip title={t("workspaceMountRemove")}>
+              <Button
+                aria-label={t("workspaceMountRemove")}
+                danger
+                disabled={activeMount === null || workspaceMounts.length <= 1}
+                icon={<Trash2 size={14} />}
+                onClick={handleRemoveWorkspaceMount}
+                size="small"
+                type="text"
+              />
+            </Tooltip>
           </div>
           <div className="at-workspace-workbench-spacer" />
-          <Button
-            aria-label={t("workspaceOpenFolder")}
-            icon={<ExternalLink size={15} />}
-            loading={openRootMutation.isPending}
-            onClick={() => openRootMutation.mutate()}
-            size="small"
-            type="text"
-          />
         </div>
 
         {activeMode === "files" ? (

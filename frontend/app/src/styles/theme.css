@@ -823,9 +823,9 @@ body {
   justify-content: space-between;
   gap: 16px;
   min-width: 0;
-  padding: 14px 20px 12px;
+  padding: 13px 18px 12px;
   border-bottom: 1px solid var(--at-border);
-  background: var(--at-bg);
+  background: var(--at-surface);
 }
 
 .at-project-toolbar-copy {
@@ -862,10 +862,10 @@ body {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  margin: 16px 20px 20px;
+  margin: 0;
   overflow: hidden;
-  border: 1px solid var(--at-border);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   background: var(--at-surface);
 }
 
@@ -874,30 +874,32 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 48px;
-  padding: 8px 10px;
+  min-height: 42px;
+  padding: 6px 10px 6px 18px;
   border-bottom: 1px solid var(--at-border);
+  background: var(--at-surface);
 }
 
 .at-workspace-mode-tabs {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--at-border);
-  border-radius: 8px;
-  background: var(--at-surface-muted);
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .at-workspace-mode-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 26px;
-  padding: 3px 10px;
+  min-height: 30px;
+  padding: 0 1px;
   border: 0;
-  border-radius: 6px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--at-text-muted);
   cursor: pointer;
@@ -912,9 +914,10 @@ body {
 }
 
 .at-workspace-mode-tab.is-active {
-  background: var(--at-surface);
+  border-bottom-color: var(--at-primary);
+  background: transparent;
   color: var(--at-text);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
 }
 
 .at-workspace-mode-count {
@@ -958,7 +961,10 @@ body {
 }
 
 .at-workspace-mount-actions .ant-btn {
-  padding-inline: 6px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
 }
 
 .at-workspace-mount-form {
@@ -983,12 +989,12 @@ body {
 
 .at-workspace-workbench-content.is-files {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 28%);
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 28%);
 }
 
 .at-workspace-workbench-content.is-changes {
   display: grid;
-  grid-template-columns: minmax(220px, 28%) minmax(0, 1fr) minmax(190px, 20%);
+  grid-template-columns: minmax(240px, 26%) minmax(0, 1fr) minmax(240px, 24%);
 }
 
 .at-workspace-tree-list,
@@ -1017,7 +1023,7 @@ body {
   display: grid;
   align-content: start;
   gap: 1px;
-  padding: 6px;
+  padding: 4px;
   border-right: 1px solid var(--at-border);
 }
 
@@ -1034,7 +1040,7 @@ body {
 
 .at-workspace-file-pane-filter {
   flex: 0 0 auto;
-  padding: 8px;
+  padding: 6px;
   border-bottom: 1px solid var(--at-border);
 }
 
@@ -1047,7 +1053,7 @@ body {
   display: grid;
   align-content: start;
   gap: 1px;
-  padding: 6px;
+  padding: 4px;
 }
 
 .at-workspace-tree-row,
@@ -1057,8 +1063,8 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 30px;
-  padding: 5px 7px;
+  min-height: 28px;
+  padding: 4px 7px;
   border-radius: 6px;
   color: var(--at-text);
   font-size: 13px;

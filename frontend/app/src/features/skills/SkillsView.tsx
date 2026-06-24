@@ -2,6 +2,7 @@ import {
   Alert,
   App,
   Button,
+  Checkbox,
   Drawer,
   Empty,
   Input,
@@ -11,32 +12,45 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
+  ExternalLink,
   PackagePlus,
+  Plus,
   RefreshCcw,
   Search,
+  Settings,
   ShieldCheck,
   Trash2,
   Wrench,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   browseClawHubSkillMarket,
+  getClawHubConfig,
   getClawHubSkillMarketDetail,
   getConfigStatus,
   getRuntimeSkillDetail,
   installClawHubMarketSkill,
+  probeClawHubConnectivity,
   reloadSkillsConfig,
+  saveClawHubConfig,
   searchClawHubSkillMarket,
   uninstallClawHubMarketSkill,
   uninstallRuntimeSkill,
 } from "../../api/client";
 import type {
+  ClawHubConnectivityProbeResult,
   ClawHubSkillMarketDetail,
+  ClawHubSkillMarketInstallRequest,
   ClawHubSkillMarketSearchItem,
   RuntimeSkillDetail,
   RuntimeSkillSummary,
@@ -46,6 +60,7 @@ import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "../timeline/MarkdownMessage";
 
 type SkillsTab = "installed" | "market";
+type SkillsDrawer = "clawhub" | "install";
 
 type DetailTarget =
   | { kind: "installed"; ref: string }
@@ -65,6 +80,11 @@ interface DetailRow {
   value: string;
 }
 
+interface ProbeNotice {
+  kind: "error" | "info" | "success" | "warning";
+  message: string;
+}
+
 const userRemovableSources = new Set<SkillSource>([
   "user_agents",
   "user_claude",
@@ -80,18 +100,31 @@ export function SkillsView() {
   const [activeTab, setActiveTab] = useState<SkillsTab>("market");
   const [query, setQuery] = useState("");
   const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
+  const [activeDrawer, setActiveDrawer] = useState<SkillsDrawer | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ["skills", "status"],
     queryFn: getConfigStatus,
   });
-  const marketQuery = useQuery({
+  const marketQuery = useInfiniteQuery({
     queryKey: ["skills", "market", query.trim()],
-    queryFn: () =>
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
       query.trim()
         ? searchClawHubSkillMarket(query, 24)
-        : browseClawHubSkillMarket({ limit: 24, sort: "popular" }),
+        : browseClawHubSkillMarket({
+            cursor: pageParam,
+            limit: 24,
+            sort: "popular",
+          }),
     enabled: activeTab === "market",
+    getNextPageParam: (lastPage) => {
+      if (query.trim()) {
+        return undefined;
+      }
+      const nextCursor = lastPage.next_cursor?.trim() ?? "";
+      return nextCursor ? nextCursor : undefined;
+    },
   });
 
   const installedSkills = useMemo(
@@ -102,7 +135,7 @@ export function SkillsView() {
     () => filterRuntimeSkills(installedSkills, query),
     [installedSkills, query],
   );
-  const marketItems = marketQuery.data?.items ?? [];
+  const marketItems = marketQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   const installMutation = useMutation({
     mutationFn: (item: ClawHubSkillMarketSearchItem) =>
@@ -117,6 +150,24 @@ export function SkillsView() {
         return;
       }
       void message.success(t("skillsInstallSuccess"));
+      void refreshSkillQueries(queryClient);
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("skillsInstallFailed"),
+      );
+    },
+  });
+  const manualInstallMutation = useMutation({
+    mutationFn: (request: ClawHubSkillMarketInstallRequest) =>
+      installClawHubMarketSkill(request),
+    onSuccess: (result) => {
+      if (!result.ok) {
+        void message.error(result.error_message || t("skillsInstallFailed"));
+        return;
+      }
+      void message.success(t("skillsInstallSuccess"));
+      setActiveDrawer(null);
       void refreshSkillQueries(queryClient);
     },
     onError: (error) => {
@@ -229,6 +280,19 @@ export function SkillsView() {
             type="search"
             value={query}
           />
+          <Button
+            icon={<Plus size={15} />}
+            onClick={() => setActiveDrawer("install")}
+          >
+            {t("skillsAdd")}
+          </Button>
+          <Tooltip title={t("skillsClawHubSettings")}>
+            <Button
+              aria-label={t("skillsClawHubSettings")}
+              icon={<Settings size={15} />}
+              onClick={() => setActiveDrawer("clawhub")}
+            />
+          </Tooltip>
           <Tooltip title={t("skillsRefresh")}>
             <Button
               aria-label={t("skillsRefresh")}
@@ -272,8 +336,13 @@ export function SkillsView() {
             error={marketQuery.isError}
             installingSlug={installingSlug}
             items={marketItems}
+            loadingMore={marketQuery.isFetchingNextPage}
             loading={marketQuery.isLoading}
+            canLoadMore={marketQuery.hasNextPage}
             onInstall={(item) => installMutation.mutate(item)}
+            onLoadMore={() => {
+              void marketQuery.fetchNextPage();
+            }}
             onOpenDetail={(item) =>
               setDetailTarget({
                 kind: "market",
@@ -307,27 +376,45 @@ export function SkillsView() {
         onClose={() => setDetailTarget(null)}
         t={t}
       />
+      <SkillInstallDrawer
+        installing={manualInstallMutation.isPending}
+        onClose={() => setActiveDrawer(null)}
+        onInstall={(request) => manualInstallMutation.mutate(request)}
+        open={activeDrawer === "install"}
+        t={t}
+      />
+      <ClawHubSettingsDrawer
+        onClose={() => setActiveDrawer(null)}
+        open={activeDrawer === "clawhub"}
+        t={t}
+      />
     </section>
   );
 }
 
 function SkillsMarketPanel({
+  canLoadMore,
   error,
   installingSlug,
   items,
   loading,
+  loadingMore,
   onInstall,
+  onLoadMore,
   onOpenDetail,
   onUninstall,
   query,
   t,
   uninstallingSlug,
 }: {
+  canLoadMore: boolean;
   error: boolean;
   installingSlug: string | null;
   items: ClawHubSkillMarketSearchItem[];
   loading: boolean;
+  loadingMore: boolean;
   onInstall: (item: ClawHubSkillMarketSearchItem) => void;
+  onLoadMore: () => void;
   onOpenDetail: (item: ClawHubSkillMarketSearchItem) => void;
   onUninstall: (slug: string) => void;
   query: string;
@@ -349,20 +436,29 @@ function SkillsMarketPanel({
     );
   }
   return (
-    <div className="at-skills-grid">
-      {items.map((item) => (
-        <MarketSkillCard
-          installing={installingSlug === item.slug}
-          item={item}
-          key={`${item.slug}:${item.version ?? ""}`}
-          onInstall={() => onInstall(item)}
-          onOpenDetail={() => onOpenDetail(item)}
-          onUninstall={() => onUninstall(item.slug)}
-          t={t}
-          uninstalling={uninstallingSlug === item.slug}
-        />
-      ))}
-    </div>
+    <>
+      <div className="at-skills-grid">
+        {items.map((item) => (
+          <MarketSkillCard
+            installing={installingSlug === item.slug}
+            item={item}
+            key={`${item.slug}:${item.version ?? ""}`}
+            onInstall={() => onInstall(item)}
+            onOpenDetail={() => onOpenDetail(item)}
+            onUninstall={() => onUninstall(item.slug)}
+            t={t}
+            uninstalling={uninstallingSlug === item.slug}
+          />
+        ))}
+      </div>
+      {canLoadMore ? (
+        <div className="at-skills-more">
+          <Button loading={loadingMore} onClick={onLoadMore}>
+            {loadingMore ? t("skillsLoadingMore") : t("skillsLoadMore")}
+          </Button>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -531,6 +627,253 @@ function RuntimeSkillCard({
   );
 }
 
+function SkillInstallDrawer({
+  installing,
+  onClose,
+  onInstall,
+  open,
+  t,
+}: {
+  installing: boolean;
+  onClose: () => void;
+  onInstall: (request: ClawHubSkillMarketInstallRequest) => void;
+  open: boolean;
+  t: Translate;
+}) {
+  const [force, setForce] = useState(false);
+  const [slug, setSlug] = useState("");
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setForce(false);
+      setSlug("");
+      setVersion("");
+    }
+  }, [open]);
+
+  return (
+    <Drawer
+      className="at-skills-drawer"
+      destroyOnClose
+      onClose={onClose}
+      open={open}
+      title={t("skillsInstallTitle")}
+      width={460}
+    >
+      <form
+        className="at-skills-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const normalizedSlug = slug.trim();
+          if (!normalizedSlug) {
+            return;
+          }
+          onInstall({
+            force,
+            slug: normalizedSlug,
+            version: version.trim() || null,
+          });
+        }}
+      >
+        <label className="at-skills-field">
+          <span>{t("skillsInstallSlug")}</span>
+          <Input
+            autoFocus
+            onChange={(event) => setSlug(event.target.value)}
+            placeholder={t("skillsInstallSlugPlaceholder")}
+            value={slug}
+          />
+        </label>
+        <label className="at-skills-field">
+          <span>{t("skillsInstallVersion")}</span>
+          <Input
+            onChange={(event) => setVersion(event.target.value)}
+            placeholder={t("skillsInstallVersionPlaceholder")}
+            value={version}
+          />
+        </label>
+        <Checkbox
+          checked={force}
+          onChange={(event) => setForce(event.target.checked)}
+        >
+          {t("skillsInstallForce")}
+        </Checkbox>
+        <Typography.Text type="secondary">
+          {t("skillsInstallForceHelp")}
+        </Typography.Text>
+        <div className="at-skills-form-actions">
+          <Button onClick={onClose}>{t("skillsCancel")}</Button>
+          <Button
+            disabled={!slug.trim()}
+            htmlType="submit"
+            loading={installing}
+            type="primary"
+          >
+            {installing ? t("skillsInstalling") : t("skillsInstall")}
+          </Button>
+        </div>
+      </form>
+    </Drawer>
+  );
+}
+
+function ClawHubSettingsDrawer({
+  onClose,
+  open,
+  t,
+}: {
+  onClose: () => void;
+  open: boolean;
+  t: Translate;
+}) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const [probeNotice, setProbeNotice] = useState<ProbeNotice | null>(null);
+  const [tokenDirty, setTokenDirty] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState("");
+
+  const configQuery = useQuery({
+    queryKey: ["skills", "clawhub-config"],
+    queryFn: getClawHubConfig,
+    enabled: open,
+  });
+  const effectiveToken = tokenDirty
+    ? tokenDraft.trim() || null
+    : configQuery.data?.token ?? null;
+  const hasSavedToken = Boolean(configQuery.data?.token?.trim());
+
+  useEffect(() => {
+    if (!open) {
+      setProbeNotice(null);
+      setTokenDirty(false);
+      setTokenDraft("");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (open && configQuery.data) {
+      setTokenDirty(false);
+      setTokenDraft("");
+    }
+  }, [configQuery.data, open]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => saveClawHubConfig({ token: effectiveToken }),
+    onSuccess: () => {
+      void message.success(t("skillsClawHubSaved"));
+      void queryClient.invalidateQueries({
+        queryKey: ["skills", "clawhub-config"],
+      });
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("skillsClawHubSaveFailed"),
+      );
+    },
+  });
+  const probeMutation = useMutation({
+    mutationFn: () => probeClawHubConnectivity({ token: effectiveToken }),
+    onSuccess: (result) => {
+      setProbeNotice(probeNoticeFromResult(result, t));
+    },
+    onError: (error) => {
+      setProbeNotice({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : t("skillsClawHubProbeFailed"),
+      });
+    },
+  });
+
+  function runProbe() {
+    if (!effectiveToken) {
+      setProbeNotice({
+        kind: "error",
+        message: t("skillsClawHubTokenRequired"),
+      });
+      return;
+    }
+    probeMutation.mutate();
+  }
+
+  return (
+    <Drawer
+      className="at-skills-drawer"
+      destroyOnClose
+      onClose={onClose}
+      open={open}
+      title={t("skillsClawHubSettings")}
+      width={520}
+    >
+      {configQuery.isLoading ? <Skeleton active paragraph={{ rows: 4 }} /> : null}
+      {configQuery.isError ? (
+        <Alert message={t("skillsClawHubLoadFailed")} showIcon type="error" />
+      ) : null}
+      {configQuery.data ? (
+        <div className="at-skills-form">
+          <label className="at-skills-field">
+            <span>{t("skillsClawHubToken")}</span>
+            <Input.Password
+              allowClear
+              autoComplete="new-password"
+              onChange={(event) => {
+                setTokenDirty(true);
+                setTokenDraft(event.target.value);
+              }}
+              placeholder={
+                hasSavedToken && !tokenDirty
+                  ? "************"
+                  : t("skillsClawHubTokenPlaceholder")
+              }
+              value={tokenDraft}
+            />
+          </label>
+          <a
+            className="at-skills-token-link"
+            href="https://clawhub.ai/settings"
+            rel="noreferrer"
+            target="_blank"
+          >
+            <span>https://clawhub.ai/settings</span>
+            <ExternalLink aria-hidden="true" size={14} />
+          </a>
+          {probeNotice ? (
+            <Alert
+              className="at-skills-probe"
+              message={probeNotice.message}
+              showIcon
+              type={probeNotice.kind}
+            />
+          ) : null}
+          <div className="at-skills-form-actions">
+            <Button
+              onClick={() => {
+                setTokenDirty(true);
+                setTokenDraft("");
+              }}
+            >
+              {t("skillsClearToken")}
+            </Button>
+            <Button loading={probeMutation.isPending} onClick={runProbe}>
+              {probeMutation.isPending
+                ? t("skillsClawHubTesting")
+                : t("skillsClawHubTest")}
+            </Button>
+            <Button
+              loading={saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+              type="primary"
+            >
+              {t("skillsSave")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </Drawer>
+  );
+}
+
 function SkillDetailDrawer({
   detailTarget,
   onClose,
@@ -686,6 +1029,27 @@ function marketDetailView(
 
 function marketTitle(item: ClawHubSkillMarketSearchItem): string {
   return item.title.trim() || item.slug;
+}
+
+function probeNoticeFromResult(
+  result: ClawHubConnectivityProbeResult,
+  t: Translate,
+): ProbeNotice {
+  if (result.ok) {
+    return {
+      kind: "success",
+      message: t("skillsClawHubProbeSuccess", {
+        latency: formatCount(result.latency_ms),
+        version: result.clawhub_version || "clawhub",
+      }),
+    };
+  }
+  return {
+    kind: result.retryable ? "warning" : "error",
+    message: t("skillsClawHubProbeReason", {
+      reason: result.error_message || result.error_code || t("skillsUnknown"),
+    }),
+  };
 }
 
 function skillSourceLabel(source: SkillSource, t: Translate): string {

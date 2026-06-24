@@ -350,6 +350,41 @@ export interface SystemConfigStatus {
   skills?: SkillConfigStatus;
 }
 
+export interface ClawHubConfig {
+  token?: string | null;
+}
+
+export interface ClawHubConfigSaveResponse {
+  status: string;
+}
+
+export interface ClawHubConnectivityProbeRequest {
+  timeout_ms?: number | null;
+  token?: string | null;
+}
+
+export interface ClawHubConnectivityProbeDiagnostics {
+  binary_available: boolean;
+  endpoint_fallback_used: boolean;
+  installation_attempted: boolean;
+  installed_during_probe: boolean;
+  registry?: string | null;
+  token_configured: boolean;
+}
+
+export interface ClawHubConnectivityProbeResult {
+  checked_at: string;
+  clawhub_path?: string | null;
+  clawhub_version?: string | null;
+  diagnostics: ClawHubConnectivityProbeDiagnostics;
+  error_code?: string | null;
+  error_message?: string | null;
+  exit_code?: number | null;
+  latency_ms: number;
+  ok: boolean;
+  retryable: boolean;
+}
+
 export interface SkillUninstallResponse {
   error_code?: string | null;
   error_message?: string | null;

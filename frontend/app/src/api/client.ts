@@ -5,6 +5,10 @@ import type {
   AutomationProjectSessionRecord,
   AutomationRunNowResult,
   BoardTodoBoardResponse,
+  ClawHubConfig,
+  ClawHubConfigSaveResponse,
+  ClawHubConnectivityProbeRequest,
+  ClawHubConnectivityProbeResult,
   ClawHubSkillMarketDetail,
   ClawHubSkillMarketInstallRequest,
   ClawHubSkillMarketInstallResponse,
@@ -285,6 +289,31 @@ export function disableAutomationProject(
 
 export function getConfigStatus(): Promise<SystemConfigStatus> {
   return requestJson<SystemConfigStatus>("/system/configs");
+}
+
+export function getClawHubConfig(): Promise<ClawHubConfig> {
+  return requestJson<ClawHubConfig>("/system/configs/clawhub");
+}
+
+export function saveClawHubConfig(
+  config: ClawHubConfig,
+): Promise<ClawHubConfigSaveResponse> {
+  return requestJson<ClawHubConfigSaveResponse>("/system/configs/clawhub", {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+}
+
+export function probeClawHubConnectivity(
+  request: ClawHubConnectivityProbeRequest,
+): Promise<ClawHubConnectivityProbeResult> {
+  return requestJson<ClawHubConnectivityProbeResult>(
+    "/system/configs/clawhub:probe",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export interface BrowseClawHubSkillMarketOptions {

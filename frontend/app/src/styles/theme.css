@@ -1149,6 +1149,73 @@ body {
   color: var(--at-text);
 }
 
+.at-skills-more {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 2px;
+}
+
+.at-skills-drawer .ant-drawer-body {
+  padding: 18px;
+}
+
+.at-skills-form {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.at-skills-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--at-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.at-skills-field .ant-input,
+.at-skills-field .ant-input-affix-wrapper {
+  font-weight: 400;
+}
+
+.at-skills-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.at-skills-token-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  color: var(--at-text);
+  text-decoration: none;
+}
+
+.at-skills-token-link:hover {
+  border-color: var(--at-border-strong);
+  color: var(--at-primary);
+}
+
+.at-skills-token-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-skills-probe {
+  margin: 0;
+}
+
 .at-skills-detail {
   display: grid;
   gap: 14px;
@@ -4128,11 +4195,12 @@ body {
   }
 
   .at-skills-toolbar-actions {
+    flex-wrap: wrap;
     width: 100%;
   }
 
   .at-skills-search {
-    flex: 1 1 auto;
+    flex: 1 0 100%;
     width: auto;
   }
 
@@ -4150,6 +4218,11 @@ body {
   }
 
   .at-skills-card-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .at-skills-form-actions {
     align-items: stretch;
     flex-direction: column;
   }

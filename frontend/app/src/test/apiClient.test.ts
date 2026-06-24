@@ -6,6 +6,7 @@ import {
   deleteEnvironmentVariable,
   deleteSshProfile,
   enableAutomationProject,
+  getClawHubConfig,
   getClawHubSkillMarketDetail,
   getConfigStatus,
   getAutomationProject,
@@ -28,11 +29,13 @@ import {
   listWorkspaces,
   openWorkspaceRoot,
   probeSshProfileConnection,
+  probeClawHubConnectivity,
   probeWebConnectivity,
   revealSshProfilePassword,
   reloadProxyConfig,
   reloadSkillsConfig,
   saveEnvironmentVariable,
+  saveClawHubConfig,
   saveNotificationConfig,
   saveProxyConfig,
   saveSshProfile,
@@ -325,6 +328,28 @@ describe("api client", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(statusPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "saved-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            checked_at: "2026-06-24T00:00:00Z",
+            diagnostics: {
+              binary_available: true,
+              endpoint_fallback_used: false,
+              installation_attempted: false,
+              installed_during_probe: false,
+              token_configured: true,
+            },
+            latency_ms: 6,
+            ok: true,
+            retryable: false,
+          }),
+          { status: 200 },
+        ),
+      )
       .mockResolvedValueOnce(new Response(JSON.stringify(marketPayload), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(marketPayload), { status: 200 }))
       .mockResolvedValueOnce(
@@ -383,6 +408,13 @@ describe("api client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getConfigStatus()).resolves.toEqual(statusPayload);
+    await expect(getClawHubConfig()).resolves.toEqual({ token: "saved-token" });
+    await expect(saveClawHubConfig({ token: "next-token" })).resolves.toEqual({
+      status: "ok",
+    });
+    await expect(
+      probeClawHubConnectivity({ token: "next-token" }),
+    ).resolves.toMatchObject({ ok: true });
     await expect(
       browseClawHubSkillMarket({ cursor: "next", limit: 12, sort: "popular" }),
     ).resolves.toEqual(marketPayload);
@@ -415,26 +447,47 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/system/skills/market/clawhub?limit=12&cursor=next&sort=popular",
+      "/api/system/configs/clawhub",
       expect.objectContaining({ headers: expect.any(Headers) }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "/api/system/skills/market/clawhub/search?query=skill+creator&limit=8",
-      expect.objectContaining({ headers: expect.any(Headers) }),
+      "/api/system/configs/clawhub",
+      expect.objectContaining({
+        body: JSON.stringify({ token: "next-token" }),
+        method: "PUT",
+      }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
-      "/api/system/skills/market/clawhub/skill-creator?version=1.0.0",
-      expect.objectContaining({ headers: expect.any(Headers) }),
+      "/api/system/configs/clawhub:probe",
+      expect.objectContaining({
+        body: JSON.stringify({ token: "next-token" }),
+        method: "POST",
+      }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
-      "/api/system/skills/skill-creator",
+      "/api/system/skills/market/clawhub?limit=12&cursor=next&sort=popular",
       expect.objectContaining({ headers: expect.any(Headers) }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       6,
+      "/api/system/skills/market/clawhub/search?query=skill+creator&limit=8",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/system/skills/market/clawhub/skill-creator?version=1.0.0",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "/api/system/skills/skill-creator",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
       "/api/system/skills/market/clawhub/install",
       expect.objectContaining({
         body: JSON.stringify({
@@ -446,17 +499,17 @@ describe("api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      7,
+      10,
       "/api/system/skills/market/clawhub/skill-creator",
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      8,
+      11,
       "/api/system/skills/skill-creator",
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      9,
+      12,
       "/api/system/configs/skills:reload",
       expect.objectContaining({ method: "POST" }),
     );

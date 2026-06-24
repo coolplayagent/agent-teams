@@ -48,6 +48,26 @@ export interface WorkspaceSnapshot {
   tree: WorkspaceTreeNode;
 }
 
+export interface WorkspaceTreeListing {
+  workspace_id: string;
+  mount_name?: string;
+  directory_path: string;
+  children: WorkspaceTreeNode[];
+}
+
+export interface WorkspaceSearchResult {
+  name: string;
+  path: string;
+  kind: WorkspaceTreeNodeKind;
+  mount_name?: string;
+}
+
+export interface WorkspaceSearchResponse {
+  workspace_id: string;
+  query: string;
+  results: WorkspaceSearchResult[];
+}
+
 export type WorkspaceDiffChangeType =
   | "added"
   | "modified"

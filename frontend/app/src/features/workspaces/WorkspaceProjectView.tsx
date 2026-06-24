@@ -3,6 +3,7 @@ import {
   App,
   Button,
   Empty,
+  Input,
   Skeleton,
   Typography,
 } from "antd";
@@ -14,19 +15,23 @@ import {
   FolderClosed,
   GitBranch,
   RefreshCcw,
+  Search,
 } from "lucide-react";
 
 import {
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
   getWorkspaceSnapshot,
+  getWorkspaceTree,
   listWorkspaces,
   openWorkspaceRoot,
+  searchWorkspacePaths,
 } from "../../api/client";
 import type {
   WorkspaceDiffFile,
   WorkspaceDiffFileSummary,
   WorkspaceRecord,
+  WorkspaceSearchResult,
   WorkspaceSnapshot,
   WorkspaceTreeNode,
 } from "../../api/contracts";
@@ -45,6 +50,8 @@ interface DiffLine {
   text: string;
 }
 
+type WorkspaceFilePaneEntry = WorkspaceTreeNode | WorkspaceSearchResult;
+
 export function WorkspaceProjectView({
   onBack,
   selectedWorkspaceId,
@@ -53,7 +60,9 @@ export function WorkspaceProjectView({
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [modeOverride, setModeOverride] = useState<WorkspaceProjectMode | null>(null);
+  const [activeMountNameOverride, setActiveMountNameOverride] = useState<string | null>(null);
   const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
+  const [treeFilter, setTreeFilter] = useState("");
 
   const workspacesQuery = useQuery({
     queryKey: ["workspaces"],
@@ -68,7 +77,9 @@ export function WorkspaceProjectView({
 
   useEffect(() => {
     setModeOverride(null);
+    setActiveMountNameOverride(null);
     setSelectedDiffPath(null);
+    setTreeFilter("");
   }, [workspaceId]);
 
   const snapshotQuery = useQuery({
@@ -76,15 +87,28 @@ export function WorkspaceProjectView({
     queryFn: () => getWorkspaceSnapshot(workspaceId),
     enabled: workspaceId.length > 0,
   });
-  const diffsQuery = useQuery({
-    queryKey: ["workspaces", "diffs", workspaceId],
-    queryFn: () => getWorkspaceDiffs(workspaceId),
-    enabled: workspaceId.length > 0,
-  });
-
   const snapshot = snapshotQuery.data;
   const rootEntries = snapshot?.tree.children ?? [];
+  const defaultMountName = snapshot?.default_mount_name?.trim() || "default";
+  const mountNames = uniqueValues([
+    defaultMountName,
+    ...rootEntries
+      .filter((entry) => entry.kind === "directory")
+      .map((entry) => entry.name.trim())
+      .filter((name) => name.length > 0),
+  ]);
+  const activeMountNameCandidate = activeMountNameOverride ?? defaultMountName;
+  const activeMountName = mountNames.includes(activeMountNameCandidate)
+    ? activeMountNameCandidate
+    : defaultMountName;
+
+  const diffsQuery = useQuery({
+    queryKey: ["workspaces", "diffs", workspaceId, activeMountName],
+    queryFn: () => getWorkspaceDiffs(workspaceId, activeMountName),
+    enabled: workspaceId.length > 0 && activeMountName.length > 0,
+  });
   const diffFiles = diffsQuery.data?.diff_files ?? [];
+  const diffFilesByPath = new Map(diffFiles.map((file) => [file.path, file]));
   const activeMode: WorkspaceProjectMode =
     modeOverride ?? (diffFiles.length > 0 ? "changes" : "files");
   const selectedDiff =
@@ -94,8 +118,34 @@ export function WorkspaceProjectView({
   const effectiveSelectedDiffPath = selectedDiff?.path ?? null;
   const mountName =
     diffsQuery.data?.mount_name?.trim() ||
-    snapshot?.default_mount_name?.trim() ||
-    "default";
+    activeMountName;
+
+  const rootTreeQuery = useQuery({
+    queryKey: ["workspaces", "tree", workspaceId, activeMountName, "."],
+    queryFn: () => getWorkspaceTree(workspaceId, ".", activeMountName),
+    enabled: workspaceId.length > 0 && activeMountName.length > 0,
+  });
+  const normalizedTreeFilter = treeFilter.trim();
+  const fileSearchQuery = useQuery({
+    queryKey: [
+      "workspaces",
+      "search",
+      workspaceId,
+      activeMountName,
+      normalizedTreeFilter,
+    ],
+    queryFn: () =>
+      searchWorkspacePaths(workspaceId, normalizedTreeFilter, 80, activeMountName),
+    enabled:
+      workspaceId.length > 0 &&
+      activeMountName.length > 0 &&
+      normalizedTreeFilter.length > 0,
+  });
+  const rootTreeEntries = rootTreeQuery.data?.children ?? [];
+  const filePaneEntries =
+    normalizedTreeFilter.length > 0
+      ? fileSearchQuery.data?.results ?? []
+      : rootTreeEntries;
 
   const diffFileQuery = useQuery({
     queryKey: ["workspaces", "diff", workspaceId, mountName, effectiveSelectedDiffPath],
@@ -112,7 +162,7 @@ export function WorkspaceProjectView({
   });
 
   const openRootMutation = useMutation({
-    mutationFn: () => openWorkspaceRoot(workspaceId),
+    mutationFn: () => openWorkspaceRoot(workspaceId, mountName),
     onSuccess: () => {
       void message.success(t("workspaceFolderOpened"));
     },
@@ -214,9 +264,21 @@ export function WorkspaceProjectView({
           </div>
           <div className="at-workspace-mount-menu" aria-label={t("workspaceMount")}>
             <span>{t("workspaceMount")}</span>
-            <button className="is-active" type="button">
-              {mountName}
-            </button>
+            {mountNames.map((name) => (
+              <button
+                aria-pressed={name === activeMountName}
+                className={name === activeMountName ? "is-active" : undefined}
+                key={name}
+                onClick={() => {
+                  setActiveMountNameOverride(name);
+                  setSelectedDiffPath(null);
+                  setTreeFilter("");
+                }}
+                type="button"
+              >
+                {name}
+              </button>
+            ))}
           </div>
           <div className="at-workspace-workbench-spacer" />
           <Button
@@ -231,22 +293,22 @@ export function WorkspaceProjectView({
 
         {activeMode === "files" ? (
           <div className="at-workspace-workbench-content is-files">
-            {snapshotQuery.isLoading ? (
+            {rootTreeQuery.isLoading ? (
               <Skeleton active paragraph={{ rows: 12 }} />
             ) : null}
-            {snapshotQuery.isError ? (
+            {rootTreeQuery.isError ? (
               <div className="at-project-state is-error">
-                {errorMessage(snapshotQuery.error, t("workspaceLoadSnapshotError"))}
+                {errorMessage(rootTreeQuery.error, t("workspaceLoadTreeError"))}
               </div>
             ) : null}
-            {!snapshotQuery.isLoading &&
-            !snapshotQuery.isError &&
-            rootEntries.length === 0 ? (
+            {!rootTreeQuery.isLoading &&
+            !rootTreeQuery.isError &&
+            rootTreeEntries.length === 0 ? (
               <div className="at-project-state">{t("workspaceNoRootEntries")}</div>
             ) : null}
-            {rootEntries.length > 0 ? (
+            {rootTreeEntries.length > 0 ? (
               <div className="at-workspace-tree-list">
-                {rootEntries.map((entry) => (
+                {rootTreeEntries.map((entry) => (
                   <WorkspaceTreeEntry entry={entry} key={entry.path || entry.name} t={t} />
                 ))}
               </div>
@@ -290,6 +352,25 @@ export function WorkspaceProjectView({
                 t={t}
               />
             </section>
+            <WorkspaceFilePane
+              diffFilesByPath={diffFilesByPath}
+              entries={filePaneEntries}
+              error={
+                normalizedTreeFilter.length > 0
+                  ? fileSearchQuery.error
+                  : rootTreeQuery.error
+              }
+              filter={treeFilter}
+              loading={
+                normalizedTreeFilter.length > 0
+                  ? fileSearchQuery.isFetching
+                  : rootTreeQuery.isLoading
+              }
+              onFilterChange={setTreeFilter}
+              onSelectDiff={(path) => setSelectedDiffPath(path)}
+              selectedPath={effectiveSelectedDiffPath}
+              t={t}
+            />
           </div>
         )}
       </div>
@@ -307,6 +388,12 @@ export function WorkspaceProjectView({
     void queryClient.invalidateQueries({
       queryKey: ["workspaces", "diff", targetWorkspaceId],
     });
+    void queryClient.invalidateQueries({
+      queryKey: ["workspaces", "tree", targetWorkspaceId],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["workspaces", "search", targetWorkspaceId],
+    });
   }
 }
 
@@ -314,7 +401,7 @@ function WorkspaceTreeEntry({
   entry,
   t,
 }: {
-  entry: WorkspaceTreeNode;
+  entry: WorkspaceFilePaneEntry;
   t: Translate;
 }) {
   const Icon = entry.kind === "directory" ? FolderClosed : File;
@@ -322,9 +409,132 @@ function WorkspaceTreeEntry({
     <div className="at-workspace-tree-row" title={entry.path}>
       <Icon aria-hidden="true" size={15} />
       <span>{entry.name}</span>
-      {entry.kind === "directory" && entry.has_children === true ? (
+      {entry.kind === "directory" &&
+      "has_children" in entry &&
+      entry.has_children === true ? (
         <span className="at-workspace-tree-meta">{t("workspaceContainsItems")}</span>
       ) : null}
+    </div>
+  );
+}
+
+function WorkspaceFilePane({
+  diffFilesByPath,
+  entries,
+  error,
+  filter,
+  loading,
+  onFilterChange,
+  onSelectDiff,
+  selectedPath,
+  t,
+}: {
+  diffFilesByPath: Map<string, WorkspaceDiffFileSummary>;
+  entries: WorkspaceFilePaneEntry[];
+  error: Error | null;
+  filter: string;
+  loading: boolean;
+  onFilterChange: (value: string) => void;
+  onSelectDiff: (path: string) => void;
+  selectedPath: string | null;
+  t: Translate;
+}) {
+  return (
+    <section aria-label={t("workspaceFileTree")} className="at-workspace-file-pane">
+      <div className="at-workspace-file-pane-filter">
+        <Input
+          allowClear
+          aria-label={t("workspaceFilterFiles")}
+          className="at-workspace-tree-filter"
+          onChange={(event) => onFilterChange(event.target.value)}
+          placeholder={t("workspaceFilterFiles")}
+          prefix={<Search aria-hidden="true" size={14} />}
+          size="small"
+          value={filter}
+        />
+      </div>
+      {loading && entries.length === 0 ? <Skeleton active paragraph={{ rows: 10 }} /> : null}
+      {error !== null ? (
+        <div className="at-project-state is-error">
+          {errorMessage(
+            error,
+            filter.trim().length > 0
+              ? t("workspaceSearchFilesError")
+              : t("workspaceLoadTreeError"),
+          )}
+        </div>
+      ) : null}
+      {!loading && error === null && entries.length === 0 ? (
+        <div className="at-project-state">
+          {filter.trim().length > 0
+            ? t("workspaceNoFileMatches")
+            : t("workspaceNoRootEntries")}
+        </div>
+      ) : null}
+      {entries.length > 0 ? (
+        <div className="at-workspace-file-pane-list">
+          {entries.map((entry) => (
+            <WorkspaceFilePaneRow
+              diffFile={diffFilesByPath.get(entry.path)}
+              entry={entry}
+              key={`${entry.kind}:${entry.path}`}
+              onSelectDiff={onSelectDiff}
+              selected={entry.path === selectedPath}
+              t={t}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function WorkspaceFilePaneRow({
+  diffFile,
+  entry,
+  onSelectDiff,
+  selected,
+  t,
+}: {
+  diffFile: WorkspaceDiffFileSummary | undefined;
+  entry: WorkspaceFilePaneEntry;
+  onSelectDiff: (path: string) => void;
+  selected: boolean;
+  t: Translate;
+}) {
+  const Icon = entry.kind === "directory" ? FolderClosed : File;
+  const content = (
+    <>
+      <Icon aria-hidden="true" size={15} />
+      <span className="at-workspace-file-pane-name">{entry.name}</span>
+      {diffFile !== undefined ? (
+        <span className={`at-workspace-diff-status is-${diffFile.change_type}`}>
+          {changeLabel(diffFile.change_type)}
+        </span>
+      ) : null}
+    </>
+  );
+  if (diffFile !== undefined) {
+    return (
+      <button
+        aria-current={selected ? "page" : undefined}
+        aria-label={t("workspaceOpenChangedFile", { path: entry.path })}
+        className={
+          selected
+            ? "at-workspace-file-pane-row is-action is-selected"
+            : "at-workspace-file-pane-row is-action"
+        }
+        onClick={() => onSelectDiff(entry.path)}
+        title={entry.path}
+        type="button"
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className="at-workspace-file-pane-row" title={entry.path}>
+      {content}
     </div>
   );
 }
@@ -458,4 +668,8 @@ function changeLabel(changeType: string): string {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function uniqueValues(values: string[]): string[] {
+  return Array.from(new Set(values));
 }

@@ -5,6 +5,7 @@ import {
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
   getWorkspaceSnapshot,
+  getWorkspaceTree,
   listSessionRounds,
   listWorkspaces,
   openWorkspaceRoot,
@@ -13,6 +14,7 @@ import {
   saveNotificationConfig,
   saveProxyConfig,
   saveWebConfig,
+  searchWorkspacePaths,
   stopBackgroundTask,
   updateSession,
 } from "../api/client";
@@ -172,6 +174,41 @@ describe("api client", () => {
           JSON.stringify({
             workspace_id: "workspace-1",
             mount_name: "default",
+            directory_path: ".",
+            children: [
+              {
+                name: "src",
+                path: "src",
+                kind: "directory",
+                has_children: true,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workspace_id: "workspace-1",
+            query: "file",
+            results: [
+              {
+                name: "file.ts",
+                path: "src/file.ts",
+                kind: "file",
+                mount_name: "default",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workspace_id: "workspace-1",
+            mount_name: "default",
             root_path: "C:/work/agent-teams",
             diff_files: [],
           }),
@@ -198,7 +235,17 @@ describe("api client", () => {
     await expect(getWorkspaceSnapshot("workspace-1")).resolves.toMatchObject({
       workspace_id: "workspace-1",
     });
-    await expect(getWorkspaceDiffs("workspace-1")).resolves.toMatchObject({
+    await expect(
+      getWorkspaceTree("workspace-1", ".", "default"),
+    ).resolves.toMatchObject({
+      children: [expect.objectContaining({ path: "src" })],
+    });
+    await expect(
+      searchWorkspacePaths("workspace-1", "file", 40, "default"),
+    ).resolves.toMatchObject({
+      results: [expect.objectContaining({ path: "src/file.ts" })],
+    });
+    await expect(getWorkspaceDiffs("workspace-1", "default")).resolves.toMatchObject({
       root_path: "C:/work/agent-teams",
     });
     await expect(
@@ -207,7 +254,7 @@ describe("api client", () => {
       diff: "+changed",
       path: "src/file.ts",
     });
-    await expect(openWorkspaceRoot("workspace-1")).resolves.toEqual({
+    await expect(openWorkspaceRoot("workspace-1", "default")).resolves.toEqual({
       status: "ok",
     });
 
@@ -220,21 +267,35 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/workspaces/workspace-1/diffs",
+      "/api/workspaces/workspace-1/tree?path=.&mount=default",
       expect.objectContaining({
         headers: expect.any(Headers),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "/api/workspaces/workspace-1/diff?path=src%2Ffile.ts&mount=default",
+      "/api/workspaces/workspace-1/search?query=file&limit=40&mount=default",
       expect.objectContaining({
         headers: expect.any(Headers),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
-      "/api/workspaces/workspace-1:open-root",
+      "/api/workspaces/workspace-1/diffs?mount=default",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/workspaces/workspace-1/diff?path=src%2Ffile.ts&mount=default",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/workspaces/workspace-1:open-root?mount=default",
       expect.objectContaining({
         method: "POST",
         headers: expect.any(Headers),

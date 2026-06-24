@@ -31,7 +31,9 @@ import type {
   WorkspaceRecord,
   WorkspaceDiffFile,
   WorkspaceDiffListing,
+  WorkspaceSearchResponse,
   WorkspaceSnapshot,
+  WorkspaceTreeListing,
   WebConfig,
   WebConnectivityProbeRequest,
   WebConnectivityProbeResult,
@@ -57,11 +59,49 @@ export function getWorkspaceSnapshot(
   );
 }
 
+export function getWorkspaceTree(
+  workspaceId: string,
+  path = ".",
+  mountName?: string | null,
+): Promise<WorkspaceTreeListing> {
+  const params = new URLSearchParams({ path });
+  if (mountName !== undefined && mountName !== null && mountName.trim()) {
+    params.set("mount", mountName);
+  }
+  return requestJson<WorkspaceTreeListing>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/tree?${params.toString()}`,
+  );
+}
+
+export function searchWorkspacePaths(
+  workspaceId: string,
+  query: string,
+  limit = 80,
+  mountName?: string | null,
+): Promise<WorkspaceSearchResponse> {
+  const params = new URLSearchParams({
+    query,
+    limit: String(limit),
+  });
+  if (mountName !== undefined && mountName !== null && mountName.trim()) {
+    params.set("mount", mountName);
+  }
+  return requestJson<WorkspaceSearchResponse>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/search?${params.toString()}`,
+  );
+}
+
 export function getWorkspaceDiffs(
   workspaceId: string,
+  mountName?: string | null,
 ): Promise<WorkspaceDiffListing> {
+  const params = new URLSearchParams();
+  if (mountName !== undefined && mountName !== null && mountName.trim()) {
+    params.set("mount", mountName);
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return requestJson<WorkspaceDiffListing>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/diffs`,
+    `/workspaces/${encodeURIComponent(workspaceId)}/diffs${query}`,
   );
 }
 
@@ -81,9 +121,15 @@ export function getWorkspaceDiffFile(
 
 export function openWorkspaceRoot(
   workspaceId: string,
+  mountName?: string | null,
 ): Promise<{ status: string }> {
+  const params = new URLSearchParams();
+  if (mountName !== undefined && mountName !== null && mountName.trim()) {
+    params.set("mount", mountName);
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return requestJson<{ status: string }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}:open-root`,
+    `/workspaces/${encodeURIComponent(workspaceId)}:open-root${query}`,
     {
       method: "POST",
     },

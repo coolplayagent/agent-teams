@@ -7,8 +7,10 @@ import {
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
   getWorkspaceSnapshot,
+  getWorkspaceTree,
   listWorkspaces,
   openWorkspaceRoot,
+  searchWorkspacePaths,
 } from "../api/client";
 import { WorkspaceProjectView } from "../features/workspaces/WorkspaceProjectView";
 import { useUiStore } from "../runtime/uiStore";
@@ -17,15 +19,19 @@ vi.mock("../api/client", () => ({
   getWorkspaceDiffFile: vi.fn(),
   getWorkspaceDiffs: vi.fn(),
   getWorkspaceSnapshot: vi.fn(),
+  getWorkspaceTree: vi.fn(),
   listWorkspaces: vi.fn(),
   openWorkspaceRoot: vi.fn(),
+  searchWorkspacePaths: vi.fn(),
 }));
 
 const getWorkspaceDiffFileMock = vi.mocked(getWorkspaceDiffFile);
 const getWorkspaceDiffsMock = vi.mocked(getWorkspaceDiffs);
 const getWorkspaceSnapshotMock = vi.mocked(getWorkspaceSnapshot);
+const getWorkspaceTreeMock = vi.mocked(getWorkspaceTree);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 const openWorkspaceRootMock = vi.mocked(openWorkspaceRoot);
+const searchWorkspacePathsMock = vi.mocked(searchWorkspacePaths);
 
 afterEach(() => {
   cleanup();
@@ -57,18 +63,37 @@ describe("WorkspaceProjectView", () => {
         kind: "directory",
         children: [
           {
-            name: "frontend",
-            path: "frontend",
+            name: "default",
+            path: "default",
             kind: "directory",
             has_children: true,
           },
           {
-            name: "README.md",
-            path: "README.md",
-            kind: "file",
+            name: "wsl-home",
+            path: "wsl-home",
+            kind: "directory",
+            has_children: true,
           },
         ],
       },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [
+        {
+          name: "frontend",
+          path: "frontend",
+          kind: "directory",
+          has_children: true,
+        },
+        {
+          name: "README.md",
+          path: "README.md",
+          kind: "file",
+        },
+      ],
     });
     getWorkspaceDiffsMock.mockResolvedValue({
       workspace_id: "workspace-1",
@@ -95,6 +120,7 @@ describe("WorkspaceProjectView", () => {
 
     expect(await screen.findByText("Agent Teams")).toBeVisible();
     expect(screen.getByText("Mount")).toBeVisible();
+    expect(screen.getByRole("button", { name: "wsl-home" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "Changes 1" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -107,11 +133,16 @@ describe("WorkspaceProjectView", () => {
 
     expect(await screen.findByText("frontend")).toBeVisible();
     expect(screen.getByText("README.md")).toBeVisible();
+    expect(getWorkspaceTreeMock).toHaveBeenCalledWith(
+      "workspace-1",
+      ".",
+      "default",
+    );
 
     fireEvent.click(screen.getAllByRole("button", { name: "Open folder" })[0]);
 
     await waitFor(() =>
-      expect(openWorkspaceRootMock).toHaveBeenCalledWith("workspace-1"),
+      expect(openWorkspaceRootMock).toHaveBeenCalledWith("workspace-1", "default"),
     );
   });
 
@@ -131,8 +162,28 @@ describe("WorkspaceProjectView", () => {
         name: ".",
         path: ".",
         kind: "directory",
-        children: [],
+        children: [
+          {
+            name: "default",
+            path: "default",
+            kind: "directory",
+            has_children: true,
+          },
+        ],
       },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [
+        {
+          name: "src",
+          path: "src",
+          kind: "directory",
+          has_children: true,
+        },
+      ],
     });
     getWorkspaceDiffsMock.mockResolvedValue({
       workspace_id: "workspace-1",
@@ -181,6 +232,98 @@ describe("WorkspaceProjectView", () => {
     );
   });
 
+  it("filters the workspace file tree and opens a changed result", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/work/agent-teams",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [
+          {
+            name: "default",
+            path: "default",
+            kind: "directory",
+            has_children: true,
+          },
+        ],
+      },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [
+        {
+          name: "src",
+          path: "src",
+          kind: "directory",
+          has_children: true,
+        },
+      ],
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/agent-teams",
+      is_git_repository: true,
+      diff_files: [
+        {
+          path: "frontend/app/src/App.tsx",
+          change_type: "modified",
+        },
+      ],
+    });
+    getWorkspaceDiffFileMock.mockResolvedValue({
+      mount_name: "default",
+      path: "frontend/app/src/App.tsx",
+      change_type: "modified",
+      diff: "--- a/frontend/app/src/App.tsx\n+++ b/frontend/app/src/App.tsx\n+changed",
+      is_binary: false,
+    });
+    searchWorkspacePathsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      query: "App",
+      results: [
+        {
+          name: "App.tsx",
+          path: "frontend/app/src/App.tsx",
+          kind: "file",
+          mount_name: "default",
+        },
+      ],
+    });
+
+    renderProjectView();
+
+    const filter = await screen.findByLabelText("Filter files...");
+    fireEvent.change(filter, { target: { value: "App" } });
+
+    expect(await screen.findByText("App.tsx")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open changed file frontend/app/src/App.tsx",
+      }),
+    );
+
+    expect(await screen.findByText("+changed")).toBeVisible();
+    expect(searchWorkspacePathsMock).toHaveBeenCalledWith(
+      "workspace-1",
+      "App",
+      80,
+      "default",
+    );
+  });
+
   it("localizes the project workbench shell actions in Chinese", async () => {
     useUiStore.setState({ language: "zh-CN" });
     listWorkspacesMock.mockResolvedValue([
@@ -198,8 +341,21 @@ describe("WorkspaceProjectView", () => {
         name: ".",
         path: ".",
         kind: "directory",
-        children: [],
+        children: [
+          {
+            name: "default",
+            path: "default",
+            kind: "directory",
+            has_children: true,
+          },
+        ],
       },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [],
     });
     getWorkspaceDiffsMock.mockResolvedValue({
       workspace_id: "workspace-1",

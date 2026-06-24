@@ -1062,3 +1062,29 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this fixed-page workspace/chat framework slice. No Workspace, Application Shell, or Message Timeline subsystem completion is claimed from this batch; remaining work includes broader V1 project interaction parity, detailed workspace actions, streaming/recovery scenarios, and reviewer sign-off.
+
+## 2026-06-24 Workspace File Tree Pane Batch
+
+### Scope
+- Rechecked the real V1 and V2 project workbench in the in-app browser before editing, focusing on the larger framework mismatch the user flagged.
+- V1 showed a three-surface project workbench with a right-side file tree, `筛选文件...` filter, file/change tabs, and workspace-level actions.
+- V2 before this batch had the fixed-page workbench shell from the prior pass, but the changes view only had a diff list and diff preview, leaving the right workspace file surface missing.
+- Added typed V2 client contracts for the real workspace tree and path search endpoints, and threaded the active mount through tree, search, diff, and open-root requests.
+- Added a real right-side workspace file pane to the V2 changes view, with file filtering backed by `/api/workspaces/{id}/search` and changed-file rows selecting the corresponding diff preview.
+- Kept unchanged file and directory rows display-only in this batch instead of pretending they open, so the UI does not add dead controls while full file-open parity remains pending.
+- Adjusted the workbench grid so the three columns fill the available width without the blank right gap seen in the first browser verification pass.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-workspace-tree-parity/`.
+- V1 reference screenshot: `v1-project-workbench-reference.png`.
+- V2 before screenshot: `v2-workspace-before-tree-pane.png`.
+- V2 after screenshots: `v2-workspace-after-tree-pane.png` and `v2-workspace-filtered-tree-pane.png`.
+- Final V2 browser metrics kept body/document fixed to the viewport (`1272 / 1272`, `windowScrollY=0`) while `.at-session-list`, `.at-workspace-diff-list`, `.at-workspace-diff-preview`, and `.at-workspace-file-pane-list` owned their own scrolling.
+- Final V2 workbench grid columns measured `265.156px 491.844px 190px` with `rightGap=0`, replacing the earlier two-column V2 state and the first three-column attempt that left unused right space.
+- Filtering for `WorkspaceProjectView` returned real changed-file rows for `frontend/app/src/test/WorkspaceProjectView.test.tsx` and `frontend/app/src/features/workspaces/WorkspaceProjectView.tsx`; selecting the component result updated both the file pane and diff list selection and showed the matching diff preview.
+- Browser console verification returned no warnings or errors after the rebuilt V2 interaction pass.
+- `npm run test -- src/test/WorkspaceProjectView.test.tsx src/test/apiClient.test.ts` in `frontend/app` passed with 10 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this workspace file-tree pane slice. No Workspace subsystem completion is claimed from this batch; remaining work includes opening non-diff files, recursive tree expansion, broader project actions, streaming/recovery parity, loading and empty states across more real runs, and reviewer sign-off.

@@ -247,7 +247,7 @@ body {
 .at-sidebar-section-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .at-sidebar-section-actions .ant-btn.is-active {
@@ -257,8 +257,7 @@ body {
 
 .at-sidebar-search-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .at-session-list {

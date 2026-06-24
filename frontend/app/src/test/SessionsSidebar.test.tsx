@@ -89,9 +89,9 @@ describe("SessionsSidebar", () => {
     expect(openWorkspaceView).toHaveBeenCalledTimes(1);
     expect(screen.getByText("C:/work/agent-teams")).toBeVisible();
 
-    const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
     window.dispatchEvent(new Event("agent-teams-focus-session-search"));
 
+    const searchbox = await screen.findByRole("searchbox", { name: "Search sessions" });
     expect(searchbox).toHaveFocus();
   });
 
@@ -262,6 +262,8 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("工作空间")).toBeVisible();
     expect(screen.getByRole("button", { name: "新建会话" })).toBeVisible();
+    expect(screen.queryByRole("searchbox", { name: "搜索会话" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "筛选会话" }));
     expect(screen.getByRole("searchbox", { name: "搜索会话" })).toBeVisible();
     expect(screen.getByRole("button", { name: "刷新会话" })).toBeVisible();
     expect(await screen.findByRole("button", {
@@ -421,6 +423,7 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("Agent Teams")).toBeVisible();
 
+    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
     fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
       target: { value: "desktop" },
     });
@@ -465,6 +468,7 @@ describe("SessionsSidebar", () => {
       "false",
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
     fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
       target: { value: "alpha" },
     });
@@ -541,6 +545,7 @@ describe("SessionsSidebar", () => {
     expect(await screen.findByText("Filtered result 12")).toBeVisible();
     expect(screen.queryByText("Filtered result 01")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
     fireEvent.change(screen.getByRole("searchbox", { name: "Search sessions" }), {
       target: { value: "filtered" },
     });

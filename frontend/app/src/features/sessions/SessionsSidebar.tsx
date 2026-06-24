@@ -18,6 +18,7 @@ import {
   Pencil,
   Plus,
   RefreshCcw,
+  Search,
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -73,6 +74,7 @@ export function SessionsSidebar({
   const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
   const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const [filter, setFilter] = useState("");
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [visibleSessionLimits, setVisibleSessionLimits] = useState<
     Record<string, number>
   >({});
@@ -83,6 +85,7 @@ export function SessionsSidebar({
   const [renameValue, setRenameValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<SessionSidebarRecord | null>(null);
   const searchInputRef = useRef<InputRef>(null);
+  const focusSearchOnExpandRef = useRef(false);
 
   const sessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
@@ -124,13 +127,25 @@ export function SessionsSidebar({
   ]);
   useEffect(() => {
     const focusSearch = () => {
-      searchInputRef.current?.focus();
+      if (searchExpanded) {
+        searchInputRef.current?.focus();
+        return;
+      }
+      focusSearchOnExpandRef.current = true;
+      setSearchExpanded(true);
     };
     window.addEventListener("agent-teams-focus-session-search", focusSearch);
     return () => {
       window.removeEventListener("agent-teams-focus-session-search", focusSearch);
     };
-  }, []);
+  }, [searchExpanded]);
+  useEffect(() => {
+    if (!searchExpanded || !focusSearchOnExpandRef.current) {
+      return;
+    }
+    focusSearchOnExpandRef.current = false;
+    searchInputRef.current?.focus();
+  }, [searchExpanded]);
 
   const createSessionMutation = useMutation({
     mutationFn: (workspaceId: string) => createSession({ workspace_id: workspaceId }),
@@ -211,6 +226,7 @@ export function SessionsSidebar({
     (total, group) => total + group.sessions.length,
     0,
   );
+  const showSearchRow = searchExpanded || isFiltering;
 
   return (
     <div className="at-sidebar-inner">
@@ -251,27 +267,47 @@ export function SessionsSidebar({
         <span>{t("sidebarWorkspaces")}</span>
         <div className="at-sidebar-section-actions">
           <span>{sessionGroups.length}</span>
+          <Tooltip
+            title={t(showSearchRow ? "sidebarHideSessionFilter" : "sidebarShowSessionFilter")}
+          >
+            <Button
+              aria-label={t(
+                showSearchRow ? "sidebarHideSessionFilter" : "sidebarShowSessionFilter",
+              )}
+              className={showSearchRow ? "is-active" : undefined}
+              icon={<Search size={14} />}
+              onClick={() => toggleSessionFilter()}
+              size="small"
+              type="text"
+            />
+          </Tooltip>
+          <Tooltip title={t("sidebarRefreshSessions")}>
+            <Button
+              aria-label={t("sidebarRefreshSessions")}
+              icon={<RefreshCcw size={14} />}
+              loading={sessionsQuery.isFetching}
+              onClick={() =>
+                queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] })
+              }
+              size="small"
+              type="text"
+            />
+          </Tooltip>
         </div>
       </div>
-      <div className="at-sidebar-search-row">
-        <Input.Search
-          allowClear
-          aria-label={t("sidebarSearchSessions")}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder={t("sidebarSearchSessions")}
-          ref={searchInputRef}
-          size="small"
-          value={filter}
-        />
-        <Button
-          aria-label={t("sidebarRefreshSessions")}
-          icon={<RefreshCcw size={15} />}
-          loading={sessionsQuery.isFetching}
-          onClick={() => queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] })}
-          size="small"
-          type="text"
-        />
-      </div>
+      {showSearchRow ? (
+        <div className="at-sidebar-search-row">
+          <Input.Search
+            allowClear
+            aria-label={t("sidebarSearchSessions")}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={t("sidebarSearchSessions")}
+            ref={searchInputRef}
+            size="small"
+            value={filter}
+          />
+        </div>
+      ) : null}
       {sessionsQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
       {sessionsQuery.isError ? (
         <Empty description={t("sidebarSessionsLoadError")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -527,6 +563,18 @@ export function SessionsSidebar({
   function resetRenameSession() {
     setRenameTarget(null);
     setRenameValue("");
+  }
+
+  function toggleSessionFilter() {
+    setSearchExpanded((expanded) => {
+      const nextExpanded = !expanded;
+      if (!nextExpanded) {
+        setFilter("");
+      } else {
+        focusSearchOnExpandRef.current = true;
+      }
+      return nextExpanded;
+    });
   }
 
   function submitRenameSession() {

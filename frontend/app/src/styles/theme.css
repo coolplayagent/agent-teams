@@ -4366,6 +4366,14 @@ body {
   border-radius: 8px;
 }
 
+.at-settings-detail-page {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  max-width: 920px;
+  min-width: 0;
+}
+
 .at-settings-detail-header {
   display: flex;
   align-items: flex-start;
@@ -4385,6 +4393,26 @@ body {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.at-settings-property-row {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.32fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-property-row:last-child {
+  border-bottom: 0;
+}
+
+.at-settings-property-row > .ant-typography:last-child {
+  min-width: 0;
+  color: var(--at-text);
+  font-size: 13px;
 }
 
 .at-settings-workspace-facts {
@@ -4578,6 +4606,24 @@ body {
   font-family: var(--at-font-mono);
   font-size: 12px;
   white-space: pre-wrap;
+}
+
+.at-model-profiles-list {
+  max-width: 920px;
+}
+
+.at-model-profile-row {
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 190px);
+}
+
+.at-model-profile-detail .at-settings-detail-header {
+  padding: 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+}
+
+.at-model-profile-properties {
+  max-width: 720px;
 }
 
 .at-mcp-facts {
@@ -5296,6 +5342,11 @@ body {
   .at-settings-list-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
+  }
+
+  .at-settings-property-row,
+  .at-model-profile-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .at-settings-workspace-grid {

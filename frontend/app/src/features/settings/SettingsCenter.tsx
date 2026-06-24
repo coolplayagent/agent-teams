@@ -269,28 +269,122 @@ function SettingsModels({
   profiles: Awaited<ReturnType<typeof getModelProfiles>> | undefined;
 }) {
   const t = useTranslations();
-  const entries = Object.entries(profiles ?? {});
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const entries = useMemo(
+    () => Object.entries(profiles ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+    [profiles],
+  );
+  const selectedProfile =
+    selectedProfileId !== null ? profiles?.[selectedProfileId] : undefined;
+
+  useEffect(() => {
+    if (selectedProfileId !== null && profiles?.[selectedProfileId] === undefined) {
+      setSelectedProfileId(null);
+    }
+  }, [profiles, selectedProfileId]);
+
   return (
     <SettingsSection title={t("settingsModels")}>
       <SettingsQueryState error={error} loading={loading} />
       {!loading && profiles !== undefined ? (
-        <>
-          <div className="at-settings-facts">
-            <Fact label={t("settingsProfileCount")} value={String(entries.length)} />
-            <Fact label={t("settingsDefaultProfile")} value={defaultProfile(entries)} />
-          </div>
-          <SettingsList
-            emptyText={t("settingsNoModelProfiles")}
-            items={entries.map(([profileId, profile]) => ({
-              detail: modelProfileDetail(profile),
-              key: profileId,
-              meta: profile.provider ?? t("settingsProviderUnknown"),
-              title: profileId,
-            }))}
+        selectedProfileId !== null && selectedProfile !== undefined ? (
+          <ModelProfileDetail
+            onBack={() => setSelectedProfileId(null)}
+            profile={selectedProfile}
+            profileId={selectedProfileId}
           />
-        </>
+        ) : (
+          <>
+            <div className="at-settings-facts">
+              <Fact label={t("settingsProfileCount")} value={String(entries.length)} />
+              <Fact label={t("settingsDefaultProfile")} value={defaultProfile(entries)} />
+            </div>
+            {entries.length === 0 ? (
+              <div className="at-settings-empty">{t("settingsNoModelProfiles")}</div>
+            ) : (
+              <div className="at-settings-list at-model-profiles-list">
+                {entries.map(([profileId, profile]) => {
+                  const detail = modelProfileDetail(profile);
+                  const provider = profile.provider ?? t("settingsProviderUnknown");
+                  return (
+                    <button
+                      className="at-settings-list-button at-settings-list-row at-model-profile-row"
+                      key={profileId}
+                      onClick={() => setSelectedProfileId(profileId)}
+                      type="button"
+                    >
+                      <div className="at-settings-list-main">
+                        <span>{profileId}</span>
+                        <Typography.Text ellipsis title={detail}>
+                          {detail}
+                        </Typography.Text>
+                      </div>
+                      <Typography.Text
+                        className="at-settings-list-meta"
+                        ellipsis
+                        title={provider}
+                      >
+                        {provider}
+                      </Typography.Text>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )
       ) : null}
     </SettingsSection>
+  );
+}
+
+function ModelProfileDetail({
+  onBack,
+  profile,
+  profileId,
+}: {
+  onBack: () => void;
+  profile: ModelProfileRecord;
+  profileId: string;
+}) {
+  const t = useTranslations();
+  const input = capabilityModes(profile.resolved_capabilities?.input ?? profile.capabilities?.input);
+  const output = capabilityModes(profile.resolved_capabilities?.output ?? profile.capabilities?.output);
+  return (
+    <div className="at-settings-detail-page at-model-profile-detail">
+      <div className="at-settings-detail-header">
+        <div className="at-settings-list-main">
+          <span>{profileId}</span>
+          <Typography.Text>{modelProfileDetail(profile)}</Typography.Text>
+        </div>
+        <div className="at-settings-detail-actions">
+          <Button onClick={onBack}>{t("settingsBack")}</Button>
+        </div>
+      </div>
+      <div className="at-settings-facts at-settings-workspace-facts">
+        <Fact
+          label={t("settingsModelProvider")}
+          value={profile.provider ?? t("settingsProviderUnknown")}
+        />
+        <Fact label={t("settingsModelName")} value={profile.model ?? "-"} />
+        <Fact
+          label={t("settingsModelDefault")}
+          value={profile.is_default === true ? t("settingsEnabled") : t("settingsDisabled")}
+        />
+      </div>
+      <div className="at-settings-list at-model-profile-properties">
+        <PropertyRow label={t("settingsModelInput")} value={input || "-"} />
+        <PropertyRow label={t("settingsModelOutput")} value={output || "-"} />
+        <PropertyRow
+          label={t("settingsModelModalities")}
+          value={modalityList(profile.input_modalities ?? []) || "-"}
+        />
+        <PropertyRow
+          label={t("settingsModelSpeechRealtime")}
+          value={profile.speech_realtime?.model ?? "-"}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -362,6 +456,17 @@ function SettingsList({
           </Typography.Text>
         </div>
       ))}
+    </div>
+  );
+}
+
+function PropertyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="at-settings-property-row">
+      <Typography.Text className="at-settings-list-meta">{label}</Typography.Text>
+      <Typography.Text ellipsis title={value}>
+        {value}
+      </Typography.Text>
     </div>
   );
 }

@@ -519,6 +519,16 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
     await waitFor(() => expect(screen.getAllByText("default").length).toBeGreaterThan(0));
     expect(screen.getByText("gpt-5-mini · in: image, text / out: text")).toBeVisible();
+    const defaultProfileRow = screen
+      .getByText("gpt-5-mini · in: image, text / out: text")
+      .closest("button");
+    expect(defaultProfileRow).not.toBeNull();
+    fireEvent.click(defaultProfileRow as HTMLElement);
+    expect(await screen.findByText("Realtime speech")).toBeVisible();
+    expect(screen.getByText("gpt-5-mini")).toBeVisible();
+    expect(screen.getByText("image, text")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("vision")).toBeVisible();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
     await waitFor(() => expect(screen.getAllByText("Coordinator").length).toBeGreaterThan(0));

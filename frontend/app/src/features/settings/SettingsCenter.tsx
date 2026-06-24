@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   getGeneralConfig,
+  getConfigStatus,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfig,
@@ -34,9 +35,11 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
+import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
 import { CommandsSettingsSection } from "./CommandsSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { McpSettingsSection } from "./McpSettingsSection";
+import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
 import {
   AgentRuntimeSettingsSection,
@@ -45,24 +48,34 @@ import {
 } from "./RuntimeSettingsSections";
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 
-type SettingsSection =
-  | "agent-runtime"
+type SettingsSectionKey =
   | "appearance"
-  | "commands"
+  | "clawhub"
   | "environment"
   | "general"
-  | "hooks"
-  | "mcp"
   | "roles"
   | "models"
+  | "notifications"
   | "orchestration"
-  | "plugins"
   | "proxy"
+  | "speech"
+  | "system"
   | "web"
   | "workspace";
+
+const SYSTEM_SETTINGS_PAGE_IDS = [
+  "mcp",
+  "plugins",
+  "commands",
+  "hooks",
+  "agent-runtime",
+] as const;
+
+type SystemSettingsPage = (typeof SYSTEM_SETTINGS_PAGE_IDS)[number];
 
 interface SettingsCenterProps {
   open: boolean;
@@ -72,7 +85,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
-  const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>("appearance");
   const [form] = Form.useForm<GeneralConfig>();
   const themeMode = useUiStore((state) => state.themeMode);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
@@ -118,18 +131,17 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
     () => [
       { key: "appearance" as const, label: t("settingsAppearance") },
       { key: "general" as const, label: t("settingsGeneral") },
+      { key: "speech" as const, label: t("settingsSpeech") },
+      { key: "notifications" as const, label: t("settingsNotifications") },
       { key: "models" as const, label: t("settingsModels") },
-      { key: "mcp" as const, label: t("settingsMcp") },
-      { key: "plugins" as const, label: t("settingsPlugins") },
-      { key: "commands" as const, label: t("settingsCommands") },
-      { key: "hooks" as const, label: t("settingsHooks") },
-      { key: "agent-runtime" as const, label: t("settingsAgentRuntime") },
       { key: "roles" as const, label: t("settingsRoles") },
       { key: "orchestration" as const, label: t("settingsOrchestration") },
       { key: "web" as const, label: t("settingsWeb") },
+      { key: "clawhub" as const, label: t("settingsClawHub") },
       { key: "proxy" as const, label: t("settingsProxy") },
       { key: "workspace" as const, label: t("settingsWorkspace") },
       { key: "environment" as const, label: t("settingsEnvironment") },
+      { key: "system" as const, label: t("settingsSystem") },
     ],
     [t],
   );
@@ -169,13 +181,8 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             saving={saveMutation.isPending}
           />
         ) : null}
-        {activeSection === "commands" ? <CommandsSettingsSection /> : null}
-        {activeSection === "mcp" ? <McpSettingsSection /> : null}
-        {activeSection === "plugins" ? <PluginsSettingsSection /> : null}
-        {activeSection === "hooks" ? <HooksSettingsSection /> : null}
-        {activeSection === "agent-runtime" ? (
-          <AgentRuntimeSettingsSection />
-        ) : null}
+        {activeSection === "speech" ? <SpeechSettingsSection /> : null}
+        {activeSection === "notifications" ? <NotificationSettingsSection /> : null}
         {activeSection === "roles" ? (
           <SettingsRoles
             error={rolesQuery.error}
@@ -198,12 +205,121 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           />
         ) : null}
         {activeSection === "web" ? <WebSettingsSection /> : null}
+        {activeSection === "clawhub" ? <ClawHubSettingsSection /> : null}
         {activeSection === "proxy" ? <ProxySettingsSection /> : null}
         {activeSection === "workspace" ? <WorkspaceSettingsSection /> : null}
         {activeSection === "environment" ? <EnvironmentSettingsSection /> : null}
+        {activeSection === "system" ? <SettingsSystem /> : null}
       </section>
     </div>
   );
+}
+
+function SettingsSystem() {
+  const t = useTranslations();
+  const [selectedPage, setSelectedPage] = useState<SystemSettingsPage | null>(null);
+  const statusQuery = useQuery({
+    queryKey: ["settings", "system", "status"],
+    queryFn: getConfigStatus,
+    enabled: selectedPage === null,
+  });
+  const systemItems = useMemo(
+    () => [
+      {
+        detail: t("settingsSystemMcpDetail"),
+        key: "mcp",
+        meta: t("settingsSystem"),
+        title: t("settingsMcp"),
+      },
+      {
+        detail: t("settingsSystemPluginsDetail"),
+        key: "plugins",
+        meta: t("settingsSystem"),
+        title: t("settingsPlugins"),
+      },
+      {
+        detail: t("settingsSystemCommandsDetail"),
+        key: "commands",
+        meta: t("settingsSystem"),
+        title: t("settingsCommands"),
+      },
+      {
+        detail: t("settingsSystemHooksDetail"),
+        key: "hooks",
+        meta: t("settingsSystem"),
+        title: t("settingsHooks"),
+      },
+      {
+        detail: t("settingsSystemAgentRuntimeDetail"),
+        key: "agent-runtime",
+        meta: t("settingsSystem"),
+        title: t("settingsAgentRuntime"),
+      },
+    ],
+    [t],
+  );
+
+  if (selectedPage !== null) {
+    return (
+      <div className="at-settings-system-detail">
+        <div className="at-settings-system-detail-toolbar">
+          <Button onClick={() => setSelectedPage(null)}>{t("settingsBack")}</Button>
+        </div>
+        <SystemSettingsPageContent page={selectedPage} />
+      </div>
+    );
+  }
+
+  return (
+    <SettingsSection title={t("settingsSystem")}>
+      <SettingsQueryState error={statusQuery.error} loading={statusQuery.isLoading} />
+      {!statusQuery.isLoading && statusQuery.data !== undefined ? (
+        <div className="at-settings-facts">
+          <Fact
+            label={t("settingsSystemSkillsLoaded")}
+            value={
+              statusQuery.data.skills?.loaded === true
+                ? t("settingsEnabled")
+                : t("settingsDisabled")
+            }
+          />
+          <Fact
+            label={t("settingsSkills")}
+            value={String(statusQuery.data.skills?.skills?.length ?? 0)}
+          />
+        </div>
+      ) : null}
+      <SettingsList
+        emptyText={t("settingsSystemNoPages")}
+        items={systemItems}
+        onSelect={(item) => {
+          if (isSystemSettingsPage(item.key)) {
+            setSelectedPage(item.key);
+          }
+        }}
+      />
+    </SettingsSection>
+  );
+}
+
+function SystemSettingsPageContent({ page }: { page: SystemSettingsPage }) {
+  if (page === "mcp") {
+    return <McpSettingsSection />;
+  }
+  if (page === "plugins") {
+    return <PluginsSettingsSection />;
+  }
+  if (page === "commands") {
+    return <CommandsSettingsSection />;
+  }
+  if (page === "hooks") {
+    return <HooksSettingsSection />;
+  }
+  return <AgentRuntimeSettingsSection />;
+}
+
+function isSystemSettingsPage(key: string): key is SystemSettingsPage {
+  return SYSTEM_SETTINGS_PAGE_IDS.some((page) => page === key);
 }
 
 function SettingsGeneral({

@@ -5116,6 +5116,23 @@ body {
   gap: 8px;
 }
 
+.at-settings-system-detail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
+.at-settings-system-detail-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.at-settings-system-detail > .at-settings-section {
+  min-height: 0;
+}
+
 .at-settings-property-row {
   display: grid;
   grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);

@@ -28,6 +28,7 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
+import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
@@ -38,6 +39,7 @@ import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 
 type SettingsSection =
   | "appearance"
+  | "clawhub"
   | "environment"
   | "general"
   | "notifications"
@@ -117,6 +119,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
       { key: "roles" as const, label: t("settingsRoles") },
       { key: "orchestration" as const, label: t("settingsOrchestration") },
       { key: "web" as const, label: t("settingsWeb") },
+      { key: "clawhub" as const, label: t("settingsClawHub") },
       { key: "proxy" as const, label: t("settingsProxy") },
       { key: "workspace" as const, label: t("settingsWorkspace") },
       { key: "environment" as const, label: t("settingsEnvironment") },
@@ -186,6 +189,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           />
         ) : null}
         {activeSection === "web" ? <WebSettingsSection /> : null}
+        {activeSection === "clawhub" ? <ClawHubSettingsSection /> : null}
         {activeSection === "proxy" ? <ProxySettingsSection /> : null}
         {activeSection === "workspace" ? <WorkspaceSettingsSection /> : null}
         {activeSection === "environment" ? <EnvironmentSettingsSection /> : null}

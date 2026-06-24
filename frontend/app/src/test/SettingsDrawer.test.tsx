@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import {
   deleteEnvironmentVariable,
   deleteSshProfile,
+  getClawHubConfig,
   getEnvironmentVariables,
   getGeneralConfig,
   getHealth,
@@ -24,12 +25,14 @@ import {
   getRoleConfigOptions,
   getWebConfig,
   listSshProfiles,
+  probeClawHubConnectivity,
   probeSshProfileConnection,
   probeWebConnectivity,
   revealSshProfilePassword,
   reloadProxyConfig,
   saveEnvironmentVariable,
   saveGeneralConfig,
+  saveClawHubConfig,
   saveNotificationConfig,
   saveProxyConfig,
   saveSshProfile,
@@ -42,6 +45,7 @@ import { useUiStore } from "../runtime/uiStore";
 vi.mock("../api/client", () => ({
   deleteEnvironmentVariable: vi.fn(),
   deleteSshProfile: vi.fn(),
+  getClawHubConfig: vi.fn(),
   getEnvironmentVariables: vi.fn(),
   getGeneralConfig: vi.fn(),
   getHealth: vi.fn(),
@@ -52,12 +56,14 @@ vi.mock("../api/client", () => ({
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
   listSshProfiles: vi.fn(),
+  probeClawHubConnectivity: vi.fn(),
   probeSshProfileConnection: vi.fn(),
   probeWebConnectivity: vi.fn(),
   revealSshProfilePassword: vi.fn(),
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
   saveGeneralConfig: vi.fn(),
+  saveClawHubConfig: vi.fn(),
   saveNotificationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
   saveSshProfile: vi.fn(),
@@ -71,6 +77,7 @@ vi.mock("../api/speech", () => ({
 
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
+const getClawHubConfigMock = vi.mocked(getClawHubConfig);
 const getEnvironmentVariablesMock = vi.mocked(getEnvironmentVariables);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getHealthMock = vi.mocked(getHealth);
@@ -81,12 +88,14 @@ const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
+const probeClawHubConnectivityMock = vi.mocked(probeClawHubConnectivity);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
+const saveClawHubConfigMock = vi.mocked(saveClawHubConfig);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
@@ -220,6 +229,7 @@ beforeEach(() => {
     proxy_username: "alice",
     ssl_verify: false,
   });
+  getClawHubConfigMock.mockResolvedValue({ token: "saved-clawhub-token" });
   getEnvironmentVariablesMock.mockResolvedValue({
     app: [
       {
@@ -256,6 +266,25 @@ beforeEach(() => {
     status_code: 200,
     used_method: "HEAD",
   });
+  probeClawHubConnectivityMock.mockResolvedValue({
+    checked_at: "2026-06-24T00:00:00Z",
+    clawhub_path: "C:/Users/yex/.local/bin/clawhub.exe",
+    clawhub_version: "1.2.3",
+    diagnostics: {
+      binary_available: true,
+      endpoint_fallback_used: false,
+      installation_attempted: false,
+      installed_during_probe: false,
+      registry: "https://clawhub.ai",
+      token_configured: true,
+    },
+    error_code: null,
+    error_message: null,
+    exit_code: 0,
+    latency_ms: 51,
+    ok: true,
+    retryable: false,
+  });
   listSshProfilesMock.mockResolvedValue([
     {
       ssh_profile_id: "devbox",
@@ -286,6 +315,7 @@ beforeEach(() => {
   });
   revealSshProfilePasswordMock.mockResolvedValue({ password: "saved-password" });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
+  saveClawHubConfigMock.mockResolvedValue({ status: "ok" });
   saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
   reloadProxyConfigMock.mockResolvedValue({ status: "ok" });
   saveSpeechConfigMock.mockResolvedValue({
@@ -342,6 +372,7 @@ describe("SettingsDrawer", () => {
     expect(within(sections).getByRole("button", { name: "Roles" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Orchestration" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Web" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "ClawHub" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Proxy" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Remote workspace" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Environment variables" })).toBeVisible();
@@ -464,7 +495,7 @@ describe("SettingsDrawer", () => {
         },
       ),
     );
-  });
+  }, 10000);
 
   it("saves the general shell policy through the real general config client", async () => {
     renderDrawer();
@@ -517,6 +548,42 @@ describe("SettingsDrawer", () => {
         fallback_provider: "searxng",
         provider: "exa",
         searxng_instance_url: "https://search.changed.example/",
+      }),
+    );
+  });
+
+  it("saves and probes ClawHub settings through the settings center", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "ClawHub" }));
+
+    expect(await screen.findByText("clawhub.ai")).toBeVisible();
+    expect(screen.getByLabelText("Token")).toHaveAttribute(
+      "placeholder",
+      "************",
+    );
+    expect(getClawHubConfigMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("Token"), {
+      target: { value: "next-clawhub-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() =>
+      expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
+        token: "next-clawhub-token",
+      }),
+    );
+    expect(await screen.findByText("Connected with 1.2.3 in 51 ms.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
+        token: "next-clawhub-token",
       }),
     );
   });

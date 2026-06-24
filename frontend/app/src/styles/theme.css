@@ -3860,7 +3860,13 @@ body {
 
 .at-settings-section-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-start;
+}
+
+.at-settings-probe {
+  margin-top: 2px;
 }
 
 .at-settings-workspace-grid {

@@ -29,20 +29,28 @@ import { CommandsSettingsSection } from "./CommandsSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { McpSettingsSection } from "./McpSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
+import {
+  AgentRuntimeSettingsSection,
+  HooksSettingsSection,
+  PluginsSettingsSection,
+} from "./RuntimeSettingsSections";
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 import { WebSettingsSection } from "./WebSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 
 type SettingsSection =
+  | "agent-runtime"
   | "appearance"
   | "commands"
   | "environment"
   | "general"
+  | "hooks"
   | "mcp"
   | "roles"
   | "models"
   | "orchestration"
+  | "plugins"
   | "proxy"
   | "web"
   | "workspace";
@@ -103,7 +111,10 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
       { key: "general" as const, label: t("settingsGeneral") },
       { key: "models" as const, label: t("settingsModels") },
       { key: "mcp" as const, label: t("settingsMcp") },
+      { key: "plugins" as const, label: t("settingsPlugins") },
       { key: "commands" as const, label: t("settingsCommands") },
+      { key: "hooks" as const, label: t("settingsHooks") },
+      { key: "agent-runtime" as const, label: t("settingsAgentRuntime") },
       { key: "roles" as const, label: t("settingsRoles") },
       { key: "orchestration" as const, label: t("settingsOrchestration") },
       { key: "web" as const, label: t("settingsWeb") },
@@ -151,6 +162,11 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
         ) : null}
         {activeSection === "commands" ? <CommandsSettingsSection /> : null}
         {activeSection === "mcp" ? <McpSettingsSection /> : null}
+        {activeSection === "plugins" ? <PluginsSettingsSection /> : null}
+        {activeSection === "hooks" ? <HooksSettingsSection /> : null}
+        {activeSection === "agent-runtime" ? (
+          <AgentRuntimeSettingsSection />
+        ) : null}
         {activeSection === "roles" ? (
           <SettingsRoles
             error={rolesQuery.error}

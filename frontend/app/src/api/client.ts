@@ -13,6 +13,7 @@ import type {
   CommandCreateRequest,
   CommandMutationResponse,
   CommandUpdateRequest,
+  AgentRuntimeSummary,
   ClawHubSkillMarketDetail,
   ClawHubSkillMarketInstallRequest,
   ClawHubSkillMarketInstallResponse,
@@ -51,6 +52,8 @@ import type {
   RecoverySnapshot,
   RoleConfigOptions,
   RuntimeSkillDetail,
+  HooksConfigPayload,
+  HookRuntimeViewPayload,
   RunCreateRequest,
   RunCreateResponse,
   DeleteSessionRequest,
@@ -72,6 +75,7 @@ import type {
   TimelineMessage,
   StopBackgroundTaskResponse,
   SystemConfigStatus,
+  PluginsRuntimePayload,
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
   WorkspacePage,
@@ -898,6 +902,22 @@ export function answerUserQuestion(
 
 export function getGeneralConfig(): Promise<GeneralConfig> {
   return requestJson<GeneralConfig>("/system/configs/general");
+}
+
+export function getPluginsRuntime(): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>("/system/configs/plugins/runtime");
+}
+
+export function getHooksConfig(): Promise<HooksConfigPayload> {
+  return requestJson<HooksConfigPayload>("/system/configs/hooks");
+}
+
+export function getHookRuntimeView(): Promise<HookRuntimeViewPayload> {
+  return requestJson<HookRuntimeViewPayload>("/system/configs/hooks/runtime");
+}
+
+export function getAgentRuntimes(): Promise<AgentRuntimeSummary[]> {
+  return requestJson<AgentRuntimeSummary[]>("/system/configs/agent-runtimes");
 }
 
 export function getEnvironmentVariables(): Promise<EnvironmentVariableCatalog> {

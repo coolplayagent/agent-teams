@@ -17,13 +17,17 @@ import {
   deleteEnvironmentVariable,
   deleteMcpServer,
   deleteSshProfile,
+  getAgentRuntimes,
   getCommandCatalog,
   getEnvironmentVariables,
   getGeneralConfig,
+  getHookRuntimeView,
+  getHooksConfig,
   getMcpServer,
   getMcpServerTools,
   getModelProfiles,
   getOrchestrationConfig,
+  getPluginsRuntime,
   getProxyConfig,
   getRoleConfigOptions,
   getWebConfig,
@@ -59,13 +63,17 @@ vi.mock("../api/client", () => ({
   deleteEnvironmentVariable: vi.fn(),
   deleteMcpServer: vi.fn(),
   deleteSshProfile: vi.fn(),
+  getAgentRuntimes: vi.fn(),
   getCommandCatalog: vi.fn(),
   getEnvironmentVariables: vi.fn(),
   getGeneralConfig: vi.fn(),
+  getHookRuntimeView: vi.fn(),
+  getHooksConfig: vi.fn(),
   getMcpServer: vi.fn(),
   getMcpServerTools: vi.fn(),
   getModelProfiles: vi.fn(),
   getOrchestrationConfig: vi.fn(),
+  getPluginsRuntime: vi.fn(),
   getProxyConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
@@ -95,13 +103,17 @@ const createCommandMock = vi.mocked(createCommand);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteMcpServerMock = vi.mocked(deleteMcpServer);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
+const getAgentRuntimesMock = vi.mocked(getAgentRuntimes);
 const getCommandCatalogMock = vi.mocked(getCommandCatalog);
 const getEnvironmentVariablesMock = vi.mocked(getEnvironmentVariables);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
+const getHookRuntimeViewMock = vi.mocked(getHookRuntimeView);
+const getHooksConfigMock = vi.mocked(getHooksConfig);
 const getMcpServerMock = vi.mocked(getMcpServer);
 const getMcpServerToolsMock = vi.mocked(getMcpServerTools);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
+const getPluginsRuntimeMock = vi.mocked(getPluginsRuntime);
 const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
@@ -384,6 +396,54 @@ beforeEach(() => {
       },
     ],
   });
+  getPluginsRuntimeMock.mockResolvedValue({
+    diagnostics: [],
+    plugins: [
+      {
+        command_sources: [{ name: "workspace-command" }],
+        description: "Workspace utilities",
+        enabled: true,
+        name: "workspace-tools",
+        skill_sources: [{ name: "workspace-skill" }],
+        valid: true,
+      },
+    ],
+  });
+  getHooksConfigMock.mockResolvedValue({
+    hooks: {
+      SessionStart: [
+        {
+          command: "python hooks/start.py",
+          name: "Session startup setup",
+        },
+      ],
+    },
+  });
+  getHookRuntimeViewMock.mockResolvedValue({
+    loaded_hooks: [
+      {
+        event: "SessionStart",
+        handler: "python hooks/start.py",
+        name: "Session startup setup",
+        source: "project",
+      },
+    ],
+    sources: [
+      {
+        path: "C:/repo/.relay/hooks",
+        source: "project",
+      },
+    ],
+  });
+  getAgentRuntimesMock.mockResolvedValue([
+    {
+      agent_id: "codex-acp",
+      description: "ACP adapter for OpenAI's coding assistant",
+      name: "Codex CLI",
+      protocol: "acp",
+      transport: "registry",
+    },
+  ]);
   probeWebConnectivityMock.mockResolvedValue({
     diagnostics: {
       endpoint_reachable: true,
@@ -499,7 +559,10 @@ describe("SettingsDrawer", () => {
       "General",
       "Models",
       "MCP",
+      "Plugins",
       "Commands",
+      "Hooks",
+      "Agent Runtime",
       "Roles",
       "Orchestration",
       "Web",
@@ -542,6 +605,22 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("/opsx:propose")).toBeVisible();
     expect(screen.getByText("Global commands")).toBeVisible();
     expect(getCommandCatalogMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Plugins" }));
+    expect(await screen.findByText("workspace-tools")).toBeVisible();
+    expect(screen.getByText("2 components")).toBeVisible();
+    expect(getPluginsRuntimeMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Hooks" }));
+    expect(await screen.findByText("Session startup setup")).toBeVisible();
+    expect(screen.getByText("SessionStart · python hooks/start.py")).toBeVisible();
+    expect(getHooksConfigMock).toHaveBeenCalledTimes(1);
+    expect(getHookRuntimeViewMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Agent Runtime" }));
+    expect(await screen.findByText("Codex CLI")).toBeVisible();
+    expect(screen.getByText("acp · registry")).toBeVisible();
+    expect(getAgentRuntimesMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
     expect(await screen.findByText("https://search.example/")).toBeVisible();
@@ -608,7 +687,7 @@ describe("SettingsDrawer", () => {
         overwrite: false,
       }),
     );
-  }, 12000);
+  }, 20000);
 
   it("manages remote workspace SSH profiles through the workspace config clients", async () => {
     renderDrawer();
@@ -862,7 +941,7 @@ describe("SettingsDrawer", () => {
         workspace_id: "workspace-1",
       }),
     );
-  }, 10000);
+  }, 15000);
 
   it("saves and probes proxy settings while preserving the saved password", async () => {
     renderDrawer();

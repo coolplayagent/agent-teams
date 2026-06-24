@@ -150,6 +150,65 @@ export interface McpServerConnectionTestResult {
   transport: string;
 }
 
+export interface PluginRuntimeRecord {
+  command_sources?: JsonValue[];
+  description?: string | null;
+  diagnostics?: JsonValue;
+  enabled?: boolean | null;
+  hook_sources?: JsonValue[];
+  manifest_path?: string | null;
+  mcp_sources?: JsonValue[];
+  name?: string | null;
+  plugin_id?: string | null;
+  role_sources?: JsonValue[];
+  settings_sources?: JsonValue[];
+  skill_sources?: JsonValue[];
+  source?: string | null;
+  valid?: boolean | null;
+}
+
+export interface PluginRuntimeDiagnostics {
+  code?: string | null;
+  level?: string | null;
+  message?: string | null;
+  plugin?: string | null;
+}
+
+export interface PluginsRuntimePayload {
+  diagnostics?: PluginRuntimeDiagnostics[];
+  plugins?: PluginRuntimeRecord[];
+}
+
+export interface HooksConfigPayload {
+  hooks?: Record<string, JsonValue>;
+}
+
+export interface HookRuntimeSource {
+  path?: string | null;
+  source?: string | null;
+}
+
+export interface LoadedHookRecord {
+  event?: string | null;
+  handler?: string | null;
+  matcher?: string | null;
+  name?: string | null;
+  source?: string | null;
+}
+
+export interface HookRuntimeViewPayload {
+  loaded_hooks?: LoadedHookRecord[];
+  sources?: HookRuntimeSource[];
+}
+
+export interface AgentRuntimeSummary {
+  agent_id: string;
+  description?: string | null;
+  name?: string | null;
+  protocol?: string | null;
+  transport?: string | null;
+}
+
 export interface WorkspaceRecord {
   workspace_id: string;
   root_path: string;

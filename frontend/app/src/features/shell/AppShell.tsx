@@ -35,7 +35,7 @@ import {
   listSidebarSessions,
   listWorkspaces,
 } from "../../api/client";
-import type { SessionSidebarRecord } from "../../api/contracts";
+import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
 import { AutomationView } from "../automation/AutomationView";
 import { BoardTodosView } from "../boards/BoardTodosView";
 import { ConnectorsView } from "../connectors/ConnectorsView";
@@ -161,6 +161,22 @@ export function AppShell() {
         (session) => session.session_id === selectedSessionId,
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
+  );
+  const topbarWorkspaceId =
+    selectedWorkspaceId ??
+    selectedSession?.workspace_id ??
+    sessionDetailQuery.data?.workspace_id ??
+    null;
+  const selectedWorkspace = useMemo(
+    () =>
+      workspacesQuery.data?.find(
+        (workspace) => workspace.workspace_id === topbarWorkspaceId,
+      ) ?? null,
+    [topbarWorkspaceId, workspacesQuery.data],
+  );
+  const topbarWorkspaceLabel = workspaceDisplayLabel(
+    selectedWorkspace,
+    topbarWorkspaceId,
   );
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [
@@ -381,6 +397,7 @@ export function AppShell() {
           <CurrentSessionIndicator
             selectedSessionId={selectedSessionId}
             session={selectedSession}
+            workspaceLabel={topbarWorkspaceLabel}
           />
         </div>
         <Space size={8} className="at-topbar-right">
@@ -676,6 +693,19 @@ export function AppShell() {
     setActiveView("chat");
     closeSidebarOnNarrow();
   }
+}
+
+function workspaceDisplayLabel(
+  workspace: WorkspaceRecord | null,
+  workspaceId: string | null,
+): string {
+  return (
+    workspace?.display_name?.trim() ||
+    workspace?.name?.trim() ||
+    workspace?.workspace_id.trim() ||
+    workspaceId?.trim() ||
+    "Agent Teams"
+  );
 }
 
 function useNarrowViewport(): boolean {

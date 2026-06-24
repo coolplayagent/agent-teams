@@ -158,11 +158,18 @@ body {
   flex: 0 1 auto;
 }
 
+.at-topbar-identity {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
 .at-workspace-title {
-  max-width: 260px;
+  max-width: 320px;
   color: var(--at-text);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.15;
 }
 
 .at-current-session {
@@ -170,6 +177,20 @@ body {
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+.at-current-session-label {
+  max-width: 360px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.at-current-session .ant-tag {
+  margin-inline-end: 0;
+  padding-inline: 5px;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .at-body {
@@ -5531,6 +5552,10 @@ body {
     width: 26px;
   }
 
+  .at-topbar-identity {
+    max-width: 112px;
+  }
+
   .at-sidebar {
     position: fixed !important;
     z-index: 20;
@@ -5568,8 +5593,12 @@ body {
   }
 
   .at-workspace-title {
-    max-width: 60px;
+    max-width: 112px;
     font-size: 14px;
+  }
+
+  .at-current-session-label {
+    max-width: 96px;
   }
 
   .at-timeline {

@@ -20,9 +20,11 @@ describe("CurrentSessionIndicator", () => {
           title: "Legacy rewrite",
           active_run_status: "running",
         }}
+        workspaceLabel="Agent Teams"
       />,
     );
 
+    expect(screen.getByText("Agent Teams")).toBeVisible();
     expect(screen.getByText("Frontend rewrite")).toBeVisible();
     expect(screen.queryByText("Legacy rewrite")).not.toBeInTheDocument();
     expect(screen.getByText("running")).toBeVisible();
@@ -30,9 +32,14 @@ describe("CurrentSessionIndicator", () => {
 
   it("falls back to the selected session id while sidebar data loads", () => {
     render(
-      <CurrentSessionIndicator selectedSessionId="session-loading" session={null} />,
+      <CurrentSessionIndicator
+        selectedSessionId="session-loading"
+        session={null}
+        workspaceLabel="Workspace loading"
+      />,
     );
 
+    expect(screen.getByText("Workspace loading")).toBeVisible();
     expect(screen.getByText("session-loading")).toBeVisible();
   });
 });

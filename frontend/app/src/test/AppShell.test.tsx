@@ -17,6 +17,7 @@ import {
   listSidebarSessions,
   listWorkspaces,
 } from "../api/client";
+import type { SessionSidebarRecord } from "../api/contracts";
 import { AppShell } from "../features/shell/AppShell";
 import { sidebarWidthDefault, useUiStore } from "../runtime/uiStore";
 
@@ -100,7 +101,20 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
 }));
 
 vi.mock("../features/shell/CurrentSessionIndicator", () => ({
-  CurrentSessionIndicator: () => <span>session-1</span>,
+  CurrentSessionIndicator: ({
+    selectedSessionId,
+    session,
+    workspaceLabel,
+  }: {
+    selectedSessionId: string | null;
+    session: SessionSidebarRecord | null;
+    workspaceLabel: string;
+  }) => (
+    <div>
+      <span>{workspaceLabel}</span>
+      <span>{session?.title ?? selectedSessionId ?? ""}</span>
+    </div>
+  ),
 }));
 
 vi.mock("../features/shell/MessageExportMenu", () => ({
@@ -216,6 +230,13 @@ describe("AppShell", () => {
     expect(chatView).toContainElement(screen.getByTestId("composer"));
     expect(screen.getByRole("separator", { name: "Resize sidebar" }))
       .toHaveAttribute("aria-valuenow", String(sidebarWidthDefault));
+  });
+
+  it("keeps the workspace title separate from the current session identity", async () => {
+    renderShell();
+
+    expect(await screen.findByText("Agent Teams")).toBeVisible();
+    expect(screen.getByText("Session 1")).toBeVisible();
   });
 
   it("collapses the mobile sidebar by default and reopens it as an overlay", async () => {
@@ -351,7 +372,9 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("session-search-view")).toBeVisible();
     expect(screen.getByRole("searchbox", { name: "Search sessions" })).toBeVisible();
-    expect(screen.getByText("Session 1")).toBeVisible();
+    expect(
+      within(screen.getByTestId("session-search-view")).getByText("Session 1"),
+    ).toBeVisible();
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
 

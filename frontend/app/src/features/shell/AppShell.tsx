@@ -9,6 +9,7 @@ import {
   Activity,
   CalendarClock,
   Database,
+  MessageSquare,
   Menu,
   Moon,
   PlugZap,
@@ -171,24 +172,13 @@ export function AppShell() {
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [
       {
-        active: activeView === "search",
-        icon: <Search size={15} />,
-        key: "search",
-        label: t("appSearch"),
+        active: activeView === "chat",
+        icon: <MessageSquare size={15} />,
+        key: "chat",
+        label: t("appChat"),
         onSelect: () => {
           setActiveSubagent(null);
-          setActiveView("search");
-        },
-        shortcut: "Ctrl+K",
-      },
-      {
-        active: activeView === "skills",
-        icon: <Wrench size={15} />,
-        key: "skills",
-        label: t("appSkills"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("skills");
+          setActiveView("chat");
         },
       },
       {
@@ -202,13 +192,13 @@ export function AppShell() {
         },
       },
       {
-        active: activeView === "connectors",
-        icon: <PlugZap size={15} />,
-        key: "connectors",
-        label: t("appConnectors"),
+        active: activeView === "skills",
+        icon: <Wrench size={15} />,
+        key: "skills",
+        label: t("appSkills"),
         onSelect: () => {
           setActiveSubagent(null);
-          setActiveView("connectors");
+          setActiveView("skills");
         },
       },
       {
@@ -222,6 +212,27 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "search",
+        icon: <Search size={15} />,
+        key: "search",
+        label: t("appSearch"),
+        onSelect: () => {
+          setActiveSubagent(null);
+          setActiveView("search");
+        },
+        shortcut: "Ctrl+K",
+      },
+      {
+        active: activeView === "connectors",
+        icon: <PlugZap size={15} />,
+        key: "connectors",
+        label: t("appConnectors"),
+        onSelect: () => {
+          setActiveSubagent(null);
+          setActiveView("connectors");
+        },
+      },
+      {
         active: activeView === "memory",
         icon: <Database size={15} />,
         key: "memory",
@@ -230,6 +241,22 @@ export function AppShell() {
           setActiveSubagent(null);
           setActiveView("memory");
         },
+      },
+      {
+        active: activeView === "observability",
+        icon: <Activity size={15} />,
+        key: "observability",
+        label: t("appObservability"),
+        onSelect: () => {
+          setActiveSubagent(null);
+          setActiveView("observability");
+        },
+      },
+      {
+        icon: <Settings size={15} />,
+        key: "settings",
+        label: t("appSettings"),
+        onSelect: () => setSettingsOpen(true),
       },
     ],
     [activeView, t],

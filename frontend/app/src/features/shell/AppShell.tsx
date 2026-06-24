@@ -10,6 +10,7 @@ import {
 import type { MenuProps } from "antd";
 import {
   Activity,
+  Database,
   Download,
   ExternalLink,
   Languages,
@@ -37,6 +38,7 @@ import type { SessionSidebarRecord } from "../../api/contracts";
 import { Composer } from "../composer/Composer";
 import { ConnectorsView } from "../connectors/ConnectorsView";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
+import { MemoryView } from "../memory/MemoryView";
 import { MessageExportMenu, useMessageExporter } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { RecoveryBar } from "../recovery/RecoveryBar";
@@ -66,7 +68,7 @@ export function AppShell() {
   const { token } = theme.useToken();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<
-    "chat" | "connectors" | "observability" | "search" | "workspace"
+    "chat" | "connectors" | "memory" | "observability" | "search" | "workspace"
   >("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const runStreamController = useRunStreamController();
@@ -163,6 +165,16 @@ export function AppShell() {
         },
       },
       {
+        active: activeView === "memory",
+        icon: <Database size={15} />,
+        key: "memory",
+        label: t("appMemory"),
+        onSelect: () => {
+          setActiveView("memory");
+          closeSidebarOnNarrow();
+        },
+      },
+      {
         active: activeView === "observability",
         icon: <Activity size={15} />,
         key: "observability",
@@ -198,6 +210,11 @@ export function AppShell() {
         icon: <PlugZap size={15} />,
         key: "connectors",
         label: t("appConnectors"),
+      },
+      {
+        icon: <Database size={15} />,
+        key: "memory",
+        label: t("appMemory"),
       },
       {
         disabled: messageExporter.exporting !== null,
@@ -441,6 +458,8 @@ export function AppShell() {
             <ObservabilityPanel sessionId={selectedSessionId} />
           ) : activeView === "connectors" ? (
             <ConnectorsView />
+          ) : activeView === "memory" ? (
+            <MemoryView selectedWorkspaceId={selectedWorkspaceId} />
           ) : activeView === "workspace" ? (
             <WorkspaceProjectView
               onBack={() => setActiveView("chat")}
@@ -526,6 +545,11 @@ export function AppShell() {
     }
     if (key === "connectors") {
       setActiveView("connectors");
+      closeSidebarOnNarrow();
+      return;
+    }
+    if (key === "memory") {
+      setActiveView("memory");
       closeSidebarOnNarrow();
       return;
     }

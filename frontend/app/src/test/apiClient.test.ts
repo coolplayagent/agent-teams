@@ -4,6 +4,7 @@ import {
   deleteEnvironmentVariable,
   deleteSshProfile,
   getEnvironmentVariables,
+  getMemory,
   deleteSession,
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
@@ -11,6 +12,7 @@ import {
   getWorkspaceSnapshot,
   getWorkspaceTree,
   listConnectors,
+  listMemories,
   listSshProfiles,
   listSessionRounds,
   listWorkspaces,
@@ -24,8 +26,10 @@ import {
   saveProxyConfig,
   saveSshProfile,
   saveWebConfig,
+  searchMemories,
   searchWorkspacePaths,
   stopBackgroundTask,
+  rebuildMemoryIndex,
   testConnector,
   updateSession,
   updateWorkspace,
@@ -211,6 +215,191 @@ describe("api client", () => {
       2,
       "/api/connectors/github:test",
       expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("lists, reads, searches, and rebuilds memories through memory endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                confidence_score: 0.91,
+                content_body_preview: "Keep workspace pages fixed height.",
+                content_title: "Fixed workspace frame",
+                created_at: "2026-06-24T00:00:00Z",
+                expires_at: null,
+                id: "memory-1",
+                kind: "constraint",
+                role_id: null,
+                scope: "workspace",
+                session_id: null,
+                source: "manual",
+                status: "active",
+                tags: ["frontend"],
+                tier: "persistent",
+                updated_at: "2026-06-24T00:10:00Z",
+                version: 1,
+                workspace_id: "workspace-1",
+              },
+            ],
+            limit: 40,
+            offset: 0,
+            total_count: 1,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_count: 3,
+            confidence_score: 0.91,
+            content: {
+              body: "Keep workspace pages fixed height.",
+              context: "V2 shell rewrite",
+              outcome: "Avoid body scroll",
+              title: "Fixed workspace frame",
+            },
+            created_at: "2026-06-24T00:00:00Z",
+            expires_at: null,
+            id: "memory-1",
+            kind: "constraint",
+            last_accessed_at: null,
+            metadata: {},
+            parent_entry_id: null,
+            role_id: null,
+            run_id: null,
+            scope: "workspace",
+            session_id: null,
+            source: "manual",
+            source_ref: "",
+            status: "active",
+            superseded_by_id: null,
+            tags: ["frontend"],
+            tier: "persistent",
+            updated_at: "2026-06-24T00:10:00Z",
+            version: 1,
+            workspace_id: "workspace-1",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                entry: {
+                  confidence_score: 0.91,
+                  content_body_preview: "Keep workspace pages fixed height.",
+                  content_title: "Fixed workspace frame",
+                  created_at: "2026-06-24T00:00:00Z",
+                  expires_at: null,
+                  id: "memory-1",
+                  kind: "constraint",
+                  role_id: null,
+                  scope: "workspace",
+                  session_id: null,
+                  source: "manual",
+                  status: "active",
+                  tags: ["frontend"],
+                  tier: "persistent",
+                  updated_at: "2026-06-24T00:10:00Z",
+                  version: 1,
+                  workspace_id: "workspace-1",
+                },
+                rank: 1,
+                score: 0.87,
+                snippet: "workspace pages fixed height",
+              },
+            ],
+            total_count: 1,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            failed_count: 0,
+            rebuilt_count: 1,
+            scanned_count: 1,
+            skipped_count: 0,
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listMemories({
+        kind: "constraint",
+        scope: "workspace",
+        status: "active",
+        tier: "persistent",
+        workspaceId: "workspace-1",
+      }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: "memory-1" })],
+      total_count: 1,
+    });
+    await expect(getMemory("workspace-1", "memory-1")).resolves.toMatchObject({
+      content: expect.objectContaining({ title: "Fixed workspace frame" }),
+      id: "memory-1",
+    });
+    await expect(
+      searchMemories({
+        min_confidence: 0,
+        status: "active",
+        text_query: "fixed",
+        workspace_id: "workspace-1",
+      }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ score: 0.87 })],
+    });
+    await expect(rebuildMemoryIndex("workspace-1")).resolves.toMatchObject({
+      rebuilt_count: 1,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/memories?workspace_id=workspace-1&tier=persistent&scope=workspace&status=active&kind=constraint&limit=40&offset=0",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/workspaces/workspace-1/memories/memory-1",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/memories/search",
+      expect.objectContaining({
+        body: JSON.stringify({
+          min_confidence: 0,
+          status: "active",
+          text_query: "fixed",
+          workspace_id: "workspace-1",
+        }),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/memories/rebuild-index",
+      expect.objectContaining({
+        body: JSON.stringify({ workspace_id: "workspace-1" }),
         headers: expect.any(Headers),
         method: "POST",
       }),

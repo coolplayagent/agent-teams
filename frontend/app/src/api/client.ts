@@ -7,8 +7,17 @@ import type {
   EnvironmentVariableSaveRequest,
   EnvironmentVariableScope,
   EnvironmentVariableRecord,
+  GlobalMemorySearchRequest,
   RunInjectionRequest,
   JsonValue,
+  MemoryEntry,
+  MemoryEntryKind,
+  MemoryEntryStatus,
+  MemoryIndexRebuildResult,
+  MemoryQueryResult,
+  MemoryScope,
+  MemorySearchResult,
+  MemoryTier,
   ModelProfilesPayload,
   NotificationConfig,
   OrchestrationConfig,
@@ -240,6 +249,69 @@ export function testConnector(connectorId: string): Promise<ConnectorTestResult>
       method: "POST",
     },
   );
+}
+
+export interface ListMemoriesOptions {
+  kind?: MemoryEntryKind | "all";
+  limit?: number;
+  offset?: number;
+  scope?: MemoryScope | "all";
+  status?: MemoryEntryStatus | "all";
+  tier?: MemoryTier | "all";
+  workspaceId?: string | null;
+}
+
+export function listMemories(
+  options: ListMemoriesOptions = {},
+): Promise<MemoryQueryResult> {
+  const params = new URLSearchParams();
+  appendQueryParam(params, "workspace_id", options.workspaceId);
+  if (options.tier !== undefined && options.tier !== "all") {
+    appendQueryParam(params, "tier", options.tier);
+  }
+  if (options.scope !== undefined && options.scope !== "all") {
+    appendQueryParam(params, "scope", options.scope);
+  }
+  if (options.status !== undefined && options.status !== "all") {
+    appendQueryParam(params, "status", options.status);
+  }
+  if (options.kind !== undefined && options.kind !== "all") {
+    appendQueryParam(params, "kind", options.kind);
+  }
+  params.set("limit", String(options.limit ?? 40));
+  params.set("offset", String(options.offset ?? 0));
+  return requestJson<MemoryQueryResult>(`/memories?${params.toString()}`);
+}
+
+export function getMemory(
+  workspaceId: string,
+  memoryId: string,
+): Promise<MemoryEntry> {
+  return requestJson<MemoryEntry>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/memories/${encodeURIComponent(memoryId)}`,
+  );
+}
+
+export function searchMemories(
+  request: GlobalMemorySearchRequest,
+): Promise<MemorySearchResult> {
+  return requestJson<MemorySearchResult>("/memories/search", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function rebuildMemoryIndex(
+  workspaceId?: string | null,
+): Promise<MemoryIndexRebuildResult> {
+  const trimmedWorkspaceId = workspaceId?.trim() ?? "";
+  const body = trimmedWorkspaceId
+    ? JSON.stringify({ workspace_id: trimmedWorkspaceId })
+    : JSON.stringify({});
+  return requestJson<MemoryIndexRebuildResult>("/memories/rebuild-index", {
+    method: "POST",
+    body,
+  });
 }
 
 export function saveNotificationConfig(
@@ -594,6 +666,17 @@ export function getObservabilityBreakdowns(
   return requestJson<ObservabilityBreakdowns>(
     `/observability/breakdowns?${params.toString()}`,
   );
+}
+
+function appendQueryParam(
+  params: URLSearchParams,
+  key: string,
+  value: string | number | null | undefined,
+) {
+  const text = String(value ?? "").trim();
+  if (text) {
+    params.set(key, text);
+  }
 }
 
 export function jsonRecord(value: JsonValue | undefined): Record<string, JsonValue> {

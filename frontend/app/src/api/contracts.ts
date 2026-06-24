@@ -951,6 +951,117 @@ export interface ConnectorTestResult {
   status: ConnectorStatus;
 }
 
+export type MemoryTier = "working" | "medium_term" | "persistent";
+export type MemoryScope = "workspace" | "session" | "role";
+export type MemoryEntryKind =
+  | "constraint"
+  | "decision"
+  | "fact"
+  | "failure_mode"
+  | "insight"
+  | "preference"
+  | "summary";
+export type MemoryEntryStatus = "active" | "expired" | "superseded";
+export type MemorySourceKind =
+  | "condensation"
+  | "consolidation"
+  | "manual"
+  | "task_result";
+
+export interface MemoryContent {
+  body: string;
+  context: string;
+  outcome: string;
+  title: string;
+}
+
+export interface MemoryEntry {
+  access_count: number;
+  confidence_score: number;
+  content: MemoryContent;
+  created_at: string;
+  expires_at?: string | null;
+  id: string;
+  kind: MemoryEntryKind;
+  last_accessed_at?: string | null;
+  metadata: Record<string, string>;
+  parent_entry_id?: string | null;
+  role_id?: string | null;
+  run_id?: string | null;
+  scope: MemoryScope;
+  session_id?: string | null;
+  source: MemorySourceKind;
+  source_ref: string;
+  status: MemoryEntryStatus;
+  superseded_by_id?: string | null;
+  tags: string[];
+  tier: MemoryTier;
+  updated_at: string;
+  version: number;
+  workspace_id: string;
+}
+
+export interface MemoryEntrySummary {
+  confidence_score: number;
+  content_body_preview: string;
+  content_title: string;
+  created_at: string;
+  expires_at?: string | null;
+  id: string;
+  kind: MemoryEntryKind;
+  role_id?: string | null;
+  scope: MemoryScope;
+  session_id?: string | null;
+  source: MemorySourceKind;
+  status: MemoryEntryStatus;
+  tags: string[];
+  tier: MemoryTier;
+  updated_at: string;
+  version: number;
+  workspace_id: string;
+}
+
+export interface MemoryQueryResult {
+  items: MemoryEntrySummary[];
+  limit: number;
+  offset: number;
+  total_count: number;
+}
+
+export interface GlobalMemorySearchRequest {
+  kind?: MemoryEntryKind | null;
+  limit?: number;
+  min_confidence?: number;
+  role_id?: string | null;
+  role_id_is_null?: boolean;
+  scope?: MemoryScope | null;
+  session_id?: string | null;
+  status?: MemoryEntryStatus | null;
+  tags?: string[];
+  text_query: string;
+  tier?: MemoryTier | null;
+  workspace_id?: string | null;
+}
+
+export interface MemorySearchHit {
+  entry: MemoryEntrySummary;
+  rank: number;
+  score: number;
+  snippet: string;
+}
+
+export interface MemorySearchResult {
+  items: MemorySearchHit[];
+  total_count: number;
+}
+
+export interface MemoryIndexRebuildResult {
+  failed_count: number;
+  rebuilt_count: number;
+  scanned_count: number;
+  skipped_count: number;
+}
+
 export interface ObservabilityOverview {
   updated_at?: string;
   scope?: string;

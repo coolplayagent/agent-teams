@@ -1597,24 +1597,29 @@ body {
 }
 
 .at-session-mode-control {
-  min-width: 188px;
+  min-width: 0;
+  width: 154px;
 }
 
 .at-normal-root-role-select,
 .at-orchestration-preset-select {
-  width: 164px;
+  width: 136px;
 }
 
 .at-role-select {
-  width: 180px;
+  width: 148px;
 }
 
 .at-model-profile-select {
-  width: 180px;
+  width: 148px;
 }
 
 .at-thinking-effort-select {
   width: 112px;
+}
+
+.at-shell-safety-checkbox {
+  white-space: nowrap;
 }
 
 .at-voice-input-button[data-voice-state="listening"] {

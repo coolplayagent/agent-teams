@@ -481,7 +481,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           </Typography.Text>
         ) : null}
         <div className="at-composer-controls">
-          <Space className="at-composer-control-set" size={8} wrap>
+          <Space className="at-composer-control-set" size={6} wrap>
             <Segmented<SessionMode>
               aria-label={t("composerSessionMode")}
               className="at-session-mode-control"
@@ -500,58 +500,63 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               size="small"
               value={selectedSessionMode}
             />
-            <Select
-              aria-label={t("composerRootRole")}
-              className="at-normal-root-role-select"
-              disabled={
-                !canChangeTopology ||
-                selectedSessionMode !== "normal" ||
-                normalRootRoleOptions.length === 0
-              }
-              loading={roleOptionsQuery.isLoading || updateTopologyMutation.isPending}
-              onChange={(roleId) => {
-                const nextRoleId = normalizeProfileName(roleId);
-                if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
-                  updateSessionTopologyMode("normal", {
-                    normalRootRoleId: nextRoleId,
-                  });
+            {selectedSessionMode === "normal" ? (
+              <Select
+                aria-label={t("composerRootRole")}
+                className="at-normal-root-role-select"
+                disabled={
+                  !canChangeTopology ||
+                  normalRootRoleOptions.length === 0
                 }
-              }}
-              optionFilterProp="label"
-              options={normalRootRoleOptions}
-              placeholder={t("composerRootRole")}
-              popupMatchSelectWidth={false}
-              showSearch
-              size="small"
-              value={selectedNormalRootRoleId || undefined}
-            />
-            <Select
-              aria-label={t("composerOrchestrationPreset")}
-              className="at-orchestration-preset-select"
-              disabled={
-                !canChangeTopology ||
-                selectedSessionMode !== "orchestration" ||
-                orchestrationPresetOptions.length === 0
-              }
-              loading={
-                orchestrationQuery.isLoading || updateTopologyMutation.isPending
-              }
-              onChange={(presetId) => {
-                const nextPresetId = normalizeProfileName(presetId);
-                if (nextPresetId && nextPresetId !== selectedOrchestrationPresetId) {
-                  updateSessionTopologyMode("orchestration", {
-                    orchestrationPresetId: nextPresetId,
-                  });
+                loading={roleOptionsQuery.isLoading || updateTopologyMutation.isPending}
+                onChange={(roleId) => {
+                  const nextRoleId = normalizeProfileName(roleId);
+                  if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
+                    updateSessionTopologyMode("normal", {
+                      normalRootRoleId: nextRoleId,
+                    });
+                  }
+                }}
+                optionFilterProp="label"
+                options={normalRootRoleOptions}
+                placeholder={t("composerRootRole")}
+                popupMatchSelectWidth={false}
+                showSearch
+                size="small"
+                value={selectedNormalRootRoleId || undefined}
+              />
+            ) : null}
+            {selectedSessionMode === "orchestration" ? (
+              <Select
+                aria-label={t("composerOrchestrationPreset")}
+                className="at-orchestration-preset-select"
+                disabled={
+                  !canChangeTopology ||
+                  orchestrationPresetOptions.length === 0
                 }
-              }}
-              optionFilterProp="label"
-              options={orchestrationPresetOptions}
-              placeholder={t("composerPreset")}
-              popupMatchSelectWidth={false}
-              showSearch
-              size="small"
-              value={selectedOrchestrationPresetId || undefined}
-            />
+                loading={
+                  orchestrationQuery.isLoading || updateTopologyMutation.isPending
+                }
+                onChange={(presetId) => {
+                  const nextPresetId = normalizeProfileName(presetId);
+                  if (
+                    nextPresetId &&
+                    nextPresetId !== selectedOrchestrationPresetId
+                  ) {
+                    updateSessionTopologyMode("orchestration", {
+                      orchestrationPresetId: nextPresetId,
+                    });
+                  }
+                }}
+                optionFilterProp="label"
+                options={orchestrationPresetOptions}
+                placeholder={t("composerPreset")}
+                popupMatchSelectWidth={false}
+                showSearch
+                size="small"
+                value={selectedOrchestrationPresetId || undefined}
+              />
+            ) : null}
             <Select
               allowClear
               aria-label={t("composerTargetRole")}
@@ -617,18 +622,21 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 />
               ) : null}
             </Space>
-            <Checkbox
-              aria-label={t("composerShellSafetyPolicy")}
-              checked={shellSafetyPolicyEnabled}
-              disabled={
-                busy || activeRunId !== null || !canOverrideShellSafetyPolicy
-              }
-              onChange={(event) =>
-                setShellSafetyPolicyEnabled(event.target.checked)
-              }
-            >
-              {t("composerShellSafety")}
-            </Checkbox>
+            <Tooltip title={t("composerShellSafetyPolicy")}>
+              <Checkbox
+                aria-label={t("composerShellSafetyPolicy")}
+                className="at-shell-safety-checkbox"
+                checked={shellSafetyPolicyEnabled}
+                disabled={
+                  busy || activeRunId !== null || !canOverrideShellSafetyPolicy
+                }
+                onChange={(event) =>
+                  setShellSafetyPolicyEnabled(event.target.checked)
+                }
+              >
+                {t("composerShellSafetyShort")}
+              </Checkbox>
+            </Tooltip>
             <Checkbox
               checked={yolo}
               disabled={busy || activeRunId !== null}

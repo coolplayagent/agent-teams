@@ -147,12 +147,42 @@ describe("Composer", () => {
     );
     expect(screen.getByText("普通模式")).toBeVisible();
     expect(screen.getByRole("combobox", { name: "根角色" })).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "编排预设" })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "目标角色" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "模型配置" })).toBeVisible();
     expect(screen.getByText("思考")).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Shell 安全策略" })).toBeInTheDocument();
-    expect(screen.getByText("Shell 安全")).toBeVisible();
+    expect(screen.getByText("Shell")).toBeVisible();
     expect(screen.getByRole("button", { name: "发送" })).toBeVisible();
+  });
+
+  it("keeps composer topology controls scoped to the active session mode", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "orchestration",
+      normal_root_role_id: "Writer",
+      normal_model_profile: null,
+      orchestration_preset_id: "team",
+      can_switch_mode: true,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    expect(
+      await screen.findByRole("combobox", { name: "Orchestration preset" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("combobox", { name: "Root role" }),
+    ).not.toBeInTheDocument();
   });
 
   it("passes the selected target role to AG-UI run creation", async () => {

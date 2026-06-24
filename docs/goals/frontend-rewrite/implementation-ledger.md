@@ -991,3 +991,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this sidebar session-management slice. No Sessions subsystem completion is claimed from this batch; remaining work includes the broader screenshot-first framework pass the user requested, workspace visual structure polish, composer density, streaming/recovery parity, and reviewer sign-off.
+
+## 2026-06-24 Composer Density Framework Batch
+
+### Scope
+- Rechecked real V1 and V2 browser screenshots before editing, focusing on the bottom composer frame and main workspace density.
+- Found V2's composer controls wrapping into two visible rows because normal mode still rendered the orchestration preset control and the Shell safety label consumed a full control-width slot.
+- Scoped topology controls to the active session mode: normal mode shows the root role selector, orchestration mode shows the preset selector.
+- Kept the Shell safety override as a real per-run control but shortened its visible label to `Shell` with the full meaning preserved in the accessible name and tooltip.
+- Narrowed composer control widths and spacing so the V2 control strip fits in a single visual row at the desktop viewport used for V1/V2 comparison.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-framework-pass/`.
+- V1 reference screenshot: `v1-framework-baseline.png`.
+- V2 before screenshot: `v2-framework-before.png`.
+- V2 final screenshot: `v2-composer-compact-after.png`.
+- Before this batch, V2 composer metrics showed `.at-composer` height `134px`, `.at-composer-control-set` height `56px`, timeline height `1051px`, and visible composer text included the disabled orchestration preset in normal mode.
+- After this batch, V2 composer metrics showed `.at-composer` height `110px`, `.at-composer-control-set` height `24px`, timeline height `1075px`, normal-mode orchestration preset count `0`, and all composer controls on one visual row.
+- Body and document scroll stayed fixed to the viewport (`1272 / 1272`) after the compact composer pass.
+- `npm run test -- src/test/Composer.test.tsx` in `frontend/app` passed with 45 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this composer-density framework slice. No Composer subsystem completion is claimed from this batch; remaining work includes broader V1/V2 framework parity, runtime streaming/recovery scenarios, missing V1 management surfaces, desktop checks, and reviewer sign-off.

@@ -2,7 +2,6 @@ import {
   App,
   Button,
   Form,
-  Segmented,
   Switch,
   Typography,
 } from "antd";
@@ -27,11 +26,12 @@ import type {
   RoleOption,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
-import { useUiStore, type Language } from "../../runtime/uiStore";
+import { useUiStore } from "../../runtime/uiStore";
 import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
+import { SettingsAppearanceSection } from "./SettingsAppearanceSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
@@ -63,9 +63,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
   const [form] = Form.useForm<GeneralConfig>();
   const themeMode = useUiStore((state) => state.themeMode);
-  const language = useUiStore((state) => state.language);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
-  const setLanguage = useUiStore((state) => state.setLanguage);
 
   const generalQuery = useQuery({
     queryKey: ["settings", "general"],
@@ -149,9 +147,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
       </nav>
       <section className="at-settings-content">
         {activeSection === "appearance" ? (
-          <SettingsAppearance
-            language={language}
-            setLanguage={setLanguage}
+          <SettingsAppearanceSection
             setThemeMode={setThemeMode}
             themeMode={themeMode}
           />
@@ -202,46 +198,6 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
         ) : null}
       </section>
     </div>
-  );
-}
-
-function SettingsAppearance({
-  language,
-  setLanguage,
-  setThemeMode,
-  themeMode,
-}: {
-  language: Language;
-  setLanguage: (language: Language) => void;
-  setThemeMode: (themeMode: "dark" | "light") => void;
-  themeMode: "dark" | "light";
-}) {
-  const t = useTranslations();
-  return (
-    <SettingsSection title={t("settingsAppearance")}>
-      <div className="at-settings-field-row">
-        <span>{t("settingsTheme")}</span>
-        <Segmented
-          onChange={(value) => setThemeMode(value as "dark" | "light")}
-          options={[
-            { label: t("settingsThemeLight"), value: "light" },
-            { label: t("settingsThemeDark"), value: "dark" },
-          ]}
-          value={themeMode}
-        />
-      </div>
-      <div className="at-settings-field-row">
-        <span>{t("settingsLanguage")}</span>
-        <Segmented
-          onChange={(value) => setLanguage(value as Language)}
-          options={[
-            { label: t("languageEnglish"), value: "en" },
-            { label: t("languageChinese"), value: "zh-CN" },
-          ]}
-          value={language}
-        />
-      </div>
-    </SettingsSection>
   );
 }
 

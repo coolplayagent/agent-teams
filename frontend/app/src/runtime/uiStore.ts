@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type ThemeMode = "light" | "dark";
+export type ThemeMode = "system" | "light" | "dark";
 export type Language = "en" | "zh-CN";
 
 interface UiState {
@@ -78,10 +78,10 @@ function storedSidebarWidth(): number {
 
 function storedThemeMode(): ThemeMode {
   const raw = window.localStorage.getItem("agentTeams.themeMode");
-  if (raw === "light" || raw === "dark") {
+  if (raw === "system" || raw === "light" || raw === "dark") {
     return raw;
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return "system";
 }
 
 function storedLanguage(): Language {

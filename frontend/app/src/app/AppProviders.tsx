@@ -2,8 +2,14 @@ import { App as AntApp, ConfigProvider, theme } from "antd";
 import { XProvider } from "@ant-design/x";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import {
+  appearanceChangedEvent,
+  applyAppearanceSettings,
+  readAppearanceSettings,
+} from "../runtime/appearance";
+import { currentSystemThemeMode, resolveThemeMode } from "../runtime/themeMode";
 import { useUiStore } from "../runtime/uiStore";
 
 const queryClient = new QueryClient({
@@ -22,15 +28,42 @@ interface AppProvidersProps {
 
 export function AppProviders({ children }: AppProvidersProps) {
   const themeMode = useUiStore((state) => state.themeMode);
-  const algorithm = themeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm;
+  const [appearanceSettings, setAppearanceSettings] = useState(readAppearanceSettings);
+  const [systemThemeMode, setSystemThemeMode] = useState(currentSystemThemeMode);
+  const resolvedThemeMode = themeMode === "system" ? systemThemeMode : resolveThemeMode(themeMode);
+  const algorithm = resolvedThemeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm;
+
+  useEffect(() => {
+    applyAppearanceSettings(appearanceSettings);
+  }, [appearanceSettings]);
+
+  useEffect(() => {
+    const syncAppearance = () => setAppearanceSettings(readAppearanceSettings());
+    window.addEventListener(appearanceChangedEvent, syncAppearance);
+    window.addEventListener("storage", syncAppearance);
+    return () => {
+      window.removeEventListener(appearanceChangedEvent, syncAppearance);
+      window.removeEventListener("storage", syncAppearance);
+    };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const updateSystemThemeMode = () =>
+      setSystemThemeMode(mediaQuery.matches ? "dark" : "light");
+    mediaQuery.addEventListener("change", updateSystemThemeMode);
+    return () => mediaQuery.removeEventListener("change", updateSystemThemeMode);
+  }, []);
+
   const tokens = useMemo(
     () => ({
       borderRadius: 8,
-      colorPrimary: "#2f6f5e",
+      colorPrimary: appearanceSettings.accent.trim() || "#2f6f5e",
       fontFamily:
-        '"Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif',
+        appearanceSettings.uiFont.trim()
+        || '"Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif',
     }),
-    [],
+    [appearanceSettings.accent, appearanceSettings.uiFont],
   );
 
   return (

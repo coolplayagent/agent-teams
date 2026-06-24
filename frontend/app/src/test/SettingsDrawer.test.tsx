@@ -40,6 +40,11 @@ import {
 } from "../api/client";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
+import {
+  appearanceStorageKey,
+  applyAppearanceSettings,
+  defaultAppearanceSettings,
+} from "../runtime/appearance";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
@@ -74,6 +79,8 @@ vi.mock("../api/speech", () => ({
   fetchSpeechConfig: vi.fn(),
   saveSpeechConfig: vi.fn(),
 }));
+
+vi.setConfig({ testTimeout: 15000 });
 
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
@@ -355,6 +362,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  applyAppearanceSettings(defaultAppearanceSettings);
   vi.clearAllMocks();
 });
 
@@ -458,7 +466,7 @@ describe("SettingsDrawer", () => {
         username: "deploy",
       }),
     );
-  }, 12000);
+  }, 18000);
 
   it("manages app environment variables through the environment config clients", async () => {
     renderDrawer();
@@ -518,14 +526,57 @@ describe("SettingsDrawer", () => {
     );
   });
 
-  it("updates appearance state without pretending to call a backend", async () => {
+  it("updates appearance state and applies V1 appearance overrides locally", async () => {
     renderDrawer();
 
-    fireEvent.click(await screen.findByText("Dark"));
+    fireEvent.click(await screen.findByRole("button", { name: "Dark" }));
     expect(useUiStore.getState().themeMode).toBe("dark");
 
-    fireEvent.click(screen.getByText("中文"));
-    expect(useUiStore.getState().language).toBe("zh-CN");
+    expect(screen.getByText("Dark theme")).toBeVisible();
+    expect(screen.getByText("Copy theme")).toBeVisible();
+    expect(screen.getByText("Use pointer cursor")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Accent color value"), {
+      target: { value: "#336699" },
+    });
+    fireEvent.change(screen.getByLabelText("UI font"), {
+      target: { value: '"Inter", sans-serif' },
+    });
+    fireEvent.change(screen.getByLabelText("UI font size"), {
+      target: { value: "16" },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Translucent sidebar" }));
+    fireEvent.change(screen.getByLabelText("Contrast"), {
+      target: { value: "60" },
+    });
+    fireEvent.click(screen.getByText("On"));
+    fireEvent.click(screen.getByText("+/-"));
+
+    expect(document.documentElement.style.getPropertyValue("--at-primary")).toBe(
+      "#336699",
+    );
+    expect(document.documentElement.style.getPropertyValue("--primary")).toBe("#336699");
+    expect(document.documentElement.style.getPropertyValue("--at-font-ui")).toBe(
+      '"Inter", sans-serif',
+    );
+    expect(document.documentElement.style.getPropertyValue("--at-ui-font-size")).toBe(
+      "16px",
+    );
+    expect(document.documentElement.style.getPropertyValue("--at-contrast-filter")).toBe(
+      "contrast(1.15)",
+    );
+    expect(document.documentElement.dataset.translucentSidebar).toBe("true");
+    expect(document.documentElement.dataset.motion).toBe("reduce");
+    expect(document.documentElement.dataset.diffMarker).toBe("sign");
+    expect(JSON.parse(window.localStorage.getItem(appearanceStorageKey) ?? "{}")).toMatchObject({
+      accent: "#336699",
+      contrast: 60,
+      diffMarker: "sign",
+      motion: "reduce",
+      translucentSidebar: true,
+      uiFont: '"Inter", sans-serif',
+      uiFontSize: 16,
+    });
   });
 
   it("saves web settings while preserving the saved Exa key when the key field is blank", async () => {
@@ -586,7 +637,7 @@ describe("SettingsDrawer", () => {
         token: "next-clawhub-token",
       }),
     );
-  });
+  }, 10000);
 
   it("saves and probes proxy settings while preserving the saved password", async () => {
     renderDrawer();

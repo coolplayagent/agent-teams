@@ -1527,6 +1527,70 @@ export interface ConnectorTestResult {
   status: ConnectorStatus;
 }
 
+export type BinaryToolId = "clawhub" | "gh" | "relay-knowledge" | "rg";
+
+export type BinaryToolSourceKind = "github_release" | "npm_global";
+
+export type BinaryToolPathSource = "managed" | "npm_global" | "system";
+
+export type BinaryToolStatus = "downloading" | "error" | "missing" | "ready";
+
+export type BinaryToolDownloadStatus =
+  | "failed"
+  | "queued"
+  | "running"
+  | "succeeded";
+
+export type BinaryToolSystemPathStatus = "already_added" | "updated";
+
+export interface BinaryToolItem {
+  display_name: string;
+  download_job_id?: string | null;
+  error_message?: string | null;
+  executable_name: string;
+  path?: string | null;
+  path_source?: BinaryToolPathSource | null;
+  source_kind: BinaryToolSourceKind;
+  status: BinaryToolStatus;
+  target_version?: string | null;
+  tool_id: BinaryToolId;
+  update_available: boolean;
+  version?: string | null;
+}
+
+export interface BinaryToolSystemPathState {
+  added: boolean;
+  bin_dir: string;
+  supported: boolean;
+}
+
+export interface BinaryToolListResponse {
+  items: BinaryToolItem[];
+  system_path?: BinaryToolSystemPathState | null;
+}
+
+export interface BinaryToolDownloadJob {
+  downloaded_bytes: number;
+  error_message?: string | null;
+  job_id: string;
+  message: string;
+  path?: string | null;
+  progress_percent?: number | null;
+  started_at: string;
+  status: BinaryToolDownloadStatus;
+  target_version?: string | null;
+  tool_id: BinaryToolId;
+  total_bytes?: number | null;
+  updated_at: string;
+}
+
+export interface BinaryToolSystemPathResult {
+  bin_dir: string;
+  message: string;
+  requires_terminal_restart: boolean;
+  status: BinaryToolSystemPathStatus;
+}
+
 export type MemoryTier = "working" | "medium_term" | "persistent";
 export type MemoryScope = "workspace" | "session" | "role";
 export type MemoryEntryKind =

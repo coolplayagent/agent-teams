@@ -24,6 +24,7 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
+import { RuntimeToolsSection } from "./RuntimeToolsSection";
 
 type ConnectorFilter = "all" | ConnectorStatus;
 
@@ -232,6 +233,7 @@ export function ConnectorsView() {
             />
           </div>
         ) : null}
+        <RuntimeToolsSection />
       </div>
     </section>
   );

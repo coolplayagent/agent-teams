@@ -5,6 +5,9 @@ import type {
   AutomationProjectSessionRecord,
   AutomationRunNowResult,
   BoardTodoBoardResponse,
+  BinaryToolDownloadJob,
+  BinaryToolListResponse,
+  BinaryToolSystemPathResult,
   ClawHubConfig,
   ClawHubConfigSaveResponse,
   ClawHubConnectivityProbeRequest,
@@ -600,6 +603,38 @@ export function listConnectors(): Promise<ConnectorListResponse> {
 export function testConnector(connectorId: string): Promise<ConnectorTestResult> {
   return requestJson<ConnectorTestResult>(
     `/connectors/${encodeURIComponent(connectorId)}:test`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function listRuntimeTools(): Promise<BinaryToolListResponse> {
+  return requestJson<BinaryToolListResponse>("/connectors/runtime-tools");
+}
+
+export function startRuntimeToolDownload(
+  toolId: string,
+): Promise<BinaryToolDownloadJob> {
+  return requestJson<BinaryToolDownloadJob>(
+    `/connectors/runtime-tools/${encodeURIComponent(toolId)}:download`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function getRuntimeToolDownload(
+  jobId: string,
+): Promise<BinaryToolDownloadJob> {
+  return requestJson<BinaryToolDownloadJob>(
+    `/connectors/runtime-tools/downloads/${encodeURIComponent(jobId)}`,
+  );
+}
+
+export function addRuntimeToolsSystemPath(): Promise<BinaryToolSystemPathResult> {
+  return requestJson<BinaryToolSystemPathResult>(
+    "/connectors/runtime-tools/system-path:add",
     {
       method: "POST",
     },

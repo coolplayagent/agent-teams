@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   browseClawHubSkillMarket,
+  addRuntimeToolsSystemPath,
   disableAutomationProject,
   deleteEnvironmentVariable,
   deleteSshProfile,
@@ -12,6 +13,7 @@ import {
   getAutomationProject,
   getEnvironmentVariables,
   getMemory,
+  getRuntimeToolDownload,
   getRuntimeSkillDetail,
   deleteSession,
   getWorkspaceDiffFile,
@@ -23,6 +25,7 @@ import {
   listAutomationProjects,
   listBoardTodos,
   listConnectors,
+  listRuntimeTools,
   listAgentMessages,
   listMemories,
   listSshProfiles,
@@ -46,6 +49,7 @@ import {
   searchMemories,
   searchWorkspacePaths,
   stopBackgroundTask,
+  startRuntimeToolDownload,
   rebuildMemoryIndex,
   runAutomationProject,
   syncBoardTodos,
@@ -685,6 +689,136 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/connectors/github:test",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("lists runtime tools and mutates runtime tool endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            system_path: {
+              added: false,
+              bin_dir: "C:\\Users\\yex\\.agent-teams\\bin",
+              supported: true,
+            },
+            items: [
+              {
+                display_name: "ripgrep",
+                download_job_id: null,
+                error_message: null,
+                executable_name: "rg.exe",
+                path: "C:\\Users\\yex\\.agent-teams\\bin\\rg.exe",
+                path_source: "managed",
+                source_kind: "github_release",
+                status: "ready",
+                target_version: null,
+                tool_id: "rg",
+                update_available: false,
+                version: "14.1.1",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            downloaded_bytes: 0,
+            error_message: null,
+            job_id: "download-1",
+            message: "Queued",
+            path: null,
+            progress_percent: 0,
+            started_at: "2026-06-24T00:00:00Z",
+            status: "queued",
+            target_version: "14.1.1",
+            tool_id: "rg",
+            total_bytes: null,
+            updated_at: "2026-06-24T00:00:00Z",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            downloaded_bytes: 100,
+            error_message: null,
+            job_id: "download-1",
+            message: "Complete",
+            path: "C:\\Users\\yex\\.agent-teams\\bin\\rg.exe",
+            progress_percent: 100,
+            started_at: "2026-06-24T00:00:00Z",
+            status: "succeeded",
+            target_version: "14.1.1",
+            tool_id: "rg",
+            total_bytes: 100,
+            updated_at: "2026-06-24T00:00:01Z",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            bin_dir: "C:\\Users\\yex\\.agent-teams\\bin",
+            message: "Runtime tools were added to the system PATH.",
+            requires_terminal_restart: true,
+            status: "updated",
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listRuntimeTools()).resolves.toMatchObject({
+      items: [expect.objectContaining({ tool_id: "rg" })],
+      system_path: expect.objectContaining({ supported: true }),
+    });
+    await expect(startRuntimeToolDownload("rg")).resolves.toMatchObject({
+      job_id: "download-1",
+      status: "queued",
+    });
+    await expect(getRuntimeToolDownload("download-1")).resolves.toMatchObject({
+      job_id: "download-1",
+      status: "succeeded",
+    });
+    await expect(addRuntimeToolsSystemPath()).resolves.toMatchObject({
+      status: "updated",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/connectors/runtime-tools",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/connectors/runtime-tools/rg:download",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/connectors/runtime-tools/downloads/download-1",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/connectors/runtime-tools/system-path:add",
       expect.objectContaining({
         headers: expect.any(Headers),
         method: "POST",

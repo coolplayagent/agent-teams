@@ -1680,6 +1680,69 @@ export interface GitHubWebhookConnectivityProbeResult {
   webhook_base_url?: string | null;
 }
 
+export type FeishuGatewayAccountStatus = "disabled" | "enabled";
+export type FeishuTriggerRule = "all_messages" | "mention_only";
+
+export interface FeishuTriggerSourceConfig {
+  app_id: string;
+  app_name: string;
+  provider: "feishu";
+  trigger_rule: FeishuTriggerRule;
+}
+
+export interface FeishuTriggerTargetConfig {
+  normal_root_role_id?: string | null;
+  orchestration_preset_id?: string | null;
+  session_mode: SessionMode;
+  shell_safety_policy_enabled: boolean;
+  thinking: RunThinkingConfig;
+  workspace_id: string;
+  yolo: boolean;
+}
+
+export interface FeishuTriggerSecretConfig {
+  app_secret?: string | null;
+  encrypt_key?: string | null;
+  verification_token?: string | null;
+}
+
+export interface FeishuTriggerSecretStatus {
+  app_secret_configured?: boolean;
+  encrypt_key_configured?: boolean;
+  verification_token_configured?: boolean;
+}
+
+export interface FeishuGatewayAccountRecord {
+  account_id: string;
+  created_at: string;
+  display_name: string;
+  last_error?: string | null;
+  name: string;
+  secret_config?: FeishuTriggerSecretConfig | null;
+  secret_status?: FeishuTriggerSecretStatus | null;
+  source_config: FeishuTriggerSourceConfig;
+  status: FeishuGatewayAccountStatus;
+  target_config?: FeishuTriggerTargetConfig | null;
+  updated_at: string;
+}
+
+export interface FeishuGatewayAccountCreateInput {
+  display_name?: string | null;
+  enabled?: boolean;
+  name: string;
+  secret_config?: FeishuTriggerSecretConfig | null;
+  source_config: FeishuTriggerSourceConfig;
+  target_config: FeishuTriggerTargetConfig;
+}
+
+export interface FeishuGatewayAccountUpdateInput {
+  display_name?: string | null;
+  name?: string | null;
+  secret_config?: FeishuTriggerSecretConfig | null;
+  source_config?: FeishuTriggerSourceConfig | null;
+  target_config?: FeishuTriggerTargetConfig | null;
+}
+
 export type LocalhostRunTunnelStatusValue =
   | "active"
   | "failed"

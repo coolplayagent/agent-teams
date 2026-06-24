@@ -13,11 +13,15 @@ import type { ReactNode } from "react";
 
 import {
   addMcpServer,
+  createFeishuGatewayAccount,
   createCommand,
   deleteAgentRuntime,
+  deleteFeishuGatewayAccount,
   deleteEnvironmentVariable,
   deleteMcpServer,
   deleteSshProfile,
+  disableFeishuGatewayAccount,
+  enableFeishuGatewayAccount,
   getAgentRuntime,
   getAgentRuntimeRegistry,
   getAgentRuntimes,
@@ -31,6 +35,7 @@ import {
   getGitHubWebhookTunnelStatus,
   getHookRuntimeView,
   getHooksConfig,
+  listFeishuGatewayAccounts,
   getMcpServer,
   getMcpServerTools,
   getModelProfiles,
@@ -50,10 +55,12 @@ import {
   probeGitHubConnectivity,
   probeGitHubWebhookConnectivity,
   probeWebConnectivity,
+  listWorkspaces,
   revealSshProfilePassword,
   revealGitHubToken,
   refreshAgentRuntimeRegistry,
   refreshMcpServerTools,
+  reloadFeishuGateway,
   reloadMcpConfig,
   reloadProxyConfig,
   saveEnvironmentVariable,
@@ -73,6 +80,7 @@ import {
   stopGitHubWebhookTunnel,
   testMcpServerConnection,
   updateCommand,
+  updateFeishuGatewayAccount,
   updateMcpServer,
 } from "../api/client";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
@@ -86,11 +94,15 @@ import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   addMcpServer: vi.fn(),
+  createFeishuGatewayAccount: vi.fn(),
   createCommand: vi.fn(),
   deleteAgentRuntime: vi.fn(),
+  deleteFeishuGatewayAccount: vi.fn(),
   deleteEnvironmentVariable: vi.fn(),
   deleteMcpServer: vi.fn(),
   deleteSshProfile: vi.fn(),
+  disableFeishuGatewayAccount: vi.fn(),
+  enableFeishuGatewayAccount: vi.fn(),
   getAgentRuntime: vi.fn(),
   getAgentRuntimeRegistry: vi.fn(),
   getAgentRuntimes: vi.fn(),
@@ -104,6 +116,7 @@ vi.mock("../api/client", () => ({
   getGitHubWebhookTunnelStatus: vi.fn(),
   getHookRuntimeView: vi.fn(),
   getHooksConfig: vi.fn(),
+  listFeishuGatewayAccounts: vi.fn(),
   getMcpServer: vi.fn(),
   getMcpServerTools: vi.fn(),
   getModelProfiles: vi.fn(),
@@ -118,6 +131,7 @@ vi.mock("../api/client", () => ({
   listRoleConfigs: vi.fn(),
   listMcpServers: vi.fn(),
   listSshProfiles: vi.fn(),
+  listWorkspaces: vi.fn(),
   probeSshProfileConnection: vi.fn(),
   probeClawHubConnectivity: vi.fn(),
   probeGitHubConnectivity: vi.fn(),
@@ -127,6 +141,7 @@ vi.mock("../api/client", () => ({
   revealGitHubToken: vi.fn(),
   refreshAgentRuntimeRegistry: vi.fn(),
   refreshMcpServerTools: vi.fn(),
+  reloadFeishuGateway: vi.fn(),
   reloadMcpConfig: vi.fn(),
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
@@ -146,6 +161,7 @@ vi.mock("../api/client", () => ({
   stopGitHubWebhookTunnel: vi.fn(),
   testMcpServerConnection: vi.fn(),
   updateCommand: vi.fn(),
+  updateFeishuGatewayAccount: vi.fn(),
   updateMcpServer: vi.fn(),
 }));
 
@@ -157,11 +173,15 @@ vi.mock("../api/speech", () => ({
 vi.setConfig({ testTimeout: 15000 });
 
 const addMcpServerMock = vi.mocked(addMcpServer);
+const createFeishuGatewayAccountMock = vi.mocked(createFeishuGatewayAccount);
 const createCommandMock = vi.mocked(createCommand);
 const deleteAgentRuntimeMock = vi.mocked(deleteAgentRuntime);
+const deleteFeishuGatewayAccountMock = vi.mocked(deleteFeishuGatewayAccount);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteMcpServerMock = vi.mocked(deleteMcpServer);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
+const disableFeishuGatewayAccountMock = vi.mocked(disableFeishuGatewayAccount);
+const enableFeishuGatewayAccountMock = vi.mocked(enableFeishuGatewayAccount);
 const getAgentRuntimeMock = vi.mocked(getAgentRuntime);
 const getAgentRuntimeRegistryMock = vi.mocked(getAgentRuntimeRegistry);
 const getAgentRuntimesMock = vi.mocked(getAgentRuntimes);
@@ -175,6 +195,7 @@ const getGitHubConfigMock = vi.mocked(getGitHubConfig);
 const getGitHubWebhookTunnelStatusMock = vi.mocked(getGitHubWebhookTunnelStatus);
 const getHookRuntimeViewMock = vi.mocked(getHookRuntimeView);
 const getHooksConfigMock = vi.mocked(getHooksConfig);
+const listFeishuGatewayAccountsMock = vi.mocked(listFeishuGatewayAccounts);
 const getMcpServerMock = vi.mocked(getMcpServer);
 const getMcpServerToolsMock = vi.mocked(getMcpServerTools);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
@@ -189,6 +210,7 @@ const installAgentRuntimeFromRegistryMock = vi.mocked(installAgentRuntimeFromReg
 const listRoleConfigsMock = vi.mocked(listRoleConfigs);
 const listMcpServersMock = vi.mocked(listMcpServers);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
+const listWorkspacesMock = vi.mocked(listWorkspaces);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeClawHubConnectivityMock = vi.mocked(probeClawHubConnectivity);
 const probeGitHubConnectivityMock = vi.mocked(probeGitHubConnectivity);
@@ -198,6 +220,7 @@ const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
 const revealGitHubTokenMock = vi.mocked(revealGitHubToken);
 const refreshAgentRuntimeRegistryMock = vi.mocked(refreshAgentRuntimeRegistry);
 const refreshMcpServerToolsMock = vi.mocked(refreshMcpServerTools);
+const reloadFeishuGatewayMock = vi.mocked(reloadFeishuGateway);
 const reloadMcpConfigMock = vi.mocked(reloadMcpConfig);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
@@ -217,6 +240,7 @@ const startGitHubWebhookTunnelMock = vi.mocked(startGitHubWebhookTunnel);
 const stopGitHubWebhookTunnelMock = vi.mocked(stopGitHubWebhookTunnel);
 const testMcpServerConnectionMock = vi.mocked(testMcpServerConnection);
 const updateCommandMock = vi.mocked(updateCommand);
+const updateFeishuGatewayAccountMock = vi.mocked(updateFeishuGatewayAccount);
 const updateMcpServerMock = vi.mocked(updateMcpServer);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
@@ -362,6 +386,139 @@ beforeEach(() => {
     public_url: "https://relay.localhost.run",
     status: "stopped",
   });
+  listWorkspacesMock.mockResolvedValue([
+    {
+      root_path: "C:/repo",
+      workspace_id: "workspace-1",
+    },
+  ]);
+  listFeishuGatewayAccountsMock.mockResolvedValue([
+    {
+      account_id: "feishu-main",
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: "Feishu Main",
+      name: "feishu-main",
+      secret_status: {
+        app_secret_configured: true,
+      },
+      source_config: {
+        app_id: "cli_app_id",
+        app_name: "Relay Bot",
+        provider: "feishu",
+        trigger_rule: "mention_only",
+      },
+      status: "enabled",
+      target_config: {
+        normal_root_role_id: "main",
+        orchestration_preset_id: null,
+        session_mode: "normal",
+        shell_safety_policy_enabled: true,
+        thinking: {
+          enabled: false,
+          effort: null,
+        },
+        workspace_id: "workspace-1",
+        yolo: true,
+      },
+      updated_at: "2026-06-24T00:00:00Z",
+    },
+  ]);
+  createFeishuGatewayAccountMock.mockImplementation((request) =>
+    Promise.resolve({
+      account_id: request.name,
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: request.display_name ?? request.name,
+      name: request.name,
+      secret_status: {
+        app_secret_configured: Boolean(request.secret_config?.app_secret),
+      },
+      source_config: request.source_config,
+      status: request.enabled === false ? "disabled" : "enabled",
+      target_config: request.target_config,
+      updated_at: "2026-06-24T00:00:00Z",
+    }),
+  );
+  updateFeishuGatewayAccountMock.mockImplementation((accountId, request) =>
+    Promise.resolve({
+      account_id: accountId,
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: request.display_name ?? request.name ?? accountId,
+      name: request.name ?? accountId,
+      secret_status: {
+        app_secret_configured: true,
+      },
+      source_config: request.source_config ?? {
+        app_id: "cli_app_id",
+        app_name: "Relay Bot",
+        provider: "feishu",
+        trigger_rule: "mention_only",
+      },
+      status: "enabled",
+      target_config: request.target_config ?? {
+        normal_root_role_id: "main",
+        orchestration_preset_id: null,
+        session_mode: "normal",
+        shell_safety_policy_enabled: true,
+        thinking: {
+          enabled: false,
+          effort: null,
+        },
+        workspace_id: "workspace-1",
+        yolo: true,
+      },
+      updated_at: "2026-06-24T00:00:00Z",
+    }),
+  );
+  enableFeishuGatewayAccountMock.mockResolvedValue({
+    account_id: "feishu-main",
+    created_at: "2026-06-24T00:00:00Z",
+    display_name: "Feishu Main",
+    name: "feishu-main",
+    secret_status: { app_secret_configured: true },
+    source_config: {
+      app_id: "cli_app_id",
+      app_name: "Relay Bot",
+      provider: "feishu",
+      trigger_rule: "mention_only",
+    },
+    status: "enabled",
+    target_config: {
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      session_mode: "normal",
+      shell_safety_policy_enabled: true,
+      thinking: { enabled: false, effort: null },
+      workspace_id: "workspace-1",
+      yolo: true,
+    },
+    updated_at: "2026-06-24T00:00:00Z",
+  });
+  disableFeishuGatewayAccountMock.mockResolvedValue({
+    account_id: "feishu-main",
+    created_at: "2026-06-24T00:00:00Z",
+    display_name: "Feishu Main",
+    name: "feishu-main",
+    secret_status: { app_secret_configured: true },
+    source_config: {
+      app_id: "cli_app_id",
+      app_name: "Relay Bot",
+      provider: "feishu",
+      trigger_rule: "mention_only",
+    },
+    status: "disabled",
+    target_config: {
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      session_mode: "normal",
+      shell_safety_policy_enabled: true,
+      thinking: { enabled: false, effort: null },
+      workspace_id: "workspace-1",
+      yolo: true,
+    },
+    updated_at: "2026-06-24T00:00:00Z",
+  });
+  deleteFeishuGatewayAccountMock.mockResolvedValue({ status: "ok" });
+  reloadFeishuGatewayMock.mockResolvedValue({ status: "ok" });
   getCommandCatalogMock.mockResolvedValue({
     app_commands: [
       {
@@ -926,6 +1083,7 @@ describe("SettingsDrawer", () => {
     expect(within(sections).queryByRole("button", { name: "Hooks" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "Agent Runtime" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "GitHub" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "Triggers" })).toBeNull();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
     expect(getModelProfilesMock).toHaveBeenCalledTimes(1);
@@ -1021,6 +1179,7 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("MCP")).toBeVisible();
     expect(screen.getByText("Global and workspace command files.")).toBeVisible();
     expect(screen.getByText("GitHub CLI token, webhook callback, and tunnel.")).toBeVisible();
+    expect(screen.getByText("Feishu gateway trigger accounts and session targets.")).toBeVisible();
     expect(getConfigStatusMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByText("Commands").closest("button") as HTMLElement);
@@ -1173,6 +1332,69 @@ describe("SettingsDrawer", () => {
         auto_save_webhook_base_url: true,
       }),
     );
+  }, 45000);
+
+  it("manages Feishu trigger accounts from the System secondary page", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    expect(within(sections).queryByRole("button", { name: "Triggers" })).toBeNull();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    const triggersRow = (await screen.findByText("Triggers")).closest("button");
+    expect(triggersRow).not.toBeNull();
+    fireEvent.click(triggersRow as HTMLElement);
+
+    expect(await screen.findByText("Feishu Main")).toBeVisible();
+    expect(screen.getByText("Relay Bot · workspace-1 · mention_only")).toBeVisible();
+    expect(listFeishuGatewayAccountsMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload gateway" }));
+    await waitFor(() => expect(reloadFeishuGatewayMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Disable" }));
+    await waitFor(() =>
+      expect(disableFeishuGatewayAccountMock).toHaveBeenCalledWith("feishu-main"),
+    );
+
+    const accountRowMain = screen.getByText("Feishu Main").closest("button");
+    expect(accountRowMain).not.toBeNull();
+    fireEvent.click(accountRowMain as HTMLElement);
+
+    expect(await screen.findByText("Account ID")).toBeVisible();
+    expect(screen.getAllByText("feishu-main").length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "feishu-updated" },
+    });
+    fireEvent.change(screen.getByLabelText("App name"), {
+      target: { value: "Relay Bot Updated" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateFeishuGatewayAccountMock).toHaveBeenCalledTimes(1));
+    expect(updateFeishuGatewayAccountMock.mock.calls[0]?.[0]).toBe("feishu-main");
+    const updatePayload = updateFeishuGatewayAccountMock.mock.calls[0]?.[1];
+    expect(updatePayload).toMatchObject({
+      display_name: "Feishu Main",
+      name: "feishu-updated",
+      source_config: {
+        app_id: "cli_app_id",
+        app_name: "Relay Bot Updated",
+        provider: "feishu",
+        trigger_rule: "mention_only",
+      },
+      target_config: {
+        normal_root_role_id: "main",
+        orchestration_preset_id: null,
+        session_mode: "normal",
+        shell_safety_policy_enabled: true,
+        workspace_id: "workspace-1",
+        yolo: true,
+      },
+    });
+    expect(updatePayload).not.toHaveProperty("secret_config");
   }, 45000);
 
   it("saves editable role configs from the role detail page", async () => {

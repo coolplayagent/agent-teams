@@ -50,6 +50,7 @@ import {
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 import { SpeechSettingsSection } from "./SpeechSettingsSection";
+import { TriggerSettingsSection } from "./TriggerSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 
@@ -75,6 +76,7 @@ const SYSTEM_SETTINGS_PAGE_IDS = [
   "hooks",
   "agent-runtime",
   "github",
+  "triggers",
 ] as const;
 
 type SystemSettingsPage = (typeof SYSTEM_SETTINGS_PAGE_IDS)[number];
@@ -263,6 +265,12 @@ function SettingsSystem() {
         meta: t("settingsSystem"),
         title: t("settingsGitHub"),
       },
+      {
+        detail: t("settingsSystemTriggersDetail"),
+        key: "triggers",
+        meta: t("settingsSystem"),
+        title: t("settingsTriggers"),
+      },
     ],
     [t],
   );
@@ -325,6 +333,9 @@ function SystemSettingsPageContent({ page }: { page: SystemSettingsPage }) {
   }
   if (page === "agent-runtime") {
     return <AgentRuntimeSettingsSection />;
+  }
+  if (page === "triggers") {
+    return <TriggerSettingsSection />;
   }
   return <GitHubSettingsSection />;
 }

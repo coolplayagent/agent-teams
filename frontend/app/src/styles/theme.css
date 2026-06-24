@@ -5041,6 +5041,44 @@ body {
   font-size: 12px;
 }
 
+.at-trigger-row {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
+}
+
+.at-trigger-row-main {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-trigger-row-main:hover .at-settings-list-main > span,
+.at-trigger-row-main:focus-visible .at-settings-list-main > span {
+  color: var(--at-primary);
+}
+
+.at-trigger-row-main:focus-visible {
+  outline: none;
+}
+
+.at-trigger-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.at-trigger-row-actions .at-settings-list-meta {
+  flex: 1 1 72px;
+  min-width: 0;
+  text-align: right;
+}
+
 .at-settings-section-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6168,6 +6206,20 @@ body {
   .at-settings-list-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
+  }
+
+  .at-trigger-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-trigger-row-actions {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .at-trigger-row-actions .at-settings-list-meta {
+    flex-basis: 100%;
+    text-align: left;
   }
 
   .at-settings-property-row,

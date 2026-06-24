@@ -3,10 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   browseClawHubSkillMarket,
   addRuntimeToolsSystemPath,
+  createFeishuGatewayAccount,
   deleteAgentRuntime,
   disableAutomationProject,
+  deleteFeishuGatewayAccount,
   deleteEnvironmentVariable,
   deleteSshProfile,
+  disableFeishuGatewayAccount,
+  enableFeishuGatewayAccount,
   enableAutomationProject,
   getAgentRuntime,
   getAgentRuntimeRegistry,
@@ -19,6 +23,7 @@ import {
   getEnvironmentVariables,
   getGitHubConfig,
   getGitHubWebhookTunnelStatus,
+  listFeishuGatewayAccounts,
   getMemory,
   getRoleConfig,
   getRuntimeToolDownload,
@@ -53,6 +58,7 @@ import {
   revealGitHubToken,
   refreshAgentRuntimeRegistry,
   reloadProxyConfig,
+  reloadFeishuGateway,
   reloadSkillsConfig,
   saveEnvironmentVariable,
   saveAgentRuntime,
@@ -80,6 +86,7 @@ import {
   uninstallClawHubMarketSkill,
   uninstallRuntimeSkill,
   updateSession,
+  updateFeishuGatewayAccount,
   updateWorkspace,
 } from "../api/client";
 import { saveSpeechConfig } from "../api/speech";
@@ -1879,6 +1886,136 @@ describe("api client", () => {
         body: JSON.stringify({ clear_webhook_base_url_if_matching: true }),
         method: "POST",
       }),
+    );
+  });
+
+  it("manages Feishu gateway accounts through trigger endpoints", async () => {
+    const accountPayload = {
+      account_id: "feishu-main",
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: "Feishu Main",
+      name: "feishu-main",
+      secret_status: { app_secret_configured: true },
+      source_config: {
+        app_id: "cli_app_id",
+        app_name: "Relay Bot",
+        provider: "feishu",
+        trigger_rule: "mention_only",
+      },
+      status: "enabled",
+      target_config: {
+        normal_root_role_id: "main",
+        orchestration_preset_id: null,
+        session_mode: "normal",
+        shell_safety_policy_enabled: true,
+        thinking: { enabled: false, effort: null },
+        workspace_id: "default",
+        yolo: true,
+      },
+      updated_at: "2026-06-24T00:00:00Z",
+    };
+    const requestPayload = {
+      display_name: "Feishu Main",
+      enabled: true,
+      name: "feishu-main",
+      secret_config: { app_secret: "secret" },
+      source_config: {
+        app_id: "cli_app_id",
+        app_name: "Relay Bot",
+        provider: "feishu" as const,
+        trigger_rule: "mention_only" as const,
+      },
+      target_config: {
+        normal_root_role_id: "main",
+        orchestration_preset_id: null,
+        session_mode: "normal" as const,
+        shell_safety_policy_enabled: true,
+        thinking: { enabled: false, effort: null },
+        workspace_id: "default",
+        yolo: true,
+      },
+    };
+    const updatePayload = {
+      display_name: "Feishu Main",
+      name: "feishu-main",
+      secret_config: { app_secret: "secret" },
+      source_config: requestPayload.source_config,
+      target_config: requestPayload.target_config,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([accountPayload]), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listFeishuGatewayAccounts()).resolves.toEqual([accountPayload]);
+    await expect(createFeishuGatewayAccount(requestPayload)).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(
+      updateFeishuGatewayAccount("feishu-main", updatePayload),
+    ).resolves.toEqual(accountPayload);
+    await expect(enableFeishuGatewayAccount("feishu-main")).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(disableFeishuGatewayAccount("feishu-main")).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(deleteFeishuGatewayAccount("feishu-main")).resolves.toEqual({
+      status: "ok",
+    });
+    await expect(reloadFeishuGateway()).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/gateway/feishu/accounts",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/gateway/feishu/accounts",
+      expect.objectContaining({
+        body: JSON.stringify(requestPayload),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/gateway/feishu/accounts/feishu-main",
+      expect.objectContaining({
+        body: JSON.stringify(updatePayload),
+        method: "PATCH",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/gateway/feishu/accounts/feishu-main:enable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/gateway/feishu/accounts/feishu-main:disable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/gateway/feishu/accounts/feishu-main",
+      expect.objectContaining({
+        body: JSON.stringify({ force: true }),
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/gateway/feishu/reload",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 

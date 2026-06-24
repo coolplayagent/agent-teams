@@ -33,6 +33,9 @@ import type {
   EnvironmentVariableSaveRequest,
   EnvironmentVariableScope,
   EnvironmentVariableRecord,
+  FeishuGatewayAccountCreateInput,
+  FeishuGatewayAccountRecord,
+  FeishuGatewayAccountUpdateInput,
   GlobalMemorySearchRequest,
   GitHubConfigUpdate,
   GitHubConfigView,
@@ -697,6 +700,68 @@ export function stopGitHubWebhookTunnel(
       body: JSON.stringify(request),
     },
   );
+}
+
+export function listFeishuGatewayAccounts(): Promise<FeishuGatewayAccountRecord[]> {
+  return requestJson<FeishuGatewayAccountRecord[]>("/gateway/feishu/accounts");
+}
+
+export function createFeishuGatewayAccount(
+  request: FeishuGatewayAccountCreateInput,
+): Promise<FeishuGatewayAccountRecord> {
+  return requestJson<FeishuGatewayAccountRecord>("/gateway/feishu/accounts", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function updateFeishuGatewayAccount(
+  accountId: string,
+  request: FeishuGatewayAccountUpdateInput,
+): Promise<FeishuGatewayAccountRecord> {
+  return requestJson<FeishuGatewayAccountRecord>(
+    `/gateway/feishu/accounts/${encodeURIComponent(accountId.trim())}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteFeishuGatewayAccount(
+  accountId: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/gateway/feishu/accounts/${encodeURIComponent(accountId.trim())}`,
+    {
+      method: "DELETE",
+      body: JSON.stringify({ force: true }),
+    },
+  );
+}
+
+export function enableFeishuGatewayAccount(
+  accountId: string,
+): Promise<FeishuGatewayAccountRecord> {
+  return requestJson<FeishuGatewayAccountRecord>(
+    `/gateway/feishu/accounts/${encodeURIComponent(accountId.trim())}:enable`,
+    { method: "POST" },
+  );
+}
+
+export function disableFeishuGatewayAccount(
+  accountId: string,
+): Promise<FeishuGatewayAccountRecord> {
+  return requestJson<FeishuGatewayAccountRecord>(
+    `/gateway/feishu/accounts/${encodeURIComponent(accountId.trim())}:disable`,
+    { method: "POST" },
+  );
+}
+
+export function reloadFeishuGateway(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/gateway/feishu/reload", {
+    method: "POST",
+  });
 }
 
 export function getProxyConfig(): Promise<ProxyConfig> {

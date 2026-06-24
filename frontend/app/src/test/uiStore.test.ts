@@ -9,11 +9,19 @@ describe("uiStore", () => {
   it("uses the V1-sized desktop sidebar default", async () => {
     const { sidebarWidthDefault, useUiStore } = await import("../runtime/uiStore");
 
-    expect(sidebarWidthDefault).toBe(220);
+    expect(sidebarWidthDefault).toBe(274);
     expect(useUiStore.getState().sidebarWidth).toBe(sidebarWidthDefault);
   });
 
-  it("migrates the old oversized default while preserving resized widths", async () => {
+  it("migrates old generated defaults while preserving resized widths", async () => {
+    window.localStorage.setItem("agentTeams.sidebarWidth", "220");
+
+    const compactDefaultStore = await import("../runtime/uiStore");
+
+    expect(compactDefaultStore.useUiStore.getState().sidebarWidth)
+      .toBe(compactDefaultStore.sidebarWidthDefault);
+
+    vi.resetModules();
     window.localStorage.setItem("agentTeams.sidebarWidth", "280");
 
     const oldDefaultStore = await import("../runtime/uiStore");

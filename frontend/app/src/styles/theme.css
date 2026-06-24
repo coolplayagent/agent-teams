@@ -943,6 +943,26 @@ body {
   white-space: nowrap;
 }
 
+.at-workspace-mount-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.at-workspace-mount-actions .ant-btn {
+  padding-inline: 6px;
+}
+
+.at-workspace-mount-form {
+  padding-top: 4px;
+}
+
+.at-workspace-ssh-profile-list .ant-list-item {
+  padding-inline: 0;
+}
+
 .at-workspace-workbench-spacer {
   flex: 1 1 auto;
   min-width: 0;
@@ -2431,6 +2451,11 @@ body {
 
   .at-workspace-mount-menu {
     flex: 1 1 auto;
+  }
+
+  .at-workspace-mount-actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
   }
 
   .at-workspace-workbench-content.is-files {

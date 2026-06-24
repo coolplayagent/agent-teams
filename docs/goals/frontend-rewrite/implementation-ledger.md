@@ -1115,3 +1115,31 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this workspace file-preview slice. No Workspace subsystem completion is claimed from this batch; remaining work includes mount add/edit/remove parity, SSH profile management entry parity, richer file highlighting/image preview parity, broader project actions, streaming/recovery scenarios, and reviewer sign-off.
+
+## 2026-06-24 Workspace Mount Actions Batch
+
+### Scope
+- Rechecked the real V1 project workbench before editing and confirmed its mount action bar exposes add mount, edit mount, SSH config, and remove mount actions.
+- V2 before this batch showed mount chips but did not expose real mount-management actions, leaving a visible project interaction gap after the fixed-page workbench pass.
+- Added typed V2 workspace update and SSH profile contracts to the shared API client.
+- Added project-workbench actions for adding, editing, and removing workspace mounts through the real workspace update endpoint.
+- Added a read-only SSH profiles entry point backed by the real workspace SSH profiles configuration endpoint, so the V2 workbench has the same top-level navigation affordance as V1 without claiming full SSH profile editing parity yet.
+- Kept the workbench fixed in the one-page application frame while adding the new actions.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-mount-actions/`.
+- V1 reference screenshot: `v1-mount-actions-reference.png`.
+- V2 before screenshot: `v2-mount-actions-before.png`.
+- V2 final screenshots: `v2-mount-actions-final.png`, `v2-add-mount-modal-final.png`, and `v2-ssh-profiles-modal-final.png`.
+- Final V2 browser metrics at `1248x679` kept body/document fixed to the viewport (`679 / 679`, `scrollTop=0`), kept `main` fixed at `627px`, kept `.at-project-view` fixed at `627px`, and kept `.at-workspace-workbench` contained at `520px`.
+- Final V2 mount action counts were one each for `添加挂载`, `编辑挂载`, `SSH 配置`, and `移除挂载`.
+- The add-mount dialog rendered real mount fields and localized actions (`取消`, `保存`) with no English `Cancel` text.
+- The SSH profiles dialog rendered the localized empty state `暂无 SSH 配置。` with no Ant default `No data` text.
+- Current page assets loaded the rebuilt files `index-Cc-dSXVg.js` and `index-CL4YibP8.css`.
+- Browser console verification found only the pre-existing missing favicon 404 and no workspace action, chunk, or API errors.
+- `npm run test -- src/test/WorkspaceProjectView.test.tsx src/test/apiClient.test.ts` in `frontend/app` passed with 14 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this workspace mount-action slice. No Workspace subsystem completion is claimed from this batch; remaining work includes full SSH profile management surfaces, richer project actions, file/image preview parity, streaming/recovery scenarios, and reviewer sign-off.

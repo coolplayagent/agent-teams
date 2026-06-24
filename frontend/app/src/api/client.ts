@@ -23,6 +23,7 @@ import type {
   SessionMode,
   SessionRecord,
   SessionSidebarRecord,
+  SshProfileRecord,
   TimelineMessage,
   StopBackgroundTaskResponse,
   ToolApprovalAction,
@@ -35,6 +36,7 @@ import type {
   WorkspaceSearchResponse,
   WorkspaceSnapshot,
   WorkspaceTreeListing,
+  WorkspaceUpdateRequest,
   WebConfig,
   WebConnectivityProbeRequest,
   WebConnectivityProbeResult,
@@ -57,6 +59,19 @@ export function getWorkspaceSnapshot(
 ): Promise<WorkspaceSnapshot> {
   return requestJson<WorkspaceSnapshot>(
     `/workspaces/${encodeURIComponent(workspaceId)}/snapshot`,
+  );
+}
+
+export function updateWorkspace(
+  workspaceId: string,
+  request: WorkspaceUpdateRequest,
+): Promise<WorkspaceRecord> {
+  return requestJson<WorkspaceRecord>(
+    `/workspaces/${encodeURIComponent(workspaceId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request),
+    },
   );
 }
 
@@ -438,6 +453,10 @@ export function answerUserQuestion(
 
 export function getGeneralConfig(): Promise<GeneralConfig> {
   return requestJson<GeneralConfig>("/system/configs/general");
+}
+
+export function listSshProfiles(): Promise<SshProfileRecord[]> {
+  return requestJson<SshProfileRecord[]>("/system/configs/workspace/ssh-profiles");
 }
 
 export function saveGeneralConfig(config: GeneralConfig): Promise<{ status: string }> {

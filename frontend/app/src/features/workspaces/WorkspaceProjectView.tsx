@@ -2,11 +2,17 @@ import { useEffect, useState } from "react";
 import {
   App,
   Button,
+  Checkbox,
   Empty,
+  Form,
   Input,
+  List,
+  Modal,
+  Select,
   Skeleton,
   Typography,
 } from "antd";
+import type { FormInstance } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -16,8 +22,12 @@ import {
   File,
   FolderClosed,
   GitBranch,
+  Pencil,
+  Plus,
   RefreshCcw,
   Search,
+  Server,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -26,18 +36,26 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  listSshProfiles,
   listWorkspaces,
   openWorkspaceRoot,
   searchWorkspacePaths,
+  updateWorkspace,
 } from "../../api/client";
 import type {
+  SshProfileRecord,
   WorkspaceDiffFile,
   WorkspaceDiffFileSummary,
   WorkspaceFileContent,
+  WorkspaceLocalMountConfig,
+  WorkspaceMountProvider,
+  WorkspaceMountRecord,
   WorkspaceRecord,
   WorkspaceSearchResult,
+  WorkspaceSshMountConfig,
   WorkspaceSnapshot,
   WorkspaceTreeNode,
+  WorkspaceUpdateRequest,
 } from "../../api/contracts";
 import { useTranslations, type Translate } from "../../i18n";
 
@@ -55,19 +73,43 @@ interface DiffLine {
 }
 
 type WorkspaceFilePaneEntry = WorkspaceTreeNode | WorkspaceSearchResult;
+type WorkspaceMountDialogMode = "create" | "edit";
+
+interface WorkspaceMountDialogState {
+  mode: WorkspaceMountDialogMode;
+  mount: WorkspaceMountRecord | null;
+}
+
+interface WorkspaceMountFormValues {
+  local_root_path?: string;
+  mount_name?: string;
+  provider?: WorkspaceMountProvider;
+  remote_root?: string;
+  set_default?: boolean;
+  ssh_profile_id?: string;
+}
+
+interface WorkspaceMountUpdateInput {
+  preferredMountName: string;
+  request: WorkspaceUpdateRequest;
+  successMessage: string;
+}
 
 export function WorkspaceProjectView({
   onBack,
   selectedWorkspaceId,
 }: WorkspaceProjectViewProps) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
+  const [mountForm] = Form.useForm<WorkspaceMountFormValues>();
   const [modeOverride, setModeOverride] = useState<WorkspaceProjectMode | null>(null);
   const [activeMountNameOverride, setActiveMountNameOverride] = useState<string | null>(null);
   const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [treeFilter, setTreeFilter] = useState("");
+  const [mountDialog, setMountDialog] = useState<WorkspaceMountDialogState | null>(null);
+  const [sshProfilesOpen, setSshProfilesOpen] = useState(false);
 
   const workspacesQuery = useQuery({
     queryKey: ["workspaces"],
@@ -94,19 +136,25 @@ export function WorkspaceProjectView({
     enabled: workspaceId.length > 0,
   });
   const snapshot = snapshotQuery.data;
-  const rootEntries = snapshot?.tree.children ?? [];
-  const defaultMountName = snapshot?.default_mount_name?.trim() || "default";
+  const defaultMountName =
+    workspace?.default_mount_name?.trim() ||
+    snapshot?.default_mount_name?.trim() ||
+    "default";
+  const workspaceMounts = resolveWorkspaceMounts(workspace, snapshot, defaultMountName);
   const mountNames = uniqueValues([
     defaultMountName,
-    ...rootEntries
-      .filter((entry) => entry.kind === "directory")
-      .map((entry) => entry.name.trim())
+    ...workspaceMounts
+      .map((mount) => mount.mount_name.trim())
       .filter((name) => name.length > 0),
   ]);
   const activeMountNameCandidate = activeMountNameOverride ?? defaultMountName;
   const activeMountName = mountNames.includes(activeMountNameCandidate)
     ? activeMountNameCandidate
     : defaultMountName;
+  const activeMount =
+    workspaceMounts.find((mount) => mount.mount_name === activeMountName) ??
+    workspaceMounts[0] ??
+    null;
 
   const diffsQuery = useQuery({
     queryKey: ["workspaces", "diffs", workspaceId, activeMountName],
@@ -182,8 +230,14 @@ export function WorkspaceProjectView({
       selectedFilePath !== null,
   });
 
+  const sshProfilesQuery = useQuery({
+    queryKey: ["settings", "workspace", "ssh-profiles"],
+    queryFn: listSshProfiles,
+    enabled: mountDialog !== null || sshProfilesOpen,
+  });
+
   const openRootMutation = useMutation({
-    mutationFn: () => openWorkspaceRoot(workspaceId, mountName),
+    mutationFn: () => openWorkspaceRoot(workspaceId, activeMountName),
     onSuccess: () => {
       void message.success(t("workspaceFolderOpened"));
     },
@@ -193,6 +247,24 @@ export function WorkspaceProjectView({
       );
     },
   });
+
+  const updateWorkspaceMutation = useMutation({
+    mutationFn: (input: WorkspaceMountUpdateInput) =>
+      updateWorkspace(workspaceId, input.request),
+  });
+
+  useEffect(() => {
+    if (mountDialog === null) {
+      return;
+    }
+    mountForm.setFieldsValue(
+      mountDialogValues({
+        defaultMountName,
+        mode: mountDialog.mode,
+        mount: mountDialog.mount,
+      }),
+    );
+  }, [defaultMountName, mountDialog, mountForm]);
 
   if (workspacesQuery.isLoading) {
     return (
@@ -302,6 +374,43 @@ export function WorkspaceProjectView({
               </button>
             ))}
           </div>
+          <div className="at-workspace-mount-actions">
+            <Button
+              icon={<Plus size={14} />}
+              onClick={() => setMountDialog({ mode: "create", mount: null })}
+              size="small"
+              type="text"
+            >
+              {t("workspaceMountAdd")}
+            </Button>
+            <Button
+              disabled={activeMount === null}
+              icon={<Pencil size={14} />}
+              onClick={() => setMountDialog({ mode: "edit", mount: activeMount })}
+              size="small"
+              type="text"
+            >
+              {t("workspaceMountEdit")}
+            </Button>
+            <Button
+              icon={<Server size={14} />}
+              onClick={() => setSshProfilesOpen(true)}
+              size="small"
+              type="text"
+            >
+              {t("workspaceSshProfiles")}
+            </Button>
+            <Button
+              danger
+              disabled={activeMount === null || workspaceMounts.length <= 1}
+              icon={<Trash2 size={14} />}
+              onClick={handleRemoveWorkspaceMount}
+              size="small"
+              type="text"
+            >
+              {t("workspaceMountRemove")}
+            </Button>
+          </div>
           <div className="at-workspace-workbench-spacer" />
           <Button
             aria-label={t("workspaceOpenFolder")}
@@ -408,6 +517,28 @@ export function WorkspaceProjectView({
           </div>
         )}
       </div>
+      <WorkspaceMountDialog
+        defaultMountName={defaultMountName}
+        form={mountForm}
+        mode={mountDialog?.mode ?? "create"}
+        onCancel={() => setMountDialog(null)}
+        onSubmit={handleSubmitWorkspaceMount}
+        open={mountDialog !== null}
+        selectedMount={mountDialog?.mount ?? null}
+        sshProfiles={sshProfilesQuery.data ?? []}
+        sshProfilesError={sshProfilesQuery.error}
+        sshProfilesLoading={sshProfilesQuery.isLoading}
+        submitting={updateWorkspaceMutation.isPending}
+        t={t}
+      />
+      <WorkspaceSshProfilesModal
+        error={sshProfilesQuery.error}
+        loading={sshProfilesQuery.isLoading}
+        onClose={() => setSshProfilesOpen(false)}
+        open={sshProfilesOpen}
+        profiles={sshProfilesQuery.data ?? []}
+        t={t}
+      />
     </section>
   );
 
@@ -432,6 +563,318 @@ export function WorkspaceProjectView({
       queryKey: ["workspaces", "search", targetWorkspaceId],
     });
   }
+
+  async function handleSubmitWorkspaceMount(values: WorkspaceMountFormValues) {
+    if (workspace === null) {
+      return;
+    }
+    const sourceMountName = mountDialog?.mount?.mount_name ?? "";
+    const mode = mountDialog?.mode ?? "create";
+    try {
+      const nextMount = buildWorkspaceMountRecordFromValues(values, {
+        existingMount: mountDialog?.mount ?? null,
+        mode,
+      });
+      validateWorkspaceMountSubmission({
+        existingMounts: workspaceMounts,
+        mode,
+        mount: nextMount,
+        sourceMountName,
+        t,
+      });
+      const nextMounts = sortWorkspaceMountRecords(
+        mode === "edit"
+          ? workspaceMounts.map((mount) =>
+              mount.mount_name === sourceMountName ? nextMount : mount,
+            )
+          : [...workspaceMounts, nextMount],
+      );
+      const nextDefaultMountName = resolveUpdatedDefaultMountName({
+        nextMounts,
+        removedMountName: mode === "edit" ? sourceMountName : "",
+        replacementMountName: nextMount.mount_name,
+        requestedDefaultMountName:
+          values.set_default === true && nextMount.provider === "local"
+            ? nextMount.mount_name
+            : defaultMountName,
+      });
+      await submitWorkspaceMountUpdate({
+        preferredMountName: nextMount.mount_name,
+        request: {
+          default_mount_name: nextDefaultMountName,
+          mounts: nextMounts,
+        },
+        successMessage: t(
+          mode === "edit" ? "workspaceMountUpdated" : "workspaceMountAdded",
+          { mount: nextMount.mount_name },
+        ),
+      });
+      setMountDialog(null);
+    } catch (error) {
+      void message.error(
+        error instanceof Error ? error.message : t("workspaceMountSaveFailed"),
+      );
+    }
+  }
+
+  function handleRemoveWorkspaceMount() {
+    if (activeMount === null) {
+      return;
+    }
+    if (workspaceMounts.length <= 1) {
+      void message.warning(t("workspaceMountRemoveLast"));
+      return;
+    }
+    modal.confirm({
+      cancelText: t("sidebarDeleteCancel"),
+      content: t("workspaceMountRemoveConfirm", { mount: activeMount.mount_name }),
+      okButtonProps: { danger: true },
+      okText: t("sidebarDeleteConfirm"),
+      onOk: () => removeWorkspaceMount(activeMount),
+      title: t("workspaceMountRemove"),
+    });
+  }
+
+  async function removeWorkspaceMount(mount: WorkspaceMountRecord) {
+    const nextMounts = sortWorkspaceMountRecords(
+      workspaceMounts.filter((item) => item.mount_name !== mount.mount_name),
+    );
+    const nextDefaultMountName = resolveUpdatedDefaultMountName({
+      nextMounts,
+      removedMountName: mount.mount_name,
+      requestedDefaultMountName: defaultMountName,
+    });
+    try {
+      await submitWorkspaceMountUpdate({
+        preferredMountName: nextDefaultMountName,
+        request: {
+          default_mount_name: nextDefaultMountName,
+          mounts: nextMounts,
+        },
+        successMessage: t("workspaceMountRemoved", { mount: mount.mount_name }),
+      });
+    } catch (error) {
+      void message.error(
+        error instanceof Error ? error.message : t("workspaceMountRemoveFailed"),
+      );
+      throw error;
+    }
+  }
+
+  async function submitWorkspaceMountUpdate(input: WorkspaceMountUpdateInput) {
+    const updatedWorkspace = await updateWorkspaceMutation.mutateAsync(input);
+    queryClient.setQueryData<WorkspaceRecord[]>(["workspaces"], (current) => {
+      const existing = current ?? [];
+      if (
+        existing.some(
+          (item) => item.workspace_id === updatedWorkspace.workspace_id,
+        )
+      ) {
+        return existing.map((item) =>
+          item.workspace_id === updatedWorkspace.workspace_id
+            ? updatedWorkspace
+            : item,
+        );
+      }
+      return [updatedWorkspace, ...existing];
+    });
+    setActiveMountNameOverride(input.preferredMountName);
+    setSelectedDiffPath(null);
+    setSelectedFilePath(null);
+    setTreeFilter("");
+    refreshWorkspace(updatedWorkspace.workspace_id);
+    void message.success(input.successMessage);
+  }
+}
+
+function WorkspaceMountDialog({
+  defaultMountName,
+  form,
+  mode,
+  onCancel,
+  onSubmit,
+  open,
+  selectedMount,
+  sshProfiles,
+  sshProfilesError,
+  sshProfilesLoading,
+  submitting,
+  t,
+}: {
+  defaultMountName: string;
+  form: FormInstance<WorkspaceMountFormValues>;
+  mode: WorkspaceMountDialogMode;
+  onCancel: () => void;
+  onSubmit: (values: WorkspaceMountFormValues) => void;
+  open: boolean;
+  selectedMount: WorkspaceMountRecord | null;
+  sshProfiles: SshProfileRecord[];
+  sshProfilesError: Error | null;
+  sshProfilesLoading: boolean;
+  submitting: boolean;
+  t: Translate;
+}) {
+  const provider = Form.useWatch("provider", form) ?? "local";
+  const sshOptions = sshProfiles.map((profile) => ({
+    label: profile.ssh_profile_id,
+    value: profile.ssh_profile_id,
+  }));
+  return (
+    <Modal
+      cancelText={t("sidebarDeleteCancel")}
+      destroyOnHidden
+      okText={t("settingsSave")}
+      confirmLoading={submitting}
+      onCancel={onCancel}
+      onOk={() => form.submit()}
+      open={open}
+      title={
+        mode === "edit"
+          ? t("workspaceMountEditTitle", {
+              mount: selectedMount?.mount_name ?? defaultMountName,
+            })
+          : t("workspaceMountAdd")
+      }
+      width={520}
+    >
+      <Form
+        className="at-workspace-mount-form"
+        form={form}
+        layout="vertical"
+        onFinish={onSubmit}
+      >
+        <Form.Item
+          label={t("workspaceMountName")}
+          name="mount_name"
+          rules={[{ required: true, message: t("workspaceMountValidationName") }]}
+        >
+          <Input placeholder={t("workspaceMountNamePlaceholder")} />
+        </Form.Item>
+        <Form.Item
+          label={t("workspaceMountProvider")}
+          name="provider"
+          rules={[{ required: true }]}
+        >
+          <Select
+            options={[
+              { label: t("workspaceMountProviderLocal"), value: "local" },
+              { label: t("workspaceMountProviderSsh"), value: "ssh" },
+            ]}
+          />
+        </Form.Item>
+        {provider === "ssh" ? (
+          <>
+            <Form.Item
+              label={t("workspaceMountSshProfile")}
+              name="ssh_profile_id"
+              rules={[
+                {
+                  required: true,
+                  message: t("workspaceMountValidationSshProfile"),
+                },
+              ]}
+            >
+              <Select
+                loading={sshProfilesLoading}
+                options={sshOptions}
+                placeholder={t("workspaceMountSshProfilePlaceholder")}
+              />
+            </Form.Item>
+            {sshProfilesError !== null ? (
+              <div className="at-project-state is-error">
+                {errorMessage(sshProfilesError, t("workspaceSshProfilesLoadError"))}
+              </div>
+            ) : null}
+            {!sshProfilesLoading && sshProfilesError === null && sshProfiles.length === 0 ? (
+              <div className="at-project-state">
+                {t("workspaceNoSshProfiles")}
+              </div>
+            ) : null}
+            <Form.Item
+              label={t("workspaceMountRemoteRoot")}
+              name="remote_root"
+              rules={[
+                {
+                  required: true,
+                  message: t("workspaceMountValidationRemoteRoot"),
+                },
+              ]}
+            >
+              <Input placeholder={t("workspaceMountRemoteRootPlaceholder")} />
+            </Form.Item>
+          </>
+        ) : (
+          <>
+            <Form.Item
+              label={t("workspaceMountLocalRoot")}
+              name="local_root_path"
+              rules={[
+                {
+                  required: true,
+                  message: t("workspaceMountValidationLocalRoot"),
+                },
+              ]}
+            >
+              <Input placeholder={t("workspaceMountLocalRootPlaceholder")} />
+            </Form.Item>
+            <Form.Item name="set_default" valuePropName="checked">
+              <Checkbox>{t("workspaceMountSetDefault")}</Checkbox>
+            </Form.Item>
+          </>
+        )}
+      </Form>
+    </Modal>
+  );
+}
+
+function WorkspaceSshProfilesModal({
+  error,
+  loading,
+  onClose,
+  open,
+  profiles,
+  t,
+}: {
+  error: Error | null;
+  loading: boolean;
+  onClose: () => void;
+  open: boolean;
+  profiles: SshProfileRecord[];
+  t: Translate;
+}) {
+  return (
+    <Modal
+      footer={null}
+      onCancel={onClose}
+      open={open}
+      title={t("workspaceSshProfiles")}
+      width={560}
+    >
+      {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : null}
+      {error !== null ? (
+        <div className="at-project-state is-error">
+          {errorMessage(error, t("workspaceSshProfilesLoadError"))}
+        </div>
+      ) : null}
+      {!loading && error === null && profiles.length === 0 ? (
+        <div className="at-project-state">{t("workspaceNoSshProfiles")}</div>
+      ) : null}
+      {!loading && error === null && profiles.length > 0 ? (
+        <List
+          className="at-workspace-ssh-profile-list"
+          dataSource={profiles}
+          renderItem={(profile) => (
+            <List.Item>
+              <List.Item.Meta
+                description={sshProfileDescription(profile, t)}
+                title={profile.ssh_profile_id}
+              />
+            </List.Item>
+          )}
+        />
+      ) : null}
+    </Modal>
+  );
 }
 
 function WorkspaceFilePreview({
@@ -947,6 +1390,286 @@ function splitFileLines(content: string): string[] {
   return normalized.length === 0 ? [""] : normalized.split("\n");
 }
 
+function resolveWorkspaceMounts(
+  workspace: WorkspaceRecord | null,
+  snapshot: WorkspaceSnapshot | undefined,
+  defaultMountName: string,
+): WorkspaceMountRecord[] {
+  if (workspace?.mounts !== undefined && workspace.mounts.length > 0) {
+    return sortWorkspaceMountRecords(workspace.mounts);
+  }
+  const rootPath = workspaceRoot(workspace, snapshot);
+  const snapshotMountNames = (snapshot?.tree.children ?? [])
+    .filter((entry) => entry.kind === "directory")
+    .map((entry) => entry.name.trim())
+    .filter((name) => name.length > 0);
+  const names = uniqueValues([defaultMountName, ...snapshotMountNames]);
+  return sortWorkspaceMountRecords(
+    names.map((name) => ({
+      mount_name: name,
+      provider: "local",
+      provider_config: {
+        root_path: name === defaultMountName ? rootPath : name,
+      },
+      working_directory: ".",
+      readable_paths: ["."],
+      writable_paths: ["."],
+    })),
+  );
+}
+
+function sortWorkspaceMountRecords(
+  mounts: WorkspaceMountRecord[],
+): WorkspaceMountRecord[] {
+  return [...mounts].sort(compareWorkspaceMountRecords);
+}
+
+function compareWorkspaceMountRecords(
+  left: WorkspaceMountRecord,
+  right: WorkspaceMountRecord,
+): number {
+  const providerDelta = mountProviderOrder(left.provider) - mountProviderOrder(right.provider);
+  if (providerDelta !== 0) {
+    return providerDelta;
+  }
+  return left.mount_name.localeCompare(right.mount_name);
+}
+
+function mountProviderOrder(provider: WorkspaceMountProvider): number {
+  return provider === "local" ? 0 : 1;
+}
+
+function mountDialogValues({
+  defaultMountName,
+  mode,
+  mount,
+}: {
+  defaultMountName: string;
+  mode: WorkspaceMountDialogMode;
+  mount: WorkspaceMountRecord | null;
+}): WorkspaceMountFormValues {
+  if (mode === "create" || mount === null) {
+    return {
+      mount_name: "",
+      provider: "local",
+      local_root_path: "",
+      set_default: false,
+    };
+  }
+  const config = mount.provider_config;
+  if (isWorkspaceSshMountConfig(config)) {
+    return {
+      mount_name: mount.mount_name,
+      provider: "ssh",
+      remote_root: config.remote_root,
+      set_default: false,
+      ssh_profile_id: config.ssh_profile_id,
+    };
+  }
+  return {
+    local_root_path: config.root_path,
+    mount_name: mount.mount_name,
+    provider: "local",
+    set_default: mount.mount_name === defaultMountName,
+  };
+}
+
+function buildWorkspaceMountRecordFromValues(
+  values: WorkspaceMountFormValues,
+  {
+    existingMount,
+    mode,
+  }: {
+    existingMount: WorkspaceMountRecord | null;
+    mode: WorkspaceMountDialogMode;
+  },
+): WorkspaceMountRecord {
+  const mountName = values.mount_name?.trim() ?? "";
+  const provider = values.provider === "ssh" ? "ssh" : "local";
+  const baseRecord = buildWorkspaceMountBaseRecord({
+    existingMount,
+    mode,
+    nextProvider: provider,
+  });
+  if (provider === "ssh") {
+    return {
+      ...baseRecord,
+      mount_name: mountName,
+      provider,
+      provider_config: {
+        remote_root: values.remote_root?.trim() ?? "",
+        ssh_profile_id: values.ssh_profile_id?.trim() ?? "",
+      },
+    };
+  }
+  return {
+    ...baseRecord,
+    mount_name: mountName,
+    provider,
+    provider_config: {
+      root_path: values.local_root_path?.trim() ?? "",
+    },
+  };
+}
+
+function buildWorkspaceMountBaseRecord({
+  existingMount,
+  mode,
+  nextProvider,
+}: {
+  existingMount: WorkspaceMountRecord | null;
+  mode: WorkspaceMountDialogMode;
+  nextProvider: WorkspaceMountProvider;
+}): Partial<
+  Pick<
+    WorkspaceMountRecord,
+    | "branch_name"
+    | "capabilities"
+    | "forked_from_workspace_id"
+    | "readable_paths"
+    | "source_root_path"
+    | "working_directory"
+    | "writable_paths"
+  >
+> {
+  if (mode !== "edit" || existingMount === null) {
+    return {};
+  }
+  const providerUnchanged = existingMount.provider === nextProvider;
+  const nextRecord: Partial<
+    Pick<
+      WorkspaceMountRecord,
+      | "branch_name"
+      | "capabilities"
+      | "forked_from_workspace_id"
+      | "readable_paths"
+      | "source_root_path"
+      | "working_directory"
+      | "writable_paths"
+    >
+  > = {};
+  nextRecord.working_directory = existingMount.working_directory;
+  nextRecord.readable_paths = [...(existingMount.readable_paths ?? [])];
+  nextRecord.writable_paths = [...(existingMount.writable_paths ?? [])];
+  if (providerUnchanged && existingMount.capabilities !== undefined) {
+    nextRecord.capabilities = existingMount.capabilities;
+  }
+  if (nextProvider === "local") {
+    nextRecord.branch_name = existingMount.branch_name;
+    nextRecord.source_root_path = existingMount.source_root_path;
+    nextRecord.forked_from_workspace_id = existingMount.forked_from_workspace_id;
+  }
+  return nextRecord;
+}
+
+function validateWorkspaceMountSubmission({
+  existingMounts,
+  mode,
+  mount,
+  sourceMountName,
+  t,
+}: {
+  existingMounts: WorkspaceMountRecord[];
+  mode: WorkspaceMountDialogMode;
+  mount: WorkspaceMountRecord;
+  sourceMountName: string;
+  t: Translate;
+}) {
+  const mountName = mount.mount_name.trim();
+  if (!mountName) {
+    throw new Error(t("workspaceMountValidationName"));
+  }
+  const duplicateMount = existingMounts.find((existingMount) => {
+    if (mode === "edit" && existingMount.mount_name === sourceMountName) {
+      return false;
+    }
+    return existingMount.mount_name === mountName;
+  });
+  if (duplicateMount !== undefined) {
+    throw new Error(t("workspaceMountValidationDuplicate", { mount: mountName }));
+  }
+  if (mount.provider === "ssh") {
+    const config = mount.provider_config;
+    if (!isWorkspaceSshMountConfig(config) || !config.ssh_profile_id.trim()) {
+      throw new Error(t("workspaceMountValidationSshProfile"));
+    }
+    if (!config.remote_root.trim()) {
+      throw new Error(t("workspaceMountValidationRemoteRoot"));
+    }
+    return;
+  }
+  const config = mount.provider_config;
+  if (!isWorkspaceLocalMountConfig(config) || !config.root_path.trim()) {
+    throw new Error(t("workspaceMountValidationLocalRoot"));
+  }
+}
+
+function resolveUpdatedDefaultMountName({
+  nextMounts,
+  removedMountName = "",
+  replacementMountName = "",
+  requestedDefaultMountName,
+}: {
+  nextMounts: WorkspaceMountRecord[];
+  removedMountName?: string;
+  replacementMountName?: string;
+  requestedDefaultMountName: string;
+}): string {
+  const requestedMount = findWorkspaceMountByName(nextMounts, requestedDefaultMountName);
+  if (requestedMount !== null) {
+    return requestedMount.mount_name;
+  }
+  const replacementMount = findWorkspaceMountByName(nextMounts, replacementMountName);
+  if (
+    requestedDefaultMountName.trim() &&
+    removedMountName.trim() &&
+    requestedDefaultMountName === removedMountName &&
+    replacementMount !== null
+  ) {
+    return replacementMount.mount_name;
+  }
+  const firstLocalMount = nextMounts.find((mount) => mount.provider === "local");
+  return firstLocalMount?.mount_name ?? nextMounts[0]?.mount_name ?? "default";
+}
+
+function findWorkspaceMountByName(
+  mounts: WorkspaceMountRecord[],
+  mountName: string,
+): WorkspaceMountRecord | null {
+  const normalizedMountName = mountName.trim();
+  if (!normalizedMountName) {
+    return null;
+  }
+  return mounts.find((mount) => mount.mount_name === normalizedMountName) ?? null;
+}
+
+function isWorkspaceLocalMountConfig(
+  config: WorkspaceMountRecord["provider_config"],
+): config is WorkspaceLocalMountConfig {
+  return "root_path" in config;
+}
+
+function isWorkspaceSshMountConfig(
+  config: WorkspaceMountRecord["provider_config"],
+): config is WorkspaceSshMountConfig {
+  return "ssh_profile_id" in config;
+}
+
+function sshProfileDescription(profile: SshProfileRecord, t: Translate): string {
+  const auth = [
+    profile.has_password === true ? t("workspaceSshProfilePassword") : "",
+    profile.has_private_key === true
+      ? profile.private_key_name?.trim() || t("workspaceSshProfilePrivateKey")
+      : "",
+  ].filter(Boolean).join(" / ") || t("workspaceSshProfileSystemAuth");
+  return [
+    profile.host,
+    profile.username?.trim() ? `${profile.username}${profile.port ? `:${profile.port}` : ""}` : "",
+    profile.remote_shell?.trim() || "",
+    auth,
+  ].filter(Boolean).join(" · ");
+}
+
 function formatBytes(sizeBytes: number): string {
   if (sizeBytes < 1024) {
     return `${sizeBytes} B`;
@@ -982,14 +1705,15 @@ function workspaceLabel(workspace: WorkspaceRecord): string {
 }
 
 function workspaceRoot(
-  workspace: WorkspaceRecord,
+  workspace: WorkspaceRecord | null,
   snapshot: WorkspaceSnapshot | undefined,
 ): string {
   return (
     snapshot?.root_path?.trim() ||
     snapshot?.default_mount_root?.trim() ||
-    workspace.root_path.trim() ||
-    workspace.workspace_id
+    workspace?.root_path.trim() ||
+    workspace?.workspace_id ||
+    ""
   );
 }
 

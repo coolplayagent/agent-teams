@@ -7,6 +7,7 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  listSshProfiles,
   listSessionRounds,
   listWorkspaces,
   openWorkspaceRoot,
@@ -18,6 +19,7 @@ import {
   searchWorkspacePaths,
   stopBackgroundTask,
   updateSession,
+  updateWorkspace,
 } from "../api/client";
 import { saveSpeechConfig } from "../api/speech";
 
@@ -151,7 +153,7 @@ describe("api client", () => {
     );
   });
 
-  it("reads workspace project view data and opens the workspace root", async () => {
+  it("reads and updates workspace project view data", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -245,6 +247,25 @@ describe("api client", () => {
       )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workspace_id: "workspace-1",
+            root_path: "C:/work/agent-teams",
+            default_mount_name: "docs",
+            mounts: [
+              {
+                mount_name: "docs",
+                provider: "local",
+                provider_config: {
+                  root_path: "C:/work/agent-teams/docs",
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -278,6 +299,22 @@ describe("api client", () => {
     });
     await expect(openWorkspaceRoot("workspace-1", "default")).resolves.toEqual({
       status: "ok",
+    });
+    await expect(
+      updateWorkspace("workspace-1", {
+        default_mount_name: "docs",
+        mounts: [
+          {
+            mount_name: "docs",
+            provider: "local",
+            provider_config: {
+              root_path: "C:/work/agent-teams/docs",
+            },
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      default_mount_name: "docs",
     });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -327,6 +364,56 @@ describe("api client", () => {
       "/api/workspaces/workspace-1:open-root?mount=default",
       expect.objectContaining({
         method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "/api/workspaces/workspace-1",
+      expect.objectContaining({
+        body: JSON.stringify({
+          default_mount_name: "docs",
+          mounts: [
+            {
+              mount_name: "docs",
+              provider: "local",
+              provider_config: {
+                root_path: "C:/work/agent-teams/docs",
+              },
+            },
+          ],
+        }),
+        method: "PUT",
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("lists SSH profiles through the workspace settings endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            ssh_profile_id: "devbox",
+            host: "dev.example.com",
+            username: "yex",
+          },
+        ]),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listSshProfiles()).resolves.toEqual([
+      {
+        ssh_profile_id: "devbox",
+        host: "dev.example.com",
+        username: "yex",
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/system/configs/workspace/ssh-profiles",
+      expect.objectContaining({
         headers: expect.any(Headers),
       }),
     );

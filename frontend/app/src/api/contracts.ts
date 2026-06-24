@@ -139,6 +139,25 @@ export interface WorkspaceFileContent {
   size_bytes: number;
 }
 
+export interface WorkspaceUpdateRequest {
+  default_mount_name: string;
+  mounts: WorkspaceMountRecord[];
+}
+
+export interface SshProfileRecord {
+  ssh_profile_id: string;
+  host: string;
+  username?: string | null;
+  port?: number | null;
+  remote_shell?: string | null;
+  connect_timeout_seconds?: number | null;
+  private_key_name?: string | null;
+  has_password?: boolean;
+  has_private_key?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface WorkspaceDiffListing {
   workspace_id: string;
   mount_name?: string;

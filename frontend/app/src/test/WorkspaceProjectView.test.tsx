@@ -9,9 +9,11 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  listSshProfiles,
   listWorkspaces,
   openWorkspaceRoot,
   searchWorkspacePaths,
+  updateWorkspace,
 } from "../api/client";
 import { WorkspaceProjectView } from "../features/workspaces/WorkspaceProjectView";
 import { useUiStore } from "../runtime/uiStore";
@@ -22,9 +24,11 @@ vi.mock("../api/client", () => ({
   getWorkspaceFileContent: vi.fn(),
   getWorkspaceSnapshot: vi.fn(),
   getWorkspaceTree: vi.fn(),
+  listSshProfiles: vi.fn(),
   listWorkspaces: vi.fn(),
   openWorkspaceRoot: vi.fn(),
   searchWorkspacePaths: vi.fn(),
+  updateWorkspace: vi.fn(),
 }));
 
 const getWorkspaceDiffFileMock = vi.mocked(getWorkspaceDiffFile);
@@ -32,9 +36,11 @@ const getWorkspaceDiffsMock = vi.mocked(getWorkspaceDiffs);
 const getWorkspaceFileContentMock = vi.mocked(getWorkspaceFileContent);
 const getWorkspaceSnapshotMock = vi.mocked(getWorkspaceSnapshot);
 const getWorkspaceTreeMock = vi.mocked(getWorkspaceTree);
+const listSshProfilesMock = vi.mocked(listSshProfiles);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 const openWorkspaceRootMock = vi.mocked(openWorkspaceRoot);
 const searchWorkspacePathsMock = vi.mocked(searchWorkspacePaths);
+const updateWorkspaceMock = vi.mocked(updateWorkspace);
 
 afterEach(() => {
   cleanup();
@@ -366,6 +372,240 @@ describe("WorkspaceProjectView", () => {
       80,
       "default",
     );
+  });
+
+  it("adds a local mount through the workspace update endpoint", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        default_mount_name: "default",
+        display_name: "Agent Teams",
+        mounts: [
+          {
+            mount_name: "default",
+            provider: "local",
+            provider_config: { root_path: "C:/work/agent-teams" },
+          },
+        ],
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/work/agent-teams",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [],
+      },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [],
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/agent-teams",
+      is_git_repository: true,
+      diff_files: [],
+    });
+    updateWorkspaceMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      root_path: "C:/work/agent-teams",
+      default_mount_name: "docs",
+      mounts: [
+        {
+          mount_name: "default",
+          provider: "local",
+          provider_config: { root_path: "C:/work/agent-teams" },
+        },
+        {
+          mount_name: "docs",
+          provider: "local",
+          provider_config: { root_path: "C:/work/agent-teams/docs" },
+        },
+      ],
+    });
+
+    renderProjectView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add mount" }));
+    fireEvent.change(screen.getByLabelText("Mount name"), {
+      target: { value: "docs" },
+    });
+    fireEvent.change(screen.getByLabelText("Local root"), {
+      target: { value: "C:/work/agent-teams/docs" },
+    });
+    fireEvent.click(screen.getByLabelText("Use as default mount"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceMock).toHaveBeenCalledWith("workspace-1", {
+        default_mount_name: "docs",
+        mounts: [
+          {
+            mount_name: "default",
+            provider: "local",
+            provider_config: { root_path: "C:/work/agent-teams" },
+          },
+          {
+            mount_name: "docs",
+            provider: "local",
+            provider_config: { root_path: "C:/work/agent-teams/docs" },
+          },
+        ],
+      }),
+    );
+  });
+
+  it("removes the active mount after confirmation", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        default_mount_name: "default",
+        display_name: "Agent Teams",
+        mounts: [
+          {
+            mount_name: "default",
+            provider: "local",
+            provider_config: { root_path: "C:/work/agent-teams" },
+          },
+          {
+            mount_name: "wsl-home",
+            provider: "ssh",
+            provider_config: {
+              ssh_profile_id: "devbox",
+              remote_root: "/home/yex/agent-teams",
+            },
+          },
+        ],
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/work/agent-teams",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [],
+      },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [],
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/agent-teams",
+      is_git_repository: true,
+      diff_files: [],
+    });
+    updateWorkspaceMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      root_path: "C:/work/agent-teams",
+      default_mount_name: "wsl-home",
+      mounts: [
+        {
+          mount_name: "wsl-home",
+          provider: "ssh",
+          provider_config: {
+            ssh_profile_id: "devbox",
+            remote_root: "/home/yex/agent-teams",
+          },
+        },
+      ],
+    });
+
+    renderProjectView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove mount" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(updateWorkspaceMock).toHaveBeenCalledWith("workspace-1", {
+        default_mount_name: "wsl-home",
+        mounts: [
+          {
+            mount_name: "wsl-home",
+            provider: "ssh",
+            provider_config: {
+              ssh_profile_id: "devbox",
+              remote_root: "/home/yex/agent-teams",
+            },
+          },
+        ],
+      }),
+    );
+  });
+
+  it("opens the SSH profiles surface with real profile data", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        default_mount_name: "default",
+        display_name: "Agent Teams",
+        mounts: [
+          {
+            mount_name: "default",
+            provider: "local",
+            provider_config: { root_path: "C:/work/agent-teams" },
+          },
+        ],
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/work/agent-teams",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [],
+      },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [],
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/agent-teams",
+      is_git_repository: true,
+      diff_files: [],
+    });
+    listSshProfilesMock.mockResolvedValue([
+      {
+        ssh_profile_id: "devbox",
+        host: "dev.example.com",
+        username: "yex",
+        port: 22,
+        has_password: true,
+      },
+    ]);
+
+    renderProjectView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "SSH profiles" }));
+
+    expect(await screen.findByText("dev.example.com · yex:22 · Password")).toBeInTheDocument();
+    expect(screen.getAllByText("devbox").length).toBeGreaterThan(0);
+    expect(listSshProfilesMock).toHaveBeenCalledTimes(1);
   });
 
   it("localizes the project workbench shell actions in Chinese", async () => {

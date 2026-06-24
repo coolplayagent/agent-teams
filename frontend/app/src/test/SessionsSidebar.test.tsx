@@ -1,6 +1,13 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -12,6 +19,7 @@ import {
 } from "../api/client";
 import {
   SessionsSidebar,
+  type SidebarBackendStatus,
   type SidebarNavigationItem,
 } from "../features/sessions/SessionsSidebar";
 import { useUiStore } from "../runtime/uiStore";
@@ -42,6 +50,52 @@ afterEach(() => {
 });
 
 describe("SessionsSidebar", () => {
+  it("keeps V1 frame details without adding primary navigation entries", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar({
+      backendStatus: {
+        label: "Backend connected",
+        tone: "online",
+      },
+      navigationItems: [
+        {
+          key: "search",
+          label: "Search",
+          onSelect: vi.fn(),
+          shortcut: "Ctrl+K",
+        },
+      ],
+    });
+
+    expect(await screen.findByText("Workspaces")).toBeVisible();
+    const navigation = screen.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+
+    expect(
+      within(navigation).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["SearchCtrl+K"]);
+    expect(within(navigation).getByRole("button", { name: "Search" })).toBeVisible();
+    expect(within(navigation).getByText("Ctrl+K")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Backend connected");
+    expect(screen.getByRole("status")).toHaveClass("is-online");
+  });
+
   it("renders real primary navigation actions and focuses search shortcuts", async () => {
     const openObservability = vi.fn();
     const openWorkspaceView = vi.fn();
@@ -92,7 +146,7 @@ describe("SessionsSidebar", () => {
     window.dispatchEvent(new Event("agent-teams-focus-session-search"));
 
     const searchbox = await screen.findByRole("searchbox", { name: "Search sessions" });
-    expect(searchbox).toHaveFocus();
+    await waitFor(() => expect(searchbox).toHaveFocus());
   });
 
   it("creates a session in the selected workspace and selects it", async () => {
@@ -559,6 +613,7 @@ describe("SessionsSidebar", () => {
 });
 
 function renderSidebar(props?: {
+  backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
@@ -577,6 +632,7 @@ function renderSidebar(props?: {
       <ConfigProvider>
         <AntApp>
           <SessionsSidebar
+            backendStatus={props?.backendStatus}
             navigationItems={props?.navigationItems}
             onOpenWorkspaceView={props?.onOpenWorkspaceView}
             onSessionSelected={props?.onSessionSelected}

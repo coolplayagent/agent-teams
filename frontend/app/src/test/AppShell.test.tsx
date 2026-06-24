@@ -57,25 +57,44 @@ vi.mock("../features/recovery/RecoveryBar", () => ({
 
 vi.mock("../features/sessions/SessionsSidebar", () => ({
   SessionsSidebar: ({
+    backendStatus,
     navigationItems = [],
     onOpenWorkspaceView,
   }: {
+    backendStatus?: {
+      label: string;
+      tone: string;
+    };
     navigationItems?: Array<{
       key: string;
       label: string;
       onSelect: () => void;
+      shortcut?: string;
     }>;
     onOpenWorkspaceView?: () => void;
   }) => (
     <div data-testid="sessions-sidebar">
       {navigationItems.map((item) => (
-        <button key={item.key} onClick={item.onSelect} type="button">
+        <button
+          aria-label={item.label}
+          key={item.key}
+          onClick={item.onSelect}
+          type="button"
+        >
           {item.label}
+          {item.shortcut !== undefined ? (
+            <span aria-hidden="true">{item.shortcut}</span>
+          ) : null}
         </button>
       ))}
       <button onClick={onOpenWorkspaceView} type="button">
         Open workspace view
       </button>
+      {backendStatus !== undefined ? (
+        <div data-tone={backendStatus.tone} role="status">
+          {backendStatus.label}
+        </div>
+      ) : null}
     </div>
   ),
 }));
@@ -246,7 +265,9 @@ describe("AppShell", () => {
     const sidebar = await screen.findByTestId("sessions-sidebar");
 
     expect(
-      within(sidebar).getAllByRole("button").map((button) => button.textContent),
+      within(sidebar)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label") ?? button.textContent),
     ).toEqual([
       "Search",
       "Skills",
@@ -256,6 +277,16 @@ describe("AppShell", () => {
       "Memory",
       "Open workspace view",
     ]);
+    expect(within(sidebar).getByText("Ctrl+K")).toBeVisible();
+    await waitFor(() =>
+      expect(within(sidebar).getByRole("status")).toHaveTextContent(
+        "Backend connected",
+      ),
+    );
+    expect(within(sidebar).getByRole("status")).toHaveAttribute(
+      "data-tone",
+      "online",
+    );
     expect(within(sidebar).queryByRole("button", { name: "Chat" })).toBeNull();
     expect(
       within(sidebar).queryByRole("button", { name: "Observability" }),

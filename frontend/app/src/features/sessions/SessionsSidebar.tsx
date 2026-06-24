@@ -45,9 +45,18 @@ export interface SidebarNavigationItem {
   key: string;
   label: string;
   onSelect: () => void;
+  shortcut?: string;
+}
+
+export type SidebarBackendStatusTone = "busy" | "checking" | "offline" | "online";
+
+export interface SidebarBackendStatus {
+  label: string;
+  tone: SidebarBackendStatusTone;
 }
 
 interface SessionsSidebarProps {
+  backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
@@ -60,6 +69,7 @@ interface RenameSessionPayload {
 }
 
 export function SessionsSidebar({
+  backendStatus,
   navigationItems = [],
   onOpenWorkspaceView,
   onSessionSelected,
@@ -246,6 +256,7 @@ export function SessionsSidebar({
           {navigationItems.map((item) => (
             <button
               aria-current={item.active ? "page" : undefined}
+              aria-label={item.label}
               className={
                 item.active ? "at-sidebar-nav-item is-active" : "at-sidebar-nav-item"
               }
@@ -253,12 +264,15 @@ export function SessionsSidebar({
               onClick={item.onSelect}
               type="button"
             >
-              {item.icon !== undefined ? (
-                <span aria-hidden="true" className="at-sidebar-nav-icon">
-                  {item.icon}
+              <span aria-hidden="true" className="at-sidebar-nav-icon">
+                {item.icon}
+              </span>
+              <span className="at-sidebar-nav-label">{item.label}</span>
+              {item.shortcut !== undefined ? (
+                <span aria-hidden="true" className="at-sidebar-nav-shortcut">
+                  {item.shortcut}
                 </span>
               ) : null}
-              <span className="at-sidebar-nav-label">{item.label}</span>
             </button>
           ))}
         </nav>
@@ -491,6 +505,21 @@ export function SessionsSidebar({
           );
         })}
       </div>
+      {backendStatus !== undefined ? (
+        <div className="at-sidebar-footer">
+          <div
+            aria-busy={
+              backendStatus.tone === "checking" ? "true" : "false"
+            }
+            className={`at-sidebar-backend-status is-${backendStatus.tone}`}
+            role="status"
+            title={backendStatus.label}
+          >
+            <span aria-hidden="true" className="at-sidebar-backend-dot" />
+            <span className="at-sidebar-backend-label">{backendStatus.label}</span>
+          </div>
+        </div>
+      ) : null}
       <Modal
         cancelText={t("sidebarRenameCancel")}
         destroyOnHidden

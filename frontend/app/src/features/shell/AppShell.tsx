@@ -3,7 +3,6 @@ import {
   Layout,
   Space,
   Tooltip,
-  theme,
   App,
   Dropdown,
 } from "antd";
@@ -49,6 +48,7 @@ import { SessionSearchView } from "../search/SessionSearchView";
 import { SkillsView } from "../skills/SkillsView";
 import {
   SessionsSidebar,
+  type SidebarBackendStatus,
   type SidebarNavigationItem,
 } from "../sessions/SessionsSidebar";
 import { SettingsDrawer } from "./SettingsDrawer";
@@ -63,11 +63,11 @@ import { useTranslations } from "../../i18n";
 
 const { Header, Sider, Content } = Layout;
 const narrowViewportQuery = "(max-width: 760px)";
+const healthyBackendStatuses = new Set(["alive", "ok", "ready"]);
 
 export function AppShell() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const { token } = theme.useToken();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<
     | "automation"
@@ -128,13 +128,28 @@ export function AppShell() {
 
   const healthLabel = useMemo(() => {
     if (healthQuery.isLoading) {
-      return t("healthChecking");
+      return t("sidebarBackendChecking");
     }
     if (healthQuery.isError) {
-      return t("healthOffline");
+      return t("sidebarBackendOffline");
     }
-    return healthQuery.data?.status ?? t("healthReady");
+    const status = healthQuery.data?.status?.trim();
+    if (status === undefined || healthyBackendStatuses.has(status.toLowerCase())) {
+      return t("sidebarBackendConnected");
+    }
+    return status;
   }, [healthQuery.data?.status, healthQuery.isError, healthQuery.isLoading, t]);
+  const sidebarBackendStatus = useMemo<SidebarBackendStatus>(
+    () => ({
+      label: healthLabel,
+      tone: healthQuery.isLoading
+        ? "checking"
+        : healthQuery.isError
+          ? "offline"
+          : "online",
+    }),
+    [healthLabel, healthQuery.isError, healthQuery.isLoading],
+  );
   const selectedSession = useMemo(
     () =>
       sidebarSessionsQuery.data?.find(
@@ -153,6 +168,7 @@ export function AppShell() {
           setActiveView("search");
           closeSidebarOnNarrow();
         },
+        shortcut: "Ctrl+K",
       },
       {
         active: activeView === "skills",
@@ -422,18 +438,6 @@ export function AppShell() {
                   type="text"
                 />
               </Tooltip>
-              <Button
-                className="at-health-button"
-                icon={<RefreshCcw size={15} />}
-                loading={healthQuery.isFetching}
-                onClick={() =>
-                  queryClient.invalidateQueries({ queryKey: ["server-health"] })
-                }
-                size="small"
-                style={{ borderColor: token.colorBorder }}
-              >
-                {healthLabel}
-              </Button>
               <Button href="/" size="small">
                 V1
               </Button>
@@ -457,6 +461,7 @@ export function AppShell() {
             width={isNarrowViewport ? 0 : sidebarWidth}
           >
             <SessionsSidebar
+              backendStatus={sidebarBackendStatus}
               navigationItems={sidebarNavigationItems}
               onOpenWorkspaceView={() => {
                 setActiveView("workspace");

@@ -170,11 +170,6 @@ body {
   min-width: 0;
 }
 
-.at-health-button {
-  color: var(--at-text-muted);
-  background: transparent;
-}
-
 .at-body {
   flex: 1 1 auto;
   display: flex;
@@ -245,7 +240,7 @@ body {
 
 .at-sidebar-nav-item {
   display: grid;
-  grid-template-columns: 17px minmax(0, 1fr);
+  grid-template-columns: 17px minmax(0, 1fr) max-content;
   align-items: center;
   gap: 7px;
   width: 100%;
@@ -282,6 +277,20 @@ body {
   white-space: nowrap;
 }
 
+.at-sidebar-nav-shortcut {
+  justify-self: end;
+  min-width: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--at-border);
+  border-radius: 5px;
+  background: var(--at-surface);
+  color: var(--at-text-muted);
+  font-family: var(--at-font-ui);
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
 .at-sidebar-section-header {
   display: flex;
   align-items: center;
@@ -311,6 +320,57 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+}
+
+.at-sidebar-footer {
+  flex: 0 0 auto;
+  padding: 8px 4px 2px;
+  border-top: 1px solid var(--at-border);
+}
+
+.at-sidebar-backend-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.at-sidebar-backend-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--at-text-muted);
+  opacity: 0.65;
+}
+
+.at-sidebar-backend-status.is-online .at-sidebar-backend-dot {
+  background: var(--at-primary);
+  opacity: 0.85;
+}
+
+.at-sidebar-backend-status.is-offline .at-sidebar-backend-dot {
+  background: var(--at-danger);
+  opacity: 1;
+}
+
+.at-sidebar-backend-status.is-busy .at-sidebar-backend-dot,
+.at-sidebar-backend-status.is-checking .at-sidebar-backend-dot {
+  border: 1px solid color-mix(in srgb, var(--at-primary) 45%, var(--at-border));
+  background: var(--at-surface);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--at-primary) 35%, transparent);
+  opacity: 1;
+}
+
+.at-sidebar-backend-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .at-workspace-group {
@@ -4828,13 +4888,8 @@ body {
     padding-inline: 4px;
   }
 
-  .at-topbar .ant-btn-icon-only,
-  .at-health-button {
+  .at-topbar .ant-btn-icon-only {
     width: 26px;
-  }
-
-  .at-health-button > span:not(.ant-btn-icon) {
-    display: none;
   }
 
   .at-sidebar {

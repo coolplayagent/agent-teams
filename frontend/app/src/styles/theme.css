@@ -427,11 +427,6 @@ body {
   outline: none;
 }
 
-.at-workspace-group-header.is-selected {
-  background: var(--at-surface-muted);
-  color: var(--at-text);
-}
-
 .at-workspace-group-toggle,
 .at-workspace-group-title-button {
   min-width: 0;

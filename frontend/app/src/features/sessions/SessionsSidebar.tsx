@@ -421,14 +421,7 @@ export function SessionsSidebar({
           const hiddenSessionCount = group.sessions.length - visibleSessions.length;
           return (
             <section className="at-workspace-group" key={group.id}>
-              <div
-                className={
-                  group.id === selectedWorkspaceId
-                    ? "at-workspace-group-header is-selected"
-                    : "at-workspace-group-header"
-                }
-                title={group.pathHint || group.label}
-              >
+              <div className="at-workspace-group-header" title={group.pathHint || group.label}>
                 <button
                   aria-expanded={groupExpanded}
                   aria-label={t(

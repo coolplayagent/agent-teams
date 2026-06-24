@@ -166,6 +166,38 @@ describe("SessionsSidebar", () => {
     await waitFor(() => expect(searchbox).toHaveFocus());
   });
 
+  it("keeps workspace headers visually separate from selected sessions", async () => {
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "workspace-1",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    const workspaceHeader = (await screen.findByText("Agent Teams")).closest(
+      ".at-workspace-group-header",
+    );
+    const selectedSession = screen.getByText("Alpha").closest(".at-session-item");
+
+    expect(workspaceHeader).not.toHaveClass("is-selected");
+    expect(selectedSession).toHaveClass("is-selected");
+  });
+
   it("creates a session in the selected workspace and selects it", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

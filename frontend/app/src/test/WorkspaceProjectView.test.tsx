@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
+  getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
   listWorkspaces,
@@ -18,6 +19,7 @@ import { useUiStore } from "../runtime/uiStore";
 vi.mock("../api/client", () => ({
   getWorkspaceDiffFile: vi.fn(),
   getWorkspaceDiffs: vi.fn(),
+  getWorkspaceFileContent: vi.fn(),
   getWorkspaceSnapshot: vi.fn(),
   getWorkspaceTree: vi.fn(),
   listWorkspaces: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock("../api/client", () => ({
 
 const getWorkspaceDiffFileMock = vi.mocked(getWorkspaceDiffFile);
 const getWorkspaceDiffsMock = vi.mocked(getWorkspaceDiffs);
+const getWorkspaceFileContentMock = vi.mocked(getWorkspaceFileContent);
 const getWorkspaceSnapshotMock = vi.mocked(getWorkspaceSnapshot);
 const getWorkspaceTreeMock = vi.mocked(getWorkspaceTree);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
@@ -77,24 +80,36 @@ describe("WorkspaceProjectView", () => {
         ],
       },
     });
-    getWorkspaceTreeMock.mockResolvedValue({
-      workspace_id: "workspace-1",
-      mount_name: "default",
-      directory_path: ".",
-      children: [
-        {
-          name: "frontend",
-          path: "frontend",
-          kind: "directory",
-          has_children: true,
-        },
-        {
-          name: "README.md",
-          path: "README.md",
-          kind: "file",
-        },
-      ],
-    });
+    getWorkspaceTreeMock.mockImplementation((_workspaceId, path = ".") =>
+      Promise.resolve({
+        workspace_id: "workspace-1",
+        mount_name: "default",
+        directory_path: path,
+        children:
+          path === "frontend"
+            ? [
+                {
+                  name: "src",
+                  path: "frontend/src",
+                  kind: "directory",
+                  has_children: true,
+                },
+              ]
+            : [
+                {
+                  name: "frontend",
+                  path: "frontend",
+                  kind: "directory",
+                  has_children: true,
+                },
+                {
+                  name: "README.md",
+                  path: "README.md",
+                  kind: "file",
+                },
+              ],
+      }),
+    );
     getWorkspaceDiffsMock.mockResolvedValue({
       workspace_id: "workspace-1",
       mount_name: "default",
@@ -113,6 +128,16 @@ describe("WorkspaceProjectView", () => {
       change_type: "modified",
       diff: "--- a/frontend/app/src/App.tsx\n+++ b/frontend/app/src/App.tsx\n@@ -1 +1 @@\n-old\n+new",
       is_binary: false,
+    });
+    getWorkspaceFileContentMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      path: "README.md",
+      content: "# Agent Teams\n\nProject docs.",
+      encoding: "utf-8",
+      is_binary: false,
+      truncated: false,
+      size_bytes: 27,
     });
     openWorkspaceRootMock.mockResolvedValue({ status: "ok" });
 
@@ -136,6 +161,25 @@ describe("WorkspaceProjectView", () => {
     expect(getWorkspaceTreeMock).toHaveBeenCalledWith(
       "workspace-1",
       ".",
+      "default",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Toggle directory frontend" }),
+    );
+
+    expect(await screen.findByText("src")).toBeVisible();
+    expect(getWorkspaceTreeMock).toHaveBeenCalledWith(
+      "workspace-1",
+      "frontend",
+      "default",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open file README.md" }));
+
+    expect(await screen.findByText("# Agent Teams")).toBeVisible();
+    expect(getWorkspaceFileContentMock).toHaveBeenCalledWith(
+      "workspace-1",
+      "README.md",
       "default",
     );
 
@@ -305,15 +349,15 @@ describe("WorkspaceProjectView", () => {
 
     renderProjectView();
 
-    const filter = await screen.findByLabelText("Filter files...");
+    expect(await screen.findByText("+changed")).toBeVisible();
+
+    const filter = screen.getByLabelText("Filter files...");
     fireEvent.change(filter, { target: { value: "App" } });
 
-    expect(await screen.findByText("App.tsx")).toBeVisible();
-    fireEvent.click(
-      screen.getByRole("button", {
+    const result = await screen.findByRole("button", {
         name: "Open changed file frontend/app/src/App.tsx",
-      }),
-    );
+    });
+    fireEvent.click(result);
 
     expect(await screen.findByText("+changed")).toBeVisible();
     expect(searchWorkspacePathsMock).toHaveBeenCalledWith(

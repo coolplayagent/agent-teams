@@ -10,6 +10,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   File,
   FolderClosed,
@@ -21,6 +23,7 @@ import {
 import {
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
+  getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
   listWorkspaces,
@@ -30,6 +33,7 @@ import {
 import type {
   WorkspaceDiffFile,
   WorkspaceDiffFileSummary,
+  WorkspaceFileContent,
   WorkspaceRecord,
   WorkspaceSearchResult,
   WorkspaceSnapshot,
@@ -62,6 +66,7 @@ export function WorkspaceProjectView({
   const [modeOverride, setModeOverride] = useState<WorkspaceProjectMode | null>(null);
   const [activeMountNameOverride, setActiveMountNameOverride] = useState<string | null>(null);
   const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [treeFilter, setTreeFilter] = useState("");
 
   const workspacesQuery = useQuery({
@@ -79,6 +84,7 @@ export function WorkspaceProjectView({
     setModeOverride(null);
     setActiveMountNameOverride(null);
     setSelectedDiffPath(null);
+    setSelectedFilePath(null);
     setTreeFilter("");
   }, [workspaceId]);
 
@@ -159,6 +165,21 @@ export function WorkspaceProjectView({
       activeMode === "changes" &&
       workspaceId.length > 0 &&
       effectiveSelectedDiffPath !== null,
+  });
+
+  const fileContentQuery = useQuery({
+    queryKey: ["workspaces", "file", workspaceId, activeMountName, selectedFilePath],
+    queryFn: () => {
+      if (selectedFilePath === null) {
+        throw new Error("File path is required.");
+      }
+      return getWorkspaceFileContent(workspaceId, selectedFilePath, activeMountName);
+    },
+    enabled:
+      activeMode === "files" &&
+      workspaceId.length > 0 &&
+      activeMountName.length > 0 &&
+      selectedFilePath !== null,
   });
 
   const openRootMutation = useMutation({
@@ -272,6 +293,7 @@ export function WorkspaceProjectView({
                 onClick={() => {
                   setActiveMountNameOverride(name);
                   setSelectedDiffPath(null);
+                  setSelectedFilePath(null);
                   setTreeFilter("");
                 }}
                 type="button"
@@ -293,26 +315,38 @@ export function WorkspaceProjectView({
 
         {activeMode === "files" ? (
           <div className="at-workspace-workbench-content is-files">
-            {rootTreeQuery.isLoading ? (
-              <Skeleton active paragraph={{ rows: 12 }} />
-            ) : null}
-            {rootTreeQuery.isError ? (
-              <div className="at-project-state is-error">
-                {errorMessage(rootTreeQuery.error, t("workspaceLoadTreeError"))}
-              </div>
-            ) : null}
-            {!rootTreeQuery.isLoading &&
-            !rootTreeQuery.isError &&
-            rootTreeEntries.length === 0 ? (
-              <div className="at-project-state">{t("workspaceNoRootEntries")}</div>
-            ) : null}
-            {rootTreeEntries.length > 0 ? (
-              <div className="at-workspace-tree-list">
-                {rootTreeEntries.map((entry) => (
-                  <WorkspaceTreeEntry entry={entry} key={entry.path || entry.name} t={t} />
-                ))}
-              </div>
-            ) : null}
+            <section
+              aria-label={t("workspaceFilePreview")}
+              className="at-workspace-file-preview"
+            >
+              <WorkspaceFilePreview
+                error={fileContentQuery.error}
+                fileContent={fileContentQuery.data}
+                loading={fileContentQuery.isFetching}
+                selectedPath={selectedFilePath}
+                t={t}
+              />
+            </section>
+            <WorkspaceFileExplorer
+              entries={filePaneEntries}
+              error={
+                normalizedTreeFilter.length > 0
+                  ? fileSearchQuery.error
+                  : rootTreeQuery.error
+              }
+              filter={treeFilter}
+              loading={
+                normalizedTreeFilter.length > 0
+                  ? fileSearchQuery.isFetching
+                  : rootTreeQuery.isLoading
+              }
+              mountName={activeMountName}
+              onFilterChange={setTreeFilter}
+              onSelectFile={setSelectedFilePath}
+              selectedPath={selectedFilePath}
+              t={t}
+              workspaceId={workspaceId}
+            />
           </div>
         ) : (
           <div className="at-workspace-workbench-content is-changes">
@@ -389,6 +423,9 @@ export function WorkspaceProjectView({
       queryKey: ["workspaces", "diff", targetWorkspaceId],
     });
     void queryClient.invalidateQueries({
+      queryKey: ["workspaces", "file", targetWorkspaceId],
+    });
+    void queryClient.invalidateQueries({
       queryKey: ["workspaces", "tree", targetWorkspaceId],
     });
     void queryClient.invalidateQueries({
@@ -397,24 +434,303 @@ export function WorkspaceProjectView({
   }
 }
 
-function WorkspaceTreeEntry({
+function WorkspaceFilePreview({
+  error,
+  fileContent,
+  loading,
+  selectedPath,
+  t,
+}: {
+  error: Error | null;
+  fileContent: WorkspaceFileContent | undefined;
+  loading: boolean;
+  selectedPath: string | null;
+  t: Translate;
+}) {
+  if (selectedPath === null) {
+    return <div className="at-project-state">{t("workspaceNoFileSelected")}</div>;
+  }
+  if (loading && fileContent === undefined) {
+    return <Skeleton active paragraph={{ rows: 14 }} />;
+  }
+  if (error !== null) {
+    return (
+      <div className="at-project-state is-error">
+        {errorMessage(error, t("workspaceFileLoadError"))}
+      </div>
+    );
+  }
+  if (fileContent?.is_binary === true) {
+    return <div className="at-project-state">{t("workspaceBinaryFile")}</div>;
+  }
+  const lines = splitFileLines(fileContent?.content ?? "");
+  return (
+    <div className={loading ? "at-workspace-file-body is-loading" : "at-workspace-file-body"}>
+      {fileContent?.truncated === true ? (
+        <div className="at-workspace-file-notice">
+          {t("workspaceFileTruncated", { size: formatBytes(fileContent.size_bytes) })}
+        </div>
+      ) : null}
+      {lines.map((line, index) => (
+        <div className="at-workspace-file-line" key={`${index}:${line}`}>
+          <span className="at-workspace-file-line-number">{index + 1}</span>
+          <code className="at-workspace-file-line-text">{line || " "}</code>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WorkspaceFileExplorer({
+  entries,
+  error,
+  filter,
+  loading,
+  mountName,
+  onFilterChange,
+  onSelectFile,
+  selectedPath,
+  t,
+  workspaceId,
+}: {
+  entries: WorkspaceFilePaneEntry[];
+  error: Error | null;
+  filter: string;
+  loading: boolean;
+  mountName: string;
+  onFilterChange: (value: string) => void;
+  onSelectFile: (path: string) => void;
+  selectedPath: string | null;
+  t: Translate;
+  workspaceId: string;
+}) {
+  const normalizedFilter = filter.trim();
+  return (
+    <section aria-label={t("workspaceFileTree")} className="at-workspace-file-pane">
+      <div className="at-workspace-file-pane-filter">
+        <Input
+          allowClear
+          aria-label={t("workspaceFilterFiles")}
+          className="at-workspace-tree-filter"
+          onChange={(event) => onFilterChange(event.target.value)}
+          placeholder={t("workspaceFilterFiles")}
+          prefix={<Search aria-hidden="true" size={14} />}
+          size="small"
+          value={filter}
+        />
+      </div>
+      {loading && entries.length === 0 ? <Skeleton active paragraph={{ rows: 10 }} /> : null}
+      {error !== null ? (
+        <div className="at-project-state is-error">
+          {errorMessage(
+            error,
+            normalizedFilter.length > 0
+              ? t("workspaceSearchFilesError")
+              : t("workspaceLoadTreeError"),
+          )}
+        </div>
+      ) : null}
+      {!loading && error === null && entries.length === 0 ? (
+        <div className="at-project-state">
+          {normalizedFilter.length > 0
+            ? t("workspaceNoFileMatches")
+            : t("workspaceNoRootEntries")}
+        </div>
+      ) : null}
+      {entries.length > 0 ? (
+        <div className="at-workspace-file-pane-list">
+          {entries.map((entry) =>
+            normalizedFilter.length > 0 ? (
+              <WorkspaceFilteredFileRow
+                entry={entry}
+                key={`${entry.kind}:${entry.path}`}
+                onSelectFile={onSelectFile}
+                selected={entry.path === selectedPath}
+                t={t}
+              />
+            ) : (
+              <WorkspaceFileTreeNode
+                entry={entry}
+                key={`${entry.kind}:${entry.path}`}
+                mountName={mountName}
+                onSelectFile={onSelectFile}
+                selectedPath={selectedPath}
+                t={t}
+                workspaceId={workspaceId}
+              />
+            ),
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function WorkspaceFileTreeNode({
   entry,
+  mountName,
+  onSelectFile,
+  selectedPath,
+  t,
+  workspaceId,
+}: {
+  entry: WorkspaceFilePaneEntry;
+  mountName: string;
+  onSelectFile: (path: string) => void;
+  selectedPath: string | null;
+  t: Translate;
+  workspaceId: string;
+}) {
+  if (entry.kind === "directory") {
+    return (
+      <WorkspaceDirectoryNode
+        entry={entry}
+        mountName={mountName}
+        onSelectFile={onSelectFile}
+        selectedPath={selectedPath}
+        t={t}
+        workspaceId={workspaceId}
+      />
+    );
+  }
+  return (
+    <WorkspaceFileTreeFile
+      entry={entry}
+      onSelectFile={onSelectFile}
+      selected={entry.path === selectedPath}
+      t={t}
+    />
+  );
+}
+
+function WorkspaceDirectoryNode({
+  entry,
+  mountName,
+  onSelectFile,
+  selectedPath,
+  t,
+  workspaceId,
+}: {
+  entry: WorkspaceFilePaneEntry;
+  mountName: string;
+  onSelectFile: (path: string) => void;
+  selectedPath: string | null;
+  t: Translate;
+  workspaceId: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const canLoadChildren =
+    "has_children" in entry ? entry.has_children === true : true;
+  const childrenQuery = useQuery({
+    queryKey: ["workspaces", "tree", workspaceId, mountName, entry.path],
+    queryFn: () => getWorkspaceTree(workspaceId, entry.path, mountName),
+    enabled: expanded && canLoadChildren && workspaceId.length > 0 && mountName.length > 0,
+  });
+  const inlineChildren = "children" in entry && Array.isArray(entry.children)
+    ? entry.children
+    : [];
+  const children = childrenQuery.data?.children ?? inlineChildren;
+  return (
+    <div className="at-workspace-tree-node">
+      <button
+        aria-expanded={expanded}
+        aria-label={t("workspaceToggleDirectory", { path: entry.path })}
+        className="at-workspace-tree-row is-action"
+        onClick={() => setExpanded(!expanded)}
+        title={entry.path}
+        type="button"
+      >
+        {expanded ? (
+          <ChevronDown aria-hidden="true" size={14} />
+        ) : (
+          <ChevronRight aria-hidden="true" size={14} />
+        )}
+        <FolderClosed aria-hidden="true" size={15} />
+        <span className="at-workspace-file-pane-name">{entry.name}</span>
+      </button>
+      {expanded ? (
+        <div className="at-workspace-tree-children">
+          {childrenQuery.isLoading ? (
+            <div className="at-project-state">{t("workspaceLoadingDirectory")}</div>
+          ) : null}
+          {childrenQuery.isError ? (
+            <div className="at-project-state is-error">
+              {errorMessage(childrenQuery.error, t("workspaceLoadTreeError"))}
+            </div>
+          ) : null}
+          {children.map((child) => (
+            <WorkspaceFileTreeNode
+              entry={child}
+              key={`${child.kind}:${child.path}`}
+              mountName={mountName}
+              onSelectFile={onSelectFile}
+              selectedPath={selectedPath}
+              t={t}
+              workspaceId={workspaceId}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function WorkspaceFileTreeFile({
+  entry,
+  onSelectFile,
+  selected,
   t,
 }: {
   entry: WorkspaceFilePaneEntry;
+  onSelectFile: (path: string) => void;
+  selected: boolean;
   t: Translate;
 }) {
-  const Icon = entry.kind === "directory" ? FolderClosed : File;
   return (
-    <div className="at-workspace-tree-row" title={entry.path}>
-      <Icon aria-hidden="true" size={15} />
-      <span>{entry.name}</span>
-      {entry.kind === "directory" &&
-      "has_children" in entry &&
-      entry.has_children === true ? (
-        <span className="at-workspace-tree-meta">{t("workspaceContainsItems")}</span>
-      ) : null}
-    </div>
+    <button
+      aria-current={selected ? "page" : undefined}
+      aria-label={t("workspaceOpenFile", { path: entry.path })}
+      className={
+        selected
+          ? "at-workspace-file-pane-row is-action is-selected"
+          : "at-workspace-file-pane-row is-action"
+      }
+      onClick={() => onSelectFile(entry.path)}
+      title={entry.path}
+      type="button"
+    >
+      <File aria-hidden="true" size={15} />
+      <span className="at-workspace-file-pane-name">{entry.name}</span>
+    </button>
+  );
+}
+
+function WorkspaceFilteredFileRow({
+  entry,
+  onSelectFile,
+  selected,
+  t,
+}: {
+  entry: WorkspaceFilePaneEntry;
+  onSelectFile: (path: string) => void;
+  selected: boolean;
+  t: Translate;
+}) {
+  if (entry.kind === "directory") {
+    return (
+      <div className="at-workspace-file-pane-row" title={entry.path}>
+        <FolderClosed aria-hidden="true" size={15} />
+        <span className="at-workspace-file-pane-name">{entry.name}</span>
+      </div>
+    );
+  }
+  return (
+    <WorkspaceFileTreeFile
+      entry={entry}
+      onSelectFile={onSelectFile}
+      selected={selected}
+      t={t}
+    />
   );
 }
 
@@ -624,6 +940,21 @@ function buildDiffLines(diff: string): DiffLine[] {
     lineNumber: index + 1,
     text,
   }));
+}
+
+function splitFileLines(content: string): string[] {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalized.length === 0 ? [""] : normalized.split("\n");
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${Math.round(sizeBytes / 102.4) / 10} KB`;
+  }
+  return `${Math.round(sizeBytes / 1024 / 102.4) / 10} MB`;
 }
 
 function diffLineKind(text: string): DiffLine["kind"] {

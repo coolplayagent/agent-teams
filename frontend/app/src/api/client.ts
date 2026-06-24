@@ -31,6 +31,7 @@ import type {
   WorkspaceRecord,
   WorkspaceDiffFile,
   WorkspaceDiffListing,
+  WorkspaceFileContent,
   WorkspaceSearchResponse,
   WorkspaceSnapshot,
   WorkspaceTreeListing,
@@ -116,6 +117,20 @@ export function getWorkspaceDiffFile(
   }
   return requestJson<WorkspaceDiffFile>(
     `/workspaces/${encodeURIComponent(workspaceId)}/diff?${params.toString()}`,
+  );
+}
+
+export function getWorkspaceFileContent(
+  workspaceId: string,
+  path: string,
+  mountName?: string | null,
+): Promise<WorkspaceFileContent> {
+  const params = new URLSearchParams({ path });
+  if (mountName !== undefined && mountName !== null && mountName.trim()) {
+    params.set("mount", mountName);
+  }
+  return requestJson<WorkspaceFileContent>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/file?${params.toString()}`,
   );
 }
 

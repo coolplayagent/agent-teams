@@ -1088,3 +1088,30 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this workspace file-tree pane slice. No Workspace subsystem completion is claimed from this batch; remaining work includes opening non-diff files, recursive tree expansion, broader project actions, streaming/recovery parity, loading and empty states across more real runs, and reviewer sign-off.
+
+## 2026-06-24 Workspace File Preview Batch
+
+### Scope
+- Rechecked V1 and V2 project views in the real in-app browser after the prior file-tree pane work.
+- V1 Files mode showed a real project workbench shape: central file preview, right-side filterable tree, directory expansion, and file selection.
+- V2 before this batch still rendered Files mode as a flat root-entry list, so the project workbench looked closer in Changes mode but remained structurally wrong for file browsing.
+- Added a typed V2 client contract for `GET /api/workspaces/{id}/file?path=...&mount=...`.
+- Reworked the V2 Files tab into a two-surface workbench: left file preview and right file explorer, while preserving the fixed one-page shell.
+- Added on-demand directory expansion through the existing workspace tree endpoint, file search through the existing path search endpoint, and real file content loading through the existing file endpoint.
+- Kept directory search results display-only when they cannot be previewed directly, so the UI does not add fake open behavior for directories.
+
+### Verification
+- Browser screenshots and metrics were captured under `.tmp/frontend-v2-next-framework-pass/`.
+- V1 reference screenshot: `v1-project-view-confirmed.png`.
+- V2 rebuilt default workspace screenshot before switching Files mode: `v2-default-workspace-after-build.png`.
+- V2 final Files preview screenshot: `v2-files-preview-after.png`.
+- Browser verification opened the real `default` workspace at `C:\Users\yex\Documents\workspace\agent-teams`, switched to Files mode, expanded `frontend`, filtered for `WorkspaceProjectView.tsx`, and opened `frontend/app/src/features/workspaces/WorkspaceProjectView.tsx`.
+- Final V2 browser metrics kept body/document fixed to the viewport (`1272 / 1272`, `windowScrollY=0`) while `.at-workspace-file-preview` owned the long source scroll (`clientHeight=1063`, `scrollHeight=19731`) and `.at-workspace-file-pane-list` owned the file-result scroll.
+- Final Files grid measured `681.844px 265.156px`, matching the V1 main-preview plus side-tree shape more closely than the previous flat Files list.
+- Browser console verification returned no warnings or errors after the file browse and preview interaction.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run test -- src/test/WorkspaceProjectView.test.tsx src/test/apiClient.test.ts` in `frontend/app` passed with 10 tests.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this workspace file-preview slice. No Workspace subsystem completion is claimed from this batch; remaining work includes mount add/edit/remove parity, SSH profile management entry parity, richer file highlighting/image preview parity, broader project actions, streaming/recovery scenarios, and reviewer sign-off.

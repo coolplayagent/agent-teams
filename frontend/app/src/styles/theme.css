@@ -956,8 +956,8 @@ body {
 }
 
 .at-workspace-workbench-content.is-files {
-  overflow: auto;
-  padding: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 28%);
 }
 
 .at-workspace-workbench-content.is-changes {
@@ -968,11 +968,17 @@ body {
 .at-workspace-tree-list,
 .at-workspace-diff-list,
 .at-workspace-diff-preview,
+.at-workspace-file-preview,
 .at-workspace-file-pane,
 .at-workspace-file-pane-list {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+
+.at-workspace-file-preview {
+  border-right: 1px solid var(--at-border);
+  background: color-mix(in srgb, var(--at-bg) 64%, var(--at-surface));
 }
 
 .at-workspace-tree-list {
@@ -1036,6 +1042,29 @@ body {
   grid-template-columns: 18px minmax(0, 1fr) max-content;
 }
 
+.at-workspace-tree-node {
+  min-width: 0;
+}
+
+.at-workspace-tree-row.is-action {
+  grid-template-columns: 16px 18px minmax(0, 1fr);
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-workspace-tree-children {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  margin-left: 14px;
+  padding-left: 6px;
+  border-left: 1px solid var(--at-border);
+}
+
 .at-workspace-diff-file {
   grid-template-columns: 18px max-content minmax(0, 1fr);
   width: 100%;
@@ -1062,6 +1091,8 @@ body {
 .at-workspace-diff-file:hover,
 .at-workspace-diff-file:focus-visible,
 .at-workspace-diff-file.is-selected,
+.at-workspace-tree-row.is-action:hover,
+.at-workspace-tree-row.is-action:focus-visible,
 .at-workspace-file-pane-row.is-action:hover,
 .at-workspace-file-pane-row.is-action:focus-visible,
 .at-workspace-file-pane-row.is-selected {
@@ -1086,6 +1117,50 @@ body {
 .at-workspace-diff-file svg,
 .at-workspace-file-pane-row svg {
   color: var(--at-text-muted);
+}
+
+.at-workspace-file-body {
+  min-width: 0;
+  padding: 0;
+  overflow: auto;
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.at-workspace-file-body.is-loading {
+  opacity: 0.68;
+}
+
+.at-workspace-file-notice {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--at-border);
+  background: var(--at-surface-muted);
+  color: var(--at-text-muted);
+  font-family: var(--at-font);
+  font-size: 12px;
+}
+
+.at-workspace-file-line {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  min-width: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--at-border) 54%, transparent);
+}
+
+.at-workspace-file-line-number {
+  padding: 0 9px;
+  border-right: 1px solid var(--at-border);
+  color: var(--at-text-muted);
+  text-align: right;
+  user-select: none;
+}
+
+.at-workspace-file-line-text {
+  min-width: 0;
+  padding: 0 10px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .at-workspace-tree-meta,
@@ -2358,9 +2433,19 @@ body {
     flex: 1 1 auto;
   }
 
+  .at-workspace-workbench-content.is-files {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 0.64fr) minmax(150px, 0.36fr);
+  }
+
   .at-workspace-workbench-content.is-changes {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(140px, 0.25fr) minmax(220px, 0.5fr) minmax(150px, 0.25fr);
+  }
+
+  .at-workspace-file-preview {
+    border-right: 0;
+    border-bottom: 1px solid var(--at-border);
   }
 
   .at-workspace-diff-list {
@@ -2374,6 +2459,10 @@ body {
   }
 
   .at-workspace-diff-line {
+    grid-template-columns: 3.4rem minmax(0, 1fr);
+  }
+
+  .at-workspace-file-line {
     grid-template-columns: 3.4rem minmax(0, 1fr);
   }
 

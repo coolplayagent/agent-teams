@@ -4,6 +4,7 @@ import {
   deleteSession,
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
+  getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
   listSessionRounds,
@@ -228,6 +229,21 @@ describe("api client", () => {
         ),
       )
       .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            workspace_id: "workspace-1",
+            mount_name: "default",
+            path: "src/file.ts",
+            content: "export const value = 1;\n",
+            encoding: "utf-8",
+            is_binary: false,
+            truncated: false,
+            size_bytes: 24,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
         new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
@@ -252,6 +268,12 @@ describe("api client", () => {
       getWorkspaceDiffFile("workspace-1", "src/file.ts", "default"),
     ).resolves.toMatchObject({
       diff: "+changed",
+      path: "src/file.ts",
+    });
+    await expect(
+      getWorkspaceFileContent("workspace-1", "src/file.ts", "default"),
+    ).resolves.toMatchObject({
+      content: "export const value = 1;\n",
       path: "src/file.ts",
     });
     await expect(openWorkspaceRoot("workspace-1", "default")).resolves.toEqual({
@@ -295,6 +317,13 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       6,
+      "/api/workspaces/workspace-1/file?path=src%2Ffile.ts&mount=default",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
       "/api/workspaces/workspace-1:open-root?mount=default",
       expect.objectContaining({
         method: "POST",

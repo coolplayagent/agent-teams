@@ -20,8 +20,43 @@ export interface ServerHealthPayload {
 export interface WorkspaceRecord {
   workspace_id: string;
   root_path: string;
+  default_mount_name?: string;
   name?: string;
   display_name?: string;
+  mounts?: WorkspaceMountRecord[];
+}
+
+export type WorkspaceMountProvider = "local" | "ssh";
+
+export interface WorkspaceMountCapabilities {
+  can_read?: boolean;
+  can_write?: boolean;
+  can_search?: boolean;
+  can_shell?: boolean;
+  can_diff?: boolean;
+  can_preview?: boolean;
+}
+
+export interface WorkspaceLocalMountConfig {
+  root_path: string;
+}
+
+export interface WorkspaceSshMountConfig {
+  ssh_profile_id: string;
+  remote_root: string;
+}
+
+export interface WorkspaceMountRecord {
+  mount_name: string;
+  provider: WorkspaceMountProvider;
+  provider_config: WorkspaceLocalMountConfig | WorkspaceSshMountConfig;
+  working_directory?: string;
+  readable_paths?: string[];
+  writable_paths?: string[];
+  capabilities?: WorkspaceMountCapabilities | null;
+  branch_name?: string | null;
+  source_root_path?: string | null;
+  forked_from_workspace_id?: string | null;
 }
 
 export interface WorkspacePage {
@@ -91,6 +126,17 @@ export interface WorkspaceDiffFile {
   previous_path?: string | null;
   diff: string;
   is_binary?: boolean;
+}
+
+export interface WorkspaceFileContent {
+  workspace_id: string;
+  mount_name?: string;
+  path: string;
+  content: string;
+  encoding?: string;
+  is_binary?: boolean;
+  truncated?: boolean;
+  size_bytes: number;
 }
 
 export interface WorkspaceDiffListing {

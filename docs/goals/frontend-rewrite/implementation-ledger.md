@@ -2773,3 +2773,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this Web settings save/error slice. Full Settings subsystem parity, all destructive/high-impact settings confirmations, visual parity matrix, Electron readiness, and release readiness remain open.
+
+## 2026-06-26 V2 Remote Workspace Delete Confirmation Browser Evidence Batch
+
+### Scope
+- Re-checked the Settings completion rules after the Web settings save/error batch, focusing on the destructive/high-impact confirmation requirement that still needed browser-level evidence.
+- Added a real built `/app/` browser scenario that opens Settings from the topbar, navigates to the existing V1-aligned Remote workspace entry, and verifies SSH profiles load from `/api/system/configs/workspace/ssh-profiles`.
+- Verified clicking `Delete` first opens the confirmation dialog for `devbox` and does not send any `DELETE` request before the user confirms.
+- Verified canceling the confirmation leaves the profile visible and still does not call the delete API.
+- Verified confirming the dialog sends `DELETE /api/system/configs/workspace/ssh-profiles/devbox`, shows the visible success toast, refreshes the SSH profile list, and renders the empty state after the backend removes the profile.
+- Kept this as targeted Settings destructive-action evidence only; no sidebar/settings entries were added or removed, and full Settings subsystem parity still requires broader mutation/error/destructive coverage and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "remote_workspace_delete"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections or web_settings_save or remote_workspace_delete"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent browser verification completed for this Remote workspace delete-confirmation slice. Full Settings subsystem parity, full visual parity matrix, Electron readiness, reviewer sign-off, and release readiness remain open.

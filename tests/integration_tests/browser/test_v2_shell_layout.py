@@ -694,6 +694,77 @@ def test_v2_web_settings_save_success_and_error_feedback(
         ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
 
+def test_v2_remote_workspace_delete_requires_confirmation(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        settings.get_by_role("navigation", name="Settings sections").get_by_role(
+            "button",
+            name="Remote workspace",
+        ).click()
+
+        expect(settings.get_by_role("heading", name="Remote workspace")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_role("heading", name="devbox")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("dev.example.com · yex · 22").first).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        settings.get_by_role("button", name="Delete").click()
+        confirm = page.get_by_role("dialog").filter(
+            has_text='Delete SSH profile "devbox"?',
+        )
+        expect(confirm).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.ssh_delete_requests == []
+
+        confirm.get_by_role("button", name="Cancel").click()
+        expect(confirm).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
+        assert backend.ssh_delete_requests == []
+        expect(settings.get_by_role("heading", name="devbox")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        settings.get_by_role("button", name="Delete").click()
+        confirm = page.get_by_role("dialog").filter(
+            has_text='Delete SSH profile "devbox"?',
+        )
+        expect(confirm).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "DELETE"
+                and response.url.endswith(
+                    "/api/system/configs/workspace/ssh-profiles/devbox"
+                )
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            confirm.get_by_role("button", name="Delete").click()
+
+        assert backend.ssh_delete_requests == ["devbox"]
+        expect(page.get_by_text("Deleted SSH profile devbox.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("No SSH profiles.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 def test_v2_appearance_dark_preset_keeps_settings_frame_fixed(
     browser_page: Page,
 ) -> None:
@@ -920,6 +991,22 @@ class _V2ShellBackend:
         self.requested_urls: list[str] = []
         self.rounds_request_count = 0
         self.snapshot_request_count = 0
+        self.ssh_delete_requests: list[str] = []
+        self.ssh_profiles: list[dict[str, object]] = [
+            {
+                "connect_timeout_seconds": 15,
+                "created_at": "2026-06-25T08:00:00Z",
+                "has_password": True,
+                "has_private_key": False,
+                "host": "dev.example.com",
+                "port": 22,
+                "private_key_name": None,
+                "remote_shell": "/bin/bash",
+                "ssh_profile_id": "devbox",
+                "updated_at": "2026-06-25T08:05:00Z",
+                "username": "yex",
+            }
+        ]
         self.web_config: dict[str, object] = {
             "exa_api_key": "saved-exa-key",
             "fallback_provider": "searxng",
@@ -1037,6 +1124,24 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs/general":
             _fulfill_json(route, {"shell_safety_policy_enabled": True})
+            return
+        if request.method == "GET" and path == "/system/configs/workspace/ssh-profiles":
+            _fulfill_json(route, self.ssh_profiles)
+            return
+        if (
+            request.method == "DELETE"
+            and path.startswith("/system/configs/workspace/ssh-profiles/")
+        ):
+            profile_id = unquote(
+                path.removeprefix("/system/configs/workspace/ssh-profiles/"),
+            )
+            self.ssh_delete_requests.append(profile_id)
+            self.ssh_profiles = [
+                profile
+                for profile in self.ssh_profiles
+                if profile["ssh_profile_id"] != profile_id
+            ]
+            _fulfill_json(route, {"status": "ok"})
             return
         if request.method == "GET" and path == "/system/configs/web":
             _fulfill_json(route, self.web_config)

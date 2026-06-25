@@ -54,6 +54,20 @@ class _ShellFrameMetrics(TypedDict):
     workspaceWidth: int
 
 
+class _AppearanceFrameMetrics(TypedDict):
+    accent: str
+    background: str
+    bodyOverflow: str
+    documentScrollHeight: int
+    foreground: str
+    previewHeights: list[int]
+    previewWidths: list[int]
+    rootTheme: str
+    settingsBodyOverflowY: str
+    settingsBodyScrollHeight: int
+    settingsBodyClientHeight: int
+
+
 @pytest.fixture()
 def browser_page() -> Iterator[Page]:
     with sync_playwright() as playwright:
@@ -473,6 +487,70 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         assert "/system/commands:catalog" in backend.requested_paths
         assert "/system/configs/github" in backend.requested_paths
         assert "/system/configs/github/webhook/tunnel" in backend.requested_paths
+
+
+def test_v2_appearance_dark_preset_keeps_settings_frame_fixed(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(settings.get_by_role("heading", name="Appearance")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        dark_theme = settings.get_by_role("button", name="Dark")
+        expect(dark_theme).to_have_attribute("aria-pressed", "true")
+        preset_button = settings.get_by_role("button", name="Theme preset")
+        expect(preset_button).to_contain_text("Codex", timeout=_WAIT_TIMEOUT_MS)
+        preset_button.click()
+        listbox = settings.get_by_role("listbox")
+        expect(listbox).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        listbox.get_by_role("option", name="Rose Pine").click()
+
+        expect(settings.get_by_role("listbox")).to_have_count(
+            0,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(preset_button).to_contain_text("Rose Pine", timeout=_WAIT_TIMEOUT_MS)
+
+        appearance = cast(
+            dict[str, object],
+            page.evaluate(
+                "() => JSON.parse(window.localStorage.getItem('agent_teams_appearance') || '{}')",
+            ),
+        )
+        assert appearance["themePreset"] == "rose-pine"
+        assert appearance["accent"] == "#C4A7E7"
+        assert appearance["background"] == "#191724"
+        assert appearance["foreground"] == "#E0DEF4"
+
+        metrics = _appearance_frame_metrics(page)
+        assert metrics["rootTheme"] == "dark"
+        assert metrics["accent"] == "#C4A7E7"
+        assert metrics["background"] == "#191724"
+        assert metrics["foreground"] == "#E0DEF4"
+        assert metrics["bodyOverflow"] == "hidden"
+        assert metrics["documentScrollHeight"] == _VIEWPORT_HEIGHT
+        assert metrics["settingsBodyOverflowY"] == "auto"
+        assert metrics["settingsBodyScrollHeight"] > metrics["settingsBodyClientHeight"]
+        assert len(metrics["previewHeights"]) == 3
+        assert all(height >= 110 for height in metrics["previewHeights"])
+        assert all(width >= 160 for width in metrics["previewWidths"])
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings-appearance"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-appearance-dark-rose-pine.png"))
 
 
 def test_v2_narrow_shell_keeps_workspace_fixed_under_sidebar_overlay(
@@ -1547,6 +1625,41 @@ def _shell_frame_metrics(page: Page) -> _ShellFrameMetrics:
     )
     assert isinstance(metrics, dict)
     return cast(_ShellFrameMetrics, metrics)
+
+
+def _appearance_frame_metrics(page: Page) -> _AppearanceFrameMetrics:
+    metrics = page.evaluate(
+        """
+        () => {
+          const settingsBody = document.querySelector('.at-settings-section-body');
+          const previews = Array.from(
+            document.querySelectorAll('.at-appearance-theme-preview'),
+          );
+          if (!(settingsBody instanceof HTMLElement)) {
+            throw new Error('Settings body is missing.');
+          }
+          return {
+            accent: document.documentElement.style.getPropertyValue('--at-primary').trim(),
+            background: document.documentElement.style.getPropertyValue('--at-bg').trim(),
+            bodyOverflow: window.getComputedStyle(document.body).overflow,
+            documentScrollHeight: document.documentElement.scrollHeight,
+            foreground: document.documentElement.style.getPropertyValue('--at-text').trim(),
+            previewHeights: previews.map((preview) =>
+              Math.round(preview.getBoundingClientRect().height),
+            ),
+            previewWidths: previews.map((preview) =>
+              Math.round(preview.getBoundingClientRect().width),
+            ),
+            rootTheme: document.documentElement.dataset.theme || '',
+            settingsBodyOverflowY: window.getComputedStyle(settingsBody).overflowY,
+            settingsBodyScrollHeight: settingsBody.scrollHeight,
+            settingsBodyClientHeight: settingsBody.clientHeight,
+          };
+        }
+        """,
+    )
+    assert isinstance(metrics, dict)
+    return cast(_AppearanceFrameMetrics, metrics)
 
 
 def _fulfill_json(

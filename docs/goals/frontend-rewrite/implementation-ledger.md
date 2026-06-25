@@ -2682,3 +2682,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent real browser integration verification completed for this replay cursor dedupe slice. No full Message Timeline, AG-UI Runtime Stream, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Appearance Dark Preset Browser Evidence Batch
+
+### Scope
+- Re-checked the Settings and Appearance parity gaps after the real SSE replay-dedupe batch instead of continuing only stream tests.
+- Added a real V2 `/app/` browser scenario that opens the Settings drawer, verifies the Appearance page is the active first-level settings surface, keeps Dark selected, opens the theme preset listbox, chooses `Rose Pine`, and verifies the listbox closes.
+- Verified the selected dark preset writes real appearance settings to local storage and applies the expected `--at-primary`, `--at-bg`, and `--at-text` CSS variables instead of acting as a decorative control.
+- Verified the outer page remains fixed (`body` overflow hidden and document height equal to the viewport), while the actual settings section body owns internal scrolling.
+- Captured dark Appearance evidence at `.tmp/frontend-v2-settings-appearance/v2-appearance-dark-rose-pine.png`.
+- Preserved the V1 settings information architecture: no sidebar/settings entries were added or removed, and system-level pages remain behind the secondary launcher.
+- Kept this as targeted Settings/Appearance browser evidence only; full Settings parity, all settings save/error/destructive-state coverage, reviewer sign-off, visual parity matrix, and release readiness remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "appearance_dark_preset"` passed with 1 selected test.
+
+### Reviewer
+- Main-agent real browser verification completed for this Appearance dark preset slice. No full Settings, Application Shell, visual parity, or release readiness completion is claimed.

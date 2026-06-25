@@ -2998,3 +2998,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and screenshot inspection completed for this route-switch baseline slice. No Application Shell, Settings, Message Timeline, or release subsystem completion is claimed from this batch.
+
+## 2026-06-26 V2 Real SSE Malformed Event Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, quality gates, stream/recovery tests, and latest ledger before choosing this slice, then targeted a remaining runtime-gate edge case instead of continuing only visual or settings work.
+- Added a built `/app/` real SSE browser scenario where the server sends a valid initial text delta followed by a structurally invalid named SSE event.
+- Verified the visible stream state after the malformed event: the already streamed text remains rendered, Stop disappears, Send returns, and the stale recovery target is suppressed so the RecoveryBar does not immediately auto-start the same broken stream again.
+- Extended the real SSE test server with a malformed-event mode and kept the request-count assertion at one stream request after the error, covering the browser path that was previously only represented by lower-level stream-client tests.
+- Re-queued reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` to continue the AG-UI Runtime Stream and Run Recovery review; no final PASS/FAIL is claimed in this batch because the reviewer had not returned before this commit.
+- Kept this as targeted AG-UI Runtime Stream error-path evidence only; full stream/replay completion, Message Timeline visual parity, subsystem reviewer sign-off, Electron readiness, and release readiness remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_malformed_event_suppresses_stale_auto_recovery"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_malformed_event_suppresses_stale_auto_recovery or real_sse_server_error_suppresses_stale_auto_recovery or real_sse_run_failed_finalizes_stream"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent built-app browser verification completed for this malformed SSE edge case. Hegel reviewer review is still pending, so no subsystem completion is claimed.

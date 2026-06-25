@@ -1887,3 +1887,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and screenshot inspection completed for this narrow shell slice. No Application Shell subsystem completion is claimed.
+
+## 2026-06-25 V2 Observability Browser Scope Batch
+
+### Scope
+- Re-checked the Observability checklist after the narrow shell pass and targeted the missing built-shell evidence for the top-bar Observability entry and scope switch.
+- Added a focused browser integration flow for the built `/app/` shell that opens Observability from the real top bar rather than mounting the page in isolation.
+- Verified the Global scope requests `/api/observability/overview?scope=global&time_window_minutes=1440` and `/api/observability/breakdowns?scope=global&time_window_minutes=1440`, then renders KPI cards plus the breakdown table row.
+- Switched to Session scope inside the secondary Observability surface and verified the shell requests the same overview and breakdown endpoints with the selected `scope_id`.
+- Verified the Session scope replaces the displayed KPIs and breakdown row without flattening Observability into the first-level sidebar navigation.
+- Captured screenshot evidence at `.tmp/frontend-v2-observability/v2-observability-session.png`; manual inspection confirmed the fixed shell, V1-shaped sidebar, top-bar secondary surface, and session KPIs/table render in one viewport.
+- Left Observability completion open; remaining work still includes deeper project/spec lineage, feedback/diagnostic surfaces, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k observability` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 6 tests.
+- No frontend build was needed because this batch adds browser evidence for existing V2 Observability behavior without changing renderer source.
+
+### Reviewer
+- Main-agent browser integration and screenshot inspection completed for this Observability scope slice. No Observability subsystem completion is claimed.

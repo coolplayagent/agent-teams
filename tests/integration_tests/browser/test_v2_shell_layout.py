@@ -8,6 +8,7 @@ from pathlib import Path
 import threading
 from typing import cast
 from typing import TypedDict
+from urllib.parse import parse_qs
 from urllib.parse import unquote
 from urllib.parse import urlsplit
 
@@ -342,14 +343,86 @@ def test_v2_narrow_shell_keeps_workspace_fixed_under_sidebar_overlay(
         page.screenshot(path=str(screenshot_dir / "v2-narrow-sidebar-overlay.png"))
 
 
+def test_v2_observability_topbar_opens_and_switches_scope(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("button", name="Observability").click()
+        observability = page.locator(".at-surface-view").filter(
+            has_text="Observability",
+        )
+        expect(
+            observability.get_by_role("heading", name="Observability")
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            observability.locator(".at-stat")
+            .filter(has_text="Steps")
+            .filter(
+                has_text="12",
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(observability.get_by_text("Agent loop")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        observability.get_by_text("Session", exact=True).click()
+        expect(
+            observability.locator(".at-stat")
+            .filter(has_text="Steps")
+            .filter(
+                has_text="3",
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(observability.get_by_text("Session tools")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        assert (
+            "/observability/overview?scope=global&time_window_minutes=1440"
+            in backend.requested_urls
+        )
+        assert (
+            "/observability/breakdowns?scope=global&time_window_minutes=1440"
+            in backend.requested_urls
+        )
+        assert (
+            "/observability/overview?"
+            f"scope=session&scope_id={_SESSION_ID}&time_window_minutes=1440"
+            in backend.requested_urls
+        )
+        assert (
+            "/observability/breakdowns?"
+            f"scope=session&scope_id={_SESSION_ID}&time_window_minutes=1440"
+            in backend.requested_urls
+        )
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-observability"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-observability-session.png"))
+
+
 class _V2ShellBackend:
     def __init__(self, *, include_image_message: bool = False) -> None:
         self.include_image_message = include_image_message
         self.requested_paths: list[str] = []
+        self.requested_urls: list[str] = []
         self.rounds_request_count = 0
 
     def route(self, route: Route, request: Request) -> None:
-        path = urlsplit(request.url).path.removeprefix("/api")
+        url = urlsplit(request.url)
+        path = url.path.removeprefix("/api")
+        self.requested_urls.append(f"{path}?{url.query}" if url.query else path)
         self.requested_paths.append(path)
         if request.method == "GET" and path == "/system/health":
             _fulfill_json(route, {"status": "ok"})
@@ -413,6 +486,12 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs/general":
             _fulfill_json(route, {"shell_safety_policy_enabled": True})
+            return
+        if request.method == "GET" and path == "/observability/overview":
+            _fulfill_json(route, self._observability_overview(url.query))
+            return
+        if request.method == "GET" and path == "/observability/breakdowns":
+            _fulfill_json(route, self._observability_breakdowns(url.query))
             return
         if request.method == "GET" and path == "/system/configs":
             _fulfill_json(route, self._system_config())
@@ -555,6 +634,63 @@ class _V2ShellBackend:
                 }
             ],
             "next_cursor": None,
+        }
+
+    def _observability_overview(self, query: str) -> dict[str, object]:
+        params = parse_qs(query)
+        scope = params.get("scope", ["global"])[0]
+        if scope == "session":
+            return {
+                "kpis": {
+                    "input_tokens": 2048,
+                    "output_tokens": 512,
+                    "steps": 3,
+                    "tool_avg_duration_ms": 55,
+                    "tool_calls": 2,
+                    "tool_success_rate": 1,
+                },
+                "scope": "session",
+                "scope_id": params.get("scope_id", [""])[0],
+                "updated_at": "2026-06-25T08:31:00Z",
+            }
+        return {
+            "kpis": {
+                "input_tokens": 112000,
+                "output_tokens": 790,
+                "steps": 12,
+                "tool_avg_duration_ms": 88,
+                "tool_calls": 7,
+                "tool_success_rate": 0.9,
+            },
+            "scope": "global",
+            "updated_at": "2026-06-25T08:30:00Z",
+        }
+
+    def _observability_breakdowns(self, query: str) -> dict[str, object]:
+        params = parse_qs(query)
+        scope = params.get("scope", ["global"])[0]
+        if scope == "session":
+            return {
+                "rows": [
+                    {
+                        "avg_duration_ms": 55,
+                        "calls": 2,
+                        "name": "Session tools",
+                        "success_rate": 1,
+                    }
+                ],
+                "updated_at": "2026-06-25T08:31:00Z",
+            }
+        return {
+            "rows": [
+                {
+                    "avg_duration_ms": 88,
+                    "calls": 7,
+                    "name": "Agent loop",
+                    "success_rate": 0.9,
+                }
+            ],
+            "updated_at": "2026-06-25T08:30:00Z",
         }
 
     def _system_config(self) -> dict[str, object]:

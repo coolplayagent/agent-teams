@@ -1,9 +1,21 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { listBoardTodos, syncBoardTodos } from "../api/client";
+import {
+  listBoardTodos,
+  previewStartBoardTodo,
+  startBoardTodo,
+  syncBoardTodos,
+} from "../api/client";
 import type {
   BoardTodoBoardResponse,
   BoardTodoItem,
@@ -14,10 +26,14 @@ import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   listBoardTodos: vi.fn(),
+  previewStartBoardTodo: vi.fn(),
+  startBoardTodo: vi.fn(),
   syncBoardTodos: vi.fn(),
 }));
 
 const listBoardTodosMock = vi.mocked(listBoardTodos);
+const previewStartBoardTodoMock = vi.mocked(previewStartBoardTodo);
+const startBoardTodoMock = vi.mocked(startBoardTodo);
 const syncBoardTodosMock = vi.mocked(syncBoardTodos);
 
 const workspaces: WorkspaceRecord[] = [
@@ -74,6 +90,45 @@ const syncedItem: BoardTodoItem = {
 beforeEach(() => {
   useUiStore.setState({ language: "en" });
   listBoardTodosMock.mockResolvedValue(boardResponse([todoItem, reviewItem], 7));
+  previewStartBoardTodoMock.mockResolvedValue({
+    board_workspace_id: "workspace-1",
+    concurrency: {
+      runtime_target_active: 0,
+      runtime_target_limit: 1,
+      source_workspace_active: 0,
+      source_workspace_limit: 2,
+    },
+    diagnostics: [],
+    execution_policy: "fork_git_worktree",
+    execution_workspace_preview: {
+      display_name: "Agent Teams fork",
+      policy: "fork_git_worktree",
+      source_workspace_id: "workspace-1",
+      workspace_id: "workspace-1-fork",
+    },
+    is_fork_view: false,
+    prompt: "Preview prompt for board handoff",
+    queue_preview: {
+      queue_if_full: true,
+      slot_available: true,
+      will_queue: false,
+    },
+    runtime_target_id: null,
+    template_kind: "start",
+    template_source: "built_in",
+    thinking: { enabled: false, effort: null },
+    todo_id: "todo-1",
+    view_workspace_id: "workspace-1",
+    yolo: true,
+  });
+  startBoardTodoMock.mockResolvedValue({
+    ...todoItem,
+    item_revision: 4,
+    last_status_reason: "Queued for board todo handoff",
+    run_id: "run-board-1",
+    session_id: "session-board-1",
+    status: "in_progress",
+  });
   syncBoardTodosMock.mockResolvedValue(boardResponse([syncedItem], 8));
 });
 
@@ -128,6 +183,48 @@ describe("BoardTodosView", () => {
     );
     expect(await screen.findByText("Board sync completed")).toBeVisible();
     expect(screen.getByText("8")).toBeVisible();
+  });
+
+  it("previews and starts a board TODO handoff from the card drawer", async () => {
+    renderView();
+
+    const card = await screen.findByTestId("board-todo-todo-1");
+    fireEvent.click(
+      within(card).getByRole("button", { name: "Start handoff" }),
+    );
+
+    await waitFor(() =>
+      expect(previewStartBoardTodoMock).toHaveBeenCalledWith("todo-1", {
+        queue_if_full: true,
+        view_workspace_id: "workspace-1",
+      }),
+    );
+    expect(await screen.findByRole("dialog", { name: "Start board TODO" }))
+      .toBeVisible();
+    const finalPrompt = await screen.findByLabelText("Final prompt");
+    expect(finalPrompt).toHaveValue("Preview prompt for board handoff");
+
+    fireEvent.change(finalPrompt, {
+      target: { value: "Final prompt from reviewer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() =>
+      expect(startBoardTodoMock).toHaveBeenCalledWith("todo-1", {
+        execution_policy: "fork_git_worktree",
+        final_prompt: "Final prompt from reviewer",
+        normal_root_role_id: null,
+        orchestration_preset_id: null,
+        queue_if_full: true,
+        runtime_target_id: null,
+        session_mode: null,
+        thinking: { enabled: false, effort: null },
+        view_workspace_id: "workspace-1",
+        yolo: true,
+      }),
+    );
+    expect(await screen.findByText("Queued for board todo handoff")).toBeVisible();
+    expect(screen.getByText("In progress")).toBeVisible();
   });
 });
 

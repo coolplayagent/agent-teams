@@ -621,6 +621,95 @@ export interface BoardTodoBoardResponse {
   workspace_id: string;
 }
 
+export type BoardTodoExecutionPolicy = "current_workspace" | "fork_git_worktree";
+export type BoardTodoRuntimeTargetKind = "local_role" | "orchestration_preset";
+
+export interface BoardTodoStartRequest {
+  view_workspace_id?: string | null;
+  execution_policy?: BoardTodoExecutionPolicy | null;
+  runtime_target_id?: string | null;
+  queue_if_full?: boolean;
+  final_prompt?: string | null;
+  prompt?: string | null;
+  session_mode?: SessionMode | null;
+  normal_root_role_id?: string | null;
+  orchestration_preset_id?: string | null;
+  yolo?: boolean;
+  thinking?: RunThinkingConfig;
+}
+
+export interface BoardTodoPreviewStartRequest {
+  view_workspace_id?: string | null;
+  execution_policy?: BoardTodoExecutionPolicy | null;
+  runtime_target_id?: string | null;
+  queue_if_full?: boolean;
+}
+
+export interface BoardTodoStartRoleOption {
+  role_id: string;
+  name: string;
+  description?: string;
+}
+
+export interface BoardTodoStartPresetOption {
+  preset_id: string;
+  name: string;
+  description?: string;
+}
+
+export interface BoardTodoRuntimeTargetOption {
+  target_id: string;
+  kind: BoardTodoRuntimeTargetKind;
+  label: string;
+  description?: string;
+}
+
+export interface BoardTodoExecutionWorkspacePreview {
+  policy: BoardTodoExecutionPolicy;
+  workspace_id?: string | null;
+  source_workspace_id: string;
+  display_name: string;
+}
+
+export interface BoardTodoConcurrencySnapshot {
+  source_workspace_active: number;
+  source_workspace_limit: number;
+  runtime_target_active: number;
+  runtime_target_limit: number;
+}
+
+export interface BoardTodoQueuePreview {
+  queue_if_full: boolean;
+  slot_available: boolean;
+  will_queue: boolean;
+  reason?: string | null;
+}
+
+export interface BoardTodoPreviewStartResponse {
+  todo_id: string;
+  board_workspace_id: string;
+  view_workspace_id: string;
+  is_fork_view?: boolean;
+  forked_from_workspace_id?: string | null;
+  template_kind: string;
+  template_source: string;
+  prompt: string;
+  execution_policy: BoardTodoExecutionPolicy;
+  execution_workspace_preview?: BoardTodoExecutionWorkspacePreview | null;
+  runtime_target_id?: string | null;
+  runtime_target_options?: BoardTodoRuntimeTargetOption[];
+  concurrency: BoardTodoConcurrencySnapshot;
+  queue_preview: BoardTodoQueuePreview;
+  session_mode?: SessionMode | null;
+  normal_root_role_id?: string | null;
+  normal_mode_roles?: BoardTodoStartRoleOption[];
+  orchestration_preset_id?: string | null;
+  orchestration_presets?: BoardTodoStartPresetOption[];
+  yolo: boolean;
+  thinking: RunThinkingConfig;
+  diagnostics: string[];
+}
+
 export type AutomationProjectStatus = "enabled" | "disabled";
 export type AutomationScheduleMode = "cron" | "interval" | "one_shot";
 export type AutomationIntervalUnit = "minutes" | "hours" | "days";

@@ -544,6 +544,75 @@ def test_v2_board_sync_calls_real_endpoint_and_updates_cards(
         assert "/boards/todos:sync" in backend.requested_paths
 
 
+def test_v2_board_handoff_preview_and_start_call_real_endpoints(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        primary_nav = page.get_by_role("navigation", name="Primary navigation")
+        primary_nav.get_by_role("button", name="Board").click()
+
+        board_view = page.get_by_test_id("board-todos-view")
+        todo_card = board_view.get_by_test_id("board-todo-todo-v2-shell")
+        expect(todo_card).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        todo_card.get_by_role("button", name="Start handoff").click()
+
+        drawer = page.get_by_role("dialog", name="Start board TODO")
+        expect(drawer).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        final_prompt = drawer.get_by_label("Final prompt")
+        expect(final_prompt).to_have_value(
+            "Previewed board handoff prompt",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        final_prompt.fill("Final browser board handoff prompt")
+        drawer.get_by_role("button", name="Start").click()
+
+        expect(page.get_by_text("Board handoff started.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(todo_card.get_by_text("Queued for board todo handoff")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(todo_card.get_by_text("running")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(drawer).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.board_handoff_preview_payloads == [
+            {
+                "queue_if_full": True,
+                "view_workspace_id": _WORKSPACE_ID,
+            }
+        ]
+        assert backend.board_handoff_start_payloads == [
+            {
+                "execution_policy": "fork_git_worktree",
+                "final_prompt": "Final browser board handoff prompt",
+                "normal_root_role_id": None,
+                "orchestration_preset_id": None,
+                "queue_if_full": True,
+                "runtime_target_id": None,
+                "session_mode": None,
+                "thinking": {"enabled": False, "effort": None},
+                "view_workspace_id": _WORKSPACE_ID,
+                "yolo": True,
+            }
+        ]
+        assert "/boards/todos/todo-v2-shell:preview-start" in backend.requested_paths
+        assert "/boards/todos/todo-v2-shell:start" in backend.requested_paths
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-board"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-board-handoff-started.png"))
+
+
 def test_v2_workspace_project_view_opens_real_workbench_flow(
     browser_page: Page,
 ) -> None:
@@ -1200,6 +1269,9 @@ class _V2ShellBackend:
         self.automation_enable_requests: list[str] = []
         self.automation_disable_requests: list[str] = []
         self.automation_project_status = "enabled"
+        self.board_handoff_preview_payloads: list[dict[str, object]] = []
+        self.board_handoff_start_payloads: list[dict[str, object]] = []
+        self.board_handoff_started = False
         self.board_sync_payloads: list[dict[str, object]] = []
         self.open_root_queries: list[str] = []
         self.requested_paths: list[str] = []
@@ -1483,6 +1555,26 @@ class _V2ShellBackend:
             )
             self.board_sync_payloads.append(payload)
             _fulfill_json(route, self._board_synced())
+            return
+        if (
+            request.method == "POST"
+            and path == "/boards/todos/todo-v2-shell:preview-start"
+        ):
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.board_handoff_preview_payloads.append(payload)
+            _fulfill_json(route, self._board_handoff_preview())
+            return
+        if request.method == "POST" and path == "/boards/todos/todo-v2-shell:start":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.board_handoff_start_payloads.append(payload)
+            self.board_handoff_started = True
+            _fulfill_json(route, self._board_handoff_started_item())
             return
         if request.method == "GET" and path == "/memories":
             _fulfill_json(route, self._memory_query())
@@ -2199,7 +2291,7 @@ class _V2ShellBackend:
         }
 
     def _board(self) -> dict[str, object]:
-        item = {
+        item = self._board_handoff_started_item() if self.board_handoff_started else {
             "body": "Keep module pages reachable from the fixed V2 shell.",
             "created_at": "2026-06-25T08:00:00Z",
             "issue_number": 401,
@@ -2216,6 +2308,62 @@ class _V2ShellBackend:
             "workspace_id": _WORKSPACE_ID,
         }
         return self._board_response(item, revision=9, synced_at="2026-06-25T08:11:00Z")
+
+    def _board_handoff_preview(self) -> dict[str, object]:
+        return {
+            "board_workspace_id": _WORKSPACE_ID,
+            "concurrency": {
+                "runtime_target_active": 0,
+                "runtime_target_limit": 1,
+                "source_workspace_active": 0,
+                "source_workspace_limit": 2,
+            },
+            "diagnostics": [],
+            "execution_policy": "fork_git_worktree",
+            "execution_workspace_preview": {
+                "display_name": "Agent Teams fork",
+                "policy": "fork_git_worktree",
+                "source_workspace_id": _WORKSPACE_ID,
+                "workspace_id": "workspace-v2-shell-fork",
+            },
+            "is_fork_view": False,
+            "prompt": "Previewed board handoff prompt",
+            "queue_preview": {
+                "queue_if_full": True,
+                "slot_available": True,
+                "will_queue": False,
+            },
+            "runtime_target_id": None,
+            "template_kind": "start",
+            "template_source": "built_in",
+            "thinking": {"enabled": False, "effort": None},
+            "todo_id": "todo-v2-shell",
+            "view_workspace_id": _WORKSPACE_ID,
+            "yolo": True,
+        }
+
+    def _board_handoff_started_item(self) -> dict[str, object]:
+        return {
+            "body": "Keep module pages reachable from the fixed V2 shell.",
+            "created_at": "2026-06-25T08:00:00Z",
+            "execution_workspace_id": "workspace-v2-shell-fork",
+            "issue_number": 401,
+            "item_revision": 4,
+            "last_status_reason": "Queued for board todo handoff",
+            "repository_full_name": "openai/agent-teams",
+            "run_id": "run-board-v2-shell",
+            "run_recoverable": False,
+            "run_status": "running",
+            "session_id": "session-board-v2-shell",
+            "source_key": "openai/agent-teams#401",
+            "source_provider": "github",
+            "source_type": "github_issue",
+            "status": "in_progress",
+            "title": "Keep module pages reachable",
+            "todo_id": "todo-v2-shell",
+            "updated_at": "2026-06-25T08:24:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
 
     def _board_synced(self) -> dict[str, object]:
         item = {

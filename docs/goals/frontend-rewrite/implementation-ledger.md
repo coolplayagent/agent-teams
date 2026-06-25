@@ -2899,3 +2899,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent built-app browser verification completed for this runtime tools connector action slice. Full module parity, gateway action coverage, visual parity matrix completion, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Board Handoff Start Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, latest ledger, and current worktree before choosing this slice, then targeted the still-open Boards TODO handoff interaction requirement instead of continuing only visual polish or connector actions.
+- Added typed frontend contracts and API client calls for `POST /api/boards/todos/{todo_id}:preview-start` and `POST /api/boards/todos/{todo_id}:start`.
+- Added a secondary Board handoff drawer opened from each Todo card, preserving the V1-style module navigation and avoiding new sidebar/settings entries; the drawer previews the backend prompt, exposes the final prompt editor, displays execution/queue/concurrency diagnostics, and starts the handoff through the real API.
+- Updated the Board query cache from the start response so the card moves to the backend-reported in-progress state without a decorative-only button or stale list.
+- Added component coverage for preview/start payloads and cache updates, plus a built `/app/` browser scenario that opens Board from the existing V1-aligned primary navigation, previews a TODO handoff, edits the final prompt, starts it, verifies the real endpoint payloads, waits for the drawer to close, and captures stable browser evidence at `.tmp/frontend-v2-board/v2-board-handoff-started.png`.
+- Kept this as targeted Board start-handoff progress only; request-changes, mark done/archive/restore, source settings, broader module error states, full visual parity matrix, stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `npm test -- --run src/test/BoardTodosView.test.tsx` passed with 4 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "board_handoff_preview_and_start"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "board_sync or board_handoff_preview_and_start"` passed with 2 selected tests.
+
+### Reviewer
+- Main-agent component and built-app browser verification completed for this Board start-handoff slice. Full Boards action parity, Connectors/Memory/Gateway/Automation/Boards module parity, visual parity matrix completion, stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.

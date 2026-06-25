@@ -5,6 +5,10 @@ import type {
   AutomationProjectSessionRecord,
   AutomationRunNowResult,
   BoardTodoBoardResponse,
+  BoardTodoItem,
+  BoardTodoPreviewStartRequest,
+  BoardTodoPreviewStartResponse,
+  BoardTodoStartRequest,
   BinaryToolDownloadJob,
   BinaryToolListResponse,
   BinaryToolSystemPathResult,
@@ -291,6 +295,32 @@ export function syncBoardTodos(
       workspace_id: options.workspaceId,
     }),
   });
+}
+
+export function previewStartBoardTodo(
+  todoId: string,
+  request: BoardTodoPreviewStartRequest,
+): Promise<BoardTodoPreviewStartResponse> {
+  return requestJson<BoardTodoPreviewStartResponse>(
+    `/boards/todos/${encodeURIComponent(todoId)}:preview-start`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function startBoardTodo(
+  todoId: string,
+  request: BoardTodoStartRequest,
+): Promise<BoardTodoItem> {
+  return requestJson<BoardTodoItem>(
+    `/boards/todos/${encodeURIComponent(todoId)}:start`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export function listAutomationProjects(): Promise<AutomationProjectRecord[]> {

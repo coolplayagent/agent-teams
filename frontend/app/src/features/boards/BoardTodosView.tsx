@@ -1,6 +1,8 @@
 import {
   Alert,
+  App,
   Button,
+  Drawer,
   Empty,
   Input,
   Select,
@@ -14,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   ExternalLink,
+  Play,
   RefreshCcw,
   RotateCw,
   Search,
@@ -21,11 +24,18 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { listBoardTodos, syncBoardTodos } from "../../api/client";
+import {
+  listBoardTodos,
+  previewStartBoardTodo,
+  startBoardTodo,
+  syncBoardTodos,
+} from "../../api/client";
 import type {
   BoardTodoBoardResponse,
   BoardTodoItem,
+  BoardTodoPreviewStartResponse,
   BoardTodoStatus,
+  BoardTodoStatusCounts,
   WorkspaceRecord,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
@@ -59,8 +69,11 @@ export function BoardTodosView({
   workspaces: WorkspaceRecord[];
 }) {
   const t = useTranslations();
+  const { message } = App.useApp();
   const language = useUiStore((state) => state.language);
   const queryClient = useQueryClient();
+  const [handoffTarget, setHandoffTarget] = useState<BoardTodoItem | null>(null);
+  const [handoffPrompt, setHandoffPrompt] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
   const [searchText, setSearchText] = useState("");
   const workspaceOptions = useMemo(
@@ -98,6 +111,50 @@ export function BoardTodosView({
       queryClient.setQueryData(boardQueryKey, response);
     },
   });
+  const previewHandoffMutation = useMutation({
+    mutationFn: (item: BoardTodoItem) =>
+      previewStartBoardTodo(item.todo_id, {
+        queue_if_full: true,
+        view_workspace_id: requireWorkspaceId(activeWorkspaceId),
+      }),
+    onError: (error) => {
+      void message.error(errorText(error));
+    },
+    onSuccess: (preview) => {
+      setHandoffPrompt(preview.prompt);
+    },
+  });
+  const startHandoffMutation = useMutation({
+    mutationFn: () => {
+      const preview = previewHandoffMutation.data;
+      if (handoffTarget === null || preview === undefined) {
+        throw new Error(t("boardHandoffNoPreview"));
+      }
+      return startBoardTodo(handoffTarget.todo_id, {
+        execution_policy: preview.execution_policy,
+        final_prompt: handoffPrompt,
+        normal_root_role_id: preview.normal_root_role_id ?? null,
+        orchestration_preset_id: preview.orchestration_preset_id ?? null,
+        queue_if_full: preview.queue_preview.queue_if_full,
+        runtime_target_id: preview.runtime_target_id ?? null,
+        session_mode: preview.session_mode ?? null,
+        thinking: preview.thinking,
+        view_workspace_id: requireWorkspaceId(activeWorkspaceId),
+        yolo: preview.yolo,
+      });
+    },
+    onError: (error) => {
+      void message.error(errorText(error));
+    },
+    onSuccess: (item) => {
+      queryClient.setQueryData<BoardTodoBoardResponse>(
+        boardQueryKey,
+        (current) => replaceBoardItem(current, item),
+      );
+      void message.success(t("boardHandoffStarted"));
+      resetHandoffDrawer();
+    },
+  });
 
   const trimmedSearchText = searchText.trim().toLowerCase();
   const visibleColumns = includeArchived
@@ -125,6 +182,29 @@ export function BoardTodosView({
     workspaceOptions.find((option) => option.value === activeWorkspaceId)?.label ??
     activeWorkspaceId ??
     t("boardNoWorkspace");
+  const handoffPreview = previewHandoffMutation.data;
+
+  function openStartHandoff(item: BoardTodoItem) {
+    setHandoffTarget(item);
+    setHandoffPrompt("");
+    previewHandoffMutation.reset();
+    startHandoffMutation.reset();
+    previewHandoffMutation.mutate(item);
+  }
+
+  function closeHandoffDrawer() {
+    if (previewHandoffMutation.isPending || startHandoffMutation.isPending) {
+      return;
+    }
+    resetHandoffDrawer();
+  }
+
+  function resetHandoffDrawer() {
+    setHandoffTarget(null);
+    setHandoffPrompt("");
+    previewHandoffMutation.reset();
+    startHandoffMutation.reset();
+  }
 
   return (
     <section
@@ -261,6 +341,12 @@ export function BoardTodosView({
                           item={item}
                           key={item.todo_id}
                           language={language}
+                          onStartHandoff={openStartHandoff}
+                          startBusy={
+                            handoffTarget?.todo_id === item.todo_id
+                            && (previewHandoffMutation.isPending
+                              || startHandoffMutation.isPending)
+                          }
                         />
                       ))
                     ) : (
@@ -275,6 +361,19 @@ export function BoardTodosView({
           </div>
         )}
       </div>
+      <BoardHandoffDrawer
+        item={handoffTarget}
+        onClose={closeHandoffDrawer}
+        onPromptChange={setHandoffPrompt}
+        onStart={() => startHandoffMutation.mutate()}
+        open={handoffTarget !== null}
+        preview={handoffPreview}
+        previewError={previewHandoffMutation.error}
+        previewLoading={previewHandoffMutation.isPending}
+        prompt={handoffPrompt}
+        startError={startHandoffMutation.error}
+        starting={startHandoffMutation.isPending}
+      />
     </section>
   );
 }
@@ -334,9 +433,13 @@ function BoardScopeSummary({
 function BoardTodoCard({
   item,
   language,
+  onStartHandoff,
+  startBusy,
 }: {
   item: BoardTodoItem;
   language: Language;
+  onStartHandoff: (item: BoardTodoItem) => void;
+  startBusy: boolean;
 }) {
   const t = useTranslations();
   const sourceLabel = formatSourceLabel(item, t);
@@ -401,7 +504,151 @@ function BoardTodoCard({
       {item.last_status_reason ? (
         <div className="at-board-card-reason">{item.last_status_reason}</div>
       ) : null}
+      {canStartBoardTodo(item) ? (
+        <div className="at-board-card-actions">
+          <Button
+            icon={<Play size={14} />}
+            loading={startBusy}
+            onClick={() => onStartHandoff(item)}
+            size="small"
+          >
+            {t("boardHandoffStart")}
+          </Button>
+        </div>
+      ) : null}
     </article>
+  );
+}
+
+function BoardHandoffDrawer({
+  item,
+  onClose,
+  onPromptChange,
+  onStart,
+  open,
+  preview,
+  previewError,
+  previewLoading,
+  prompt,
+  startError,
+  starting,
+}: {
+  item: BoardTodoItem | null;
+  onClose: () => void;
+  onPromptChange: (prompt: string) => void;
+  onStart: () => void;
+  open: boolean;
+  preview: BoardTodoPreviewStartResponse | undefined;
+  previewError: Error | null;
+  previewLoading: boolean;
+  prompt: string;
+  startError: Error | null;
+  starting: boolean;
+}) {
+  const t = useTranslations();
+  const busy = previewLoading || starting;
+  const trimmedPrompt = prompt.trim();
+  return (
+    <Drawer
+      destroyOnClose
+      onClose={onClose}
+      open={open}
+      title={t("boardHandoffTitle")}
+      width={560}
+    >
+      <div className="at-board-handoff">
+        {item !== null ? (
+          <section className="at-board-handoff-item">
+            <h3>{item.title}</h3>
+            {item.body.trim() ? <p>{item.body.trim()}</p> : null}
+          </section>
+        ) : null}
+        {previewLoading && preview === undefined ? (
+          <Skeleton active paragraph={{ rows: 5 }} title={false} />
+        ) : null}
+        {previewError !== null ? (
+          <Alert
+            description={errorText(previewError)}
+            message={t("boardHandoffPreviewError")}
+            showIcon
+            type="error"
+          />
+        ) : null}
+        {startError !== null ? (
+          <Alert
+            description={errorText(startError)}
+            message={t("boardHandoffStartError")}
+            showIcon
+            type="error"
+          />
+        ) : null}
+        {preview !== undefined ? (
+          <>
+            <dl className="at-board-handoff-meta">
+              <div>
+                <dt>{t("boardHandoffTemplate")}</dt>
+                <dd>{preview.template_source}</dd>
+              </div>
+              <div>
+                <dt>{t("boardHandoffExecutionPolicy")}</dt>
+                <dd>{formatBoardValue(preview.execution_policy)}</dd>
+              </div>
+              {preview.execution_workspace_preview !== null
+              && preview.execution_workspace_preview !== undefined ? (
+                <div>
+                  <dt>{t("boardHandoffExecutionWorkspace")}</dt>
+                  <dd title={preview.execution_workspace_preview.display_name}>
+                    {preview.execution_workspace_preview.display_name}
+                  </dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>{t("boardHandoffQueue")}</dt>
+                <dd>{handoffQueueLabel(preview, t)}</dd>
+              </div>
+              <div>
+                <dt>{t("boardHandoffConcurrency")}</dt>
+                <dd>
+                  {preview.concurrency.source_workspace_active}/
+                  {preview.concurrency.source_workspace_limit} ·{" "}
+                  {preview.concurrency.runtime_target_active}/
+                  {preview.concurrency.runtime_target_limit}
+                </dd>
+              </div>
+            </dl>
+            {preview.diagnostics.length > 0 ? (
+              <Alert
+                description={preview.diagnostics.join(" / ")}
+                message={t("boardDiagnostics")}
+                showIcon
+                type="warning"
+              />
+            ) : null}
+            <label className="at-board-handoff-prompt">
+              <span>{t("boardHandoffFinalPrompt")}</span>
+              <Input.TextArea
+                autoSize={{ minRows: 8, maxRows: 14 }}
+                onChange={(event) => onPromptChange(event.target.value)}
+                value={prompt}
+              />
+            </label>
+          </>
+        ) : null}
+        <div className="at-board-handoff-actions">
+          <Button disabled={busy} onClick={onClose}>
+            {t("boardHandoffCancel")}
+          </Button>
+          <Button
+            disabled={preview === undefined || trimmedPrompt.length === 0}
+            loading={starting}
+            onClick={onStart}
+            type="primary"
+          >
+            {t("boardHandoffSubmit")}
+          </Button>
+        </div>
+      </div>
+    </Drawer>
   );
 }
 
@@ -412,6 +659,41 @@ function compareBoardTodoItems(left: BoardTodoItem, right: BoardTodoItem) {
     return rightTime - leftTime;
   }
   return left.title.localeCompare(right.title);
+}
+
+function canStartBoardTodo(item: BoardTodoItem): boolean {
+  return item.status === "todo";
+}
+
+function replaceBoardItem(
+  board: BoardTodoBoardResponse | undefined,
+  item: BoardTodoItem,
+): BoardTodoBoardResponse | undefined {
+  if (board === undefined) {
+    return undefined;
+  }
+  const found = board.items.some((candidate) => candidate.todo_id === item.todo_id);
+  const items = found
+    ? board.items.map((candidate) =>
+        candidate.todo_id === item.todo_id ? item : candidate,
+      )
+    : [item, ...board.items];
+  return {
+    ...board,
+    items,
+    revision: Math.max(board.revision, item.item_revision),
+    status_counts: boardStatusCounts(items),
+  };
+}
+
+function boardStatusCounts(items: BoardTodoItem[]): BoardTodoStatusCounts {
+  return {
+    archived: items.filter((item) => item.status === "archived").length,
+    done: items.filter((item) => item.status === "done").length,
+    in_progress: items.filter((item) => item.status === "in_progress").length,
+    review: items.filter((item) => item.status === "review").length,
+    todo: items.filter((item) => item.status === "todo").length,
+  };
 }
 
 function errorText(error: unknown) {
@@ -476,6 +758,28 @@ function requireWorkspaceId(workspaceId: string | null) {
     throw new Error("Workspace is required.");
   }
   return workspaceId;
+}
+
+function handoffQueueLabel(
+  preview: BoardTodoPreviewStartResponse,
+  t: (
+    key:
+      | "boardHandoffQueueAvailable"
+      | "boardHandoffQueueDisabled"
+      | "boardHandoffQueueWillQueue",
+  ) => string,
+) {
+  if (preview.queue_preview.will_queue) {
+    return t("boardHandoffQueueWillQueue");
+  }
+  if (preview.queue_preview.slot_available) {
+    return t("boardHandoffQueueAvailable");
+  }
+  return t("boardHandoffQueueDisabled");
+}
+
+function formatBoardValue(value: string) {
+  return value.replace(/_/g, " ");
 }
 
 function statusClass(status: BoardTodoStatus) {

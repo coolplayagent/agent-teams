@@ -368,7 +368,7 @@ def test_single_run_stream_formats_ag_ui_sse_and_uses_last_event_id() -> None:
     assert '"payload":{"text":"hello"}' in response.text
 
 
-def test_single_run_stream_query_offset_overrides_last_event_id() -> None:
+def test_single_run_stream_uses_newer_last_event_id_over_query_offset() -> None:
     client, run_service, _session_service = _create_client()
 
     response = client.get(
@@ -377,8 +377,21 @@ def test_single_run_stream_query_offset_overrides_last_event_id() -> None:
     )
 
     assert response.status_code == 200
-    assert run_service.single_stream_calls == [("run-1", 4)]
-    assert "id: 5\n" in response.text
+    assert run_service.single_stream_calls == [("run-1", 41)]
+    assert "id: 42\n" in response.text
+
+
+def test_single_run_stream_keeps_query_offset_when_it_is_newer() -> None:
+    client, run_service, _session_service = _create_client()
+
+    response = client.get(
+        "/api/ag-ui/runs/run-1/events?after_event_id=44",
+        headers={"Last-Event-ID": "41"},
+    )
+
+    assert response.status_code == 200
+    assert run_service.single_stream_calls == [("run-1", 44)]
+    assert "id: 45\n" in response.text
 
 
 def test_multiplex_stream_formats_events_and_uses_last_event_id_default() -> None:

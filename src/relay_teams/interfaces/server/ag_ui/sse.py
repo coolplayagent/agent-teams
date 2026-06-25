@@ -21,10 +21,15 @@ def resolve_after_event_id(
     query_after_event_id: int | None,
     last_event_id: str | None,
 ) -> int:
+    parsed_last_event_id = _parse_last_event_id(last_event_id)
     if query_after_event_id is not None:
-        return query_after_event_id
+        return max(query_after_event_id, parsed_last_event_id or 0)
+    return parsed_last_event_id or 0
+
+
+def _parse_last_event_id(last_event_id: str | None) -> int | None:
     if last_event_id is None or not last_event_id.strip():
-        return 0
+        return None
     try:
         parsed = int(last_event_id.strip())
     except ValueError as exc:

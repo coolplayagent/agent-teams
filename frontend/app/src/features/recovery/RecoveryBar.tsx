@@ -45,6 +45,9 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     {},
   );
   const [approvalErrors, setApprovalErrors] = useState<Record<string, string>>({});
+  const [approvalFeedbacks, setApprovalFeedbacks] = useState<Record<string, string>>(
+    {},
+  );
   const [questionErrors, setQuestionErrors] = useState<Record<string, string>>({});
   const [collapsedBackgroundRunIds, setCollapsedBackgroundRunIds] = useState<
     Record<string, boolean>
@@ -166,6 +169,16 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
       if (shouldResumeBeforeRecoveryAction(activeRun, request.runId)) {
         await resumeRecoverableRun(request.runId);
       }
+      const feedback = request.feedback?.trim() ?? "";
+      if (feedback) {
+        return resolveToolApproval(
+          request.runId,
+          request.toolCallId,
+          request.action,
+          request.optionId,
+          feedback,
+        );
+      }
       return resolveToolApproval(
         request.runId,
         request.toolCallId,
@@ -176,7 +189,8 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     onMutate: (request) => {
       setApprovalErrors((current) => removeRecordKey(current, request.toolCallId));
     },
-    onSuccess: () => {
+    onSuccess: (_result, request) => {
+      setApprovalFeedbacks((current) => removeRecordKey(current, request.toolCallId));
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
@@ -313,6 +327,13 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
                   : null
               }
               errors={approvalErrors}
+              feedbacks={approvalFeedbacks}
+              onFeedbackChange={(toolCallId, feedback) => {
+                setApprovalFeedbacks((current) => ({
+                  ...current,
+                  [toolCallId]: feedback,
+                }));
+              }}
               onResolve={(request) => approvalMutation.mutate(request)}
             />
           )}
@@ -350,6 +371,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
 
 interface ApprovalActionRequest {
   action: ToolApprovalAction;
+  feedback?: string;
   optionId?: string;
   runId: string;
   toolCallId: string;
@@ -513,6 +535,8 @@ interface PendingApprovalsProps {
   approvals: PendingToolApproval[];
   busyToolCallId: string | null;
   errors: Record<string, string>;
+  feedbacks: Record<string, string>;
+  onFeedbackChange: (toolCallId: string, feedback: string) => void;
   onResolve: (request: ApprovalActionRequest) => void;
 }
 
@@ -521,6 +545,8 @@ function PendingApprovals({
   approvals,
   busyToolCallId,
   errors,
+  feedbacks,
+  onFeedbackChange,
   onResolve,
 }: PendingApprovalsProps) {
   if (approvals.length === 0) {
@@ -534,6 +560,7 @@ function PendingApprovals({
         const busy = busyToolCallId === toolCallId;
         const disabled = busyToolCallId !== null;
         const error = errors[toolCallId] ?? "";
+        const feedback = feedbacks[toolCallId] ?? approval.feedback ?? "";
         return (
           <div className="at-recovery-item" key={toolCallId}>
             <div className="at-recovery-copy">
@@ -548,6 +575,15 @@ function PendingApprovals({
               {error ? (
                 <Typography.Text type="danger">{error}</Typography.Text>
               ) : null}
+              <Input
+                aria-label="Approval feedback"
+                className="at-recovery-approval-feedback"
+                disabled={disabled}
+                onChange={(event) => onFeedbackChange(toolCallId, event.target.value)}
+                placeholder="Optional approval feedback"
+                size="small"
+                value={feedback}
+              />
             </div>
             <Space size={6} wrap>
               {approvalOptions.map((option) => (
@@ -559,6 +595,7 @@ function PendingApprovals({
                   onClick={() =>
                     onResolve({
                       action: option.action,
+                      feedback,
                       optionId: option.optionId,
                       runId: activeRunId,
                       toolCallId,
@@ -575,6 +612,7 @@ function PendingApprovals({
                 onClick={() =>
                   onResolve({
                     action: "approve",
+                    feedback,
                     runId: activeRunId,
                     toolCallId,
                   })
@@ -591,6 +629,7 @@ function PendingApprovals({
                 onClick={() =>
                   onResolve({
                     action: "deny",
+                    feedback,
                     runId: activeRunId,
                     toolCallId,
                   })

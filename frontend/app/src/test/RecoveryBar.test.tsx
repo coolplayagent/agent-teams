@@ -132,6 +132,40 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("submits optional approval feedback with the selected action", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_tool_approvals: [
+          {
+            tool_call_id: "tool-call-1",
+            tool_name: "execute_command",
+            acp_options: [
+              { kind: "reject_once", name: "Reject once", optionId: "reject_once" },
+            ],
+          },
+        ],
+      }),
+    );
+    resolveToolApprovalMock.mockResolvedValue({ status: "ok" });
+
+    renderRecoveryBar();
+
+    fireEvent.change(await screen.findByLabelText("Approval feedback"), {
+      target: { value: "Use a read-only command instead." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reject once" }));
+
+    await waitFor(() =>
+      expect(resolveToolApprovalMock).toHaveBeenCalledWith(
+        "run-1",
+        "tool-call-1",
+        "deny",
+        "reject_once",
+        "Use a read-only command instead.",
+      ),
+    );
+  });
+
   it("shows approval errors locally and clears them before retrying", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

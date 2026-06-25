@@ -65,6 +65,7 @@ import {
   reloadFeishuGateway,
   reloadWeChatGateway,
   reloadSkillsConfig,
+  resolveToolApproval,
   resolveCommandPrompt,
   saveEnvironmentVariable,
   saveAgentRuntime,
@@ -740,6 +741,39 @@ describe("api client", () => {
         headers: expect.any(Headers),
       }),
     );
+  });
+
+  it("resolves tool approvals with optional feedback through the AG-UI endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      resolveToolApproval(
+        "run-1",
+        "tool-call-1",
+        "deny",
+        "reject_once",
+        "Use a read-only command instead.",
+      ),
+    ).resolves.toEqual({ status: "ok" });
+    const [, requestInit] = fetchMock.mock.calls[0];
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ag-ui/runs/run-1/tool-approvals/tool-call-1:resolve",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    if (requestInit === undefined) {
+      throw new Error("Tool approval request init was not captured.");
+    }
+    expect(JSON.parse(String(requestInit.body))).toEqual({
+      action: "deny",
+      feedback: "Use a read-only command instead.",
+      option_id: "reject_once",
+    });
   });
 
   it("lists and tests connectors through connector endpoints", async () => {

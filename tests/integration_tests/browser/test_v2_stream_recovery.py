@@ -40,6 +40,7 @@ _QUEUED_INJECTION = "queued follow-up"
 _INTERRUPT_INJECTION = "interrupt now"
 _RESUMED_CHUNK = "resumed chunk"
 _APPROVAL_TOOL_CALL_ID = "call-v2-approval"
+_APPROVAL_FEEDBACK = "Use the existing npm test command."
 _QUESTION_ID = "question-v2-recovery"
 _QUESTION_SUPPLEMENT = "Need release note"
 _BACKGROUND_TASK_ID = "background-task-v2"
@@ -801,12 +802,17 @@ def test_v2_real_sse_recoverable_run_resumes_before_tool_approval(
             timeout=_WAIT_TIMEOUT_MS,
         )
 
+        page.get_by_label("Approval feedback").fill(_APPROVAL_FEEDBACK)
         page.get_by_role("button", name="Allow once").click()
 
         assert stream_state.wait_for_after_event_id(7, timeout_seconds=10.0)
         assert backend.resume_requested is True
         assert backend.approval_resolutions == [
-            {"action": "approve", "option_id": "allow_once"},
+            {
+                "action": "approve",
+                "feedback": _APPROVAL_FEEDBACK,
+                "option_id": "allow_once",
+            },
         ]
         assert stream_state.wait_for_sent_event_id(9, timeout_seconds=5.0)
         expect(
@@ -995,6 +1001,7 @@ def test_v2_recoverable_run_resumes_before_tool_approval(
             timeout=_WAIT_TIMEOUT_MS,
         )
 
+        page.get_by_label("Approval feedback").fill(_APPROVAL_FEEDBACK)
         page.get_by_role("button", name="Allow once").click()
         page.wait_for_function(
             """
@@ -1006,7 +1013,11 @@ def test_v2_recoverable_run_resumes_before_tool_approval(
         )
         assert backend.resume_requested is True
         assert backend.approval_resolutions == [
-            {"action": "approve", "option_id": "allow_once"},
+            {
+                "action": "approve",
+                "feedback": _APPROVAL_FEEDBACK,
+                "option_id": "allow_once",
+            },
         ]
 
 

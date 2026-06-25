@@ -2272,3 +2272,30 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this Appearance preset interaction slice. No Settings or Appearance subsystem completion is claimed.
+
+## 2026-06-25 V2 Approval Feedback Recovery Batch
+
+### Scope
+- Re-checked the Run Recovery, AG-UI Runtime Stream, and Observability/Feedback checklist after the Appearance preset interaction batch instead of continuing settings polish.
+- Closed a real recovery-action feedback gap: pending tool approval controls now expose a compact optional feedback input and pass the trimmed feedback through the AG-UI `tool-approvals/{tool_call_id}:resolve` payload.
+- Preserved the existing approval option, Approve, Deny, resume-before-approval, busy, and error behavior while clearing the local feedback after a successful resolution.
+- Extended the API client and RecoveryBar tests so feedback is asserted at both the component call boundary and the serialized AG-UI request body.
+- Extended the built `/app/` browser recovery flows so both mock EventSource and real HTTP/SSE approval recovery fill the visible `Approval feedback` input and verify the backend receives that feedback with the selected ACP option.
+- Refreshed `frontend/dist/app` for the RecoveryBar/API client change.
+- Checked the current in-app browser at `http://127.0.0.1:8000/app/` after reload: body scroll height and client height both reported `720`, `body` overflow was `hidden`, the workspace was `994x668`, the timeline was `994x500`, and the composer was fixed at `994x136`. The current live session did not have a pending approval, so the approval feedback visual path is covered by the browser integration flow rather than the live session state.
+- Screenshot capture from the in-app browser timed out twice at the browser screenshot command, so no screenshot artifact is claimed for this batch.
+- Kept this as a targeted recovery/feedback improvement only; full Run Recovery, AG-UI Runtime Stream, Observability/Feedback, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/RecoveryBar.test.tsx -t feedback` passed with 1 test.
+- `npm test -- --run src/test/apiClient.test.ts -t "tool approvals"` passed with 1 test.
+- `npm test -- --run src/test/RecoveryBar.test.tsx` passed with 22 tests.
+- `npm test -- --run src/test/apiClient.test.ts` passed with 24 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "recoverable_run_resumes_before_tool_approval"` passed with 2 tests.
+- `uv run --extra dev ruff check --fix tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --no-cache --force-exclude tests/integration_tests/browser/test_v2_stream_recovery.py` left 1 file unchanged.
+
+### Reviewer
+- Main-agent browser integration and targeted verification completed for this approval-feedback recovery slice. No Run Recovery, AG-UI Runtime Stream, or Observability/Feedback subsystem completion is claimed.

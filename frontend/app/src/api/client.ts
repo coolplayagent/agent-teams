@@ -1217,10 +1217,18 @@ export function resolveToolApproval(
   toolCallId: string,
   action: ToolApprovalAction,
   optionId = "",
+  feedback = "",
 ): Promise<{ status: string }> {
-  const payload: { action: ToolApprovalAction; option_id?: string } = { action };
+  const payload: {
+    action: ToolApprovalAction;
+    feedback?: string;
+    option_id?: string;
+  } = { action };
   if (optionId.trim()) {
     payload.option_id = optionId.trim();
+  }
+  if (feedback.trim()) {
+    payload.feedback = feedback.trim();
   }
   return requestJson<{ status: string }>(
     `/ag-ui/runs/${encodeURIComponent(runId)}/tool-approvals/${encodeURIComponent(toolCallId)}:resolve`,

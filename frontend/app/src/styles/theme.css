@@ -5631,6 +5631,13 @@ body {
   gap: 6px;
 }
 
+.at-settings-code-editor {
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
 .at-settings-list-main {
   display: grid;
   gap: 3px;

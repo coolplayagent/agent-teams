@@ -79,6 +79,7 @@ import {
   saveClawHubConfig,
   saveGeneralConfig,
   saveGitHubConfig,
+  saveHooksConfig,
   saveModelProfile,
   saveNotificationConfig,
   saveOrchestrationConfig,
@@ -100,6 +101,7 @@ import {
   updateWeChatGatewayAccount,
   updateMcpServer,
   updatePlugin,
+  validateHooksConfig,
   waitWeChatGatewayLogin,
 } from "../api/client";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
@@ -179,6 +181,7 @@ vi.mock("../api/client", () => ({
   saveClawHubConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveGitHubConfig: vi.fn(),
+  saveHooksConfig: vi.fn(),
   saveModelProfile: vi.fn(),
   saveNotificationConfig: vi.fn(),
   saveOrchestrationConfig: vi.fn(),
@@ -200,6 +203,7 @@ vi.mock("../api/client", () => ({
   updateWeChatGatewayAccount: vi.fn(),
   updateMcpServer: vi.fn(),
   updatePlugin: vi.fn(),
+  validateHooksConfig: vi.fn(),
   waitWeChatGatewayLogin: vi.fn(),
 }));
 
@@ -277,6 +281,7 @@ const saveAgentRuntimeMock = vi.mocked(saveAgentRuntime);
 const saveClawHubConfigMock = vi.mocked(saveClawHubConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveGitHubConfigMock = vi.mocked(saveGitHubConfig);
+const saveHooksConfigMock = vi.mocked(saveHooksConfig);
 const saveModelProfileMock = vi.mocked(saveModelProfile);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveOrchestrationConfigMock = vi.mocked(saveOrchestrationConfig);
@@ -298,6 +303,7 @@ const updateFeishuGatewayAccountMock = vi.mocked(updateFeishuGatewayAccount);
 const updateWeChatGatewayAccountMock = vi.mocked(updateWeChatGatewayAccount);
 const updateMcpServerMock = vi.mocked(updateMcpServer);
 const updatePluginMock = vi.mocked(updatePlugin);
+const validateHooksConfigMock = vi.mocked(validateHooksConfig);
 const waitWeChatGatewayLoginMock = vi.mocked(waitWeChatGatewayLogin);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
@@ -1019,12 +1025,20 @@ beforeEach(() => {
     hooks: {
       SessionStart: [
         {
-          command: "python hooks/start.py",
-          name: "Session startup setup",
+          hooks: [
+            {
+              command: "python hooks/start.py",
+              name: "Session startup setup",
+              type: "command",
+            },
+          ],
+          matcher: "*",
         },
       ],
     },
   });
+  saveHooksConfigMock.mockImplementation(async (payload) => payload);
+  validateHooksConfigMock.mockResolvedValue({ status: "ok" });
   getHookRuntimeViewMock.mockResolvedValue({
     loaded_hooks: [
       {
@@ -1551,6 +1565,80 @@ describe("SettingsDrawer", () => {
         scope: "user",
       }),
     );
+  });
+
+  it("validates and saves hooks from the System secondary page", async () => {
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Hooks")).closest("button") as HTMLElement);
+
+    const editor = await screen.findByLabelText("Hooks JSON");
+    expect(editor).toHaveValue(
+      JSON.stringify(
+        {
+          hooks: {
+            SessionStart: [
+              {
+                hooks: [
+                  {
+                    command: "python hooks/start.py",
+                    name: "Session startup setup",
+                    type: "command",
+                  },
+                ],
+                matcher: "*",
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    expect(getHooksConfigMock).toHaveBeenCalledTimes(1);
+    expect(getHookRuntimeViewMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+    await waitFor(() =>
+      expect(validateHooksConfigMock).toHaveBeenCalledWith({
+        hooks: {
+          SessionStart: [
+            {
+              hooks: [
+                {
+                  command: "python hooks/start.py",
+                  name: "Session startup setup",
+                  type: "command",
+                },
+              ],
+              matcher: "*",
+            },
+          ],
+        },
+      }),
+    );
+
+    const nextHooks = {
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                command: "python hooks/prompt.py",
+                type: "command",
+              },
+            ],
+            matcher: "*",
+          },
+        ],
+      },
+    };
+    fireEvent.change(editor, {
+      target: { value: JSON.stringify(nextHooks, null, 2) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveHooksConfigMock).toHaveBeenCalledWith(nextHooks));
   });
 
   it("manages GitHub settings from the System secondary page", async () => {

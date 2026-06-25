@@ -1030,7 +1030,11 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         expect(settings.get_by_role("heading", name="Hooks")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(settings.get_by_text("Session startup setup")).to_be_visible(
+        expect(
+            settings.locator(".at-settings-list-row").filter(
+                has_text="Session startup setup"
+            )
+        ).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         settings.get_by_role("button", name="Back", exact=True).click()
@@ -1165,6 +1169,69 @@ def test_v2_plugins_settings_actions_call_real_endpoints(
         screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(screenshot_dir / "v2-plugin-actions.png"))
+
+
+def test_v2_hooks_settings_validate_and_save_real_config(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        sections = settings.get_by_role("navigation", name="Settings sections")
+        expect(sections.get_by_role("button", name="Hooks")).to_have_count(0)
+
+        sections.get_by_role("button", name="System").click()
+        settings.locator(".at-settings-list-button").filter(has_text="Hooks").click()
+        expect(settings.get_by_role("heading", name="Hooks")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        editor = settings.get_by_label("Hooks JSON")
+        expect(editor).to_have_value(
+            json.dumps(backend.hooks_config, indent=2),
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        settings.get_by_role("button", name="Validate").click()
+        _wait_for_backend_state(
+            lambda: backend.hooks_validate_payloads == [backend.hooks_config],
+            "Hooks validate request was not captured.",
+        )
+
+        next_hooks = {
+            "hooks": {
+                "UserPromptSubmit": [
+                    {
+                        "hooks": [
+                            {
+                                "command": "python hooks/prompt.py",
+                                "type": "command",
+                            }
+                        ],
+                        "matcher": "*",
+                    }
+                ]
+            }
+        }
+        editor.fill(json.dumps(next_hooks, indent=2))
+        settings.get_by_role("button", name="Save").click()
+        _wait_for_backend_state(
+            lambda: backend.hooks_save_payloads == [next_hooks],
+            "Hooks save request was not captured.",
+        )
+        expect(editor).to_have_value(json.dumps(next_hooks, indent=2))
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-hooks-editor-save.png"))
 
 
 def test_v2_model_profile_detail_saves_and_tests_existing_profile(
@@ -1838,6 +1905,24 @@ class _V2ShellBackend:
                 "version": "2.0.0",
             },
         ]
+        self.hooks_config: dict[str, object] = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "hooks": [
+                            {
+                                "command": "python hooks/start.py",
+                                "name": "Session startup setup",
+                                "type": "command",
+                            }
+                        ],
+                        "matcher": "*",
+                    }
+                ]
+            }
+        }
+        self.hooks_save_payloads: list[dict[str, object]] = []
+        self.hooks_validate_payloads: list[dict[str, object]] = []
         self.model_catalog_refresh_count = 0
         self.model_profile_reload_count = 0
         self.model_profile_save_payloads: list[dict[str, object]] = []
@@ -2133,6 +2218,12 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs/hooks":
             _fulfill_json(route, self._hooks_config())
+            return
+        if request.method == "PUT" and path == "/system/configs/hooks":
+            self._save_hooks_config(route, request)
+            return
+        if request.method == "POST" and path == "/system/configs/hooks:validate":
+            self._validate_hooks_config(route, request)
             return
         if request.method == "GET" and path == "/system/configs/hooks/runtime":
             _fulfill_json(route, self._hooks_runtime())
@@ -2807,16 +2898,18 @@ class _V2ShellBackend:
         }
 
     def _hooks_config(self) -> dict[str, object]:
-        return {
-            "hooks": {
-                "SessionStart": [
-                    {
-                        "command": "python hooks/start.py",
-                        "name": "Session startup setup",
-                    }
-                ]
-            }
-        }
+        return self.hooks_config
+
+    def _save_hooks_config(self, route: Route, request: Request) -> None:
+        payload = cast(dict[str, object], json.loads(request.post_data or "{}"))
+        self.hooks_save_payloads.append(payload)
+        self.hooks_config = payload
+        _fulfill_json(route, self._hooks_config())
+
+    def _validate_hooks_config(self, route: Route, request: Request) -> None:
+        payload = cast(dict[str, object], json.loads(request.post_data or "{}"))
+        self.hooks_validate_payloads.append(payload)
+        _fulfill_json(route, {"status": "ok"})
 
     def _hooks_runtime(self) -> dict[str, object]:
         return {

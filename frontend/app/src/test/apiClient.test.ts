@@ -33,6 +33,7 @@ import {
   getEnvironmentVariables,
   getGitHubConfig,
   getGitHubWebhookTunnelStatus,
+  getHooksConfig,
   listFeishuGatewayAccounts,
   listWeChatGatewayAccounts,
   getMemory,
@@ -89,6 +90,7 @@ import {
   saveAgentRuntime,
   saveClawHubConfig,
   saveGitHubConfig,
+  saveHooksConfig,
   saveModelProfile,
   saveNotificationConfig,
   saveOrchestrationConfig,
@@ -121,6 +123,7 @@ import {
   updateWeChatGatewayAccount,
   updatePlugin,
   updateWorkspace,
+  validateHooksConfig,
   waitWeChatGatewayLogin,
 } from "../api/client";
 import { saveSpeechConfig } from "../api/speech";
@@ -2263,6 +2266,64 @@ describe("api client", () => {
       expect.objectContaining({
         method: "DELETE",
         headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("manages hooks through the system config endpoints", async () => {
+    const hooksPayload = {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [{ command: "python hooks/start.py", type: "command" }],
+            matcher: "*",
+          },
+        ],
+      },
+    };
+    const validationPayload = { status: "ok" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(hooksPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(hooksPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(validationPayload), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getHooksConfig()).resolves.toEqual(hooksPayload);
+    await expect(saveHooksConfig(hooksPayload)).resolves.toEqual(hooksPayload);
+    await expect(validateHooksConfig(hooksPayload)).resolves.toEqual(
+      validationPayload,
+    );
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/hooks",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/hooks",
+      expect.objectContaining({
+        body: JSON.stringify(hooksPayload),
+        headers: expect.any(Headers),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/hooks:validate",
+      expect.objectContaining({
+        body: JSON.stringify(hooksPayload),
+        headers: expect.any(Headers),
+        method: "POST",
       }),
     );
   });

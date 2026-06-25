@@ -97,6 +97,7 @@ import type {
   RoleConfigSummary,
   RuntimeSkillDetail,
   HooksConfigPayload,
+  HooksValidationResult,
   HookRuntimeViewPayload,
   RunCreateRequest,
   RunCreateResponse,
@@ -1568,6 +1569,24 @@ export function deletePlugin(
 
 export function getHooksConfig(): Promise<HooksConfigPayload> {
   return requestJson<HooksConfigPayload>("/system/configs/hooks");
+}
+
+export function saveHooksConfig(
+  payload: HooksConfigPayload,
+): Promise<HooksConfigPayload> {
+  return requestJson<HooksConfigPayload>("/system/configs/hooks", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function validateHooksConfig(
+  payload: HooksConfigPayload,
+): Promise<HooksValidationResult> {
+  return requestJson<HooksValidationResult>("/system/configs/hooks:validate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getHookRuntimeView(): Promise<HookRuntimeViewPayload> {

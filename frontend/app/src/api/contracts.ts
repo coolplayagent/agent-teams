@@ -227,6 +227,10 @@ export interface HooksConfigPayload {
   hooks?: Record<string, JsonValue>;
 }
 
+export interface HooksValidationResult {
+  status: string;
+}
+
 export interface HookRuntimeSource {
   path?: string | null;
   source?: string | null;

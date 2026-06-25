@@ -3244,3 +3244,28 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, API-client, built-app browser, and screenshot inspection completed for this plugin mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.
+
+## 2026-06-26 V2 Settings Hooks Edit Validate Save Recovery Batch
+
+### Scope
+- Re-checked the remaining Hegel Settings FAIL after the plugin mutation recovery and selected Hooks because it shares the same Settings/System secondary-page parity gap and has real backend mutation endpoints.
+- Restored a V1-backed Hooks mutation path inside the existing System -> Hooks secondary page: the page now renders the saved hooks config as a JSON editor, validates through `POST /api/system/configs/hooks:validate`, saves through `PUT /api/system/configs/hooks`, and refreshes config/runtime diagnostics afterward.
+- Added typed frontend contracts and API clients for hook validation results and save/validate endpoints.
+- Preserved the V1 Settings information architecture: no primary Settings items were added or removed, and Hooks remains behind the System secondary launcher rather than being flattened into the root Settings list.
+- Added built `/app/` browser evidence for Settings > System > Hooks: the scenario confirms Hooks is absent from the root Settings nav, opens Hooks from System, validates the current JSON, saves an edited config payload, verifies backend request payloads, and captures `.tmp/frontend-v2-settings/v2-hooks-editor-save.png`.
+- Kept this as partial Settings recovery only. Hegel Settings FAIL remains open for Roles/Orchestration create/validation/default/destructive flows, CodeAgent/MaaS auth/discovery gaps, broader visual review, and reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "hooks"` passed with 1 selected test.
+- `npm test -- --run src/test/apiClient.test.ts -t "hooks"` passed with 1 selected test.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "hooks_settings_validate"` passed with 1 selected test.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-settings/v2-hooks-editor-save.png` confirmed the real built V2 shell stayed framed, Settings root nav was unchanged, and Hooks remained in the System secondary page.
+- `npm test -- --run src/test/apiClient.test.ts` passed with 30 tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections or plugins_settings_actions or hooks_settings_validate"` passed with 3 selected tests.
+- `npm run lint` passed.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 21 tests.
+
+### Reviewer
+- Main-agent component, API-client, built-app browser, and screenshot inspection completed for this hooks mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.

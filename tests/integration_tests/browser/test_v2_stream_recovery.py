@@ -46,6 +46,10 @@ _BACKGROUND_CWD = "C:/Users/yex/Documents/workspace/agent-teams"
 _SUBAGENT_RUN_ID = "subagent-run-v2"
 _MAIN_MULTIPLEX_CHUNK = "main multiplex chunk"
 _SUBAGENT_MULTIPLEX_CHUNK = "subagent multiplex chunk"
+_RICH_REPLAY_THINKING_PREFIX = "checking replay state"
+_RICH_REPLAY_THINKING_SUFFIX = " after reconnect"
+_RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
+_RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
 
 
 @pytest.fixture()
@@ -312,6 +316,143 @@ def test_v2_interrupted_stream_reconnects_from_sse_last_event_id(
         ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
         _emit_relay_event(page, "run_completed", 4, {"status": "completed"})
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 0",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
+def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=0'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "run_started", 1, {"phase": "streaming"})
+        _emit_relay_event(page, "text_delta", 2, {"text": _FIRST_CHUNK})
+        _emit_relay_event(page, "thinking_started", 3, {"part_index": 0})
+        _emit_relay_event(
+            page,
+            "thinking_delta",
+            4,
+            {"delta": _RICH_REPLAY_THINKING_PREFIX, "part_index": 0},
+        )
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message-thinking").filter(
+                has_text=_RICH_REPLAY_THINKING_PREFIX,
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        page.evaluate("() => window.__v2DispatchTransportError()")
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url, index) =>
+              index > 0
+              && url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=4'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.wait_for_function(
+            "() => window.__v2EventSources[0]?.readyState === 2",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(
+            page,
+            "thinking_delta",
+            5,
+            {"delta": _RICH_REPLAY_THINKING_SUFFIX, "part_index": 0},
+        )
+        expect(
+            page.locator(".at-message-thinking").filter(
+                has_text=(
+                    f"{_RICH_REPLAY_THINKING_PREFIX}{_RICH_REPLAY_THINKING_SUFFIX}"
+                ),
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        _emit_relay_event(
+            page,
+            "tool_call",
+            6,
+            {
+                "args": {"path": "README.md"},
+                "tool_call_id": _RICH_REPLAY_TOOL_CALL_ID,
+                "tool_name": "read",
+            },
+        )
+        _emit_relay_event(
+            page,
+            "tool_result",
+            7,
+            {
+                "result": {"data": _RICH_REPLAY_TOOL_OUTPUT, "ok": True},
+                "tool_call_id": _RICH_REPLAY_TOOL_CALL_ID,
+                "tool_name": "read",
+            },
+        )
+        _emit_relay_event(
+            page,
+            "token_usage",
+            8,
+            {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+        )
+
+        expect(page.get_by_text("Tool call: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message-tool-preview").get_by_text(
+                "README.md",
+                exact=True,
+            ),
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Tool result: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message-tool-preview").get_by_text(
+                _RICH_REPLAY_TOOL_OUTPUT,
+                exact=True,
+            ),
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("token usage")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            1,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "thinking_finished", 9, {"part_index": 0})
+        _emit_relay_event(page, "run_completed", 10, {"status": "completed"})
         page.wait_for_function(
             "() => window.__v2OpenEventSourceCount() === 0",
             timeout=_WAIT_TIMEOUT_MS,

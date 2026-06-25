@@ -2019,3 +2019,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Reviewer subagent `019efec7-4bf7-7351-b911-f3d389cb761b` returned FAIL on the first pass with findings for missing version-display closure, missing reviewer PASS, under-tested real user external-link path, ungated test hooks, and thin startup failure controls.
 - After fixes, reviewer subagent `019efec7-4bf7-7351-b911-f3d389cb761b` returned PASS for the Electron desktop shell subsystem.
 - Reviewer residual risks: same-window external navigation is not separately guarded with `will-navigate`; rapid repeated Retry clicks could overlap startup attempts; packaging/installer behavior remains outside current smoke-test evidence.
+
+## 2026-06-25 V2 Interrupted Stream Non-Text Event Browser Batch
+
+### Scope
+- Re-checked the goal and parity checklist after closing the Desktop reviewer loop, then moved back to the remaining high-risk AG-UI Runtime Stream gap instead of continuing desktop or appearance polish.
+- Extended the built V2 `/app/` browser stream recovery harness with an interrupted stream that has already rendered text and active thinking content before the transport disconnects.
+- Verified the replacement EventSource reconnects with `after_event_id=4`, derived from the latest local runtime cursor after the pre-disconnect `thinking_delta`, rather than replaying from the earlier text event.
+- Verified non-text runtime events after reconnect continue into the same visible timeline: `thinking_delta` appends to the active thinking block, `tool_call` renders the tool-call summary and arguments, `tool_result` renders the result summary, and `token_usage` remains visible as a fallback runtime event.
+- Verified the pre-interruption text chunk is not duplicated and the stream closes on `run_completed`.
+- Left full AG-UI Runtime Stream completion open; remaining work includes backend-backed interrupted SSE timing, broader named AG-UI event coverage, stop/resume browser flows against real backend timing, and paired reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k non_text_events` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 12 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed after formatting the file.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch verifies stream runtime behavior and visible event rendering through browser assertions rather than changing layout or styling.
+
+### Reviewer
+- Main-agent browser integration verification completed for this non-text interrupted stream slice. No AG-UI Runtime Stream subsystem completion is claimed.

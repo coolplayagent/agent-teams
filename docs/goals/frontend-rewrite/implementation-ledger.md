@@ -1319,3 +1319,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this recovery stream target tracking slice. No AG-UI Runtime Stream or Run Recovery subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.
+
+## 2026-06-25 V1 Sidebar And Runtime Message Cleanup Batch
+
+### Scope
+- Rechecked V2 against the live V1 page before editing instead of relying on code-level assumptions.
+- Restored the primary sidebar to V1's six navigation entries and order: Search, Skills, Automation, Connectors, Board, and Memory. Chat remains the default/session surface, while Observability and Settings remain topbar actions instead of extra sidebar entries.
+- Tightened runtime `message` event rendering so empty protocol events no longer leak the literal `message` fallback or standard role labels into the timeline, while payload text and payload parts from replay still render normally.
+- Reduced the visual weight of runtime tool-only rows so tool call/result/error details read as subordinate timeline details rather than full message rows.
+
+### Verification
+- `npm test -- src/test/AppShell.test.tsx` in `frontend/app` passed with 17 tests, including V1 sidebar order and topbar-only Observability/Settings coverage.
+- `npm test -- src/test/MessageTimeline.test.tsx` in `frontend/app` passed with 45 tests, including the new empty runtime `message` regression and payload replay rendering regression.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt asset `index-2ygWoNwy.js`.
+- Browser verification on `http://127.0.0.1:8000/app/` showed `body.scrollHeight === body.clientHeight`, `.at-timeline` as the scroll owner, sidebar buttons `["搜索Ctrl+K", "技能", "自动化", "连接器", "看板", "记忆"]`, `bareMessageTexts: 0`, `standardRoleLabels: []`, and `floatingTimelineToolbar: 0`.
+- V1 and V2 screenshots were captured to `frontend-debug-v1-reference.png` and `frontend-debug-v2-final.png` for the large-frame comparison.
+
+### Reviewer
+- Main-agent browser and targeted test verification completed for this V1 sidebar and runtime message cleanup slice. No Message Timeline or Shell subsystem completion is claimed from this batch; remaining work includes deeper V1 visual parity review, live stream/replay scenarios, refresh-during-stream recovery, and reviewer sign-off.

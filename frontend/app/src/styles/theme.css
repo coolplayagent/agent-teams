@@ -3730,8 +3730,18 @@ body {
 }
 
 .at-message.is-tool-only {
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  border-bottom: 0;
+}
+
+.at-message.is-runtime.is-tool-only {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.at-message.is-tool-only .at-message-content {
+  gap: 4px;
 }
 
 .at-message.is-tool-only .at-message-role {
@@ -4005,6 +4015,10 @@ body {
   border-radius: 6px;
   background: var(--at-surface);
   overflow: hidden;
+}
+
+.at-message.is-tool-only .at-message-tool {
+  background: var(--at-surface-muted);
 }
 
 .at-message-tool.is-error {

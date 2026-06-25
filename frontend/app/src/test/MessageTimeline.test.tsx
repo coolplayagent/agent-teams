@@ -76,6 +76,56 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("message")).not.toBeInTheDocument();
   });
 
+  it("does not render protocol fallbacks for empty runtime message events", async () => {
+    setRuntimeEntries([
+      {
+        eventId: 1,
+        id: "run-message:1:0",
+        kind: "message",
+        occurredAt: "2026-06-23T00:00:00Z",
+        payload: {},
+        roleId: "user",
+        runId: "run-message",
+        sessionId: "session-1",
+        text: "message",
+      },
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(screen.queryByText("message")).not.toBeInTheDocument();
+    expect(screen.queryByText("User")).not.toBeInTheDocument();
+  });
+
+  it("renders runtime message payload content instead of the event type", async () => {
+    setRuntimeEntries([
+      {
+        eventId: 1,
+        id: "run-message:1:0",
+        kind: "message",
+        occurredAt: "2026-06-23T00:00:00Z",
+        payload: {
+          message: {
+            parts: [{ kind: "text", text: "Actual replayed answer" }],
+          },
+        },
+        roleId: "assistant",
+        runId: "run-message",
+        sessionId: "session-1",
+        text: "message",
+      },
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Actual replayed answer")).toBeVisible();
+    expect(screen.queryByText("message")).not.toBeInTheDocument();
+    expect(screen.queryByText("Assistant")).not.toBeInTheDocument();
+  });
+
   it("copies the latest non-user answer", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

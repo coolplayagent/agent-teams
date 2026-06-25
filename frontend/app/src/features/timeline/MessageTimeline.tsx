@@ -682,10 +682,11 @@ function runtimeEntryToRowWithParts(
   key: string,
 ): TimelineRow {
   const text = rowCopyText(parts);
+  const fallbackText = runtimeFallbackText(entry);
   return {
     key,
     role: entry.roleId,
-    text: text || entry.text,
+    text: text || fallbackText,
     kind: entry.kind,
     parts,
     roundMarker: null,
@@ -1011,6 +1012,10 @@ function runtimeStreamKey(entry: TimelineEntry): string {
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
+  const runtimeMessageParts = runtimeMessageRenderParts(entry);
+  if (runtimeMessageParts !== null) {
+    return runtimeMessageParts;
+  }
   const output = runtimeOutputParts(entry);
   if (output !== null && output.length > 0) {
     return output;
@@ -1023,7 +1028,82 @@ function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
   if (approval !== null) {
     return [approval];
   }
-  return [{ kind: "text", text: entry.text }];
+  const fallbackText = runtimeFallbackText(entry);
+  return fallbackText.trim().length > 0 ? [{ kind: "text", text: fallbackText }] : [];
+}
+
+function runtimeMessageRenderParts(entry: TimelineEntry): TimelineRenderPart[] | null {
+  if (entry.kind !== "message") {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return null;
+  }
+  const payloadParts = runtimeMessageContentParts(payload);
+  if (payloadParts.length > 0) {
+    return payloadParts.flatMap(contentPartToRenderParts);
+  }
+  const text =
+    objectRawString(payload, "text") ||
+    objectRawString(payload, "content") ||
+    objectRawString(payload, "message") ||
+    runtimeNestedMessageText(payload);
+  return text.trim().length > 0 ? [{ kind: "text", text: timelineDisplayText(text) }] : [];
+}
+
+function runtimeNestedMessageText(payload: Record<string, JsonValue>): string {
+  const message = jsonObject(payload.message);
+  if (message === null) {
+    return "";
+  }
+  return objectRawString(message, "text") || objectRawString(message, "content");
+}
+
+function runtimeMessageContentParts(payload: Record<string, JsonValue>): ContentPart[] {
+  const directParts = jsonContentParts(payload.parts);
+  if (directParts.length > 0) {
+    return directParts;
+  }
+  const message = jsonObject(payload.message);
+  return message === null ? [] : jsonContentParts(message.parts);
+}
+
+function jsonContentParts(value: JsonValue | undefined): ContentPart[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((part) => {
+    const contentPart = jsonContentPart(part);
+    return contentPart === null ? [] : [contentPart];
+  });
+}
+
+function jsonContentPart(value: JsonValue): ContentPart | null {
+  const object = jsonObject(value);
+  if (object === null || !jsonObjectLooksLikeContentPart(object)) {
+    return null;
+  }
+  return object as unknown as ContentPart;
+}
+
+function jsonObjectLooksLikeContentPart(object: Record<string, JsonValue>): boolean {
+  return (
+    objectString(object, "kind").length > 0 ||
+    objectString(object, "part_kind").length > 0 ||
+    objectString(object, "text").length > 0 ||
+    objectString(object, "content").length > 0 ||
+    "args" in object ||
+    "tool_name" in object ||
+    "url" in object
+  );
+}
+
+function runtimeFallbackText(entry: TimelineEntry): string {
+  if (entry.kind === "message" && entry.text.trim().toLowerCase() === "message") {
+    return "";
+  }
+  return entry.text;
 }
 
 function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {

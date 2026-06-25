@@ -149,6 +149,29 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Assistant")).not.toBeInTheDocument();
   });
 
+  it("keeps closed runtime output visible when only the user prompt is hydrated", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Closed runtime answer",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Original prompt",
+        message_id: "user-run-output",
+        role: "user",
+        run_id: "run-output",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Original prompt")).toBeVisible();
+    expect(await screen.findByText("Closed runtime answer")).toBeVisible();
+  });
+
   it("copies the latest non-user answer", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

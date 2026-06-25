@@ -7,7 +7,9 @@ import json
 from pathlib import Path
 import re
 import threading
+import time
 from typing import cast
+from urllib.parse import parse_qs
 from urllib.parse import unquote
 from urllib.parse import urlsplit
 
@@ -50,6 +52,7 @@ _RICH_REPLAY_THINKING_PREFIX = "checking replay state"
 _RICH_REPLAY_THINKING_SUFFIX = " after reconnect"
 _RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
 _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
+_REAL_SSE_RESUMED_CHUNK = "real SSE resumed chunk"
 
 
 @pytest.fixture()
@@ -457,6 +460,42 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
             "() => window.__v2OpenEventSourceCount() === 0",
             timeout=_WAIT_TIMEOUT_MS,
         )
+
+
+def test_v2_real_sse_interrupted_stream_reconnects_from_runtime_cursor(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState()
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert stream_state.wait_for_after_event_id(2, timeout_seconds=10.0)
+        assert stream_state.wait_for_sent_event_id(4, timeout_seconds=5.0)
+        expect(
+            page.locator(".at-message").filter(has_text=_REAL_SSE_RESUMED_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            1,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.has_last_event_id_header("2")
 
 
 def test_v2_session_switch_closes_active_stream_and_isolates_timeline(
@@ -1333,6 +1372,75 @@ class _V2StreamBackend:
         }
 
 
+class _RealSseStreamState:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._resumed_stream_seen = threading.Event()
+        self._sent_event_ids: set[int] = set()
+        self._sent_initial_stream = False
+        self.stream_requests: list[dict[str, object]] = []
+
+    def record_request(self, *, after_event_id: int, last_event_id: str) -> None:
+        with self._lock:
+            self.stream_requests.append(
+                {
+                    "after_event_id": after_event_id,
+                    "last_event_id": last_event_id,
+                },
+            )
+        if after_event_id >= 2:
+            self._resumed_stream_seen.set()
+
+    def claim_initial_stream(self, after_event_id: int) -> bool:
+        with self._lock:
+            if self._sent_initial_stream or after_event_id != 0:
+                return False
+            self._sent_initial_stream = True
+            return True
+
+    def wait_for_after_event_id(
+        self,
+        after_event_id: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        if after_event_id <= 0:
+            return self._has_after_event_id(after_event_id)
+        return self._resumed_stream_seen.wait(timeout=timeout_seconds)
+
+    def wait_for_sent_event_id(
+        self,
+        event_id: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            with self._lock:
+                if event_id in self._sent_event_ids:
+                    return True
+            time.sleep(0.05)
+        return False
+
+    def has_last_event_id_header(self, last_event_id: str) -> bool:
+        with self._lock:
+            return any(
+                request["last_event_id"] == last_event_id
+                for request in self.stream_requests
+            )
+
+    def record_sent_event_id(self, event_id: int) -> None:
+        with self._lock:
+            self._sent_event_ids.add(event_id)
+
+    def _has_after_event_id(self, after_event_id: int) -> bool:
+        with self._lock:
+            return any(
+                request["after_event_id"] == after_event_id
+                for request in self.stream_requests
+            )
+
+
 @contextmanager
 def _serve_v2_app(repo_root: Path) -> Iterator[str]:
     app_root = repo_root / "frontend" / "dist" / "app"
@@ -1348,6 +1456,210 @@ def _serve_v2_app(repo_root: Path) -> Iterator[str]:
 
         def log_message(self, format: str, *args: object) -> None:
             return
+
+    server = create_browser_safe_http_server(Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = cast(tuple[str, int], server.server_address)
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+
+@contextmanager
+def _serve_v2_app_with_real_sse(
+    repo_root: Path,
+    backend: _V2StreamBackend,
+    stream_state: _RealSseStreamState,
+) -> Iterator[str]:
+    app_root = repo_root / "frontend" / "dist" / "app"
+
+    class Handler(SimpleHTTPRequestHandler):
+        def translate_path(self, path: str) -> str:
+            request_path = unquote(urlsplit(path).path)
+            if request_path in {"/app", "/app/"}:
+                return str(app_root / "index.html")
+            if request_path.startswith("/app/"):
+                return str(app_root / request_path.removeprefix("/app/"))
+            return str(app_root / "index.html")
+
+        def do_GET(self) -> None:
+            request_url = urlsplit(self.path)
+            request_path = unquote(request_url.path)
+            if request_path.startswith("/api/"):
+                self._handle_api_get(
+                    request_path.removeprefix("/api"), request_url.query
+                )
+                return
+            super().do_GET()
+
+        def do_POST(self) -> None:
+            request_url = urlsplit(self.path)
+            request_path = unquote(request_url.path)
+            if request_path.startswith("/api/"):
+                self._handle_api_post(request_path.removeprefix("/api"))
+                return
+            self.send_error(404)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+        def _handle_api_get(self, path: str, query: str) -> None:
+            if path == "/system/health":
+                self._send_json({"status": "ok"})
+                return
+            if path == "/workspaces":
+                self._send_json([backend._workspace()])
+                return
+            if path == "/sessions/sidebar":
+                self._send_json(
+                    [backend._sidebar_session(), backend._alt_sidebar_session()]
+                )
+                return
+            if path == f"/sessions/{_SESSION_ID}":
+                self._send_json(backend._session())
+                return
+            if path == f"/sessions/{_SESSION_ID}/messages":
+                self._send_json(backend._messages())
+                return
+            if path == f"/sessions/{_SESSION_ID}/rounds":
+                self._send_json(backend._rounds_page())
+                return
+            if path == f"/sessions/{_SESSION_ID}/token-usage":
+                self._send_json(backend._token_usage())
+                return
+            if path == f"/sessions/{_SESSION_ID}/recovery":
+                self._send_json(backend._recovery())
+                return
+            if path == "/roles:options":
+                self._send_json(backend._role_options())
+                return
+            if path == "/system/configs/model/profiles":
+                self._send_json(backend._model_profiles())
+                return
+            if path == "/system/configs/orchestration":
+                self._send_json(backend._orchestration())
+                return
+            if path == "/system/configs/general":
+                self._send_json({"shell_safety_policy_enabled": True})
+                return
+            if path == f"/ag-ui/runs/{_RUN_ID}/events":
+                self._handle_run_events(query)
+                return
+            self._send_json(
+                {"detail": f"Unhandled real SSE mock API route: {path}"}, 404
+            )
+
+        def _handle_api_post(self, path: str) -> None:
+            if path == "/ag-ui/runs":
+                backend.run_created = True
+                backend.run_payload = self._read_json_body()
+                self._send_json(
+                    {
+                        "run_id": _RUN_ID,
+                        "session_id": _SESSION_ID,
+                        "target_role_id": None,
+                    },
+                )
+                return
+            if path == f"/ag-ui/runs/{_RUN_ID}:stop":
+                backend.completed = True
+                backend.stop_payload = self._read_json_body()
+                self._send_json({"run_id": _RUN_ID, "scope": "main", "status": "ok"})
+                return
+            self._send_json(
+                {"detail": f"Unhandled real SSE mock API route: {path}"}, 404
+            )
+
+        def _handle_run_events(self, query: str) -> None:
+            params = parse_qs(query)
+            after_event_id = _first_query_int(params, "after_event_id")
+            last_event_id = self.headers.get("Last-Event-ID", "")
+            stream_state.record_request(
+                after_event_id=after_event_id,
+                last_event_id=last_event_id,
+            )
+            self._send_sse_headers()
+            if stream_state.claim_initial_stream(after_event_id):
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "run.started", "run_started", 1, {"phase": "streaming"}
+                    ),
+                )
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "message.text.delta",
+                        "text_delta",
+                        2,
+                        {"text": _FIRST_CHUNK},
+                    ),
+                )
+                return
+            if after_event_id < 2:
+                time.sleep(5.0)
+                return
+            self._write_sse_event(
+                _ag_ui_event(
+                    "message.text.delta",
+                    "text_delta",
+                    3,
+                    {"text": _REAL_SSE_RESUMED_CHUNK},
+                ),
+            )
+            time.sleep(0.2)
+            backend.completed = True
+            self._write_sse_event(
+                _ag_ui_event(
+                    "run.completed",
+                    "run_completed",
+                    4,
+                    {"status": "completed"},
+                ),
+            )
+            time.sleep(0.5)
+
+        def _read_json_body(self) -> dict[str, object]:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(content_length).decode("utf-8")
+            if not raw_body.strip():
+                return {}
+            return cast(dict[str, object], json.loads(raw_body))
+
+        def _send_json(
+            self,
+            payload: dict[str, object] | list[dict[str, object]],
+            status: int = 200,
+        ) -> None:
+            body = json.dumps(payload).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_sse_headers(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+
+        def _write_sse_event(self, event: dict[str, object]) -> None:
+            event_id = event.get("event_id")
+            event_type = event.get("type")
+            if not isinstance(event_id, int) or not isinstance(event_type, str):
+                raise AssertionError(f"Invalid SSE event: {event}")
+            payload = json.dumps(event)
+            frame = f"id: {event_id}\nevent: {event_type}\ndata: {payload}\n\n"
+            try:
+                self.wfile.write(frame.encode("utf-8"))
+                self.wfile.flush()
+                stream_state.record_sent_event_id(event_id)
+            except (BrokenPipeError, ConnectionResetError):
+                return
 
     server = create_browser_safe_http_server(Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1451,6 +1763,21 @@ def _install_mock_event_source(page: Page) -> None:
     )
 
 
+def _install_real_sse_shell_state(page: Page) -> None:
+    page.add_init_script(
+        """
+        (() => {
+          window.localStorage.setItem('agentTeams.language', 'en');
+          window.localStorage.setItem('agentTeams.themeMode', 'dark');
+          window.localStorage.setItem('agent_teams_theme', 'dark');
+          window.localStorage.setItem('agentTeams.selectedSessionId', 'session-v2-stream');
+          window.localStorage.setItem('agentTeams.selectedWorkspaceId', 'workspace-v2');
+          window.localStorage.setItem('agentTeams.shellView', 'chat');
+        })();
+        """,
+    )
+
+
 def _wait_for_v2_shell(page: Page) -> None:
     page.wait_for_function(
         "() => document.body.dataset.bootstrapState === 'ready'",
@@ -1505,6 +1832,32 @@ def _emit_relay_event_with_last_event_id(
         """,
         [event_type, event_id, last_event_id, payload, run_id, role_id],
     )
+
+
+def _ag_ui_event(
+    event_name: str,
+    relay_event_type: str,
+    event_id: int,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "event_id": event_id,
+        "payload": payload,
+        "relay_event_type": relay_event_type,
+        "role_id": "MainAgent",
+        "run_id": _RUN_ID,
+        "session_id": _SESSION_ID,
+        "trace_id": "trace-v2-stream",
+        "type": event_name,
+    }
+
+
+def _first_query_int(params: dict[str, list[str]], key: str) -> int:
+    raw_value = next(iter(params.get(key, ["0"])), "0")
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return 0
 
 
 def _fulfill_json(

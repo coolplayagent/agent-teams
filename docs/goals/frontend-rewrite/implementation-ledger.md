@@ -2040,3 +2040,30 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this non-text interrupted stream slice. No AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Real SSE Interrupted Replay Browser Batch
+
+### Scope
+- Re-checked the AG-UI Runtime Stream checklist after the non-text mock EventSource coverage and targeted the remaining real browser HTTP/SSE timing gap.
+- Added a built V2 `/app/` browser integration path served by a local HTTP server that handles the app shell, mock JSON APIs, and a real `text/event-stream` endpoint without replacing `window.EventSource`.
+- Simulated the real interruption sequence: the first SSE request streams `run_started` and `text_delta` through event id 2, the browser performs a native reconnect to the original URL with `Last-Event-ID: 2`, and the V2 controller then opens a new stream with `after_event_id=2`.
+- Verified the resumed SSE stream renders a later text delta, does not duplicate the pre-interruption chunk, and hides the Stop control after `run_completed`.
+- Found and fixed a real timeline bug exposed only by the full terminal timing: closed runtime entries were hidden whenever any persisted row shared the same run id, including the user prompt. The timeline now suppresses closed runtime rows only after a non-user output row for that run has hydrated.
+- Added component coverage proving closed runtime output remains visible when only the user prompt has hydrated.
+- Refreshed `frontend/dist/app` for the timeline fix.
+- Left full AG-UI Runtime Stream completion open; remaining work includes real backend stop/resume timing, broader production backend interrupted-stream evidence, and paired reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx -t "keeps closed runtime output visible"` passed with 1 test.
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 47 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k real_sse` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 13 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed after formatting the file.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch fixes stream timing/state reconciliation rather than changing visible layout; browser assertions verify the visible timeline and Stop control state.
+
+### Reviewer
+- Main-agent browser integration and component verification completed for this real SSE interrupted replay slice. No AG-UI Runtime Stream subsystem completion is claimed.

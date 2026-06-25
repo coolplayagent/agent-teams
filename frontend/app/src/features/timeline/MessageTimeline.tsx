@@ -71,19 +71,19 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
         .filter(timelineRowHasRenderableContent),
     [messageRoundLookup, messages],
   );
-  const hydratedRunIds = useMemo(
-    () => timelineRowRunIds(persistedRows),
+  const hydratedOutputRunIds = useMemo(
+    () => timelineOutputRunIds(persistedRows),
     [persistedRows],
   );
   const runtimeEntries = useMemo(
     () =>
       Object.values(runtimeState.runs)
         .filter((runState) =>
-          runState.status !== "closed" || !hydratedRunIds.has(runState.runId),
+          runState.status !== "closed" || !hydratedOutputRunIds.has(runState.runId),
         )
         .flatMap((runState) => runState.entries)
         .filter((entry) => entry.sessionId === sessionId),
-    [hydratedRunIds, runtimeState.runs, sessionId],
+    [hydratedOutputRunIds, runtimeState.runs, sessionId],
   );
   const runtimeRows = useMemo(
     () => runtimeEntriesToRows(runtimeEntries),
@@ -772,9 +772,12 @@ function latestRoundRunId(rounds: SessionRound[]): string | null {
   return null;
 }
 
-function timelineRowRunIds(rows: TimelineRow[]): Set<string> {
+function timelineOutputRunIds(rows: TimelineRow[]): Set<string> {
   const runIds = new Set<string>();
   for (const row of rows) {
+    if (!isAnswerRole(row.role)) {
+      continue;
+    }
     if (row.runId !== null && row.runId.trim().length > 0) {
       runIds.add(row.runId);
     }

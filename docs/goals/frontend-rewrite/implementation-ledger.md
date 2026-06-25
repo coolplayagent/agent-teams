@@ -1530,3 +1530,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent screenshot and browser interaction verification completed for this V1/V2 theme parity slice. No subsystem completion is claimed; remaining work includes browser-level stream/replay/refresh recovery scenarios, detailed message rendering parity, settings secondary-page review, and paired subagent review before any checklist row can be marked complete.
+
+## 2026-06-25 V2 Browser Stream Recovery Scenario Batch
+
+### Scope
+- Re-scanned the frontend rewrite goal and selected a gap from the global checklist rather than continuing local visual polish.
+- Added a real V2 `/app/` browser integration scenario for the AG-UI stream and recovery path.
+- Served the built React/Ant Design app from `frontend/dist/app`, mocked only the `/api/*` backend contract, and installed a browser-native mock `EventSource` before app bootstrap so Composer, MessageTimeline, RecoveryBar, query invalidation, and stream controller logic all run through the actual shell.
+- Covered creating a run from the V2 composer, receiving live `text_delta` output, refreshing while the run is active, hydrating the saved first chunk, and auto-opening the recovered EventSource from `last_event_id`.
+- Asserted the recovered stream URL carries `after_event_id=2`, the persisted first chunk remains rendered exactly once after refresh, the post-refresh chunk appears from the resumed stream, and `run_completed` closes the EventSource.
+- Left full Runtime Stream completion open; this is the first browser-level refresh recovery scenario and still needs backend-backed SSE timing, interrupted network retry, stop/resume, approvals/questions, and reviewer sign-off coverage.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 1 test.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because the committed change is browser-level runtime coverage rather than a visual UI change; the next visual framework pass should continue using paired V1/V2 screenshots.
+
+### Reviewer
+- Main-agent browser integration verification completed for this refresh recovery slice. No AG-UI Runtime Stream, Run Recovery, or Message Timeline subsystem completion is claimed; remaining work includes real backend SSE replay, interrupted stream resume, stop/resume, approvals/questions during active recovery, and detailed message rendering parity.

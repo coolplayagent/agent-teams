@@ -3202,3 +3202,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, API-client, built-app browser, and screenshot inspection completed for this create/catalog slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.
+
+## 2026-06-26 V2 Real SSE Refresh Recovery Checkpoint Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, quality gates, latest ledger, and current stream/recovery coverage before choosing this slice, then targeted a remaining AG-UI Runtime Stream browser gap instead of continuing only Settings or visual polish.
+- Added a built `/app/` real SSE browser scenario for page refresh while a run stream is still open: the initial SSE sends `run_started` and the first text delta, stays open to prevent a pre-refresh native reconnect false positive, and the browser reloads with persisted message and recovery checkpoint state.
+- Verified the refreshed page opens a new real SSE request from `after_event_id=2`, with no synthetic `Last-Event-ID` header, receives the continued text delta and terminal event, keeps the pre-refresh text rendered exactly once, hides Stop, restores Send, and does not create a second run.
+- Extended the real SSE harness with a controlled first-stream hold/release path plus request-count/request-snapshot wait helpers so future refresh tests can distinguish page-reload recovery from ordinary EventSource reconnects.
+- Kept this as targeted refresh-recovery evidence only. Full AG-UI Runtime Stream completion, Message Timeline visual parity, Settings readiness, visual matrix review, Electron release readiness, and subsystem reviewer sign-off remain open.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_refresh_recovery_reopens_stream_from_checkpoint"` passed with 1 selected test.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_refresh_recovery_reopens_stream_from_checkpoint or real_sse_interrupted_stream_reconnects_from_runtime_cursor or real_sse_replay_dedupes_cursor_event_before_continuing or real_sse_rich_replay_preserves_non_text_events_after_reconnect"` passed with 4 selected tests.
+
+### Reviewer
+- Main-agent built-app real SSE browser verification completed for this refresh-recovery checkpoint slice. No full AG-UI Runtime Stream, Run Recovery, Message Timeline, Settings, or release completion is claimed.

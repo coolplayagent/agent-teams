@@ -879,6 +879,65 @@ def test_v2_real_sse_interrupted_stream_reconnects_from_runtime_cursor(
         assert stream_state.has_last_event_id_header("2")
 
 
+def test_v2_real_sse_refresh_recovery_reopens_stream_from_checkpoint(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(hold_initial_stream_after_first_chunk=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        assistant_message = page.locator(".at-message").filter(has_text=_FIRST_CHUNK)
+        expect(assistant_message).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.wait_for_sent_event_id(2, timeout_seconds=5.0)
+        backend.last_event_id = 2
+        backend.persisted_assistant_text = _FIRST_CHUNK
+
+        request_count_before_reload = stream_state.request_count()
+        assert request_count_before_reload == 1
+
+        page.reload()
+        _wait_for_v2_shell(page)
+        assert stream_state.wait_for_request_count_at_least(
+            request_count_before_reload + 1,
+            timeout_seconds=10.0,
+        )
+        stream_state.release_initial_stream()
+        request_snapshots = stream_state.request_snapshots()
+        latest_request = request_snapshots[-1]
+        assert latest_request == {
+            "after_event_id": 2,
+            "last_event_id": "",
+            "run_id": _RUN_ID,
+        }
+
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            1,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message").filter(has_text=_REAL_SSE_RESUMED_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.wait_for_sent_event_id(4, timeout_seconds=5.0)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.run_create_count == 1
+
+
 def test_v2_real_sse_replay_dedupes_cursor_event_before_continuing(
     browser_page: Page,
 ) -> None:
@@ -2343,6 +2402,7 @@ class _RealSseStreamState:
         self,
         *,
         fail_initial_stream: bool = False,
+        hold_initial_stream_after_first_chunk: bool = False,
         hold_initial_stream_until_stop: bool = False,
         malformed_initial_stream: bool = False,
         replay_duplicate_event_on_resume: bool = False,
@@ -2351,6 +2411,9 @@ class _RealSseStreamState:
         stop_initial_stream: bool = False,
     ) -> None:
         self.fail_initial_stream = fail_initial_stream
+        self.hold_initial_stream_after_first_chunk = (
+            hold_initial_stream_after_first_chunk
+        )
         self.hold_initial_stream_until_stop = hold_initial_stream_until_stop
         self.malformed_initial_stream = malformed_initial_stream
         self.replay_duplicate_event_on_resume = replay_duplicate_event_on_resume
@@ -2360,6 +2423,7 @@ class _RealSseStreamState:
         self._lock = threading.Lock()
         self._initial_stream_finished = threading.Event()
         self._multiplex_stream_seen = threading.Event()
+        self._release_initial_stream = threading.Event()
         self._resumed_stream_seen = threading.Event()
         self._sent_event_ids: set[int] = set()
         self._sent_initial_stream = False
@@ -2431,6 +2495,19 @@ class _RealSseStreamState:
             time.sleep(0.05)
         return False
 
+    def wait_for_request_count_at_least(
+        self,
+        request_count: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            if self.request_count() >= request_count:
+                return True
+            time.sleep(0.05)
+        return False
+
     def wait_for_multiplex_run_ids(
         self,
         run_ids: set[str],
@@ -2481,6 +2558,10 @@ class _RealSseStreamState:
         with self._lock:
             return len(self.stream_requests)
 
+    def request_snapshots(self) -> list[dict[str, object]]:
+        with self._lock:
+            return [dict(request) for request in self.stream_requests]
+
     def record_initial_stream_finished(self) -> None:
         self._initial_stream_finished.set()
 
@@ -2490,6 +2571,12 @@ class _RealSseStreamState:
 
     def record_stop_request(self) -> None:
         self._stop_requested.set()
+
+    def release_initial_stream(self) -> None:
+        self._release_initial_stream.set()
+
+    def wait_for_initial_stream_release(self, *, timeout_seconds: float) -> bool:
+        return self._release_initial_stream.wait(timeout=timeout_seconds)
 
     def wait_for_initial_stream_finished(self, *, timeout_seconds: float) -> bool:
         return self._initial_stream_finished.wait(timeout=timeout_seconds)
@@ -2711,6 +2798,10 @@ def _serve_v2_app_with_real_sse(
                         {"text": _FIRST_CHUNK},
                     ),
                 )
+                if stream_state.hold_initial_stream_after_first_chunk:
+                    stream_state.wait_for_initial_stream_release(timeout_seconds=10.0)
+                    stream_state.record_initial_stream_finished()
+                    return
                 if stream_state.malformed_initial_stream:
                     self._write_malformed_sse_event()
                     stream_state.record_initial_stream_finished()

@@ -2452,3 +2452,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, built-app browser replay, and targeted static verification completed for this coordination replay slice. No Message Timeline, AG-UI Runtime Stream, Subagents, or Run Recovery subsystem completion is claimed.
+
+## 2026-06-25 V2 Subagent Session Stream Batch
+
+### Scope
+- Re-checked the Subagents, AG-UI Runtime Stream, and Run Recovery checklist after the coordination replay slice, focusing on the normal-mode subagent secondary page instead of continuing only message replay summaries.
+- Reused the main `MessageTimeline` renderer for subagent agent-message history so persisted subagent messages, runtime replay entries, thinking/tool rendering, empty states, and load errors follow the same path as the main chat timeline.
+- Added scoped timeline options for alternate message loaders, query keys, disabled round rails, runtime run filtering, and fallback run hydration so a subagent page can show only its own run stream without flattening subagent content into the primary chat page.
+- Preserved the V1-style secondary page behavior: subagents still open from the nested sidebar entry, the subagent page keeps its own back button, and sidebar/settings items were not added or removed.
+- Wired active subagent sessions to `RunStreamController.startRunStream` with `last_event_id` replay continuation, terminal-status precedence, scoped runtime display, cleanup on page switch, and agent-message refresh when a tracked subagent stream closes.
+- Refreshed `frontend/dist/app` for the subagent session stream change.
+- Kept this as targeted Subagents and AG-UI Runtime Stream progress only; full Subagents, Run Recovery, stream replay edge cases, browser V1/V2 visual comparison, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/SubagentSessionView.test.tsx src/test/MessageTimeline.test.tsx` passed with 56 tests.
+- `npm test -- --run src/test/SessionsSidebar.test.tsx src/test/AppShell.test.tsx src/test/ChatWorkspace.test.tsx` passed with 41 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- No screenshot was captured because this batch changes subagent stream behavior and fixed-frame reuse rather than the global app shell. The next layout-focused batch should start with browser screenshots against V1 and V2 before detail work.
+
+### Reviewer
+- Main-agent component and shell-level targeted verification completed for this subagent-session stream slice. No full Subagents, Run Recovery, Message Timeline, or AG-UI Runtime Stream subsystem completion is claimed.

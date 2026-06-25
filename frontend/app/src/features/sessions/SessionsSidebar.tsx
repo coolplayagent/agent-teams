@@ -73,6 +73,7 @@ export interface ActiveSubagentSession {
   createdAt: string;
   instanceId: string;
   interactive: boolean;
+  lastEventId: number | null;
   roleId: string;
   runId: string;
   runPhase: string;
@@ -916,6 +917,7 @@ function normalizeSessionSubagent(
     createdAt: firstTrimmed(record.created_at),
     instanceId,
     interactive: record.interactive === true || subagentKind === "orchestration",
+    lastEventId: normalizedPositiveInteger(record.last_event_id),
     roleId,
     runId,
     runPhase: firstTrimmed(record.run_phase),
@@ -926,6 +928,13 @@ function normalizeSessionSubagent(
     title: firstTrimmed(record.title),
     updatedAt: firstTrimmed(record.updated_at, record.created_at),
   };
+}
+
+function normalizedPositiveInteger(value: number | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.floor(value);
 }
 
 function normalizeSubagentKind(record: SessionSubagentRecord): string {

@@ -1,39 +1,87 @@
-import { Button, Empty, Skeleton, Typography } from "antd";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Wrench } from "lucide-react";
+import { Button, Typography } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { listAgentMessages } from "../../api/client";
-import {
-  contentPartText,
-  type ContentPart,
-  type JsonValue,
-  type TimelineMessage,
-} from "../../api/contracts";
-import { useTranslations, type Translate } from "../../i18n";
-import { MarkdownMessage } from "../timeline/MarkdownMessage";
+import type { RunStreamController } from "../../runtime/useRunStreamController";
+import { useTranslations } from "../../i18n";
+import { MessageTimeline } from "../timeline/MessageTimeline";
 import type { ActiveSubagentSession } from "./SessionsSidebar";
 
 interface SubagentSessionViewProps {
   subagent: ActiveSubagentSession;
   onBack: () => void;
+  runStreamController: RunStreamController;
 }
 
 export function SubagentSessionView({
   onBack,
+  runStreamController,
   subagent,
 }: SubagentSessionViewProps) {
+  const queryClient = useQueryClient();
   const t = useTranslations();
-  const messagesQuery = useQuery({
-    queryKey: [
-      "sessions",
-      subagent.sessionId,
-      "agents",
-      subagent.instanceId,
-      "messages",
-    ],
-    queryFn: () => listAgentMessages(subagent.sessionId, subagent.instanceId),
-  });
+  const runStreamControllerRef = useRef(runStreamController);
+  const previouslyTrackedRunRef = useRef(false);
+  const runId = subagent.runId.trim();
+  const streamStatusKey = [
+    subagent.status,
+    subagent.runStatus,
+    subagent.runPhase,
+  ].join("|");
+  const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
+  const messageQueryKey = useMemo(
+    () => subagentMessagesQueryKey(subagent.sessionId, subagent.instanceId),
+    [subagent.instanceId, subagent.sessionId],
+  );
   const title = subagent.title || humanizeRoleId(subagent.roleId) || subagent.instanceId;
+
+  useEffect(() => {
+    runStreamControllerRef.current = runStreamController;
+  }, [runStreamController]);
+
+  useEffect(() => {
+    let startedRunStream = false;
+    if (
+      shouldStreamSubagentRun(runId, streamStatusKey) &&
+      !runStreamControllerRef.current.trackedRunIds.includes(runId) &&
+      !runStreamControllerRef.current.suppressedRunIds.includes(runId)
+    ) {
+      runStreamControllerRef.current.startRunStream({
+        afterEventId: subagent.lastEventId ?? undefined,
+        foreground: true,
+        runId,
+        sessionId: subagent.sessionId,
+      });
+      startedRunStream = true;
+    }
+    return () => {
+      if (startedRunStream) {
+        runStreamControllerRef.current.clearRunStream();
+      }
+    };
+  }, [runId, streamStatusKey, subagent.lastEventId, subagent.sessionId]);
+
+  useEffect(() => {
+    const tracked = runId.length > 0 && runStreamController.trackedRunIds.includes(runId);
+    if (previouslyTrackedRunRef.current && !tracked) {
+      void queryClient.invalidateQueries({ queryKey: messageQueryKey });
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", subagent.sessionId, "subagents"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    }
+    previouslyTrackedRunRef.current = tracked;
+  }, [
+    messageQueryKey,
+    queryClient,
+    runId,
+    subagent.sessionId,
+    trackedRunIdsKey,
+    runStreamController.trackedRunIds,
+  ]);
+
   return (
     <div className="at-subagent-session-view">
       <header className="at-subagent-session-header">
@@ -55,161 +103,61 @@ export function SubagentSessionView({
         </div>
       </header>
       <div className="at-subagent-session-body">
-        {messagesQuery.isLoading ? (
-          <Skeleton active paragraph={{ rows: 10 }} />
-        ) : messagesQuery.isError ? (
-          <Empty
-            description={t("subagentSessionLoadError")}
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
-        ) : (messagesQuery.data ?? []).length === 0 ? (
-          <Empty
-            description={t("subagentSessionEmpty")}
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
-        ) : (
-          <div className="at-subagent-message-list">
-            {(messagesQuery.data ?? []).map((message, index) => (
-              <SubagentMessage
-                key={message.message_id ?? `${message.role ?? "message"}:${index}`}
-                message={message}
-              />
-            ))}
-          </div>
-        )}
+        <MessageTimeline
+          emptyDescription={t("subagentSessionEmpty")}
+          fallbackRunId={runId}
+          loadErrorDescription={t("subagentSessionLoadError")}
+          loadMessages={() => listAgentMessages(subagent.sessionId, subagent.instanceId)}
+          messageQueryKey={messageQueryKey}
+          roundsEnabled={false}
+          runtimeRunId={runId}
+          sessionId={subagent.sessionId}
+        />
       </div>
     </div>
   );
 }
 
-function SubagentMessage({ message }: { message: TimelineMessage }) {
-  const t = useTranslations();
-  const parts = messageParts(message);
-  const fallbackText = fallbackMessageText(message);
-  const role = message.role_id?.trim() || message.role?.trim() || "agent";
-  return (
-    <article className="at-subagent-message">
-      <div className="at-subagent-message-header">
-        <span>{role}</span>
-        {message.created_at ? <time dateTime={message.created_at}>{message.created_at}</time> : null}
-      </div>
-      <div className="at-subagent-message-content">
-        {parts.length > 0 ? (
-          parts.map((part, index) => (
-            <SubagentMessagePart
-              key={`${partKind(part)}:${index}`}
-              part={part}
-              t={t}
-            />
-          ))
-        ) : fallbackText ? (
-          <MarkdownMessage text={fallbackText} />
-        ) : null}
-      </div>
-    </article>
-  );
+function subagentMessagesQueryKey(
+  sessionId: string,
+  instanceId: string,
+): readonly unknown[] {
+  return ["sessions", sessionId, "agents", instanceId, "messages"] as const;
 }
 
-function SubagentMessagePart({
-  part,
-  t,
-}: {
-  part: ContentPart;
-  t: Translate;
-}) {
-  const text = contentPartText(part);
-  if (text !== null) {
-    return <MarkdownMessage text={text} />;
+function shouldStreamSubagentRun(runId: string, streamStatusKey: string): boolean {
+  if (runId.length === 0) {
+    return false;
   }
-  const kind = partKind(part);
-  if (kind === "thinking") {
-    return (
-      <details className="at-subagent-message-thinking">
-        <summary>{t("timelineThinking")}</summary>
-        <MarkdownMessage text={partText(part)} />
-      </details>
-    );
+  const statuses = streamStatusKey.split("|");
+  if (statuses.some(isTerminalRunStatus)) {
+    return false;
   }
-  if (kind === "tool-call" || kind === "tool-return" || kind === "retry-prompt") {
-    return (
-      <details className="at-subagent-message-tool">
-        <summary>
-          <Wrench aria-hidden="true" size={14} />
-          <span>{toolPartTitle(kind, part, t)}</span>
-        </summary>
-        <pre>{toolPartBody(part)}</pre>
-      </details>
-    );
-  }
-  return null;
+  return statuses.some(isStreamingRunStatus);
 }
 
-function messageParts(message: TimelineMessage): ContentPart[] {
-  return message.parts ?? message.message?.parts ?? [];
+function isStreamingRunStatus(status: string | undefined): boolean {
+  switch (status?.trim().toLowerCase()) {
+    case "queued":
+    case "running":
+    case "stopping":
+      return true;
+    default:
+      return false;
+  }
 }
 
-function fallbackMessageText(message: TimelineMessage): string {
-  return message.content?.trim() || message.message?.content?.trim() || "";
-}
-
-function partKind(part: ContentPart): string {
-  if ("kind" in part) {
-    return String(part.kind);
+function isTerminalRunStatus(status: string | undefined): boolean {
+  switch (status?.trim().toLowerCase()) {
+    case "cancelled":
+    case "canceled":
+    case "completed":
+    case "failed":
+    case "stopped":
+      return true;
+    default:
+      return false;
   }
-  if ("part_kind" in part) {
-    return String(part.part_kind);
-  }
-  return "part";
-}
-
-function partText(part: ContentPart): string {
-  if ("text" in part && typeof part.text === "string") {
-    return part.text;
-  }
-  if ("content" in part && typeof part.content === "string") {
-    return part.content;
-  }
-  return "";
-}
-
-function toolPartTitle(kind: string, part: ContentPart, t: Translate): string {
-  const name = toolName(part);
-  if (kind === "tool-call") {
-    return name ? `${t("timelineToolCall")}: ${name}` : t("timelineToolCall");
-  }
-  if (kind === "retry-prompt") {
-    return name
-      ? `${t("timelineToolValidation")}: ${name}`
-      : t("timelineToolValidation");
-  }
-  return name ? `${t("timelineToolResult")}: ${name}` : t("timelineToolResult");
-}
-
-function toolName(part: ContentPart): string {
-  if ("tool_name" in part && typeof part.tool_name === "string") {
-    return part.tool_name;
-  }
-  return "";
-}
-
-function toolPartBody(part: ContentPart): string {
-  if ("args" in part) {
-    return jsonDisplayText(part.args);
-  }
-  if ("content" in part) {
-    return jsonDisplayText(part.content);
-  }
-  return "";
-}
-
-function jsonDisplayText(value: JsonValue | undefined): string {
-  if (value === undefined) {
-    return "";
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  return JSON.stringify(value, null, 2);
 }
 
 function subagentBadgeClassName(subagent: ActiveSubagentSession): string {

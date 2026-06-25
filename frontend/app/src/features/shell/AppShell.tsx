@@ -469,6 +469,7 @@ export function AppShell() {
           ) : activeView === "subagent-session" && activeSubagent !== null ? (
             <SubagentSessionView
               onBack={() => openPrimaryShellView("chat", "replace")}
+              runStreamController={runStreamController}
               subagent={activeSubagent}
             />
           ) : (

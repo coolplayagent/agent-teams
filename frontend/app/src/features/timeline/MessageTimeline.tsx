@@ -29,10 +29,26 @@ const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 
 interface MessageTimelineProps {
+  emptyDescription?: string;
+  fallbackRunId?: string | null;
+  loadErrorDescription?: string;
+  loadMessages?: (sessionId: string) => Promise<TimelineMessage[]>;
+  messageQueryKey?: readonly unknown[];
+  roundsEnabled?: boolean;
+  runtimeRunId?: string | null;
   sessionId: string | null;
 }
 
-export function MessageTimeline({ sessionId }: MessageTimelineProps) {
+export function MessageTimeline({
+  emptyDescription,
+  fallbackRunId = null,
+  loadErrorDescription,
+  loadMessages = listSessionMessages,
+  messageQueryKey,
+  roundsEnabled = true,
+  runtimeRunId = null,
+  sessionId,
+}: MessageTimelineProps) {
   const { message } = App.useApp();
   const t = useTranslations();
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -42,14 +58,18 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const messagesQuery = useQuery({
-    queryKey: ["sessions", sessionId, "messages"],
-    queryFn: () => listSessionMessages(sessionId ?? ""),
+    queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
+    queryFn: () => loadMessages(sessionId ?? ""),
     enabled: sessionId !== null,
   });
   const roundsQuery = useQuery({
     queryKey: ["sessions", sessionId, "rounds", "rail"],
     queryFn: () => collectRoundRailRounds(sessionId ?? ""),
-    enabled: sessionId !== null && !messagesQuery.isLoading && !messagesQuery.isError,
+    enabled:
+      roundsEnabled &&
+      sessionId !== null &&
+      !messagesQuery.isLoading &&
+      !messagesQuery.isError,
     staleTime: 10000,
   });
 
@@ -66,10 +86,10 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     () =>
       messages
         .map((messageItem, index) =>
-          messageToRow(messageItem, index, messageRoundLookup),
+          messageToRow(messageItem, index, messageRoundLookup, fallbackRunId),
         )
         .filter(timelineRowHasRenderableContent),
-    [messageRoundLookup, messages],
+    [fallbackRunId, messageRoundLookup, messages],
   );
   const hydratedOutputRunIds = useMemo(
     () => timelineOutputRunIds(persistedRows),
@@ -81,7 +101,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
         .flatMap((runState) =>
           runState.entries.filter(
             (entry) =>
-              entry.sessionId === sessionId &&
+              runtimeEntryMatchesScope(entry, sessionId, runtimeRunId) &&
               shouldKeepRuntimeEntryAfterHydration(
                 runState,
                 entry,
@@ -89,7 +109,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
               ),
           ),
         ),
-    [hydratedOutputRunIds, runtimeState.runs, sessionId],
+    [hydratedOutputRunIds, runtimeRunId, runtimeState.runs, sessionId],
   );
   const runtimeRows = useMemo(
     () => runtimeEntriesToRows(runtimeEntries),
@@ -108,9 +128,11 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
       Object.values(runtimeState.runs).some(
         (runState) =>
           runState.status !== "closed" &&
-          runState.entries.some((entry) => entry.sessionId === sessionId),
+          runState.entries.some((entry) =>
+            runtimeEntryMatchesScope(entry, sessionId, runtimeRunId),
+          ),
       ),
-    [runtimeState.runs, sessionId],
+    [runtimeRunId, runtimeState.runs, sessionId],
   );
   const lastAnswer = useMemo(() => {
     for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -200,7 +222,10 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   if (messagesQuery.isError) {
     return (
       <TimelineStateFrame>
-        <Empty description={t("timelineLoadError")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty
+          description={loadErrorDescription ?? t("timelineLoadError")}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
       </TimelineStateFrame>
     );
   }
@@ -208,7 +233,10 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   if (rows.length === 0) {
     return (
       <TimelineStateFrame>
-        <Empty description={t("timelineNoMessages")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty
+          description={emptyDescription ?? t("timelineNoMessages")}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
       </TimelineStateFrame>
     );
   }
@@ -574,6 +602,7 @@ function messageToRow(
   message: TimelineMessage,
   index: number,
   roundLookup: MessageRoundLookup,
+  fallbackRunId: string | null,
 ): TimelineRow {
   const role = message.role_id ?? message.role ?? "agent";
   const parts = messageParts(message);
@@ -585,7 +614,7 @@ function messageToRow(
     kind: "message",
     parts,
     roundMarker: null,
-    runId: messageRunId(message, roundLookup),
+    runId: messageRunId(message, roundLookup, fallbackRunId),
     source: "message",
     copyable: isAnswerRole(role) && text.trim().length > 0,
   };
@@ -805,6 +834,18 @@ function shouldKeepRuntimeEntryAfterHydration(
   return !runtimeEntryIsCoveredByHydratedOutput(entry);
 }
 
+function runtimeEntryMatchesScope(
+  entry: TimelineEntry,
+  sessionId: string | null,
+  runtimeRunId: string | null,
+): boolean {
+  if (entry.sessionId !== sessionId) {
+    return false;
+  }
+  const scopedRunId = runtimeRunId?.trim() ?? "";
+  return scopedRunId.length === 0 || entry.runId === scopedRunId;
+}
+
 function runtimeEntryIsCoveredByHydratedOutput(entry: TimelineEntry): boolean {
   return (
     entry.kind === "text_delta" ||
@@ -893,6 +934,7 @@ function roundMessages(round: SessionRound): SessionRoundMessage[] {
 function messageRunId(
   message: TimelineMessage,
   roundLookup: MessageRoundLookup,
+  fallbackRunId: string | null,
 ): string | null {
   const explicitRunId = (message.run_id ?? message.trace_id)?.trim();
   if (explicitRunId !== undefined && explicitRunId.length > 0) {
@@ -911,9 +953,13 @@ function messageRunId(
     if (exactRunId !== undefined) {
       return exactRunId;
     }
-    return runIdForTimestamp(createdAt, roundLookup.boundaries);
+    const boundaryRunId = runIdForTimestamp(createdAt, roundLookup.boundaries);
+    if (boundaryRunId !== null) {
+      return boundaryRunId;
+    }
   }
-  return null;
+  const normalizedFallbackRunId = fallbackRunId?.trim() ?? "";
+  return normalizedFallbackRunId.length > 0 ? normalizedFallbackRunId : null;
 }
 
 function runIdForTimestamp(

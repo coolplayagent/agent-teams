@@ -925,74 +925,11 @@ body {
 }
 
 .at-subagent-session-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
-  overflow: auto;
-  padding: 16px 18px 24px;
-}
-
-.at-subagent-message-list {
-  display: grid;
-  gap: 12px;
-  max-width: 920px;
-}
-
-.at-subagent-message {
-  display: grid;
-  gap: 6px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--at-border);
-}
-
-.at-subagent-message-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--at-text-muted);
-  font-size: 12px;
-}
-
-.at-subagent-message-header span {
-  color: var(--at-text);
-  font-weight: 600;
-}
-
-.at-subagent-message-content {
-  min-width: 0;
-}
-
-.at-subagent-message-thinking,
-.at-subagent-message-tool {
-  border: 1px solid var(--at-border);
-  border-radius: 6px;
-  background: var(--at-surface);
-}
-
-.at-subagent-message-thinking summary,
-.at-subagent-message-tool summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--at-text-muted);
-  font-size: 12px;
-  padding: 6px 8px;
-}
-
-.at-subagent-message-thinking .at-message-markdown,
-.at-subagent-message-tool pre {
-  margin: 0;
-  padding: 8px;
-}
-
-.at-subagent-message-tool pre {
-  overflow: auto;
-  border-top: 1px solid var(--at-border);
-  color: var(--at-text);
-  font-family: var(--at-font-mono);
-  font-size: 12px;
-  white-space: pre-wrap;
+  overflow: hidden;
 }
 
 .at-recovery {

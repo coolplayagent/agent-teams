@@ -466,6 +466,41 @@ describe("useRunStreamController", () => {
     expect(streamMocks.handles[0].close).not.toHaveBeenCalled();
   });
 
+  it("keeps the native EventSource reconnect when duplicate replay activity resumes before fallback", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const firstOptions = streamMocks.optionsList[0] as RunStreamOptions;
+    act(() => {
+      firstOptions.onError("Run stream disconnected.", "transport");
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+      firstOptions.onActivity?.();
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(streamMocks.handles[0].close).not.toHaveBeenCalled();
+  });
+
   it("does not reconnect explicit server stream errors", () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({

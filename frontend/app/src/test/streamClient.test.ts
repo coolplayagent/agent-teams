@@ -262,6 +262,26 @@ describe("openRunStream", () => {
     expect(stream.states[0].runs["run-1"].entries).toHaveLength(1);
   });
 
+  it("reports activity for duplicate replay events without notifying state", () => {
+    const stream = openTestStream({
+      initialState: runtimeStateWithOpenRun(5),
+    });
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 5,
+          payload_json: JSON.stringify({ text: "already seen replay chunk" }),
+        }),
+      ),
+    );
+
+    expect(stream.activities).toHaveLength(1);
+    expect(stream.states).toEqual([]);
+    expect(stream.source.close).not.toHaveBeenCalled();
+  });
+
   it("closes once when a terminal event arrives", () => {
     const stream = openTestStream();
 
@@ -591,6 +611,7 @@ describe("openRunStream", () => {
 });
 
 function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
+  activities: string[];
   closedStates: RuntimeState[];
   errors: Array<{ kind: string; message: string }>;
   handle: ReturnType<typeof openRunStream>;
@@ -598,6 +619,7 @@ function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
   states: RuntimeState[];
 } {
   vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
+  const activities: string[] = [];
   const states: RuntimeState[] = [];
   const errors: Array<{ kind: string; message: string }> = [];
   const closedStates: RuntimeState[] = [];
@@ -608,6 +630,9 @@ function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
     onState: (state) => {
       states.push(state);
     },
+    onActivity: () => {
+      activities.push("activity");
+    },
     onError: (message, kind) => {
       errors.push({ kind, message });
     },
@@ -617,6 +642,7 @@ function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
     ...overrides,
   });
   return {
+    activities,
     closedStates,
     errors,
     handle,
@@ -628,6 +654,7 @@ function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
 function openTestMultiplexedStream(
   overrides: Partial<MultiplexedRunStreamOptions> = {},
 ): {
+  activities: string[];
   closedStates: RuntimeState[];
   errors: Array<{ kind: string; message: string }>;
   handle: ReturnType<typeof openMultiplexedRunStream>;
@@ -635,6 +662,7 @@ function openTestMultiplexedStream(
   states: RuntimeState[];
 } {
   vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
+  const activities: string[] = [];
   const states: RuntimeState[] = [];
   const errors: Array<{ kind: string; message: string }> = [];
   const closedStates: RuntimeState[] = [];
@@ -646,6 +674,9 @@ function openTestMultiplexedStream(
     onError: (message, kind) => {
       errors.push({ kind, message });
     },
+    onActivity: () => {
+      activities.push("activity");
+    },
     onState: (state) => {
       states.push(state);
     },
@@ -653,6 +684,7 @@ function openTestMultiplexedStream(
     ...overrides,
   });
   return {
+    activities,
     closedStates,
     errors,
     handle,
@@ -702,6 +734,22 @@ function runtimeStateWithClosedRun(lastEventId: number): RuntimeState {
       runId: "run-1",
     },
   ]);
+}
+
+function runtimeStateWithOpenRun(lastEventId: number): RuntimeState {
+  return {
+    activeRunIds: ["run-1"],
+    runs: {
+      "run-1": {
+        entries: [],
+        lastEventId,
+        runId: "run-1",
+        seenEventKeys: [`run-1:${lastEventId}`],
+        status: "open",
+        terminalEventType: null,
+      },
+    },
+  };
 }
 
 function runtimeStateWithClosedRuns(

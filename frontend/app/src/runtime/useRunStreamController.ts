@@ -43,6 +43,7 @@ export interface RunStreamController {
 
 interface RunStreamCallbacks {
   initialState: RuntimeState;
+  onActivity: () => void;
   onState: (nextRuntimeState: RuntimeState) => void;
   onClosed: () => void;
   onError: (errorMessage: string, errorKind: RunStreamErrorKind) => void;
@@ -144,6 +145,13 @@ export function useRunStreamController(): RunStreamController {
     const runs = resolveReplayTargets(options.runs, runtimeStateRef.current);
     const callbacks: RunStreamCallbacks = {
       initialState: runtimeStateRef.current,
+      onActivity: () => {
+        if (streamGeneration !== streamGenerationRef.current) {
+          return;
+        }
+        clearReconnectTimer();
+        reconnectAttemptRef.current = 0;
+      },
       onState: (nextRuntimeState) => {
         if (streamGeneration !== streamGenerationRef.current) {
           return;

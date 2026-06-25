@@ -1475,3 +1475,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser screenshot/metrics verification completed for this message timeline tool-summary slice. No full Message Timeline or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes live stream/replay browser scenarios, refresh-during-stream recovery under actual SSE timing, detailed long-history rendering parity, and reviewer sign-off.
+
+## 2026-06-25 Stream Replay Activity Continuation Batch
+
+### Scope
+- Continued the AG-UI stream/replay hardening pass around interrupted-stream recovery.
+- Added a stream activity callback for valid tracked run events, separate from state changes, so replayed duplicate events can still prove the native EventSource connection resumed.
+- Updated the run stream controller to cancel pending manual reconnect fallback when tracked activity arrives, while still keeping duplicate events out of rendered runtime state.
+- Preserved the existing state-change path so normal streamed events continue to cancel reconnect timers and update active run ids.
+- Left broader browser-level live stream/replay verification open; this batch targets the reducer/controller boundary that prevents needless reconnect churn during replay resume.
+
+### Verification
+- `npm test -- src/test/streamClient.test.ts src/test/RunStreamController.test.tsx src/test/runtimeReducers.test.ts` in `frontend/app` passed with 50 tests.
+- `npm run build` in `frontend/app` passed, including typecheck, desktop build, and Vite production build; Vite refreshed `frontend/dist/app` with rebuilt asset `index-DDLpdHYG.js`.
+- No screenshot was captured for this batch because it changed non-visual stream runtime behavior; browser stream/replay scenarios remain required before subsystem completion.
+
+### Reviewer
+- Main-agent targeted verification completed for this replay activity continuation slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery under actual SSE timing, interrupted stream resume validation against the backend, and reviewer sign-off.

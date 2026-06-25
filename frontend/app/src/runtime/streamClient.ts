@@ -12,6 +12,7 @@ export interface RunStreamOptions {
   runId: string;
   afterEventId: number;
   onState: (state: RuntimeState) => void;
+  onActivity?: () => void;
   onError: (message: string, kind: RunStreamErrorKind) => void;
   onClosed?: (state: RuntimeState) => void;
   initialState: RuntimeState;
@@ -25,6 +26,7 @@ export interface RunStreamTarget {
 export interface MultiplexedRunStreamOptions {
   runs: RunStreamTarget[];
   onState: (state: RuntimeState) => void;
+  onActivity?: () => void;
   onError: (message: string, kind: RunStreamErrorKind) => void;
   onClosed?: (state: RuntimeState) => void;
   initialState: RuntimeState;
@@ -33,6 +35,7 @@ export interface MultiplexedRunStreamOptions {
 export function openRunStream(options: RunStreamOptions): RunStreamHandle {
   return openRunEventSource({
     initialState: options.initialState,
+    onActivity: options.onActivity,
     onClosed: options.onClosed,
     onError: options.onError,
     onState: options.onState,
@@ -47,6 +50,7 @@ export function openMultiplexedRunStream(
   const runs = normalizeRunStreamTargets(options.runs);
   return openRunEventSource({
     initialState: options.initialState,
+    onActivity: options.onActivity,
     onClosed: options.onClosed,
     onError: options.onError,
     onState: options.onState,
@@ -59,6 +63,7 @@ interface RunEventSourceOptions {
   url: string;
   trackedRunIds: string[];
   onState: (state: RuntimeState) => void;
+  onActivity?: () => void;
   onError: (message: string, kind: RunStreamErrorKind) => void;
   onClosed?: (state: RuntimeState) => void;
   initialState: RuntimeState;
@@ -103,6 +108,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     if (!options.trackedRunIds.includes(event.run_id)) {
       return;
     }
+    options.onActivity?.();
     const nextRuntimeState = reduceRunEvent(runtimeState, event);
     if (nextRuntimeState === runtimeState) {
       if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {

@@ -2127,3 +2127,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this real SSE recoverable resume slice. No AG-UI Runtime Stream or Run Recovery subsystem completion is claimed.
+
+## 2026-06-25 V2 Real SSE Failed Terminal Browser Batch
+
+### Scope
+- Re-checked the Runtime Gate after the real SSE recoverable resume slice and targeted the missing real-browser `run_failed` terminal path.
+- Extended the built V2 `/app/` real HTTP/SSE harness with a mode that sends `run_started`, `text_delta`, and terminal `run_failed` events over native EventSource.
+- Verified the failure diagnostic payload text remains visible in the timeline after the terminal event.
+- Verified the stream finalizes without an extra reconnect, the Stop control hides, and the Send control returns after `run_failed`.
+- Left full AG-UI Runtime Stream completion open; remaining work still includes production-backend timing for approvals and user questions, broader event coverage, and reviewer findings from the active review pass.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k real_sse_run_failed` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 16 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch verifies stream terminal timing and visible failure text through browser assertions rather than changing layout or styling.
+
+### Reviewer
+- Reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` is reviewing the AG-UI Runtime Stream and Run Recovery subsystem. Final reviewer PASS/FAIL is not yet claimed in this batch.

@@ -53,6 +53,7 @@ _RICH_REPLAY_THINKING_SUFFIX = " after reconnect"
 _RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
 _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
 _REAL_SSE_RESUMED_CHUNK = "real SSE resumed chunk"
+_REAL_SSE_FAILURE_MESSAGE = "real SSE provider failed before completion"
 
 
 @pytest.fixture()
@@ -535,6 +536,41 @@ def test_v2_real_sse_active_run_stop_closes_stream_and_restores_send(
             1,
             timeout=_WAIT_TIMEOUT_MS,
         )
+
+
+def test_v2_real_sse_run_failed_finalizes_stream_and_restores_send(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(fail_initial_stream=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert stream_state.wait_for_sent_event_id(3, timeout_seconds=5.0)
+        expect(
+            page.locator(".at-message").filter(has_text=_REAL_SSE_FAILURE_MESSAGE),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.wait_for_initial_stream_finished(timeout_seconds=5.0)
+        assert stream_state.request_count() == 1
 
 
 def test_v2_real_sse_recoverable_resume_streams_from_checkpoint(
@@ -1447,7 +1483,13 @@ class _V2StreamBackend:
 
 
 class _RealSseStreamState:
-    def __init__(self, *, hold_initial_stream_until_stop: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_initial_stream: bool = False,
+        hold_initial_stream_until_stop: bool = False,
+    ) -> None:
+        self.fail_initial_stream = fail_initial_stream
         self.hold_initial_stream_until_stop = hold_initial_stream_until_stop
         self._lock = threading.Lock()
         self._initial_stream_finished = threading.Event()
@@ -1505,6 +1547,10 @@ class _RealSseStreamState:
                 request["last_event_id"] == last_event_id
                 for request in self.stream_requests
             )
+
+    def request_count(self) -> int:
+        with self._lock:
+            return len(self.stream_requests)
 
     def record_initial_stream_finished(self) -> None:
         self._initial_stream_finished.set()
@@ -1699,6 +1745,21 @@ def _serve_v2_app_with_real_sse(
                         {"text": _FIRST_CHUNK},
                     ),
                 )
+                if stream_state.fail_initial_stream:
+                    backend.completed = True
+                    self._write_sse_event(
+                        _ag_ui_event(
+                            "run.failed",
+                            "run_failed",
+                            3,
+                            {
+                                "error_code": "provider_stream_failed",
+                                "error_message": _REAL_SSE_FAILURE_MESSAGE,
+                            },
+                        ),
+                    )
+                    stream_state.record_initial_stream_finished()
+                    return
                 if stream_state.hold_initial_stream_until_stop:
                     stream_state.wait_for_stop_request(timeout_seconds=10.0)
                     self._write_sse_event(

@@ -611,6 +611,89 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         assert "/gateway/wechat/accounts" in backend.requested_paths
 
 
+def test_v2_web_settings_save_success_and_error_feedback(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        settings.get_by_role("navigation", name="Settings sections").get_by_role(
+            "button",
+            name="Web",
+        ).click()
+
+        expect(settings.get_by_role("heading", name="Web")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            settings.get_by_text("Leave blank to keep the saved API key."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        searxng_url = settings.get_by_label("SearXNG instance URL")
+        expect(searxng_url).to_have_value(
+            "https://search.initial.example/",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("https://searx.space")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        searxng_url.fill("https://search.changed.example/")
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PUT"
+                and response.url.endswith("/api/system/configs/web")
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            settings.get_by_role("button", name="Save").click()
+
+        assert backend.web_save_payloads[-1] == {
+            "exa_api_key": "saved-exa-key",
+            "fallback_provider": "searxng",
+            "provider": "exa",
+            "searxng_instance_url": "https://search.changed.example/",
+        }
+        expect(page.get_by_text("Web settings saved.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        backend.fail_next_web_save = True
+        searxng_url.fill("https://search.failed.example/")
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PUT"
+                and response.url.endswith("/api/system/configs/web")
+                and response.status == 500
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            settings.get_by_role("button", name="Save").click()
+
+        assert backend.web_save_payloads[-1] == {
+            "exa_api_key": "saved-exa-key",
+            "fallback_provider": "searxng",
+            "provider": "exa",
+            "searxng_instance_url": "https://search.failed.example/",
+        }
+        assert backend.web_config["searxng_instance_url"] == (
+            "https://search.changed.example/"
+        )
+        expect(
+            page.get_by_text("Web settings save failed in browser test."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+
 def test_v2_appearance_dark_preset_keeps_settings_frame_fixed(
     browser_page: Page,
 ) -> None:
@@ -831,11 +914,20 @@ def test_v2_observability_topbar_opens_and_switches_scope(
 class _V2ShellBackend:
     def __init__(self, *, include_image_message: bool = False) -> None:
         self.include_image_message = include_image_message
+        self.fail_next_web_save = False
         self.open_root_queries: list[str] = []
         self.requested_paths: list[str] = []
         self.requested_urls: list[str] = []
         self.rounds_request_count = 0
         self.snapshot_request_count = 0
+        self.web_config: dict[str, object] = {
+            "exa_api_key": "saved-exa-key",
+            "fallback_provider": "searxng",
+            "provider": "exa",
+            "searxng_instance_seeds": ["https://searx.space"],
+            "searxng_instance_url": "https://search.initial.example/",
+        }
+        self.web_save_payloads: list[dict[str, object]] = []
 
     def route(self, route: Route, request: Request) -> None:
         url = urlsplit(request.url)
@@ -945,6 +1037,30 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs/general":
             _fulfill_json(route, {"shell_safety_policy_enabled": True})
+            return
+        if request.method == "GET" and path == "/system/configs/web":
+            _fulfill_json(route, self.web_config)
+            return
+        if request.method == "PUT" and path == "/system/configs/web":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.web_save_payloads.append(payload)
+            if self.fail_next_web_save:
+                self.fail_next_web_save = False
+                _fulfill_json(
+                    route,
+                    {"detail": "Web settings save failed in browser test."},
+                    status=500,
+                )
+                return
+            self.web_config = {
+                **self.web_config,
+                **payload,
+                "searxng_instance_seeds": self.web_config["searxng_instance_seeds"],
+            }
+            _fulfill_json(route, {"status": "ok"})
             return
         if request.method == "GET" and path == "/observability/overview":
             _fulfill_json(route, self._observability_overview(url.query))

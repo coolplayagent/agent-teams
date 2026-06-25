@@ -2755,3 +2755,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser test coverage was added for this stream copy-control slice. Full Message Timeline, AG-UI Runtime Stream, visual parity matrix, Electron readiness, and release readiness remain open.
+
+## 2026-06-26 V2 Web Settings Save/Error Browser Evidence Batch
+
+### Scope
+- Re-checked the Settings completion rules after the stream copy-control batch, focusing on the remaining requirement that forms load real data, save through real APIs, and show visible validation or mutation errors.
+- Added a real built `/app/` browser scenario that opens Settings from the topbar, navigates to the existing V1-aligned Web settings entry, and verifies the section loads saved Web config from `/api/system/configs/web`.
+- Verified the saved Exa key preservation path by leaving the key field blank, editing the SearXNG URL, and asserting the UI sends a real `PUT /api/system/configs/web` payload that preserves the stored key while saving the changed URL.
+- Verified successful save feedback with the visible `Web settings saved.` toast.
+- Verified failed save feedback by forcing the next Web settings `PUT` to return HTTP 500 and asserting the visible API error message appears without replacing the last successfully saved config.
+- Kept this as targeted Settings form mutation/error evidence only; no sidebar or settings entries were added or removed, and full Settings subsystem parity still requires broader reviewer coverage across every settings surface.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "web_settings_save"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections or web_settings_save or appearance_dark_preset"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent browser verification completed for this Web settings save/error slice. Full Settings subsystem parity, all destructive/high-impact settings confirmations, visual parity matrix, Electron readiness, and release readiness remain open.

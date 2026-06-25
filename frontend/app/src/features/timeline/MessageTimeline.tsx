@@ -1197,6 +1197,10 @@ function runtimeStructuredEventText(entry: TimelineEntry): string | null {
   if (entry.kind === "todo_updated") {
     return runtimeTodoUpdatedText(entry);
   }
+  const lifecycleText = runtimeLifecycleEventText(entry);
+  if (lifecycleText !== null) {
+    return lifecycleText;
+  }
   return null;
 }
 
@@ -1306,6 +1310,119 @@ function runtimeTodoActiveItem(items: Record<string, JsonValue>[]): string {
   const pending = items.find((item) => objectString(item, "status") === "pending");
   const firstItem = inProgress ?? pending ?? items.at(0);
   return firstItem === undefined ? "" : objectString(firstItem, "content");
+}
+
+function runtimeLifecycleEventText(entry: TimelineEntry): string | null {
+  const label = runtimeLifecycleEventLabel(entry.kind);
+  if (label === null) {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return null;
+  }
+  const summary = runtimeLifecycleEventSummary(entry.kind, payload);
+  if (summary.length === 0) {
+    return null;
+  }
+  return `${label}: ${summary}`;
+}
+
+function runtimeLifecycleEventLabel(kind: string): string | null {
+  switch (kind) {
+    case "model_step_started":
+      return "Model step started";
+    case "model_step_finished":
+      return "Model step finished";
+    case "notification_requested":
+      return "Notification";
+    case "background_task_started":
+      return "Background task started";
+    case "background_task_updated":
+      return "Background task updated";
+    case "background_task_completed":
+      return "Background task completed";
+    case "background_task_stopped":
+      return "Background task stopped";
+    default:
+      return null;
+  }
+}
+
+function runtimeLifecycleEventSummary(
+  kind: string,
+  payload: Record<string, JsonValue>,
+): string {
+  if (kind === "model_step_started" || kind === "model_step_finished") {
+    return runtimeModelStepSummary(payload);
+  }
+  if (kind === "notification_requested") {
+    return runtimeNotificationSummary(payload);
+  }
+  if (kind.startsWith("background_task_")) {
+    return runtimeBackgroundTaskSummary(kind, payload);
+  }
+  return runtimePayloadSummary(payload);
+}
+
+function runtimeModelStepSummary(payload: Record<string, JsonValue>): string {
+  const roleId = objectString(payload, "role_id");
+  const instanceId = objectString(payload, "instance_id");
+  const parts = [
+    roleId.length > 0 ? `role ${roleId}` : "",
+    instanceId.length > 0 ? `instance ${instanceId}` : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : runtimePayloadSummary(payload);
+}
+
+function runtimeNotificationSummary(payload: Record<string, JsonValue>): string {
+  const title = objectString(payload, "title")
+    || objectString(payload, "body")
+    || runtimePayloadSummary(payload);
+  const notificationType = objectString(payload, "notification_type")
+    || objectString(payload, "type");
+  const channels = jsonStringArrayInlineText(payload.channels);
+  return [
+    title,
+    notificationType.length > 0 ? `type ${notificationType}` : "",
+    channels.length > 0 ? `channels ${channels}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeBackgroundTaskSummary(
+  kind: string,
+  payload: Record<string, JsonValue>,
+): string {
+  const primary = runtimeBackgroundTaskPrimaryText(kind, payload);
+  const status = objectString(payload, "status");
+  const exitCode = jsonScalarText(payload.exit_code);
+  const taskKind = objectString(payload, "kind");
+  const taskId = objectString(payload, "background_task_id");
+  return [
+    primary.length > 0 ? truncatePreview(primary) : "",
+    status.length > 0 ? `status ${status}` : "",
+    exitCode.length > 0 ? `exit ${exitCode}` : "",
+    taskKind.length > 0 ? `kind ${taskKind}` : "",
+    taskId.length > 0 ? `#${taskId}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeBackgroundTaskPrimaryText(
+  kind: string,
+  payload: Record<string, JsonValue>,
+): string {
+  if (kind === "background_task_updated") {
+    return objectString(payload, "delta")
+      || objectString(payload, "output_excerpt")
+      || objectString(payload, "title")
+      || objectString(payload, "command")
+      || runtimePayloadSummary(payload);
+  }
+  return objectString(payload, "title")
+    || objectString(payload, "input_text")
+    || objectString(payload, "command")
+    || objectString(payload, "output_excerpt")
+    || runtimePayloadSummary(payload);
 }
 
 function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {
@@ -2267,6 +2384,14 @@ function jsonStringArrayText(value: JsonValue | undefined): string {
   }
   const strings = value.filter((item): item is string => typeof item === "string");
   return strings.length === value.length ? strings.join("\n").trim() : "";
+}
+
+function jsonStringArrayInlineText(value: JsonValue | undefined): string {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+  const strings = value.filter((item): item is string => typeof item === "string");
+  return strings.length === value.length ? strings.join(", ").trim() : "";
 }
 
 function toolSummaryPreview(tool: TimelineToolPart): string {

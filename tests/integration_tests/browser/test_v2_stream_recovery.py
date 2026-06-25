@@ -55,6 +55,12 @@ _RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
 _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
 _RICH_REPLAY_TOKEN_SUMMARY = "Token usage: Total 18 · Input 11 · Output 7"
 _RICH_REPLAY_MODEL_STEP = "model step replay visible"
+_RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY = (
+    f"Model step started: {_RICH_REPLAY_MODEL_STEP}"
+)
+_RICH_REPLAY_MODEL_STEP_FINISHED_SUMMARY = (
+    f"Model step finished: {_RICH_REPLAY_MODEL_STEP} finished"
+)
 _RICH_REPLAY_STATE_SNAPSHOT = "state snapshot replay visible"
 _RICH_REPLAY_STATE_SNAPSHOT_SUMMARY = f"State snapshot: {_RICH_REPLAY_STATE_SNAPSHOT}"
 _RICH_REPLAY_STATE_DELTA = "state delta replay visible"
@@ -65,8 +71,12 @@ _RICH_REPLAY_TODO_SUMMARY = (
     f"Current {_RICH_REPLAY_TODO_CURRENT} · v4 · by replay-agent"
 )
 _RICH_REPLAY_NOTIFICATION = "notification replay visible"
+_RICH_REPLAY_NOTIFICATION_SUMMARY = f"Notification: {_RICH_REPLAY_NOTIFICATION}"
 _RICH_REPLAY_SUBAGENT_STATUS = "subagent status replay visible"
 _RICH_REPLAY_BACKGROUND_TASK = "background task replay visible"
+_RICH_REPLAY_BACKGROUND_TASK_SUMMARY = (
+    f"Background task started: {_RICH_REPLAY_BACKGROUND_TASK}"
+)
 _REAL_SSE_RESUMED_CHUNK = "real SSE resumed chunk"
 _REAL_SSE_FAILURE_MESSAGE = "real SSE provider failed before completion"
 _REAL_SSE_UNAVAILABLE_MESSAGE = "run recovery stream is no longer available"
@@ -527,12 +537,12 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         expect(page.get_by_text(_RICH_REPLAY_TOKEN_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text(_RICH_REPLAY_MODEL_STEP, exact=True)).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_text(f"{_RICH_REPLAY_MODEL_STEP} finished")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
+        expect(
+            page.get_by_text(_RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_text(_RICH_REPLAY_MODEL_STEP_FINISHED_SUMMARY),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
         expect(page.get_by_text(_RICH_REPLAY_STATE_SNAPSHOT_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
@@ -542,13 +552,13 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         expect(page.get_by_text(_RICH_REPLAY_TODO_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text(_RICH_REPLAY_NOTIFICATION)).to_be_visible(
+        expect(page.get_by_text(_RICH_REPLAY_NOTIFICATION_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         expect(page.get_by_text(_RICH_REPLAY_SUBAGENT_STATUS)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text(_RICH_REPLAY_BACKGROUND_TASK)).to_be_visible(
+        expect(page.get_by_text(_RICH_REPLAY_BACKGROUND_TASK_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(

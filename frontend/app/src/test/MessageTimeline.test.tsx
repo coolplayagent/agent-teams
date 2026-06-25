@@ -1773,12 +1773,6 @@ describe("MessageTimeline", () => {
   it("renders replayed runtime metadata events with fallback text", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({
-        id: "run-meta:1:0",
-        kind: "model_step_started",
-        text: "model step visible",
-        eventId: 1,
-      }),
-      runtimeGenericEntry({
         id: "run-meta:2:1",
         kind: "generation_progress",
         text: "runtime setup downloading",
@@ -1789,12 +1783,6 @@ describe("MessageTimeline", () => {
         kind: "injection_applied",
         text: "injection applied visible",
         eventId: 3,
-      }),
-      runtimeGenericEntry({
-        id: "run-meta:4:3",
-        kind: "notification_requested",
-        text: "notification visible",
-        eventId: 4,
       }),
       runtimeGenericEntry({
         id: "run-meta:5:4",
@@ -1819,10 +1807,8 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findByText("model step visible")).toBeVisible();
-    expect(screen.getByText("runtime setup downloading")).toBeVisible();
+    expect(await screen.findByText("runtime setup downloading")).toBeVisible();
     expect(screen.getByText("injection applied visible")).toBeVisible();
-    expect(screen.getByText("notification visible")).toBeVisible();
     expect(screen.getByText("subagent session visible")).toBeVisible();
     expect(screen.getByText("manual action visible")).toBeVisible();
     expect(screen.getByText("hook event visible")).toBeVisible();
@@ -1889,6 +1875,105 @@ describe("MessageTimeline", () => {
     ).toBeVisible();
     expect(screen.queryByText("state snapshot")).not.toBeInTheDocument();
     expect(screen.queryByText("state delta")).not.toBeInTheDocument();
+  });
+
+  it("renders runtime lifecycle metadata events as labelled summaries", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-lifecycle:1:0",
+        kind: "model_step_started",
+        text: "model step started",
+        eventId: 1,
+        payload: {
+          instance_id: "coordinator-1",
+          role_id: "coordinator",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-lifecycle:2:1",
+        kind: "model_step_finished",
+        text: "model step finished",
+        eventId: 2,
+        payload: { summary: "model pass complete" },
+      }),
+      runtimeGenericEntry({
+        id: "run-lifecycle:3:2",
+        kind: "notification_requested",
+        text: "notification requested",
+        eventId: 3,
+        payload: {
+          channels: ["desktop", "feishu"],
+          notification_type: "run_failed",
+          title: "Run failed",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-lifecycle:4:3",
+        kind: "background_task_started",
+        text: "background task started",
+        eventId: 4,
+        payload: {
+          background_task_id: "background-task-1",
+          command: "npm run watch",
+          kind: "command",
+          status: "running",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-lifecycle:5:4",
+        kind: "background_task_updated",
+        text: "background task updated",
+        eventId: 5,
+        payload: {
+          background_task_id: "background-task-1",
+          delta: "Compiled successfully",
+          status: "running",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-lifecycle:6:5",
+        kind: "background_task_completed",
+        text: "background task completed",
+        eventId: 6,
+        payload: {
+          background_task_id: "background-task-1",
+          exit_code: 0,
+          output_excerpt: "Build finished",
+          status: "completed",
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText(
+        "Model step started: role coordinator · instance coordinator-1",
+      ),
+    ).toBeVisible();
+    expect(screen.getByText("Model step finished: model pass complete")).toBeVisible();
+    expect(
+      screen.getByText("Notification: Run failed · type run_failed · channels desktop, feishu"),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Background task started: npm run watch · status running · kind command · #background-task-1",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Background task updated: Compiled successfully · status running · #background-task-1",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Background task completed: Build finished · status completed · exit 0 · #background-task-1",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("model step started")).not.toBeInTheDocument();
+    expect(screen.queryByText("notification requested")).not.toBeInTheDocument();
+    expect(screen.queryByText("background task started")).not.toBeInTheDocument();
   });
 
   it("renders runtime todo update events as compact todo summaries", async () => {

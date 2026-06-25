@@ -2980,3 +2980,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, built-app browser, and screenshot verification completed for this rich replay terminal-recovery slice. Full AG-UI Runtime Stream completion, Message Timeline visual parity, visual parity matrix completion, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Route Switch And V1 Baseline Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, quality gates, latest ledger, and live `/app/` DOM state before closing this small slice, then kept the work focused on route/baseline evidence rather than treating the latest annotated screenshot as the whole objective.
+- Added browser coverage that starts on the real V1 root page, verifies the V1 shell and `Open new interface` entry, switches into `/app/`, verifies the fixed V2 shell and `V1` return entry, then switches back to the V1 root page.
+- Extended the local browser test server to serve both legacy `frontend/dist` assets and the V2 `frontend/dist/app` bundle so route switching is exercised against the same built static layout the product ships.
+- Narrowed API interception for this flow to the served `/api/**` origin and added the V1 workspace sidebar-session response so legacy static assets are not mistaken for backend API requests and the captured V1 screenshots stay free of mock-route error toasts.
+- Captured route-switch evidence at `.tmp/frontend-v2-route-switch/`: `v1-root-before-switch.png`, `v2-after-new-ui-switch.png`, and `v1-after-return.png`; manual inspection confirmed V1 opens cleanly, V2 keeps the fixed shell/composer frame, and returning to V1 preserves the V1 root surface.
+- Kept this as route-switch and baseline evidence only; full same-session visual matrix, remaining Message Timeline stream/replay edge cases, Settings form mutation/error parity, Electron/release readiness, and subsystem reviewer sign-off remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "route_switches_from_v1_and_back"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "route_switches_from_v1_and_back or sidebar_mouse_resize"` passed with 2 selected tests.
+
+### Reviewer
+- Main-agent browser integration and screenshot inspection completed for this route-switch baseline slice. No Application Shell, Settings, Message Timeline, or release subsystem completion is claimed from this batch.

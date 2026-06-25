@@ -131,6 +131,47 @@ def test_v2_sidebar_mouse_resize_persists_after_reload(browser_page: Page) -> No
         )
 
 
+def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-route-switch"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.route(f"{app_url}/api/**", backend.route)
+        page.goto(f"{app_url}/")
+        _wait_for_v1_shell(page)
+
+        expect(page.locator(".app-shell")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        new_ui_link = page.get_by_role("link", name="Open new interface")
+        expect(new_ui_link).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert page.evaluate("() => document.body.scrollHeight <= window.innerHeight")
+        page.screenshot(path=str(screenshot_dir / "v1-root-before-switch.png"))
+
+        new_ui_link.click()
+        page.wait_for_url(f"{app_url}/app/", timeout=_WAIT_TIMEOUT_MS)
+        _wait_for_v2_shell(page)
+        expect(page.locator(".at-shell")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.get_by_role("link", name="V1")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
+        page.screenshot(path=str(screenshot_dir / "v2-after-new-ui-switch.png"))
+
+        page.get_by_role("link", name="V1").click()
+        page.wait_for_url(f"{app_url}/", timeout=_WAIT_TIMEOUT_MS)
+        _wait_for_v1_shell(page)
+        expect(page.locator(".app-shell")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.get_by_role("link", name="Open new interface")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.screenshot(path=str(screenshot_dir / "v1-after-return.png"))
+
+
 def test_v2_message_export_downloads_html_and_png(
     browser_page: Page,
     tmp_path: Path,
@@ -1416,7 +1457,10 @@ class _V2ShellBackend:
             self.open_root_queries.append(url.query)
             _fulfill_json(route, {"status": "ok"})
             return
-        if request.method == "GET" and path == "/sessions/sidebar":
+        if request.method == "GET" and path in {
+            "/sessions/sidebar",
+            f"/workspaces/{_WORKSPACE_ID}/sessions/sidebar",
+        }:
             _fulfill_json(route, [self._sidebar_session()])
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}":
@@ -2667,6 +2711,7 @@ class _V2ShellBackend:
 
 @contextmanager
 def _serve_v2_app(repo_root: Path) -> Iterator[str]:
+    legacy_root = repo_root / "frontend" / "dist"
     app_root = repo_root / "frontend" / "dist" / "app"
 
     class Handler(SimpleHTTPRequestHandler):
@@ -2676,7 +2721,12 @@ def _serve_v2_app(repo_root: Path) -> Iterator[str]:
                 return str(app_root / "index.html")
             if request_path.startswith("/app/"):
                 return str(app_root / request_path.removeprefix("/app/"))
-            return str(app_root / "index.html")
+            if request_path == "/":
+                return str(legacy_root / "index.html")
+            legacy_target = legacy_root.joinpath(*request_path.removeprefix("/").split("/"))
+            if legacy_target.is_file():
+                return str(legacy_target)
+            return str(legacy_root / "index.html")
 
         def log_message(self, format: str, *args: object) -> None:
             return
@@ -2729,6 +2779,13 @@ def _install_shell_state(page: Page) -> None:
 
 
 def _wait_for_v2_shell(page: Page) -> None:
+    page.wait_for_function(
+        "() => document.body.dataset.bootstrapState === 'ready'",
+        timeout=_WAIT_TIMEOUT_MS,
+    )
+
+
+def _wait_for_v1_shell(page: Page) -> None:
     page.wait_for_function(
         "() => document.body.dataset.bootstrapState === 'ready'",
         timeout=_WAIT_TIMEOUT_MS,

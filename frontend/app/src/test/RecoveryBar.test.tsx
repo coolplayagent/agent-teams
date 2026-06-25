@@ -738,6 +738,63 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("shows and tracks background tasks when no active run is registered", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: null,
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "background-run-1",
+            session_id: "session-1",
+            kind: "command",
+            command: "python worker.py",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "running",
+            recent_output: [],
+          },
+        ],
+      }),
+    );
+    stopBackgroundTaskMock.mockResolvedValue({
+      background_task: {
+        background_task_id: "background-task-1",
+        run_id: "background-run-1",
+        session_id: "session-1",
+        kind: "command",
+        command: "python worker.py",
+        cwd: "C:/repo",
+        execution_mode: "background",
+        status: "stopped",
+        recent_output: [],
+      },
+    });
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("Background task is still active");
+    expect(screen.getByText("python worker.py")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: undefined,
+        runId: "background-run-1",
+        sessionId: "session-1",
+      }),
+    );
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    await waitFor(() =>
+      expect(stopBackgroundTaskMock).toHaveBeenCalledWith(
+        "background-run-1",
+        "background-task-1",
+      ),
+    );
+  });
+
   it("collapses and expands the background task list", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

@@ -229,7 +229,16 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     },
   });
 
-  if (sessionId === null || recoveryQuery.isLoading || activeRun === null) {
+  if (sessionId === null || recoveryQuery.isLoading) {
+    return null;
+  }
+  const recoveryPanelRunId = recoveryPanelRunKey(activeRun, activeBackgroundTasks);
+  if (
+    activeRun === null &&
+    activeBackgroundTasks.length === 0 &&
+    pendingQuestions.length === 0 &&
+    pausedSubagent === null
+  ) {
     return null;
   }
 
@@ -240,7 +249,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
         <div className="at-recovery-body">
           <Space size={8}>
             <span>
-              Run {activeRun.run_id} is {activeRun.phase ?? activeRun.status}
+              {recoveryStatusText(activeRun, activeBackgroundTasks)}
             </span>
             {showResumeAction ? (
               <Button
@@ -254,13 +263,13 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
             ) : null}
           </Space>
           <BackgroundTasksPanel
-            activeRunId={activeRun.run_id}
+            activeRunId={recoveryPanelRunId}
             busyTaskId={
               stopBackgroundTaskMutation.isPending
                 ? stopBackgroundTaskMutation.variables?.backgroundTaskId ?? null
                 : null
             }
-            collapsed={collapsedBackgroundRunIds[activeRun.run_id] === true}
+            collapsed={collapsedBackgroundRunIds[recoveryPanelRunId] === true}
             errors={backgroundTaskErrors}
             onStop={(request) => stopBackgroundTaskMutation.mutate(request)}
             onToggle={(runId) => {
@@ -272,17 +281,19 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
             tasks={activeBackgroundTasks}
           />
           <PausedSubagentPanel pausedSubagent={pausedSubagent} />
-          <PendingApprovals
-            activeRunId={activeRun.run_id}
-            approvals={pendingApprovals}
-            busyToolCallId={
-              approvalMutation.isPending
-                ? approvalMutation.variables?.toolCallId ?? null
-                : null
-            }
-            errors={approvalErrors}
-            onResolve={(request) => approvalMutation.mutate(request)}
-          />
+          {activeRun === null ? null : (
+            <PendingApprovals
+              activeRunId={activeRun.run_id}
+              approvals={pendingApprovals}
+              busyToolCallId={
+                approvalMutation.isPending
+                  ? approvalMutation.variables?.toolCallId ?? null
+                  : null
+              }
+              errors={approvalErrors}
+              onResolve={(request) => approvalMutation.mutate(request)}
+            />
+          )}
           <PendingQuestions
             busyQuestionId={
               questionMutation.isPending
@@ -440,6 +451,39 @@ function BackgroundTasksPanel({
       )}
     </div>
   );
+}
+
+function recoveryStatusText(
+  activeRun: RecoveryRun | null,
+  activeBackgroundTasks: RecoveryBackgroundTask[],
+): string {
+  if (activeRun !== null) {
+    return `Run ${activeRun.run_id} is ${activeRun.phase ?? activeRun.status}`;
+  }
+  if (activeBackgroundTasks.length === 1) {
+    return "Background task is still active";
+  }
+  if (activeBackgroundTasks.length > 1) {
+    return `${activeBackgroundTasks.length} background tasks are still active`;
+  }
+  return "Recovery needs attention";
+}
+
+function recoveryPanelRunKey(
+  activeRun: RecoveryRun | null,
+  activeBackgroundTasks: RecoveryBackgroundTask[],
+): string {
+  const activeRunId = activeRun?.run_id.trim() ?? "";
+  if (activeRunId) {
+    return activeRunId;
+  }
+  for (const task of activeBackgroundTasks) {
+    const taskRunId = task.run_id.trim();
+    if (taskRunId) {
+      return taskRunId;
+    }
+  }
+  return "recovery";
 }
 
 interface PendingApprovalsProps {

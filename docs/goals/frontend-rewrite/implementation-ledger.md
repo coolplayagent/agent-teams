@@ -1339,3 +1339,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and targeted test verification completed for this V1 sidebar and runtime message cleanup slice. No Message Timeline or Shell subsystem completion is claimed from this batch; remaining work includes deeper V1 visual parity review, live stream/replay scenarios, refresh-during-stream recovery, and reviewer sign-off.
+
+## 2026-06-25 Background-Only Recovery Batch
+
+### Scope
+- Continued the Run Recovery and AG-UI continuation pass for refresh/replay edge cases.
+- RecoveryBar now stays visible when a recovery snapshot has active background tasks but no registered `active_run`.
+- The background-only recovery state starts the appropriate run stream target, keeps the task stop action wired to the task's own `run_id`, and still avoids rendering approval actions when no active run id is available for approvals.
+- Added status/collapse key handling that does not depend on `active_run.run_id`, so background task collapse/expand remains stable after refresh.
+
+### Verification
+- `npm test -- src/test/RecoveryBar.test.tsx` in `frontend/app` passed with 20 tests, including the new regression for `active_run: null` plus a running background task.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt asset `index-DbEQ_jK8.js`.
+
+### Reviewer
+- Main-agent targeted verification completed for this background-only recovery slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes browser refresh-recovery scenarios with real SSE timing, interrupted stream resume, and reviewer sign-off.

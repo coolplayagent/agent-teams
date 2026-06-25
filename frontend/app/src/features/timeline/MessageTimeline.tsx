@@ -16,7 +16,7 @@ import {
   type TimelineMessage,
 } from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
-import type { TimelineEntry } from "../../runtime/reducers";
+import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -78,11 +78,17 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   const runtimeEntries = useMemo(
     () =>
       Object.values(runtimeState.runs)
-        .filter((runState) =>
-          runState.status !== "closed" || !hydratedOutputRunIds.has(runState.runId),
-        )
-        .flatMap((runState) => runState.entries)
-        .filter((entry) => entry.sessionId === sessionId),
+        .flatMap((runState) =>
+          runState.entries.filter(
+            (entry) =>
+              entry.sessionId === sessionId &&
+              shouldKeepRuntimeEntryAfterHydration(
+                runState,
+                entry,
+                hydratedOutputRunIds,
+              ),
+          ),
+        ),
     [hydratedOutputRunIds, runtimeState.runs, sessionId],
   );
   const runtimeRows = useMemo(
@@ -783,6 +789,30 @@ function timelineOutputRunIds(rows: TimelineRow[]): Set<string> {
     }
   }
   return runIds;
+}
+
+function shouldKeepRuntimeEntryAfterHydration(
+  runState: RuntimeRunState,
+  entry: TimelineEntry,
+  hydratedOutputRunIds: Set<string>,
+): boolean {
+  if (runState.status !== "closed") {
+    return true;
+  }
+  if (!hydratedOutputRunIds.has(runState.runId)) {
+    return true;
+  }
+  return !runtimeEntryIsCoveredByHydratedOutput(entry);
+}
+
+function runtimeEntryIsCoveredByHydratedOutput(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "text_delta" ||
+    entry.kind === "output_delta" ||
+    entry.kind === "run_started" ||
+    entry.kind === "run_resumed" ||
+    entry.kind === "run_completed"
+  );
 }
 
 function visibleRunIdFromRenderedRows(container: HTMLElement): string | null {

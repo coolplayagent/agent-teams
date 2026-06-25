@@ -390,6 +390,104 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("final chunk only")).not.toBeInTheDocument();
   });
 
+  it("keeps closed runtime tool events when a hydrated answer covers the same run", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-1": {
+            runId: "run-1",
+            status: "closed",
+            lastEventId: 5,
+            seenEventKeys: [],
+            terminalEventType: "run_completed",
+            entries: [
+              {
+                id: "run-1:1:0",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "duplicated runtime chunk",
+                payload: { text: "duplicated runtime chunk" },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-1:2:1",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "tool_call",
+                text: "execute_command",
+                payload: {
+                  args: { cmd: "npm test" },
+                  tool_call_id: "tool-1",
+                  tool_name: "execute_command",
+                },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-1:3:2",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "tool_result",
+                text: "execute_command",
+                payload: {
+                  result: {
+                    ok: false,
+                    error: {
+                      message: "File not found: .",
+                      retryable: false,
+                      type: "validation_error",
+                    },
+                  },
+                  tool_call_id: "tool-1",
+                  tool_name: "execute_command",
+                },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+              {
+                id: "run-1:4:3",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "run_completed",
+                text: "completed",
+                payload: { phase: "completed" },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:03Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+        content: "Full persisted answer",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Full persisted answer")).toBeVisible();
+    expect(screen.queryByText("duplicated runtime chunk")).not.toBeInTheDocument();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
+    expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
+    expect(screen.getByText("Tool error: execute_command")).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual([
+      "npm test",
+      "File not found: .",
+    ]);
+  });
+
   it("renders image media references with previewable images", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

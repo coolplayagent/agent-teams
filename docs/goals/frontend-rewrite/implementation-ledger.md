@@ -2323,3 +2323,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, browser integration, screenshot, and in-app-browser verification completed for this Spec Lineage slice. No Observability, Project View, Spec Lineage, or Feedback subsystem completion is claimed.
+
+## 2026-06-25 V2 Timeline Hydration Tool Replay Batch
+
+### Scope
+- Re-checked the Message Timeline and AG-UI Runtime Stream checklist after the Spec Lineage batch and targeted a replay/hydration edge case rather than continuing item-11 work.
+- Narrowed runtime-entry suppression after persisted message hydration: closed runs with a hydrated assistant answer now suppress duplicate runtime text/output and routine lifecycle rows, but keep tool calls, tool results, validation, approval, thinking, and other non-output replay rows available to the timeline.
+- Added focused MessageTimeline coverage proving a closed run with a persisted answer hides the stale runtime text chunk while still rendering the same run's replayed tool call and compact tool error result.
+- Refreshed `frontend/dist/app` for the timeline replay behavior change.
+- Kept this as targeted Message Timeline replay evidence only; full Message Timeline, AG-UI Runtime Stream, interrupted replay, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 48 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- No screenshot was captured because this batch changes replay/hydration data filtering rather than visible layout. The visible behavior is covered by focused component assertions.
+
+### Reviewer
+- Main-agent targeted component verification completed for this replay/hydration slice. No Message Timeline or AG-UI Runtime Stream subsystem completion is claimed.

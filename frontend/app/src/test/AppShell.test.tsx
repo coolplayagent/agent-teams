@@ -160,6 +160,7 @@ const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 
 beforeEach(() => {
+  window.history.replaceState(null, "", window.location.href);
   mockViewportMatch(false);
   getHealthMock.mockResolvedValue({ status: "ok" });
   getSessionMock.mockResolvedValue({
@@ -194,6 +195,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  window.history.replaceState(null, "", window.location.href);
   vi.clearAllMocks();
 });
 
@@ -485,6 +487,37 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
     expect(screen.getByTestId("timeline").closest(".at-chat-view")).not.toBeNull();
+  });
+
+  it("restores the V1 secondary workspace surface after shell reload", async () => {
+    window.localStorage.setItem("agentTeams.shellView", "workspace");
+
+    renderShell();
+
+    expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("agentTeams.shellView")).toBe("workspace");
+  });
+
+  it("keeps browser back behavior at the shell secondary view boundary", async () => {
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: "Open workspace view" }),
+    );
+
+    expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: { agentTeamsShellView: "chat" },
+      }),
+    );
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(screen.queryByTestId("workspace-project-view")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("agentTeams.shellView")).toBe("chat");
   });
 });
 

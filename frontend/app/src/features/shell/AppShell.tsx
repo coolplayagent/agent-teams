@@ -20,7 +20,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 
 import {
@@ -60,22 +60,29 @@ import { useTranslations } from "../../i18n";
 const { Header, Sider, Content } = Layout;
 const healthyBackendStatuses = new Set(["alive", "ok", "ready"]);
 const sidebarOverlayMediaQuery = "(max-width: 760px)";
+const shellViewHistoryKey = "agentTeamsShellView";
+const shellViewStorageKey = "agentTeams.shellView";
+
+type ShellPrimaryView =
+  | "automation"
+  | "board"
+  | "chat"
+  | "connectors"
+  | "memory"
+  | "observability"
+  | "search"
+  | "skills"
+  | "workspace";
+
+type ShellView = ShellPrimaryView | "subagent-session";
+type ShellHistoryMode = "push" | "replace";
 
 export function AppShell() {
   const { message } = App.useApp();
   const t = useTranslations();
-  const [activeView, setActiveView] = useState<
-    | "automation"
-    | "board"
-    | "chat"
-    | "connectors"
-    | "memory"
-    | "observability"
-    | "search"
-    | "skills"
-    | "subagent-session"
-    | "workspace"
-  >("chat");
+  const [activeView, setActiveView] = useState<ShellView>(
+    () => readInitialShellView(),
+  );
   const [activeSubagent, setActiveSubagent] =
     useState<ActiveSubagentSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -98,6 +105,25 @@ export function AppShell() {
     messenger: message,
     sessionId: selectedSessionId,
   });
+  const navigateShellView = useCallback(
+    (nextView: ShellView, historyMode: ShellHistoryMode = "push") => {
+      setActiveView(nextView);
+      if (nextView !== "subagent-session") {
+        writeShellViewHistory(nextView, historyMode);
+      }
+    },
+    [],
+  );
+  const openPrimaryShellView = useCallback(
+    (
+      nextView: ShellPrimaryView,
+      historyMode: ShellHistoryMode = "push",
+    ) => {
+      setActiveSubagent(null);
+      navigateShellView(nextView, historyMode);
+    },
+    [navigateShellView],
+  );
 
   const healthQuery = useQuery({
     queryKey: ["server-health"],
@@ -178,50 +204,35 @@ export function AppShell() {
         icon: <MessageSquare size={15} />,
         key: "chat",
         label: t("appChat"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("chat");
-        },
+        onSelect: () => openPrimaryShellView("chat"),
       },
       {
         active: activeView === "automation",
         icon: <CalendarClock size={15} />,
         key: "automation",
         label: t("appAutomation"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("automation");
-        },
+        onSelect: () => openPrimaryShellView("automation"),
       },
       {
         active: activeView === "skills",
         icon: <Wrench size={15} />,
         key: "skills",
         label: t("appSkills"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("skills");
-        },
+        onSelect: () => openPrimaryShellView("skills"),
       },
       {
         active: activeView === "board",
         icon: <SquareKanban size={15} />,
         key: "board",
         label: t("appBoard"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("board");
-        },
+        onSelect: () => openPrimaryShellView("board"),
       },
       {
         active: activeView === "search",
         icon: <Search size={15} />,
         key: "search",
         label: t("appSearch"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("search");
-        },
+        onSelect: () => openPrimaryShellView("search"),
         shortcut: "Ctrl+K",
       },
       {
@@ -229,30 +240,21 @@ export function AppShell() {
         icon: <PlugZap size={15} />,
         key: "connectors",
         label: t("appConnectors"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("connectors");
-        },
+        onSelect: () => openPrimaryShellView("connectors"),
       },
       {
         active: activeView === "memory",
         icon: <Database size={15} />,
         key: "memory",
         label: t("appMemory"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("memory");
-        },
+        onSelect: () => openPrimaryShellView("memory"),
       },
       {
         active: activeView === "observability",
         icon: <Activity size={15} />,
         key: "observability",
         label: t("appObservability"),
-        onSelect: () => {
-          setActiveSubagent(null);
-          setActiveView("observability");
-        },
+        onSelect: () => openPrimaryShellView("observability"),
       },
       {
         icon: <Settings size={15} />,
@@ -261,8 +263,23 @@ export function AppShell() {
         onSelect: () => setSettingsOpen(true),
       },
     ],
-    [activeView, t],
+    [activeView, openPrimaryShellView, t],
   );
+
+  useEffect(() => {
+    writeShellViewHistory(asRestorableShellView(activeView), "replace");
+    const handleShellHistory = (event: PopStateEvent) => {
+      const nextView = shellViewFromHistoryState(event.state) ?? "chat";
+      setActiveSubagent(null);
+      setActiveView(nextView);
+    };
+    window.addEventListener("popstate", handleShellHistory);
+    return () => window.removeEventListener("popstate", handleShellHistory);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(shellViewStorageKey, asRestorableShellView(activeView));
+  }, [activeView]);
 
   useEffect(() => {
     const handleSearchShortcut = (event: globalThis.KeyboardEvent) => {
@@ -270,11 +287,11 @@ export function AppShell() {
         return;
       }
       event.preventDefault();
-      setActiveView("search");
+      openPrimaryShellView("search");
     };
     window.addEventListener("keydown", handleSearchShortcut);
     return () => window.removeEventListener("keydown", handleSearchShortcut);
-  }, []);
+  }, [openPrimaryShellView]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(sidebarOverlayMediaQuery);
@@ -343,10 +360,7 @@ export function AppShell() {
             <Button
               aria-label={t("appObservability")}
               icon={<Activity size={17} />}
-              onClick={() => {
-                setActiveSubagent(null);
-                setActiveView("observability");
-              }}
+              onClick={() => openPrimaryShellView("observability")}
               type={activeView === "observability" ? "default" : "text"}
             />
           </Tooltip>
@@ -396,17 +410,11 @@ export function AppShell() {
               activeSubagent={activeSubagent}
               backendStatus={sidebarBackendStatus}
               navigationItems={sidebarNavigationItems}
-              onOpenWorkspaceView={() => {
-                setActiveSubagent(null);
-                setActiveView("workspace");
-              }}
-              onSessionSelected={() => {
-                setActiveSubagent(null);
-                setActiveView("chat");
-              }}
+              onOpenWorkspaceView={() => openPrimaryShellView("workspace")}
+              onSessionSelected={() => openPrimaryShellView("chat", "replace")}
               onSubagentSelected={(subagent) => {
                 setActiveSubagent(subagent);
-                setActiveView("subagent-session");
+                navigateShellView("subagent-session");
               }}
               workspaceViewActive={activeView === "workspace"}
             />
@@ -444,10 +452,7 @@ export function AppShell() {
             <SkillsView />
           ) : activeView === "workspace" ? (
             <WorkspaceProjectView
-              onBack={() => {
-                setActiveSubagent(null);
-                setActiveView("chat");
-              }}
+              onBack={() => openPrimaryShellView("chat", "replace")}
               selectedWorkspaceId={selectedWorkspaceId}
             />
           ) : activeView === "search" ? (
@@ -461,10 +466,7 @@ export function AppShell() {
             />
           ) : activeView === "subagent-session" && activeSubagent !== null ? (
             <SubagentSessionView
-              onBack={() => {
-                setActiveSubagent(null);
-                setActiveView("chat");
-              }}
+              onBack={() => openPrimaryShellView("chat", "replace")}
               subagent={activeSubagent}
             />
           ) : (
@@ -506,8 +508,7 @@ export function AppShell() {
       setSelectedWorkspaceId(session.workspace_id);
     }
     setSelectedSessionId(session.session_id);
-    setActiveSubagent(null);
-    setActiveView("chat");
+    openPrimaryShellView("chat", "replace");
   }
 
   function handleAutomationSessionSelected(
@@ -518,8 +519,7 @@ export function AppShell() {
       setSelectedWorkspaceId(workspaceId);
     }
     setSelectedSessionId(sessionId);
-    setActiveSubagent(null);
-    setActiveView("chat");
+    openPrimaryShellView("chat", "replace");
   }
 }
 
@@ -538,4 +538,78 @@ function workspaceDisplayLabel(
 
 function readSidebarOverlayMode(): boolean {
   return window.matchMedia(sidebarOverlayMediaQuery).matches;
+}
+
+function readInitialShellView(): ShellPrimaryView {
+  return (
+    shellViewFromHistoryState(window.history.state as unknown) ??
+    normalizeShellView(window.localStorage.getItem(shellViewStorageKey)) ??
+    "chat"
+  );
+}
+
+function writeShellViewHistory(
+  view: ShellPrimaryView,
+  mode: "push" | "replace",
+): void {
+  const nextState = {
+    ...currentHistoryState(),
+    [shellViewHistoryKey]: view,
+  };
+  if (mode === "push") {
+    window.history.pushState(nextState, "", window.location.href);
+    return;
+  }
+  window.history.replaceState(nextState, "", window.location.href);
+}
+
+function shellViewFromHistoryState(state: unknown): ShellPrimaryView | null {
+  if (!isRecord(state)) {
+    return null;
+  }
+  return normalizeShellView(state[shellViewHistoryKey]);
+}
+
+function currentHistoryState(): Record<string, unknown> {
+  const state = window.history.state as unknown;
+  return isRecord(state) ? { ...state } : {};
+}
+
+function normalizeShellView(value: unknown): ShellPrimaryView | null {
+  if (value === "automation") {
+    return "automation";
+  }
+  if (value === "board") {
+    return "board";
+  }
+  if (value === "chat") {
+    return "chat";
+  }
+  if (value === "connectors") {
+    return "connectors";
+  }
+  if (value === "memory") {
+    return "memory";
+  }
+  if (value === "observability") {
+    return "observability";
+  }
+  if (value === "search") {
+    return "search";
+  }
+  if (value === "skills") {
+    return "skills";
+  }
+  if (value === "workspace") {
+    return "workspace";
+  }
+  return null;
+}
+
+function asRestorableShellView(view: ShellView): ShellPrimaryView {
+  return view === "subagent-session" ? "chat" : view;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

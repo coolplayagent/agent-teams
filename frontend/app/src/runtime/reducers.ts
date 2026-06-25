@@ -36,6 +36,7 @@ export interface RuntimeState {
 }
 
 export const MAX_SEEN_EVENT_KEYS = 512;
+const RAW_TEXT_PAYLOAD_KEYS = new Set(["text", "delta", "content", "message"]);
 
 export const initialRuntimeState: RuntimeState = {
   runs: {},
@@ -55,7 +56,7 @@ export function reduceRunEvent(
     return state;
   }
   const dedupeKey = eventDedupeKey(event);
-  if (existing.seenEventKeys.includes(dedupeKey)) {
+  if (dedupeKey !== null && existing.seenEventKeys.includes(dedupeKey)) {
     return state;
   }
 
@@ -63,15 +64,19 @@ export function reduceRunEvent(
     hasPositiveEventId
       ? rawEventId
       : existing.lastEventId;
-  const status: StreamStatus = isTerminalRunEvent(event.event_type) ? "closed" : "open";
+  const terminalEventType = nextTerminalEventType(
+    existing.terminalEventType,
+    event.event_type,
+  );
+  const status: StreamStatus = terminalEventType === null ? "open" : "closed";
   const nextRun: RuntimeRunState = {
     ...existing,
     status,
     lastEventId: Math.max(existing.lastEventId, eventId),
-    seenEventKeys: rememberSeenEventKey(existing.seenEventKeys, dedupeKey),
-    terminalEventType: isTerminalRunEvent(event.event_type)
-      ? event.event_type
-      : existing.terminalEventType,
+    seenEventKeys: dedupeKey === null
+      ? existing.seenEventKeys
+      : rememberSeenEventKey(existing.seenEventKeys, dedupeKey),
+    terminalEventType,
     entries: appendTimelineEntry(existing.entries, {
       id: `${runId}:${eventId}:${existing.entries.length}`,
       sessionId: event.session_id,
@@ -101,6 +106,19 @@ export function reduceRunEvent(
     },
     activeRunIds: Array.from(activeRunIds),
   };
+}
+
+function nextTerminalEventType(
+  existingTerminalEventType: RunEventType | null,
+  eventType: RunEventType,
+): RunEventType | null {
+  if (eventType === "run_resumed") {
+    return null;
+  }
+  if (isTerminalRunEvent(eventType)) {
+    return eventType;
+  }
+  return existingTerminalEventType;
 }
 
 function rememberSeenEventKey(
@@ -168,8 +186,18 @@ function firstPayloadString(
 ): string | null {
   for (const key of keys) {
     const value = payload[key];
-    if (typeof value === "string" && value.trim()) {
-      return value;
+    if (typeof value !== "string") {
+      continue;
+    }
+    if (RAW_TEXT_PAYLOAD_KEYS.has(key)) {
+      if (value.length > 0) {
+        return value;
+      }
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed) {
+      return trimmed;
     }
   }
   return null;

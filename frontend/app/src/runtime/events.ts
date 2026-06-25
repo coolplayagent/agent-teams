@@ -191,9 +191,13 @@ export function isTerminalRunEvent(eventType: RunEventType): boolean {
   );
 }
 
-export function eventDedupeKey(event: ParsedRunEvent): string {
+export function eventDedupeKey(event: ParsedRunEvent): string | null {
   if (typeof event.event_id === "number" && event.event_id > 0) {
     return `${event.run_id}:${event.event_id}`;
+  }
+  const occurredAt = event.occurred_at?.trim();
+  if (!occurredAt) {
+    return null;
   }
   return [
     event.run_id,
@@ -201,6 +205,7 @@ export function eventDedupeKey(event: ParsedRunEvent): string {
     event.event_type,
     event.task_id ?? "",
     event.instance_id ?? "",
+    occurredAt,
     event.payload_json ?? JSON.stringify(event.payload),
   ].join(":");
 }

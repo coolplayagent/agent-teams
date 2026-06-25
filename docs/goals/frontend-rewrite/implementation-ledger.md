@@ -3111,3 +3111,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Hegel reviewer `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` was queued for Settings subsystem readiness review after this recheck; no PASS/FAIL result has returned yet.
+
+## 2026-06-26 V2 Resource And Assistive Feature Evidence Batch
+
+### Scope
+- Re-checked the product parity checklist item 12 and the latest ledger before choosing this slice, then focused on Resource and Assistive Features because it is an explicit release gate and does not overlap with the pending Settings reviewer pass.
+- Verified existing component coverage for message export format choices, paginated round loading before export, HTML/PNG export invocation, token usage refresh, context-window display, loading/error titles, and Chinese localization of the token/context strip.
+- Verified built `/app/` browser coverage for real HTML and PNG message-export downloads, including expected filenames, HTML transcript content, and PNG file signature.
+- Verified built `/app/` browser image-preview coverage and inspected `.tmp/frontend-v2-resource/v2-image-preview-open.png`; the runtime media reference rendered nonblank, the Ant image preview was open, and the V2 shell stayed framed with sidebar/topbar/composer visible.
+- Verified focused voice-input browser coverage for the configured speech path sending PCM audio and returning idle after silence, plus the unconfigured STT path where the voice button remains hidden and Space continues behaving as prompt input.
+- Kept this as Resource and Assistive Feature evidence only. No full Resource subsystem completion is claimed because complete reviewer sign-off, broader export visual review, and final release-level audit remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageExportMenu.test.tsx src/test/messageExport.test.ts src/test/SessionTokenUsage.test.tsx` passed with 3 files and 18 tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "message_export or timeline_image_preview"` passed with 2 selected tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_voice_input_audio.py -k "button_hides_without_stt_config or sends_pcm_bytes"` passed with 2 selected tests.
+
+### Reviewer
+- Main-agent component, browser, and screenshot inspection completed for this Resource/Assistive evidence slice. Full reviewer sign-off remains open.

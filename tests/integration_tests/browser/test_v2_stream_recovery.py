@@ -32,6 +32,8 @@ _RUN_ID = "run-v2-stream"
 _PROMPT = "stream recovery probe"
 _FIRST_CHUNK = "first chunk "
 _AFTER_RELOAD_CHUNK = "after reload"
+_QUEUED_INJECTION = "queued follow-up"
+_INTERRUPT_INJECTION = "interrupt now"
 
 
 @pytest.fixture()
@@ -118,13 +120,69 @@ def test_v2_run_stream_recovers_after_refresh(browser_page: Page) -> None:
         )
 
 
+def test_v2_active_run_controls_inject_and_stop(browser_page: Page) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 1",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        _emit_relay_event(page, "run_started", 1, {"phase": "streaming"})
+
+        stop_button = page.get_by_role("button", name=re.compile(r"^(Stop|停止)$"))
+        expect(stop_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        prompt.fill(_QUEUED_INJECTION)
+        page.get_by_role("button", name=re.compile(r"^(Queue|排队)$")).click()
+        expect(prompt).to_have_value("", timeout=_WAIT_TIMEOUT_MS)
+        assert backend.injections == [
+            {"content": _QUEUED_INJECTION, "mode": "queued"},
+        ]
+
+        prompt.fill(_INTERRUPT_INJECTION)
+        page.get_by_role("button", name=re.compile(r"^(Interrupt|打断)$")).click()
+        expect(prompt).to_have_value("", timeout=_WAIT_TIMEOUT_MS)
+        assert backend.injections == [
+            {"content": _QUEUED_INJECTION, "mode": "queued"},
+            {"content": _INTERRUPT_INJECTION, "mode": "interrupt"},
+        ]
+        assert backend.stop_payload is None
+        assert backend.completed is False
+
+        stop_button.click()
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 0",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(stop_button).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.stop_payload == {"scope": "main"}
+        assert backend.completed is True
+
+
 class _V2StreamBackend:
     def __init__(self) -> None:
         self.completed = False
+        self.injections: list[dict[str, object]] = []
         self.last_event_id = 0
         self.persisted_assistant_text = ""
         self.run_created = False
         self.run_payload: dict[str, object] | None = None
+        self.stop_payload: dict[str, object] | None = None
 
     def route(self, route: Route, request: Request) -> None:
         path = urlsplit(request.url).path.removeprefix("/api")
@@ -176,6 +234,37 @@ class _V2StreamBackend:
                     "run_id": _RUN_ID,
                     "session_id": _SESSION_ID,
                     "target_role_id": None,
+                },
+            )
+            return
+        if request.method == "POST" and path == f"/ag-ui/runs/{_RUN_ID}/inject":
+            injection = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.injections.append(injection)
+            _fulfill_json(
+                route,
+                {
+                    "action": "inject",
+                    "run_id": _RUN_ID,
+                    "session_id": _SESSION_ID,
+                    "status": "ok",
+                },
+            )
+            return
+        if request.method == "POST" and path == f"/ag-ui/runs/{_RUN_ID}:stop":
+            self.stop_payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.completed = True
+            _fulfill_json(
+                route,
+                {
+                    "run_id": _RUN_ID,
+                    "scope": "main",
+                    "status": "ok",
                 },
             )
             return

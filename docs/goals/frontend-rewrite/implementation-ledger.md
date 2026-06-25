@@ -1569,3 +1569,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent backend integration verification completed for this AG-UI replay slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real browser interrupted-stream reconnect, multiplexed backend replay, stop/resume and recovery UI actions, approvals/questions, and reviewer sign-off.
+
+## 2026-06-25 V2 Active Run Control Recovery Cache Batch
+
+### Scope
+- Continued from the global Runtime Gate and Composer/Run Controls checklist rather than repeating protocol-only stream coverage.
+- Extended the real V2 `/app/` browser integration scenario to exercise active-run controls in the built shell.
+- Covered queued runtime injection, interrupt runtime injection, and stop-run actions against the AG-UI endpoint shapes from the V2 composer while a mocked EventSource is open.
+- Caught a real stop-run race where the Stop mutation cleared the stream controller but stale recovery cache still contained a running `active_run`, letting RecoveryBar immediately reconnect before the fresh recovery refetch arrived.
+- Fixed the race by clearing the current session recovery query's `active_run` cache synchronously on Stop success before calling `clearRunStream()`, while still invalidating recovery so a backend-reported recoverable stopped run can reappear as a Resume action.
+- Rebuilt the V2 app bundle so `frontend/dist/app` carries the fix.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 2 tests.
+- `npm test -- src/test/Composer.test.tsx src/test/RecoveryBar.test.tsx src/test/RunStreamController.test.tsx` in `frontend/app` passed with 84 tests.
+- `npm run build` in `frontend/app` passed, including typecheck, desktop build, and Vite production build; Vite refreshed `frontend/dist/app` with rebuilt asset `index-Du6q0nKX.js`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because the committed change fixes runtime control behavior rather than visual structure; the next visual pass should resume paired V1/V2 screenshots.
+
+### Reviewer
+- Main-agent browser integration and targeted test verification completed for this active-run controls slice. No Composer, Run Recovery, or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real backend stop/resume browser flows, approval and user-question recovery actions, multiplexed backend replay, and reviewer sign-off.

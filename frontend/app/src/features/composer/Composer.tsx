@@ -35,6 +35,7 @@ import type {
   InjectionDeliveryMode,
   ModelProfilesPayload,
   OrchestrationConfig,
+  RecoverySnapshot,
   RoleOption,
   RoleConfigOptions,
   RunCreateRequest,
@@ -97,6 +98,10 @@ function sessionDetailQueryKey(sessionId: string) {
 
 function sessionTopologyLockQueryKey(sessionId: string | null) {
   return ["sessions", "topology-lock", sessionId] as const;
+}
+
+function sessionRecoveryQueryKey(sessionId: string) {
+  return ["sessions", sessionId, "recovery"] as const;
 }
 
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
@@ -377,10 +382,19 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       return stopRun(activeRunId);
     },
     onSuccess: () => {
+      if (sessionId !== null) {
+        queryClient.setQueryData<RecoverySnapshot | undefined>(
+          sessionRecoveryQueryKey(sessionId),
+          (current) =>
+            current === undefined ? current : { ...current, active_run: null },
+        );
+      }
       runStreamController.clearRunStream();
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       if (sessionId !== null) {
-        void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
+        void queryClient.invalidateQueries({
+          queryKey: sessionRecoveryQueryKey(sessionId),
+        });
       }
     },
     onError: (error) => {

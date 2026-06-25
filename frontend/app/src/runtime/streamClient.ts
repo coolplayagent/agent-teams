@@ -165,7 +165,15 @@ function normalizeRunStreamTargets(runs: RunStreamTarget[]): RunStreamTarget[] {
   if (normalizedRuns.some((run) => run.runId.length === 0)) {
     throw new Error("Run stream target runId cannot be blank.");
   }
-  return normalizedRuns;
+  const targetsByRunId = new Map<string, RunStreamTarget>();
+  for (const run of normalizedRuns) {
+    const existing = targetsByRunId.get(run.runId);
+    targetsByRunId.set(run.runId, {
+      afterEventId: Math.max(existing?.afterEventId ?? 0, run.afterEventId),
+      runId: run.runId,
+    });
+  }
+  return Array.from(targetsByRunId.values());
 }
 
 function trackedRunsClosed(

@@ -216,6 +216,60 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
   });
 
+  it("deduplicates multiplexed run targets before opening a replay stream", () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1", "run-2"],
+        runs: {
+          "run-1": {
+            entries: [],
+            lastEventId: 20,
+            runId: "run-1",
+            seenEventKeys: ["run-1:20"],
+            status: "open",
+            terminalEventType: null,
+          },
+          "run-2": {
+            entries: [],
+            lastEventId: 7,
+            runId: "run-2",
+            seenEventKeys: ["run-2:7"],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start duplicate streams" }));
+
+    expect(streamMocks.openRunStream).not.toHaveBeenCalled();
+    expect(streamMocks.openMultiplexedRunStream).toHaveBeenCalledTimes(1);
+    const options = streamMocks.latestOptions as MultiplexedRunStreamOptions;
+    expect(options.runs).toEqual([
+      { afterEventId: 20, runId: "run-1" },
+      { afterEventId: 7, runId: "run-2" },
+    ]);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
+  });
+
   it("refreshes recovery immediately when the active stream reports an error", () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -479,6 +533,33 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
         }
       >
         Start streams
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          controller.startRunStreams({
+            sessionId: "session-1",
+            runs: [
+              {
+                afterEventId: 12,
+                runId: "run-1",
+              },
+              {
+                afterEventId: 3,
+                runId: "run-1",
+              },
+              {
+                afterEventId: 4,
+                runId: "run-2",
+              },
+              {
+                runId: "run-2",
+              },
+            ],
+          })
+        }
+      >
+        Start duplicate streams
       </button>
       <span data-testid="active-run-ids">{controller.activeRunIds.join(",")}</span>
     </>

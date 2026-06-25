@@ -399,6 +399,21 @@ describe("openRunStream", () => {
     expect(stream.closedStates[0].activeRunIds).toEqual([]);
   });
 
+  it("deduplicates multiplexed stream targets with the highest replay cursor", () => {
+    const stream = openTestMultiplexedStream({
+      runs: [
+        { afterEventId: 4, runId: "run-a" },
+        { afterEventId: 11, runId: "run-a" },
+        { afterEventId: 9, runId: "run-b" },
+        { afterEventId: 7, runId: "run-b" },
+      ],
+    });
+
+    expect(String(stream.source.url)).toBe(
+      "/api/ag-ui/runs/events?run_id=run-a&after_event_id=11&run_id=run-b&after_event_id=9",
+    );
+  });
+
   it("ignores untracked events while a multiplexed replay is open", () => {
     const stream = openTestMultiplexedStream({
       runs: [

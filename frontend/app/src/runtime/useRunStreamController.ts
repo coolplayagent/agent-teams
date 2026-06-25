@@ -245,7 +245,8 @@ export function useRunStreamController(): RunStreamController {
 
 function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget[] {
   const normalizedRuns = runs.map((run) => ({
-    afterEventId: run.afterEventId,
+    afterEventId:
+      typeof run.afterEventId === "number" ? Math.max(0, run.afterEventId) : undefined,
     runId: run.runId.trim(),
   }));
   if (normalizedRuns.length === 0) {
@@ -254,7 +255,15 @@ function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget
   if (normalizedRuns.some((run) => run.runId.length === 0)) {
     throw new Error("Run stream target runId cannot be blank.");
   }
-  return normalizedRuns;
+  const targetsByRunId = new Map<string, StartRunStreamTarget>();
+  for (const run of normalizedRuns) {
+    const existing = targetsByRunId.get(run.runId);
+    targetsByRunId.set(run.runId, {
+      afterEventId: Math.max(existing?.afterEventId ?? 0, run.afterEventId ?? 0),
+      runId: run.runId,
+    });
+  }
+  return Array.from(targetsByRunId.values());
 }
 
 function resolveReplayTargets(

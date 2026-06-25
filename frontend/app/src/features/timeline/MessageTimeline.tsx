@@ -1191,6 +1191,9 @@ function runtimeStructuredEventText(entry: TimelineEntry): string | null {
   if (entry.kind === "token_usage") {
     return runtimeTokenUsageText(entry);
   }
+  if (entry.kind === "todo_updated") {
+    return runtimeTodoUpdatedText(entry);
+  }
   return null;
 }
 
@@ -1215,6 +1218,59 @@ function runtimeTokenUsageText(entry: TimelineEntry): string | null {
     return null;
   }
   return `Token usage: ${parts.join(" · ")}`;
+}
+
+function runtimeTodoUpdatedText(entry: TimelineEntry): string | null {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return null;
+  }
+  const items = Array.isArray(payload.items)
+    ? payload.items.flatMap((item) => {
+        const todo = jsonObject(item);
+        return todo === null ? [] : [todo];
+      })
+    : [];
+  const counts = runtimeTodoStatusCounts(items);
+  const activeItem = runtimeTodoActiveItem(items);
+  const version = objectNumber(payload, "version");
+  const updatedBy = objectString(payload, "updated_by_instance_id")
+    || objectString(payload, "updated_by_role_id");
+  const fallbackSummary = objectString(payload, "summary")
+    || objectString(payload, "title")
+    || objectString(payload, "message");
+  const parts = [
+    items.length > 0 ? `${items.length} ${items.length === 1 ? "item" : "items"}` : "",
+    counts.length > 0 ? counts.join(", ") : "",
+    activeItem.length > 0 ? `Current ${activeItem}` : "",
+    version > 0 ? `v${formatRuntimeCount(version)}` : "",
+    updatedBy.length > 0 ? `by ${updatedBy}` : "",
+    items.length === 0 ? fallbackSummary : "",
+  ].filter(Boolean);
+  if (parts.length === 0) {
+    return null;
+  }
+  return `Todo updated: ${parts.join(" · ")}`;
+}
+
+function runtimeTodoStatusCounts(items: Record<string, JsonValue>[]): string[] {
+  const counts = new Map<string, number>();
+  items.forEach((item) => {
+    const status = objectString(item, "status");
+    if (status.length > 0) {
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    }
+  });
+  return Array.from(counts.entries()).map(
+    ([status, count]) => `${formatRuntimeCount(count)} ${status}`,
+  );
+}
+
+function runtimeTodoActiveItem(items: Record<string, JsonValue>[]): string {
+  const inProgress = items.find((item) => objectString(item, "status") === "in_progress");
+  const pending = items.find((item) => objectString(item, "status") === "pending");
+  const firstItem = inProgress ?? pending ?? items.at(0);
+  return firstItem === undefined ? "" : objectString(firstItem, "content");
 }
 
 function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {

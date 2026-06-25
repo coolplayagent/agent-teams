@@ -2359,3 +2359,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted component verification completed for this token-usage replay slice. No Message Timeline, AG-UI Runtime Stream, or Resource subsystem completion is claimed.
+
+## 2026-06-25 V2 Timeline Todo Replay Summary Batch
+
+### Scope
+- Re-checked the Message Timeline, AG-UI Runtime Stream, and Rounds/Todos checklist after the token-usage replay slice, focusing on another runtime replay event that still rendered as protocol fallback text.
+- Added structured timeline rendering for `todo_updated` runtime events backed by the real `TodoSnapshot` payload shape: item count, status counts, current in-progress or pending item, snapshot version, and updater.
+- Preserved safe fallback behavior for malformed payloads and summary-only replay events.
+- Updated the rich interrupted-stream browser replay flow to assert the current structured `token_usage` summary and a structured `todo_updated` snapshot summary instead of raw fallback labels.
+- Refreshed `frontend/dist/app` for the timeline replay rendering change.
+- Kept this as targeted Message Timeline, AG-UI Runtime Stream, and todo-event readability evidence only; full Message Timeline, AG-UI Runtime Stream, Rounds/Todos, interrupted replay, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 50 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k interrupted_stream_preserves_non_text_events_after_reconnect` passed with 1 test.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` reported 1 file already formatted.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors, 0 warnings, and 0 notes.
+- No screenshot was captured because this batch changes replay text rendering, not layout. The visible behavior is covered by the browser rich replay assertion against the built `/app/` bundle.
+
+### Reviewer
+- Main-agent component, built-app browser replay, and targeted static verification completed for this todo replay slice. No Message Timeline, AG-UI Runtime Stream, or Rounds/Todos subsystem completion is claimed.

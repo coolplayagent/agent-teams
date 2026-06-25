@@ -1856,6 +1856,38 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("token usage")).not.toBeInTheDocument();
   });
 
+  it("renders runtime todo update events as compact todo summaries", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-todo:1:0",
+        kind: "todo_updated",
+        text: "todo updated",
+        eventId: 1,
+        payload: {
+          items: [
+            { content: "Inspect replay recovery", status: "completed" },
+            { content: "Verify todo stream summary", status: "in_progress" },
+            { content: "Capture final evidence", status: "pending" },
+          ],
+          run_id: "run-output",
+          session_id: "session-1",
+          updated_by_instance_id: "MainAgent",
+          version: 3,
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText(
+        "Todo updated: 3 items · 1 completed, 1 in_progress, 1 pending · Current Verify todo stream summary · v3 · by MainAgent",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("todo updated")).not.toBeInTheDocument();
+  });
+
   it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

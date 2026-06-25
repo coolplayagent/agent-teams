@@ -53,10 +53,15 @@ _RICH_REPLAY_THINKING_PREFIX = "checking replay state"
 _RICH_REPLAY_THINKING_SUFFIX = " after reconnect"
 _RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
 _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
+_RICH_REPLAY_TOKEN_SUMMARY = "Token usage: Total 18 · Input 11 · Output 7"
 _RICH_REPLAY_MODEL_STEP = "model step replay visible"
 _RICH_REPLAY_STATE_SNAPSHOT = "state snapshot replay visible"
 _RICH_REPLAY_STATE_DELTA = "state delta replay visible"
-_RICH_REPLAY_TODO_UPDATE = "todo update replay visible"
+_RICH_REPLAY_TODO_CURRENT = "verify rich replay todos"
+_RICH_REPLAY_TODO_SUMMARY = (
+    "Todo updated: 3 items · 1 completed, 1 in_progress, 1 pending · "
+    f"Current {_RICH_REPLAY_TODO_CURRENT} · v4 · by replay-agent"
+)
 _RICH_REPLAY_NOTIFICATION = "notification replay visible"
 _RICH_REPLAY_SUBAGENT_STATUS = "subagent status replay visible"
 _RICH_REPLAY_BACKGROUND_TASK = "background task replay visible"
@@ -461,7 +466,20 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
             page,
             "todo_updated",
             13,
-            {"summary": _RICH_REPLAY_TODO_UPDATE},
+            {
+                "items": [
+                    {"content": "inspect replay hydration", "status": "completed"},
+                    {
+                        "content": _RICH_REPLAY_TODO_CURRENT,
+                        "status": "in_progress",
+                    },
+                    {"content": "capture replay evidence", "status": "pending"},
+                ],
+                "run_id": _RUN_ID,
+                "session_id": _SESSION_ID,
+                "updated_by_instance_id": "replay-agent",
+                "version": 4,
+            },
         )
         _emit_relay_event(
             page,
@@ -504,7 +522,7 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         ).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text("token usage")).to_be_visible(
+        expect(page.get_by_text(_RICH_REPLAY_TOKEN_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         expect(page.get_by_text(_RICH_REPLAY_MODEL_STEP, exact=True)).to_be_visible(
@@ -519,7 +537,7 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         expect(page.get_by_text(_RICH_REPLAY_STATE_DELTA)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text(_RICH_REPLAY_TODO_UPDATE)).to_be_visible(
+        expect(page.get_by_text(_RICH_REPLAY_TODO_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         expect(page.get_by_text(_RICH_REPLAY_NOTIFICATION)).to_be_visible(

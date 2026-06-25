@@ -1743,6 +1743,42 @@ def test_v2_real_sse_background_task_recovery_streams_multiplexed_runs(
         assert stream_state.wait_for_sent_event_id(4, timeout_seconds=5.0)
 
 
+def test_v2_real_sse_recoverable_parent_streams_background_subagent_only(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(
+        background_task=True,
+        background_task_subagent_run=True,
+        recoverable_stopped_run=True,
+    )
+    stream_state = _RealSseStreamState()
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        assert stream_state.wait_for_stream_run_id(
+            _SUBAGENT_RUN_ID,
+            timeout_seconds=10.0,
+        )
+        assert not stream_state.has_stream_run_id(_RUN_ID)
+        assert stream_state.multiplex_request_count() == 0
+        expect(
+            page.locator(".at-message").filter(has_text=_SUBAGENT_MULTIPLEX_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.wait_for_sent_event_id(2, timeout_seconds=5.0)
+        composer = page.locator(".at-composer")
+        expect(
+            composer.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            composer.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+
+
 def test_v2_paused_subagent_recovery_displays_followup_state(
     browser_page: Page,
 ) -> None:
@@ -2331,12 +2367,19 @@ class _RealSseStreamState:
         self.multiplex_stream_requests: list[dict[str, object]] = []
         self.stream_requests: list[dict[str, object]] = []
 
-    def record_request(self, *, after_event_id: int, last_event_id: str) -> None:
+    def record_request(
+        self,
+        *,
+        after_event_id: int,
+        last_event_id: str,
+        run_id: str,
+    ) -> None:
         with self._lock:
             self.stream_requests.append(
                 {
                     "after_event_id": after_event_id,
                     "last_event_id": last_event_id,
+                    "run_id": run_id,
                 },
             )
         if after_event_id >= 2:
@@ -2405,6 +2448,27 @@ class _RealSseStreamState:
                 )
                 for request in self.multiplex_stream_requests
             )
+
+    def wait_for_stream_run_id(
+        self,
+        run_id: str,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            if self.has_stream_run_id(run_id):
+                return True
+            time.sleep(0.05)
+        return False
+
+    def has_stream_run_id(self, run_id: str) -> bool:
+        with self._lock:
+            return any(request["run_id"] == run_id for request in self.stream_requests)
+
+    def multiplex_request_count(self) -> int:
+        with self._lock:
+            return len(self.multiplex_stream_requests)
 
     def has_last_event_id_header(self, last_event_id: str) -> bool:
         with self._lock:
@@ -2547,7 +2611,10 @@ def _serve_v2_app_with_real_sse(
                 self._send_json({"shell_safety_policy_enabled": True})
                 return
             if path == f"/ag-ui/runs/{_RUN_ID}/events":
-                self._handle_run_events(query)
+                self._handle_run_events(query, run_id=_RUN_ID)
+                return
+            if path == f"/ag-ui/runs/{_SUBAGENT_RUN_ID}/events":
+                self._handle_subagent_run_events(query)
                 return
             if path == "/ag-ui/runs/events":
                 self._handle_multiplexed_run_events(query)
@@ -2615,13 +2682,14 @@ def _serve_v2_app_with_real_sse(
                 {"detail": f"Unhandled real SSE mock API route: {path}"}, 404
             )
 
-        def _handle_run_events(self, query: str) -> None:
+        def _handle_run_events(self, query: str, *, run_id: str) -> None:
             params = parse_qs(query)
             after_event_id = _first_query_int(params, "after_event_id")
             last_event_id = self.headers.get("Last-Event-ID", "")
             stream_state.record_request(
                 after_event_id=after_event_id,
                 last_event_id=last_event_id,
+                run_id=run_id,
             )
             self._send_sse_headers()
             if stream_state.claim_initial_stream(after_event_id):
@@ -2997,6 +3065,39 @@ def _serve_v2_app_with_real_sse(
                     "run_completed",
                     27,
                     {"status": "completed"},
+                ),
+            )
+            time.sleep(0.5)
+
+        def _handle_subagent_run_events(self, query: str) -> None:
+            params = parse_qs(query)
+            after_event_id = _first_query_int(params, "after_event_id")
+            last_event_id = self.headers.get("Last-Event-ID", "")
+            stream_state.record_request(
+                after_event_id=after_event_id,
+                last_event_id=last_event_id,
+                run_id=_SUBAGENT_RUN_ID,
+            )
+            self._send_sse_headers()
+            self._write_sse_event(
+                _ag_ui_event(
+                    "message.text.delta",
+                    "text_delta",
+                    1,
+                    {"text": _SUBAGENT_MULTIPLEX_CHUNK},
+                    role_id="reviewer",
+                    run_id=_SUBAGENT_RUN_ID,
+                ),
+            )
+            time.sleep(0.2)
+            self._write_sse_event(
+                _ag_ui_event(
+                    "run.completed",
+                    "run_completed",
+                    2,
+                    {"status": "completed"},
+                    role_id="reviewer",
+                    run_id=_SUBAGENT_RUN_ID,
                 ),
             )
             time.sleep(0.5)

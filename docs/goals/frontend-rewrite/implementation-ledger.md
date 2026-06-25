@@ -3038,3 +3038,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, API-client, built-app browser, and live in-app DOM verification completed for this Board source-settings slice. Full module parity and subsystem reviewer sign-off remain open.
+
+## 2026-06-26 V2 Recoverable Parent Background Stream Fix Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, latest ledger, live `/app/` DOM state, and Hegel reviewer result before choosing this slice; moved from screenshot-level timeline polish back to the higher-risk AG-UI stream/replay recovery gap.
+- Addressed Hegel reviewer `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` P1 finding: V2 could include a recoverable/stopped parent run in automatic background multiplex recovery whenever active background tasks existed, diverging from V1 and risking a stream that stayed open after the real background/subagent run completed.
+- Split automatic recovery target selection so the foreground active run is included only when its own status or phase is streamable, while background task output runs are added separately.
+- Filtered background task targets that point back to the same recoverable/stopped parent run; subagent tasks with a distinct `subagent_run_id` now stream that child run only.
+- Preserved explicit Resume, pending approval, pending user question, paused subagent, and running parent + subagent multiplex paths.
+- Extended the real SSE browser harness so it can serve a standalone subagent run stream, then added built `/app/` evidence that a recoverable stopped parent with an active subagent requests only the child run, opens no multiplex stream, renders the subagent output, and returns the composer to Send without showing Stop.
+- Kept this as targeted AG-UI Runtime Stream recovery progress only; Message Timeline visual parity, full visual matrix, subsystem reviewer sign-off, Electron readiness, and release readiness remain open.
+
+### Verification
+- `npm test -- RecoveryBar.test.tsx -t "subagent output run|same-run background"` passed with 2 selected tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm test -- RecoveryBar.test.tsx -t "active background subagent recovery|subagent output run|same-run background"` passed with 3 selected tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "recoverable_parent_streams_background_subagent_only"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "background_task_recovery_uses_multiplex_stream or real_sse_background_task_recovery_streams_multiplexed_runs or recoverable_parent_streams_background_subagent_only or background_task_recovery_displays_collapses_and_stops"` passed with 4 selected tests.
+- `npm test -- RecoveryBar.test.tsx` passed with 25 tests.
+
+### Reviewer
+- Hegel reviewer P1 was reproduced from code review and fixed in this batch. No final AG-UI Runtime Stream subsystem completion is claimed yet; a follow-up reviewer pass is still required for sign-off.

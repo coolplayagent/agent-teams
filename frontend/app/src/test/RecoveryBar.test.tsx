@@ -505,6 +505,84 @@ describe("RecoveryBar", () => {
     expect(controller.startRunStream).not.toHaveBeenCalled();
   });
 
+  it("streams only the subagent output run when the parent run is stopped and recoverable", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "stopped",
+          phase: "stopped",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "subagent",
+            command: "subagent:reviewer",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "running",
+            recent_output: [],
+            subagent_run_id: "subagent-run-1",
+          },
+        ],
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("subagent:reviewer");
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: undefined,
+        foreground: false,
+        runId: "subagent-run-1",
+        sessionId: "session-1",
+      }),
+    );
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-stream a recoverable stopped parent for same-run background work", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "stopped",
+          phase: "stopped",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "command",
+            command: "npm run watch",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "running",
+            recent_output: [],
+          },
+        ],
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("npm run watch");
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
   it("keeps recovered multiplex streams active when run ids are reordered", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

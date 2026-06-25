@@ -909,29 +909,32 @@ function buildRecoveryRunStreamTargets(
   activeBackgroundTasks: RecoveryBackgroundTask[],
 ): StartRunStreamTarget[] {
   const targets: StartRunStreamTarget[] = [];
-  if (shouldStreamActiveRun(activeRun, activeBackgroundTasks)) {
+  const activeRunStreamable = shouldStreamActiveRun(activeRun);
+  if (activeRunStreamable) {
     addRecoveryRunStreamTarget(targets, activeRun.run_id, activeRun.last_event_id);
   }
   for (const task of activeBackgroundTasks) {
-    addRecoveryRunStreamTarget(
+    addBackgroundRecoveryRunStreamTarget(
       targets,
       task.run_id,
-      activeRun?.run_id === task.run_id ? activeRun.last_event_id : undefined,
+      activeRun,
+      activeRunStreamable,
     );
-    addRecoveryRunStreamTarget(targets, backgroundTaskOutputRunId(task), undefined);
+    addBackgroundRecoveryRunStreamTarget(
+      targets,
+      backgroundTaskOutputRunId(task),
+      activeRun,
+      activeRunStreamable,
+    );
   }
   return targets;
 }
 
 function shouldStreamActiveRun(
   activeRun: RecoveryRun | null,
-  activeBackgroundTasks: RecoveryBackgroundTask[],
 ): activeRun is RecoveryRun {
   if (activeRun === null || activeRun.run_id.trim().length === 0) {
     return false;
-  }
-  if (activeBackgroundTasks.length > 0) {
-    return true;
   }
   if (activeRun.should_show_recover === true) {
     return false;
@@ -953,6 +956,26 @@ function foregroundRecoveryRunIdsFor(activeRun: RecoveryRun | null): string[] {
     return [];
   }
   return [activeRunId];
+}
+
+function addBackgroundRecoveryRunStreamTarget(
+  targets: StartRunStreamTarget[],
+  runId: string,
+  activeRun: RecoveryRun | null,
+  activeRunStreamable: boolean,
+): void {
+  const normalizedRunId = runId.trim();
+  if (!normalizedRunId) {
+    return;
+  }
+  const activeRunId = activeRun?.run_id.trim() ?? "";
+  if (activeRunId && normalizedRunId === activeRunId && !activeRunStreamable) {
+    return;
+  }
+  const afterEventId = activeRunStreamable && normalizedRunId === activeRunId
+    ? activeRun?.last_event_id
+    : undefined;
+  addRecoveryRunStreamTarget(targets, normalizedRunId, afterEventId);
 }
 
 function isStreamingRunStatus(status: string | undefined): boolean {

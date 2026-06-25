@@ -54,6 +54,7 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
       return;
     }
     if (isStreamErrorPayload(parsed)) {
+      closeSource();
       options.onError(parsed.error, "server");
       return;
     }
@@ -79,7 +80,6 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
       handleMessage(event);
       return;
     }
-    closeSource();
     options.onError("Run stream disconnected.", "transport");
   });
 

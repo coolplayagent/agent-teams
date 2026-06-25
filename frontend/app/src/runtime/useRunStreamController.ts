@@ -6,7 +6,7 @@ import { openRunStream, type RunStreamHandle } from "./streamClient";
 import { useRuntimeStore } from "./runtimeStore";
 
 const RECOVERY_CONTINUITY_REFRESH_MS = 10000;
-const RUN_STREAM_RECONNECT_DELAY_MS = 1000;
+const RUN_STREAM_MANUAL_RECONNECT_GRACE_MS = 3500;
 const RUN_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 
 export interface StartRunStreamOptions {
@@ -101,6 +101,7 @@ export function useRunStreamController(): RunStreamController {
         if (streamGeneration !== streamGenerationRef.current) {
           return;
         }
+        clearReconnectTimer();
         reconnectAttemptRef.current = 0;
         runtimeStateRef.current = nextRuntimeState;
         setRuntimeState(nextRuntimeState);
@@ -156,8 +157,6 @@ export function useRunStreamController(): RunStreamController {
     if (reconnectTimerRef.current !== null) {
       return;
     }
-    streamHandleRef.current?.close();
-    streamHandleRef.current = null;
     const nextAttempt = reconnectAttemptRef.current + 1;
     reconnectAttemptRef.current = nextAttempt;
     reconnectTimerRef.current = window.setTimeout(() => {
@@ -165,8 +164,10 @@ export function useRunStreamController(): RunStreamController {
       if (streamGeneration !== streamGenerationRef.current) {
         return;
       }
+      streamHandleRef.current?.close();
+      streamHandleRef.current = null;
       openTrackedRunStream(options, streamGeneration);
-    }, RUN_STREAM_RECONNECT_DELAY_MS * nextAttempt);
+    }, RUN_STREAM_MANUAL_RECONNECT_GRACE_MS * nextAttempt);
   };
 
   const startRunStream = (options: StartRunStreamOptions) => {

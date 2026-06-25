@@ -130,6 +130,7 @@ describe("openRunStream", () => {
 
     expect(stream.errors).toEqual([{ kind: "server", message: "resume failed" }]);
     expect(stream.states).toEqual([]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
   });
 
   it("reports malformed stream events without throwing", () => {
@@ -155,7 +156,7 @@ describe("openRunStream", () => {
     expect(stream.states).toEqual([]);
   });
 
-  it("does not double-report a transport error", () => {
+  it("lets EventSource attempt native reconnect after a transport error", () => {
     const stream = openTestStream();
 
     stream.source.dispatchTransportError();
@@ -163,7 +164,7 @@ describe("openRunStream", () => {
     expect(stream.errors).toEqual([
       { kind: "transport", message: "Run stream disconnected." },
     ]);
-    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.source.close).not.toHaveBeenCalled();
   });
 });
 

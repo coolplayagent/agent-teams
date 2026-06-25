@@ -214,20 +214,57 @@ describe("useRunStreamController", () => {
 
     expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
-    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
+    expect(streamMocks.handles[0].close).not.toHaveBeenCalled();
 
     act(() => {
-      vi.advanceTimersByTime(999);
+      vi.advanceTimersByTime(3499);
     });
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(streamMocks.handles[0].close).not.toHaveBeenCalled();
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
 
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(2);
+    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
     const reconnectOptions = streamMocks.optionsList[1] as RunStreamOptions;
     expect(reconnectOptions.afterEventId).toBe(77);
+  });
+
+  it("keeps the native EventSource reconnect when events resume before fallback", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const firstOptions = streamMocks.optionsList[0] as RunStreamOptions;
+    act(() => {
+      firstOptions.onError("Run stream disconnected.", "transport");
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+      firstOptions.onState(runtimeStateWithLastEvent(79));
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(streamMocks.handles[0].close).not.toHaveBeenCalled();
   });
 
   it("does not reconnect explicit server stream errors", () => {
@@ -256,7 +293,7 @@ describe("useRunStreamController", () => {
       options.onError("resume failed", "server");
     });
     act(() => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(5000);
     });
 
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
@@ -290,7 +327,7 @@ describe("useRunStreamController", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear stream" }));
 
     act(() => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(5000);
     });
 
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);

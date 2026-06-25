@@ -1591,3 +1591,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and targeted test verification completed for this active-run controls slice. No Composer, Run Recovery, or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real backend stop/resume browser flows, approval and user-question recovery actions, multiplexed backend replay, and reviewer sign-off.
+
+## 2026-06-25 V2 Recoverable Resume Browser Batch
+
+### Scope
+- Continued from the global Run Recovery and AG-UI Runtime Stream checklist instead of staying on message-layout polish.
+- Extended the V2 `/app/` browser integration harness with a stopped active run whose recovery snapshot reports `should_show_recover: true` and `last_event_id: 7`.
+- Covered the real RecoveryBar resume action against the built V2 shell, including the POST to `/api/ag-ui/runs/run-v2-stream:resume`.
+- Verified that Resume opens the run EventSource from the saved checkpoint with `after_event_id=7`, then accepts a `run_resumed` event and renders the resumed `text_delta` chunk.
+- Preserved the active-run controls check after resume by asserting that the Stop control appears once the stream is live again.
+- Left full Run Recovery and Runtime Stream completion open; this batch does not yet cover real backend resume timing, approvals/questions during recoverable runs, multiplexed backend replay, or reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 3 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because it adds browser-level runtime recovery coverage rather than visual layout changes; the next visual-framework pass should resume paired V1/V2 screenshots before detailed styling work.
+
+### Reviewer
+- Main-agent browser integration verification completed for this recoverable-resume slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes backend-backed resume/replay browser evidence, approval and user-question recovery actions, multiplexed stream replay, and reviewer sign-off.

@@ -34,6 +34,7 @@ _FIRST_CHUNK = "first chunk "
 _AFTER_RELOAD_CHUNK = "after reload"
 _QUEUED_INJECTION = "queued follow-up"
 _INTERRUPT_INJECTION = "interrupt now"
+_RESUMED_CHUNK = "resumed chunk"
 
 
 @pytest.fixture()
@@ -174,13 +175,58 @@ def test_v2_active_run_controls_inject_and_stop(browser_page: Page) -> None:
         assert backend.completed is True
 
 
+def test_v2_recoverable_run_resume_reopens_stream_from_checkpoint(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(recoverable_stopped_run=True)
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        resume_button = page.get_by_role("button", name="Resume")
+        expect(resume_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-recovery").filter(has_text="stopped")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        resume_button.click()
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=7'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert backend.resume_requested is True
+
+        _emit_relay_event(page, "run_resumed", 8, {"phase": "streaming"})
+        _emit_relay_event(page, "text_delta", 9, {"text": _RESUMED_CHUNK})
+        backend.last_event_id = 9
+        expect(
+            page.locator(".at-message").filter(has_text=_RESUMED_CHUNK)
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+
 class _V2StreamBackend:
-    def __init__(self) -> None:
+    def __init__(self, *, recoverable_stopped_run: bool = False) -> None:
         self.completed = False
         self.injections: list[dict[str, object]] = []
-        self.last_event_id = 0
+        self.last_event_id = 7 if recoverable_stopped_run else 0
         self.persisted_assistant_text = ""
-        self.run_created = False
+        self.recoverable_stopped_run = recoverable_stopped_run
+        self.resume_requested = False
+        self.run_created = recoverable_stopped_run
         self.run_payload: dict[str, object] | None = None
         self.stop_payload: dict[str, object] | None = None
 
@@ -268,6 +314,19 @@ class _V2StreamBackend:
                 },
             )
             return
+        if request.method == "POST" and path == f"/ag-ui/runs/{_RUN_ID}:resume":
+            self.resume_requested = True
+            self.completed = False
+            self.run_created = True
+            _fulfill_json(
+                route,
+                {
+                    "run_id": _RUN_ID,
+                    "session_id": _SESSION_ID,
+                    "status": "ok",
+                },
+            )
+            return
         _fulfill_json(
             route, {"detail": f"Unhandled mock API route: {path}"}, status=404
         )
@@ -282,10 +341,19 @@ class _V2StreamBackend:
 
     def _sidebar_session(self) -> dict[str, object]:
         active_run_id = _RUN_ID if self.run_created and not self.completed else None
+        active_run_phase = ""
+        active_run_status = ""
+        if active_run_id is not None:
+            if self.recoverable_stopped_run and not self.resume_requested:
+                active_run_phase = "stopped"
+                active_run_status = "stopped"
+            else:
+                active_run_phase = "streaming"
+                active_run_status = "running"
         return {
             "active_run_id": active_run_id,
-            "active_run_phase": "streaming" if active_run_id is not None else "",
-            "active_run_status": "running" if active_run_id is not None else "",
+            "active_run_phase": active_run_phase,
+            "active_run_status": active_run_status,
             "session_id": _SESSION_ID,
             "session_mode": "normal",
             "title": "V2 stream recovery",
@@ -333,6 +401,13 @@ class _V2StreamBackend:
         return messages
 
     def _rounds_page(self) -> dict[str, object]:
+        run_phase = "streaming"
+        run_status = "running"
+        if self.completed:
+            run_status = "completed"
+        elif self.recoverable_stopped_run and not self.resume_requested:
+            run_phase = "stopped"
+            run_status = "stopped"
         return {
             "has_more": False,
             "items": [
@@ -343,8 +418,8 @@ class _V2StreamBackend:
                     "intent_parts": [{"kind": "text", "text": _PROMPT}],
                     "primary_role_id": "MainAgent",
                     "run_id": _RUN_ID,
-                    "run_phase": "streaming",
-                    "run_status": "running" if not self.completed else "completed",
+                    "run_phase": run_phase,
+                    "run_status": run_status,
                     "run_user_message": _PROMPT,
                 },
             ],
@@ -367,13 +442,16 @@ class _V2StreamBackend:
     def _recovery(self) -> dict[str, object]:
         active_run = None
         if self.run_created and not self.completed:
+            should_show_recover = (
+                self.recoverable_stopped_run and not self.resume_requested
+            )
             active_run = {
                 "last_event_id": self.last_event_id,
-                "phase": "streaming",
+                "phase": "stopped" if should_show_recover else "streaming",
                 "run_id": _RUN_ID,
                 "session_id": _SESSION_ID,
-                "should_show_recover": False,
-                "status": "running",
+                "should_show_recover": should_show_recover,
+                "status": "stopped" if should_show_recover else "running",
                 "stream_connected": False,
             }
         return {

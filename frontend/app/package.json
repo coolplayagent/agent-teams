@@ -4,10 +4,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && npm run desktop:build && vite build",
+    "desktop:build": "tsc -p tsconfig.desktop.json",
+    "desktop:dev": "npm run desktop:build && electron dist-desktop/desktop/main.js",
     "preview": "vite preview --host 127.0.0.1",
-    "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit --pretty false",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.desktop.json --noEmit",
+    "lint": "tsc --noEmit --pretty false && tsc -p tsconfig.desktop.json --noEmit --pretty false",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -34,6 +36,7 @@
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^42.5.0",
     "jsdom": "^27.4.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.3",

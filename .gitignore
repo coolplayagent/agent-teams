@@ -18,6 +18,7 @@ tmp.db-journal
 pytest-cache-files-*/
 frontend/node_modules/
 frontend/.vite/
+frontend/app/dist-desktop/
 node_modules
 package-lock.json
 package.json

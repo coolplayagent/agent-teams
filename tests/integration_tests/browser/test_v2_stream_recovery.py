@@ -618,6 +618,66 @@ def test_v2_real_sse_active_run_stop_closes_stream_and_restores_send(
         )
 
 
+def test_v2_real_sse_active_run_injects_without_creating_new_run(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(hold_initial_stream_until_stop=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        stop_button = page.get_by_role("button", name=re.compile(r"^(Stop|停止)$"))
+        expect(stop_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Queue|排队)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Interrupt|打断)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        prompt.fill(_QUEUED_INJECTION)
+        page.get_by_role("button", name=re.compile(r"^(Queue|排队)$")).click()
+        expect(prompt).to_have_value("", timeout=_WAIT_TIMEOUT_MS)
+        assert backend.injections == [
+            {"content": _QUEUED_INJECTION, "mode": "queued"},
+        ]
+        assert backend.run_create_count == 1
+
+        prompt.fill(_INTERRUPT_INJECTION)
+        page.get_by_role("button", name=re.compile(r"^(Interrupt|打断)$")).click()
+        expect(prompt).to_have_value("", timeout=_WAIT_TIMEOUT_MS)
+        assert backend.injections == [
+            {"content": _QUEUED_INJECTION, "mode": "queued"},
+            {"content": _INTERRUPT_INJECTION, "mode": "interrupt"},
+        ]
+        assert backend.run_create_count == 1
+        assert backend.stop_payload is None
+        assert backend.completed is False
+        expect(stop_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        stop_button.click()
+
+        assert stream_state.wait_for_stop_request(timeout_seconds=5.0)
+        assert stream_state.wait_for_initial_stream_finished(timeout_seconds=5.0)
+        expect(stop_button).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+
 def test_v2_real_sse_run_failed_finalizes_stream_and_restores_send(
     browser_page: Page,
 ) -> None:
@@ -1202,6 +1262,7 @@ class _V2StreamBackend:
         self.question_answers: list[dict[str, object]] = []
         self.resume_requested = False
         self.run_created = self.recoverable_stopped_run
+        self.run_create_count = 0
         self.run_payload: dict[str, object] | None = None
         self.stop_payload: dict[str, object] | None = None
 
@@ -1263,6 +1324,7 @@ class _V2StreamBackend:
             return
         if request.method == "POST" and path == "/ag-ui/runs":
             self.run_created = True
+            self.run_create_count += 1
             self.run_payload = cast(
                 dict[str, object],
                 json.loads(request.post_data or "{}"),
@@ -1909,12 +1971,24 @@ def _serve_v2_app_with_real_sse(
         def _handle_api_post(self, path: str) -> None:
             if path == "/ag-ui/runs":
                 backend.run_created = True
+                backend.run_create_count += 1
                 backend.run_payload = self._read_json_body()
                 self._send_json(
                     {
                         "run_id": _RUN_ID,
                         "session_id": _SESSION_ID,
                         "target_role_id": None,
+                    },
+                )
+                return
+            if path == f"/ag-ui/runs/{_RUN_ID}/inject":
+                backend.injections.append(self._read_json_body())
+                self._send_json(
+                    {
+                        "action": "inject",
+                        "run_id": _RUN_ID,
+                        "session_id": _SESSION_ID,
+                        "status": "ok",
                     },
                 )
                 return

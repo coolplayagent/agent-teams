@@ -2232,3 +2232,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this Project View entry-flow slice. No Project View, Workspace, or Shell subsystem completion is claimed.
+
+## 2026-06-25 V2 Real SSE Runtime Injection Browser Batch
+
+### Scope
+- Re-checked the Composer/Run Controls and AG-UI Runtime Stream checklist after the Project View browser-flow batch and targeted a runtime behavior gap instead of continuing Project View or visual-only work.
+- Added a built V2 `/app/` browser flow using native EventSource where a run remains actively streaming while the Composer sends Queue and Interrupt injections.
+- Extended the real HTTP/SSE browser harness with the real `POST /api/ag-ui/runs/{run_id}/inject` action response and a run-create counter.
+- Verified Queue and Interrupt both post text-only injection payloads to the active run, clear the prompt, keep the active Stop control available, avoid setting a terminal state, and do not create a second run while the SSE stream remains open.
+- Finished the held stream through Stop to prove the same run still closes cleanly and returns the Composer to Send after injections.
+- Kept this as browser-flow evidence only; full Composer/Run Controls and AG-UI Runtime Stream completion remains open pending broader attachment/mention/error-state coverage and final reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k real_sse_active_run_injects` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 20 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch verifies runtime stream/control behavior and visible Composer state through browser assertions rather than changing layout or styling.
+
+### Reviewer
+- Main-agent browser integration verification completed for this real SSE runtime-injection slice. No Composer, Run Controls, or AG-UI Runtime Stream subsystem completion is claimed.

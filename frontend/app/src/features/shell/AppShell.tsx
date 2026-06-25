@@ -181,6 +181,28 @@ export function AppShell() {
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
   );
+
+  useEffect(() => {
+    if (selectedSessionId !== null) {
+      return;
+    }
+    const firstSession = sidebarSessionsQuery.data?.find((session) =>
+      session.session_id.trim(),
+    );
+    if (firstSession === undefined) {
+      return;
+    }
+    setSelectedSessionId(firstSession.session_id);
+    if (firstSession.workspace_id !== undefined && firstSession.workspace_id.trim()) {
+      setSelectedWorkspaceId(firstSession.workspace_id);
+    }
+  }, [
+    selectedSessionId,
+    setSelectedSessionId,
+    setSelectedWorkspaceId,
+    sidebarSessionsQuery.data,
+  ]);
+
   const topbarWorkspaceId =
     selectedWorkspaceId ??
     selectedSession?.workspace_id ??

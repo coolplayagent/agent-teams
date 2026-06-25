@@ -245,6 +245,34 @@ describe("AppShell", () => {
     expect(screen.getByText("Session 1")).toBeVisible();
   });
 
+  it("opens the first available session when no session was restored", async () => {
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-first",
+        workspace_id: "workspace-1",
+        title: "First session",
+      },
+    ]);
+    getSessionMock.mockResolvedValue({
+      session_id: "session-first",
+      workspace_id: "workspace-1",
+      normal_root_role_id: "MainAgent",
+    });
+    useUiStore.setState({
+      selectedSessionId: null,
+      selectedWorkspaceId: null,
+    });
+
+    renderShell();
+
+    expect(await screen.findByText("First session")).toBeVisible();
+    await waitFor(() =>
+      expect(useUiStore.getState().selectedSessionId).toBe("session-first"),
+    );
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-first"));
+  });
+
   it("keeps the V1 primary sidebar item order", async () => {
     renderShell();
 

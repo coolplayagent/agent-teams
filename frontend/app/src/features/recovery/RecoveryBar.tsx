@@ -876,10 +876,14 @@ function runStreamIdsMatchTargets(
   activeRunIds: string[],
   targets: StartRunStreamTarget[],
 ): boolean {
-  return (
-    activeRunIds.length === targets.length &&
-    targets.every((target, index) => activeRunIds[index] === target.runId)
-  );
+  if (activeRunIds.length !== targets.length) {
+    return false;
+  }
+  const activeRunIdSet = new Set(activeRunIds);
+  if (activeRunIdSet.size !== activeRunIds.length) {
+    return false;
+  }
+  return targets.every((target) => activeRunIdSet.has(target.runId));
 }
 
 function recoveryRunStreamTargetKey(target: StartRunStreamTarget): string {

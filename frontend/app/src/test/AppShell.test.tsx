@@ -245,6 +245,27 @@ describe("AppShell", () => {
     expect(screen.getByText("Session 1")).toBeVisible();
   });
 
+  it("keeps the V1 primary sidebar item order", async () => {
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    const sidebarButtons = within(sidebar)
+      .getAllByRole("button")
+      .map((button) => button.textContent?.trim() ?? "");
+
+    expect(sidebarButtons.slice(0, 9)).toEqual([
+      "Chat",
+      "Automation",
+      "Skills",
+      "Board",
+      "SearchCtrl+K",
+      "Connectors",
+      "Memory",
+      "Observability",
+      "Settings",
+    ]);
+  });
+
   it("keeps the narrow sidebar visible in the V1 workspace frame", async () => {
     mockViewportMatch(true);
     renderShell();

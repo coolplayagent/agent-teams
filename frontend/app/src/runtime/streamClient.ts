@@ -87,13 +87,11 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     options.onClosed?.(runtimeState);
   };
 
-  const handleMessage = (message: MessageEvent<string>) => {
+  const handleParsedPayload = (
+    parsed: RunEventEnvelope | StreamErrorPayload,
+    lastEventId: string,
+  ) => {
     if (sourceClosed) {
-      return;
-    }
-    const parsed = parseStreamPayload(message.data);
-    if (parsed === null) {
-      options.onError("Malformed run stream event.", "malformed");
       return;
     }
     if (isStreamErrorPayload(parsed)) {
@@ -101,7 +99,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       options.onError(parsed.error, "server");
       return;
     }
-    const event = withLastEventIdFallback(parsed, message.lastEventId);
+    const event = withLastEventIdFallback(parsed, lastEventId);
     if (!options.trackedRunIds.includes(event.run_id)) {
       return;
     }
@@ -118,6 +116,32 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       notifyClosed();
     }
   };
+
+  const handleMessage = (message: MessageEvent<string>) => {
+    const parsed = parseStreamPayload(message.data);
+    if (parsed === null) {
+      options.onError("Malformed run stream event.", "malformed");
+      return;
+    }
+    handleParsedPayload(parsed, message.lastEventId);
+  };
+
+  const handleErrorEvent = (event: Event) => {
+    if (sourceClosed) {
+      return;
+    }
+    if (!isMessageEvent(event)) {
+      options.onError("Run stream disconnected.", "transport");
+      return;
+    }
+    const parsed = parseStreamPayload(event.data);
+    if (parsed === null) {
+      options.onError("Run stream disconnected.", "transport");
+      return;
+    }
+    handleParsedPayload(parsed, event.lastEventId);
+  };
+
   source.onmessage = handleMessage;
   for (const eventName of AG_UI_EVENT_NAMES) {
     source.addEventListener(eventName, (event) => {
@@ -127,14 +151,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     });
   }
   source.addEventListener("error", (event) => {
-    if (sourceClosed) {
-      return;
-    }
-    if (isMessageEvent(event)) {
-      handleMessage(event);
-      return;
-    }
-    options.onError("Run stream disconnected.", "transport");
+    handleErrorEvent(event);
   });
 
   return {

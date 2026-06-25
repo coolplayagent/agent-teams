@@ -1356,3 +1356,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this background-only recovery slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes browser refresh-recovery scenarios with real SSE timing, interrupted stream resume, and reviewer sign-off.
+
+## 2026-06-25 Error Event Transport Fallback Batch
+
+### Scope
+- Continued the AG-UI stream/replay pass by tightening the lower stream client's `event: error` handling.
+- Kept explicit server error payloads (`{"error": "..."}`) on the server-error path so failed replay/resume responses still close the EventSource and surface the backend error.
+- Treated empty or malformed data-bearing `event: error` messages as transport interruptions instead of malformed stream payloads, so transient disconnect noise can enter the controller's delayed reconnect path rather than stopping stream/replay immediately.
+- Left normal AG-UI/message event malformed payload reporting unchanged.
+
+### Verification
+- `npm test -- src/test/streamClient.test.ts` in `frontend/app` passed with 20 tests, including the new empty and malformed `event: error` transport fallback regressions.
+- `npm test -- src/test/RunStreamController.test.tsx` in `frontend/app` passed with 13 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt asset `index-D_ZeE1Sh.js`.
+
+### Reviewer
+- Main-agent targeted verification completed for this error-event transport fallback slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted stream resume under real SSE timing, and reviewer sign-off.

@@ -324,6 +324,30 @@ describe("openRunStream", () => {
     expect(stream.source.close).toHaveBeenCalledTimes(1);
   });
 
+  it("treats empty data error events as transport interruptions", () => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage("error", "");
+
+    expect(stream.errors).toEqual([
+      { kind: "transport", message: "Run stream disconnected." },
+    ]);
+    expect(stream.states).toEqual([]);
+    expect(stream.source.close).not.toHaveBeenCalled();
+  });
+
+  it("treats malformed data error events as transport interruptions", () => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage("error", "{bad json");
+
+    expect(stream.errors).toEqual([
+      { kind: "transport", message: "Run stream disconnected." },
+    ]);
+    expect(stream.states).toEqual([]);
+    expect(stream.source.close).not.toHaveBeenCalled();
+  });
+
   it("reports malformed stream events without throwing", () => {
     const stream = openTestStream();
 

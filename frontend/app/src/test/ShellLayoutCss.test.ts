@@ -6,6 +6,18 @@ import { describe, expect, it } from "vitest";
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
 
 describe("shell layout CSS", () => {
+  it("keeps the desktop sidebar separated by the V1 resize gutter", () => {
+    expect(themeCss).toMatch(
+      /\.at-sidebar\s*{[\s\S]*?margin-right:\s*6px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-sidebar-resizer\s*{[\s\S]*?right:\s*-6px;[\s\S]*?width:\s*6px;/,
+    );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.at-sidebar\s*{[\s\S]*?margin-right:\s*0;/,
+    );
+  });
+
   it("keeps settings navigation and content scrolling independently", () => {
     expect(themeCss).toMatch(
       /\.at-settings-drawer \.ant-drawer-body\s*{[\s\S]*?overflow:\s*hidden;/,

@@ -18,7 +18,7 @@ interface UiState {
   setSelectedWorkspaceId: (workspaceId: string | null) => void;
 }
 
-export const sidebarWidthDefault = 280;
+export const sidebarWidthDefault = 260;
 export const sidebarWidthMin = 220;
 export const sidebarWidthMax = 320;
 

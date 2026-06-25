@@ -206,6 +206,7 @@ body {
 .at-sidebar {
   position: relative;
   height: 100%;
+  margin-right: 6px;
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--at-border);
@@ -226,7 +227,7 @@ body {
   position: absolute;
   z-index: 3;
   top: 0;
-  right: -3px;
+  right: -6px;
   bottom: 0;
   width: 6px;
   cursor: col-resize;
@@ -5801,6 +5802,7 @@ body {
     position: absolute;
     z-index: 12;
     inset: 0 auto 0 0;
+    margin-right: 0;
     max-width: calc(100vw - 44px);
   }
 

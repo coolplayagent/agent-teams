@@ -44,6 +44,17 @@ export interface CommandDetail {
   template: string;
 }
 
+export interface CommandSummary {
+  name: string;
+  aliases?: string[];
+  description?: string;
+  argument_hint?: string;
+  allowed_modes?: string[];
+  scope: CommandScope;
+  discovery_source: CommandDiscoverySource;
+  source_path: string;
+}
+
 export interface CommandCatalogWorkspace {
   workspace_id: string;
   root_path?: string | null;
@@ -82,6 +93,24 @@ export interface CommandUpdateRequest {
 export interface CommandMutationResponse {
   command: CommandDetail;
   workspace_id?: string | null;
+}
+
+export interface CommandResolveRequest {
+  workspace_id: string;
+  raw_text: string;
+  mode?: string;
+  cwd?: string | null;
+}
+
+export interface CommandResolveResponse {
+  matched: boolean;
+  raw_text: string;
+  parsed_name?: string | null;
+  resolved_name?: string | null;
+  args?: string;
+  command?: CommandSummary | null;
+  expanded_prompt?: string | null;
+  expanded_prompt_length?: number;
 }
 
 export type McpConfigScope = "app" | "plugin" | "session";

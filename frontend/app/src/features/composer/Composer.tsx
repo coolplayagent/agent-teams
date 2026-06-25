@@ -24,6 +24,7 @@ import {
   getRoleConfigOptions,
   getSession,
   injectRunMessage,
+  resolveCommandPrompt,
   stopRun,
   updateSessionTopology,
   updateSessionNormalModelProfile,
@@ -75,6 +76,11 @@ interface TopologyPatch {
   sessionMode: SessionMode;
   normalRootRoleId: string | null;
   orchestrationPresetId: string | null;
+}
+
+interface PromptSlashInvocation {
+  args: string;
+  rawText: string;
 }
 
 function sessionDetailQueryKey(sessionId: string) {
@@ -239,7 +245,13 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       if (draftValidationMessage) {
         throw new Error(draftValidationMessage);
       }
-      const inputParts = buildPromptInputParts(effectivePromptText, promptAttachments);
+      const resolvedPromptText = await resolveComposerPromptText({
+        promptText: effectivePromptText,
+        session: sessionQuery.data,
+        sessionMode: selectedSessionMode,
+        t,
+      });
+      const inputParts = buildPromptInputParts(resolvedPromptText, promptAttachments);
       const request: RunCreateRequest = {
         session_id: sessionId,
         input: inputParts,
@@ -891,6 +903,57 @@ function resolveDraftValidationMessage(
     return t("composerPromptAfterMention");
   }
   return "";
+}
+
+async function resolveComposerPromptText({
+  promptText,
+  session,
+  sessionMode,
+  t,
+}: {
+  promptText: string;
+  session: SessionRecord | undefined;
+  sessionMode: SessionMode;
+  t: Translate;
+}): Promise<string> {
+  const invocation = extractPromptSlashInvocation(promptText);
+  if (invocation === null) {
+    return promptText;
+  }
+  const workspaceId = normalizeOptionalId(session?.workspace_id);
+  if (workspaceId === null) {
+    throw new Error(t("composerCommandRequiresWorkspace"));
+  }
+  const response = await resolveCommandPrompt({
+    workspace_id: workspaceId,
+    raw_text: invocation.rawText,
+    mode: sessionMode,
+  });
+  if (!response.matched) {
+    return promptText;
+  }
+  const expandedPrompt = normalizeProfileName(response.expanded_prompt);
+  return expandedPrompt || promptText;
+}
+
+function extractPromptSlashInvocation(promptText: string): PromptSlashInvocation | null {
+  const trimmedPrompt = promptText.trim();
+  if (!trimmedPrompt.startsWith("/")) {
+    return null;
+  }
+  const match = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(trimmedPrompt);
+  if (match === null) {
+    return null;
+  }
+  const name = normalizeProfileName(match[1]);
+  if (!name) {
+    return null;
+  }
+  const args = normalizeProfileName(match[2]);
+  return {
+    args,
+    rawText: `/${name}${args ? ` ${args}` : ""}`,
+  };
 }
 
 function resolveImageInputBlockedMessage({

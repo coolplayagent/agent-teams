@@ -133,6 +133,8 @@ const messages = {
     composerRole: "Role",
     composerRootRole: "Root role",
     composerRunCreationFailed: "Run creation failed.",
+    composerCommandRequiresWorkspace:
+      "Cannot resolve a command without an active workspace.",
     composerSelectSessionBeforeModel: "Select a session before changing the model.",
     composerSelectSessionBeforeMode: "Select a session before changing mode.",
     composerSelectSessionBeforeSending: "Select a session before sending.",
@@ -1298,6 +1300,7 @@ const messages = {
     composerRole: "角色",
     composerRootRole: "根角色",
     composerRunCreationFailed: "创建运行失败。",
+    composerCommandRequiresWorkspace: "没有活动工作区时无法解析命令。",
     composerSelectSessionBeforeModel: "选择会话后再切换模型。",
     composerSelectSessionBeforeMode: "选择会话后再切换模式。",
     composerSelectSessionBeforeSending: "选择会话后再发送。",

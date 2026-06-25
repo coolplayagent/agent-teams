@@ -12,6 +12,7 @@ import {
   getRoleConfigOptions,
   getSession,
   injectRunMessage,
+  resolveCommandPrompt,
   updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../api/client";
@@ -62,6 +63,7 @@ vi.mock("../api/client", () => ({
   getRoleConfigOptions: vi.fn(),
   getSession: vi.fn(),
   injectRunMessage: vi.fn(),
+  resolveCommandPrompt: vi.fn(),
   stopRun: vi.fn(),
   updateSessionTopology: vi.fn(),
   updateSessionNormalModelProfile: vi.fn(),
@@ -81,6 +83,7 @@ const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getSessionMock = vi.mocked(getSession);
 const injectRunMessageMock = vi.mocked(injectRunMessage);
+const resolveCommandPromptMock = vi.mocked(resolveCommandPrompt);
 const updateSessionTopologyMock = vi.mocked(updateSessionTopology);
 const updateSessionNormalModelProfileMock = vi.mocked(
   updateSessionNormalModelProfile,
@@ -116,6 +119,10 @@ beforeEach(() => {
   getOrchestrationConfigMock.mockResolvedValue({
     default_orchestration_preset_id: "team",
     presets: [{ preset_id: "team", name: "Team" }],
+  });
+  resolveCommandPromptMock.mockResolvedValue({
+    matched: false,
+    raw_text: "",
   });
 });
 
@@ -232,6 +239,75 @@ describe("Composer", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
+  });
+
+  it("resolves leading slash commands before AG-UI run creation", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: true,
+      raw_text: "/review file.py",
+      parsed_name: "review",
+      resolved_name: "review",
+      args: "file.py",
+      expanded_prompt: "Review file.py",
+      expanded_prompt_length: 14,
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "/review file.py" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(resolveCommandPromptMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-1",
+        raw_text: "/review file.py",
+        mode: "normal",
+      }),
+    );
+    expect(createRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [{ kind: "text", text: "Review file.py" }],
+        display_input: [{ kind: "text", text: "Review file.py" }],
+      }),
+    );
+  });
+
+  it("keeps unknown leading slash commands as raw prompt text", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: false,
+      raw_text: "/missing value",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "/missing value" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(createRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: [{ kind: "text", text: "/missing value" }],
+        }),
+      ),
+    );
   });
 
   it("uses a leading role mention as the run target and strips it from prompt text", async () => {

@@ -65,6 +65,7 @@ import {
   reloadFeishuGateway,
   reloadWeChatGateway,
   reloadSkillsConfig,
+  resolveCommandPrompt,
   saveEnvironmentVariable,
   saveAgentRuntime,
   saveClawHubConfig,
@@ -662,6 +663,48 @@ describe("api client", () => {
       12,
       "/api/system/configs/skills:reload",
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("resolves slash commands through the system command endpoint", async () => {
+    const responsePayload = {
+      matched: true,
+      raw_text: "/review file.py",
+      parsed_name: "review",
+      resolved_name: "review",
+      args: "file.py",
+      command: {
+        name: "review",
+        aliases: [],
+        description: "Review a file",
+        argument_hint: "<path>",
+        allowed_modes: ["normal"],
+        scope: "project",
+        discovery_source: "project_codex",
+        source_path: "C:/work/agent-teams/.codex/commands/review.md",
+      },
+      expanded_prompt: "Review file.py",
+      expanded_prompt_length: 14,
+    };
+    const requestPayload = {
+      workspace_id: "workspace-1",
+      raw_text: "/review file.py",
+      mode: "normal",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(responsePayload), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(resolveCommandPrompt(requestPayload)).resolves.toEqual(
+      responsePayload,
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/system/commands:resolve",
+      expect.objectContaining({
+        body: JSON.stringify(requestPayload),
+        method: "POST",
+      }),
     );
   });
 

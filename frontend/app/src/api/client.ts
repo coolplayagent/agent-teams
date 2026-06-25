@@ -15,6 +15,8 @@ import type {
   CommandCatalogResponse,
   CommandCreateRequest,
   CommandMutationResponse,
+  CommandResolveRequest,
+  CommandResolveResponse,
   CommandUpdateRequest,
   AcpRegistryCatalogResponse,
   AcpRegistryInstallRequest,
@@ -365,6 +367,15 @@ export function updateCommand(
 ): Promise<CommandMutationResponse> {
   return requestJson<CommandMutationResponse>("/system/commands", {
     method: "PUT",
+    body: JSON.stringify(request),
+  });
+}
+
+export function resolveCommandPrompt(
+  request: CommandResolveRequest,
+): Promise<CommandResolveResponse> {
+  return requestJson<CommandResolveResponse>("/system/commands:resolve", {
+    method: "POST",
     body: JSON.stringify(request),
   });
 }

@@ -1462,7 +1462,7 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     await screen.findByText("thought before failure");
-    expect(screen.getByText("run failed")).toBeVisible();
+    expect(screen.getByText("Run failed: run failed")).toBeVisible();
     const thinkingBlock = container.querySelector(".at-message-thinking");
     expect(thinkingBlock).toHaveTextContent("thought before failure");
     expect(thinkingBlock).toHaveAttribute("data-streaming", "false");
@@ -1561,7 +1561,7 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("run completed")).toBeVisible();
+    expect(await screen.findByText("Run completed: run completed")).toBeVisible();
     expect(container.querySelector(".at-message-thinking")).toBeNull();
     expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
   });
@@ -1780,21 +1780,9 @@ describe("MessageTimeline", () => {
       }),
       runtimeGenericEntry({
         id: "run-meta:3:2",
-        kind: "injection_applied",
-        text: "injection applied visible",
+        kind: "llm_retry_scheduled",
+        text: "retry scheduled visible",
         eventId: 3,
-      }),
-      runtimeGenericEntry({
-        id: "run-meta:5:4",
-        kind: "subagent_session_status_changed",
-        text: "subagent session visible",
-        eventId: 5,
-      }),
-      runtimeGenericEntry({
-        id: "run-meta:6:5",
-        kind: "awaiting_manual_action",
-        text: "manual action visible",
-        eventId: 6,
       }),
       runtimeGenericEntry({
         id: "run-meta:7:6",
@@ -1808,9 +1796,7 @@ describe("MessageTimeline", () => {
     renderTimeline();
 
     expect(await screen.findByText("runtime setup downloading")).toBeVisible();
-    expect(screen.getByText("injection applied visible")).toBeVisible();
-    expect(screen.getByText("subagent session visible")).toBeVisible();
-    expect(screen.getByText("manual action visible")).toBeVisible();
+    expect(screen.getByText("retry scheduled visible")).toBeVisible();
     expect(screen.getByText("hook event visible")).toBeVisible();
   });
 
@@ -1974,6 +1960,155 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("model step started")).not.toBeInTheDocument();
     expect(screen.queryByText("notification requested")).not.toBeInTheDocument();
     expect(screen.queryByText("background task started")).not.toBeInTheDocument();
+  });
+
+  it("renders runtime coordination events as labelled summaries", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-coordination:1:0",
+        kind: "user_question_requested",
+        text: "user question requested",
+        eventId: 1,
+        payload: {
+          question_id: "question-1",
+          questions: [{ question: "Pick deployment target" }],
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:2:1",
+        kind: "user_question_answered",
+        text: "user question answered",
+        eventId: 2,
+        payload: {
+          answers: [{ selections: [{ label: "Production" }] }],
+          question_id: "question-1",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:3:2",
+        kind: "injection_enqueued",
+        text: "injection enqueued",
+        eventId: 3,
+        payload: {
+          content: [{ kind: "text", text: "Please retry with logs" }],
+          delivery_mode: "queued",
+          recipient_instance_id: "worker-1",
+          source: "user",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:4:3",
+        kind: "injection_applied",
+        text: "injection applied",
+        eventId: 4,
+        payload: {
+          content: "System reminder",
+          internal_delivery_mode: "guidance",
+          recipient_instance_id: "worker-1",
+          source: "system",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:5:4",
+        kind: "subagent_session_status_changed",
+        text: "subagent session status changed",
+        eventId: 5,
+        payload: {
+          run_phase: "subagent_running",
+          status: "running",
+          subagent_instance_id: "subagent-1",
+          subagent_role_id: "reviewer",
+          title: "Review PR",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:6:5",
+        kind: "subagent_stopped",
+        text: "subagent stopped",
+        eventId: 6,
+        payload: {
+          instance_id: "subagent-1",
+          reason: "stopped_by_user",
+          role_id: "reviewer",
+          task_id: "task-1",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:7:6",
+        kind: "subagent_resumed",
+        text: "subagent resumed",
+        eventId: 7,
+        payload: {
+          instance_id: "subagent-1",
+          role_id: "reviewer",
+          task_id: "task-1",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:8:7",
+        kind: "awaiting_manual_action",
+        text: "awaiting manual action",
+        eventId: 8,
+        payload: { root_task_id: "root-1" },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:9:8",
+        kind: "run_started",
+        text: "run started",
+        eventId: 9,
+        payload: { phase: "streaming" },
+      }),
+      runtimeGenericEntry({
+        id: "run-coordination:10:9",
+        kind: "run_failed",
+        text: "run failed",
+        eventId: 10,
+        payload: {
+          error: "Provider failed",
+          root_task_id: "root-1",
+          status: "failed",
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText("User question: Pick deployment target · #question-1"),
+    ).toBeVisible();
+    expect(screen.getByText("User question answered: 1 answer · #question-1")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Injection queued: Please retry with logs · source user · mode queued · to worker-1",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Injection applied: System reminder · source system · mode guidance · to worker-1",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Subagent status: Review PR · status running · phase subagent_running · role reviewer · instance subagent-1",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Subagent stopped: reason stopped_by_user · role reviewer · instance subagent-1 · task task-1",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Subagent resumed: role reviewer · instance subagent-1 · task task-1"),
+    ).toBeVisible();
+    expect(screen.getByText("Awaiting manual action: root task root-1")).toBeVisible();
+    expect(screen.getByText("Run started: phase: streaming")).toBeVisible();
+    expect(
+      screen.getByText("Run failed: status failed · Provider failed · root task root-1"),
+    ).toBeVisible();
+    expect(screen.queryByText("user question requested")).not.toBeInTheDocument();
+    expect(screen.queryByText("injection enqueued")).not.toBeInTheDocument();
+    expect(screen.queryByText("subagent session status changed")).not.toBeInTheDocument();
   });
 
   it("renders runtime todo update events as compact todo summaries", async () => {

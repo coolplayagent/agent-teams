@@ -2428,3 +2428,27 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, built-app browser replay, and targeted static verification completed for this lifecycle replay slice. No Message Timeline, AG-UI Runtime Stream, notification, or background-task subsystem completion is claimed.
+
+## 2026-06-25 V2 Timeline Coordination Replay Summary Batch
+
+### Scope
+- Re-checked the Message Timeline, AG-UI Runtime Stream, Run Recovery, and Subagents checklist after the lifecycle replay slice, focusing on remaining coordination replay events.
+- Added labelled timeline rendering for `user_question_requested`, `user_question_answered`, `injection_enqueued`, `injection_applied`, `subagent_session_status_changed`, `subagent_stopped`, `subagent_resumed`, `awaiting_manual_action`, and run lifecycle events.
+- Kept the summaries data-backed and compact: questions show prompt/id, injections show content/source/mode/recipient, subagents show status/role/instance/task, manual action shows root task, and run lifecycle shows status/output/root task.
+- Preserved hydration suppression for duplicate routine `run_started`, `run_resumed`, and `run_completed` entries when a persisted assistant answer already covers the run output.
+- Expanded the rich interrupted-stream browser replay flow to assert these coordination summaries in the built `/app/` UI and moved the duplicate text assertion before virtual scrolling unloads the first row.
+- Refreshed `frontend/dist/app` for the timeline replay rendering change.
+- Kept this as targeted Message Timeline and AG-UI Runtime Stream coordination-event evidence only; full Message Timeline, AG-UI Runtime Stream, Subagents, Run Recovery, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 53 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k interrupted_stream_preserves_non_text_events_after_reconnect` passed with 1 test.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` reported 1 file already formatted.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors, 0 warnings, and 0 notes.
+- No screenshot was captured because this batch changes replay text rendering, not layout. The visible behavior is covered by the browser rich replay assertion against the built `/app/` bundle.
+
+### Reviewer
+- Main-agent component, built-app browser replay, and targeted static verification completed for this coordination replay slice. No Message Timeline, AG-UI Runtime Stream, Subagents, or Run Recovery subsystem completion is claimed.

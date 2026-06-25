@@ -1201,6 +1201,10 @@ function runtimeStructuredEventText(entry: TimelineEntry): string | null {
   if (lifecycleText !== null) {
     return lifecycleText;
   }
+  const coordinationText = runtimeCoordinationEventText(entry);
+  if (coordinationText !== null) {
+    return coordinationText;
+  }
   return null;
 }
 
@@ -1423,6 +1427,198 @@ function runtimeBackgroundTaskPrimaryText(
     || objectString(payload, "command")
     || objectString(payload, "output_excerpt")
     || runtimePayloadSummary(payload);
+}
+
+function runtimeCoordinationEventText(entry: TimelineEntry): string | null {
+  const label = runtimeCoordinationEventLabel(entry.kind);
+  if (label === null) {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return null;
+  }
+  const summary = runtimeCoordinationEventSummary(entry.kind, payload);
+  if (summary.length === 0) {
+    return null;
+  }
+  return `${label}: ${summary}`;
+}
+
+function runtimeCoordinationEventLabel(kind: string): string | null {
+  switch (kind) {
+    case "user_question_requested":
+      return "User question";
+    case "user_question_answered":
+      return "User question answered";
+    case "injection_enqueued":
+      return "Injection queued";
+    case "injection_applied":
+      return "Injection applied";
+    case "subagent_session_status_changed":
+      return "Subagent status";
+    case "subagent_stopped":
+      return "Subagent stopped";
+    case "subagent_resumed":
+      return "Subagent resumed";
+    case "awaiting_manual_action":
+      return "Awaiting manual action";
+    case "run_started":
+      return "Run started";
+    case "run_paused":
+      return "Run paused";
+    case "run_resumed":
+      return "Run resumed";
+    case "run_completed":
+      return "Run completed";
+    case "run_stopped":
+      return "Run stopped";
+    case "run_failed":
+      return "Run failed";
+    default:
+      return null;
+  }
+}
+
+function runtimeCoordinationEventSummary(
+  kind: string,
+  payload: Record<string, JsonValue>,
+): string {
+  if (kind === "user_question_requested") {
+    return runtimeUserQuestionRequestedSummary(payload);
+  }
+  if (kind === "user_question_answered") {
+    return runtimeUserQuestionAnsweredSummary(payload);
+  }
+  if (kind === "injection_enqueued" || kind === "injection_applied") {
+    return runtimeInjectionSummary(payload);
+  }
+  if (kind === "subagent_session_status_changed") {
+    return runtimeSubagentStatusSummary(payload);
+  }
+  if (kind === "subagent_stopped" || kind === "subagent_resumed") {
+    return runtimeSubagentLifecycleSummary(payload);
+  }
+  if (kind === "awaiting_manual_action") {
+    return runtimeManualActionSummary(payload);
+  }
+  if (kind.startsWith("run_")) {
+    return runtimeRunLifecycleSummary(payload);
+  }
+  return runtimePayloadSummary(payload);
+}
+
+function runtimeUserQuestionRequestedSummary(payload: Record<string, JsonValue>): string {
+  const questions = Array.isArray(payload.questions)
+    ? payload.questions.flatMap((item) => {
+        const question = jsonObject(item);
+        return question === null ? [] : [question];
+      })
+    : [];
+  const firstQuestion = questions.at(0);
+  const text = firstQuestion === undefined
+    ? runtimePayloadSummary(payload)
+    : objectString(firstQuestion, "question")
+      || objectString(firstQuestion, "header")
+      || runtimePayloadSummary(firstQuestion);
+  const questionId = objectString(payload, "question_id");
+  return [
+    text.length > 0 ? truncatePreview(text) : "",
+    questions.length > 1 ? `${questions.length} questions` : "",
+    questionId.length > 0 ? `#${questionId}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeUserQuestionAnsweredSummary(payload: Record<string, JsonValue>): string {
+  const questionId = objectString(payload, "question_id");
+  const status = objectString(payload, "status");
+  const answerCount = Array.isArray(payload.answers) ? payload.answers.length : 0;
+  return [
+    status.length > 0 ? `status ${status}` : "",
+    answerCount > 0 ? `${answerCount} ${answerCount === 1 ? "answer" : "answers"}` : "",
+    questionId.length > 0 ? `#${questionId}` : "",
+    status.length === 0 && answerCount === 0 ? runtimePayloadSummary(payload) : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeInjectionSummary(payload: Record<string, JsonValue>): string {
+  const content = runtimeContentValueText(payload.content);
+  const redactedLength = objectNumber(payload, "content_length");
+  const source = objectString(payload, "source");
+  const deliveryMode = objectString(payload, "delivery_mode")
+    || objectString(payload, "internal_delivery_mode");
+  const recipient = objectString(payload, "recipient_instance_id");
+  return [
+    content.length > 0 ? truncatePreview(content) : "",
+    content.length === 0 && redactedLength > 0 ? `redacted ${formatRuntimeCount(redactedLength)} chars` : "",
+    source.length > 0 ? `source ${source}` : "",
+    deliveryMode.length > 0 ? `mode ${deliveryMode}` : "",
+    recipient.length > 0 ? `to ${recipient}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeSubagentStatusSummary(payload: Record<string, JsonValue>): string {
+  const title = objectString(payload, "title");
+  const status = objectString(payload, "status")
+    || objectString(payload, "run_status");
+  const phase = objectString(payload, "run_phase");
+  const roleId = objectString(payload, "subagent_role_id")
+    || objectString(payload, "role_id");
+  const instanceId = objectString(payload, "subagent_instance_id")
+    || objectString(payload, "instance_id");
+  return [
+    title.length > 0 ? truncatePreview(title) : "",
+    status.length > 0 ? `status ${status}` : "",
+    phase.length > 0 ? `phase ${phase}` : "",
+    roleId.length > 0 ? `role ${roleId}` : "",
+    instanceId.length > 0 ? `instance ${instanceId}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeSubagentLifecycleSummary(payload: Record<string, JsonValue>): string {
+  const reason = objectString(payload, "reason");
+  const roleId = objectString(payload, "role_id");
+  const instanceId = objectString(payload, "instance_id");
+  const taskId = objectString(payload, "task_id");
+  return [
+    reason.length > 0 ? `reason ${reason}` : "",
+    roleId.length > 0 ? `role ${roleId}` : "",
+    instanceId.length > 0 ? `instance ${instanceId}` : "",
+    taskId.length > 0 ? `task ${taskId}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeManualActionSummary(payload: Record<string, JsonValue>): string {
+  const rootTaskId = objectString(payload, "root_task_id")
+    || objectString(payload, "root_task");
+  return rootTaskId.length > 0 ? `root task ${rootTaskId}` : runtimePayloadSummary(payload);
+}
+
+function runtimeRunLifecycleSummary(payload: Record<string, JsonValue>): string {
+  const status = objectString(payload, "status");
+  const output = objectString(payload, "output")
+    || objectString(payload, "message")
+    || objectString(payload, "error")
+    || objectString(payload, "reason");
+  const rootTaskId = objectString(payload, "root_task_id")
+    || objectString(payload, "root_task");
+  return [
+    status.length > 0 ? `status ${status}` : "",
+    output.length > 0 ? truncatePreview(output) : "",
+    rootTaskId.length > 0 ? `root task ${rootTaskId}` : "",
+    status.length === 0 && output.length === 0 ? runtimePayloadSummary(payload) : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeContentValueText(value: JsonValue | undefined): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return jsonContentParts(value)
+    .map(contentPartText)
+    .filter((text): text is string => text !== null && text.trim().length > 0)
+    .join("\n")
+    .trim();
 }
 
 function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {

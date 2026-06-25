@@ -70,9 +70,38 @@ _RICH_REPLAY_TODO_SUMMARY = (
     "Todo updated: 3 items · 1 completed, 1 in_progress, 1 pending · "
     f"Current {_RICH_REPLAY_TODO_CURRENT} · v4 · by replay-agent"
 )
+_RICH_REPLAY_INJECTION = "queued replay injection"
+_RICH_REPLAY_INJECTION_QUEUED_SUMMARY = (
+    f"Injection queued: {_RICH_REPLAY_INJECTION} · source user · mode queued · "
+    "to replay-agent"
+)
+_RICH_REPLAY_INJECTION_APPLIED = "applied replay injection"
+_RICH_REPLAY_INJECTION_APPLIED_SUMMARY = (
+    f"Injection applied: {_RICH_REPLAY_INJECTION_APPLIED} · source system · "
+    "mode guidance · to replay-agent"
+)
+_RICH_REPLAY_QUESTION_ID = "question-rich-replay"
+_RICH_REPLAY_QUESTION = "Choose replay path"
+_RICH_REPLAY_QUESTION_SUMMARY = (
+    f"User question: {_RICH_REPLAY_QUESTION} · #{_RICH_REPLAY_QUESTION_ID}"
+)
+_RICH_REPLAY_QUESTION_ANSWER_SUMMARY = (
+    f"User question answered: 1 answer · #{_RICH_REPLAY_QUESTION_ID}"
+)
 _RICH_REPLAY_NOTIFICATION = "notification replay visible"
 _RICH_REPLAY_NOTIFICATION_SUMMARY = f"Notification: {_RICH_REPLAY_NOTIFICATION}"
 _RICH_REPLAY_SUBAGENT_STATUS = "subagent status replay visible"
+_RICH_REPLAY_SUBAGENT_STATUS_SUMMARY = (
+    f"Subagent status: {_RICH_REPLAY_SUBAGENT_STATUS} · status running"
+)
+_RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY = (
+    "Subagent stopped: reason stopped_by_user · role reviewer · "
+    "instance subagent-rich · task task-rich"
+)
+_RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY = (
+    "Subagent resumed: role reviewer · instance subagent-rich · task task-rich"
+)
+_RICH_REPLAY_MANUAL_ACTION_SUMMARY = "Awaiting manual action: root task root-rich"
 _RICH_REPLAY_BACKGROUND_TASK = "background task replay visible"
 _RICH_REPLAY_BACKGROUND_TASK_SUMMARY = (
     f"Background task started: {_RICH_REPLAY_BACKGROUND_TASK}"
@@ -424,6 +453,10 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
                 ),
             ),
         ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            1,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
         _emit_relay_event(
             page,
             "tool_call",
@@ -503,13 +536,80 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
             page,
             "subagent_session_status_changed",
             15,
-            {"status": _RICH_REPLAY_SUBAGENT_STATUS},
+            {"status": "running", "title": _RICH_REPLAY_SUBAGENT_STATUS},
         )
         _emit_relay_event(
             page,
             "background_task_started",
             16,
             {"title": _RICH_REPLAY_BACKGROUND_TASK},
+        )
+        _emit_relay_event(
+            page,
+            "injection_enqueued",
+            17,
+            {
+                "content": _RICH_REPLAY_INJECTION,
+                "delivery_mode": "queued",
+                "recipient_instance_id": "replay-agent",
+                "source": "user",
+            },
+        )
+        _emit_relay_event(
+            page,
+            "injection_applied",
+            18,
+            {
+                "content": _RICH_REPLAY_INJECTION_APPLIED,
+                "internal_delivery_mode": "guidance",
+                "recipient_instance_id": "replay-agent",
+                "source": "system",
+            },
+        )
+        _emit_relay_event(
+            page,
+            "user_question_requested",
+            19,
+            {
+                "question_id": _RICH_REPLAY_QUESTION_ID,
+                "questions": [{"question": _RICH_REPLAY_QUESTION}],
+            },
+        )
+        _emit_relay_event(
+            page,
+            "user_question_answered",
+            20,
+            {
+                "answers": [{"selections": [{"label": "Continue"}]}],
+                "question_id": _RICH_REPLAY_QUESTION_ID,
+            },
+        )
+        _emit_relay_event(
+            page,
+            "subagent_stopped",
+            21,
+            {
+                "instance_id": "subagent-rich",
+                "reason": "stopped_by_user",
+                "role_id": "reviewer",
+                "task_id": "task-rich",
+            },
+        )
+        _emit_relay_event(
+            page,
+            "subagent_resumed",
+            22,
+            {
+                "instance_id": "subagent-rich",
+                "role_id": "reviewer",
+                "task_id": "task-rich",
+            },
+        )
+        _emit_relay_event(
+            page,
+            "awaiting_manual_action",
+            23,
+            {"root_task_id": "root-rich"},
         )
 
         expect(page.get_by_text("Tool call: read")).to_be_visible(
@@ -555,19 +655,36 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         expect(page.get_by_text(_RICH_REPLAY_NOTIFICATION_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text(_RICH_REPLAY_SUBAGENT_STATUS)).to_be_visible(
+        expect(page.get_by_text(_RICH_REPLAY_SUBAGENT_STATUS_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         expect(page.get_by_text(_RICH_REPLAY_BACKGROUND_TASK_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
-            1,
+        expect(page.get_by_text(_RICH_REPLAY_INJECTION_QUEUED_SUMMARY)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_INJECTION_APPLIED_SUMMARY)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_QUESTION_SUMMARY)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_QUESTION_ANSWER_SUMMARY)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_MANUAL_ACTION_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
 
-        _emit_relay_event(page, "thinking_finished", 17, {"part_index": 0})
-        _emit_relay_event(page, "run_completed", 18, {"status": "completed"})
+        _emit_relay_event(page, "thinking_finished", 24, {"part_index": 0})
+        _emit_relay_event(page, "run_completed", 25, {"status": "completed"})
         page.wait_for_function(
             "() => window.__v2OpenEventSourceCount() === 0",
             timeout=_WAIT_TIMEOUT_MS,

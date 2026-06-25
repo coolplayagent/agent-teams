@@ -32,10 +32,12 @@ _WAIT_TIMEOUT_MS = 20_000
 _WORKSPACE_ID = "workspace-desktop-smoke"
 _SESSION_ID = "session-desktop-smoke"
 _DESKTOP_API_KEYS = [
+    "copyText",
     "getBackendStatus",
     "getVersion",
     "onBackendStatus",
     "openExternal",
+    "retryStartup",
 ]
 
 
@@ -125,22 +127,42 @@ def test_v2_electron_shows_backend_startup_failure() -> None:
     if not electron.exists():
         pytest.skip(f"Electron executable is not installed: {electron}")
 
+    copy_log = repo_root / ".tmp" / "frontend-v2-desktop" / "copy-diagnostics.log"
+    if copy_log.exists():
+        copy_log.unlink()
+
     with _serve_desktop_backend(repo_root, healthy=False) as backend_url:
         process, debug_port = _launch_electron(
             repo_root,
             electron,
             backend_url,
+            extra_env={"AGENT_TEAMS_DESKTOP_COPY_TEXT_LOG": str(copy_log)},
             startup_timeout_ms=900,
+            test_mode=True,
         )
         try:
             with _connect_to_electron_page(debug_port) as page:
+                diagnostics = _capture_page_diagnostics(page)
                 expect(
                     page.get_by_role("heading", name="Startup failed"),
                 ).to_be_visible(
                     timeout=_WAIT_TIMEOUT_MS,
                 )
                 expect(
-                    page.get_by_text(f"Backend was not ready at {backend_url}."),
+                    page.get_by_role("button", name="Copy diagnostics"),
+                ).to_be_visible(
+                    timeout=_WAIT_TIMEOUT_MS,
+                )
+                expect(
+                    page.get_by_role("button", name="Retry startup"),
+                ).to_be_visible(
+                    timeout=_WAIT_TIMEOUT_MS,
+                )
+                expect(
+                    page.get_by_text(
+                        f"Backend was not ready at {backend_url}.",
+                        exact=True,
+                    ),
                 ).to_be_visible(
                     timeout=_WAIT_TIMEOUT_MS,
                 )
@@ -153,6 +175,27 @@ def test_v2_electron_shows_backend_startup_failure() -> None:
                     "message": f"Backend was not ready at {backend_url}.",
                     "state": "failed",
                 }
+
+                page.get_by_role("button", name="Copy diagnostics").click()
+                assert f"Backend: {backend_url}" in _wait_for_text(
+                    copy_log, f"Backend: {backend_url}"
+                )
+
+                page.get_by_role("button", name="Retry startup").click()
+                expect(
+                    page.locator(".status-label", has_text="Starting")
+                ).to_be_visible(
+                    timeout=_WAIT_TIMEOUT_MS,
+                )
+                expect(
+                    page.get_by_role("heading", name="Startup failed"),
+                ).to_be_visible(
+                    timeout=_WAIT_TIMEOUT_MS,
+                )
+                page_errors = [
+                    entry for entry in diagnostics if entry.startswith("pageerror:")
+                ]
+                assert page_errors == []
 
                 _save_desktop_screenshot(
                     repo_root,
@@ -183,10 +226,16 @@ def test_v2_electron_open_external_uses_preload_main_boundary() -> None:
             electron,
             backend_url,
             extra_env={"AGENT_TEAMS_DESKTOP_OPEN_EXTERNAL_LOG": str(external_log)},
+            test_mode=True,
         )
         try:
             with _connect_to_electron_page(debug_port) as page:
                 page.wait_for_url(f"{backend_url}/app/", timeout=_WAIT_TIMEOUT_MS)
+                page.get_by_role("link", name="Desktop docs").click()
+                assert "https://example.com/docs?source=markdown#v2" in _wait_for_text(
+                    external_log, "https://example.com/docs?source=markdown#v2"
+                )
+
                 page.evaluate(
                     """async () => {
                         await window.agentTeamsDesktop.openExternal(
@@ -264,6 +313,7 @@ def test_v2_electron_managed_backend_starts_and_stops_with_main_lifecycle() -> N
             "AGENT_TEAMS_DESKTOP_MANAGED_REQUEST_LOG": str(request_log),
         },
         startup_timeout_ms=4_000,
+        test_mode=True,
     )
     try:
         trace_log_text = _wait_for_text(trace_log, "fired")
@@ -348,12 +398,16 @@ def _api_response(path: str) -> object:
             "workspace_id": _WORKSPACE_ID,
         }
     if path == f"/api/sessions/{_SESSION_ID}/messages":
+        text = (
+            "Electron renderer smoke "
+            "[Desktop docs](https://example.com/docs?source=markdown#v2)"
+        )
         return [
             {
-                "content": "Electron renderer smoke",
+                "content": text,
                 "created_at": "2026-06-25T09:01:30Z",
                 "message_id": "message-desktop-smoke",
-                "parts": [{"kind": "text", "text": "Electron renderer smoke"}],
+                "parts": [{"kind": "text", "text": text}],
                 "role": "assistant",
                 "role_id": "MainAgent",
                 "run_id": "run-desktop-smoke",
@@ -551,6 +605,7 @@ def _launch_electron(
     *,
     extra_env: dict[str, str] | None = None,
     startup_timeout_ms: int = 4_000,
+    test_mode: bool = False,
 ) -> tuple[subprocess.Popen[str], int]:
     frontend_app = repo_root / "frontend" / "app"
     main_script = frontend_app / "dist-desktop" / "desktop" / "main.js"
@@ -569,6 +624,8 @@ def _launch_electron(
     )
     if backend_url is not None:
         env["AGENT_TEAMS_BACKEND_URL"] = backend_url
+    if test_mode:
+        env["AGENT_TEAMS_DESKTOP_TEST_MODE"] = "1"
     if extra_env is not None:
         env.update(extra_env)
     process = subprocess.Popen(

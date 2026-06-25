@@ -1185,6 +1185,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  delete window.agentTeamsDesktop;
   window.localStorage.clear();
   applyAppearanceSettings(defaultAppearanceSettings);
   vi.clearAllMocks();
@@ -1192,6 +1193,7 @@ afterEach(() => {
 
 describe("SettingsDrawer", () => {
   it("renders a real settings center backed by existing config endpoints", async () => {
+    installDesktopApi("9.8.7");
     renderDrawer();
 
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeVisible();
@@ -1312,6 +1314,8 @@ describe("SettingsDrawer", () => {
     expect(getClawHubConfigMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    expect(await screen.findByText("Desktop version")).toBeVisible();
+    expect(screen.getByText("9.8.7")).toBeVisible();
     expect(await screen.findByText("MCP")).toBeVisible();
     expect(screen.getByText("Global and workspace command files.")).toBeVisible();
     expect(screen.getByText("GitHub CLI token, webhook callback, and tunnel.")).toBeVisible();
@@ -1546,6 +1550,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(
       (await screen.findByText("Agent Runtime")).closest("button") as HTMLElement,
     );
+    expect(await screen.findByText("Codex CLI")).toBeVisible();
     fireEvent.click(await screen.findByRole("button", { name: "ACP registry" }));
 
     expect(await screen.findByText("Codex Runtime")).toBeVisible();
@@ -2143,6 +2148,25 @@ function renderDrawer() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+function installDesktopApi(version: string) {
+  const desktopApi: NonNullable<Window["agentTeamsDesktop"]> = {
+    copyText: vi.fn().mockResolvedValue(undefined),
+    getBackendStatus: vi.fn().mockResolvedValue({
+      baseUrl: "http://127.0.0.1:8000",
+      message: "Backend ready.",
+      state: "ready",
+    }),
+    getVersion: vi.fn().mockResolvedValue(version),
+    onBackendStatus: vi.fn(() => () => undefined),
+    openExternal: vi.fn().mockResolvedValue(undefined),
+    retryStartup: vi.fn().mockResolvedValue(undefined),
+  };
+  Object.defineProperty(window, "agentTeamsDesktop", {
+    configurable: true,
+    value: desktopApi,
+  });
 }
 
 function lastBackButton(): HTMLElement {

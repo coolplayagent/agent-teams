@@ -3,7 +3,7 @@ import { appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
 
 import {
   buildDesktopBackendPlan,
@@ -23,7 +23,9 @@ let backendStatus: DesktopBackendStatus = {
 let appQuitting = false;
 const desktopAutoQuitAfterReadyEnv = "AGENT_TEAMS_DESKTOP_AUTO_QUIT_AFTER_READY_MS";
 const desktopAutoQuitTraceEnv = "AGENT_TEAMS_DESKTOP_AUTO_QUIT_TRACE";
+const desktopCopyTextLogEnv = "AGENT_TEAMS_DESKTOP_COPY_TEXT_LOG";
 const desktopOpenExternalLogEnv = "AGENT_TEAMS_DESKTOP_OPEN_EXTERNAL_LOG";
+const desktopTestModeEnv = "AGENT_TEAMS_DESKTOP_TEST_MODE";
 
 app.whenReady().then(() => {
   registerIpcHandlers();
@@ -48,14 +50,18 @@ app.on("before-quit", () => {
 });
 
 async function startDesktopApp(): Promise<void> {
+  mainWindow = createMainWindow();
+  await loadDesktopApp(mainWindow);
+}
+
+async function loadDesktopApp(window: BrowserWindow): Promise<void> {
   const plan = buildDesktopBackendPlan({ env: process.env });
   setBackendStatus({
     baseUrl: plan.baseUrl,
     message: "Starting backend.",
     state: "starting",
   });
-  mainWindow = createMainWindow();
-  await mainWindow.loadURL(loadingDocumentUrl(plan));
+  await window.loadURL(loadingDocumentUrl(plan));
 
   try {
     await ensureBackendReady(plan);
@@ -64,7 +70,7 @@ async function startDesktopApp(): Promise<void> {
       message: "Backend ready.",
       state: "ready",
     });
-    const appLoad = mainWindow.loadURL(plan.appUrl);
+    const appLoad = window.loadURL(plan.appUrl);
     scheduleAutoQuitAfterReady();
     await appLoad;
   } catch (error) {
@@ -74,7 +80,7 @@ async function startDesktopApp(): Promise<void> {
       message,
       state: "failed",
     });
-    await mainWindow.loadURL(failureDocumentUrl(plan, message));
+    await window.loadURL(failureDocumentUrl(plan, message));
   }
 }
 
@@ -92,6 +98,12 @@ function createMainWindow(): BrowserWindow {
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.handle("agent-teams:copy-text", (_event, text: unknown) => {
+    if (typeof text !== "string") {
+      throw new Error("Copied text must be a string.");
+    }
+    copyText(text);
+  });
   ipcMain.handle("agent-teams:get-version", () => app.getVersion());
   ipcMain.handle("agent-teams:get-backend-status", () => backendStatus);
   ipcMain.handle("agent-teams:open-external", async (_event, url: unknown) => {
@@ -99,6 +111,13 @@ function registerIpcHandlers(): void {
       throw new Error("External URL must be a string.");
     }
     await openExternalUrl(url);
+  });
+  ipcMain.handle("agent-teams:retry-startup", async () => {
+    if (mainWindow === null || mainWindow.isDestroyed()) {
+      await startDesktopApp();
+      return;
+    }
+    await loadDesktopApp(mainWindow);
   });
 }
 
@@ -151,6 +170,9 @@ function stopManagedBackend(): void {
 }
 
 function scheduleAutoQuitAfterReady(): void {
+  if (!isDesktopTestMode()) {
+    return;
+  }
   const delayMs = readNonNegativeInteger(process.env[desktopAutoQuitAfterReadyEnv]);
   if (delayMs === null) {
     return;
@@ -165,6 +187,9 @@ function scheduleAutoQuitAfterReady(): void {
 }
 
 function traceAutoQuit(message: string): void {
+  if (!isDesktopTestMode()) {
+    return;
+  }
   const tracePath = process.env[desktopAutoQuitTraceEnv]?.trim();
   if (tracePath === undefined || tracePath === "") {
     return;
@@ -215,28 +240,44 @@ function setBackendStatus(status: DesktopBackendStatus): void {
 async function openExternalUrl(url: string): Promise<void> {
   const normalizedUrl = normalizeExternalHttpUrl(url);
   const externalLogPath = process.env[desktopOpenExternalLogEnv]?.trim();
-  if (externalLogPath !== undefined && externalLogPath !== "") {
+  if (isDesktopTestMode() && externalLogPath !== undefined && externalLogPath !== "") {
     appendFileSync(externalLogPath, `${normalizedUrl}\n`, { encoding: "utf-8" });
     return;
   }
   await shell.openExternal(normalizedUrl);
 }
 
+function copyText(text: string): void {
+  const copyLogPath = process.env[desktopCopyTextLogEnv]?.trim();
+  if (isDesktopTestMode() && copyLogPath !== undefined && copyLogPath !== "") {
+    appendFileSync(copyLogPath, `${text}\n`, { encoding: "utf-8" });
+    return;
+  }
+  clipboard.writeText(text);
+}
+
+function isDesktopTestMode(): boolean {
+  return process.env[desktopTestModeEnv] === "1";
+}
+
 function loadingDocumentUrl(plan: DesktopBackendPlan): string {
   return dataDocumentUrl(
     "Agent Teams",
-    `<main><h1>Agent Teams</h1><p>Starting local backend at ${escapeHtml(
+    `<main class="desktop-status" aria-live="polite"><div class="status-label">Starting</div><h1>Agent Teams</h1><p>Starting local backend at ${escapeHtml(
       plan.baseUrl,
     )}.</p></main>`,
   );
 }
 
 function failureDocumentUrl(plan: DesktopBackendPlan, message: string): string {
+  const diagnostic = `Backend: ${plan.baseUrl}\nStatus: ${message}`;
   return dataDocumentUrl(
     "Agent Teams startup failed",
-    `<main><h1>Startup failed</h1><p>${escapeHtml(message)}</p><code>${escapeHtml(
-      plan.baseUrl,
-    )}</code></main>`,
+    `<main class="desktop-status is-failed" role="alert"><div class="status-label">Agent Teams</div><h1>Startup failed</h1><p>${escapeHtml(
+      message,
+    )}</p><code id="desktop-diagnostic">${escapeHtml(
+      diagnostic,
+    )}</code><div class="status-actions"><button type="button" onclick="window.agentTeamsDesktop.copyText(document.getElementById('desktop-diagnostic')?.innerText ?? '')">Copy diagnostics</button><button type="button" onclick="window.agentTeamsDesktop.retryStartup()">Retry startup</button></div></main>`,
   );
 }
 
@@ -249,10 +290,14 @@ function dataDocumentUrl(title: string, body: string): string {
     <title>${escapeHtml(title)}</title>
     <style>
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7f7f3; color: #1f2328; font: 14px system-ui, sans-serif; }
-      main { display: grid; gap: 10px; width: min(420px, calc(100vw - 48px)); }
-      h1 { margin: 0; font-size: 24px; }
-      p { margin: 0; color: #656d76; }
-      code { overflow-wrap: anywhere; }
+      .desktop-status { display: grid; gap: 12px; width: min(480px, calc(100vw - 48px)); padding: 24px; border: 1px solid #d8d6cf; border-radius: 8px; background: #ffffff; }
+      .status-label { color: #5b625f; font-size: 12px; }
+      h1 { margin: 0; font-size: 22px; font-weight: 650; }
+      p { margin: 0; color: #656d76; line-height: 1.45; }
+      code { display: block; overflow-wrap: anywhere; white-space: pre-wrap; border: 1px solid #e5e2da; border-radius: 6px; padding: 10px; background: #faf9f5; color: #24292f; }
+      .status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      button { height: 32px; border: 1px solid #d0d7de; border-radius: 6px; background: #ffffff; color: #24292f; font: inherit; padding: 0 12px; }
+      button:hover { background: #f6f8fa; }
     </style>
   </head>
   <body>${body}</body>

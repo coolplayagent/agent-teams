@@ -222,11 +222,37 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
 function SettingsSystem() {
   const t = useTranslations();
   const [selectedPage, setSelectedPage] = useState<SystemSettingsPage | null>(null);
+  const [desktopVersion, setDesktopVersion] = useState<string | null>(null);
   const statusQuery = useQuery({
     queryKey: ["settings", "system", "status"],
     queryFn: getConfigStatus,
     enabled: selectedPage === null,
   });
+  useEffect(() => {
+    let cancelled = false;
+    const desktopApi = window.agentTeamsDesktop;
+    if (desktopApi === undefined) {
+      setDesktopVersion(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void desktopApi
+      .getVersion()
+      .then((version) => {
+        if (!cancelled) {
+          setDesktopVersion(version.trim() || null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDesktopVersion(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const systemItems = useMemo(
     () => [
       {
@@ -303,6 +329,9 @@ function SettingsSystem() {
             label={t("settingsSkills")}
             value={String(statusQuery.data.skills?.skills?.length ?? 0)}
           />
+          {desktopVersion !== null ? (
+            <Fact label={t("settingsSystemDesktopVersion")} value={desktopVersion} />
+          ) : null}
         </div>
       ) : null}
       <SettingsList

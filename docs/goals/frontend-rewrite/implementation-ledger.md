@@ -1992,3 +1992,30 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent Electron open-external boundary verification completed for this slice. No Desktop subsystem completion is claimed.
+
+## 2026-06-25 V2 Electron Desktop Reviewer Closure Batch
+
+### Scope
+- Re-checked the Desktop checklist and ran the required independent reviewer loop for the Electron desktop shell subsystem.
+- Addressed reviewer findings by gating smoke-only desktop hooks behind `AGENT_TEAMS_DESKTOP_TEST_MODE=1` so production runtime behavior is not changed by test env variables alone.
+- Extended the desktop open-external smoke from direct preload invocation to a real V2 markdown link click, proving the renderer link path reaches the main-process `setWindowOpenHandler` boundary.
+- Added an Electron-only app version display in the existing Settings > System facts area without changing the V1-aligned settings navigation items.
+- Improved the startup failure data document into an actionable desktop error state with diagnostics, Copy diagnostics, and Retry startup controls.
+- Routed Copy diagnostics and Retry startup through minimal preload/main IPC; smoke coverage clicks both controls, verifies diagnostics reach the main-process copy path, and verifies retry re-enters startup before returning to the failure state when the backend is still unhealthy.
+- Refreshed `frontend/dist/app` for the renderer Settings change.
+- Fixed a brittle SettingsDrawer test wait so the ACP registry action is clicked only after Agent Runtime data has loaded.
+
+### Verification
+- `npm test -- --testTimeout=60000 src/test/SettingsDrawer.test.tsx src/test/desktopBackendPlan.test.ts src/test/desktopSecurity.test.ts` passed with 24 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run lint` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 4 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 0 errors.
+- Screenshot inspection of `.tmp/frontend-v2-desktop/v2-electron-startup-failed.png` confirmed the startup failure state remains a restrained Agent Teams-style status panel with diagnostics and actions.
+
+### Reviewer
+- Reviewer subagent `019efec7-4bf7-7351-b911-f3d389cb761b` returned FAIL on the first pass with findings for missing version-display closure, missing reviewer PASS, under-tested real user external-link path, ungated test hooks, and thin startup failure controls.
+- After fixes, reviewer subagent `019efec7-4bf7-7351-b911-f3d389cb761b` returned PASS for the Electron desktop shell subsystem.
+- Reviewer residual risks: same-window external navigation is not separately guarded with `will-navigate`; rapid repeated Retry clicks could overlap startup attempts; packaging/installer behavior remains outside current smoke-test evidence.

@@ -289,6 +289,31 @@ describe("openRunStream", () => {
     expect(stream.closedStates[0].activeRunIds).toEqual([]);
   });
 
+  it("closes when replay only delivers a duplicate terminal event", () => {
+    const stream = openTestStream({
+      initialState: runtimeStateWithClosedRun(7),
+    });
+
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(
+        relayEvent({
+          event_id: 7,
+          event_type: "run_completed",
+        }),
+      ),
+    );
+
+    expect(stream.states).toEqual([]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].runs["run-1"]).toMatchObject({
+      lastEventId: 7,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+  });
+
   it("reports server error payloads without reducing them", () => {
     const stream = openTestStream();
 
@@ -562,5 +587,21 @@ function agUiEvent(overrides: Partial<AgUiRunEvent> = {}): AgUiRunEvent {
     event_id: 1,
     occurred_at: "2026-06-25T00:00:00Z",
     ...overrides,
+  };
+}
+
+function runtimeStateWithClosedRun(lastEventId: number): RuntimeState {
+  return {
+    activeRunIds: [],
+    runs: {
+      "run-1": {
+        entries: [],
+        lastEventId,
+        runId: "run-1",
+        seenEventKeys: [`run-1:${lastEventId}`],
+        status: "closed",
+        terminalEventType: "run_completed",
+      },
+    },
   };
 }

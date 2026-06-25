@@ -1272,3 +1272,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this multiplex active-run state slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.
+
+## 2026-06-25 Duplicate Terminal Replay Close Batch
+
+### Scope
+- Continued the AG-UI stream/replay parity pass at the lower stream client layer.
+- Fixed the case where replay only delivers a duplicate terminal event that the reducer correctly treats as a no-op; the stream client now still checks the tracked run terminal state and emits `onClosed`.
+- This prevents upper layers from waiting for a later transport error before clearing streaming state when replay confirms a run is already terminal.
+
+### Verification
+- `npm test -- src/test/streamClient.test.ts` in `frontend/app` passed with 17 tests, including the new duplicate terminal replay close regression.
+- `npm test -- src/test/RunStreamController.test.tsx` in `frontend/app` passed with 13 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt asset `index-CiycJFyW.js`.
+
+### Reviewer
+- Main-agent targeted verification completed for this duplicate terminal replay close slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.

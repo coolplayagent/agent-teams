@@ -107,6 +107,9 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     }
     const nextRuntimeState = reduceRunEvent(runtimeState, event);
     if (nextRuntimeState === runtimeState) {
+      if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+        notifyClosed();
+      }
       return;
     }
     runtimeState = nextRuntimeState;

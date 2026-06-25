@@ -172,6 +172,41 @@ describe("runtime reducers", () => {
     });
   });
 
+  it("uses diagnostic payload text for failed and stopped runtime events", () => {
+    const failed = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 2,
+        event_type: "run_failed",
+        payload_json: JSON.stringify({
+          error_message: "Provider stream ended before finish reason",
+          error_code: "network_stream_interrupted",
+        }),
+      }),
+    );
+    const stopped = reduceRunEvent(
+      failed,
+      runEvent({
+        event_id: 3,
+        event_type: "run_stopped",
+        payload_json: JSON.stringify({
+          reason: "User requested stop",
+        }),
+      }),
+    );
+
+    expect(stopped.runs["run-1"].entries).toMatchObject([
+      {
+        kind: "run_failed",
+        text: "Provider stream ended before finish reason",
+      },
+      {
+        kind: "run_stopped",
+        text: "User requested stop",
+      },
+    ]);
+  });
+
   it("preserves instance ids for runtime stream grouping", () => {
     const state = reduceRunEvent(
       initialRuntimeState,

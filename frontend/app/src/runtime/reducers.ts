@@ -166,6 +166,10 @@ function eventText(payload: JsonValue, eventType: RunEventType): string {
       "message",
       "title",
       "summary",
+      "error",
+      "error_message",
+      "reason",
+      "error_code",
       "phase",
       "status",
     ]);

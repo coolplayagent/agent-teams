@@ -2881,3 +2881,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent built-app browser verification completed for this round rail retry/todo slice. Full Rounds/Todos/History/Retry parity, paging coverage, visual parity matrix completion, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Runtime Tools Connector Action Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, latest ledger, and current worktree after the round rail commit, then moved to the Connectors/Memory/Gateway/Automation/Boards requirement instead of continuing round-only coverage.
+- Identified that runtime tool actions had component tests and module-open browser evidence, but no built `/app/` browser proof that the visible connector action buttons work inside the real shell.
+- Added a real built `/app/` browser scenario that opens Connectors from the existing V1-aligned primary navigation, verifies the ripgrep runtime tool card loads from `/api/connectors/runtime-tools`, clicks the visible copy-path button, and asserts the browser clipboard receives the backend-provided binary path.
+- Extended the shell mock backend with stateful `POST /api/connectors/runtime-tools/system-path:add` handling, then verified the visible `Add to system environment variables` action calls the real endpoint, updates the button to `Added to system environment variables`, and shows the backend success message.
+- Captured local browser evidence at `.tmp/frontend-v2-connectors/v2-runtime-tools-actions.png`.
+- Kept this as targeted connector action evidence only; no sidebar/settings entries were added or removed, no connector set was changed, and full Connectors/Memory/Gateway/Automation/Boards parity still requires broader gateway/memory/handoff/error reviewer coverage.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "connectors_runtime_tools_actions"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "sidebar_module_entries_open_real_surfaces or connectors_runtime_tools_actions"` passed with 2 selected tests.
+
+### Reviewer
+- Main-agent built-app browser verification completed for this runtime tools connector action slice. Full module parity, gateway action coverage, visual parity matrix completion, subsystem reviewer sign-off, and release readiness remain open.

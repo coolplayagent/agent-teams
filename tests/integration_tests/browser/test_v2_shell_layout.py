@@ -384,6 +384,76 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
         page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
 
 
+def test_v2_connectors_runtime_tools_actions_call_real_endpoints(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    page.add_init_script(
+        """
+        (() => {
+          window.__runtimeToolCopiedPaths = [];
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: {
+              writeText: async (value) => {
+                window.__runtimeToolCopiedPaths.push(String(value));
+              },
+            },
+          });
+        })();
+        """,
+    )
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        primary_nav = page.get_by_role("navigation", name="Primary navigation")
+        primary_nav.get_by_role("button", name="Connectors").click()
+
+        runtime_tools = page.get_by_test_id("runtime-tools-section")
+        expect(runtime_tools).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        ripgrep_card = page.get_by_test_id("runtime-tool-card-rg")
+        expect(ripgrep_card).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(ripgrep_card.get_by_text("Ready")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(ripgrep_card.get_by_text("Version 14.1.1")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        ripgrep_card.get_by_role("button", name="Copy binary path").click()
+        expect(page.get_by_text("Path copied")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        copied_paths = page.evaluate("() => window.__runtimeToolCopiedPaths")
+        assert copied_paths == ["C:/Users/yex/.agent-teams/bin/rg.exe"]
+
+        runtime_tools.get_by_role(
+            "button",
+            name="Add to system environment variables",
+        ).click()
+        expect(
+            runtime_tools.get_by_role(
+                "button",
+                name="Added to system environment variables",
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_text("Runtime tools directory added to system PATH."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.runtime_tools_system_path_requests == ["add"]
+        assert "/connectors/runtime-tools/system-path:add" in backend.requested_paths
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-connectors"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-runtime-tools-actions.png"))
+
+
 def test_v2_automation_toggle_calls_real_endpoint_and_updates_detail(
     browser_page: Page,
 ) -> None:
@@ -1135,6 +1205,8 @@ class _V2ShellBackend:
         self.requested_paths: list[str] = []
         self.requested_urls: list[str] = []
         self.rounds_request_count = 0
+        self.runtime_tools_system_path_added = False
+        self.runtime_tools_system_path_requests: list[str] = []
         self.snapshot_request_count = 0
         self.ssh_delete_requests: list[str] = []
         self.ssh_profiles: list[dict[str, object]] = [
@@ -1384,6 +1456,22 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/connectors/runtime-tools":
             _fulfill_json(route, self._runtime_tools())
+            return
+        if (
+            request.method == "POST"
+            and path == "/connectors/runtime-tools/system-path:add"
+        ):
+            self.runtime_tools_system_path_added = True
+            self.runtime_tools_system_path_requests.append("add")
+            _fulfill_json(
+                route,
+                {
+                    "bin_dir": "C:/Users/yex/.agent-teams/bin",
+                    "message": "Runtime tools directory added to system PATH.",
+                    "requires_terminal_restart": True,
+                    "status": "updated",
+                },
+            )
             return
         if request.method == "GET" and path == "/boards/todos":
             _fulfill_json(route, self._board())
@@ -2104,7 +2192,7 @@ class _V2ShellBackend:
                 }
             ],
             "system_path": {
-                "added": True,
+                "added": self.runtime_tools_system_path_added,
                 "bin_dir": "C:/Users/yex/.agent-teams/bin",
                 "supported": True,
             },

@@ -2556,3 +2556,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, build, and browser/DevTools verification completed for this round rail detail slice. No full Rounds, Todos, History, Retry, AG-UI Runtime Stream, sidebar/settings parity, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Sidebar Primary Entry Parity Batch
+
+### Scope
+- Re-checked the Application Shell and Settings parity requirements after the round rail detail batch, focusing on the framework-level sidebar mismatch found in browser audit.
+- Restored the V2 primary sidebar entry set and order to match the V1 sidebar: `聊天`, `自动化`, `技能`, `看板`, `搜索`, `连接器`, `记忆`, `观测`, `设置`.
+- Wired the added `聊天`, `观测`, and `设置` entries to existing real surfaces instead of adding placeholder pages: chat returns to `ChatWorkspace`, observability opens `ObservabilityPanel`, and settings opens the existing `SettingsDrawer`.
+- Preserved the existing topbar observability/settings shortcuts and the V1-style secondary page model; settings remains a drawer/secondary surface and is not flattened into the primary workspace.
+- Tightened sidebar active state so opening settings highlights only `设置`, and selecting another primary entry closes the settings drawer before navigating.
+- Refreshed `frontend/dist/app` for the sidebar navigation change.
+- Kept this as targeted Application Shell parity progress only; settings tab coverage, full settings form parity, screenshot-based V1/V2 visual QA, stream/replay edge cases, and release readiness remain open.
+
+### Verification
+- `npm test -- --run src/test/AppShell.test.tsx` passed with 19 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- Browser reload of `http://127.0.0.1:8000/app/` showed `bodyOverflow = hidden`, sidebar width `260`, workspace x `266`, and sidebar entries `聊天`, `自动化`, `技能`, `看板`, `搜索Ctrl+K`, `连接器`, `记忆`, `观测`, `设置`.
+- Browser interaction verification showed `观测` opens the observability surface with only `观测` active, `设置` opens the drawer with only `设置` active, and `聊天` closes the drawer and returns to the chat timeline with only `聊天` active.
+
+### Reviewer
+- Main-agent shell component, build, and browser/DevTools verification completed for this sidebar primary entry parity slice. No full Application Shell, Settings, visual parity, or release readiness completion is claimed.

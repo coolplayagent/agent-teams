@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Database,
   Menu,
+  MessageSquare,
   Moon,
   PlugZap,
   Search,
@@ -119,6 +120,7 @@ export function AppShell() {
       nextView: ShellPrimaryView,
       historyMode: ShellHistoryMode = "push",
     ) => {
+      setSettingsOpen(false);
       setActiveSubagent(null);
       navigateShellView(nextView, historyMode);
     },
@@ -222,7 +224,35 @@ export function AppShell() {
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [
       {
-        active: activeView === "search",
+        active: !settingsOpen && activeView === "chat",
+        icon: <MessageSquare size={15} />,
+        key: "chat",
+        label: t("appChat"),
+        onSelect: () => openPrimaryShellView("chat"),
+      },
+      {
+        active: !settingsOpen && activeView === "automation",
+        icon: <CalendarClock size={15} />,
+        key: "automation",
+        label: t("appAutomation"),
+        onSelect: () => openPrimaryShellView("automation"),
+      },
+      {
+        active: !settingsOpen && activeView === "skills",
+        icon: <Wrench size={15} />,
+        key: "skills",
+        label: t("appSkills"),
+        onSelect: () => openPrimaryShellView("skills"),
+      },
+      {
+        active: !settingsOpen && activeView === "board",
+        icon: <SquareKanban size={15} />,
+        key: "board",
+        label: t("appBoard"),
+        onSelect: () => openPrimaryShellView("board"),
+      },
+      {
+        active: !settingsOpen && activeView === "search",
         icon: <Search size={15} />,
         key: "search",
         label: t("appSearch"),
@@ -230,42 +260,35 @@ export function AppShell() {
         shortcut: "Ctrl+K",
       },
       {
-        active: activeView === "skills",
-        icon: <Wrench size={15} />,
-        key: "skills",
-        label: t("appSkills"),
-        onSelect: () => openPrimaryShellView("skills"),
-      },
-      {
-        active: activeView === "automation",
-        icon: <CalendarClock size={15} />,
-        key: "automation",
-        label: t("appAutomation"),
-        onSelect: () => openPrimaryShellView("automation"),
-      },
-      {
-        active: activeView === "connectors",
+        active: !settingsOpen && activeView === "connectors",
         icon: <PlugZap size={15} />,
         key: "connectors",
         label: t("appConnectors"),
         onSelect: () => openPrimaryShellView("connectors"),
       },
       {
-        active: activeView === "board",
-        icon: <SquareKanban size={15} />,
-        key: "board",
-        label: t("appBoard"),
-        onSelect: () => openPrimaryShellView("board"),
-      },
-      {
-        active: activeView === "memory",
+        active: !settingsOpen && activeView === "memory",
         icon: <Database size={15} />,
         key: "memory",
         label: t("appMemory"),
         onSelect: () => openPrimaryShellView("memory"),
       },
+      {
+        active: !settingsOpen && activeView === "observability",
+        icon: <Activity size={15} />,
+        key: "observability",
+        label: t("appObservability"),
+        onSelect: () => openPrimaryShellView("observability"),
+      },
+      {
+        active: settingsOpen,
+        icon: <Settings size={15} />,
+        key: "settings",
+        label: t("appSettings"),
+        onSelect: () => setSettingsOpen(true),
+      },
     ],
-    [activeView, openPrimaryShellView, t],
+    [activeView, openPrimaryShellView, settingsOpen, t],
   );
 
   useEffect(() => {

@@ -1828,6 +1828,34 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("hook event visible")).toBeVisible();
   });
 
+  it("renders runtime token usage events as compact usage summaries", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-token:1:0",
+        kind: "token_usage",
+        text: "token usage",
+        eventId: 1,
+        payload: {
+          cached_input_tokens: 2,
+          input_tokens: 11,
+          output_tokens: 7,
+          reasoning_output_tokens: 3,
+          total_tokens: 18,
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText(
+        "Token usage: Total 18 · Input 11 · Cached 2 · Output 7 · Reasoning 3",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText("token usage")).not.toBeInTheDocument();
+  });
+
   it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

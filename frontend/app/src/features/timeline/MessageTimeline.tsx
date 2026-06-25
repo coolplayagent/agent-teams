@@ -1089,6 +1089,10 @@ function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
   if (approval !== null) {
     return [approval];
   }
+  const structuredText = runtimeStructuredEventText(entry);
+  if (structuredText !== null) {
+    return [{ kind: "text", text: structuredText }];
+  }
   const fallbackText = runtimeFallbackText(entry);
   return fallbackText.trim().length > 0 ? [{ kind: "text", text: fallbackText }] : [];
 }
@@ -1181,6 +1185,36 @@ function runtimeFallbackText(entry: TimelineEntry): string {
     return "";
   }
   return entry.text;
+}
+
+function runtimeStructuredEventText(entry: TimelineEntry): string | null {
+  if (entry.kind === "token_usage") {
+    return runtimeTokenUsageText(entry);
+  }
+  return null;
+}
+
+function runtimeTokenUsageText(entry: TimelineEntry): string | null {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return null;
+  }
+  const total = objectNumber(payload, "total_tokens");
+  const input = objectNumber(payload, "input_tokens");
+  const output = objectNumber(payload, "output_tokens");
+  const cached = objectNumber(payload, "cached_input_tokens");
+  const reasoning = objectNumber(payload, "reasoning_output_tokens");
+  const parts = [
+    total > 0 ? `Total ${formatRuntimeCount(total)}` : "",
+    input > 0 ? `Input ${formatRuntimeCount(input)}` : "",
+    cached > 0 ? `Cached ${formatRuntimeCount(cached)}` : "",
+    output > 0 ? `Output ${formatRuntimeCount(output)}` : "",
+    reasoning > 0 ? `Reasoning ${formatRuntimeCount(reasoning)}` : "",
+  ].filter(Boolean);
+  if (parts.length === 0) {
+    return null;
+  }
+  return `Token usage: ${parts.join(" · ")}`;
 }
 
 function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {
@@ -2269,6 +2303,16 @@ function objectRawString(
   return typeof value === "string" ? value : "";
 }
 
+function objectNumber(
+  object: Record<string, JsonValue>,
+  key: string,
+): number {
+  const value = object[key];
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0;
+}
+
 function objectBoolean(
   object: Record<string, JsonValue>,
   key: string,
@@ -2304,6 +2348,10 @@ function jsonValueText(value: unknown): string {
     return "";
   }
   return JSON.stringify(value, null, 2);
+}
+
+function formatRuntimeCount(value: number): string {
+  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 function isAnswerRole(role: string): boolean {

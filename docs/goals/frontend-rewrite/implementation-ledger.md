@@ -2341,3 +2341,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted component verification completed for this replay/hydration slice. No Message Timeline or AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Timeline Token Usage Replay Summary Batch
+
+### Scope
+- Continued the Message Timeline and AG-UI Runtime Stream checklist after the hydration/tool replay slice, focusing on another replay readability gap rather than switching to a shallow surface.
+- Added structured timeline rendering for `token_usage` runtime events so replay shows a compact token summary instead of the raw protocol fallback text `token usage`.
+- The summary includes total, input, cached input, output, and reasoning token counts when present, while malformed or empty payloads still fall back safely.
+- Refreshed `frontend/dist/app` for the timeline replay rendering change.
+- Kept this as targeted Message Timeline and resource-event readability evidence only; full Message Timeline, AG-UI Runtime Stream, token usage, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 49 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- No screenshot was captured because this batch changes replay text content, not layout. The visible behavior is covered by focused component assertions.
+
+### Reviewer
+- Main-agent targeted component verification completed for this token-usage replay slice. No Message Timeline, AG-UI Runtime Stream, or Resource subsystem completion is claimed.

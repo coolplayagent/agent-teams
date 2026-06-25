@@ -37,6 +37,24 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps desktop composer controls compact inside the V1-width shell", () => {
+    expect(themeCss).toMatch(
+      /\.at-composer-controls\s*{[\s\S]*?min-width:\s*0;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-composer-control-set\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-width:\s*0;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-composer-controls > \.ant-space:last-child\s*{[\s\S]*?flex:\s*0 0 auto;/,
+    );
+    expect(themeCss).toMatch(/\.at-session-mode-control\s*{[\s\S]*?width:\s*116px;/);
+    expect(themeCss).toMatch(
+      /\.at-normal-root-role-select,\s*\.at-orchestration-preset-select\s*{[\s\S]*?width:\s*96px;/,
+    );
+    expect(themeCss).toMatch(/\.at-role-select\s*{[\s\S]*?width:\s*96px;/);
+    expect(themeCss).toMatch(/\.at-model-profile-select\s*{[\s\S]*?width:\s*104px;/);
+  });
+
   it("keeps the narrow workspace full width behind the sidebar overlay", () => {
     expect(themeCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.at-body\s*{[\s\S]*?position:\s*relative;/,

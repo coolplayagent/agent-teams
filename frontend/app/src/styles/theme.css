@@ -4243,11 +4243,17 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
 }
 
 .at-composer-control-set {
+  flex: 1 1 auto;
   min-width: 0;
   row-gap: 6px !important;
+}
+
+.at-composer-controls > .ant-space:last-child {
+  flex: 0 0 auto;
 }
 
 .at-thinking-control {
@@ -4261,20 +4267,20 @@ body {
 
 .at-session-mode-control {
   min-width: 0;
-  width: 154px;
+  width: 116px;
 }
 
 .at-normal-root-role-select,
 .at-orchestration-preset-select {
-  width: 136px;
+  width: 96px;
 }
 
 .at-role-select {
-  width: 148px;
+  width: 96px;
 }
 
 .at-model-profile-select {
-  width: 148px;
+  width: 104px;
 }
 
 .at-thinking-effort-select {

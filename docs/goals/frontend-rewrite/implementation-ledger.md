@@ -1691,3 +1691,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this frontend multiplex recovery slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes interrupted browser replay, broader event coverage, and paired reviewer sign-off.
+
+## 2026-06-25 V2 Settings Agent Runtime Evidence Batch
+
+### Scope
+- Re-checked the Settings parity target against the V1 settings shell before changing code, especially the V1 Agent Runtime tab and ACP registry child view.
+- Preserved the current V2 Settings navigation shape: MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, and Triggers remain behind the System secondary page instead of being added as new top-level Settings entries.
+- Added component coverage for creating a stdio Agent Runtime from the System -> Agent Runtime secondary page and verified the real `saveAgentRuntime` payload includes the agent id, command, args, protocol, and transport.
+- Added destructive-action coverage for deleting an existing Agent Runtime through the antd confirmation flow before `deleteAgentRuntime` is called.
+- Added ACP registry child-view coverage for opening the registry from Agent Runtime and calling the real registry refresh client.
+- Left Settings completion open; remaining work includes reviewer pass over all settings tabs, deeper visual comparison against V1, and more edge-state/error coverage for high-risk forms.
+
+### Verification
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "creates and deletes agent runtimes|refreshes the ACP registry"` passed with 2 tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx src/test/SettingsNavigationParity.test.ts` passed with 17 tests.
+- No screenshot was captured for this batch because the committed change is targeted behavior evidence and does not alter visible UI layout.
+
+### Reviewer
+- Main-agent parity inspection and component verification completed for this Agent Runtime settings slice. No Settings subsystem completion is claimed.

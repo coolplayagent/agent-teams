@@ -1470,6 +1470,91 @@ describe("SettingsDrawer", () => {
     );
   }, 45000);
 
+  it("creates and deletes agent runtimes from the System secondary page", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    fireEvent.click(
+      (await screen.findByText("Agent Runtime")).closest("button") as HTMLElement,
+    );
+
+    expect(await screen.findByText("Codex CLI")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "New runtime" }));
+
+    expect(await screen.findByText("Unsaved runtime")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Agent ID"), {
+      target: { value: "local-cli" },
+    });
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Local CLI" },
+    });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Local command runtime" },
+    });
+    fireEvent.change(screen.getByLabelText("Command"), {
+      target: { value: "codex" },
+    });
+    fireEvent.change(screen.getByLabelText("Arguments"), {
+      target: { value: "--serve\n--profile local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveAgentRuntimeMock).toHaveBeenCalledWith(
+        "local-cli",
+        expect.objectContaining({
+          agent_id: "local-cli",
+          description: "Local command runtime",
+          name: "Local CLI",
+          protocol: "acp",
+          transport: {
+            args: ["--serve", "--profile local"],
+            command: "codex",
+            env: [],
+            transport: "stdio",
+          },
+        }),
+      ),
+    );
+
+    fireEvent.click(lastBackButton());
+    expect(await screen.findByText("Codex CLI")).toBeVisible();
+    fireEvent.click(screen.getByText("Codex CLI").closest("button") as HTMLElement);
+    expect(await screen.findByText("Agent ID")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(
+      await screen.findByText('Delete agent runtime "codex-acp"?'),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Delete" }).length).toBeGreaterThan(1),
+    );
+    fireEvent.click(lastDeleteButton());
+
+    await waitFor(() => expect(deleteAgentRuntimeMock).toHaveBeenCalledWith("codex-acp"));
+  }, 25000);
+
+  it("refreshes the ACP registry from the Agent Runtime secondary view", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    fireEvent.click(
+      (await screen.findByText("Agent Runtime")).closest("button") as HTMLElement,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "ACP registry" }));
+
+    expect(await screen.findByText("Codex Runtime")).toBeVisible();
+    expect(getAgentRuntimeRegistryMock).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(refreshAgentRuntimeRegistryMock).toHaveBeenCalledTimes(1));
+  }, 25000);
+
   it("manages trigger gateway accounts from the System secondary page", async () => {
     renderDrawer();
 
@@ -2062,6 +2147,11 @@ function renderDrawer() {
 
 function lastBackButton(): HTMLElement {
   const buttons = screen.getAllByRole("button", { name: "Back" });
+  return buttons[buttons.length - 1] as HTMLElement;
+}
+
+function lastDeleteButton(): HTMLElement {
+  const buttons = screen.getAllByRole("button", { name: "Delete" });
   return buttons[buttons.length - 1] as HTMLElement;
 }
 

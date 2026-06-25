@@ -1671,3 +1671,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent backend integration verification completed for this multiplex replay slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes interrupted browser replay, real frontend multiplex handling, broader event coverage, and paired reviewer sign-off.
+
+## 2026-06-25 V2 Browser Multiplex Recovery Stream Batch
+
+### Scope
+- Continued the AG-UI Runtime Stream checklist at the frontend boundary after adding backend multiplex replay evidence.
+- Extended the built V2 `/app/` browser integration harness with a background subagent task that produces two recovery stream targets: the parent run and the subagent run.
+- Verified that RecoveryBar opens the AG-UI multiplex EventSource endpoint `/api/ag-ui/runs/events` with both `run_id` values instead of falling back to a single-run stream.
+- Emitted text deltas for both tracked runs through the same browser EventSource and verified both chunks render in the live V2 timeline.
+- Emitted terminal events for both tracked runs and verified the multiplex EventSource closes only after both run targets are terminal.
+- Left full AG-UI Runtime Stream completion open; remaining work includes interrupted-network reconnect timing, broader event-type coverage in live browser flows, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 8 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because the committed change is browser-level runtime stream behavior evidence rather than visual layout work.
+
+### Reviewer
+- Main-agent browser integration verification completed for this frontend multiplex recovery slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes interrupted browser replay, broader event coverage, and paired reviewer sign-off.

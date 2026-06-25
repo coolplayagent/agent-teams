@@ -41,6 +41,9 @@ _QUESTION_SUPPLEMENT = "Need release note"
 _BACKGROUND_TASK_ID = "background-task-v2"
 _BACKGROUND_COMMAND = "npm run watch"
 _BACKGROUND_CWD = "C:/Users/yex/Documents/workspace/agent-teams"
+_SUBAGENT_RUN_ID = "subagent-run-v2"
+_MAIN_MULTIPLEX_CHUNK = "main multiplex chunk"
+_SUBAGENT_MULTIPLEX_CHUNK = "subagent multiplex chunk"
 
 
 @pytest.fixture()
@@ -369,6 +372,77 @@ def test_v2_background_task_recovery_displays_collapses_and_stops(
         ]
 
 
+def test_v2_background_task_recovery_uses_multiplex_stream(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(
+        background_task=True,
+        background_task_subagent_run=True,
+    )
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.wait_for_function(
+            f"""
+            () => window.__v2EventSourceUrls.some((rawUrl) => {{
+              const url = new URL(rawUrl, window.location.origin);
+              return url.pathname.endsWith('/api/ag-ui/runs/events')
+                && url.searchParams.getAll('run_id').includes('{_RUN_ID}')
+                && url.searchParams.getAll('run_id').includes('{_SUBAGENT_RUN_ID}');
+            }})
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(
+            page,
+            "text_delta",
+            1,
+            {"text": _MAIN_MULTIPLEX_CHUNK},
+            run_id=_RUN_ID,
+        )
+        _emit_relay_event(
+            page,
+            "text_delta",
+            2,
+            {"text": _SUBAGENT_MULTIPLEX_CHUNK},
+            role_id="reviewer",
+            run_id=_SUBAGENT_RUN_ID,
+        )
+        expect(
+            page.locator(".at-message").filter(has_text=_MAIN_MULTIPLEX_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.locator(".at-message").filter(has_text=_SUBAGENT_MULTIPLEX_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        _emit_relay_event(
+            page,
+            "run_completed",
+            3,
+            {"status": "completed"},
+            run_id=_RUN_ID,
+        )
+        _emit_relay_event(
+            page,
+            "run_completed",
+            4,
+            {"status": "completed"},
+            role_id="reviewer",
+            run_id=_SUBAGENT_RUN_ID,
+        )
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 0",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 def test_v2_paused_subagent_recovery_displays_followup_state(
     browser_page: Page,
 ) -> None:
@@ -404,6 +478,7 @@ class _V2StreamBackend:
         self,
         *,
         background_task: bool = False,
+        background_task_subagent_run: bool = False,
         paused_subagent: bool = False,
         pending_tool_approval: bool = False,
         pending_user_question: bool = False,
@@ -417,6 +492,7 @@ class _V2StreamBackend:
         )
         self.persisted_assistant_text = ""
         self.background_task = background_task
+        self.background_task_subagent_run = background_task_subagent_run
         self.background_task_stop_requests: list[dict[str, object]] = []
         self.paused_subagent = paused_subagent
         self.pending_tool_approval = pending_tool_approval
@@ -714,18 +790,22 @@ class _V2StreamBackend:
         return [self._background_task_payload()]
 
     def _background_task_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "background_task_id": _BACKGROUND_TASK_ID,
             "command": _BACKGROUND_COMMAND,
             "cwd": _BACKGROUND_CWD,
             "execution_mode": "background",
-            "kind": "command",
+            "kind": "subagent" if self.background_task_subagent_run else "command",
             "recent_output": ["watching files"],
             "run_id": _RUN_ID,
             "session_id": _SESSION_ID,
             "status": "running",
             "title": _BACKGROUND_COMMAND,
         }
+        if self.background_task_subagent_run:
+            payload["role_id"] = "reviewer"
+            payload["subagent_run_id"] = _SUBAGENT_RUN_ID
+        return payload
 
     def _paused_subagent(self) -> dict[str, object] | None:
         if not self.paused_subagent:
@@ -952,23 +1032,26 @@ def _emit_relay_event(
     event_type: str,
     event_id: int,
     payload: dict[str, object],
+    *,
+    role_id: str = "MainAgent",
+    run_id: str = _RUN_ID,
 ) -> None:
     page.evaluate(
         """
-        ([eventType, eventId, payload]) => {
+        ([eventType, eventId, payload, runId, roleId]) => {
           window.__v2EmitRunEvent({
             event_id: eventId,
             event_type: eventType,
             occurred_at: '2026-06-25T08:00:03Z',
             payload_json: JSON.stringify(payload),
-            role_id: 'MainAgent',
-            run_id: 'run-v2-stream',
+            role_id: roleId,
+            run_id: runId,
             session_id: 'session-v2-stream',
             trace_id: 'trace-v2-stream',
           });
         }
         """,
-        [event_type, event_id, payload],
+        [event_type, event_id, payload, run_id, role_id],
     )
 
 

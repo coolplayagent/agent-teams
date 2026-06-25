@@ -1869,3 +1869,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this Last-Event-ID resume slice. No AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Narrow Shell Overlay Browser Batch
+
+### Scope
+- Re-checked the Application Shell checklist after the stream cursor pass and targeted the missing narrow viewport browser/screenshot evidence.
+- Added a built `/app/` browser flow at a 390px viewport that verifies the V2 shell enters the narrow overlay mode instead of letting the sidebar resize the workspace.
+- Verified the document keeps a fixed one-page frame on narrow screens: `body` remains overflow-hidden, document height equals the viewport height, document width does not exceed the viewport, and the workspace remains full width behind the sidebar overlay.
+- Verified the sidebar overlay behavior through real controls: the sidebar scrim is visible, the resize gutter is hidden on narrow screens, clicking the scrim closes the sidebar, and the top-bar menu button opens it again.
+- Captured screenshot evidence at `.tmp/frontend-v2-shell/v2-narrow-sidebar-overlay.png`; manual inspection confirmed the V1-shaped sidebar overlays the workspace without page scroll or horizontal spill.
+- Left Application Shell completion open; remaining work still includes final V1/V2 visual comparison, keyboard focus review, and broader timeline/composer density review.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k narrow_shell` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 5 tests.
+- No frontend build was needed because this batch adds browser evidence for existing responsive shell behavior without changing renderer source.
+
+### Reviewer
+- Main-agent browser integration and screenshot inspection completed for this narrow shell slice. No Application Shell subsystem completion is claimed.

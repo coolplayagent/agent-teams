@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import threading
 from typing import cast
+from typing import TypedDict
 from urllib.parse import unquote
 from urllib.parse import urlsplit
 
@@ -38,6 +39,18 @@ _IMAGE_DATA_URL = (
     "%3Ccircle%20cx%3D%2282%22%20cy%3D%2256%22%20r%3D%2220%22%20fill%3D%22%23ffffff%22%20"
     "opacity%3D%22.9%22%2F%3E%3C%2Fsvg%3E"
 )
+
+
+class _ShellFrameMetrics(TypedDict):
+    bodyOverflow: str
+    documentClientHeight: int
+    documentClientWidth: int
+    documentScrollHeight: int
+    documentScrollWidth: int
+    scrimLeft: int
+    sidebarWidth: int
+    workspaceLeft: int
+    workspaceWidth: int
 
 
 @pytest.fixture()
@@ -270,6 +283,63 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
         screenshot_dir = repo_root / ".tmp" / "frontend-v2-resource"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
+
+
+def test_v2_narrow_shell_keeps_workspace_fixed_under_sidebar_overlay(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    page.set_viewport_size({"height": 740, "width": 390})
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.wait_for_function(
+            """
+            () => window.matchMedia('(max-width: 760px)').matches
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.locator(".at-sidebar")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-sidebar-scrim")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.locator(".at-sidebar-resizer")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        open_metrics = _shell_frame_metrics(page)
+        assert open_metrics["bodyOverflow"] == "hidden"
+        assert open_metrics["documentClientHeight"] == 740
+        assert open_metrics["documentScrollHeight"] == 740
+        assert open_metrics["documentScrollWidth"] <= 391
+        assert open_metrics["workspaceLeft"] == 0
+        assert open_metrics["workspaceWidth"] == 390
+        assert open_metrics["sidebarWidth"] <= 346
+        assert open_metrics["scrimLeft"] >= open_metrics["sidebarWidth"]
+
+        page.get_by_role("button", name="Close sidebar").click()
+        expect(page.locator(".at-sidebar")).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
+        closed_metrics = _shell_frame_metrics(page)
+        assert closed_metrics["documentScrollHeight"] == 740
+        assert closed_metrics["documentScrollWidth"] <= 391
+        assert closed_metrics["workspaceLeft"] == 0
+        assert closed_metrics["workspaceWidth"] == 390
+
+        page.get_by_role("button", name="Toggle sidebar").click()
+        expect(page.locator(".at-sidebar")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-sidebar-scrim")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-shell"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-narrow-sidebar-overlay.png"))
 
 
 class _V2ShellBackend:
@@ -807,6 +877,41 @@ def _expect_sidebar_width(page: Page, width: int) -> None:
         arg=width,
         timeout=_WAIT_TIMEOUT_MS,
     )
+
+
+def _shell_frame_metrics(page: Page) -> _ShellFrameMetrics:
+    metrics = page.evaluate(
+        """
+        () => {
+          const workspace = document.querySelector('.at-workspace');
+          const sidebar = document.querySelector('.at-sidebar');
+          const scrim = document.querySelector('.at-sidebar-scrim');
+          if (!(workspace instanceof HTMLElement)) {
+            throw new Error('Workspace is missing.');
+          }
+          const workspaceRect = workspace.getBoundingClientRect();
+          const sidebarRect = sidebar instanceof HTMLElement
+            ? sidebar.getBoundingClientRect()
+            : null;
+          const scrimRect = scrim instanceof HTMLElement
+            ? scrim.getBoundingClientRect()
+            : null;
+          return {
+            bodyOverflow: window.getComputedStyle(document.body).overflow,
+            documentClientHeight: document.documentElement.clientHeight,
+            documentClientWidth: document.documentElement.clientWidth,
+            documentScrollHeight: document.documentElement.scrollHeight,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            scrimLeft: scrimRect ? Math.round(scrimRect.left) : -1,
+            sidebarWidth: sidebarRect ? Math.round(sidebarRect.width) : 0,
+            workspaceLeft: Math.round(workspaceRect.left),
+            workspaceWidth: Math.round(workspaceRect.width),
+          };
+        }
+        """,
+    )
+    assert isinstance(metrics, dict)
+    return cast(_ShellFrameMetrics, metrics)
 
 
 def _fulfill_json(

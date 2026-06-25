@@ -74,12 +74,17 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     [runtimeEntries],
   );
   const rows = useMemo(
-    () => insertRoundMarkerRows([
-      ...messages.map((messageItem, index) =>
-        messageToRow(messageItem, index, messageRoundLookup),
-      ),
-      ...runtimeRows,
-    ], rounds),
+    () => {
+      const persistedRows = messages
+        .map((messageItem, index) =>
+          messageToRow(messageItem, index, messageRoundLookup),
+        )
+        .filter(timelineRowHasRenderableContent);
+      return insertRoundMarkerRows([
+        ...persistedRows,
+        ...runtimeRows.filter(timelineRowHasRenderableContent),
+      ], rounds);
+    },
     [messageRoundLookup, messages, rounds, runtimeRows],
   );
   const streamOpenForSession = useMemo(
@@ -515,6 +520,7 @@ function timelineRowElement(
     );
   }
   const toolOnly = timelineRowIsToolOnly(row);
+  const showRoleLabel = shouldShowRoleLabel(row);
   return (
     <article
       className={[
@@ -522,6 +528,7 @@ function timelineRowElement(
         "at-message",
         row.source === "runtime" ? "is-runtime" : "",
         toolOnly ? "is-tool-only" : "",
+        showRoleLabel ? "has-role-label" : "",
       ].filter(Boolean).join(" ")}
       data-index={index}
       data-row-key={row.key}
@@ -530,9 +537,11 @@ function timelineRowElement(
       ref={measureElement}
       style={style}
     >
-      <Typography.Text className="at-message-role">
-        {displayRole(row.role, t)}
-      </Typography.Text>
+      {showRoleLabel ? (
+        <Typography.Text className="at-message-role">
+          {displayRole(row.role, t)}
+        </Typography.Text>
+      ) : null}
       <MessageRowContent parts={row.parts} t={t} />
     </article>
   );
@@ -1196,16 +1205,16 @@ function MessageMediaPreview({
 
 function messageParts(message: TimelineMessage): TimelineRenderPart[] {
   if (typeof message.content === "string" && message.content.trim()) {
-    return [{ kind: "text", text: message.content }];
+    return [{ kind: "text", text: timelineDisplayText(message.content) }];
   }
   const parts = messageContentParts(message).flatMap(contentPartToRenderParts);
   if (parts.length > 0) {
     return parts;
   }
   if (typeof message.message?.content === "string" && message.message.content.trim()) {
-    return [{ kind: "text", text: message.message.content }];
+    return [{ kind: "text", text: timelineDisplayText(message.message.content) }];
   }
-  return [{ kind: "text", text: message.entry_type ?? "message" }];
+  return [];
 }
 
 function messageContentParts(message: TimelineMessage): ContentPart[] {
@@ -1213,8 +1222,8 @@ function messageContentParts(message: TimelineMessage): ContentPart[] {
 }
 
 function contentPartToRenderParts(part: ContentPart): TimelineRenderPart[] {
-  const text = contentPartText(part);
-  if (text !== null) {
+  const text = contentPartDisplayText(part);
+  if (text !== null && text.trim().length > 0) {
     return [{ kind: "text", text }];
   }
   const media = contentPartMedia(part);
@@ -1230,6 +1239,52 @@ function contentPartToRenderParts(part: ContentPart): TimelineRenderPart[] {
     return [tool];
   }
   return [];
+}
+
+function contentPartDisplayText(part: ContentPart): string | null {
+  const text = contentPartText(part);
+  if (text !== null) {
+    return timelineDisplayText(text);
+  }
+  if (contentPartKind(part) === "user-prompt" && "content" in part) {
+    const content = part.content;
+    return typeof content === "string" ? userPromptDisplayText(content) : null;
+  }
+  return null;
+}
+
+function userPromptDisplayText(text: string): string {
+  const marker = "\n\n## Skill Candidates";
+  const markerIndex = text.indexOf(marker);
+  const displayText = markerIndex >= 0 ? text.slice(0, markerIndex) : text;
+  return displayText.trim();
+}
+
+function timelineDisplayText(text: string): string {
+  return compactApiErrorText(text) ?? text;
+}
+
+function compactApiErrorText(text: string): string | null {
+  const prefix = "The request could not be completed because of an API or execution error.";
+  if (!text.includes(prefix)) {
+    return null;
+  }
+  const status = text.match(/status_code:\s*(\d+)/)?.[1]?.trim() ?? "";
+  const model = text.match(/model_name:\s*([^,\n]+)/)?.[1]?.trim() ?? "";
+  const errorMessage =
+    firstRegexGroup(text, /body:\s*\{\s*'message':\s*'([^']+)'/) ||
+    firstRegexGroup(text, /'error':\s*\{\s*'message':\s*'([^']+)'/) ||
+    firstRegexGroup(text, /"error":\s*\{\s*"message":\s*"([^"]+)"/);
+  const title = [
+    "API request failed",
+    status.length > 0 ? `(${status})` : "",
+    model.length > 0 ? `- ${model}` : "",
+  ].filter(Boolean).join(" ");
+  return [title, errorMessage].filter((line) => line.trim().length > 0).join("\n\n");
+}
+
+function firstRegexGroup(text: string, pattern: RegExp): string {
+  return pattern.exec(text)?.[1]?.trim() ?? "";
 }
 
 function contentPartThinking(part: ContentPart): TimelineThinkingPart | null {
@@ -1259,11 +1314,12 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   }
   if (kind === "tool-return") {
     const content = "content" in part ? part.content ?? null : null;
+    const error = toolReturnIsError(part, content);
     return {
       action: "",
-      body: jsonValueText(content),
+      body: toolReturnBody(content, error),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
-      error: toolReturnIsError(part, content),
+      error,
       kind: "tool",
       phase: "result",
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
@@ -1483,11 +1539,12 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
   if (!callId && !objectString(payload, "tool_name") && result === null) {
     return null;
   }
+  const error = objectBoolean(payload, "error") || jsonObjectHasFailedOk(result);
   return {
     action: "",
-    body: jsonValueText(result),
+    body: toolReturnBody(result, error),
     callId,
-    error: objectBoolean(payload, "error") || jsonObjectHasFailedOk(result),
+    error,
     kind: "tool",
     phase: "result",
     toolName,
@@ -1606,6 +1663,28 @@ function rowCopyText(parts: TimelineRenderPart[]): string {
     .join("\n\n");
 }
 
+function timelineRowHasRenderableContent(row: TimelineRow): boolean {
+  return (
+    row.roundMarker !== null ||
+    row.parts.length > 0 ||
+    row.text.trim().length > 0
+  );
+}
+
+function shouldShowRoleLabel(row: TimelineRow): boolean {
+  if (row.source !== "runtime" || timelineRowIsToolOnly(row)) {
+    return false;
+  }
+  const normalized = normalizedRole(row.role);
+  return (
+    normalized.length > 0 &&
+    normalized !== "user" &&
+    normalized !== "assistant" &&
+    normalized !== "agent" &&
+    normalized !== "mainagent"
+  );
+}
+
 function estimateRowSize(row: TimelineRow | undefined): number {
   if (row === undefined) {
     return 120;
@@ -1677,7 +1756,7 @@ function toolPhaseLabel(tool: TimelineToolPart, t: Translate): string {
 }
 
 function displayRole(role: string, t: Translate): string {
-  const normalized = role.trim().toLowerCase();
+  const normalized = normalizedRole(role);
   if (normalized === "user") {
     return t("timelineRoleUser");
   }
@@ -1688,6 +1767,10 @@ function displayRole(role: string, t: Translate): string {
     return t("timelineRoleAgent");
   }
   return role;
+}
+
+function normalizedRole(role: string): string {
+  return role.trim().toLowerCase();
 }
 
 function approvalBody({
@@ -1779,6 +1862,118 @@ function approvalDeniedLabel(action: string): string {
   return "Approval denied";
 }
 
+function toolReturnBody(value: unknown, error: boolean): string {
+  if (error) {
+    const summary = toolErrorSummary(value);
+    return summary || jsonValueText(value);
+  }
+  const summary = toolSuccessSummary(value);
+  return summary || jsonValueText(value);
+}
+
+function toolErrorSummary(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  const object = unknownJsonObject(value);
+  if (object === null) {
+    return "";
+  }
+  const lines: string[] = [];
+  appendUniqueLine(
+    lines,
+    objectString(object, "message") ||
+      objectString(object, "error_message") ||
+      objectString(object, "reason"),
+  );
+  const errorValue = object.error;
+  if (typeof errorValue === "string") {
+    appendUniqueLine(lines, errorValue);
+  }
+  const errorObject = unknownJsonObject(errorValue);
+  if (errorObject !== null) {
+    appendUniqueLine(
+      lines,
+      objectString(errorObject, "message") ||
+        objectString(errorObject, "detail") ||
+        objectString(errorObject, "reason"),
+    );
+    const errorType = objectString(errorObject, "type");
+    if (errorType.length > 0) {
+      appendUniqueLine(lines, `Type: ${errorType}`);
+    }
+    const retryable = jsonScalarText(errorObject.retryable);
+    if (retryable.length > 0) {
+      appendUniqueLine(lines, `Retryable: ${retryable}`);
+    }
+  }
+  if (lines.length === 0 && object.ok === false) {
+    return "ok: false";
+  }
+  return lines.join("\n");
+}
+
+function toolSuccessSummary(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  const object = unknownJsonObject(value);
+  if (object === null) {
+    return "";
+  }
+  if (object.ok === true && object.data !== undefined) {
+    const dataSummary = toolDataSummary(object.data);
+    return dataSummary || jsonValueText(object.data);
+  }
+  return toolDataSummary(value);
+}
+
+function toolDataSummary(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    const stringItems = value.filter((item): item is string => typeof item === "string");
+    return stringItems.length === value.length ? stringItems.join("\n").trim() : "";
+  }
+  const object = unknownJsonObject(value);
+  if (object === null) {
+    return "";
+  }
+  return (
+    objectString(object, "output_excerpt") ||
+    objectString(object, "output") ||
+    jsonStringArrayText(object.recent_output) ||
+    objectString(object, "message") ||
+    objectString(object, "status")
+  );
+}
+
+function jsonStringArrayText(value: JsonValue | undefined): string {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+  const strings = value.filter((item): item is string => typeof item === "string");
+  return strings.length === value.length ? strings.join("\n").trim() : "";
+}
+
+function appendUniqueLine(lines: string[], value: string): void {
+  const trimmed = value.trim();
+  if (trimmed.length > 0 && !lines.includes(trimmed)) {
+    lines.push(trimmed);
+  }
+}
+
+function jsonScalarText(value: JsonValue | undefined): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
+}
+
 function toolReturnIsError(
   part: ContentPart,
   content: unknown,
@@ -1812,6 +2007,13 @@ function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
     return null;
   }
   return value;
+}
+
+function unknownJsonObject(value: unknown): Record<string, JsonValue> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, JsonValue>;
 }
 
 function payloadHasParseError(payload: Record<string, JsonValue>): boolean {

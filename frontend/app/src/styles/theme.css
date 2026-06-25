@@ -3578,9 +3578,15 @@ body {
   display: flex;
   justify-content: flex-end;
   width: min(var(--at-timeline-column-width), 100%);
-  margin: 0 auto 8px;
-  padding: 2px 0;
-  background: var(--at-bg);
+  margin: 0 auto 6px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--at-border);
+  background: color-mix(in srgb, var(--at-bg) 94%, transparent);
+}
+
+.at-timeline-toolbar .ant-btn {
+  border: 1px solid var(--at-border);
+  background: var(--at-surface);
 }
 
 .at-timeline-virtual {
@@ -4078,8 +4084,10 @@ body {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+  width: min(940px, calc(100% - 40px));
   min-height: 30px;
-  padding: 4px max(20px, calc((100% - 940px) / 2));
+  margin: 0 auto;
+  padding: 4px 0;
   background: var(--at-bg);
   color: var(--at-text-muted);
 }
@@ -5868,7 +5876,9 @@ body {
     flex-wrap: wrap;
     justify-content: flex-start;
     gap: 6px;
+    width: auto;
     min-height: auto;
+    margin: 0;
     padding: 6px 14px;
   }
 

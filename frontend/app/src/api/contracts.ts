@@ -1157,6 +1157,11 @@ export interface LegacyContentTextPart {
   content: string;
 }
 
+export interface LegacyUserPromptContentPart {
+  part_kind: "user-prompt";
+  content?: string;
+}
+
 export interface LegacyContentMediaRefPart {
   part_kind: "media_ref";
   url?: string;
@@ -1269,6 +1274,7 @@ export type ContentPart =
   | InlineMediaPart
   | LegacyContentTextPart
   | LegacyContentMediaRefPart
+  | LegacyUserPromptContentPart
   | LegacyThinkingContentPart
   | LegacyToolCallContentPart
   | LegacyToolReturnContentPart

@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import { Composer } from "../composer/Composer";
 import { RecoveryBar } from "../recovery/RecoveryBar";
 import { MessageTimeline } from "../timeline/MessageTimeline";
@@ -15,6 +17,16 @@ export function ChatWorkspace({
   runStreamController,
   sessionId,
 }: ChatWorkspaceProps) {
+  const previousSessionIdRef = useRef(sessionId);
+
+  useEffect(() => {
+    if (previousSessionIdRef.current === sessionId) {
+      return;
+    }
+    previousSessionIdRef.current = sessionId;
+    runStreamController.clearRunStream();
+  }, [runStreamController, sessionId]);
+
   return (
     <div className="at-chat-view">
       <RecoveryBar

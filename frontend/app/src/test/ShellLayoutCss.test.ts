@@ -39,7 +39,7 @@ describe("shell layout CSS", () => {
   it("keeps the timeline reading column narrower than the composer", () => {
     expect(themeCss).toMatch(/--at-timeline-column-width:\s*760px;/);
     expect(themeCss).toMatch(
-      /\.at-timeline-toolbar\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?margin:\s*0 auto 8px;/,
+      /\.at-timeline-toolbar\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?margin:\s*0 auto 6px;[\s\S]*?border-bottom:\s*1px solid var\(--at-border\);/,
     );
     expect(themeCss).toMatch(
       /\.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?margin:\s*0 auto;/,

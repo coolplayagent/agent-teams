@@ -61,6 +61,21 @@ describe("MessageTimeline", () => {
     ).not.toBeNull();
   });
 
+  it("does not render entry type fallbacks for empty persisted messages", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        entry_type: "message",
+        message_id: "empty-user-message",
+        role: "user",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(screen.queryByText("message")).not.toBeInTheDocument();
+  });
+
   it("copies the latest non-user answer", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -352,6 +367,56 @@ describe("MessageTimeline", () => {
     );
   });
 
+  it("renders user prompt parts without injected skill candidate text", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: [
+                "Actual user prompt",
+                "",
+                "## Skill Candidates",
+                "- hidden: internal routing text",
+              ].join("\n"),
+              part_kind: "user-prompt",
+            },
+          ],
+        },
+        message_id: "user-prompt",
+        role: "user",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Actual user prompt")).toBeVisible();
+    expect(screen.queryByText("## Skill Candidates")).not.toBeInTheDocument();
+    expect(screen.queryByText(/hidden: internal routing text/)).not.toBeInTheDocument();
+    expect(screen.queryByText("message")).not.toBeInTheDocument();
+  });
+
+  it("compacts provider API error bodies in assistant messages", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: [
+          "The request could not be completed because of an API or execution error.",
+          "Details: status_code: 400, model_name: deepseek-v4-flash, body: {'message': 'The reasoning_content in the thinking mode must be passed back to the API.', 'type': 'invalid_request_error'}",
+          "Root cause: Error code: 400 - {'error': {'message': 'The reasoning_content in the thinking mode must be passed back to the API.'}}",
+        ].join(" "),
+        message_id: "assistant-api-error",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText(/API request failed \(400\) - deepseek-v4-flash/)).toBeVisible();
+    expect(screen.getByText(/reasoning_content in the thinking mode/)).toBeVisible();
+    expect(screen.queryByText(/Root cause/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/invalid_request_error/)).not.toBeInTheDocument();
+  });
+
   it("renders tool calls, results, and validation failures from message parts", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -397,6 +462,48 @@ describe("MessageTimeline", () => {
     expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
   });
 
+  it("unwraps successful tool return envelopes to the useful output", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: {
+                data: {
+                  output_excerpt: "tests/integration_tests/frontend/test_a.py::test_ok",
+                  recent_output: ["ignored fallback"],
+                  status: "completed",
+                },
+                error: null,
+                meta: { duration_ms: 42 },
+                ok: true,
+              },
+              part_kind: "tool-return",
+              tool_call_id: "tool-1",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "assistant-success-tool",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    const resultTitle = await screen.findByText("Tool result: shell");
+    expect(resultTitle).toBeVisible();
+    expect(screen.getByText(/tests\/integration_tests\/frontend\/test_a.py::test_ok/)).not.toBeVisible();
+    expect(screen.queryByText(/"ok": true/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/duration_ms/)).not.toBeInTheDocument();
+
+    fireEvent.click(resultTitle);
+
+    expect(screen.getByText(/tests\/integration_tests\/frontend\/test_a.py::test_ok/)).toBeVisible();
+    expect(screen.queryByText(/"ok": true/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/duration_ms/)).not.toBeInTheDocument();
+  });
+
   it("marks failed persisted tool returns as tool errors", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -422,6 +529,20 @@ describe("MessageTimeline", () => {
               tool_call_id: "tool-3",
               tool_name: "execute_command",
             },
+            {
+              content: {
+                data: null,
+                error: {
+                  message: "File not found: .",
+                  retryable: false,
+                  type: "validation_error",
+                },
+                ok: false,
+              },
+              part_kind: "tool-return",
+              tool_call_id: "tool-4",
+              tool_name: "read",
+            },
           ],
         },
         message_id: "assistant-failed-tools",
@@ -432,16 +553,27 @@ describe("MessageTimeline", () => {
     renderTimeline();
 
     const errorTitles = await screen.findAllByText("Tool error: execute_command");
+    const readErrorTitle = await screen.findByText("Tool error: read");
     expect(errorTitles).toHaveLength(3);
+    expect(readErrorTitle).toBeVisible();
     expect(screen.getByText("explicit tool failure")).not.toBeVisible();
     expect(screen.getByText("denied by policy")).not.toBeVisible();
-    expect(screen.getByText(/"ok": false/)).not.toBeVisible();
-    expect(screen.getByText(/"error": "cd failed"/)).not.toBeVisible();
+    expect(screen.getByText("cd failed")).not.toBeVisible();
+    expect(screen.getByText(/File not found/)).not.toBeVisible();
+    expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"error": "cd failed"/)).not.toBeInTheDocument();
 
     fireEvent.click(errorTitles[2]);
 
-    expect(screen.getByText(/"ok": false/)).toBeVisible();
-    expect(screen.getByText(/"error": "cd failed"/)).toBeVisible();
+    expect(screen.getByText("cd failed")).toBeVisible();
+    expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"error": "cd failed"/)).not.toBeInTheDocument();
+
+    fireEvent.click(readErrorTitle);
+
+    expect(screen.getByText(/File not found/)).toBeVisible();
+    expect(screen.getByText(/Type: validation_error/)).toBeVisible();
+    expect(screen.getByText(/Retryable: false/)).toBeVisible();
   });
 
   it("renders runtime tool approval requests and resolved decisions", async () => {
@@ -1334,8 +1466,9 @@ describe("MessageTimeline", () => {
       screen.getByText(/Input validation failed before tool execution/),
     ).not.toBeVisible();
     expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
-    expect(screen.getByText(/"ok": false/)).not.toBeVisible();
-    expect(screen.getByText(/"error": "command failed"/)).not.toBeVisible();
+    expect(screen.getByText(/command failed/)).not.toBeVisible();
+    expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"error": "command failed"/)).not.toBeInTheDocument();
     expect(screen.getByText(/cmd is required/)).not.toBeVisible();
 
     fireEvent.click(screen.getByText("Tool validation: execute_command"));

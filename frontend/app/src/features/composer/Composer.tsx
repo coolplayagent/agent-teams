@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   createRun,
+  getCommandCatalog,
   getGeneralConfig,
   getModelProfiles,
   getOrchestrationConfig,
@@ -51,7 +52,10 @@ import {
 } from "./PromptAttachments";
 import { PromptMentionMenu } from "./PromptMentionMenu";
 import {
+  applyPromptCommandOption,
+  findPromptCommandMentionOptions,
   findLeadingRoleMentionOptions,
+  getPromptCommandContext,
   parseLeadingRoleMention,
   type LeadingRoleMention,
   type PromptMentionOption,
@@ -150,6 +154,19 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     queryFn: getOrchestrationConfig,
     staleTime: 30000,
   });
+  const promptCommandContext = useMemo(
+    () =>
+      activeRunId === null && dismissedMentionDraft !== draft
+        ? getPromptCommandContext(draft)
+        : null,
+    [activeRunId, dismissedMentionDraft, draft],
+  );
+  const commandCatalogQuery = useQuery({
+    queryKey: ["commands", "catalog", "composer"],
+    queryFn: getCommandCatalog,
+    enabled: promptCommandContext !== null,
+    staleTime: 30000,
+  });
   const roleOptions = useMemo(
     () =>
       (roleOptionsQuery.data?.normal_mode_roles ?? []).map((role) => ({
@@ -204,6 +221,23 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         : [],
     [activeRunId, dismissedMentionDraft, draft, roleOptionsQuery.data],
   );
+  const commandMentionOptions = useMemo(
+    () =>
+      promptCommandContext === null
+        ? []
+        : findPromptCommandMentionOptions(
+            commandCatalogQuery.data,
+            sessionQuery.data?.workspace_id,
+            promptCommandContext.query,
+          ),
+    [
+      commandCatalogQuery.data,
+      promptCommandContext,
+      sessionQuery.data?.workspace_id,
+    ],
+  );
+  const promptMentionOptions =
+    promptCommandContext === null ? leadingMentionOptions : commandMentionOptions;
   const effectiveTargetRoleId = leadingRoleMention.roleId ?? targetRoleId;
   const effectivePromptText =
     leadingRoleMention.roleId === null ? draft.trim() : leadingRoleMention.promptText;
@@ -235,7 +269,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
 
   useEffect(() => {
     setActiveMentionIndex(0);
-  }, [leadingMentionOptions.length]);
+  }, [promptMentionOptions.length]);
 
   const createRunMutation = useMutation({
     mutationFn: async () => {
@@ -400,7 +434,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     !busy &&
     !draftValidationMessage &&
     !attachmentValidationMessage &&
-    (leadingMentionOptions.length === 0 || leadingRoleMention.roleId !== null);
+    (promptCommandContext !== null ||
+      leadingMentionOptions.length === 0 ||
+      leadingRoleMention.roleId !== null);
   const canInject =
     activeRunId !== null &&
     draft.trim().length > 0 &&
@@ -476,7 +512,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         <PromptMentionMenu
           activeIndex={activeMentionIndex}
           onSelect={selectPromptMentionOption}
-          options={leadingMentionOptions}
+          options={promptMentionOptions}
         />
         <PromptAttachments
           attachments={promptAttachments}
@@ -760,22 +796,22 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   }
 
   function handlePromptKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (leadingMentionOptions.length === 0) {
+    if (promptMentionOptions.length === 0) {
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const direction = event.key === "ArrowDown" ? 1 : -1;
       setActiveMentionIndex((current) =>
-        wrapIndex(current + direction, leadingMentionOptions.length),
+        wrapIndex(current + direction, promptMentionOptions.length),
       );
       return;
     }
     if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
       selectPromptMentionOption(
-        leadingMentionOptions[
-          Math.min(activeMentionIndex, leadingMentionOptions.length - 1)
+        promptMentionOptions[
+          Math.min(activeMentionIndex, promptMentionOptions.length - 1)
         ],
       );
       return;
@@ -790,7 +826,16 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     if (option === undefined) {
       return;
     }
-    setDraft(`@${option.insertTerm} `);
+    if (option.kind === "command") {
+      setDraft((currentDraft) => {
+        const context = promptCommandContext ?? getPromptCommandContext(currentDraft);
+        return context === null
+          ? currentDraft
+          : applyPromptCommandOption(currentDraft, context, option);
+      });
+    } else {
+      setDraft(`@${option.insertTerm} `);
+    }
     setDismissedMentionDraft("");
     inputRef.current?.focus();
   }

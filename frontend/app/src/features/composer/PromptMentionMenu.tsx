@@ -15,7 +15,7 @@ export function PromptMentionMenu({
     return null;
   }
   return (
-    <div aria-label="Role mention suggestions" className="at-prompt-mention-menu">
+    <div aria-label="Prompt suggestions" className="at-prompt-mention-menu">
       <div className="at-prompt-mention-menu-list" role="listbox">
         {options.map((option, index) => (
           <button
@@ -25,7 +25,7 @@ export function PromptMentionMenu({
                 ? "at-prompt-mention-item is-active"
                 : "at-prompt-mention-item"
             }
-            key={option.roleId}
+            key={promptMentionOptionKey(option)}
             onMouseDown={(event) => {
               event.preventDefault();
               onSelect(option);
@@ -33,7 +33,10 @@ export function PromptMentionMenu({
             role="option"
             type="button"
           >
-            <span className="at-prompt-mention-name">@{option.displayName}</span>
+            <span className="at-prompt-mention-name">
+              {option.kind === "command" ? "/" : "@"}
+              {option.displayName}
+            </span>
             {option.description ? (
               <span className="at-prompt-mention-description">
                 {option.description}
@@ -44,4 +47,10 @@ export function PromptMentionMenu({
       </div>
     </div>
   );
+}
+
+function promptMentionOptionKey(option: PromptMentionOption): string {
+  return option.kind === "command"
+    ? `command:${option.commandName}`
+    : `role:${option.roleId}`;
 }

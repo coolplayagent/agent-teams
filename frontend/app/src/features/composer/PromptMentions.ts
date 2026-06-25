@@ -1,4 +1,9 @@
-import type { RoleConfigOptions, RoleOption } from "../../api/contracts";
+import type {
+  CommandCatalogResponse,
+  CommandDetail,
+  RoleConfigOptions,
+  RoleOption,
+} from "../../api/contracts";
 
 export interface LeadingRoleMention {
   error: string;
@@ -12,15 +17,29 @@ interface MentionCandidate {
   term: string;
 }
 
-export interface PromptMentionOption {
+export interface PromptRoleMentionOption {
   aliases: string[];
+  kind: "role";
   description: string;
   displayName: string;
   insertTerm: string;
   roleId: string;
 }
 
-interface InternalPromptMentionOption extends PromptMentionOption {
+export interface PromptCommandMentionOption {
+  aliases: string[];
+  commandName: string;
+  description: string;
+  displayName: string;
+  insertTerm: string;
+  kind: "command";
+}
+
+export type PromptMentionOption =
+  | PromptCommandMentionOption
+  | PromptRoleMentionOption;
+
+interface InternalPromptRoleMentionOption extends PromptRoleMentionOption {
   aliasSet: Set<string>;
 }
 
@@ -72,7 +91,7 @@ export function startsWithPromptMention(value: string): boolean {
 export function findLeadingRoleMentionOptions(
   text: string,
   roleOptions: RoleConfigOptions | undefined,
-): PromptMentionOption[] {
+): PromptRoleMentionOption[] {
   const query = leadingMentionQuery(text);
   if (query === null) {
     return [];
@@ -129,11 +148,67 @@ function listMentionableRoleCandidates(
   return entries;
 }
 
+export interface PromptCommandContext {
+  end: number;
+  query: string;
+  start: number;
+}
+
+export function getPromptCommandContext(text: string): PromptCommandContext | null {
+  const source = String(text ?? "");
+  const beforeCursor = source;
+  const commandTokenMatch = beforeCursor.match(/(^|\s)\/([^\s]*)$/);
+  if (commandTokenMatch === null) {
+    return null;
+  }
+  const query = commandTokenMatch[2]?.trim() ?? "";
+  const start = beforeCursor.length - query.length - 1;
+  return { end: source.length, query, start };
+}
+
+export function applyPromptCommandOption(
+  text: string,
+  context: PromptCommandContext,
+  option: PromptCommandMentionOption,
+): string {
+  const before = text.slice(0, context.start);
+  const after = text.slice(context.end);
+  const tail = after ? (after.startsWith(" ") ? after : ` ${after}`) : " ";
+  return `${before}/${option.insertTerm}${tail}`;
+}
+
+export function findPromptCommandMentionOptions(
+  catalog: CommandCatalogResponse | undefined,
+  workspaceId: string | null | undefined,
+  query: string,
+): PromptCommandMentionOption[] {
+  const safeWorkspaceId = normalizeRoleId(workspaceId);
+  const commands = [
+    ...(catalog?.app_commands ?? []),
+    ...(catalog?.workspaces ?? [])
+      .filter((workspace) => workspace.workspace_id === safeWorkspaceId)
+      .flatMap((workspace) => workspace.commands ?? []),
+  ];
+  return commands
+    .map((command, index) => {
+      const option = commandMentionOption(command);
+      return {
+        index,
+        option,
+        score: mentionOptionScore(option, query),
+      };
+    })
+    .filter((item) => item.score < Number.POSITIVE_INFINITY)
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .slice(0, 10)
+    .map((item) => item.option);
+}
+
 function listMentionableRoleOptions(
   roleOptions: RoleConfigOptions | undefined,
-): PromptMentionOption[] {
-  const entries: InternalPromptMentionOption[] = [];
-  const byRoleId = new Map<string, InternalPromptMentionOption>();
+): PromptRoleMentionOption[] {
+  const entries: InternalPromptRoleMentionOption[] = [];
+  const byRoleId = new Map<string, InternalPromptRoleMentionOption>();
   const upsertOption = (
     roleId: string | undefined,
     displayName: string | undefined,
@@ -171,6 +246,7 @@ function listMentionableRoleOptions(
       description: description.trim(),
       displayName: safeDisplayName,
       insertTerm: safeDisplayName,
+      kind: "role" as const,
       roleId: safeRoleId,
     };
     byRoleId.set(safeRoleId, entry);
@@ -204,18 +280,34 @@ function leadingMentionQuery(text: string): string | null {
   return match === null ? null : match[1]?.trim().toLowerCase() ?? "";
 }
 
+function commandMentionOption(command: CommandDetail): PromptCommandMentionOption {
+  const name = normalizeRoleId(command.name);
+  const insertTerm = name.startsWith("/") ? name.slice(1) : name;
+  return {
+    aliases: [name, insertTerm, ...(command.aliases ?? [])]
+      .map(normalizeRoleId)
+      .filter(Boolean),
+    commandName: name,
+    description: command.description?.trim() ?? "",
+    displayName: name,
+    insertTerm,
+    kind: "command",
+  };
+}
+
 function mentionOptionScore(option: PromptMentionOption, query: string): number {
-  if (!query) {
+  const safeQuery = normalizeRoleId(query).toLowerCase();
+  if (!safeQuery) {
     return 0;
   }
   const aliases = option.aliases.map((alias) => alias.toLowerCase());
-  if (aliases.some((alias) => alias === query)) {
+  if (aliases.some((alias) => alias === safeQuery)) {
     return 0;
   }
-  if (aliases.some((alias) => alias.startsWith(query))) {
+  if (aliases.some((alias) => alias.startsWith(safeQuery))) {
     return 1;
   }
-  if (aliases.some((alias) => alias.includes(query))) {
+  if (aliases.some((alias) => alias.includes(safeQuery))) {
     return 2;
   }
   return Number.POSITIVE_INFINITY;

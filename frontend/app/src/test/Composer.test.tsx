@@ -6,6 +6,7 @@ import type { ClipboardEventHandler, KeyboardEventHandler, ReactNode } from "rea
 
 import {
   createRun,
+  getCommandCatalog,
   getGeneralConfig,
   getModelProfiles,
   getOrchestrationConfig,
@@ -57,6 +58,7 @@ vi.mock("@ant-design/x", () => ({
 
 vi.mock("../api/client", () => ({
   createRun: vi.fn(),
+  getCommandCatalog: vi.fn(),
   getGeneralConfig: vi.fn(),
   getModelProfiles: vi.fn(),
   getOrchestrationConfig: vi.fn(),
@@ -77,6 +79,7 @@ vi.mock("../api/speech", () => ({
 const createRunMock = vi.mocked(createRun);
 const createSpeechSttWebSocketUrlMock = vi.mocked(createSpeechSttWebSocketUrl);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
+const getCommandCatalogMock = vi.mocked(getCommandCatalog);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
@@ -119,6 +122,10 @@ beforeEach(() => {
   getOrchestrationConfigMock.mockResolvedValue({
     default_orchestration_preset_id: "team",
     presets: [{ preset_id: "team", name: "Team" }],
+  });
+  getCommandCatalogMock.mockResolvedValue({
+    app_commands: [],
+    workspaces: [],
   });
   resolveCommandPromptMock.mockResolvedValue({
     matched: false,
@@ -308,6 +315,51 @@ describe("Composer", () => {
         }),
       ),
     );
+  });
+
+  it("shows slash command suggestions from the command catalog", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [],
+      workspaces: [
+        {
+          workspace_id: "workspace-1",
+          root_path: "C:/work/agent-teams",
+          commands: [
+            {
+              aliases: ["rev"],
+              allowed_modes: ["normal"],
+              argument_hint: "<path>",
+              description: "Review a workspace file",
+              discovery_source: "project_codex",
+              name: "review",
+              scope: "project",
+              source_path: "C:/work/agent-teams/.codex/commands/review.md",
+              template: "Review {{args}}",
+            },
+          ],
+        },
+      ],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/rev" } });
+
+    const optionName = await screen.findByText("/review");
+    expect(optionName).toBeVisible();
+    expect(screen.getByText("Review a workspace file")).toBeVisible();
+    const optionButton = optionName.closest("button");
+    if (optionButton === null) {
+      throw new Error("Slash command option button was not rendered.");
+    }
+    fireEvent.mouseDown(optionButton);
+
+    expect(prompt).toHaveValue("/review ");
+    expect(createRunMock).not.toHaveBeenCalled();
   });
 
   it("uses a leading role mention as the run target and strips it from prompt text", async () => {

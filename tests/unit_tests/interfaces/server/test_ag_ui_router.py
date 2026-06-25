@@ -403,10 +403,26 @@ def test_multiplex_stream_formats_events_and_uses_last_event_id_default() -> Non
     )
 
     assert response.status_code == 200
-    assert run_service.multiplex_stream_calls == [(("run-1", 7), ("run-2", 11))]
+    assert run_service.multiplex_stream_calls == [(("run-1", 11), ("run-2", 11))]
     assert "event: run.completed\n" in response.text
     assert '"run_id":"run-1"' in response.text
-    assert '"event_id":8' in response.text
+    assert '"event_id":12' in response.text
+    assert '"run_id":"run-2"' in response.text
+    assert '"event_id":12' in response.text
+
+
+def test_multiplex_stream_keeps_newer_per_run_query_offsets() -> None:
+    client, run_service, _session_service = _create_client()
+
+    response = client.get(
+        "/api/ag-ui/runs/events?run_id=run-1&run_id=run-2&after_event_id=14",
+        headers={"Last-Event-ID": "11"},
+    )
+
+    assert response.status_code == 200
+    assert run_service.multiplex_stream_calls == [(("run-1", 14), ("run-2", 11))]
+    assert '"run_id":"run-1"' in response.text
+    assert '"event_id":15' in response.text
     assert '"run_id":"run-2"' in response.text
     assert '"event_id":12' in response.text
 

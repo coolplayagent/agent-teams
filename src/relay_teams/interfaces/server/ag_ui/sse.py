@@ -82,6 +82,7 @@ def normalize_multiplex_run_offsets(
                 status_code=422,
                 detail="after_event_id must be greater than or equal to 0",
             )
+        after_event_id = max(after_event_id, default_after_event_id)
         if run_id not in offsets_by_run_id:
             ordered_run_ids.append(run_id)
             offsets_by_run_id[run_id] = after_event_id

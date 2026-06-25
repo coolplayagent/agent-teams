@@ -56,7 +56,9 @@ _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
 _RICH_REPLAY_TOKEN_SUMMARY = "Token usage: Total 18 · Input 11 · Output 7"
 _RICH_REPLAY_MODEL_STEP = "model step replay visible"
 _RICH_REPLAY_STATE_SNAPSHOT = "state snapshot replay visible"
+_RICH_REPLAY_STATE_SNAPSHOT_SUMMARY = f"State snapshot: {_RICH_REPLAY_STATE_SNAPSHOT}"
 _RICH_REPLAY_STATE_DELTA = "state delta replay visible"
+_RICH_REPLAY_STATE_DELTA_SUMMARY = f"State delta: {_RICH_REPLAY_STATE_DELTA}"
 _RICH_REPLAY_TODO_CURRENT = "verify rich replay todos"
 _RICH_REPLAY_TODO_SUMMARY = (
     "Todo updated: 3 items · 1 completed, 1 in_progress, 1 pending · "
@@ -531,10 +533,10 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         expect(page.get_by_text(f"{_RICH_REPLAY_MODEL_STEP} finished")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text(_RICH_REPLAY_STATE_SNAPSHOT)).to_be_visible(
+        expect(page.get_by_text(_RICH_REPLAY_STATE_SNAPSHOT_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        expect(page.get_by_text(_RICH_REPLAY_STATE_DELTA)).to_be_visible(
+        expect(page.get_by_text(_RICH_REPLAY_STATE_DELTA_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         expect(page.get_by_text(_RICH_REPLAY_TODO_SUMMARY)).to_be_visible(

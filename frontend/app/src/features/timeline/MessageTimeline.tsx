@@ -1191,6 +1191,9 @@ function runtimeStructuredEventText(entry: TimelineEntry): string | null {
   if (entry.kind === "token_usage") {
     return runtimeTokenUsageText(entry);
   }
+  if (entry.kind === "state_snapshot" || entry.kind === "state_delta") {
+    return runtimeStateEventText(entry);
+  }
   if (entry.kind === "todo_updated") {
     return runtimeTodoUpdatedText(entry);
   }
@@ -1218,6 +1221,38 @@ function runtimeTokenUsageText(entry: TimelineEntry): string | null {
     return null;
   }
   return `Token usage: ${parts.join(" · ")}`;
+}
+
+function runtimeStateEventText(entry: TimelineEntry): string | null {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return null;
+  }
+  const summary = runtimePayloadSummary(payload);
+  if (summary.length === 0) {
+    return null;
+  }
+  const label = entry.kind === "state_snapshot" ? "State snapshot" : "State delta";
+  return `${label}: ${summary}`;
+}
+
+function runtimePayloadSummary(payload: Record<string, JsonValue>): string {
+  return objectString(payload, "summary")
+    || objectString(payload, "title")
+    || objectString(payload, "message")
+    || objectString(payload, "status")
+    || runtimeScalarFieldSummary(payload)
+    || truncatePreview(firstNonEmptyLine(jsonValueText(payload)));
+}
+
+function runtimeScalarFieldSummary(payload: Record<string, JsonValue>): string {
+  return Object.entries(payload)
+    .flatMap(([key, value]) => {
+      const text = jsonScalarText(value);
+      return text.length > 0 ? [`${key}: ${text}`] : [];
+    })
+    .slice(0, 3)
+    .join(" · ");
 }
 
 function runtimeTodoUpdatedText(entry: TimelineEntry): string | null {

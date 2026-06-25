@@ -1856,6 +1856,41 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("token usage")).not.toBeInTheDocument();
   });
 
+  it("renders runtime state events as labelled state summaries", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-state:1:0",
+        kind: "state_snapshot",
+        text: "state snapshot",
+        eventId: 1,
+        payload: { title: "workspace context loaded" },
+      }),
+      runtimeGenericEntry({
+        id: "run-state:2:1",
+        kind: "state_delta",
+        text: "state delta",
+        eventId: 2,
+        payload: {
+          active: true,
+          phase: "replaying",
+          version: 12,
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText("State snapshot: workspace context loaded"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("State delta: active: true · phase: replaying · version: 12"),
+    ).toBeVisible();
+    expect(screen.queryByText("state snapshot")).not.toBeInTheDocument();
+    expect(screen.queryByText("state delta")).not.toBeInTheDocument();
+  });
+
   it("renders runtime todo update events as compact todo summaries", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({

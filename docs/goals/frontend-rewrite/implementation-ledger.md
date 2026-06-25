@@ -2382,3 +2382,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, built-app browser replay, and targeted static verification completed for this todo replay slice. No Message Timeline, AG-UI Runtime Stream, or Rounds/Todos subsystem completion is claimed.
+
+## 2026-06-25 V2 Timeline State Replay Summary Batch
+
+### Scope
+- Re-checked the Message Timeline and AG-UI Runtime Stream checklist after the todo replay slice, focusing on `state_snapshot` and `state_delta` replay readability instead of continuing only todo-specific work.
+- Added labelled timeline rendering for state replay events so visible history shows `State snapshot:` and `State delta:` summaries instead of unqualified protocol fallback text.
+- Kept the renderer conservative: it uses `summary`, `title`, `message`, or `status` fields first, then falls back to compact scalar field summaries or a one-line JSON preview.
+- Updated the rich interrupted-stream browser replay flow to assert the structured state summaries in the built `/app/` UI.
+- Refreshed `frontend/dist/app` for the timeline replay rendering change.
+- Kept this as targeted Message Timeline and AG-UI Runtime Stream state-event evidence only; full Message Timeline, AG-UI Runtime Stream, recovery semantics, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 51 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k interrupted_stream_preserves_non_text_events_after_reconnect` passed with 1 test.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` reported 1 file already formatted after one formatting pass.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors, 0 warnings, and 0 notes.
+- No screenshot was captured because this batch changes replay text rendering, not layout. The visible behavior is covered by the browser rich replay assertion against the built `/app/` bundle.
+
+### Reviewer
+- Main-agent component, built-app browser replay, and targeted static verification completed for this state replay slice. No Message Timeline or AG-UI Runtime Stream subsystem completion is claimed.

@@ -23,6 +23,7 @@ let backendStatus: DesktopBackendStatus = {
 let appQuitting = false;
 const desktopAutoQuitAfterReadyEnv = "AGENT_TEAMS_DESKTOP_AUTO_QUIT_AFTER_READY_MS";
 const desktopAutoQuitTraceEnv = "AGENT_TEAMS_DESKTOP_AUTO_QUIT_TRACE";
+const desktopOpenExternalLogEnv = "AGENT_TEAMS_DESKTOP_OPEN_EXTERNAL_LOG";
 
 app.whenReady().then(() => {
   registerIpcHandlers();
@@ -212,7 +213,13 @@ function setBackendStatus(status: DesktopBackendStatus): void {
 }
 
 async function openExternalUrl(url: string): Promise<void> {
-  await shell.openExternal(normalizeExternalHttpUrl(url));
+  const normalizedUrl = normalizeExternalHttpUrl(url);
+  const externalLogPath = process.env[desktopOpenExternalLogEnv]?.trim();
+  if (externalLogPath !== undefined && externalLogPath !== "") {
+    appendFileSync(externalLogPath, `${normalizedUrl}\n`, { encoding: "utf-8" });
+    return;
+  }
+  await shell.openExternal(normalizedUrl);
 }
 
 function loadingDocumentUrl(plan: DesktopBackendPlan): string {

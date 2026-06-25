@@ -1970,3 +1970,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent Electron managed lifecycle verification completed for this slice. No Desktop subsystem completion is claimed.
+
+## 2026-06-25 V2 Electron Open External Boundary Batch
+
+### Scope
+- Re-checked the Desktop checklist after the managed backend lifecycle pass and targeted the remaining open-external preload/main boundary evidence.
+- Added a desktop main-process open-external log hook for Electron smoke tests so the test can prove calls cross the sandboxed renderer, preload bridge, and main-process URL normalization path without launching an external browser.
+- Extended the Electron smoke coverage to call `window.agentTeamsDesktop.openExternal(...)` from the real sandboxed renderer, verify the main process records the normalized `https:` URL, and verify `file:` URLs are rejected through the same IPC path.
+- Strengthened the renderer smoke by asserting the preload `getVersion()` API returns a non-empty app version value, rather than only checking that the key exists.
+- Left Desktop completion open; remaining work still includes app version display decision/sign-off and reviewer sign-off for the overall desktop subsystem.
+
+### Verification
+- `npm run desktop:build` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py::test_v2_electron_open_external_uses_preload_main_boundary` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 4 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 0 errors.
+- `npm test -- src/test/desktopBackendPlan.test.ts src/test/desktopSecurity.test.ts` passed with 9 tests.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent Electron open-external boundary verification completed for this slice. No Desktop subsystem completion is claimed.

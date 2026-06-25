@@ -94,6 +94,12 @@ def test_v2_electron_loads_renderer_with_isolated_preload() -> None:
                 assert page.evaluate("() => typeof window.require") == "undefined"
                 assert page.evaluate("() => typeof window.process") == "undefined"
 
+                app_version = cast(
+                    str,
+                    page.evaluate("() => window.agentTeamsDesktop.getVersion()"),
+                )
+                assert app_version.strip()
+
                 backend_status = cast(
                     dict[str, object],
                     page.evaluate("() => window.agentTeamsDesktop.getBackendStatus()"),
@@ -152,6 +158,64 @@ def test_v2_electron_shows_backend_startup_failure() -> None:
                     repo_root,
                     page,
                     "v2-electron-startup-failed.png",
+                )
+        finally:
+            _stop_electron(process)
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") and not os.environ.get("DISPLAY"),
+    reason="Electron smoke test requires a graphical desktop session.",
+)
+def test_v2_electron_open_external_uses_preload_main_boundary() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    electron = _electron_executable(repo_root)
+    if not electron.exists():
+        pytest.skip(f"Electron executable is not installed: {electron}")
+
+    external_log = repo_root / ".tmp" / "frontend-v2-desktop" / "open-external.log"
+    if external_log.exists():
+        external_log.unlink()
+
+    with _serve_desktop_backend(repo_root, healthy=True) as backend_url:
+        process, debug_port = _launch_electron(
+            repo_root,
+            electron,
+            backend_url,
+            extra_env={"AGENT_TEAMS_DESKTOP_OPEN_EXTERNAL_LOG": str(external_log)},
+        )
+        try:
+            with _connect_to_electron_page(debug_port) as page:
+                page.wait_for_url(f"{backend_url}/app/", timeout=_WAIT_TIMEOUT_MS)
+                page.evaluate(
+                    """async () => {
+                        await window.agentTeamsDesktop.openExternal(
+                            "https://example.com/docs?source=electron#v2",
+                        );
+                    }""",
+                )
+                assert "https://example.com/docs?source=electron#v2" in _wait_for_text(
+                    external_log, "https://example.com/docs"
+                )
+
+                invalid_result = cast(
+                    str,
+                    page.evaluate(
+                        """async () => {
+                        try {
+                            await window.agentTeamsDesktop.openExternal(
+                                "file:///C:/Users/yex/token.txt",
+                            );
+                            return "resolved";
+                        } catch (error) {
+                            return error instanceof Error ? error.message : String(error);
+                        }
+                    }""",
+                    ),
+                )
+                assert (
+                    "Only http and https links can be opened externally."
+                    in invalid_result
                 )
         finally:
             _stop_electron(process)

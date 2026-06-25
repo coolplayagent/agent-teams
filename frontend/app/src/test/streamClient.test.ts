@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgUiRunEvent, RelayRunEvent } from "../runtime/events";
 import { initialRuntimeState, type RuntimeState } from "../runtime/reducers";
-import { openRunStream, type RunStreamOptions } from "../runtime/streamClient";
+import {
+  openMultiplexedRunStream,
+  openRunStream,
+  type MultiplexedRunStreamOptions,
+  type RunStreamOptions,
+} from "../runtime/streamClient";
 
 type EventSourceListener = EventListenerOrEventListenerObject;
 
@@ -207,6 +212,80 @@ describe("openRunStream", () => {
     ]);
     expect(stream.source.close).not.toHaveBeenCalled();
   });
+
+  it("opens multiplexed streams and waits for every tracked run to close", () => {
+    const stream = openTestMultiplexedStream({
+      runs: [
+        { afterEventId: 4, runId: "run-a" },
+        { afterEventId: 9, runId: "run-b" },
+      ],
+    });
+
+    expect(String(stream.source.url)).toBe(
+      "/api/ag-ui/runs/events?run_id=run-a&after_event_id=4&run_id=run-b&after_event_id=9",
+    );
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 5,
+          payload_json: JSON.stringify({ text: "run a" }),
+          run_id: "run-a",
+          trace_id: "run-a",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 10,
+          payload_json: JSON.stringify({ text: "run b" }),
+          run_id: "run-b",
+          trace_id: "run-b",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(
+        relayEvent({
+          event_id: 11,
+          event_type: "run_completed",
+          run_id: "run-a",
+          trace_id: "run-a",
+        }),
+      ),
+    );
+
+    expect(stream.source.close).not.toHaveBeenCalled();
+    expect(stream.closedStates).toHaveLength(0);
+
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(
+        relayEvent({
+          event_id: 12,
+          event_type: "run_completed",
+          run_id: "run-b",
+          trace_id: "run-b",
+        }),
+      ),
+    );
+
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].activeRunIds).toEqual([]);
+  });
+
+  it("rejects multiplexed streams without run targets", () => {
+    expect(() =>
+      openTestMultiplexedStream({
+        runs: [],
+      }),
+    ).toThrow("At least one run stream target is required.");
+  });
 });
 
 function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
@@ -233,6 +312,42 @@ function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
     onClosed: (state) => {
       closedStates.push(state);
     },
+    ...overrides,
+  });
+  return {
+    closedStates,
+    errors,
+    handle,
+    source: latestEventSource(),
+    states,
+  };
+}
+
+function openTestMultiplexedStream(
+  overrides: Partial<MultiplexedRunStreamOptions> = {},
+): {
+  closedStates: RuntimeState[];
+  errors: Array<{ kind: string; message: string }>;
+  handle: ReturnType<typeof openMultiplexedRunStream>;
+  source: MockEventSource;
+  states: RuntimeState[];
+} {
+  vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
+  const states: RuntimeState[] = [];
+  const errors: Array<{ kind: string; message: string }> = [];
+  const closedStates: RuntimeState[] = [];
+  const handle = openMultiplexedRunStream({
+    initialState: initialRuntimeState,
+    onClosed: (state) => {
+      closedStates.push(state);
+    },
+    onError: (message, kind) => {
+      errors.push({ kind, message });
+    },
+    onState: (state) => {
+      states.push(state);
+    },
+    runs: [{ afterEventId: 0, runId: "run-1" }],
     ...overrides,
   });
   return {

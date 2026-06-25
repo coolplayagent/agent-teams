@@ -17,12 +17,55 @@ export interface RunStreamOptions {
   initialState: RuntimeState;
 }
 
+export interface RunStreamTarget {
+  runId: string;
+  afterEventId: number;
+}
+
+export interface MultiplexedRunStreamOptions {
+  runs: RunStreamTarget[];
+  onState: (state: RuntimeState) => void;
+  onError: (message: string, kind: RunStreamErrorKind) => void;
+  onClosed?: (state: RuntimeState) => void;
+  initialState: RuntimeState;
+}
+
 export function openRunStream(options: RunStreamOptions): RunStreamHandle {
-  const params = new URLSearchParams();
-  params.set("after_event_id", String(Math.max(0, options.afterEventId)));
-  const source = new EventSource(
-    apiUrl(`/ag-ui/runs/${encodeURIComponent(options.runId)}/events?${params.toString()}`),
-  );
+  return openRunEventSource({
+    initialState: options.initialState,
+    onClosed: options.onClosed,
+    onError: options.onError,
+    onState: options.onState,
+    trackedRunIds: [options.runId],
+    url: runStreamUrl(options.runId, options.afterEventId),
+  });
+}
+
+export function openMultiplexedRunStream(
+  options: MultiplexedRunStreamOptions,
+): RunStreamHandle {
+  const runs = normalizeRunStreamTargets(options.runs);
+  return openRunEventSource({
+    initialState: options.initialState,
+    onClosed: options.onClosed,
+    onError: options.onError,
+    onState: options.onState,
+    trackedRunIds: runs.map((run) => run.runId),
+    url: multiplexedRunStreamUrl(runs),
+  });
+}
+
+interface RunEventSourceOptions {
+  url: string;
+  trackedRunIds: string[];
+  onState: (state: RuntimeState) => void;
+  onError: (message: string, kind: RunStreamErrorKind) => void;
+  onClosed?: (state: RuntimeState) => void;
+  initialState: RuntimeState;
+}
+
+function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
+  const source = new EventSource(apiUrl(options.url));
   let runtimeState = options.initialState;
   let didNotifyClosed = false;
   let sourceClosed = false;
@@ -60,7 +103,7 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
     }
     runtimeState = reduceRunEvent(runtimeState, parsed);
     options.onState(runtimeState);
-    if (!runtimeState.activeRunIds.includes(options.runId)) {
+    if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
       notifyClosed();
     }
   };
@@ -86,6 +129,44 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
   return {
     close: closeSource,
   };
+}
+
+function runStreamUrl(runId: string, afterEventId: number): string {
+  const params = new URLSearchParams();
+  params.set("after_event_id", String(Math.max(0, afterEventId)));
+  return `/ag-ui/runs/${encodeURIComponent(runId)}/events?${params.toString()}`;
+}
+
+function multiplexedRunStreamUrl(runs: RunStreamTarget[]): string {
+  const params = new URLSearchParams();
+  for (const run of runs) {
+    params.append("run_id", run.runId);
+    params.append("after_event_id", String(Math.max(0, run.afterEventId)));
+  }
+  return `/ag-ui/runs/events?${params.toString()}`;
+}
+
+function normalizeRunStreamTargets(runs: RunStreamTarget[]): RunStreamTarget[] {
+  const normalizedRuns = runs.map((run) => ({
+    afterEventId: Math.max(0, run.afterEventId),
+    runId: run.runId.trim(),
+  }));
+  if (normalizedRuns.length === 0) {
+    throw new Error("At least one run stream target is required.");
+  }
+  if (normalizedRuns.some((run) => run.runId.length === 0)) {
+    throw new Error("Run stream target runId cannot be blank.");
+  }
+  return normalizedRuns;
+}
+
+function trackedRunsClosed(
+  runtimeState: RuntimeState,
+  trackedRunIds: string[],
+): boolean {
+  return trackedRunIds.every(
+    (runId) => runtimeState.runs[runId]?.status === "closed",
+  );
 }
 
 function isMessageEvent(event: Event): event is MessageEvent<string> {

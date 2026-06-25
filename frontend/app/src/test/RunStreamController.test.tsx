@@ -395,6 +395,7 @@ describe("useRunStreamController", () => {
         },
       },
     });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     render(
       <QueryClientProvider client={queryClient}>
@@ -407,15 +408,24 @@ describe("useRunStreamController", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+
     const options = streamMocks.latestOptions as RunStreamOptions;
     act(() => {
       options.onError("resume failed", "server");
     });
+    const refreshCountAfterError = recoveryRefreshCallCount(invalidateSpy);
+
+    expect(refreshCountAfterError).toBe(2);
+    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+
     act(() => {
-      vi.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(10000);
     });
 
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(refreshCountAfterError);
   });
 
   it("cancels pending reconnects when the stream is cleared", () => {

@@ -102,7 +102,7 @@ export function useRunStreamController(): RunStreamController {
     }, RECOVERY_CONTINUITY_REFRESH_MS);
   };
 
-  const clearRunStream = () => {
+  const stopActiveRunStream = () => {
     streamGenerationRef.current += 1;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
@@ -110,6 +110,10 @@ export function useRunStreamController(): RunStreamController {
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
     setActiveRunIds([]);
+  };
+
+  const clearRunStream = () => {
+    stopActiveRunStream();
   };
 
   const openTrackedRunStream = (
@@ -155,7 +159,7 @@ export function useRunStreamController(): RunStreamController {
           scheduleRunStreamReconnect(options, streamGeneration, errorMessage);
           return;
         }
-        reconnectAttemptRef.current = 0;
+        stopActiveRunStream();
         void message.error(errorMessage);
       },
     };
@@ -178,12 +182,7 @@ export function useRunStreamController(): RunStreamController {
     errorMessage: string,
   ) => {
     if (reconnectAttemptRef.current >= RUN_STREAM_RECONNECT_MAX_ATTEMPTS) {
-      reconnectAttemptRef.current = 0;
-      clearReconnectTimer();
-      stopContinuityRefresh();
-      streamHandleRef.current?.close();
-      streamHandleRef.current = null;
-      setActiveRunIds([]);
+      stopActiveRunStream();
       void message.error(errorMessage);
       return;
     }

@@ -118,45 +118,41 @@ function appendTimelineEntry(
 }
 
 function shouldRenderEntry(kind: RunEventType | "message"): boolean {
-  return (
-    kind === "message" ||
-    kind === "run_started" ||
-    kind === "run_resumed" ||
-    kind === "run_paused" ||
-    kind === "text_delta" ||
-    kind === "output_delta" ||
-    kind === "thinking_started" ||
-    kind === "thinking_delta" ||
-    kind === "thinking_finished" ||
-    kind === "tool_call" ||
-    kind === "tool_input_validation_failed" ||
-    kind === "tool_result" ||
-    kind === "tool_approval_requested" ||
-    kind === "tool_approval_resolved" ||
-    kind === "user_question_requested" ||
-    kind === "user_question_answered" ||
-    kind === "background_task_started" ||
-    kind === "background_task_updated" ||
-    kind === "background_task_completed" ||
-    kind === "background_task_stopped" ||
-    kind === "todo_updated" ||
-    kind === "token_usage" ||
-    kind === "run_stopped" ||
-    kind === "run_completed" ||
-    kind === "run_failed"
-  );
+  return kind.trim().length > 0;
 }
 
 function eventText(payload: JsonValue, eventType: RunEventType): string {
   if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
-    const text = payload.text ?? payload.delta ?? payload.content ?? payload.message;
-    if (typeof text === "string") {
+    const text = firstPayloadString(payload, [
+      "text",
+      "delta",
+      "content",
+      "message",
+      "title",
+      "summary",
+      "phase",
+      "status",
+    ]);
+    if (text !== null) {
       return text;
     }
-    const toolName = payload.tool_name;
-    if (typeof toolName === "string" && toolName.trim()) {
+    const toolName = firstPayloadString(payload, ["tool_name", "name"]);
+    if (toolName !== null) {
       return toolName;
     }
   }
   return eventType.replaceAll("_", " ");
+}
+
+function firstPayloadString(
+  payload: Record<string, JsonValue>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return null;
 }

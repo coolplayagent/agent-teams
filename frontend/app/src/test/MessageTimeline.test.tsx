@@ -1391,6 +1391,64 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/Approval requested:/)).not.toBeInTheDocument();
   });
 
+  it("renders replayed runtime metadata events with fallback text", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-meta:1:0",
+        kind: "model_step_started",
+        text: "model step visible",
+        eventId: 1,
+      }),
+      runtimeGenericEntry({
+        id: "run-meta:2:1",
+        kind: "generation_progress",
+        text: "runtime setup downloading",
+        eventId: 2,
+      }),
+      runtimeGenericEntry({
+        id: "run-meta:3:2",
+        kind: "injection_applied",
+        text: "injection applied visible",
+        eventId: 3,
+      }),
+      runtimeGenericEntry({
+        id: "run-meta:4:3",
+        kind: "notification_requested",
+        text: "notification visible",
+        eventId: 4,
+      }),
+      runtimeGenericEntry({
+        id: "run-meta:5:4",
+        kind: "subagent_session_status_changed",
+        text: "subagent session visible",
+        eventId: 5,
+      }),
+      runtimeGenericEntry({
+        id: "run-meta:6:5",
+        kind: "awaiting_manual_action",
+        text: "manual action visible",
+        eventId: 6,
+      }),
+      runtimeGenericEntry({
+        id: "run-meta:7:6",
+        kind: "hook_started",
+        text: "hook event visible",
+        eventId: 7,
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("model step visible")).toBeVisible();
+    expect(screen.getByText("runtime setup downloading")).toBeVisible();
+    expect(screen.getByText("injection applied visible")).toBeVisible();
+    expect(screen.getByText("notification visible")).toBeVisible();
+    expect(screen.getByText("subagent session visible")).toBeVisible();
+    expect(screen.getByText("manual action visible")).toBeVisible();
+    expect(screen.getByText("hook event visible")).toBeVisible();
+  });
+
   it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -1809,6 +1867,32 @@ function runtimeThinkingDeltaEntry({
     kind: "thinking_delta",
     text,
     payload: { part_index: 0, text },
+    eventId,
+    occurredAt: "2026-06-23T00:00:00Z",
+  };
+}
+
+function runtimeGenericEntry({
+  id,
+  kind,
+  text,
+  eventId,
+  payload,
+}: {
+  id: string;
+  kind: TimelineEntry["kind"];
+  text: string;
+  eventId: number;
+  payload?: TimelineEntry["payload"];
+}): TimelineEntry {
+  return {
+    id,
+    sessionId: "session-1",
+    runId: "run-output",
+    roleId: "MainAgent",
+    kind,
+    text,
+    payload: payload ?? { title: text },
     eventId,
     occurredAt: "2026-06-23T00:00:00Z",
   };

@@ -71,6 +71,48 @@ describe("runtime reducers", () => {
       eventId: 12,
     });
   });
+
+  it("preserves every runtime event kind so replay cannot drop new server events", () => {
+    const eventTypes = [
+      "model_step_started",
+      "model_step_finished",
+      "generation_progress",
+      "tool_call_batch_sealed",
+      "injection_enqueued",
+      "injection_applied",
+      "notification_requested",
+      "subagent_session_status_changed",
+      "subagent_stopped",
+      "subagent_resumed",
+      "awaiting_manual_action",
+      "llm_retry_scheduled",
+      "llm_fallback_activated",
+      "runtime_guardrail_alert",
+      "hook_started",
+      "unknown_future_event",
+    ] as const;
+
+    const state = eventTypes.reduce(
+      (currentState, eventType, index) =>
+        reduceRunEvent(
+          currentState,
+          runEvent({
+            event_id: index + 1,
+            event_type: eventType,
+            payload_json: JSON.stringify({
+              title: `${eventType} visible`,
+            }),
+          }),
+        ),
+      initialRuntimeState,
+    );
+
+    const entries = state.runs["run-1"].entries;
+    expect(entries.map((entry) => entry.kind)).toEqual([...eventTypes]);
+    expect(entries.map((entry) => entry.text)).toEqual(
+      eventTypes.map((eventType) => `${eventType} visible`),
+    );
+  });
 });
 
 function runEvent(overrides: Partial<RelayRunEvent>): RelayRunEvent {

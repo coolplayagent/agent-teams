@@ -3060,4 +3060,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm test -- RecoveryBar.test.tsx` passed with 25 tests.
 
 ### Reviewer
-- Hegel reviewer P1 was reproduced from code review and fixed in this batch. No final AG-UI Runtime Stream subsystem completion is claimed yet; a follow-up reviewer pass is still required for sign-off.
+- Hegel reviewer P1 was reproduced from code review and fixed in this batch.
+- Follow-up reviewer result from Hegel subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44`: PASS for the recoverable/stopped parent background-stream P1 in commit `663e2b3b`; no blocker remains in that P1 scope.
+- No final AG-UI Runtime Stream subsystem completion is claimed from this targeted P1 pass; broader stream/replay, visual parity, subsystem reviewer sign-off, Electron readiness, and release readiness remain open.
+
+## 2026-06-26 V2 Electron Smoke Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, latest ledger, and existing Electron desktop implementation before choosing the next slice, keeping the work grounded in global V2 readiness rather than only the latest message screenshot.
+- Verified the desktop main/preload boundary currently covers external-link routing, backend status exposure, retry startup, copy diagnostics, managed backend lifecycle, and renderer isolation through the existing desktop smoke suite.
+- Inspected the Electron renderer screenshot at `.tmp/frontend-v2-desktop/v2-electron-renderer.png`; the real V2 shell loaded nonblank in desktop mode, the backend was connected, the composer was visible, and the sidebar showed the V1-aligned primary entries including Chat, Automation, Skills, Board, Search, Connectors, Memory, Observability, and Settings.
+- Kept this as desktop smoke evidence only; no sidebar/settings entries were added or removed, no renderer UI behavior was changed, and full Desktop/Electron release readiness still requires broader packaging/release validation and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 4 tests.
+- Main-agent visual inspection of `.tmp/frontend-v2-desktop/v2-electron-renderer.png` confirmed the renderer was nonblank and framed as the V2 desktop shell rather than a fallback error page.
+
+### Reviewer
+- Main-agent desktop smoke verification completed for this evidence batch. No full Desktop/Electron subsystem completion is claimed.

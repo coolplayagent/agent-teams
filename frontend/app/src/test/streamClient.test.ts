@@ -128,7 +128,7 @@ describe("openRunStream", () => {
 
     stream.source.dispatchMessage("error", JSON.stringify({ error: "resume failed" }));
 
-    expect(stream.errors).toEqual(["resume failed"]);
+    expect(stream.errors).toEqual([{ kind: "server", message: "resume failed" }]);
     expect(stream.states).toEqual([]);
   });
 
@@ -137,7 +137,9 @@ describe("openRunStream", () => {
 
     expect(() => stream.source.dispatchMessage("message.text.delta", "{bad json")).not.toThrow();
 
-    expect(stream.errors).toEqual(["Malformed run stream event."]);
+    expect(stream.errors).toEqual([
+      { kind: "malformed", message: "Malformed run stream event." },
+    ]);
     expect(stream.states).toEqual([]);
     expect(stream.source.close).not.toHaveBeenCalled();
   });
@@ -147,7 +149,9 @@ describe("openRunStream", () => {
 
     stream.source.dispatchMessage("message.text.delta", JSON.stringify({ ok: true }));
 
-    expect(stream.errors).toEqual(["Malformed run stream event."]);
+    expect(stream.errors).toEqual([
+      { kind: "malformed", message: "Malformed run stream event." },
+    ]);
     expect(stream.states).toEqual([]);
   });
 
@@ -156,20 +160,23 @@ describe("openRunStream", () => {
 
     stream.source.dispatchTransportError();
 
-    expect(stream.errors).toEqual(["Run stream disconnected."]);
+    expect(stream.errors).toEqual([
+      { kind: "transport", message: "Run stream disconnected." },
+    ]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
   });
 });
 
 function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
   closedStates: RuntimeState[];
-  errors: string[];
+  errors: Array<{ kind: string; message: string }>;
   handle: ReturnType<typeof openRunStream>;
   source: MockEventSource;
   states: RuntimeState[];
 } {
   vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
   const states: RuntimeState[] = [];
-  const errors: string[] = [];
+  const errors: Array<{ kind: string; message: string }> = [];
   const closedStates: RuntimeState[] = [];
   const handle = openRunStream({
     runId: "run-1",
@@ -178,8 +185,8 @@ function openTestStream(overrides: Partial<RunStreamOptions> = {}): {
     onState: (state) => {
       states.push(state);
     },
-    onError: (message) => {
-      errors.push(message);
+    onError: (message, kind) => {
+      errors.push({ kind, message });
     },
     onClosed: (state) => {
       closedStates.push(state);

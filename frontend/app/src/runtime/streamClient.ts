@@ -6,11 +6,13 @@ export interface RunStreamHandle {
   close: () => void;
 }
 
+export type RunStreamErrorKind = "malformed" | "server" | "transport";
+
 export interface RunStreamOptions {
   runId: string;
   afterEventId: number;
   onState: (state: RuntimeState) => void;
-  onError: (message: string) => void;
+  onError: (message: string, kind: RunStreamErrorKind) => void;
   onClosed?: (state: RuntimeState) => void;
   initialState: RuntimeState;
 }
@@ -48,11 +50,11 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
     }
     const parsed = parseStreamPayload(message.data);
     if (parsed === null) {
-      options.onError("Malformed run stream event.");
+      options.onError("Malformed run stream event.", "malformed");
       return;
     }
     if (isStreamErrorPayload(parsed)) {
-      options.onError(parsed.error);
+      options.onError(parsed.error, "server");
       return;
     }
     runtimeState = reduceRunEvent(runtimeState, parsed);
@@ -77,7 +79,8 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
       handleMessage(event);
       return;
     }
-    options.onError("Run stream disconnected.");
+    closeSource();
+    options.onError("Run stream disconnected.", "transport");
   });
 
   return {

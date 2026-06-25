@@ -4,15 +4,21 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
+import type { RuntimeState } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 import type { RunStreamOptions } from "../runtime/streamClient";
 import { useRunStreamController } from "../runtime/useRunStreamController";
 
 const streamMocks = vi.hoisted(() => ({
+  handles: [] as Array<{ close: ReturnType<typeof vi.fn> }>,
   latestOptions: null as unknown,
+  optionsList: [] as unknown[],
   openRunStream: vi.fn((options: unknown) => {
     streamMocks.latestOptions = options;
-    return { close: vi.fn() };
+    streamMocks.optionsList.push(options);
+    const handle = { close: vi.fn() };
+    streamMocks.handles.push(handle);
+    return handle;
   }),
 }));
 
@@ -23,7 +29,9 @@ vi.mock("../runtime/streamClient", () => ({
 afterEach(() => {
   cleanup();
   useRuntimeStore.getState().resetRuntimeState();
+  streamMocks.handles = [];
   streamMocks.latestOptions = null;
+  streamMocks.optionsList = [];
   vi.clearAllMocks();
   vi.useRealTimers();
 });
@@ -168,28 +176,147 @@ describe("useRunStreamController", () => {
 
     const options = streamMocks.latestOptions as RunStreamOptions;
     act(() => {
-      options.onError("Run stream disconnected.");
+      options.onError("Run stream disconnected.", "server");
     });
 
     expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
+  });
+
+  it("reconnects transport interruptions from the latest local event id", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const firstOptions = streamMocks.optionsList[0] as RunStreamOptions;
+    act(() => {
+      firstOptions.onState(runtimeStateWithLastEvent(77));
+    });
+    act(() => {
+      firstOptions.onError("Run stream disconnected.", "transport");
+    });
+
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(2);
+    const reconnectOptions = streamMocks.optionsList[1] as RunStreamOptions;
+    expect(reconnectOptions.afterEventId).toBe(77);
+  });
+
+  it("does not reconnect explicit server stream errors", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    act(() => {
+      options.onError("resume failed", "server");
+    });
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels pending reconnects when the stream is cleared", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    act(() => {
+      options.onError("Run stream disconnected.", "transport");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clear stream" }));
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
   });
 });
 
 function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
   const controller = useRunStreamController();
   return (
-    <button
-      type="button"
-      onClick={() =>
-        controller.startRunStream({
-          afterEventId,
-          runId: "run-1",
-          sessionId: "session-1",
-        })
-      }
-    >
-      Start stream
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          controller.startRunStream({
+            afterEventId,
+            runId: "run-1",
+            sessionId: "session-1",
+          })
+        }
+      >
+        Start stream
+      </button>
+      <button type="button" onClick={() => controller.clearRunStream()}>
+        Clear stream
+      </button>
+    </>
   );
 }
 
@@ -201,4 +328,20 @@ function recoveryRefreshCallCount(
       JSON.stringify(filters) ===
       JSON.stringify({ queryKey: ["sessions", "session-1", "recovery"] }),
   ).length;
+}
+
+function runtimeStateWithLastEvent(lastEventId: number): RuntimeState {
+  return {
+    activeRunIds: ["run-1"],
+    runs: {
+      "run-1": {
+        entries: [],
+        lastEventId,
+        runId: "run-1",
+        seenEventKeys: [`run-1:${lastEventId}`],
+        status: "open",
+        terminalEventType: null,
+      },
+    },
+  };
 }

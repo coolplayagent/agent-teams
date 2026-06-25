@@ -4757,6 +4757,7 @@ body {
 }
 
 .at-appearance-color-pill input[type="color"] {
+  appearance: none;
   width: 20px;
   height: 20px;
   margin-left: 8px;
@@ -4764,6 +4765,22 @@ body {
   border: 1px solid color-mix(in srgb, var(--at-text) 16%, transparent);
   border-radius: 50%;
   background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.at-appearance-color-pill input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.at-appearance-color-pill input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+.at-appearance-color-pill input[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
 }
 
 .at-appearance-color-pill .ant-input,

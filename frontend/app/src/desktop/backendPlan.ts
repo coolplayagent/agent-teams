@@ -41,6 +41,7 @@ export const desktopDefaultPort = 8000;
 export const desktopDefaultStartupTimeoutMs = 30000;
 export const desktopDefaultHealthPollMs = 350;
 export const desktopDefaultBackendCommand = "relay-teams";
+const desktopBackendHealthPath = "/api/system/health";
 
 export function buildDesktopBackendPlan(
   options: DesktopBackendPlanOptions,
@@ -67,7 +68,7 @@ export function buildDesktopBackendPlan(
       baseUrl: externalBaseUrl,
       command: null,
       healthPollMs,
-      healthUrl: `${externalBaseUrl}/api/health`,
+      healthUrl: `${externalBaseUrl}${desktopBackendHealthPath}`,
       host,
       ownership: "external",
       port,
@@ -87,7 +88,7 @@ export function buildDesktopBackendPlan(
     baseUrl,
     command,
     healthPollMs,
-    healthUrl: `${baseUrl}/api/health`,
+    healthUrl: `${baseUrl}${desktopBackendHealthPath}`,
     host,
     ownership: "managed",
     port,

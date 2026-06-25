@@ -22,7 +22,7 @@ describe("desktop backend plan", () => {
       baseUrl: "http://127.0.0.1:9100",
       command: null,
       healthPollMs: desktopDefaultHealthPollMs,
-      healthUrl: "http://127.0.0.1:9100/api/health",
+      healthUrl: "http://127.0.0.1:9100/api/system/health",
       host: "127.0.0.1",
       ownership: "external",
       port: 8000,
@@ -48,7 +48,7 @@ describe("desktop backend plan", () => {
       "8123",
     ]);
     expect(plan.appUrl).toBe("http://127.0.0.2:8123/app/");
-    expect(plan.healthUrl).toBe("http://127.0.0.2:8123/api/health");
+    expect(plan.healthUrl).toBe("http://127.0.0.2:8123/api/system/health");
     expect(plan.ownership).toBe("managed");
   });
 

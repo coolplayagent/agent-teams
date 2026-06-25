@@ -319,7 +319,7 @@ def test_v2_electron_managed_backend_starts_and_stops_with_main_lifecycle() -> N
         trace_log_text = _wait_for_text(trace_log, "fired")
         assert "scheduled:750" in trace_log_text
         request_log_text = request_log.read_text(encoding="utf-8")
-        assert "/api/health" in request_log_text
+        assert "/api/system/health" in request_log_text
         assert "/app/" in request_log_text
         _wait_for_backend_down(backend_url)
     finally:
@@ -334,7 +334,7 @@ def _serve_desktop_backend(repo_root: Path, *, healthy: bool) -> Iterator[str]:
         def do_GET(self) -> None:
             parsed = urlsplit(self.path)
             path = parsed.path
-            if path == "/api/health":
+            if path == "/api/system/health":
                 if healthy:
                     _send_json(self, {"status": "ok"})
                     return
@@ -531,7 +531,7 @@ class Handler(BaseHTTPRequestHandler):
         if request_log:
             with open(request_log, "a", encoding="utf-8") as handle:
                 handle.write(f"{self.path}\\n")
-        if self.path == "/api/health":
+        if self.path == "/api/system/health":
             self._json({"status": "ok"})
             return
         if self.path == "/app/" or self.path == "/app":
@@ -663,7 +663,7 @@ def _available_browser_safe_port() -> int:
 
 def _is_backend_healthy(base_url: str) -> bool:
     try:
-        with urlopen(f"{base_url}/api/health", timeout=0.5) as response:
+        with urlopen(f"{base_url}/api/system/health", timeout=0.5) as response:
             return response.status == 200
     except (OSError, URLError):
         return False

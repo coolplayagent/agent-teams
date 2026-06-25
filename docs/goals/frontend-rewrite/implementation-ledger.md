@@ -2791,3 +2791,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this Remote workspace delete-confirmation slice. Full Settings subsystem parity, full visual parity matrix, Electron readiness, reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Electron Health Endpoint Alignment Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal and remaining parity ledger before choosing this slice, with the next high-risk gaps still centered on stream/replay edge cases, visual parity matrix work, full Settings parity sign-off, Electron readiness, and release readiness.
+- Aligned the Electron backend startup plan with the backend's real public health contract by changing both external and managed desktop plans from `/api/health` to `/api/system/health`.
+- Updated the desktop smoke harness so healthy, unhealthy, and managed backend fixtures all respond on `/api/system/health`, preventing the smoke tests from masking a route mismatch that the packaged desktop app would hit against the real server.
+- Preserved the existing Electron security and lifecycle boundaries: renderer stays behind the preload/main IPC boundary, external links still use the main-process bridge, and managed backend ownership still starts and stops through the main process.
+- Kept this as targeted Desktop/Electron readiness progress only; no sidebar/settings entries were added or removed, no renderer UI was changed, and full Electron release readiness still requires the broader packaging and reviewer pass.
+
+### Verification
+- `npm test -- --run src/test/desktopBackendPlan.test.ts src/test/desktopSecurity.test.ts` passed with 2 files and 9 tests.
+- `npm run desktop:build` passed.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 4 tests.
+
+### Reviewer
+- Main-agent Electron smoke verification completed for this health endpoint alignment slice. Full Desktop/Electron release readiness, visual parity matrix completion, stream/replay completion, and reviewer sign-off remain open.

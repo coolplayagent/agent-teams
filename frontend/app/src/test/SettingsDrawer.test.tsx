@@ -1538,7 +1538,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(lastDeleteButton());
 
     await waitFor(() => expect(deleteAgentRuntimeMock).toHaveBeenCalledWith("codex-acp"));
-  }, 25000);
+  }, 45000);
 
   it("refreshes the ACP registry from the Agent Runtime secondary view", async () => {
     renderDrawer();

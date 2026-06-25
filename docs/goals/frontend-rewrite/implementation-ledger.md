@@ -3078,3 +3078,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent desktop smoke verification completed for this evidence batch. No full Desktop/Electron subsystem completion is claimed.
+
+## 2026-06-26 V2 Settings Full Component Gate Stabilization Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, Settings parity checklist, quality gates, and latest Settings ledger entries before choosing this slice, then targeted the currently red Settings gate instead of continuing only screenshot-level polish.
+- Found the combined Settings navigation and SettingsDrawer component gate failed because the System -> Agent Runtime create/delete secondary-page path timed out at 25 seconds in the full suite, even though the same destructive confirmation path passed in isolation.
+- Increased the Agent Runtime create/delete test timeout to match other long Settings secondary-page flows, preserving the existing V1-aligned Settings information architecture: no root settings entries were added or removed, and Agent Runtime remains behind the System secondary launcher.
+- Kept this as Settings test-gate stabilization only; full Settings subsystem completion still requires reviewer coverage across all tabs, broader browser evidence for save/error/destructive states, visual parity review, and release readiness.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "creates and deletes agent runtimes"` passed with 1 selected test.
+- `npm test -- --run src/test/SettingsNavigationParity.test.ts src/test/SettingsDrawer.test.tsx` passed with 2 files and 18 tests.
+
+### Reviewer
+- Main-agent Settings component gate verification completed for this stabilization slice. No full Settings subsystem completion is claimed.

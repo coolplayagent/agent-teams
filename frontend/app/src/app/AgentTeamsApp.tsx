@@ -3,12 +3,17 @@ import { useEffect, useState } from "react";
 import { AppShell } from "../features/shell/AppShell";
 import { currentSystemThemeMode, resolveThemeMode } from "../runtime/themeMode";
 import { useUiStore } from "../runtime/uiStore";
+import { markBootstrapReady } from "./bootstrapState";
 
 export function AgentTeamsApp() {
   const themeMode = useUiStore((state) => state.themeMode);
   const language = useUiStore((state) => state.language);
   const [systemThemeMode, setSystemThemeMode] = useState(currentSystemThemeMode);
   const resolvedThemeMode = themeMode === "system" ? systemThemeMode : resolveThemeMode(themeMode);
+
+  useEffect(() => {
+    markBootstrapReady();
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedThemeMode;

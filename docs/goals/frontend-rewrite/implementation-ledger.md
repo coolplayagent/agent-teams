@@ -2147,3 +2147,49 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` is reviewing the AG-UI Runtime Stream and Run Recovery subsystem. Final reviewer PASS/FAIL is not yet claimed in this batch.
+
+## 2026-06-25 V2 Real SSE Approval And Question Resume Browser Batch
+
+### Scope
+- Continued the Runtime Gate after the `run_failed` terminal path and targeted the remaining real-browser recovery-action timing gap for approvals and user questions.
+- Extended the built V2 `/app/` real HTTP/SSE harness so pending tool approvals and pending user questions resolve through the real AG-UI action endpoints while the client opens a native EventSource resume stream.
+- Added a real SSE browser flow proving a pending tool approval hides the standalone Resume action, resumes the recoverable run from `after_event_id=7`, posts the selected ACP approval option, streams resumed output, and returns the composer to Send.
+- Added a real SSE browser flow proving a pending user question hides standalone Resume, preserves selected answers and supplemental text, resumes from `after_event_id=7`, streams resumed output, and returns the composer to Send.
+- Left full AG-UI Runtime Stream and Run Recovery completion open pending reviewer results and any follow-up fixes.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_recoverable_run_resumes_before"` passed with 2 tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 18 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch verifies recovery-action stream timing and visible control state through browser assertions rather than changing layout or styling.
+
+### Reviewer
+- Reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` is still the active AG-UI Runtime Stream and Run Recovery reviewer. Final reviewer PASS/FAIL is not yet claimed in this batch.
+
+## 2026-06-25 V2 Runtime Recovery Reviewer P1 Fix Batch
+
+### Scope
+- Re-checked the active goal and the AG-UI Runtime Stream / Run Recovery gap after the approval/question real SSE slice instead of continuing visual polish.
+- Addressed reviewer P1 finding for stale unavailable recovery loops by tracking suppressed run ids after server or malformed stream errors; automatic RecoveryBar continuation now filters those stale targets while explicit starts still clear suppression.
+- Addressed reviewer P1 finding for background-only recovery streams by separating foreground active run ids from tracked stream ids; Composer now consumes only foreground run state while RecoveryBar can continue tracking background output streams.
+- Extended RecoveryBar auto-streaming so background-only recovery passes `foreground: false` or an empty foreground set, while active queued/running/stopping runs remain foreground.
+- Refreshed `frontend/dist/app` for the runtime and recovery behavior changes.
+- Left full AG-UI Runtime Stream completion open pending broader production backend timing evidence and final reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/RunStreamController.test.tsx src/test/RecoveryBar.test.tsx src/test/Composer.test.tsx src/test/ChatWorkspace.test.tsx` passed with 88 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "server_error_suppresses_stale_auto_recovery or background_task_recovery_uses_multiplex_stream"` passed with 2 tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 19 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch fixes runtime state semantics and stream recovery loops; browser assertions verify the visible Composer controls and EventSource request count.
+
+### Reviewer
+- Reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` returned FAIL on the first AG-UI Runtime Stream and Run Recovery pass with P1 findings for stale server-error recovery loops and background-only streams being treated as foreground active runs.
+- After the focused fixes, reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` returned PASS for the two P1 findings.
+- Reviewer re-ran `npm test -- --run src/test/RunStreamController.test.tsx src/test/RecoveryBar.test.tsx` with 37 tests passing and `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` with 19 tests passing.

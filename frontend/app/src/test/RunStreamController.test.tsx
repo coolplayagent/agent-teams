@@ -216,6 +216,42 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
   });
 
+  it("tracks background-only streams without exposing them as foreground active runs", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start background stream" }));
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("background-run-1");
+
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    act(() => {
+      options.onState(runtimeStateWithRuns([
+        { lastEventId: 5, runId: "background-run-1" },
+      ]));
+    });
+
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("background-run-1");
+  });
+
   it("removes completed runs from the active controller targets during multiplexed streams", () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -543,6 +579,39 @@ describe("useRunStreamController", () => {
     expect(recoveryRefreshCallCount(invalidateSpy)).toBe(refreshCountAfterError);
   });
 
+  it("suppresses stale recovery targets after explicit server stream errors", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+
+    act(() => {
+      options.onError("run unavailable", "server");
+    });
+
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("");
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("");
+  });
+
   it("cancels pending reconnects when the stream is cleared", () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({
@@ -686,7 +755,22 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
       >
         Start duplicate streams
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          controller.startRunStream({
+            foreground: false,
+            runId: "background-run-1",
+            sessionId: "session-1",
+          })
+        }
+      >
+        Start background stream
+      </button>
       <span data-testid="active-run-ids">{controller.activeRunIds.join(",")}</span>
+      <span data-testid="suppressed-run-ids">
+        {controller.suppressedRunIds.join(",")}
+      </span>
       <span data-testid="tracked-run-ids">{controller.trackedRunIds.join(",")}</span>
     </>
   );

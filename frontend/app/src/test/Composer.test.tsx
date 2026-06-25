@@ -1828,6 +1828,7 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
+    suppressedRunIds: [],
     trackedRunIds: activeRunId === null ? [] : [activeRunId],
   };
 }

@@ -20,6 +20,7 @@ export interface StartRunStreamOptions {
   runId: string;
   sessionId: string;
   afterEventId?: number;
+  foreground?: boolean;
 }
 
 export interface StartRunStreamTarget {
@@ -30,6 +31,7 @@ export interface StartRunStreamTarget {
 export interface StartRunStreamsOptions {
   sessionId: string;
   runs: StartRunStreamTarget[];
+  foregroundRunIds?: string[];
 }
 
 export interface RunStreamController {
@@ -38,6 +40,7 @@ export interface RunStreamController {
   clearRunStream: () => void;
   startRunStream: (options: StartRunStreamOptions) => void;
   startRunStreams: (options: StartRunStreamsOptions) => void;
+  suppressedRunIds: string[];
   trackedRunIds: string[];
 }
 
@@ -61,6 +64,7 @@ export function useRunStreamController(): RunStreamController {
   const reconnectAttemptRef = useRef(0);
   const streamGenerationRef = useRef(0);
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
+  const [suppressedRunIds, setSuppressedRunIds] = useState<string[]>([]);
   const [trackedRunIds, setTrackedRunIds] = useState<string[]>([]);
   const activeRunId = activeRunIds[0] ?? null;
 
@@ -116,6 +120,28 @@ export function useRunStreamController(): RunStreamController {
     setTrackedRunIds([]);
   };
 
+  const clearSuppressedRunTargets = (runs: StartRunStreamTarget[]) => {
+    const runIds = normalizedRunIds(runs);
+    if (runIds.length === 0) {
+      return;
+    }
+    setSuppressedRunIds((current) => current.filter((runId) => !runIds.includes(runId)));
+  };
+
+  const suppressRunTargets = (runs: StartRunStreamTarget[]) => {
+    const runIds = normalizedRunIds(runs);
+    if (runIds.length === 0) {
+      return;
+    }
+    setSuppressedRunIds((current) => {
+      const merged = new Set(current);
+      for (const runId of runIds) {
+        merged.add(runId);
+      }
+      return Array.from(merged);
+    });
+  };
+
   const clearRunStream = () => {
     stopActiveRunStream();
   };
@@ -160,7 +186,9 @@ export function useRunStreamController(): RunStreamController {
         reconnectAttemptRef.current = 0;
         runtimeStateRef.current = nextRuntimeState;
         setRuntimeState(nextRuntimeState);
-        setActiveRunIds(activeTrackedRunIds(options.runs, nextRuntimeState));
+        setActiveRunIds(
+          activeTrackedRunIds(options.foregroundRunIds ?? [], nextRuntimeState),
+        );
       },
       onClosed: () => {
         if (streamGeneration !== streamGenerationRef.current) {
@@ -181,6 +209,7 @@ export function useRunStreamController(): RunStreamController {
           scheduleRunStreamReconnect(options, streamGeneration, errorMessage);
           return;
         }
+        suppressRunTargets(options.runs);
         refreshRecoverySnapshot(options.sessionId);
         stopActiveRunStream();
         void message.error(errorMessage);
@@ -234,22 +263,26 @@ export function useRunStreamController(): RunStreamController {
           runId: options.runId,
         },
       ],
+      foregroundRunIds: options.foreground === false ? [] : [options.runId],
     });
   };
 
   const startRunStreams = (options: StartRunStreamsOptions) => {
     const runs = normalizeRunTargets(options.runs);
+    const foregroundRunIds = normalizeForegroundRunIds(options.foregroundRunIds, runs);
     streamGenerationRef.current += 1;
     const streamGeneration = streamGenerationRef.current;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
     stopContinuityRefresh();
     streamHandleRef.current?.close();
-    setActiveRunIds(runs.map((run) => run.runId));
+    clearSuppressedRunTargets(runs);
+    setActiveRunIds(foregroundRunIds);
     setTrackedRunIds(runs.map((run) => run.runId));
     startContinuityRefresh(options.sessionId);
     openTrackedRunStream(
       {
+        foregroundRunIds,
         sessionId: options.sessionId,
         runs,
       },
@@ -263,6 +296,7 @@ export function useRunStreamController(): RunStreamController {
     clearRunStream,
     startRunStream,
     startRunStreams,
+    suppressedRunIds,
     trackedRunIds,
   };
 }
@@ -290,6 +324,29 @@ function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget
   return Array.from(targetsByRunId.values());
 }
 
+function normalizedRunIds(runs: StartRunStreamTarget[]): string[] {
+  return normalizeRunTargets(runs).map((run) => run.runId);
+}
+
+function normalizeForegroundRunIds(
+  foregroundRunIds: string[] | undefined,
+  runs: StartRunStreamTarget[],
+): string[] {
+  const runIds = new Set(normalizedRunIds(runs));
+  if (foregroundRunIds === undefined) {
+    return Array.from(runIds);
+  }
+  const foregroundIds: string[] = [];
+  for (const runId of foregroundRunIds) {
+    const normalizedRunId = runId.trim();
+    if (!runIds.has(normalizedRunId) || foregroundIds.includes(normalizedRunId)) {
+      continue;
+    }
+    foregroundIds.push(normalizedRunId);
+  }
+  return foregroundIds;
+}
+
 function resolveReplayTargets(
   runs: StartRunStreamTarget[],
   runtimeState: RuntimeState,
@@ -312,11 +369,6 @@ function trackedRunTargetsClosed(
   );
 }
 
-function activeTrackedRunIds(
-  runs: StartRunStreamTarget[],
-  runtimeState: RuntimeState,
-): string[] {
-  return normalizeRunTargets(runs)
-    .map((run) => run.runId)
-    .filter((runId) => runtimeState.runs[runId]?.status !== "closed");
+function activeTrackedRunIds(runIds: string[], runtimeState: RuntimeState): string[] {
+  return runIds.filter((runId) => runtimeState.runs[runId]?.status !== "closed");
 }

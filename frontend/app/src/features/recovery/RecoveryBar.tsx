@@ -71,10 +71,26 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     () => buildRecoveryRunStreamTargets(activeRun, activeBackgroundTasks),
     [activeBackgroundTasks, activeRun],
   );
+  const foregroundRecoveryRunIds = useMemo(
+    () => foregroundRecoveryRunIdsFor(activeRun),
+    [activeRun],
+  );
+  const streamableRecoveryRunStreamTargets = useMemo(
+    () =>
+      recoveryRunStreamTargets.filter(
+        (target) => !runStreamController.suppressedRunIds.includes(target.runId),
+      ),
+    [recoveryRunStreamTargets, runStreamController.suppressedRunIds],
+  );
   const recoveryRunStreamTargetsKey = recoveryRunStreamTargets
     .map(recoveryRunStreamTargetKey)
     .join("|");
+  const streamableRecoveryRunStreamTargetsKey = streamableRecoveryRunStreamTargets
+    .map(recoveryRunStreamTargetKey)
+    .join("|");
+  const foregroundRecoveryRunIdsKey = foregroundRecoveryRunIds.join("|");
   const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
+  const suppressedRunIdsKey = runStreamController.suppressedRunIds.join("|");
   const recoverableRunId =
     activeRun?.should_show_recover === true ? activeRun.run_id : null;
   const showResumeAction = shouldShowResumeAction(
@@ -86,34 +102,40 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   );
 
   useEffect(() => {
-    if (sessionId === null || recoveryRunStreamTargets.length === 0) {
+    if (sessionId === null || streamableRecoveryRunStreamTargets.length === 0) {
       return;
     }
     if (
       runStreamIdsMatchTargets(
         runStreamController.trackedRunIds,
-        recoveryRunStreamTargets,
+        streamableRecoveryRunStreamTargets,
       )
     ) {
       return;
     }
-    if (recoveryRunStreamTargets.length === 1) {
-      const [target] = recoveryRunStreamTargets;
+    if (streamableRecoveryRunStreamTargets.length === 1) {
+      const [target] = streamableRecoveryRunStreamTargets;
       runStreamController.startRunStream({
         afterEventId: target.afterEventId,
+        foreground: foregroundRecoveryRunIds.includes(target.runId),
         runId: target.runId,
         sessionId,
       });
       return;
     }
     runStreamController.startRunStreams({
-      runs: recoveryRunStreamTargets,
+      foregroundRunIds: foregroundRecoveryRunIds,
+      runs: streamableRecoveryRunStreamTargets,
       sessionId,
     });
   }, [
     trackedRunIdsKey,
+    suppressedRunIdsKey,
     recoveryRunStreamTargetsKey,
-    recoveryRunStreamTargets,
+    streamableRecoveryRunStreamTargetsKey,
+    streamableRecoveryRunStreamTargets,
+    foregroundRecoveryRunIdsKey,
+    foregroundRecoveryRunIds,
     runStreamController,
     sessionId,
   ]);
@@ -869,6 +891,20 @@ function shouldStreamActiveRun(
   return (
     isStreamingRunStatus(activeRun.status) || isStreamingRunStatus(activeRun.phase)
   );
+}
+
+function foregroundRecoveryRunIdsFor(activeRun: RecoveryRun | null): string[] {
+  const activeRunId = activeRun?.run_id.trim() ?? "";
+  if (!activeRunId || activeRun?.should_show_recover === true) {
+    return [];
+  }
+  if (
+    !isStreamingRunStatus(activeRun?.status) &&
+    !isStreamingRunStatus(activeRun?.phase)
+  ) {
+    return [];
+  }
+  return [activeRunId];
 }
 
 function isStreamingRunStatus(status: string | undefined): boolean {

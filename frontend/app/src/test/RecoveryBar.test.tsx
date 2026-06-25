@@ -345,6 +345,7 @@ describe("RecoveryBar", () => {
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
         afterEventId: 42,
+        foreground: true,
         runId: "run-1",
         sessionId: "session-1",
       }),
@@ -408,6 +409,7 @@ describe("RecoveryBar", () => {
     await screen.findByText("subagent:reviewer");
     await waitFor(() =>
       expect(controller.startRunStreams).toHaveBeenCalledWith({
+        foregroundRunIds: ["run-1"],
         runs: [
           { afterEventId: 42, runId: "run-1" },
           { runId: "subagent-run-1" },
@@ -496,6 +498,31 @@ describe("RecoveryBar", () => {
     await screen.findByText("subagent:reviewer");
     expect(controller.startRunStreams).not.toHaveBeenCalled();
     expect(controller.startRunStream).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-start stale recovery targets after a stream error suppresses them", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "running",
+          phase: "running",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+      }),
+    );
+    const controller: RunStreamController = {
+      ...runStreamController(),
+      suppressedRunIds: ["run-1"],
+    };
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("Run run-1 is running");
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
 
   it("resumes a disconnected recoverable run before resolving approval", async () => {
@@ -779,6 +806,7 @@ describe("RecoveryBar", () => {
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
         afterEventId: undefined,
+        foreground: false,
         runId: "background-run-1",
         sessionId: "session-1",
       }),
@@ -860,6 +888,7 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
+    suppressedRunIds: [],
     trackedRunIds: activeRunId === null ? [] : [activeRunId],
   };
 }

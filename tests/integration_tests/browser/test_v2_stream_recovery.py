@@ -54,6 +54,7 @@ _RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
 _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
 _REAL_SSE_RESUMED_CHUNK = "real SSE resumed chunk"
 _REAL_SSE_FAILURE_MESSAGE = "real SSE provider failed before completion"
+_REAL_SSE_UNAVAILABLE_MESSAGE = "run recovery stream is no longer available"
 
 
 @pytest.fixture()
@@ -573,6 +574,36 @@ def test_v2_real_sse_run_failed_finalizes_stream_and_restores_send(
         assert stream_state.request_count() == 1
 
 
+def test_v2_real_sse_server_error_suppresses_stale_auto_recovery(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(server_error_initial_stream=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        assert stream_state.wait_for_initial_stream_finished(timeout_seconds=5.0)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        page.wait_for_timeout(1500)
+        assert stream_state.request_count() == 1
+
+
 def test_v2_real_sse_recoverable_resume_streams_from_checkpoint(
     browser_page: Page,
 ) -> None:
@@ -603,6 +634,99 @@ def test_v2_real_sse_recoverable_resume_streams_from_checkpoint(
         expect(
             page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
         ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+
+def test_v2_real_sse_recoverable_run_resumes_before_tool_approval(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(pending_tool_approval=True)
+    stream_state = _RealSseStreamState()
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        expect(page.get_by_text("execute_command")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text('{"cmd":"npm test"}')).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Resume")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_role("button", name="Allow once").click()
+
+        assert stream_state.wait_for_after_event_id(7, timeout_seconds=10.0)
+        assert backend.resume_requested is True
+        assert backend.approval_resolutions == [
+            {"action": "approve", "option_id": "allow_once"},
+        ]
+        assert stream_state.wait_for_sent_event_id(9, timeout_seconds=5.0)
+        expect(
+            page.locator(".at-message").filter(has_text=_RESUMED_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+
+def test_v2_real_sse_recoverable_run_resumes_before_user_question_answer(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(pending_user_question=True)
+    stream_state = _RealSseStreamState()
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        expect(page.get_by_text("Planner needs input")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Pick the handoff mode")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Resume")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_text("Ship - Deploy now").click()
+        page.get_by_text("Other").click()
+        page.get_by_label("Additional answer").fill(_QUESTION_SUPPLEMENT)
+        page.get_by_role("button", name="Answer").click()
+
+        assert stream_state.wait_for_after_event_id(7, timeout_seconds=10.0)
+        assert backend.resume_requested is True
+        assert backend.question_answers == [
+            {
+                "answers": [
+                    {
+                        "selections": [
+                            {"label": "Ship"},
+                            {
+                                "label": "__none_of_the_above__",
+                                "supplement": _QUESTION_SUPPLEMENT,
+                            },
+                        ],
+                    },
+                ],
+            },
+        ]
+        assert stream_state.wait_for_sent_event_id(9, timeout_seconds=5.0)
+        expect(
+            page.locator(".at-message").filter(has_text=_RESUMED_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
         expect(
             page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
         ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
@@ -879,6 +1003,19 @@ def test_v2_background_task_recovery_uses_multiplex_stream(
                 && url.searchParams.getAll('run_id').includes('{_SUBAGENT_RUN_ID}');
             }})
             """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        composer = page.locator(".at-composer")
+        expect(
+            composer.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            composer.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(composer.get_by_role("button", name="Queue")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(composer.get_by_role("button", name="Interrupt")).to_be_hidden(
             timeout=_WAIT_TIMEOUT_MS,
         )
 
@@ -1488,9 +1625,11 @@ class _RealSseStreamState:
         *,
         fail_initial_stream: bool = False,
         hold_initial_stream_until_stop: bool = False,
+        server_error_initial_stream: bool = False,
     ) -> None:
         self.fail_initial_stream = fail_initial_stream
         self.hold_initial_stream_until_stop = hold_initial_stream_until_stop
+        self.server_error_initial_stream = server_error_initial_stream
         self._lock = threading.Lock()
         self._initial_stream_finished = threading.Event()
         self._resumed_stream_seen = threading.Event()
@@ -1718,6 +1857,19 @@ def _serve_v2_app_with_real_sse(
                     },
                 )
                 return
+            if (
+                path
+                == f"/ag-ui/runs/{_RUN_ID}/tool-approvals/{_APPROVAL_TOOL_CALL_ID}:resolve"
+            ):
+                backend.approval_resolutions.append(self._read_json_body())
+                backend.pending_tool_approval = False
+                self._send_json({"status": "ok"})
+                return
+            if path == f"/ag-ui/runs/{_RUN_ID}/questions/{_QUESTION_ID}:answer":
+                backend.question_answers.append(self._read_json_body())
+                backend.pending_user_question = False
+                self._send_json({"status": "ok"})
+                return
             self._send_json(
                 {"detail": f"Unhandled real SSE mock API route: {path}"}, 404
             )
@@ -1732,6 +1884,11 @@ def _serve_v2_app_with_real_sse(
             )
             self._send_sse_headers()
             if stream_state.claim_initial_stream(after_event_id):
+                if stream_state.server_error_initial_stream:
+                    self._write_sse_error_event(_REAL_SSE_UNAVAILABLE_MESSAGE)
+                    stream_state.record_initial_stream_finished()
+                    time.sleep(0.2)
+                    return
                 self._write_sse_event(
                     _ag_ui_event(
                         "run.started", "run_started", 1, {"phase": "streaming"}
@@ -1861,6 +2018,15 @@ def _serve_v2_app_with_real_sse(
                 self.wfile.write(frame.encode("utf-8"))
                 self.wfile.flush()
                 stream_state.record_sent_event_id(event_id)
+            except (BrokenPipeError, ConnectionResetError):
+                return
+
+        def _write_sse_error_event(self, error_message: str) -> None:
+            payload = json.dumps({"error": error_message})
+            frame = f"event: error\ndata: {payload}\n\n"
+            try:
+                self.wfile.write(frame.encode("utf-8"))
+                self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 return
 

@@ -35,6 +35,8 @@ export interface RuntimeState {
   activeRunIds: string[];
 }
 
+export const MAX_SEEN_EVENT_KEYS = 512;
+
 export const initialRuntimeState: RuntimeState = {
   runs: {},
   activeRunIds: [],
@@ -47,21 +49,26 @@ export function reduceRunEvent(
   const event = parseRunEvent(rawEvent);
   const runId = event.run_id;
   const existing = state.runs[runId] ?? createRunState(runId);
+  const rawEventId = event.event_id;
+  const hasPositiveEventId = typeof rawEventId === "number" && rawEventId > 0;
+  if (hasPositiveEventId && rawEventId <= existing.lastEventId) {
+    return state;
+  }
   const dedupeKey = eventDedupeKey(event);
   if (existing.seenEventKeys.includes(dedupeKey)) {
     return state;
   }
 
   const eventId =
-    typeof event.event_id === "number" && event.event_id > 0
-      ? event.event_id
+    hasPositiveEventId
+      ? rawEventId
       : existing.lastEventId;
   const status: StreamStatus = isTerminalRunEvent(event.event_type) ? "closed" : "open";
   const nextRun: RuntimeRunState = {
     ...existing,
     status,
     lastEventId: Math.max(existing.lastEventId, eventId),
-    seenEventKeys: [...existing.seenEventKeys, dedupeKey],
+    seenEventKeys: rememberSeenEventKey(existing.seenEventKeys, dedupeKey),
     terminalEventType: isTerminalRunEvent(event.event_type)
       ? event.event_type
       : existing.terminalEventType,
@@ -94,6 +101,17 @@ export function reduceRunEvent(
     },
     activeRunIds: Array.from(activeRunIds),
   };
+}
+
+function rememberSeenEventKey(
+  seenEventKeys: string[],
+  dedupeKey: string,
+): string[] {
+  const nextKeys = [...seenEventKeys, dedupeKey];
+  if (nextKeys.length <= MAX_SEEN_EVENT_KEYS) {
+    return nextKeys;
+  }
+  return nextKeys.slice(nextKeys.length - MAX_SEEN_EVENT_KEYS);
 }
 
 function createRunState(runId: string): RuntimeRunState {

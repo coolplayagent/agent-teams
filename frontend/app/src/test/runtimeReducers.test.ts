@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { initialRuntimeState, reduceRunEvent } from "../runtime/reducers";
+import {
+  initialRuntimeState,
+  MAX_SEEN_EVENT_KEYS,
+  reduceRunEvent,
+} from "../runtime/reducers";
 import type { AgUiRunEvent, RelayRunEvent } from "../runtime/events";
 
 describe("runtime reducers", () => {
@@ -15,6 +19,45 @@ describe("runtime reducers", () => {
 
     expect(twice.runs["run-1"].entries).toHaveLength(1);
     expect(twice.runs["run-1"].lastEventId).toBe(7);
+  });
+
+  it("ignores replayed event ids at or below the local stream cursor", () => {
+    const state = reduceRunEvent(
+      {
+        activeRunIds: ["run-1"],
+        runs: {
+          "run-1": {
+            entries: [],
+            lastEventId: 12,
+            runId: "run-1",
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+      runEvent({
+        event_id: 11,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "old replay chunk" }),
+      }),
+    );
+
+    expect(state.runs["run-1"].entries).toHaveLength(0);
+    expect(state.runs["run-1"].lastEventId).toBe(12);
+  });
+
+  it("bounds fallback dedupe keys for long streams", () => {
+    const state = Array.from({ length: MAX_SEEN_EVENT_KEYS + 8 }, (_value, index) =>
+      runEvent({
+        event_id: null,
+        event_type: "generation_progress",
+        payload_json: JSON.stringify({ text: `progress ${index}` }),
+      }),
+    ).reduce(reduceRunEvent, initialRuntimeState);
+
+    expect(state.runs["run-1"].seenEventKeys).toHaveLength(MAX_SEEN_EVENT_KEYS);
+    expect(state.runs["run-1"].entries).toHaveLength(MAX_SEEN_EVENT_KEYS + 8);
   });
 
   it("closes active run state on terminal events", () => {

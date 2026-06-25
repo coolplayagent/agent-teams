@@ -2212,3 +2212,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this event-coverage slice. No AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Project View Browser Flow Batch
+
+### Scope
+- Re-checked the frontend rewrite goal after the interrupted replay metadata coverage and targeted a global product-shape gap instead of continuing screenshot-only polish.
+- Added a built V2 `/app/` browser flow that opens the Workspace Project View from the real sidebar workspace action, preserving the V1-style secondary-page entry instead of flattening the workbench into the root shell.
+- Extended the shell browser mock backend with real workspace API contract responses for `/api/workspaces`, snapshot, tree, diffs, diff file, file content, and `:open-root`.
+- Verified the Project View renders workspace identity/root path, starts in the Changes tab when diffs exist, shows the changed file and diff lines, switches to Files, opens `README.md`, refreshes snapshot data, opens the workspace folder endpoint, and returns to Chat.
+- Kept this as browser-flow evidence only; full Project View and Workspace subsystem completion remains open pending broader file-tree/mount/search/edit/error-state coverage and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k project_view` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 8 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_shell_layout.py` passed after formatting the file.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_shell_layout.py` passed with 0 errors.
+- Captured screenshot evidence at `.tmp/frontend-v2-project/v2-project-view-flow.png`.
+
+### Reviewer
+- Main-agent browser integration verification completed for this Project View entry-flow slice. No Project View, Workspace, or Shell subsystem completion is claimed.

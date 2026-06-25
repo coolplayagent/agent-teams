@@ -286,6 +286,102 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
         page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
 
 
+def test_v2_workspace_project_view_opens_real_workbench_flow(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role(
+            "button",
+            name="Open workspace view for agent-teams",
+        ).click()
+        project_view = page.locator(".at-project-view")
+        expect(project_view).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(project_view.get_by_role("heading", name="agent-teams")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            project_view.get_by_text(
+                "C:/Users/yex/Documents/workspace/agent-teams",
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(project_view.get_by_role("tab", name="Changes 1")).to_have_attribute(
+            "aria-selected",
+            "true",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            project_view.locator(".at-workspace-diff-path").filter(
+                has_text="frontend/app/src/App.tsx",
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(project_view.get_by_text("+new")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(project_view.get_by_text("-old")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_role("tab", name="Files").click()
+        expect(project_view.get_by_text("frontend")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(project_view.get_by_text("README.md")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.get_by_role("button", name="Open file README.md").click()
+        expect(project_view.get_by_text("# Agent Teams")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        snapshot_request_count = backend.snapshot_request_count
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "GET"
+                and response.url.endswith(f"/api/workspaces/{_WORKSPACE_ID}/snapshot")
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            page.get_by_role("button", name="Reload workspace view").click()
+        assert backend.snapshot_request_count > snapshot_request_count
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and f"/api/workspaces/{_WORKSPACE_ID}:open-root?mount=default"
+                in response.url
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            page.get_by_role("button", name="Open folder").click()
+        assert backend.open_root_queries == ["mount=default"]
+        page.get_by_role("button", name="Back to chat").click()
+        expect(project_view).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-composer")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        for requested_path in [
+            f"/workspaces/{_WORKSPACE_ID}/snapshot",
+            f"/workspaces/{_WORKSPACE_ID}/tree",
+            f"/workspaces/{_WORKSPACE_ID}/diffs",
+            f"/workspaces/{_WORKSPACE_ID}/diff",
+            f"/workspaces/{_WORKSPACE_ID}/file",
+            f"/workspaces/{_WORKSPACE_ID}:open-root",
+        ]:
+            assert requested_path in backend.requested_paths
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-project"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-project-view-flow.png"))
+
+
 def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
     browser_page: Page,
 ) -> None:
@@ -508,9 +604,11 @@ def test_v2_observability_topbar_opens_and_switches_scope(
 class _V2ShellBackend:
     def __init__(self, *, include_image_message: bool = False) -> None:
         self.include_image_message = include_image_message
+        self.open_root_queries: list[str] = []
         self.requested_paths: list[str] = []
         self.requested_urls: list[str] = []
         self.rounds_request_count = 0
+        self.snapshot_request_count = 0
 
     def route(self, route: Route, request: Request) -> None:
         url = urlsplit(request.url)
@@ -522,6 +620,29 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/workspaces":
             _fulfill_json(route, [self._workspace()])
+            return
+        if request.method == "GET" and path == f"/workspaces/{_WORKSPACE_ID}/snapshot":
+            self.snapshot_request_count += 1
+            _fulfill_json(route, self._workspace_snapshot())
+            return
+        if request.method == "GET" and path == f"/workspaces/{_WORKSPACE_ID}/tree":
+            _fulfill_json(route, self._workspace_tree(url.query))
+            return
+        if request.method == "GET" and path == f"/workspaces/{_WORKSPACE_ID}/diffs":
+            _fulfill_json(route, self._workspace_diffs())
+            return
+        if request.method == "GET" and path == f"/workspaces/{_WORKSPACE_ID}/diff":
+            _fulfill_json(route, self._workspace_diff_file())
+            return
+        if request.method == "GET" and path == f"/workspaces/{_WORKSPACE_ID}/file":
+            _fulfill_json(route, self._workspace_file(url.query))
+            return
+        if (
+            request.method == "POST"
+            and path == f"/workspaces/{_WORKSPACE_ID}:open-root"
+        ):
+            self.open_root_queries.append(url.query)
+            _fulfill_json(route, {"status": "ok"})
             return
         if request.method == "GET" and path == "/sessions/sidebar":
             _fulfill_json(route, [self._sidebar_session()])
@@ -640,9 +761,118 @@ class _V2ShellBackend:
     def _workspace(self) -> dict[str, object]:
         return {
             "display_name": "agent-teams",
+            "default_mount_name": "default",
+            "mounts": [
+                {
+                    "mount_name": "default",
+                    "provider": "local",
+                    "provider_config": {
+                        "root_path": "C:/Users/yex/Documents/workspace/agent-teams",
+                    },
+                    "working_directory": ".",
+                    "readable_paths": ["."],
+                    "writable_paths": ["."],
+                }
+            ],
             "root_path": "C:/Users/yex/Documents/workspace/agent-teams",
             "updated_at": "2026-06-25T08:00:00Z",
             "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _workspace_snapshot(self) -> dict[str, object]:
+        return {
+            "workspace_id": _WORKSPACE_ID,
+            "default_mount_name": "default",
+            "default_mount_root": "C:/Users/yex/Documents/workspace/agent-teams",
+            "root_path": "C:/Users/yex/Documents/workspace/agent-teams",
+            "tree": {
+                "name": ".",
+                "path": ".",
+                "kind": "directory",
+                "children": [
+                    {
+                        "name": "default",
+                        "path": "default",
+                        "kind": "directory",
+                        "has_children": True,
+                    }
+                ],
+            },
+        }
+
+    def _workspace_tree(self, query: str) -> dict[str, object]:
+        params = parse_qs(query)
+        directory_path = params.get("path", ["."])[0]
+        if directory_path == "frontend":
+            children: list[dict[str, object]] = [
+                {
+                    "name": "app",
+                    "path": "frontend/app",
+                    "kind": "directory",
+                    "has_children": True,
+                }
+            ]
+        else:
+            children = [
+                {
+                    "name": "frontend",
+                    "path": "frontend",
+                    "kind": "directory",
+                    "has_children": True,
+                },
+                {
+                    "name": "README.md",
+                    "path": "README.md",
+                    "kind": "file",
+                },
+            ]
+        return {
+            "workspace_id": _WORKSPACE_ID,
+            "mount_name": params.get("mount", ["default"])[0],
+            "directory_path": directory_path,
+            "children": children,
+        }
+
+    def _workspace_diffs(self) -> dict[str, object]:
+        return {
+            "workspace_id": _WORKSPACE_ID,
+            "mount_name": "default",
+            "root_path": "C:/Users/yex/Documents/workspace/agent-teams",
+            "is_git_repository": True,
+            "diff_files": [
+                {
+                    "path": "frontend/app/src/App.tsx",
+                    "change_type": "modified",
+                }
+            ],
+        }
+
+    def _workspace_diff_file(self) -> dict[str, object]:
+        return {
+            "mount_name": "default",
+            "path": "frontend/app/src/App.tsx",
+            "change_type": "modified",
+            "diff": (
+                "--- a/frontend/app/src/App.tsx\n"
+                "+++ b/frontend/app/src/App.tsx\n"
+                "@@ -1 +1 @@\n"
+                "-old\n"
+                "+new"
+            ),
+            "is_binary": False,
+        }
+
+    def _workspace_file(self, query: str) -> dict[str, object]:
+        params = parse_qs(query)
+        return {
+            "workspace_id": _WORKSPACE_ID,
+            "mount_name": params.get("mount", ["default"])[0],
+            "path": params.get("path", ["README.md"])[0],
+            "content": "# Agent Teams\n\nProject docs.",
+            "encoding": "utf-8",
+            "is_binary": False,
+            "truncated": False,
+            "size_bytes": 27,
         }
 
     def _sidebar_session(self) -> dict[str, object]:

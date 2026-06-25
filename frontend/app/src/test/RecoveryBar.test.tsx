@@ -569,8 +569,10 @@ function TestProviders({ children }: { children: ReactNode }) {
 function runStreamController(activeRunId: string | null = null): RunStreamController {
   return {
     activeRunId,
+    activeRunIds: activeRunId === null ? [] : [activeRunId],
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
+    startRunStreams: vi.fn(),
   };
 }
 

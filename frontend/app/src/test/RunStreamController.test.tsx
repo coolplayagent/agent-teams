@@ -6,7 +6,10 @@ import type { MockInstance } from "vitest";
 
 import type { RuntimeState } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
-import type { RunStreamOptions } from "../runtime/streamClient";
+import type {
+  MultiplexedRunStreamOptions,
+  RunStreamOptions,
+} from "../runtime/streamClient";
 import { useRunStreamController } from "../runtime/useRunStreamController";
 
 const streamMocks = vi.hoisted(() => ({
@@ -20,9 +23,17 @@ const streamMocks = vi.hoisted(() => ({
     streamMocks.handles.push(handle);
     return handle;
   }),
+  openMultiplexedRunStream: vi.fn((options: unknown) => {
+    streamMocks.latestOptions = options;
+    streamMocks.optionsList.push(options);
+    const handle = { close: vi.fn() };
+    streamMocks.handles.push(handle);
+    return handle;
+  }),
 }));
 
 vi.mock("../runtime/streamClient", () => ({
+  openMultiplexedRunStream: streamMocks.openMultiplexedRunStream,
   openRunStream: streamMocks.openRunStream,
 }));
 
@@ -149,6 +160,60 @@ describe("useRunStreamController", () => {
 
     const options = streamMocks.latestOptions as RunStreamOptions;
     expect(options.afterEventId).toBe(108);
+  });
+
+  it("starts multiplexed run streams from each latest local event id", () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1", "run-2"],
+        runs: {
+          "run-1": {
+            entries: [],
+            lastEventId: 108,
+            runId: "run-1",
+            seenEventKeys: ["run-1:108"],
+            status: "open",
+            terminalEventType: null,
+          },
+          "run-2": {
+            entries: [],
+            lastEventId: 7,
+            runId: "run-2",
+            seenEventKeys: ["run-2:7"],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start streams" }));
+
+    expect(streamMocks.openRunStream).not.toHaveBeenCalled();
+    expect(streamMocks.openMultiplexedRunStream).toHaveBeenCalledTimes(1);
+    const options = streamMocks.latestOptions as MultiplexedRunStreamOptions;
+    expect(options.runs).toEqual([
+      { afterEventId: 108, runId: "run-1" },
+      { afterEventId: 9, runId: "run-2" },
+    ]);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
   });
 
   it("refreshes recovery immediately when the active stream reports an error", () => {
@@ -332,6 +397,48 @@ describe("useRunStreamController", () => {
 
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
   });
+
+  it("reconnects multiplexed transport interruptions from latest local event ids", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start streams" }));
+    const firstOptions = streamMocks.optionsList[0] as MultiplexedRunStreamOptions;
+    act(() => {
+      firstOptions.onState(runtimeStateWithRuns([
+        { lastEventId: 77, runId: "run-1" },
+        { lastEventId: 88, runId: "run-2" },
+      ]));
+    });
+    act(() => {
+      firstOptions.onError("Run stream disconnected.", "transport");
+      vi.advanceTimersByTime(3500);
+    });
+
+    expect(streamMocks.openMultiplexedRunStream).toHaveBeenCalledTimes(2);
+    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
+    const reconnectOptions = streamMocks.optionsList[1] as MultiplexedRunStreamOptions;
+    expect(reconnectOptions.runs).toEqual([
+      { afterEventId: 77, runId: "run-1" },
+      { afterEventId: 88, runId: "run-2" },
+    ]);
+  });
 });
 
 function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
@@ -353,6 +460,27 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
       <button type="button" onClick={() => controller.clearRunStream()}>
         Clear stream
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          controller.startRunStreams({
+            sessionId: "session-1",
+            runs: [
+              {
+                afterEventId,
+                runId: "run-1",
+              },
+              {
+                afterEventId: 9,
+                runId: "run-2",
+              },
+            ],
+          })
+        }
+      >
+        Start streams
+      </button>
+      <span data-testid="active-run-ids">{controller.activeRunIds.join(",")}</span>
     </>
   );
 }
@@ -380,5 +508,26 @@ function runtimeStateWithLastEvent(lastEventId: number): RuntimeState {
         terminalEventType: null,
       },
     },
+  };
+}
+
+function runtimeStateWithRuns(
+  runs: Array<{ lastEventId: number; runId: string }>,
+): RuntimeState {
+  return {
+    activeRunIds: runs.map((run) => run.runId),
+    runs: Object.fromEntries(
+      runs.map((run) => [
+        run.runId,
+        {
+          entries: [],
+          lastEventId: run.lastEventId,
+          runId: run.runId,
+          seenEventKeys: [`${run.runId}:${run.lastEventId}`],
+          status: "open",
+          terminalEventType: null,
+        },
+      ]),
+    ),
   };
 }

@@ -2,8 +2,15 @@ import { App } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
-import { openRunStream, type RunStreamHandle } from "./streamClient";
+import {
+  openMultiplexedRunStream,
+  openRunStream,
+  type RunStreamErrorKind,
+  type RunStreamHandle,
+  type RunStreamTarget,
+} from "./streamClient";
 import { useRuntimeStore } from "./runtimeStore";
+import type { RuntimeState } from "./reducers";
 
 const RECOVERY_CONTINUITY_REFRESH_MS = 10000;
 const RUN_STREAM_MANUAL_RECONNECT_GRACE_MS = 3500;
@@ -15,10 +22,29 @@ export interface StartRunStreamOptions {
   afterEventId?: number;
 }
 
+export interface StartRunStreamTarget {
+  runId: string;
+  afterEventId?: number;
+}
+
+export interface StartRunStreamsOptions {
+  sessionId: string;
+  runs: StartRunStreamTarget[];
+}
+
 export interface RunStreamController {
   activeRunId: string | null;
+  activeRunIds: string[];
   clearRunStream: () => void;
   startRunStream: (options: StartRunStreamOptions) => void;
+  startRunStreams: (options: StartRunStreamsOptions) => void;
+}
+
+interface RunStreamCallbacks {
+  initialState: RuntimeState;
+  onState: (nextRuntimeState: RuntimeState) => void;
+  onClosed: () => void;
+  onError: (errorMessage: string, errorKind: RunStreamErrorKind) => void;
 }
 
 export function useRunStreamController(): RunStreamController {
@@ -32,7 +58,8 @@ export function useRunStreamController(): RunStreamController {
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const streamGenerationRef = useRef(0);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
+  const activeRunId = activeRunIds[0] ?? null;
 
   useEffect(() => {
     runtimeStateRef.current = runtimeState;
@@ -82,20 +109,15 @@ export function useRunStreamController(): RunStreamController {
     stopContinuityRefresh();
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
-    setActiveRunId(null);
+    setActiveRunIds([]);
   };
 
   const openTrackedRunStream = (
-    options: StartRunStreamOptions,
+    options: StartRunStreamsOptions,
     streamGeneration: number,
   ) => {
-    const replayOffset = Math.max(
-      runtimeStateRef.current.runs[options.runId]?.lastEventId ?? 0,
-      options.afterEventId ?? 0,
-    );
-    streamHandleRef.current = openRunStream({
-      runId: options.runId,
-      afterEventId: replayOffset,
+    const runs = resolveReplayTargets(options.runs, runtimeStateRef.current);
+    const callbacks: RunStreamCallbacks = {
       initialState: runtimeStateRef.current,
       onState: (nextRuntimeState) => {
         if (streamGeneration !== streamGenerationRef.current) {
@@ -113,7 +135,7 @@ export function useRunStreamController(): RunStreamController {
         clearReconnectTimer();
         reconnectAttemptRef.current = 0;
         stopContinuityRefresh();
-        setActiveRunId(null);
+        setActiveRunIds([]);
         streamHandleRef.current = null;
         void queryClient.invalidateQueries({
           queryKey: ["sessions", options.sessionId, "messages"],
@@ -136,11 +158,22 @@ export function useRunStreamController(): RunStreamController {
         reconnectAttemptRef.current = 0;
         void message.error(errorMessage);
       },
-    });
+    };
+    streamHandleRef.current =
+      runs.length === 1
+        ? openRunStream({
+            ...callbacks,
+            afterEventId: runs[0].afterEventId,
+            runId: runs[0].runId,
+          })
+        : openMultiplexedRunStream({
+            ...callbacks,
+            runs,
+          });
   };
 
   const scheduleRunStreamReconnect = (
-    options: StartRunStreamOptions,
+    options: StartRunStreamsOptions,
     streamGeneration: number,
     errorMessage: string,
   ) => {
@@ -150,7 +183,7 @@ export function useRunStreamController(): RunStreamController {
       stopContinuityRefresh();
       streamHandleRef.current?.close();
       streamHandleRef.current = null;
-      setActiveRunId(null);
+      setActiveRunIds([]);
       void message.error(errorMessage);
       return;
     }
@@ -171,20 +204,68 @@ export function useRunStreamController(): RunStreamController {
   };
 
   const startRunStream = (options: StartRunStreamOptions) => {
+    startRunStreams({
+      sessionId: options.sessionId,
+      runs: [
+        {
+          afterEventId: options.afterEventId,
+          runId: options.runId,
+        },
+      ],
+    });
+  };
+
+  const startRunStreams = (options: StartRunStreamsOptions) => {
+    const runs = normalizeRunTargets(options.runs);
     streamGenerationRef.current += 1;
     const streamGeneration = streamGenerationRef.current;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
     stopContinuityRefresh();
     streamHandleRef.current?.close();
-    setActiveRunId(options.runId);
+    setActiveRunIds(runs.map((run) => run.runId));
     startContinuityRefresh(options.sessionId);
-    openTrackedRunStream(options, streamGeneration);
+    openTrackedRunStream(
+      {
+        sessionId: options.sessionId,
+        runs,
+      },
+      streamGeneration,
+    );
   };
 
   return {
     activeRunId,
+    activeRunIds,
     clearRunStream,
     startRunStream,
+    startRunStreams,
   };
+}
+
+function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget[] {
+  const normalizedRuns = runs.map((run) => ({
+    afterEventId: run.afterEventId,
+    runId: run.runId.trim(),
+  }));
+  if (normalizedRuns.length === 0) {
+    throw new Error("At least one run stream target is required.");
+  }
+  if (normalizedRuns.some((run) => run.runId.length === 0)) {
+    throw new Error("Run stream target runId cannot be blank.");
+  }
+  return normalizedRuns;
+}
+
+function resolveReplayTargets(
+  runs: StartRunStreamTarget[],
+  runtimeState: RuntimeState,
+): RunStreamTarget[] {
+  return normalizeRunTargets(runs).map((run) => ({
+    afterEventId: Math.max(
+      runtimeState.runs[run.runId]?.lastEventId ?? 0,
+      run.afterEventId ?? 0,
+    ),
+    runId: run.runId,
+  }));
 }

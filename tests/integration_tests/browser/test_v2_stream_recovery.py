@@ -38,6 +38,9 @@ _RESUMED_CHUNK = "resumed chunk"
 _APPROVAL_TOOL_CALL_ID = "call-v2-approval"
 _QUESTION_ID = "question-v2-recovery"
 _QUESTION_SUPPLEMENT = "Need release note"
+_BACKGROUND_TASK_ID = "background-task-v2"
+_BACKGROUND_COMMAND = "npm run watch"
+_BACKGROUND_CWD = "C:/Users/yex/Documents/workspace/agent-teams"
 
 
 @pytest.fixture()
@@ -313,10 +316,95 @@ def test_v2_recoverable_run_resumes_before_user_question_answer(
         ]
 
 
+def test_v2_background_task_recovery_displays_collapses_and_stops(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(background_task=True)
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        recovery = page.locator(".at-recovery")
+        expect(recovery.get_by_text("Background task is still active")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_text("Background tasks")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_text("1 active")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(recovery.get_by_text(_BACKGROUND_COMMAND)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_text(_BACKGROUND_CWD)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        recovery.get_by_role("button", name="Hide").click()
+        expect(recovery.get_by_text(_BACKGROUND_COMMAND)).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        recovery.get_by_role("button", name="Show").click()
+        expect(recovery.get_by_text(_BACKGROUND_COMMAND)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        recovery.get_by_role("button", name="Stop").click()
+        expect(recovery.get_by_text("Background tasks")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert backend.background_task_stop_requests == [
+            {"background_task_id": _BACKGROUND_TASK_ID, "run_id": _RUN_ID},
+        ]
+
+
+def test_v2_paused_subagent_recovery_displays_followup_state(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(paused_subagent=True)
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        expect(page.get_by_text("Recovery needs attention")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Paused subagent: reviewer")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_text("Waiting for follow-up in the paused subagent panel."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.get_by_text("instance: reviewer-1")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Resume")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 class _V2StreamBackend:
     def __init__(
         self,
         *,
+        background_task: bool = False,
+        paused_subagent: bool = False,
         pending_tool_approval: bool = False,
         pending_user_question: bool = False,
         recoverable_stopped_run: bool = False,
@@ -328,6 +416,9 @@ class _V2StreamBackend:
             7 if recoverable_stopped_run or has_pending_recovery_action else 0
         )
         self.persisted_assistant_text = ""
+        self.background_task = background_task
+        self.background_task_stop_requests: list[dict[str, object]] = []
+        self.paused_subagent = paused_subagent
         self.pending_tool_approval = pending_tool_approval
         self.pending_user_question = pending_user_question
         self.recoverable_stopped_run = (
@@ -457,6 +548,27 @@ class _V2StreamBackend:
             )
             self.pending_user_question = False
             _fulfill_json(route, {"status": "ok"})
+            return
+        if (
+            request.method == "POST"
+            and path == f"/runs/{_RUN_ID}/background-tasks/{_BACKGROUND_TASK_ID}:stop"
+        ):
+            self.background_task = False
+            self.background_task_stop_requests.append(
+                {
+                    "background_task_id": _BACKGROUND_TASK_ID,
+                    "run_id": _RUN_ID,
+                },
+            )
+            _fulfill_json(
+                route,
+                {
+                    "background_task": {
+                        **self._background_task_payload(),
+                        "status": "stopped",
+                    },
+                },
+            )
             return
         _fulfill_json(
             route, {"detail": f"Unhandled mock API route: {path}"}, status=404
@@ -589,11 +701,40 @@ class _V2StreamBackend:
             }
         return {
             "active_run": active_run,
-            "background_tasks": [],
-            "paused_subagent": None,
+            "background_tasks": self._background_tasks(),
+            "paused_subagent": self._paused_subagent(),
             "pending_tool_approvals": self._pending_tool_approvals(),
             "pending_user_questions": self._pending_user_questions(),
             "round_snapshot": None,
+        }
+
+    def _background_tasks(self) -> list[dict[str, object]]:
+        if not self.background_task:
+            return []
+        return [self._background_task_payload()]
+
+    def _background_task_payload(self) -> dict[str, object]:
+        return {
+            "background_task_id": _BACKGROUND_TASK_ID,
+            "command": _BACKGROUND_COMMAND,
+            "cwd": _BACKGROUND_CWD,
+            "execution_mode": "background",
+            "kind": "command",
+            "recent_output": ["watching files"],
+            "run_id": _RUN_ID,
+            "session_id": _SESSION_ID,
+            "status": "running",
+            "title": _BACKGROUND_COMMAND,
+        }
+
+    def _paused_subagent(self) -> dict[str, object] | None:
+        if not self.paused_subagent:
+            return None
+        return {
+            "instance_id": "reviewer-1",
+            "reason": "waiting for input",
+            "role_id": "reviewer",
+            "task_id": "task-review-1",
         }
 
     def _recoverable_phase(self) -> str:

@@ -1631,3 +1631,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this approval/question recovery slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes backend-backed action recovery, background/paused-subagent recovery, multiplexed stream replay, and paired reviewer sign-off.
+
+## 2026-06-25 V2 Background And Paused Recovery Browser Batch
+
+### Scope
+- Continued the Run Recovery checklist from the remaining background-task and paused-subagent gaps.
+- Extended the built V2 `/app/` browser integration harness with an active background command task and a paused subagent recovery snapshot.
+- Verified that a background task with no active main run keeps the RecoveryBar visible, renders the task count, command, cwd, and running state, and opens the run stream through the existing recovery continuation path.
+- Covered background task collapse/expand behavior in the actual V2 shell and verified that Stop calls `/api/runs/run-v2-stream/background-tasks/background-task-v2:stop`.
+- Verified that a paused subagent recovery snapshot renders the follow-up state, including role, instance id, task id, and reason, while keeping the standalone Resume action hidden.
+- Left full Run Recovery completion open; remaining work includes backend-backed timing for these actions, real interrupted SSE behavior, multiplexed stream replay, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 7 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because the committed change adds browser-level recovery behavior evidence rather than a visual layout change.
+
+### Reviewer
+- Main-agent browser integration verification completed for this background/paused recovery slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes backend-backed recovery timing, interrupted/multiplexed stream replay, and paired reviewer sign-off.

@@ -2846,3 +2846,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component and built-app browser verification completed for this Automation toggle slice. Full module parity, visual parity matrix completion, stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Real SSE Multiplex Background Stream Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, latest stream ledger entries, and current worktree before choosing this slice, then shifted back to the higher-risk AG-UI Runtime Stream requirements instead of continuing module-management actions.
+- Identified that multiplex stream behavior had reducer/client and mock-EventSource browser coverage, while built-app real SSE browser evidence still centered on single-run streams.
+- Added a real built `/app/` browser scenario where recovery exposes a running background subagent task, the frontend opens the true `/api/ag-ui/runs/events` multiplex SSE endpoint with both the main run and subagent run, and both streams render their text deltas in the timeline.
+- Extended the real SSE test server to handle `/api/ag-ui/runs/events`, record multiplex run offsets, emit main and reviewer subagent deltas, and close only after both tracked runs receive terminal events.
+- Kept this as targeted AG-UI multiplex and background stream continuation evidence only; full AG-UI Runtime Stream, Subagents, Message Timeline, visual parity matrix, subsystem reviewer sign-off, and release readiness remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_background_task_recovery_streams_multiplexed_runs"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "background_task_recovery_uses_multiplex_stream or real_sse_background_task_recovery_streams_multiplexed_runs or real_sse_replay_dedupes_cursor_event_before_continuing"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent built-app real SSE browser verification completed for this multiplex background stream slice. Full AG-UI Runtime Stream, Subagents, visual parity matrix, reviewer sign-off, and release readiness remain open.

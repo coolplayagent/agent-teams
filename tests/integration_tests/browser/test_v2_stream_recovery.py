@@ -1529,6 +1529,49 @@ def test_v2_background_task_recovery_uses_multiplex_stream(
         )
 
 
+def test_v2_real_sse_background_task_recovery_streams_multiplexed_runs(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(
+        background_task=True,
+        background_task_subagent_run=True,
+    )
+    stream_state = _RealSseStreamState()
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        assert stream_state.wait_for_multiplex_run_ids(
+            {_RUN_ID, _SUBAGENT_RUN_ID},
+            timeout_seconds=10.0,
+        )
+        composer = page.locator(".at-composer")
+        expect(
+            composer.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            composer.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(composer.get_by_role("button", name="Queue")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(composer.get_by_role("button", name="Interrupt")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        expect(
+            page.locator(".at-message").filter(has_text=_MAIN_MULTIPLEX_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.locator(".at-message").filter(has_text=_SUBAGENT_MULTIPLEX_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.wait_for_sent_event_id(4, timeout_seconds=5.0)
+
+
 def test_v2_paused_subagent_recovery_displays_followup_state(
     browser_page: Page,
 ) -> None:
@@ -2105,10 +2148,12 @@ class _RealSseStreamState:
         self.stop_initial_stream = stop_initial_stream
         self._lock = threading.Lock()
         self._initial_stream_finished = threading.Event()
+        self._multiplex_stream_seen = threading.Event()
         self._resumed_stream_seen = threading.Event()
         self._sent_event_ids: set[int] = set()
         self._sent_initial_stream = False
         self._stop_requested = threading.Event()
+        self.multiplex_stream_requests: list[dict[str, object]] = []
         self.stream_requests: list[dict[str, object]] = []
 
     def record_request(self, *, after_event_id: int, last_event_id: str) -> None:
@@ -2121,6 +2166,21 @@ class _RealSseStreamState:
             )
         if after_event_id >= 2:
             self._resumed_stream_seen.set()
+
+    def record_multiplex_request(
+        self,
+        *,
+        last_event_id: str,
+        run_offsets: dict[str, int],
+    ) -> None:
+        with self._lock:
+            self.multiplex_stream_requests.append(
+                {
+                    "last_event_id": last_event_id,
+                    "run_offsets": dict(run_offsets),
+                },
+            )
+        self._multiplex_stream_seen.set()
 
     def claim_initial_stream(self, after_event_id: int) -> bool:
         with self._lock:
@@ -2152,6 +2212,24 @@ class _RealSseStreamState:
                     return True
             time.sleep(0.05)
         return False
+
+    def wait_for_multiplex_run_ids(
+        self,
+        run_ids: set[str],
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        if not self._multiplex_stream_seen.wait(timeout=timeout_seconds):
+            return False
+        with self._lock:
+            return any(
+                run_ids.issubset(
+                    set(
+                        cast(dict[str, int], request["run_offsets"]).keys(),
+                    ),
+                )
+                for request in self.multiplex_stream_requests
+            )
 
     def has_last_event_id_header(self, last_event_id: str) -> bool:
         with self._lock:
@@ -2295,6 +2373,9 @@ def _serve_v2_app_with_real_sse(
                 return
             if path == f"/ag-ui/runs/{_RUN_ID}/events":
                 self._handle_run_events(query)
+                return
+            if path == "/ag-ui/runs/events":
+                self._handle_multiplexed_run_events(query)
                 return
             self._send_json(
                 {"detail": f"Unhandled real SSE mock API route: {path}"}, 404
@@ -2503,6 +2584,58 @@ def _serve_v2_app_with_real_sse(
                     "run_completed",
                     4,
                     {"status": "completed"},
+                ),
+            )
+            time.sleep(0.5)
+
+        def _handle_multiplexed_run_events(self, query: str) -> None:
+            params = parse_qs(query)
+            run_offsets = _run_offsets_from_query(params)
+            stream_state.record_multiplex_request(
+                last_event_id=self.headers.get("Last-Event-ID", ""),
+                run_offsets=run_offsets,
+            )
+            self._send_sse_headers()
+            if _RUN_ID not in run_offsets or _SUBAGENT_RUN_ID not in run_offsets:
+                time.sleep(0.2)
+                return
+            self._write_sse_event(
+                _ag_ui_event(
+                    "message.text.delta",
+                    "text_delta",
+                    1,
+                    {"text": _MAIN_MULTIPLEX_CHUNK},
+                    run_id=_RUN_ID,
+                ),
+            )
+            self._write_sse_event(
+                _ag_ui_event(
+                    "message.text.delta",
+                    "text_delta",
+                    2,
+                    {"text": _SUBAGENT_MULTIPLEX_CHUNK},
+                    role_id="reviewer",
+                    run_id=_SUBAGENT_RUN_ID,
+                ),
+            )
+            time.sleep(0.2)
+            self._write_sse_event(
+                _ag_ui_event(
+                    "run.completed",
+                    "run_completed",
+                    3,
+                    {"status": "completed"},
+                    run_id=_RUN_ID,
+                ),
+            )
+            self._write_sse_event(
+                _ag_ui_event(
+                    "run.completed",
+                    "run_completed",
+                    4,
+                    {"status": "completed"},
+                    role_id="reviewer",
+                    run_id=_SUBAGENT_RUN_ID,
                 ),
             )
             time.sleep(0.5)
@@ -2734,13 +2867,16 @@ def _ag_ui_event(
     relay_event_type: str,
     event_id: int,
     payload: dict[str, object],
+    *,
+    role_id: str = "MainAgent",
+    run_id: str = _RUN_ID,
 ) -> dict[str, object]:
     return {
         "event_id": event_id,
         "payload": payload,
         "relay_event_type": relay_event_type,
-        "role_id": "MainAgent",
-        "run_id": _RUN_ID,
+        "role_id": role_id,
+        "run_id": run_id,
         "session_id": _SESSION_ID,
         "trace_id": "trace-v2-stream",
         "type": event_name,
@@ -2753,6 +2889,21 @@ def _first_query_int(params: dict[str, list[str]], key: str) -> int:
         return max(0, int(raw_value))
     except ValueError:
         return 0
+
+
+def _run_offsets_from_query(params: dict[str, list[str]]) -> dict[str, int]:
+    run_ids = params.get("run_id", [])
+    after_event_ids = params.get("after_event_id", [])
+    offsets: dict[str, int] = {}
+    for index, run_id in enumerate(run_ids):
+        raw_after_event_id = (
+            after_event_ids[index] if index < len(after_event_ids) else "0"
+        )
+        try:
+            offsets[run_id] = max(0, int(raw_after_event_id))
+        except ValueError:
+            offsets[run_id] = 0
+    return offsets
 
 
 def _fulfill_json(

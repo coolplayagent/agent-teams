@@ -22,18 +22,43 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
     apiUrl(`/ag-ui/runs/${encodeURIComponent(options.runId)}/events?${params.toString()}`),
   );
   let runtimeState = options.initialState;
+  let didNotifyClosed = false;
+  let sourceClosed = false;
+
+  const closeSource = () => {
+    if (sourceClosed) {
+      return;
+    }
+    sourceClosed = true;
+    source.close();
+  };
+
+  const notifyClosed = () => {
+    if (didNotifyClosed) {
+      return;
+    }
+    didNotifyClosed = true;
+    closeSource();
+    options.onClosed?.(runtimeState);
+  };
 
   const handleMessage = (message: MessageEvent<string>) => {
-    const parsed = JSON.parse(message.data) as RunEventEnvelope | { error?: string };
-    if ("error" in parsed && typeof parsed.error === "string") {
+    if (sourceClosed) {
+      return;
+    }
+    const parsed = parseStreamPayload(message.data);
+    if (parsed === null) {
+      options.onError("Malformed run stream event.");
+      return;
+    }
+    if (isStreamErrorPayload(parsed)) {
       options.onError(parsed.error);
       return;
     }
-    runtimeState = reduceRunEvent(runtimeState, parsed as RunEventEnvelope);
+    runtimeState = reduceRunEvent(runtimeState, parsed);
     options.onState(runtimeState);
     if (!runtimeState.activeRunIds.includes(options.runId)) {
-      source.close();
-      options.onClosed?.(runtimeState);
+      notifyClosed();
     }
   };
   source.onmessage = handleMessage;
@@ -45,23 +70,69 @@ export function openRunStream(options: RunStreamOptions): RunStreamHandle {
     });
   }
   source.addEventListener("error", (event) => {
+    if (sourceClosed) {
+      return;
+    }
     if (isMessageEvent(event)) {
       handleMessage(event);
       return;
     }
     options.onError("Run stream disconnected.");
   });
-  source.onerror = (event) => {
-    if (!isMessageEvent(event)) {
-      options.onError("Run stream disconnected.");
-    }
-  };
 
   return {
-    close: () => source.close(),
+    close: closeSource,
   };
 }
 
 function isMessageEvent(event: Event): event is MessageEvent<string> {
   return "data" in event && typeof event.data === "string";
+}
+
+function parseStreamPayload(rawData: string): RunEventEnvelope | StreamErrorPayload | null {
+  try {
+    const parsed = JSON.parse(rawData) as unknown;
+    if (isStreamErrorPayload(parsed)) {
+      return parsed;
+    }
+    if (isRunEventEnvelope(parsed)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+interface StreamErrorPayload {
+  error: string;
+}
+
+function isStreamErrorPayload(value: unknown): value is StreamErrorPayload {
+  return (
+    isRecord(value) &&
+    "error" in value &&
+    typeof value.error === "string"
+  );
+}
+
+function isRunEventEnvelope(value: unknown): value is RunEventEnvelope {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    typeof value.session_id !== "string" ||
+    typeof value.run_id !== "string" ||
+    typeof value.trace_id !== "string"
+  ) {
+    return false;
+  }
+  if (typeof value.relay_event_type === "string") {
+    return typeof value.type === "string" && "payload" in value;
+  }
+  return typeof value.event_type === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

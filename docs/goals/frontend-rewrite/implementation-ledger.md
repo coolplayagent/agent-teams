@@ -2612,3 +2612,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent real browser integration verification completed for this `run_stopped` SSE lifecycle slice. No full AG-UI Runtime Stream, Run Recovery, Message Timeline, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Rich Replay Output And Validation Browser Evidence Batch
+
+### Scope
+- Re-checked the Message Timeline and AG-UI Runtime Stream checklist after the `run_stopped` evidence batch, focusing on event coverage that still lacked browser-level interrupted replay proof.
+- Extended the built V2 `/app/` interrupted-stream browser scenario to emit `output_delta` after reconnect with both a structured text output part and an image `media_ref` part.
+- Extended the same interrupted replay scenario to emit `tool_input_validation_failed`, then verified the compact validation preview and expanded details in the timeline.
+- Kept the assertions in stream order so early tool-call/tool-result rows are checked before virtual scrolling unloads them, matching the real flow a user sees during streaming.
+- Kept this as targeted Message Timeline and AG-UI Runtime Stream replay evidence only; full subsystem completion, reviewer sign-off, and release readiness remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "interrupted_stream_preserves_non_text_events_after_reconnect"` passed with 1 test selected.
+
+### Reviewer
+- Main-agent built-app browser integration verification completed for this output-part and tool-validation replay slice. No full Message Timeline, AG-UI Runtime Stream, visual parity, or release readiness completion is claimed.

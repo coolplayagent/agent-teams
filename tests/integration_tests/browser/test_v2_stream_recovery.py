@@ -53,6 +53,14 @@ _RICH_REPLAY_THINKING_PREFIX = "checking replay state"
 _RICH_REPLAY_THINKING_SUFFIX = " after reconnect"
 _RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
 _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
+_RICH_REPLAY_OUTPUT_TEXT = "structured replay output part"
+_RICH_REPLAY_OUTPUT_IMAGE = "runtime-rich-image.png"
+_RICH_REPLAY_OUTPUT_IMAGE_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
+_RICH_REPLAY_VALIDATION_REASON = "Input validation failed before tool execution."
+_RICH_REPLAY_VALIDATION_DETAILS = "cmd is required for replay validation"
 _RICH_REPLAY_TOKEN_SUMMARY = "Token usage: Total 18 · Input 11 · Output 7"
 _RICH_REPLAY_MODEL_STEP = "model step replay visible"
 _RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY = (
@@ -477,6 +485,28 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
                 "tool_name": "read",
             },
         )
+        expect(page.get_by_text("Tool call: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message-tool-preview").get_by_text(
+                "README.md",
+                exact=True,
+            ),
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Tool result: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message-tool-preview").get_by_text(
+                _RICH_REPLAY_TOOL_OUTPUT,
+                exact=True,
+            ),
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
         _emit_relay_event(
             page,
             "token_usage",
@@ -611,29 +641,35 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
             23,
             {"root_task_id": "root-rich"},
         )
+        _emit_relay_event(
+            page,
+            "output_delta",
+            24,
+            {
+                "output": [
+                    {"kind": "text", "text": _RICH_REPLAY_OUTPUT_TEXT},
+                    {
+                        "kind": "media_ref",
+                        "mime_type": "image/png",
+                        "modality": "image",
+                        "name": _RICH_REPLAY_OUTPUT_IMAGE,
+                        "url": _RICH_REPLAY_OUTPUT_IMAGE_URL,
+                    },
+                ],
+            },
+        )
+        _emit_relay_event(
+            page,
+            "tool_input_validation_failed",
+            25,
+            {
+                "details": _RICH_REPLAY_VALIDATION_DETAILS,
+                "reason": _RICH_REPLAY_VALIDATION_REASON,
+                "tool_call_id": "call-v2-rich-validation",
+                "tool_name": "execute_command",
+            },
+        )
 
-        expect(page.get_by_text("Tool call: read")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.locator(".at-message-tool-preview").get_by_text(
-                "README.md",
-                exact=True,
-            ),
-        ).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_text("Tool result: read")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.locator(".at-message-tool-preview").get_by_text(
-                _RICH_REPLAY_TOOL_OUTPUT,
-                exact=True,
-            ),
-        ).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
         expect(page.get_by_text(_RICH_REPLAY_TOKEN_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
@@ -682,9 +718,27 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         expect(page.get_by_text(_RICH_REPLAY_MANUAL_ACTION_SUMMARY)).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
+        expect(page.get_by_text(_RICH_REPLAY_OUTPUT_TEXT)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        output_image = page.get_by_role("img", name=_RICH_REPLAY_OUTPUT_IMAGE)
+        expect(output_image).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(output_image).to_have_attribute("src", _RICH_REPLAY_OUTPUT_IMAGE_URL)
+        validation_header = page.get_by_text("Tool validation: execute_command")
+        expect(validation_header).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.locator(".at-message-tool-preview").get_by_text(
+                _RICH_REPLAY_VALIDATION_REASON,
+                exact=True,
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        validation_header.click()
+        expect(page.get_by_text(_RICH_REPLAY_VALIDATION_DETAILS)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
 
-        _emit_relay_event(page, "thinking_finished", 24, {"part_index": 0})
-        _emit_relay_event(page, "run_completed", 25, {"status": "completed"})
+        _emit_relay_event(page, "thinking_finished", 26, {"part_index": 0})
+        _emit_relay_event(page, "run_completed", 27, {"status": "completed"})
         page.wait_for_function(
             "() => window.__v2OpenEventSourceCount() === 0",
             timeout=_WAIT_TIMEOUT_MS,

@@ -116,6 +116,23 @@ export function useRunStreamController(): RunStreamController {
     stopActiveRunStream();
   };
 
+  const finishClosedRunStream = (sessionId: string) => {
+    clearReconnectTimer();
+    reconnectAttemptRef.current = 0;
+    stopContinuityRefresh();
+    streamHandleRef.current?.close();
+    streamHandleRef.current = null;
+    setActiveRunIds([]);
+    void queryClient.invalidateQueries({
+      queryKey: ["sessions", sessionId, "messages"],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    refreshRecoverySnapshot(sessionId);
+    void queryClient.invalidateQueries({
+      queryKey: ["sessions", sessionId, "token-usage"],
+    });
+  };
+
   const openTrackedRunStream = (
     options: StartRunStreamsOptions,
     streamGeneration: number,
@@ -136,29 +153,22 @@ export function useRunStreamController(): RunStreamController {
         if (streamGeneration !== streamGenerationRef.current) {
           return;
         }
-        clearReconnectTimer();
-        reconnectAttemptRef.current = 0;
-        stopContinuityRefresh();
-        setActiveRunIds([]);
-        streamHandleRef.current = null;
-        void queryClient.invalidateQueries({
-          queryKey: ["sessions", options.sessionId, "messages"],
-        });
-        void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-        refreshRecoverySnapshot(options.sessionId);
-        void queryClient.invalidateQueries({
-          queryKey: ["sessions", options.sessionId, "token-usage"],
-        });
+        finishClosedRunStream(options.sessionId);
       },
       onError: (errorMessage, errorKind) => {
         if (streamGeneration !== streamGenerationRef.current) {
           return;
         }
-        refreshRecoverySnapshot(options.sessionId);
         if (errorKind === "transport") {
+          if (trackedRunTargetsClosed(options.runs, runtimeStateRef.current)) {
+            finishClosedRunStream(options.sessionId);
+            return;
+          }
+          refreshRecoverySnapshot(options.sessionId);
           scheduleRunStreamReconnect(options, streamGeneration, errorMessage);
           return;
         }
+        refreshRecoverySnapshot(options.sessionId);
         stopActiveRunStream();
         void message.error(errorMessage);
       },
@@ -276,4 +286,13 @@ function resolveReplayTargets(
     ),
     runId: run.runId,
   }));
+}
+
+function trackedRunTargetsClosed(
+  runs: StartRunStreamTarget[],
+  runtimeState: RuntimeState,
+): boolean {
+  return normalizeRunTargets(runs).every(
+    (run) => runtimeState.runs[run.runId]?.status === "closed",
+  );
 }

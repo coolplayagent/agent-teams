@@ -1237,3 +1237,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this inline copy action slice. No Message Timeline subsystem completion is claimed from this batch; remaining work includes full streaming/replay edge scenarios, export parity, and reviewer sign-off.
+
+## 2026-06-25 Stream Terminal Transport Boundary Batch
+
+### Scope
+- Rechecked the current V2 browser frame before editing; the page body remained fixed to the viewport while the timeline and session list owned their own scroll areas, and the rebuilt chat surface no longer showed bare `message` rows or the old timeline-level copy toolbar.
+- Reviewed the existing AG-UI stream client, runtime reducer, and run stream controller coverage for `after_event_id`, SSE `Last-Event-ID`, local cursor replay, multiplexed replay, transport interruptions, and duplicate event suppression.
+- Fixed a terminal replay edge where a transport disconnect after the local reducer already knew every tracked run was closed could still be treated as a recoverable network interruption and scheduled another stream replay.
+- Shared the normal stream-close cleanup path for this terminal transport boundary so messages, sidebar sessions, recovery state, and token usage are invalidated exactly like a server-terminal close.
+
+### Verification
+- `npm test -- src/test/RunStreamController.test.tsx` in `frontend/app` passed with 12 tests, including the new regression proving terminal local run state stops transport reconnect instead of opening another EventSource.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt asset `index-4T8FptvI.js`.
+- Browser verification on `http://127.0.0.1:8000/app/` loaded the rebuilt asset, kept body/document height fixed at `720 / 720`, kept `.at-session-list` and `.at-timeline` as independent scroll owners, showed `floatingCopy: 0`, and showed `bareMessageCount: 0`.
+- Browser screenshots were attempted for the current V2/V1 framework and final rebuilt V2 state, but the in-app browser screenshot backend timed out on `Page.captureScreenshot`; DOM metrics and targeted runtime tests were used as evidence for this non-visual stream-controller fix.
+
+### Reviewer
+- Main-agent browser and test verification completed for this stream terminal transport boundary slice. No AG-UI Runtime Stream or Message Timeline subsystem completion is claimed from this batch; remaining work includes live stream/replay Playwright scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.

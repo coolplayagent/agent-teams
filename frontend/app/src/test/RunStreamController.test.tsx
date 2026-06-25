@@ -351,6 +351,51 @@ describe("useRunStreamController", () => {
     expect(reconnectOptions.afterEventId).toBe(77);
   });
 
+  it("does not reconnect transport interruptions after tracked runs are locally terminal", () => {
+    vi.useFakeTimers();
+    useRuntimeStore.setState({
+      runtimeState: runtimeStateWithClosedRun(77),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    expect(options.afterEventId).toBe(77);
+
+    act(() => {
+      options.onError("Run stream disconnected.", "transport");
+    });
+
+    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the native EventSource reconnect when events resume before fallback", () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({
@@ -597,6 +642,22 @@ function runtimeStateWithLastEvent(lastEventId: number): RuntimeState {
         seenEventKeys: [`run-1:${lastEventId}`],
         status: "open",
         terminalEventType: null,
+      },
+    },
+  };
+}
+
+function runtimeStateWithClosedRun(lastEventId: number): RuntimeState {
+  return {
+    activeRunIds: [],
+    runs: {
+      "run-1": {
+        entries: [],
+        lastEventId,
+        runId: "run-1",
+        seenEventKeys: [`run-1:${lastEventId}`],
+        status: "closed",
+        terminalEventType: "run_completed",
       },
     },
   };

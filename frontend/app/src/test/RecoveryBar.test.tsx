@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
@@ -20,6 +20,7 @@ import {
 } from "../api/client";
 import type { RecoverySnapshot } from "../api/contracts";
 import { RecoveryBar } from "../features/recovery/RecoveryBar";
+import { useUiStore } from "../runtime/uiStore";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
 vi.mock("../api/client", () => ({
@@ -36,8 +37,13 @@ const answerUserQuestionMock = vi.mocked(answerUserQuestion);
 const resumeRunMock = vi.mocked(resumeRun);
 const stopBackgroundTaskMock = vi.mocked(stopBackgroundTask);
 
+beforeEach(() => {
+  useUiStore.setState({ language: "en" });
+});
+
 afterEach(() => {
   cleanup();
+  useUiStore.setState({ language: "en" });
   vi.clearAllMocks();
 });
 
@@ -164,6 +170,51 @@ describe("RecoveryBar", () => {
         "Use a read-only command instead.",
       ),
     );
+  });
+
+  it("localizes recovery action prompts in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_tool_approvals: [
+          {
+            tool_call_id: "tool-call-1",
+            tool_name: "execute_command",
+          },
+        ],
+        pending_user_questions: [
+          {
+            question_id: "question-1",
+            run_id: "sub-run-1",
+            role_id: "Explorer",
+            questions: [
+              {
+                question: "Pick next step",
+                options: [
+                  { label: "Go", description: "Continue" },
+                  { label: "__none_of_the_above__" },
+                ],
+                multiple: false,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    renderRecoveryBar();
+
+    const approvalFeedback = await screen.findByLabelText("审批反馈");
+    expect(approvalFeedback).toHaveAttribute("placeholder", "可选审批反馈");
+    expect(screen.getByRole("button", { name: /批\s*准/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /拒\s*绝/ })).toBeVisible();
+
+    fireEvent.click(screen.getByLabelText("其他"));
+    expect(screen.queryByLabelText("Approval feedback")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Additional answer")).not.toBeInTheDocument();
+    const supplement = screen.getByLabelText("补充回答");
+    expect(supplement).toHaveAttribute("placeholder", "补充说明");
+    expect(screen.getByRole("button", { name: /回\s*答/ })).toBeVisible();
   });
 
   it("shows approval errors locally and clears them before retrying", async () => {

@@ -20,6 +20,7 @@ import type {
   UserQuestionPrompt,
   RecoveryRun,
 } from "../../api/contracts";
+import { useTranslations } from "../../i18n";
 import type {
   RunStreamController,
   StartRunStreamTarget,
@@ -34,6 +35,7 @@ interface RecoveryBarProps {
 
 export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps) {
   const { message } = App.useApp();
+  const t = useTranslations();
   const queryClient = useQueryClient();
   const [questionSelections, setQuestionSelections] = useState<Record<string, string[]>>(
     {},
@@ -294,7 +296,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
                 size="small"
                 type="primary"
               >
-                Resume
+                {t("recoveryResume")}
               </Button>
             ) : null}
           </Space>
@@ -549,6 +551,7 @@ function PendingApprovals({
   onFeedbackChange,
   onResolve,
 }: PendingApprovalsProps) {
+  const t = useTranslations();
   if (approvals.length === 0) {
     return null;
   }
@@ -576,11 +579,11 @@ function PendingApprovals({
                 <Typography.Text type="danger">{error}</Typography.Text>
               ) : null}
               <Input
-                aria-label="Approval feedback"
+                aria-label={t("recoveryApprovalFeedbackLabel")}
                 className="at-recovery-approval-feedback"
                 disabled={disabled}
                 onChange={(event) => onFeedbackChange(toolCallId, event.target.value)}
-                placeholder="Optional approval feedback"
+                placeholder={t("recoveryApprovalFeedbackPlaceholder")}
                 size="small"
                 value={feedback}
               />
@@ -620,7 +623,7 @@ function PendingApprovals({
                 size="small"
                 type="primary"
               >
-                Approve
+                {t("recoveryApprove")}
               </Button>
               <Button
                 danger
@@ -636,7 +639,7 @@ function PendingApprovals({
                 }
                 size="small"
               >
-                Deny
+                {t("recoveryDeny")}
               </Button>
             </Space>
           </div>
@@ -675,6 +678,7 @@ function PendingQuestions({
   selections,
   supplements,
 }: PendingQuestionsProps) {
+  const t = useTranslations();
   if (questions.length === 0) {
     return null;
   }
@@ -718,7 +722,7 @@ function PendingQuestions({
               size="small"
               type="primary"
             >
-              Answer
+              {t("recoveryAnswer")}
             </Button>
           </div>
         );
@@ -744,8 +748,9 @@ function QuestionPromptControl({
   selectedLabels,
   selectedSupplement,
 }: QuestionPromptControlProps) {
+  const t = useTranslations();
   const options = prompt.options.map((option) => ({
-    label: questionOptionLabel(option.label, option.description),
+    label: questionOptionLabel(option.label, option.description, t("recoveryOtherOption")),
     value: option.label,
   }));
   const showSupplement = selectedLabels.includes(NONE_OF_THE_ABOVE_OPTION_LABEL);
@@ -769,10 +774,10 @@ function QuestionPromptControl({
       )}
       {showSupplement ? (
         <Input
-          aria-label="Additional answer"
+          aria-label={t("recoverySupplementLabel")}
           disabled={disabled}
           onChange={(event) => onSupplementChange(event.target.value)}
-          placeholder={prompt.placeholder?.trim() || "Add details"}
+          placeholder={prompt.placeholder?.trim() || t("recoverySupplementPlaceholder")}
           size="small"
           value={selectedSupplement}
         />
@@ -815,9 +820,13 @@ function hasSelections(
   );
 }
 
-function questionOptionLabel(label: string, description: string | undefined): string {
+function questionOptionLabel(
+  label: string,
+  description: string | undefined,
+  otherLabel: string,
+): string {
   if (label === NONE_OF_THE_ABOVE_OPTION_LABEL) {
-    return "Other";
+    return otherLabel;
   }
   return description?.trim() ? `${label} - ${description}` : label;
 }

@@ -2648,3 +2648,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent visual audit completed for this desktop chat-frame checkpoint. No Application Shell, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Recovery Action Localization Batch
+
+### Scope
+- Re-checked the active goal README and current implementation ledger before closing this small Run Recovery slice, rather than treating the latest screenshot note as the whole objective.
+- Localized V2 recovery action controls for Chinese sessions: resume, approval feedback label and placeholder, approve, deny, answer, the fallback `Other` option, and the supplemental-answer label and placeholder.
+- Added component coverage that switches the V2 UI store to Chinese and verifies the localized approval and user-question controls without changing the sidebar, settings entries, or V1-style secondary-page behavior.
+- Refreshed `frontend/dist/app` for the recovery action localization change.
+- Kept this as targeted Run Recovery and Chinese usability progress only; full Message Timeline streaming/replay, settings form parity, same-session visual screenshot matrix, Electron readiness, reviewer sign-off, and release readiness remain open.
+
+### Verification
+- `npm test -- --run src/test/RecoveryBar.test.tsx -t "localizes recovery action prompts"` passed with 1 selected test.
+- `npm test -- --run src/test/RecoveryBar.test.tsx` passed with 23 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent component, lint, and build verification completed for this recovery localization slice. No full Run Recovery, Message Timeline, visual parity, or release readiness completion is claimed.

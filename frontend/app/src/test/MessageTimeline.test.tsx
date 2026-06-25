@@ -102,12 +102,17 @@ describe("MessageTimeline", () => {
       },
     ]);
 
-    renderTimeline();
+    const { container } = renderTimeline();
 
     const copyButton = await screen.findByRole("button", {
       name: "Copy last answer",
     });
     await waitFor(() => expect(copyButton).toBeEnabled());
+    expect(container.querySelector(".at-timeline-toolbar")).toBeNull();
+    expect(copyButton.closest("article.at-message")).toHaveAttribute(
+      "data-row-key",
+      "message:assistant-2",
+    );
     fireEvent.click(copyButton);
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Latest answer"));

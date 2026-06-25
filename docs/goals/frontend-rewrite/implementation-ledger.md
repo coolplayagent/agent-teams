@@ -1193,3 +1193,47 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this environment-variable settings slice. No Settings subsystem completion is claimed from this batch; remaining work includes MCP, plugin, Commands, Hooks, Agent Runtime, deeper settings form parity, the user-reported framework scroll/layout pass, streaming/recovery scenarios, and reviewer sign-off.
+
+## 2026-06-25 Message Timeline Rendering Batch
+
+### Scope
+- Rechecked the real V2 chat timeline after the user-reported screenshot instead of relying on component assumptions.
+- Removed the persisted-message fallback that rendered raw `message` text when a historical row had no readable content.
+- Added support for legacy `user-prompt` history parts and trimmed internal `## Skill Candidates` routing text from user-visible prompts.
+- Hid ordinary user/assistant role labels in the main timeline so the chat surface no longer shows stray `用户` / `助手` labels between rows.
+- Changed failed tool returns to display concise error summaries instead of raw `{ ok, data, error, meta }` JSON envelopes.
+- Changed successful tool returns to unwrap useful output fields before falling back to JSON, reducing protocol noise in tool-heavy histories.
+- Compacted provider API failure text into a readable title and cause instead of showing the full raw `body` and `Root cause` payload.
+- Cleared stale stream state when switching sessions so a previous run cannot keep painting into a newly selected chat surface.
+
+### Verification
+- Browser verification on `http://127.0.0.1:8000/app/` showed `messageExactCount: 0`, no `.at-message-role` labels for ordinary rows, `hasApiSummary: true`, and no raw `Root cause` or `invalid_request_error` text.
+- V2 screenshot verification in the in-app browser showed the API error rendered as two readable paragraphs and no bare `message` rows.
+- `npm test -- src/test/MessageTimeline.test.tsx src/test/ShellLayoutCss.test.ts src/test/ChatWorkspace.test.tsx` in `frontend/app` passed with 51 tests.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this message timeline rendering slice. No Message Timeline subsystem completion is claimed from this batch; remaining work includes full streaming/replay edge scenarios, message export parity, long tool-heavy history review, and reviewer sign-off.
+
+## 2026-06-25 Inline Message Copy Action Batch
+
+### Scope
+- Rechecked V1 and V2 in the real in-app browser before editing, focusing on the user-reported floating copy icon and message action placement.
+- Captured current V2 and V1 chat/settings baselines under `.tmp/frontend-v2-continuation/`.
+- Removed the V2 timeline-level sticky copy toolbar.
+- Moved `复制最后回答` / `Copy last answer` into the latest copyable answer row, matching V1's message-local action shape more closely while preserving the existing accessible name.
+- Kept the copy action disabled while a stream is open so partially streaming answers are not copied as final output.
+
+### Verification
+- V1/V2 baseline screenshots captured under `.tmp/frontend-v2-continuation/`: `v1-current.png`, `v2-current.png`, `v1-settings.png`, and `v2-settings.png`.
+- Final browser DOM verification on `http://127.0.0.1:8000/app/` showed `toolbarCount: 0`, one `.at-message-actions` copy button, aria label `复制最后回答`, and the action button nested under the latest answer `article.at-message`.
+- Browser body/document metrics remained fixed to the viewport at `1280x720` with no page-level scroll growth.
+- Final screenshot capture for `v2-inline-copy-after.png` was attempted twice but the in-app browser screenshot backend timed out on `Page.captureScreenshot`; DOM verification and targeted tests were used as the final evidence for this small visual placement change.
+- `npm test -- src/test/MessageTimeline.test.tsx src/test/ShellLayoutCss.test.ts` in `frontend/app` passed with 50 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app`.
+
+### Reviewer
+- Main-agent browser and test verification completed for this inline copy action slice. No Message Timeline subsystem completion is claimed from this batch; remaining work includes full streaming/replay edge scenarios, export parity, and reviewer sign-off.

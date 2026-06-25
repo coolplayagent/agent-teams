@@ -105,6 +105,9 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     }
     return undefined;
   }, [rows]);
+  const handleCopyAnswer = useCallback((row: TimelineRow | undefined) => {
+    void copyLastAnswer(row, message);
+  }, [message]);
   const activeRoundRunId = activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(rounds);
   const hasRoundRail = !roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 0;
   const virtualizer = useVirtualizer({
@@ -196,24 +199,6 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
   return (
     <div className={hasRoundRail ? "at-timeline-frame has-round-rail" : "at-timeline-frame"}>
       <div className="at-timeline" onScroll={handleTimelineScroll} ref={parentRef}>
-        <div className="at-timeline-toolbar">
-          <Tooltip
-            title={
-              streamOpenForSession ? t("timelineCopyAfterStream") : t("timelineCopyLastAnswer")
-            }
-          >
-            <Button
-              aria-label={t("timelineCopyLastAnswer")}
-              disabled={lastAnswer === undefined || streamOpenForSession}
-              icon={<Copy size={15} />}
-              onClick={() => {
-                void copyLastAnswer(lastAnswer, message);
-              }}
-              size="small"
-              type="text"
-            />
-          </Tooltip>
-        </div>
         <div
           className="at-timeline-virtual"
           style={{ height: `${timelineHeight}px` }}
@@ -225,6 +210,9 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
               virtualItem.start,
               virtualizer.measureElement,
               t,
+              lastAnswer?.key ?? null,
+              streamOpenForSession,
+              handleCopyAnswer,
             ),
           )}
         </div>
@@ -502,6 +490,9 @@ function timelineRowElement(
   start: number,
   measureElement: (element: Element | null) => void,
   t: Translate,
+  lastAnswerKey: string | null,
+  streamOpenForSession: boolean,
+  onCopyAnswer: (row: TimelineRow | undefined) => void,
 ) {
   const style = { transform: `translateY(${start}px)` };
   if (row.roundMarker !== null) {
@@ -521,6 +512,7 @@ function timelineRowElement(
   }
   const toolOnly = timelineRowIsToolOnly(row);
   const showRoleLabel = shouldShowRoleLabel(row);
+  const showActions = row.copyable && row.key === lastAnswerKey;
   return (
     <article
       className={[
@@ -543,6 +535,13 @@ function timelineRowElement(
         </Typography.Text>
       ) : null}
       <MessageRowContent parts={row.parts} t={t} />
+      {showActions ? (
+        <MessageRowActions
+          disabled={streamOpenForSession}
+          onCopy={() => onCopyAnswer(row)}
+          t={t}
+        />
+      ) : null}
     </article>
   );
 }
@@ -1107,6 +1106,33 @@ function MessageRowContent({
         }
         return <MessageMediaPreview key={`media:${index}`} media={part} t={t} />;
       })}
+    </div>
+  );
+}
+
+function MessageRowActions({
+  disabled,
+  onCopy,
+  t,
+}: {
+  disabled: boolean;
+  onCopy: () => void;
+  t: Translate;
+}) {
+  return (
+    <div className="at-message-actions">
+      <Tooltip
+        title={disabled ? t("timelineCopyAfterStream") : t("timelineCopyLastAnswer")}
+      >
+        <Button
+          aria-label={t("timelineCopyLastAnswer")}
+          disabled={disabled}
+          icon={<Copy size={14} />}
+          onClick={onCopy}
+          size="small"
+          type="text"
+        />
+      </Tooltip>
     </div>
   );
 }

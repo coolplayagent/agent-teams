@@ -3571,24 +3571,6 @@ body {
   place-items: center;
 }
 
-.at-timeline-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  justify-content: flex-end;
-  width: min(var(--at-timeline-column-width), 100%);
-  margin: 0 auto 6px;
-  padding: 0 0 6px;
-  border-bottom: 1px solid var(--at-border);
-  background: color-mix(in srgb, var(--at-bg) 94%, transparent);
-}
-
-.at-timeline-toolbar .ant-btn {
-  border: 1px solid var(--at-border);
-  background: var(--at-surface);
-}
-
 .at-timeline-virtual {
   position: relative;
   width: min(var(--at-timeline-column-width), 100%);
@@ -3766,6 +3748,22 @@ body {
   gap: var(--at-message-gap);
   max-width: 100%;
   color: var(--at-text);
+}
+
+.at-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+
+.at-message-actions .ant-btn {
+  color: var(--at-text-muted);
+}
+
+.at-message-actions .ant-btn:not(:disabled):hover {
+  color: var(--at-text);
+  background: var(--at-surface-muted);
 }
 
 .at-message-markdown {

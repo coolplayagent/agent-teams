@@ -2193,3 +2193,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` returned FAIL on the first AG-UI Runtime Stream and Run Recovery pass with P1 findings for stale server-error recovery loops and background-only streams being treated as foreground active runs.
 - After the focused fixes, reviewer subagent `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` returned PASS for the two P1 findings.
 - Reviewer re-ran `npm test -- --run src/test/RunStreamController.test.tsx src/test/RecoveryBar.test.tsx` with 37 tests passing and `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` with 19 tests passing.
+
+## 2026-06-25 V2 Interrupted Replay Metadata Event Coverage Batch
+
+### Scope
+- Re-checked the AG-UI Runtime Stream checklist after the reviewer P1 fix and targeted required event coverage rather than continuing the same recovery-state fix.
+- Extended the interrupted stream replay browser scenario so non-text events after reconnect include model step started/finished, state snapshot, state delta, todo update, notification request, subagent status, and background task events.
+- Verified those events enter the real V2 browser EventSource path, pass through reducer/store state, and render visible fallback timeline rows after reconnect without duplicating the pre-interruption text chunk.
+- Kept this as coverage evidence only; full AG-UI Runtime Stream completion remains open pending broader backend-backed event coverage and final subsystem reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k non_text_events` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 19 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch only adds stream-event coverage and does not alter layout or styling.
+
+### Reviewer
+- Main-agent browser integration verification completed for this event-coverage slice. No AG-UI Runtime Stream subsystem completion is claimed.

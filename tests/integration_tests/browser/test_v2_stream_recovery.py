@@ -52,6 +52,13 @@ _RICH_REPLAY_THINKING_PREFIX = "checking replay state"
 _RICH_REPLAY_THINKING_SUFFIX = " after reconnect"
 _RICH_REPLAY_TOOL_CALL_ID = "call-v2-rich-replay"
 _RICH_REPLAY_TOOL_OUTPUT = "recovered tool output"
+_RICH_REPLAY_MODEL_STEP = "model step replay visible"
+_RICH_REPLAY_STATE_SNAPSHOT = "state snapshot replay visible"
+_RICH_REPLAY_STATE_DELTA = "state delta replay visible"
+_RICH_REPLAY_TODO_UPDATE = "todo update replay visible"
+_RICH_REPLAY_NOTIFICATION = "notification replay visible"
+_RICH_REPLAY_SUBAGENT_STATUS = "subagent status replay visible"
+_RICH_REPLAY_BACKGROUND_TASK = "background task replay visible"
 _REAL_SSE_RESUMED_CHUNK = "real SSE resumed chunk"
 _REAL_SSE_FAILURE_MESSAGE = "real SSE provider failed before completion"
 _REAL_SSE_UNAVAILABLE_MESSAGE = "run recovery stream is no longer available"
@@ -425,6 +432,54 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
             8,
             {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
         )
+        _emit_relay_event(
+            page,
+            "model_step_started",
+            9,
+            {"summary": _RICH_REPLAY_MODEL_STEP},
+        )
+        _emit_relay_event(
+            page,
+            "model_step_finished",
+            10,
+            {"summary": f"{_RICH_REPLAY_MODEL_STEP} finished"},
+        )
+        _emit_relay_event(
+            page,
+            "state_snapshot",
+            11,
+            {"summary": _RICH_REPLAY_STATE_SNAPSHOT},
+        )
+        _emit_relay_event(
+            page,
+            "state_delta",
+            12,
+            {"summary": _RICH_REPLAY_STATE_DELTA},
+        )
+        _emit_relay_event(
+            page,
+            "todo_updated",
+            13,
+            {"summary": _RICH_REPLAY_TODO_UPDATE},
+        )
+        _emit_relay_event(
+            page,
+            "notification_requested",
+            14,
+            {"title": _RICH_REPLAY_NOTIFICATION},
+        )
+        _emit_relay_event(
+            page,
+            "subagent_session_status_changed",
+            15,
+            {"status": _RICH_REPLAY_SUBAGENT_STATUS},
+        )
+        _emit_relay_event(
+            page,
+            "background_task_started",
+            16,
+            {"title": _RICH_REPLAY_BACKGROUND_TASK},
+        )
 
         expect(page.get_by_text("Tool call: read")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
@@ -451,13 +506,37 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         expect(page.get_by_text("token usage")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
+        expect(page.get_by_text(_RICH_REPLAY_MODEL_STEP, exact=True)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(f"{_RICH_REPLAY_MODEL_STEP} finished")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_STATE_SNAPSHOT)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_STATE_DELTA)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_TODO_UPDATE)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_NOTIFICATION)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_SUBAGENT_STATUS)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text(_RICH_REPLAY_BACKGROUND_TASK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
         expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
             1,
             timeout=_WAIT_TIMEOUT_MS,
         )
 
-        _emit_relay_event(page, "thinking_finished", 9, {"part_index": 0})
-        _emit_relay_event(page, "run_completed", 10, {"status": "completed"})
+        _emit_relay_event(page, "thinking_finished", 17, {"part_index": 0})
+        _emit_relay_event(page, "run_completed", 18, {"status": "completed"})
         page.wait_for_function(
             "() => window.__v2OpenEventSourceCount() === 0",
             timeout=_WAIT_TIMEOUT_MS,

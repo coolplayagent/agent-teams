@@ -2735,3 +2735,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this System secondary settings slice. Full Settings subsystem parity, all settings mutation/error states, visual reviewer pass, streaming/replay completion, and release readiness remain open.
+
+## 2026-06-26 V2 Stream Copy Control Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal and product parity ledger before choosing this slice, with remaining high-risk work still centered on stream/replay edge cases, full settings mutation/error parity, full visual screenshot QA, Electron readiness, and reviewer sign-off.
+- Added a real built `/app/` browser scenario for the Message Timeline copy control during an active AG-UI stream.
+- Updated runtime text/output rows so streamed assistant answers expose the same latest-answer copy action as hydrated answer rows, while non-answer runtime status, thinking, and tool-only rows remain non-copyable.
+- Verified a streamed assistant answer renders immediately, the `Copy last answer` action is visible but disabled while the run stream is open, and the same action becomes enabled only after the terminal `run_completed` event closes the EventSource.
+- Verified the terminal state also restores the normal `Send` control, covering the user-facing transition from streaming mode back to idle mode.
+- Kept this as targeted Message Timeline and AG-UI Runtime Stream UI-state evidence only; no sidebar/settings entries were added or removed, and no subsystem completion is claimed.
+
+### Verification
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "copy_last_answer"` passed with 1 selected test.
+- `npm test -- --run src/test/MessageTimeline.test.tsx -t "copy"` passed with 1 selected test.
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 54 tests.
+
+### Reviewer
+- Main-agent browser test coverage was added for this stream copy-control slice. Full Message Timeline, AG-UI Runtime Stream, visual parity matrix, Electron readiness, and release readiness remain open.

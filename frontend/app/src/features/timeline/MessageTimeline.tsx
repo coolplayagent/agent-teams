@@ -745,7 +745,7 @@ function runtimeEntryToRowWithParts(
     roundMarker: null,
     runId: entry.runId,
     source: "runtime",
-    copyable: false,
+    copyable: isAnswerRole(entry.roleId) && text.trim().length > 0,
   };
 }
 

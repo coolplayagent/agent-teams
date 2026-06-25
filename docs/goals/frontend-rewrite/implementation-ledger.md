@@ -2473,3 +2473,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component and shell-level targeted verification completed for this subagent-session stream slice. No full Subagents, Run Recovery, Message Timeline, or AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-26 V2 Shell Sidebar Width Alignment Batch
+
+### Scope
+- Re-checked the visual structure and V1 parity requirement before choosing a change, focusing on the global shell frame rather than message details.
+- Attempted in-app browser viewport and full-page screenshots for V1 and V2, but the browser `Page.captureScreenshot` call timed out repeatedly before writing any screenshot files. This remains a tooling limitation to retry in a later visual QA batch, not screenshot evidence.
+- Used browser DOM snapshots and layout metrics as fallback evidence for the V1/V2 shell comparison at 1280x720.
+- Identified a concrete framework drift: V1 sidebar width was 260px with workspace starting at x=266, while V2 used a 280px default with workspace starting at x=286.
+- Restored the V2 default sidebar width to 260px and changed the generated-width migration key so existing 280px generated defaults migrate back to the V1-sized default while user-resized widths remain preserved.
+- Refreshed `frontend/dist/app` for the shell-width change.
+- Kept this as targeted visual-structure progress only; full visual parity, screenshot QA, settings/sidebar item parity, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/uiStore.test.ts src/test/AppShell.test.tsx src/test/ShellLayoutCss.test.ts` passed with 33 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- Browser metrics before the change showed V2 `sidebar.width = 280`, `workspace.left = 286`, while V1 showed `sidebar.width = 260`, `workspace.left = 266`.
+- Browser metrics after the built `/app/` reload showed V2 `sidebar.width = 260`, `workspace.left = 266`, `chat.width = 1014`, `body.scrollHeight = 720`, and independent scrolling in `.at-session-list` and `.at-timeline`.
+
+### Reviewer
+- Main-agent layout comparison and targeted verification completed for this sidebar-width alignment slice. No global shell, full visual parity, or release readiness completion is claimed.

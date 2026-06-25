@@ -1234,6 +1234,72 @@ def test_v2_hooks_settings_validate_and_save_real_config(
         page.screenshot(path=str(screenshot_dir / "v2-hooks-editor-save.png"))
 
 
+def test_v2_roles_settings_validate_delete_and_create_real_config(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        sections = settings.get_by_role("navigation", name="Settings sections")
+
+        sections.get_by_role("button", name="Roles").click()
+        expect(settings.get_by_role("heading", name="Roles")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        reviewer_row = settings.locator(".at-settings-list-button").filter(
+            has_text="Reviewer"
+        )
+        reviewer_row.click()
+        expect(settings.get_by_label("Role ID")).to_have_value(
+            "reviewer",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        settings.get_by_role("button", name="Validate").click()
+        _wait_for_backend_state(
+            lambda: len(backend.role_validate_payloads) == 1
+            and backend.role_validate_payloads[0]["role_id"] == "reviewer",
+            "Role validate request was not captured.",
+        )
+
+        settings.get_by_role("button", name="Delete").click()
+        page.get_by_role("button", name="OK", exact=True).click()
+        _wait_for_backend_state(
+            lambda: backend.role_delete_requests == ["reviewer"],
+            "Role delete request was not captured.",
+        )
+
+        settings.get_by_role("button", name="New role").click()
+        settings.get_by_label("Role ID").fill("analyst")
+        settings.get_by_label("Role name").fill("Analyst")
+        settings.get_by_label("Description").fill("Analyzes the current plan.")
+        settings.get_by_label("System prompt").fill(
+            "Analyze the plan and report risks."
+        )
+        settings.get_by_role("button", name="Save").click()
+        _wait_for_backend_state(
+            lambda: len(backend.role_save_payloads) == 1
+            and backend.role_save_payloads[0]["role_id"] == "analyst"
+            and "file_name" not in backend.role_save_payloads[0]
+            and "source" not in backend.role_save_payloads[0],
+            "Role save request was not captured.",
+        )
+        expect(settings.get_by_label("Role ID")).to_have_value("analyst")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-roles-create-save.png"))
+
+
 def test_v2_model_profile_detail_saves_and_tests_existing_profile(
     browser_page: Page,
 ) -> None:
@@ -1880,6 +1946,49 @@ class _V2ShellBackend:
         self.rounds_request_count = 0
         self.runtime_tools_system_path_added = False
         self.runtime_tools_system_path_requests: list[str] = []
+        self.role_delete_requests: list[str] = []
+        self.role_save_payloads: list[dict[str, object]] = []
+        self.role_validate_payloads: list[dict[str, object]] = []
+        self.role_configs: dict[str, dict[str, object]] = {
+            "main": {
+                "bound_agent_id": None,
+                "content": "---\nname: Main Agent\n---\nHandle work.",
+                "deletable": False,
+                "description": "Main role",
+                "file_name": "main.md",
+                "mcp_servers": ["filesystem"],
+                "memory_profile": {"enabled": True},
+                "mode": "primary",
+                "model_profile": "default",
+                "name": "Main Agent",
+                "role_id": "main",
+                "skills": ["core"],
+                "source": "app",
+                "source_role_id": "main",
+                "system_prompt": "Handle work.",
+                "tools": ["read_file"],
+                "version": "1.0.0",
+            },
+            "reviewer": {
+                "bound_agent_id": "codex-local",
+                "content": "---\nname: Reviewer\n---\nReview carefully.",
+                "deletable": True,
+                "description": "Review changes",
+                "file_name": "reviewer.md",
+                "mcp_servers": ["filesystem"],
+                "memory_profile": {"enabled": True},
+                "mode": "subagent",
+                "model_profile": "default",
+                "name": "Reviewer",
+                "role_id": "reviewer",
+                "skills": ["review"],
+                "source": "project",
+                "source_role_id": "reviewer",
+                "system_prompt": "Review carefully.",
+                "tools": ["read_file"],
+                "version": "1.0.0",
+            },
+        }
         self.plugin_delete_requests: list[dict[str, object]] = []
         self.plugin_disable_requests: list[dict[str, object]] = []
         self.plugin_enable_requests: list[dict[str, object]] = []
@@ -2072,6 +2181,21 @@ class _V2ShellBackend:
                     "subagent_roles": [],
                 },
             )
+            return
+        if request.method == "GET" and path == "/roles/configs":
+            _fulfill_json(route, self._role_config_summaries())
+            return
+        if request.method == "GET" and path.startswith("/roles/configs/"):
+            self._get_role_config(route, path)
+            return
+        if request.method == "PUT" and path.startswith("/roles/configs/"):
+            self._save_role_config(route, request, path)
+            return
+        if request.method == "DELETE" and path.startswith("/roles/configs/"):
+            self._delete_role_config(route, path)
+            return
+        if request.method == "POST" and path == "/roles:validate-config":
+            self._validate_role_config(route, request)
             return
         if request.method == "GET" and path == "/system/configs/model/profiles":
             _fulfill_json(route, self.model_profiles)
@@ -2826,6 +2950,80 @@ class _V2ShellBackend:
             ],
             "transport": "stdio",
         }
+
+    def _role_config_summaries(self) -> list[dict[str, object]]:
+        summaries: list[dict[str, object]] = []
+        for role in self.role_configs.values():
+            summaries.append(
+                {
+                    "bound_agent_id": role.get("bound_agent_id"),
+                    "deletable": role.get("deletable"),
+                    "description": role.get("description"),
+                    "mode": role.get("mode"),
+                    "model_profile": role.get("model_profile"),
+                    "name": role.get("name"),
+                    "role_id": role.get("role_id"),
+                    "source": role.get("source"),
+                    "version": role.get("version"),
+                }
+            )
+        return summaries
+
+    def _role_id_from_path(self, path: str) -> str:
+        return unquote(path.removeprefix("/roles/configs/"))
+
+    def _get_role_config(self, route: Route, path: str) -> None:
+        role_id = self._role_id_from_path(path)
+        role = self.role_configs.get(role_id)
+        if role is None:
+            _fulfill_json(route, {"detail": f"Role not found: {role_id}"}, status=404)
+            return
+        _fulfill_json(route, role)
+
+    def _save_role_config(
+        self,
+        route: Route,
+        request: Request,
+        path: str,
+    ) -> None:
+        path_role_id = self._role_id_from_path(path)
+        payload = cast(dict[str, object], json.loads(request.post_data or "{}"))
+        self.role_save_payloads.append(payload)
+        role_id = str(payload.get("role_id", path_role_id))
+        saved = {
+            **payload,
+            "content": "---\nname: "
+            + str(payload.get("name", role_id))
+            + "\n---\n"
+            + str(payload.get("system_prompt", "")),
+            "deletable": True,
+            "file_name": f"{role_id}.md",
+            "source": "project",
+        }
+        self.role_configs[role_id] = saved
+        _fulfill_json(route, saved)
+
+    def _delete_role_config(self, route: Route, path: str) -> None:
+        role_id = self._role_id_from_path(path)
+        self.role_delete_requests.append(role_id)
+        self.role_configs.pop(role_id, None)
+        _fulfill_json(route, {"status": "ok"})
+
+    def _validate_role_config(self, route: Route, request: Request) -> None:
+        payload = cast(dict[str, object], json.loads(request.post_data or "{}"))
+        self.role_validate_payloads.append(payload)
+        role_id = str(payload.get("role_id", "validated"))
+        role = {
+            **payload,
+            "content": "---\nname: "
+            + str(payload.get("name", role_id))
+            + "\n---\n"
+            + str(payload.get("system_prompt", "")),
+            "deletable": True,
+            "file_name": f"{role_id}.md",
+            "source": "project",
+        }
+        _fulfill_json(route, {"role": role, "valid": True})
 
     def _plugins_config(self) -> dict[str, object]:
         return {

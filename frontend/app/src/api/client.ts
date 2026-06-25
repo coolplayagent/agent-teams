@@ -94,7 +94,9 @@ import type {
   RecoverySnapshot,
   RoleConfigDocument,
   RoleConfigOptions,
+  RoleConfigSaveRequest,
   RoleConfigSummary,
+  RoleValidationResult,
   RuntimeSkillDetail,
   HooksConfigPayload,
   HooksValidationResult,
@@ -767,9 +769,47 @@ export function saveRoleConfig(
     `/roles/configs/${encodeURIComponent(roleId.trim())}`,
     {
       method: "PUT",
-      body: JSON.stringify(config),
+      body: JSON.stringify(roleConfigSaveRequest(config)),
     },
   );
+}
+
+export function deleteRoleConfig(roleId: string): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/roles/configs/${encodeURIComponent(roleId.trim())}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function validateRoleConfig(
+  config: RoleConfigDocument,
+): Promise<RoleValidationResult> {
+  return requestJson<RoleValidationResult>("/roles:validate-config", {
+    method: "POST",
+    body: JSON.stringify(roleConfigSaveRequest(config)),
+  });
+}
+
+function roleConfigSaveRequest(config: RoleConfigDocument): RoleConfigSaveRequest {
+  return {
+    bound_agent_id: config.bound_agent_id ?? null,
+    contract: config.contract ?? undefined,
+    description: config.description ?? "",
+    execution_surface: config.execution_surface ?? "api",
+    mcp_servers: config.mcp_servers ?? [],
+    memory_profile: config.memory_profile ?? undefined,
+    mode: config.mode ?? "primary",
+    model_profile: config.model_profile ?? "default",
+    name: config.name ?? "",
+    role_id: config.role_id,
+    skills: config.skills ?? [],
+    source_role_id: config.source_role_id ?? null,
+    system_prompt: config.system_prompt ?? "",
+    tools: config.tools ?? [],
+    version: config.version ?? "1.0.0",
+  };
 }
 
 export function getModelProfiles(): Promise<ModelProfilesPayload> {

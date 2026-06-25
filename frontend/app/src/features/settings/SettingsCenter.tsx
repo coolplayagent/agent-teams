@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   deleteModelProfile,
+  deleteRoleConfig,
   getGeneralConfig,
   getConfigStatus,
   getModelCatalog,
@@ -28,6 +29,7 @@ import {
   saveModelProfile,
   saveOrchestrationConfig,
   saveRoleConfig,
+  validateRoleConfig,
 } from "../../api/client";
 import type {
   GeneralConfig,
@@ -438,6 +440,7 @@ function SettingsRoles({
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [creatingRole, setCreatingRole] = useState(false);
   const roleConfigsQuery = useQuery({
     queryKey: ["settings", "roles", "configs"],
     queryFn: listRoleConfigs,
@@ -452,15 +455,56 @@ function SettingsRoles({
       saveRoleConfig(document.role_id, document),
     onSuccess: (document) => {
       void message.success(t("settingsSaved"));
+      setCreatingRole(false);
+      setSelectedRoleId(document.role_id);
       queryClient.setQueryData(
         ["settings", "roles", "configs", document.role_id],
         document,
+      );
+      queryClient.setQueryData<RoleConfigSummary[]>(
+        ["settings", "roles", "configs"],
+        (current) => upsertRoleConfigSummary(current ?? [], document),
       );
       void queryClient.invalidateQueries({ queryKey: ["settings", "roles"] });
     },
     onError: (mutationError) => {
       void message.error(
         mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
+      );
+    },
+  });
+  const validateMutation = useMutation({
+    mutationFn: (document: RoleConfigDocument) => validateRoleConfig(document),
+    onSuccess: () => {
+      void message.success(t("settingsRoleValidated"));
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error
+          ? mutationError.message
+          : t("settingsRoleValidationFailed"),
+      );
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (roleId: string) => deleteRoleConfig(roleId),
+    onSuccess: () => {
+      void message.success(t("settingsRoleDeleted"));
+      const deletedRoleId = deleteMutation.variables;
+      setSelectedRoleId(null);
+      setCreatingRole(false);
+      if (deletedRoleId !== undefined) {
+        queryClient.setQueryData<RoleConfigSummary[]>(
+          ["settings", "roles", "configs"],
+          (current) =>
+            (current ?? []).filter((role) => role.role_id !== deletedRoleId),
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ["settings", "roles"] });
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error ? mutationError.message : t("settingsRoleDeleteFailed"),
       );
     },
   });
@@ -491,16 +535,36 @@ function SettingsRoles({
         error={roleConfigsQuery.error ?? error}
         loading={roleConfigsQuery.isLoading || loading}
       />
-      {selectedRoleId !== null ? (
+      {creatingRole ? (
         <RoleConfigDetail
+          creating
+          deleting={false}
+          document={newRoleConfigDraft()}
+          error={null}
+          loading={false}
+          onBack={() => setCreatingRole(false)}
+          onDelete={() => undefined}
+          onSave={(document) => saveMutation.mutate(document)}
+          onValidate={(document) => validateMutation.mutate(document)}
+          roleId="new-role"
+          saving={saveMutation.isPending}
+          summary={undefined}
+          validating={validateMutation.isPending}
+        />
+      ) : selectedRoleId !== null ? (
+        <RoleConfigDetail
+          deleting={deleteMutation.isPending}
           document={selectedRoleQuery.data}
           error={selectedRoleQuery.error}
           loading={selectedRoleQuery.isLoading}
           onBack={() => setSelectedRoleId(null)}
+          onDelete={(roleId) => deleteMutation.mutate(roleId)}
           onSave={(document) => saveMutation.mutate(document)}
+          onValidate={(document) => validateMutation.mutate(document)}
           roleId={selectedRoleId}
           saving={saveMutation.isPending}
           summary={selectedRoleSummary}
+          validating={validateMutation.isPending}
         />
       ) : !roleConfigsQuery.isLoading && roleConfigsQuery.data !== undefined ? (
         <>
@@ -509,6 +573,11 @@ function SettingsRoles({
             <Fact label={t("settingsMainAgent")} value={roleName(roles?.main_agent_role)} />
             <Fact label={t("settingsNormalRoles")} value={String(normalRoles.length)} />
             <Fact label={t("settingsSubagentRoles")} value={String(subagentRoles.length)} />
+          </div>
+          <div className="at-settings-section-actions">
+            <Button onClick={() => setCreatingRole(true)} type="primary">
+              {t("settingsRoleNew")}
+            </Button>
           </div>
           <SettingsList
             emptyText={t("settingsNoRoleConfigs")}
@@ -522,23 +591,33 @@ function SettingsRoles({
 }
 
 function RoleConfigDetail({
+  creating = false,
+  deleting,
   document,
   error,
   loading,
   onBack,
+  onDelete,
   onSave,
+  onValidate,
   roleId,
   saving,
   summary,
+  validating,
 }: {
+  creating?: boolean;
+  deleting: boolean;
   document: RoleConfigDocument | undefined;
   error: Error | null;
   loading: boolean;
   onBack: () => void;
+  onDelete: (roleId: string) => void;
   onSave: (document: RoleConfigDocument) => void;
+  onValidate: (document: RoleConfigDocument) => void;
   roleId: string;
   saving: boolean;
   summary: RoleConfigSummary | undefined;
+  validating: boolean;
 }) {
   const t = useTranslations();
   const [form] = Form.useForm<RoleConfigForm>();
@@ -562,9 +641,34 @@ function RoleConfigDetail({
         </div>
         <div className="at-settings-detail-actions">
           {document !== undefined ? (
-            <Button form={formId} htmlType="submit" loading={saving} type="primary">
-              {t("settingsSave")}
-            </Button>
+            <>
+              <Button
+                loading={validating}
+                onClick={() => {
+                  form
+                    .validateFields()
+                    .then((values) =>
+                      onValidate(updateRoleConfigDocument(document, values)),
+                    )
+                    .catch(() => undefined);
+                }}
+              >
+                {t("settingsRoleValidate")}
+              </Button>
+              <Button form={formId} htmlType="submit" loading={saving} type="primary">
+                {t("settingsSave")}
+              </Button>
+              {!creating && (document.deletable === true || summary?.deletable === true) ? (
+                <Popconfirm
+                  onConfirm={() => onDelete(document.role_id)}
+                  title={t("settingsRoleDeleteConfirm", { role: title })}
+                >
+                  <Button danger loading={deleting}>
+                    {t("settingsRoleDelete")}
+                  </Button>
+                </Popconfirm>
+              ) : null}
+            </>
           ) : null}
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
@@ -590,6 +694,13 @@ function RoleConfigDetail({
               onSave(updateRoleConfigDocument(document, values));
             }}
           >
+            <Form.Item
+              label={t("settingsRoleId")}
+              name="role_id"
+              rules={[{ message: t("settingsRoleIdRequired"), required: true }]}
+            >
+              <Input autoComplete="off" disabled={!creating} />
+            </Form.Item>
             <Form.Item label={t("settingsRoleName")} name="name">
               <Input autoComplete="off" />
             </Form.Item>
@@ -1784,6 +1895,7 @@ interface RoleConfigForm {
   mode?: string;
   model_profile?: string;
   name?: string;
+  role_id?: string;
   system_prompt?: string;
   version?: string;
 }
@@ -1949,6 +2061,29 @@ function roleConfigListItem(role: RoleConfigSummary): SettingsListItem {
   };
 }
 
+function upsertRoleConfigSummary(
+  roles: RoleConfigSummary[],
+  document: RoleConfigDocument,
+): RoleConfigSummary[] {
+  const summary: RoleConfigSummary = {
+    bound_agent_id: document.bound_agent_id,
+    deletable: document.deletable,
+    description: document.description,
+    execution_surface: document.execution_surface,
+    mode: document.mode,
+    model_profile: document.model_profile,
+    name: document.name,
+    role_id: document.role_id,
+    source: document.source,
+    version: document.version,
+  };
+  const existingIndex = roles.findIndex((role) => role.role_id === document.role_id);
+  if (existingIndex === -1) {
+    return [...roles, summary];
+  }
+  return roles.map((role, index) => (index === existingIndex ? summary : role));
+}
+
 function roleConfigDetail(role: RoleConfigSummary | undefined): string {
   if (role === undefined) {
     return "-";
@@ -1967,6 +2102,7 @@ function roleConfigFormValues(document: RoleConfigDocument): RoleConfigForm {
     mode: document.mode ?? "",
     model_profile: document.model_profile ?? "",
     name: document.name ?? "",
+    role_id: document.role_id,
     system_prompt: document.system_prompt ?? "",
     version: document.version ?? "",
   };
@@ -1977,6 +2113,7 @@ function updateRoleConfigDocument(
   values: RoleConfigForm,
 ): RoleConfigDocument {
   const mode = textValue(values.mode);
+  const roleId = textValue(values.role_id);
   return {
     ...document,
     bound_agent_id: nullableText(values.bound_agent_id),
@@ -1984,8 +2121,30 @@ function updateRoleConfigDocument(
     mode: mode || document.mode,
     model_profile: nullableText(values.model_profile),
     name: textValue(values.name),
+    role_id: roleId || document.role_id,
     system_prompt: values.system_prompt ?? "",
     version: textValue(values.version),
+  };
+}
+
+function newRoleConfigDraft(): RoleConfigDocument {
+  return {
+    bound_agent_id: null,
+    description: "",
+    file_name: "new-role.md",
+    mcp_servers: [],
+    memory_profile: {
+      enabled: false,
+    },
+    mode: "primary",
+    model_profile: "default",
+    name: "",
+    role_id: "",
+    skills: [],
+    source: "app",
+    system_prompt: "",
+    tools: [],
+    version: "1.0.0",
   };
 }
 

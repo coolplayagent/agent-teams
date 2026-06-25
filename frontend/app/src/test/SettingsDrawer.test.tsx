@@ -18,6 +18,7 @@ import {
   deleteAgentRuntime,
   deleteFeishuGatewayAccount,
   deleteModelProfile,
+  deleteRoleConfig,
   deleteWeChatGatewayAccount,
   deleteEnvironmentVariable,
   deleteMcpServer,
@@ -102,6 +103,7 @@ import {
   updateMcpServer,
   updatePlugin,
   validateHooksConfig,
+  validateRoleConfig,
   waitWeChatGatewayLogin,
 } from "../api/client";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
@@ -120,6 +122,7 @@ vi.mock("../api/client", () => ({
   deleteAgentRuntime: vi.fn(),
   deleteFeishuGatewayAccount: vi.fn(),
   deleteModelProfile: vi.fn(),
+  deleteRoleConfig: vi.fn(),
   deleteWeChatGatewayAccount: vi.fn(),
   deleteEnvironmentVariable: vi.fn(),
   deleteMcpServer: vi.fn(),
@@ -204,6 +207,7 @@ vi.mock("../api/client", () => ({
   updateMcpServer: vi.fn(),
   updatePlugin: vi.fn(),
   validateHooksConfig: vi.fn(),
+  validateRoleConfig: vi.fn(),
   waitWeChatGatewayLogin: vi.fn(),
 }));
 
@@ -223,6 +227,7 @@ const deleteModelProfileMock = vi.mocked(deleteModelProfile);
 const deleteWeChatGatewayAccountMock = vi.mocked(deleteWeChatGatewayAccount);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteMcpServerMock = vi.mocked(deleteMcpServer);
+const deleteRoleConfigMock = vi.mocked(deleteRoleConfig);
 const deleteSshProfileMock = vi.mocked(deleteSshProfile);
 const disableFeishuGatewayAccountMock = vi.mocked(disableFeishuGatewayAccount);
 const disableWeChatGatewayAccountMock = vi.mocked(disableWeChatGatewayAccount);
@@ -304,6 +309,7 @@ const updateWeChatGatewayAccountMock = vi.mocked(updateWeChatGatewayAccount);
 const updateMcpServerMock = vi.mocked(updateMcpServer);
 const updatePluginMock = vi.mocked(updatePlugin);
 const validateHooksConfigMock = vi.mocked(validateHooksConfig);
+const validateRoleConfigMock = vi.mocked(validateRoleConfig);
 const waitWeChatGatewayLoginMock = vi.mocked(waitWeChatGatewayLogin);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
@@ -895,6 +901,7 @@ beforeEach(() => {
   listRoleConfigsMock.mockResolvedValue([
     {
       description: "Main role",
+      deletable: false,
       mode: "primary",
       model_profile: "default",
       name: "Main Agent",
@@ -904,6 +911,7 @@ beforeEach(() => {
     },
     {
       bound_agent_id: "codex-local",
+      deletable: true,
       description: "Review changes",
       mode: "subagent",
       model_profile: "default",
@@ -921,6 +929,7 @@ beforeEach(() => {
         invariants: [{ invariant: "must_review" }],
       },
       description: roleId === "reviewer" ? "Review changes" : "Main role",
+      deletable: roleId === "reviewer",
       file_name: `${roleId}.md`,
       mcp_servers: ["filesystem"],
       memory_profile: {
@@ -938,6 +947,11 @@ beforeEach(() => {
       version: "1.0.0",
     }),
   );
+  deleteRoleConfigMock.mockResolvedValue({ status: "ok" });
+  validateRoleConfigMock.mockImplementation(async (document) => ({
+    role: document,
+    valid: true,
+  }));
   getWebConfigMock.mockResolvedValue({
     exa_api_key: "saved-exa-key",
     fallback_provider: "searxng",
@@ -1382,10 +1396,10 @@ describe("SettingsDrawer", () => {
     const reviewerRoleRow = screen.getByText("Reviewer").closest("button");
     expect(reviewerRoleRow).not.toBeNull();
     fireEvent.click(reviewerRoleRow as HTMLElement);
-    expect(await screen.findByText("Role ID")).toBeVisible();
     expect(getRoleConfigMock).toHaveBeenCalledWith("reviewer");
-    expect(screen.getByText("reviewer")).toBeVisible();
-    expect(screen.getByDisplayValue("Review carefully.")).toBeVisible();
+    expect(await screen.findByLabelText("Role ID")).toBeVisible();
+    expect(screen.getByDisplayValue("reviewer")).toBeVisible();
+    expect(await screen.findByDisplayValue("Review carefully.")).toBeVisible();
     expect(screen.getByDisplayValue("subagent")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() => expect(screen.getAllByText("Main Agent").length).toBeGreaterThan(0));
@@ -1960,6 +1974,57 @@ describe("SettingsDrawer", () => {
       }),
     );
   }, 25000);
+
+  it("validates, deletes, and creates role configs from the roles page", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+
+    const reviewerRoleRow = (await screen.findByText("Reviewer")).closest("button");
+    expect(reviewerRoleRow).not.toBeNull();
+    fireEvent.click(reviewerRoleRow as HTMLElement);
+
+    expect(await screen.findByDisplayValue("Review carefully.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+    await waitFor(() => expect(validateRoleConfigMock).toHaveBeenCalledTimes(1));
+    expect(validateRoleConfigMock).toHaveBeenCalledWith(
+      expect.objectContaining({ role_id: "reviewer" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+    await waitFor(() => expect(deleteRoleConfigMock).toHaveBeenCalledWith("reviewer"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "New role" }));
+    fireEvent.change(await screen.findByLabelText("Role ID"), {
+      target: { value: "analyst" },
+    });
+    fireEvent.change(screen.getByLabelText("Role name"), {
+      target: { value: "Analyst" },
+    });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Analyzes the current plan." },
+    });
+    fireEvent.change(screen.getByLabelText("System prompt"), {
+      target: { value: "Analyze the plan and report risks." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveRoleConfigMock).toHaveBeenCalledWith(
+        "analyst",
+        expect.objectContaining({
+          description: "Analyzes the current plan.",
+          name: "Analyst",
+          role_id: "analyst",
+          system_prompt: "Analyze the plan and report risks.",
+        }),
+      ),
+    );
+  }, 30000);
 
   it("sets default and deletes model profiles through real model config clients", async () => {
     renderDrawer();

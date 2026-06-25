@@ -10,6 +10,7 @@ import {
   deleteBoardTodoSource,
   deleteModelProfile,
   deletePlugin,
+  deleteRoleConfig,
   disableAutomationProject,
   disablePlugin,
   deleteFeishuGatewayAccount,
@@ -124,6 +125,7 @@ import {
   updatePlugin,
   updateWorkspace,
   validateHooksConfig,
+  validateRoleConfig,
   waitWeChatGatewayLogin,
 } from "../api/client";
 import { saveSpeechConfig } from "../api/speech";
@@ -2748,6 +2750,7 @@ describe("api client", () => {
   it("manages editable role configs through the role config endpoints", async () => {
     const roleConfig = {
       bound_agent_id: "codex-local",
+      content: "---\nname: Reviewer\n---\nReview carefully.",
       contract: {
         invariants: [{ invariant: "must_review" }],
       },
@@ -2768,6 +2771,28 @@ describe("api client", () => {
       tools: ["read_file"],
       version: "1.0.0",
     };
+    const roleDraft = {
+      bound_agent_id: "codex-local",
+      contract: {
+        invariants: [{ invariant: "must_review" }],
+      },
+      description: "Review changes",
+      execution_surface: "api",
+      mcp_servers: ["filesystem"],
+      memory_profile: {
+        enabled: true,
+      },
+      mode: "subagent",
+      model_profile: "default",
+      name: "Reviewer",
+      role_id: "reviewer",
+      skills: ["review"],
+      source_role_id: "reviewer",
+      system_prompt: "Review carefully.",
+      tools: ["read_file"],
+      version: "1.0.0",
+    };
+    const validationResult = { role: roleConfig, valid: true };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -2787,7 +2812,13 @@ describe("api client", () => {
         ),
       )
       .mockResolvedValueOnce(new Response(JSON.stringify(roleConfig), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(roleConfig), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify(roleConfig), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(validationResult), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(listRoleConfigs()).resolves.toEqual([
@@ -2795,6 +2826,8 @@ describe("api client", () => {
     ]);
     await expect(getRoleConfig("reviewer")).resolves.toEqual(roleConfig);
     await expect(saveRoleConfig("reviewer", roleConfig)).resolves.toEqual(roleConfig);
+    await expect(validateRoleConfig(roleConfig)).resolves.toEqual(validationResult);
+    await expect(deleteRoleConfig("reviewer")).resolves.toEqual({ status: "ok" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -2814,9 +2847,26 @@ describe("api client", () => {
       3,
       "/api/roles/configs/reviewer",
       expect.objectContaining({
-        body: JSON.stringify(roleConfig),
+        body: JSON.stringify(roleDraft),
         headers: expect.any(Headers),
         method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/roles:validate-config",
+      expect.objectContaining({
+        body: JSON.stringify(roleDraft),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/roles/configs/reviewer",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "DELETE",
       }),
     );
   });

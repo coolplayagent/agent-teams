@@ -3269,3 +3269,30 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, API-client, built-app browser, and screenshot inspection completed for this hooks mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.
+
+## 2026-06-26 V2 Settings Role Config Mutation Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, latest Settings ledger, and remaining Hegel Settings FAIL after the Hooks recovery, then selected Roles because it still lacked real create/validate/delete mutation parity.
+- Restored V1-backed Role configuration mutations inside the existing Settings > Roles secondary detail flow: roles can now be validated through `POST /api/roles:validate-config`, deleted through `DELETE /api/roles/configs/{role_id}`, and created through the same typed save path used for existing role updates.
+- Updated the role save client to send only backend save-request fields instead of leaking read-only record metadata such as `file_name`, `source`, or rendered content back into the mutation payload.
+- Preserved the V1 Settings information architecture: no primary Settings items were added or removed, Roles remains a root Settings surface, and System child pages remain behind the System secondary launcher.
+- Added built `/app/` browser evidence for Settings > Roles: the scenario opens an editable role, validates it, deletes it, creates a new Analyst role, saves through real mocked endpoints, verifies the clean save payload, and captures `.tmp/frontend-v2-settings/v2-roles-create-save.png`.
+- Kept this as partial Settings recovery only. Hegel Settings FAIL remains open for Orchestration default/create/delete flows, CodeAgent/MaaS auth/discovery gaps, broader visual review, and reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "role configs"` passed with 2 selected tests.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "validates, deletes"` passed with 1 selected test.
+- `npm test -- --run src/test/apiClient.test.ts -t "role configs"` passed with 1 selected test.
+- `npm run typecheck` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "roles_settings_validate"` passed with 1 selected test.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-settings/v2-roles-create-save.png` confirmed the real built V2 shell stayed framed, Settings root nav was unchanged, and the created Role detail remained open after save.
+- `npm test -- --run src/test/apiClient.test.ts` passed with 30 tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections or roles_settings_validate"` passed with 2 selected tests.
+- `npm run lint` passed.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 22 tests.
+
+### Reviewer
+- Main-agent component, API-client, built-app browser, and screenshot inspection completed for this role mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.

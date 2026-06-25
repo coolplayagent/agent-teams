@@ -1240,6 +1240,8 @@ export interface RoleConfigSummary {
   bound_agent_id?: string | null;
   mode?: RoleConfigMode | null;
   source?: string | null;
+  deletable?: boolean;
+  execution_surface?: string | null;
 }
 
 export interface RoleConfigDocument extends RoleConfigSummary {
@@ -1252,6 +1254,30 @@ export interface RoleConfigDocument extends RoleConfigSummary {
   system_prompt?: string;
   file_name?: string | null;
   content?: string | null;
+}
+
+export interface RoleConfigSaveRequest {
+  bound_agent_id?: string | null;
+  contract?: JsonValue | null;
+  description: string;
+  execution_surface?: string | null;
+  mcp_servers?: string[];
+  memory_profile?: RoleMemoryProfile | null;
+  mode?: RoleConfigMode | null;
+  model_profile?: string | null;
+  name: string;
+  role_id: string;
+  skills?: string[];
+  source_role_id?: string | null;
+  system_prompt: string;
+  tools?: string[];
+  version: string;
+}
+
+export interface RoleValidationResult {
+  valid: boolean;
+  role: RoleConfigDocument;
+  diet_warnings?: JsonValue[];
 }
 
 export interface OrchestrationPreset {

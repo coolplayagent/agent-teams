@@ -96,10 +96,10 @@ def test_v2_sidebar_mouse_resize_persists_after_reload(browser_page: Page) -> No
         page.goto(f"{app_url}/app/")
         _wait_for_v2_shell(page)
 
-        _expect_sidebar_width(page, 280)
+        _expect_sidebar_width(page, 260)
 
         resizer = page.locator(".at-sidebar-resizer")
-        expect(resizer).to_have_attribute("aria-valuenow", "280")
+        expect(resizer).to_have_attribute("aria-valuenow", "260")
         box = resizer.bounding_box()
         assert box is not None
         drag_y = box["y"] + (box["height"] / 2)
@@ -116,7 +116,7 @@ def test_v2_sidebar_mouse_resize_persists_after_reload(browser_page: Page) -> No
         )
         assert (
             page.evaluate(
-                "() => localStorage.getItem('agentTeams.sidebarWidthMigratedTo280')",
+                "() => localStorage.getItem('agentTeams.sidebarWidthMigratedTo260')",
             )
             == "true"
         )
@@ -219,29 +219,26 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
         expect(page.locator(".at-sidebar-nav")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
+        primary_nav = page.get_by_role("navigation", name="Primary navigation")
         assert page.locator(".at-sidebar-nav-label").all_inner_texts() == [
-            "Search",
-            "Skills",
+            "Chat",
             "Automation",
-            "Connectors",
+            "Skills",
             "Board",
+            "Search",
+            "Connectors",
             "Memory",
+            "Observability",
+            "Settings",
         ]
 
-        page.get_by_role("button", name="Search").click()
-        expect(page.get_by_test_id("session-search-view")).to_be_visible(
+        primary_nav.get_by_role("button", name="Chat").click()
+        expect(page.locator(".at-chat-view")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
+        expect(page.locator(".at-composer")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
-        page.get_by_role("button", name="Skills").click()
-        expect(page.get_by_test_id("skills-view")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_role("button", name="Open skill Writer")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        page.get_by_role("button", name="Automation").click()
+        primary_nav.get_by_role("button", name="Automation").click()
         expect(page.get_by_role("button", name="Daily triage")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
@@ -251,7 +248,28 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
             timeout=_WAIT_TIMEOUT_MS,
         )
 
-        page.get_by_role("button", name="Connectors").click()
+        primary_nav.get_by_role("button", name="Skills").click()
+        expect(page.get_by_test_id("skills-view")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Open skill Writer")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        primary_nav.get_by_role("button", name="Board").click()
+        expect(page.get_by_test_id("board-todo-todo-v2-shell")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("heading", name="Keep module pages reachable"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        primary_nav.get_by_role("button", name="Search").click()
+        expect(page.get_by_test_id("session-search-view")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        primary_nav.get_by_role("button", name="Connectors").click()
         expect(page.get_by_test_id("connectors-view")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
@@ -262,15 +280,7 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
             timeout=_WAIT_TIMEOUT_MS,
         )
 
-        page.get_by_role("button", name="Board").click()
-        expect(page.get_by_test_id("board-todo-todo-v2-shell")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.get_by_role("heading", name="Keep module pages reachable"),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-        page.get_by_role("button", name="Memory").click()
+        primary_nav.get_by_role("button", name="Memory").click()
         expect(page.get_by_test_id("memory-view")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
@@ -281,9 +291,32 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
             page.get_by_role("heading", name="V2 shell module parity"),
         ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
+        primary_nav.get_by_role("button", name="Observability").click()
+        observability = page.locator(".at-surface-view").filter(
+            has_text="Observability",
+        )
+        expect(
+            observability.get_by_role("heading", name="Observability")
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(observability.get_by_text("Agent loop")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        primary_nav.get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            settings.get_by_role("navigation", name="Settings sections"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            settings.get_by_role("button", name="Appearance", exact=True),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
         for requested_path in [
             "/system/configs",
             "/system/skills/market/clawhub",
+            "/observability/overview",
+            "/observability/breakdowns",
             "/automation/projects",
             "/automation/projects/aut-daily",
             "/automation/projects/aut-daily/sessions",
@@ -1548,6 +1581,7 @@ def _install_shell_state(page: Page) -> None:
           if (window.sessionStorage.getItem('__v2ShellResizeSeeded') !== 'true') {
             window.localStorage.removeItem('agentTeams.sidebarWidth');
             window.localStorage.removeItem('agentTeams.sidebarWidthMigratedTo280');
+            window.localStorage.removeItem('agentTeams.sidebarWidthMigratedTo260');
             window.sessionStorage.setItem('__v2ShellResizeSeeded', 'true');
           }
           window.EventSource = class EventSource {

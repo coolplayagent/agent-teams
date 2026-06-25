@@ -2700,3 +2700,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent real browser verification completed for this Appearance dark preset slice. No full Settings, Application Shell, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Shell Browser Evidence Alignment Batch
+
+### Scope
+- Re-checked the active goal README, parity checklist, and current implementation ledger before choosing this close-out slice, with the remaining high-risk gaps still centered on stream/replay edge cases, full settings form parity, message timeline coverage, Electron readiness, visual parity matrix, and reviewer sign-off.
+- Updated stale browser shell evidence to match the current V1-aligned implementation instead of the old generated shell assumptions.
+- Aligned the sidebar resize browser scenario with the restored 260px default width and the current `agentTeams.sidebarWidthMigratedTo260` migration key.
+- Expanded the sidebar module browser scenario from the obsolete six-entry list to the V1 primary navigation order: Chat, Automation, Skills, Board, Search, Connectors, Memory, Observability, and Settings.
+- Scoped navigation clicks to the sidebar primary navigation so topbar shortcuts do not accidentally satisfy sidebar parity checks.
+- Verified each primary entry opens a real surface: chat composer, automation project, skills market, board TODO, session search, connectors/runtime tools, memory detail, observability breakdowns, and the settings drawer with the Appearance section.
+- Kept this as evidence-layer Application Shell parity progress only; no product UI code changed, no sidebar/settings entries were added or removed, and no subsystem completion is claimed.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "sidebar_mouse_resize_persists_after_reload or sidebar_module_entries_open_real_surfaces"` passed with 2 selected tests.
+
+### Reviewer
+- Main-agent browser evidence alignment completed for this shell/navigation slice. Full Application Shell visual parity, Settings parity, streaming/replay completion, Electron readiness, and reviewer subagent sign-off remain open.

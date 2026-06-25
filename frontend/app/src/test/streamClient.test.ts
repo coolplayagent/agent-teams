@@ -476,6 +476,45 @@ describe("openRunStream", () => {
     expect(stream.states[0].runs["run-other"]).toBeUndefined();
   });
 
+  it("closes multiplexed replay when tracked runs only receive duplicate terminal events", () => {
+    const stream = openTestMultiplexedStream({
+      initialState: runtimeStateWithClosedRuns([
+        { lastEventId: 11, runId: "run-a" },
+        { lastEventId: 12, runId: "run-b" },
+      ]),
+      runs: [
+        { afterEventId: 11, runId: "run-a" },
+        { afterEventId: 12, runId: "run-b" },
+      ],
+    });
+
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(
+        relayEvent({
+          event_id: 11,
+          event_type: "run_completed",
+          run_id: "run-a",
+          trace_id: "run-a",
+        }),
+      ),
+    );
+
+    expect(stream.states).toEqual([]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].runs["run-a"]).toMatchObject({
+      lastEventId: 11,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+    expect(stream.closedStates[0].runs["run-b"]).toMatchObject({
+      lastEventId: 12,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+  });
+
   it("rejects multiplexed streams without run targets", () => {
     expect(() =>
       openTestMultiplexedStream({
@@ -591,17 +630,31 @@ function agUiEvent(overrides: Partial<AgUiRunEvent> = {}): AgUiRunEvent {
 }
 
 function runtimeStateWithClosedRun(lastEventId: number): RuntimeState {
+  return runtimeStateWithClosedRuns([
+    {
+      lastEventId,
+      runId: "run-1",
+    },
+  ]);
+}
+
+function runtimeStateWithClosedRuns(
+  runs: Array<{ lastEventId: number; runId: string }>,
+): RuntimeState {
   return {
     activeRunIds: [],
-    runs: {
-      "run-1": {
+    runs: Object.fromEntries(
+      runs.map((run) => [
+        run.runId,
+        {
         entries: [],
-        lastEventId,
-        runId: "run-1",
-        seenEventKeys: [`run-1:${lastEventId}`],
+          lastEventId: run.lastEventId,
+          runId: run.runId,
+          seenEventKeys: [`${run.runId}:${run.lastEventId}`],
         status: "closed",
         terminalEventType: "run_completed",
       },
-    },
+      ]),
+    ),
   };
 }

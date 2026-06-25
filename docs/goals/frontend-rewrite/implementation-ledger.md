@@ -1289,3 +1289,16 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this duplicate terminal replay close slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.
+
+## 2026-06-25 Multiplex Duplicate Terminal Replay Evidence Batch
+
+### Scope
+- Added focused stream-client coverage for the multiplex variant of duplicate terminal replay.
+- The new regression proves that when all tracked multiplexed runs are already terminal locally, replaying a duplicate terminal event for one tracked run closes the EventSource and emits the existing closed runtime state without producing duplicate timeline state.
+
+### Verification
+- `npm test -- src/test/streamClient.test.ts` in `frontend/app` passed with 18 tests.
+- `npm run typecheck` in `frontend/app` passed.
+
+### Reviewer
+- Main-agent targeted verification completed for this multiplex duplicate terminal replay evidence slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.

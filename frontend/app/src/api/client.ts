@@ -101,7 +101,11 @@ import type {
   SkillUninstallResponse,
   TimelineMessage,
   StopBackgroundTaskResponse,
+  RunTasksResponse,
+  SpecCheckpointEvaluationsResponse,
   SystemConfigStatus,
+  TaskSpecArtifactDiffResponse,
+  TaskSpecArtifactsResponse,
   PluginsRuntimePayload,
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
@@ -1131,6 +1135,53 @@ export async function listSessionRounds(
     };
   }
   return payload;
+}
+
+export function listRunTasks(
+  runId: string,
+  includeRoot = false,
+): Promise<RunTasksResponse> {
+  const params = new URLSearchParams();
+  if (includeRoot) {
+    params.set("include_root", "true");
+  }
+  const query = params.toString();
+  return requestJson<RunTasksResponse>(
+    `/tasks/runs/${encodeURIComponent(runId)}${query ? `?${query}` : ""}`,
+  );
+}
+
+export function listTaskSpecArtifacts(
+  taskId: string,
+): Promise<TaskSpecArtifactsResponse> {
+  return requestJson<TaskSpecArtifactsResponse>(
+    `/tasks/${encodeURIComponent(taskId)}/spec-artifacts`,
+  );
+}
+
+export function getTaskSpecArtifactDiff(
+  taskId: string,
+  version: number,
+  fromVersion?: number | null,
+): Promise<TaskSpecArtifactDiffResponse> {
+  const params = new URLSearchParams();
+  if (fromVersion !== undefined && fromVersion !== null) {
+    params.set("from_version", String(fromVersion));
+  }
+  const query = params.toString();
+  return requestJson<TaskSpecArtifactDiffResponse>(
+    `/tasks/${encodeURIComponent(taskId)}/spec-artifacts/${version}/diff${
+      query ? `?${query}` : ""
+    }`,
+  );
+}
+
+export function listSpecCheckpointEvaluations(
+  taskId: string,
+): Promise<SpecCheckpointEvaluationsResponse> {
+  return requestJson<SpecCheckpointEvaluationsResponse>(
+    `/tasks/${encodeURIComponent(taskId)}/spec-checkpoint-evaluations`,
+  );
 }
 
 export function getSessionTokenUsage(

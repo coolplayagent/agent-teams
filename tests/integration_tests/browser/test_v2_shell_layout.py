@@ -576,6 +576,20 @@ def test_v2_observability_topbar_opens_and_switches_scope(
         expect(observability.get_by_text("Session tools")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
+        spec_lineage = observability.locator(".at-spec-lineage")
+        expect(spec_lineage.get_by_role("heading", name="Spec lineage")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS
+        )
+        expect(spec_lineage.get_by_label("Task")).to_have_value(
+            "task-v2-spec",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(spec_lineage.get_by_text("Requirements")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(spec_lineage.get_by_text("+ Keep V2 spec diff visible")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
 
         assert (
             "/observability/overview?scope=global&time_window_minutes=1440"
@@ -595,10 +609,23 @@ def test_v2_observability_topbar_opens_and_switches_scope(
             f"scope=session&scope_id={_SESSION_ID}&time_window_minutes=1440"
             in backend.requested_urls
         )
+        assert "/tasks/runs/run-v2-shell?include_root=true" in backend.requested_urls
+        assert "/tasks/task-v2-spec/spec-artifacts" in backend.requested_urls
+        assert (
+            "/tasks/task-v2-spec/spec-artifacts/2/diff?from_version=1"
+            in backend.requested_urls
+        )
+        assert (
+            "/tasks/task-v2-spec/spec-checkpoint-evaluations" in backend.requested_urls
+        )
 
         screenshot_dir = repo_root / ".tmp" / "frontend-v2-observability"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(screenshot_dir / "v2-observability-session.png"))
+        spec_lineage.scroll_into_view_if_needed()
+        page.screenshot(
+            path=str(screenshot_dir / "v2-observability-spec-lineage.png"),
+        )
 
 
 class _V2ShellBackend:
@@ -656,6 +683,24 @@ class _V2ShellBackend:
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/rounds":
             self.rounds_request_count += 1
             _fulfill_json(route, self._rounds_page())
+            return
+        if request.method == "GET" and path == "/tasks/runs/run-v2-shell":
+            _fulfill_json(route, self._run_tasks())
+            return
+        if request.method == "GET" and path == "/tasks/task-v2-spec/spec-artifacts":
+            _fulfill_json(route, self._spec_artifacts())
+            return
+        if (
+            request.method == "GET"
+            and path == "/tasks/task-v2-spec/spec-artifacts/2/diff"
+        ):
+            _fulfill_json(route, self._spec_artifact_diff())
+            return
+        if (
+            request.method == "GET"
+            and path == "/tasks/task-v2-spec/spec-checkpoint-evaluations"
+        ):
+            _fulfill_json(route, self._spec_checkpoint_evaluations())
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/token-usage":
             _fulfill_json(route, {"by_role": {}, "input_tokens": 0, "output_tokens": 0})
@@ -966,6 +1011,90 @@ class _V2ShellBackend:
                 }
             ],
             "next_cursor": None,
+        }
+
+    def _run_tasks(self) -> dict[str, object]:
+        return {
+            "tasks": [
+                {
+                    "objective": "Keep the task projection visible.",
+                    "status": "completed",
+                    "task_id": "task-v2-plain",
+                    "title": "Plain task",
+                },
+                {
+                    "objective": "Show spec artifact history in the shell.",
+                    "spec_artifact_id": "spec-v2-2",
+                    "status": "completed",
+                    "task_id": "task-v2-spec",
+                    "title": "Implement spec lineage",
+                },
+            ]
+        }
+
+    def _spec_artifacts(self) -> dict[str, object]:
+        return {
+            "task_id": "task-v2-spec",
+            "versions": [
+                {
+                    "artifact_id": "spec-v2-1",
+                    "created_at": "2026-06-25T08:05:00Z",
+                    "session_id": _SESSION_ID,
+                    "task_id": "task-v2-spec",
+                    "trace_id": "run-v2-shell",
+                    "updated_at": "2026-06-25T08:05:00Z",
+                    "version": 1,
+                },
+                {
+                    "artifact_id": "spec-v2-2",
+                    "created_at": "2026-06-25T08:15:00Z",
+                    "session_id": _SESSION_ID,
+                    "task_id": "task-v2-spec",
+                    "trace_id": "run-v2-shell",
+                    "updated_at": "2026-06-25T08:15:00Z",
+                    "version": 2,
+                },
+            ],
+        }
+
+    def _spec_artifact_diff(self) -> dict[str, object]:
+        return {
+            "field_changes": [
+                {
+                    "added_items": ["Keep V2 spec diff visible"],
+                    "change_type": "modified",
+                    "field_label": "Requirements",
+                    "field_name": "requirements",
+                    "removed_items": ["Sketch spec history offline"],
+                }
+            ],
+            "from_artifact_id": "spec-v2-1",
+            "from_version": 1,
+            "has_changes": True,
+            "summary": "Spec lineage became a visible observability surface.",
+            "task_id": "task-v2-spec",
+            "to_artifact_id": "spec-v2-2",
+            "to_version": 2,
+        }
+
+    def _spec_checkpoint_evaluations(self) -> dict[str, object]:
+        return {
+            "evaluations": [
+                {
+                    "artifact_id": "spec-v2-2",
+                    "checkpoint_seq": 2,
+                    "created_at": "2026-06-25T08:16:00Z",
+                    "drift_detected": False,
+                    "evaluation_id": "eval-v2-spec",
+                    "evaluator": "reviewer",
+                    "overall_score": 4.5,
+                    "session_id": _SESSION_ID,
+                    "summary": "Spec remains aligned with the shell target.",
+                    "task_id": "task-v2-spec",
+                    "trace_id": "run-v2-shell",
+                }
+            ],
+            "task_id": "task-v2-spec",
         }
 
     def _observability_overview(self, query: str) -> dict[str, object]:

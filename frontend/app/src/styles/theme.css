@@ -1742,6 +1742,132 @@ body {
   background: var(--at-surface);
 }
 
+.at-spec-lineage {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--at-border);
+}
+
+.at-spec-lineage-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.at-spec-lineage-header h4 {
+  margin: 0 0 2px !important;
+}
+
+.at-spec-lineage-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.at-spec-lineage-controls label {
+  display: grid;
+  grid-template-columns: max-content minmax(220px, 360px);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-spec-lineage-controls select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-bg);
+  color: var(--at-text);
+  font: inherit;
+}
+
+.at-spec-lineage-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.at-spec-version {
+  display: grid;
+  gap: 2px;
+  min-width: 96px;
+  padding: 7px 9px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-bg);
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-spec-version:hover,
+.at-spec-version:focus-visible,
+.at-spec-version.is-selected {
+  border-color: var(--at-primary);
+  outline: none;
+}
+
+.at-spec-version span {
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
+.at-spec-lineage-table {
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--at-surface);
+}
+
+.at-spec-lineage-diff {
+  display: grid;
+  gap: 10px;
+}
+
+.at-spec-diff-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+}
+
+.at-spec-diff-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.at-spec-diff-field-header span {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-spec-diff-field pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  color: var(--at-text);
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .at-connectors-view {
   flex: 1 1 auto;
   display: flex;
@@ -6298,6 +6424,13 @@ body {
 
   .at-board-column {
     min-width: 0;
+  }
+
+  .at-spec-lineage-controls,
+  .at-spec-lineage-controls label {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
 
   .at-session-search-result {

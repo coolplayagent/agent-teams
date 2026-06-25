@@ -30,6 +30,7 @@ import {
   listWeChatGatewayAccounts,
   getMemory,
   getRoleConfig,
+  getTaskSpecArtifactDiff,
   getRuntimeToolDownload,
   getRuntimeSkillDetail,
   deleteSession,
@@ -50,6 +51,9 @@ import {
   listSshProfiles,
   listSessionSubagents,
   listSessionRounds,
+  listRunTasks,
+  listSpecCheckpointEvaluations,
+  listTaskSpecArtifacts,
   listWorkspaces,
   openWorkspaceRoot,
   pickWorkspace,
@@ -1195,6 +1199,104 @@ describe("api client", () => {
       expect.objectContaining({
         headers: expect.any(Headers),
       }),
+    );
+  });
+
+  it("loads task spec lineage through task endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            tasks: [
+              {
+                task_id: "task-1",
+                title: "Implement spec",
+                spec_artifact_id: "spec-2",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            task_id: "task-1",
+            versions: [
+              {
+                artifact_id: "spec-1",
+                task_id: "task-1",
+                session_id: "session-1",
+                trace_id: "run-1",
+                version: 1,
+                created_at: "2026-06-25T08:00:00Z",
+                updated_at: "2026-06-25T08:00:00Z",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            task_id: "task-1",
+            from_artifact_id: "spec-1",
+            to_artifact_id: "spec-2",
+            from_version: 1,
+            to_version: 2,
+            field_changes: [],
+            has_changes: false,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            task_id: "task-1",
+            evaluations: [],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listRunTasks("run-1", true)).resolves.toMatchObject({
+      tasks: [{ task_id: "task-1" }],
+    });
+    await expect(listTaskSpecArtifacts("task-1")).resolves.toMatchObject({
+      versions: [{ artifact_id: "spec-1" }],
+    });
+    await expect(getTaskSpecArtifactDiff("task-1", 2, 1)).resolves.toMatchObject({
+      from_version: 1,
+      to_version: 2,
+    });
+    await expect(listSpecCheckpointEvaluations("task-1")).resolves.toEqual({
+      task_id: "task-1",
+      evaluations: [],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/tasks/runs/run-1?include_root=true",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/tasks/task-1/spec-artifacts",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/tasks/task-1/spec-artifacts/2/diff?from_version=1",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/tasks/task-1/spec-checkpoint-evaluations",
+      expect.objectContaining({ headers: expect.any(Headers) }),
     );
   });
 

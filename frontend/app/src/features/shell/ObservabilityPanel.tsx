@@ -9,6 +9,7 @@ import {
 } from "../../api/client";
 import type { JsonValue } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
+import { SpecLineagePanel } from "./SpecLineagePanel";
 
 interface ObservabilityPanelProps {
   sessionId: string | null;
@@ -78,6 +79,7 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
         rowKey="key"
         size="small"
       />
+      <SpecLineagePanel sessionId={sessionId} />
     </section>
   );
 }

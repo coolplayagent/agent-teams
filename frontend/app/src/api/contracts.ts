@@ -1450,6 +1450,94 @@ export interface SessionRoundsPage {
   next_cursor?: string | null;
 }
 
+export interface TaskProjection {
+  assigned_instance_id?: string | null;
+  assigned_role_id?: string | null;
+  depends_on_task_ids?: string[];
+  error?: string;
+  evidence_bundle?: JsonValue;
+  handoff?: JsonValue;
+  instance_id?: string | null;
+  lifecycle?: JsonValue;
+  objective?: string;
+  orchestration_node_id?: string;
+  parent_task_id?: string | null;
+  result?: string;
+  role_id?: string | null;
+  spec?: JsonValue;
+  spec_artifact_id?: string;
+  spec_source_task_id?: string;
+  status?: string;
+  task_id: string;
+  title?: string;
+  verification?: JsonValue;
+}
+
+export interface RunTasksResponse {
+  tasks: TaskProjection[];
+}
+
+export interface TaskSpecArtifactVersionSummary {
+  artifact_id: string;
+  created_at: string;
+  session_id: string;
+  source_task_id?: string | null;
+  task_id: string;
+  trace_id: string;
+  updated_at: string;
+  version: number;
+}
+
+export interface TaskSpecArtifactsResponse {
+  task_id: string;
+  versions: TaskSpecArtifactVersionSummary[];
+}
+
+export interface TaskSpecArtifactDiffFieldChange {
+  added_items?: string[];
+  change_type: "added" | "removed" | "modified" | "unchanged" | string;
+  field_label: string;
+  field_name: string;
+  new_items?: string[];
+  new_value?: string | null;
+  old_items?: string[];
+  old_value?: string | null;
+  removed_items?: string[];
+}
+
+export interface TaskSpecArtifactDiffResponse {
+  field_changes: TaskSpecArtifactDiffFieldChange[];
+  from_artifact_id: string;
+  from_version: number;
+  has_changes: boolean;
+  summary?: string;
+  task_id: string;
+  to_artifact_id: string;
+  to_version: number;
+}
+
+export interface SpecCheckpointEvaluation {
+  artifact_id: string;
+  checkpoint_seq: number;
+  created_at: string;
+  drift_detected: boolean;
+  drift_detail?: string;
+  evaluation_id: string;
+  evaluator: string;
+  fallback?: boolean;
+  overall_score: number;
+  scores_json?: string;
+  session_id: string;
+  summary?: string;
+  task_id: string;
+  trace_id: string;
+}
+
+export interface SpecCheckpointEvaluationsResponse {
+  evaluations: SpecCheckpointEvaluation[];
+  task_id: string;
+}
+
 export interface TokenUsageRoleSummary {
   role_id: string;
   input_tokens: number;

@@ -2299,3 +2299,27 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and targeted verification completed for this approval-feedback recovery slice. No Run Recovery, AG-UI Runtime Stream, or Observability/Feedback subsystem completion is claimed.
+
+## 2026-06-25 V2 Spec Lineage Observability Batch
+
+### Scope
+- Re-checked checklist item 11 after the approval feedback slice and targeted the missing Spec Lineage timeline/diff surface instead of continuing only the last user-reported message rendering issues.
+- Added typed frontend API coverage for the existing task/spec endpoints: run task projection, task spec artifacts, spec artifact diff, and spec checkpoint evaluations.
+- Added a `SpecLineagePanel` inside the existing Observability secondary surface, preserving the V1-shaped sidebar/settings information architecture and avoiding a new top-level module.
+- The panel discovers the latest run for the current session, filters real spec-backed tasks, shows spec artifact versions as a compact timeline, renders checkpoint evaluation rows, and shows the selected version diff from backend data.
+- Refreshed `frontend/dist/app` for the Observability/Spec Lineage changes.
+- Checked the current in-app browser at `http://127.0.0.1:8000/app/` after reload: sidebar entries remained the V1-parity set, body overflow stayed `hidden`, document height matched viewport height, workspace/sidebar heights stayed fixed at 668 px, and the live session showed the real empty state `最近运行中没有带规格的任务`.
+- Browser screenshot capture from the in-app browser timed out at the capture command, so screenshot evidence for this batch comes from the Playwright browser integration run against the refreshed built app.
+- Kept this as targeted item-11 evidence only; full Observability, Project View, Spec Lineage, Feedback, and reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/apiClient.test.ts src/test/SpecLineagePanel.test.tsx` passed with 27 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k observability` passed with 1 test and generated screenshots.
+- `uv run --extra dev ruff check --fix tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev ruff format --no-cache --force-exclude tests/integration_tests/browser/test_v2_shell_layout.py` reformatted the browser test once and then left it formatted.
+- Captured screenshot evidence at `.tmp/frontend-v2-observability/v2-observability-session.png` and `.tmp/frontend-v2-observability/v2-observability-spec-lineage.png`.
+
+### Reviewer
+- Main-agent component, browser integration, screenshot, and in-app-browser verification completed for this Spec Lineage slice. No Observability, Project View, Spec Lineage, or Feedback subsystem completion is claimed.

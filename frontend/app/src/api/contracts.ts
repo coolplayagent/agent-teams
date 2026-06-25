@@ -1262,7 +1262,23 @@ export interface OrchestrationConfig {
 export interface ModelProfileRecord {
   provider?: string;
   model?: string;
+  base_url?: string;
   is_default?: boolean;
+  temperature?: number | null;
+  top_p?: number | null;
+  context_window?: number | null;
+  connect_timeout_seconds?: number | null;
+  max_tokens?: number | null;
+  fallback_policy_id?: string | null;
+  fallback_priority?: number | null;
+  catalog_provider_id?: string | null;
+  catalog_provider_name?: string | null;
+  catalog_model_name?: string | null;
+  ssl_verify?: boolean | null;
+  api_key?: string | null;
+  headers?: JsonValue[] | null;
+  maas_auth?: JsonValue | null;
+  codeagent_auth?: JsonValue | null;
   input_modalities?: string[];
   capabilities?: ModelCapabilities;
   resolved_capabilities?: ModelCapabilities;
@@ -1272,6 +1288,33 @@ export interface ModelProfileRecord {
 }
 
 export type ModelProfilesPayload = Record<string, ModelProfileRecord>;
+
+export interface ModelProfileSaveRequest {
+  provider: string;
+  model: string;
+  base_url: string;
+  is_default?: boolean;
+  temperature: number;
+  top_p: number;
+  context_window: number | null;
+  connect_timeout_seconds: number;
+  max_tokens?: number | null;
+  fallback_policy_id?: string | null;
+  fallback_priority?: number | null;
+  catalog_provider_id?: string | null;
+  catalog_provider_name?: string | null;
+  catalog_model_name?: string | null;
+  ssl_verify?: boolean | null;
+  api_key?: string | null;
+  headers?: JsonValue[] | null;
+  maas_auth?: JsonValue | null;
+  codeagent_auth?: JsonValue | null;
+  capabilities?: ModelCapabilities;
+  speech_realtime?: {
+    model?: string | null;
+  } | null;
+  source_name?: string | null;
+}
 
 export interface ModalityCapabilities {
   audio?: boolean | null;

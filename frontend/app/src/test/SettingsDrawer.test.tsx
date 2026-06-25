@@ -17,6 +17,7 @@ import {
   createCommand,
   deleteAgentRuntime,
   deleteFeishuGatewayAccount,
+  deleteModelProfile,
   deleteWeChatGatewayAccount,
   deleteEnvironmentVariable,
   deleteMcpServer,
@@ -63,6 +64,7 @@ import {
   revealSshProfilePassword,
   revealGitHubToken,
   refreshAgentRuntimeRegistry,
+  reloadModelConfig,
   refreshMcpServerTools,
   reloadFeishuGateway,
   reloadWeChatGateway,
@@ -73,6 +75,7 @@ import {
   saveClawHubConfig,
   saveGeneralConfig,
   saveGitHubConfig,
+  saveModelProfile,
   saveNotificationConfig,
   saveOrchestrationConfig,
   saveProxyConfig,
@@ -106,6 +109,7 @@ vi.mock("../api/client", () => ({
   createCommand: vi.fn(),
   deleteAgentRuntime: vi.fn(),
   deleteFeishuGatewayAccount: vi.fn(),
+  deleteModelProfile: vi.fn(),
   deleteWeChatGatewayAccount: vi.fn(),
   deleteEnvironmentVariable: vi.fn(),
   deleteMcpServer: vi.fn(),
@@ -152,6 +156,7 @@ vi.mock("../api/client", () => ({
   revealSshProfilePassword: vi.fn(),
   revealGitHubToken: vi.fn(),
   refreshAgentRuntimeRegistry: vi.fn(),
+  reloadModelConfig: vi.fn(),
   refreshMcpServerTools: vi.fn(),
   reloadFeishuGateway: vi.fn(),
   reloadWeChatGateway: vi.fn(),
@@ -162,6 +167,7 @@ vi.mock("../api/client", () => ({
   saveClawHubConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveGitHubConfig: vi.fn(),
+  saveModelProfile: vi.fn(),
   saveNotificationConfig: vi.fn(),
   saveOrchestrationConfig: vi.fn(),
   saveProxyConfig: vi.fn(),
@@ -193,6 +199,7 @@ const createFeishuGatewayAccountMock = vi.mocked(createFeishuGatewayAccount);
 const createCommandMock = vi.mocked(createCommand);
 const deleteAgentRuntimeMock = vi.mocked(deleteAgentRuntime);
 const deleteFeishuGatewayAccountMock = vi.mocked(deleteFeishuGatewayAccount);
+const deleteModelProfileMock = vi.mocked(deleteModelProfile);
 const deleteWeChatGatewayAccountMock = vi.mocked(deleteWeChatGatewayAccount);
 const deleteEnvironmentVariableMock = vi.mocked(deleteEnvironmentVariable);
 const deleteMcpServerMock = vi.mocked(deleteMcpServer);
@@ -239,6 +246,7 @@ const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
 const revealGitHubTokenMock = vi.mocked(revealGitHubToken);
 const refreshAgentRuntimeRegistryMock = vi.mocked(refreshAgentRuntimeRegistry);
+const reloadModelConfigMock = vi.mocked(reloadModelConfig);
 const refreshMcpServerToolsMock = vi.mocked(refreshMcpServerTools);
 const reloadFeishuGatewayMock = vi.mocked(reloadFeishuGateway);
 const reloadWeChatGatewayMock = vi.mocked(reloadWeChatGateway);
@@ -249,6 +257,7 @@ const saveAgentRuntimeMock = vi.mocked(saveAgentRuntime);
 const saveClawHubConfigMock = vi.mocked(saveClawHubConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveGitHubConfigMock = vi.mocked(saveGitHubConfig);
+const saveModelProfileMock = vi.mocked(saveModelProfile);
 const saveNotificationConfigMock = vi.mocked(saveNotificationConfig);
 const saveOrchestrationConfigMock = vi.mocked(saveOrchestrationConfig);
 const saveProxyConfigMock = vi.mocked(saveProxyConfig);
@@ -1126,6 +1135,9 @@ beforeEach(() => {
   });
   revealSshProfilePasswordMock.mockResolvedValue({ password: "saved-password" });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
+  saveModelProfileMock.mockResolvedValue({ status: "ok" });
+  deleteModelProfileMock.mockResolvedValue({ status: "ok" });
+  reloadModelConfigMock.mockResolvedValue({ status: "ok" });
   saveOrchestrationConfigMock.mockResolvedValue({ status: "ok" });
   saveRoleConfigMock.mockImplementation((_roleId, document) =>
     Promise.resolve(document),
@@ -1712,6 +1724,46 @@ describe("SettingsDrawer", () => {
         tools: ["read_file"],
       }),
     );
+  }, 25000);
+
+  it("sets default and deletes model profiles through real model config clients", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+
+    const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
+    expect(visionRow).not.toBeNull();
+    fireEvent.click(within(visionRow as HTMLElement).getByRole("button", { name: "Default" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "vision",
+      expect.objectContaining({
+        base_url: "",
+        connect_timeout_seconds: 15,
+        context_window: null,
+        fallback_policy_id: null,
+        fallback_priority: 0,
+        is_default: true,
+        model: "gpt-5-vision",
+        provider: "openai",
+        temperature: 0.7,
+        top_p: 1,
+      }),
+    );
+    expect(reloadModelConfigMock).toHaveBeenCalledTimes(1);
+
+    const sttRow = screen.getByText("stt").closest(".at-model-profile-row");
+    expect(sttRow).not.toBeNull();
+    fireEvent.click(within(sttRow as HTMLElement).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText('Delete model profile "stt"?')).toBeInTheDocument();
+    fireEvent.click(lastDeleteButton());
+
+    await waitFor(() => expect(deleteModelProfileMock).toHaveBeenCalledWith("stt"));
+    await waitFor(() => expect(reloadModelConfigMock).toHaveBeenCalledTimes(2));
   }, 25000);
 
   it("manages MCP servers through the MCP config clients", async () => {

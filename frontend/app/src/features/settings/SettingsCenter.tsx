@@ -3,6 +3,7 @@ import {
   Button,
   Form,
   Input,
+  Popconfirm,
   Switch,
   Typography,
 } from "antd";
@@ -11,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  deleteModelProfile,
   getGeneralConfig,
   getConfigStatus,
   getModelProfiles,
@@ -18,7 +20,9 @@ import {
   getRoleConfig,
   getRoleConfigOptions,
   listRoleConfigs,
+  reloadModelConfig,
   saveGeneralConfig,
+  saveModelProfile,
   saveOrchestrationConfig,
   saveRoleConfig,
 } from "../../api/client";
@@ -26,6 +30,7 @@ import type {
   GeneralConfig,
   ModalityCapabilities,
   ModelProfileRecord,
+  ModelProfileSaveRequest,
   OrchestrationConfig,
   OrchestrationPreset,
   OrchestrationPolicy,
@@ -629,6 +634,8 @@ function SettingsModels({
   loading: boolean;
   profiles: Awaited<ReturnType<typeof getModelProfiles>> | undefined;
 }) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const t = useTranslations();
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const entries = useMemo(
@@ -644,6 +651,62 @@ function SettingsModels({
     }
   }, [profiles, selectedProfileId]);
 
+  const setDefaultMutation = useMutation({
+    mutationFn: async ({
+      profile,
+      profileId,
+    }: {
+      profile: ModelProfileRecord;
+      profileId: string;
+    }) => {
+      const result = await saveModelProfile(
+        profileId,
+        buildModelProfileSaveRequest(profile, { isDefault: true }),
+      );
+      await reloadModelConfig();
+      return result;
+    },
+    onSuccess: (_result, variables) => {
+      void message.success(t("settingsModelDefaultSaved", { name: variables.profileId }));
+      void queryClient.invalidateQueries({ queryKey: ["settings", "models", "profiles"] });
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
+      );
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (profileId: string) => {
+      const result = await deleteModelProfile(profileId);
+      await reloadModelConfig();
+      return result;
+    },
+    onSuccess: (_result, profileId) => {
+      if (selectedProfileId === profileId) {
+        setSelectedProfileId(null);
+      }
+      void message.success(t("settingsModelDeleted", { name: profileId }));
+      void queryClient.invalidateQueries({ queryKey: ["settings", "models", "profiles"] });
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
+      );
+    },
+  });
+
+  const requestDefault = (profileId: string, profile: ModelProfileRecord) => {
+    if (profile.is_default === true) {
+      return;
+    }
+    setDefaultMutation.mutate({ profile, profileId });
+  };
+  const requestDelete = (profileId: string) => {
+    deleteMutation.mutate(profileId);
+  };
+
   return (
     <SettingsSection title={t("settingsModels")}>
       <SettingsQueryState error={error} loading={loading} />
@@ -651,8 +714,12 @@ function SettingsModels({
         selectedProfileId !== null && selectedProfile !== undefined ? (
           <ModelProfileDetail
             onBack={() => setSelectedProfileId(null)}
+            onDelete={requestDelete}
+            onSetDefault={requestDefault}
+            deleting={deleteMutation.isPending}
             profile={selectedProfile}
             profileId={selectedProfileId}
+            settingDefault={setDefaultMutation.isPending}
           />
         ) : (
           <>
@@ -668,26 +735,47 @@ function SettingsModels({
                   const detail = modelProfileDetail(profile);
                   const provider = profile.provider ?? t("settingsProviderUnknown");
                   return (
-                    <button
-                      className="at-settings-list-button at-settings-list-row at-model-profile-row"
-                      key={profileId}
-                      onClick={() => setSelectedProfileId(profileId)}
-                      type="button"
-                    >
-                      <div className="at-settings-list-main">
-                        <span>{profileId}</span>
-                        <Typography.Text ellipsis title={detail}>
-                          {detail}
-                        </Typography.Text>
-                      </div>
-                      <Typography.Text
-                        className="at-settings-list-meta"
-                        ellipsis
-                        title={provider}
+                    <div className="at-settings-list-row at-model-profile-row" key={profileId}>
+                      <button
+                        className="at-model-profile-row-main"
+                        onClick={() => setSelectedProfileId(profileId)}
+                        type="button"
                       >
-                        {provider}
-                      </Typography.Text>
-                    </button>
+                        <div className="at-settings-list-main">
+                          <span>{profileId}</span>
+                          <Typography.Text ellipsis title={detail}>
+                            {detail}
+                          </Typography.Text>
+                        </div>
+                        <Typography.Text
+                          className="at-settings-list-meta"
+                          ellipsis
+                          title={provider}
+                        >
+                          {provider}
+                        </Typography.Text>
+                      </button>
+                      <div className="at-model-profile-actions">
+                        <Button
+                          disabled={profile.is_default === true}
+                          loading={setDefaultMutation.isPending}
+                          onClick={() => requestDefault(profileId, profile)}
+                          size="small"
+                        >
+                          {t("settingsModelSetDefaultShort")}
+                        </Button>
+                        <Popconfirm
+                          cancelText={t("sidebarDeleteCancel")}
+                          okText={t("sidebarDeleteConfirm")}
+                          onConfirm={() => requestDelete(profileId)}
+                          title={t("settingsModelDeleteConfirm", { name: profileId })}
+                        >
+                          <Button danger loading={deleteMutation.isPending} size="small">
+                            {t("settingsModelDelete")}
+                          </Button>
+                        </Popconfirm>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -700,13 +788,21 @@ function SettingsModels({
 }
 
 function ModelProfileDetail({
+  deleting,
   onBack,
+  onDelete,
+  onSetDefault,
   profile,
   profileId,
+  settingDefault,
 }: {
+  deleting: boolean;
   onBack: () => void;
+  onDelete: (profileId: string) => void;
+  onSetDefault: (profileId: string, profile: ModelProfileRecord) => void;
   profile: ModelProfileRecord;
   profileId: string;
+  settingDefault: boolean;
 }) {
   const t = useTranslations();
   const input = capabilityModes(
@@ -723,6 +819,23 @@ function ModelProfileDetail({
           <Typography.Text>{modelProfileDetail(profile)}</Typography.Text>
         </div>
         <div className="at-settings-detail-actions">
+          <Button
+            disabled={profile.is_default === true}
+            loading={settingDefault}
+            onClick={() => onSetDefault(profileId, profile)}
+          >
+            {t("settingsModelSetDefault")}
+          </Button>
+          <Popconfirm
+            cancelText={t("sidebarDeleteCancel")}
+            okText={t("sidebarDeleteConfirm")}
+            onConfirm={() => onDelete(profileId)}
+            title={t("settingsModelDeleteConfirm", { name: profileId })}
+          >
+            <Button danger loading={deleting}>
+              {t("settingsModelDelete")}
+            </Button>
+          </Popconfirm>
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
       </div>
@@ -751,6 +864,66 @@ function ModelProfileDetail({
       </div>
     </div>
   );
+}
+
+function buildModelProfileSaveRequest(
+  profile: ModelProfileRecord,
+  options: { isDefault?: boolean } = {},
+): ModelProfileSaveRequest {
+  const request: ModelProfileSaveRequest = {
+    base_url: profile.base_url ?? "",
+    connect_timeout_seconds: finiteNumber(profile.connect_timeout_seconds, 15),
+    context_window: integerOrNull(profile.context_window),
+    fallback_policy_id: profile.fallback_policy_id ?? null,
+    fallback_priority: finiteNumber(profile.fallback_priority, 0),
+    is_default: options.isDefault === true ? true : profile.is_default === true,
+    model: profile.model ?? "",
+    provider: profile.provider ?? "openai_compatible",
+    temperature: finiteNumber(profile.temperature, 0.7),
+    top_p: finiteNumber(profile.top_p, 1),
+  };
+  if (profile.max_tokens !== undefined) {
+    request.max_tokens = integerOrNull(profile.max_tokens);
+  }
+  if (profile.catalog_provider_id !== undefined) {
+    request.catalog_provider_id = profile.catalog_provider_id;
+  }
+  if (profile.catalog_provider_name !== undefined) {
+    request.catalog_provider_name = profile.catalog_provider_name;
+  }
+  if (profile.catalog_model_name !== undefined) {
+    request.catalog_model_name = profile.catalog_model_name;
+  }
+  if (profile.ssl_verify === true || profile.ssl_verify === false) {
+    request.ssl_verify = profile.ssl_verify;
+  }
+  if (profile.api_key !== undefined) {
+    request.api_key = profile.api_key;
+  }
+  if (profile.headers !== undefined) {
+    request.headers = profile.headers;
+  }
+  if (profile.maas_auth !== undefined) {
+    request.maas_auth = profile.maas_auth;
+  }
+  if (profile.codeagent_auth !== undefined) {
+    request.codeagent_auth = profile.codeagent_auth;
+  }
+  if (profile.capabilities !== undefined) {
+    request.capabilities = profile.capabilities;
+  }
+  if (profile.speech_realtime !== undefined) {
+    request.speech_realtime = profile.speech_realtime;
+  }
+  return request;
+}
+
+function finiteNumber(value: number | null | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function integerOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 function SettingsOrchestration({

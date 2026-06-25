@@ -8,6 +8,7 @@ import {
   createFeishuGatewayAccount,
   deleteAgentRuntime,
   deleteBoardTodoSource,
+  deleteModelProfile,
   disableAutomationProject,
   deleteFeishuGatewayAccount,
   deleteWeChatGatewayAccount,
@@ -70,6 +71,7 @@ import {
   revealSshProfilePassword,
   revealGitHubToken,
   refreshAgentRuntimeRegistry,
+  reloadModelConfig,
   reloadProxyConfig,
   reloadFeishuGateway,
   reloadWeChatGateway,
@@ -80,6 +82,7 @@ import {
   saveAgentRuntime,
   saveClawHubConfig,
   saveGitHubConfig,
+  saveModelProfile,
   saveNotificationConfig,
   saveOrchestrationConfig,
   saveProxyConfig,
@@ -2666,6 +2669,54 @@ describe("api client", () => {
         body: JSON.stringify(roleConfig),
         headers: expect.any(Headers),
         method: "PUT",
+      }),
+    );
+  });
+
+  it("manages model profiles through the model config endpoints", async () => {
+    const profilePayload = {
+      base_url: "https://models.example/v1",
+      connect_timeout_seconds: 15,
+      context_window: 128000,
+      fallback_policy_id: null,
+      fallback_priority: 0,
+      is_default: true,
+      model: "gpt-5-mini",
+      provider: "openai_compatible",
+      temperature: 0.7,
+      top_p: 1,
+    };
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveModelProfile("default/profile", profilePayload)).resolves.toEqual({
+      status: "ok",
+    });
+    await expect(deleteModelProfile("old/profile")).resolves.toEqual({ status: "ok" });
+    await expect(reloadModelConfig()).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/model/profiles/default%2Fprofile",
+      expect.objectContaining({
+        body: JSON.stringify(profilePayload),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/model/profiles/old%2Fprofile",
+      expect.objectContaining({
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/model:reload",
+      expect.objectContaining({
+        method: "POST",
       }),
     );
   });

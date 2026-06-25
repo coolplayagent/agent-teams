@@ -6107,7 +6107,33 @@ body {
 }
 
 .at-model-profile-row {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+}
+
+.at-model-profile-row-main {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(130px, 190px);
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-model-profile-row-main:hover .at-settings-list-main > span,
+.at-model-profile-row-main:focus-visible .at-settings-list-main > span {
+  color: var(--at-text);
+}
+
+.at-model-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .at-model-profile-detail .at-settings-detail-header {
@@ -6900,6 +6926,15 @@ body {
   .at-settings-list-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
+  }
+
+  .at-model-profile-row-main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .at-model-profile-actions {
+    justify-content: flex-start;
   }
 
   .at-trigger-row {

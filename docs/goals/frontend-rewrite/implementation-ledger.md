@@ -3129,3 +3129,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, browser, and screenshot inspection completed for this Resource/Assistive evidence slice. Full reviewer sign-off remains open.
+
+## 2026-06-26 V2 Settings Model Profile Default/Delete Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, latest Settings evidence, live `/app/` layout metrics, and Hegel reviewer result before closing this slice, keeping the work aimed at the broader V2 readiness gaps instead of only the latest annotated screenshot.
+- Hegel reviewer `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` returned FAIL for Settings readiness: Model Profiles lacked V1-backed mutation controls, Plugins/Hooks were still mostly read-only, and Roles/Orchestration were missing important create/validation/default/destructive flows.
+- Restored a first V1-backed Model Profiles mutation path in the existing V2 Settings Models page: profile rows and detail pages can now set a profile as default or delete a profile through real model-config API clients, with reload and query invalidation after mutation.
+- Added typed frontend contracts and API client calls for `PUT /api/system/configs/model/profiles/{profile_id}`, `DELETE /api/system/configs/model/profiles/{profile_id}`, and `POST /api/system/configs/model:reload`.
+- Preserved the V1-aligned Settings information architecture: no primary Settings items were added or removed, and System secondary pages remain behind the System launcher rather than being flattened into the root settings list.
+- Re-opened the user's live in-app browser at `http://127.0.0.1:8000/app/`; Settings opened from the real sidebar, the root navigation still had exactly 13 V1-aligned items, and `body`/`documentElement` stayed fixed at `720/720`.
+- Kept this as partial Model Profiles recovery only. Full Settings readiness remains open for add/save/test/catalog Model Profiles flows, Plugins/Hooks mutation parity, Roles/Orchestration parity, broader visual review, and reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "model profiles"` passed with 1 selected test.
+- `npm test -- --run src/test/apiClient.test.ts -t "model profiles"` passed with 1 selected test.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- Live in-app browser DOM/metric verification completed against `/app/`: Settings opened from the sidebar, root Settings nav remained Appearance, General, Speech, Notifications, Models, Roles, Orchestration, Web, ClawHub, Proxy, Remote Workspace, Environment Variables, and System, and the page stayed fixed to the viewport.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 17 tests.
+- `npm test -- --run src/test/apiClient.test.ts` passed with 28 tests.
+
+### Reviewer
+- Hegel reviewer FAIL is recorded as active for the broader Settings subsystem. This batch addresses only part of the Model Profiles P1 and does not claim full Settings completion.

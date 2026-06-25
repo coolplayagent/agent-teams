@@ -80,6 +80,7 @@ import type {
   McpServerSummary,
   McpServerToolsSummary,
   McpServerUpdateRequest,
+  ModelProfileSaveRequest,
   ModelProfilesPayload,
   NotificationConfig,
   OrchestrationConfig,
@@ -767,6 +768,34 @@ export function saveRoleConfig(
 
 export function getModelProfiles(): Promise<ModelProfilesPayload> {
   return requestJson<ModelProfilesPayload>("/system/configs/model/profiles");
+}
+
+export function saveModelProfile(
+  profileId: string,
+  profile: ModelProfileSaveRequest,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/system/configs/model/profiles/${encodeURIComponent(profileId.trim())}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(profile),
+    },
+  );
+}
+
+export function deleteModelProfile(profileId: string): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/system/configs/model/profiles/${encodeURIComponent(profileId.trim())}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export function reloadModelConfig(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/system/configs/model:reload", {
+    method: "POST",
+  });
 }
 
 export function getOrchestrationConfig(): Promise<OrchestrationConfig> {

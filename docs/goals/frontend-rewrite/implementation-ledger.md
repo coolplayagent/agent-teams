@@ -2666,3 +2666,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, lint, and build verification completed for this recovery localization slice. No full Run Recovery, Message Timeline, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Real SSE Replay Cursor Dedupe Evidence Batch
+
+### Scope
+- Re-checked the parity checklist after the recovery localization close-out and shifted back to the higher-risk Message Timeline and AG-UI Runtime Stream gaps.
+- Added a real SSE browser scenario for an interrupted stream where the server resumes from `after_event_id=2`, first replays the cursor event id `2`, then continues with a new text delta and terminal completion.
+- Verified the V2 timeline keeps the original streamed text visible, dedupes the replayed cursor event instead of appending the first chunk twice, renders the new post-replay chunk, hides Stop, restores Send, and preserves the browser `Last-Event-ID: 2` continuation signal.
+- Reused the real V2 `/app/` browser server fixture rather than mock-only reducer evidence, so this covers the user-facing replay path through EventSource, reducer, timeline rendering, and run-control state.
+- Kept this as targeted streaming/replay evidence only; full Message Timeline, AG-UI Runtime Stream, visual parity matrix, Electron readiness, reviewer sign-off, and release readiness remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_replay_dedupes_cursor_event_before_continuing"` passed with 1 selected test.
+
+### Reviewer
+- Main-agent real browser integration verification completed for this replay cursor dedupe slice. No full Message Timeline, AG-UI Runtime Stream, or release readiness completion is claimed.

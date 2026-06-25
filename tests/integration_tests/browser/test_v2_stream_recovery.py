@@ -115,6 +115,7 @@ _RICH_REPLAY_BACKGROUND_TASK_SUMMARY = (
     f"Background task started: {_RICH_REPLAY_BACKGROUND_TASK}"
 )
 _REAL_SSE_RESUMED_CHUNK = "real SSE resumed chunk"
+_REAL_SSE_AFTER_DUPLICATE_REPLAY_CHUNK = "real SSE after duplicate replay"
 _REAL_SSE_FAILURE_MESSAGE = "real SSE provider failed before completion"
 _REAL_SSE_UNAVAILABLE_MESSAGE = "run recovery stream is no longer available"
 
@@ -778,6 +779,45 @@ def test_v2_real_sse_interrupted_stream_reconnects_from_runtime_cursor(
         expect(
             page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
         ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.has_last_event_id_header("2")
+
+
+def test_v2_real_sse_replay_dedupes_cursor_event_before_continuing(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(replay_duplicate_event_on_resume=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        assistant_message = page.locator(".at-message").filter(has_text=_FIRST_CHUNK)
+        expect(assistant_message).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.wait_for_after_event_id(2, timeout_seconds=10.0)
+        assert stream_state.wait_for_sent_event_id(4, timeout_seconds=5.0)
+        expect(
+            page.locator(".at-message").filter(
+                has_text=_REAL_SSE_AFTER_DUPLICATE_REPLAY_CHUNK,
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        message_text = assistant_message.first.inner_text(timeout=_WAIT_TIMEOUT_MS)
+        assert message_text.count(_FIRST_CHUNK.strip()) == 1
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
         assert stream_state.has_last_event_id_header("2")
 
 
@@ -2011,11 +2051,13 @@ class _RealSseStreamState:
         *,
         fail_initial_stream: bool = False,
         hold_initial_stream_until_stop: bool = False,
+        replay_duplicate_event_on_resume: bool = False,
         server_error_initial_stream: bool = False,
         stop_initial_stream: bool = False,
     ) -> None:
         self.fail_initial_stream = fail_initial_stream
         self.hold_initial_stream_until_stop = hold_initial_stream_until_stop
+        self.replay_duplicate_event_on_resume = replay_duplicate_event_on_resume
         self.server_error_initial_stream = server_error_initial_stream
         self.stop_initial_stream = stop_initial_stream
         self._lock = threading.Lock()
@@ -2372,6 +2414,35 @@ def _serve_v2_app_with_real_sse(
                 return
             if after_event_id < 2:
                 time.sleep(5.0)
+                return
+            if stream_state.replay_duplicate_event_on_resume:
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "message.text.delta",
+                        "text_delta",
+                        2,
+                        {"text": _FIRST_CHUNK},
+                    ),
+                )
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "message.text.delta",
+                        "text_delta",
+                        3,
+                        {"text": _REAL_SSE_AFTER_DUPLICATE_REPLAY_CHUNK},
+                    ),
+                )
+                time.sleep(0.2)
+                backend.completed = True
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "run.completed",
+                        "run_completed",
+                        4,
+                        {"status": "completed"},
+                    ),
+                )
+                time.sleep(0.5)
                 return
             self._write_sse_event(
                 _ag_ui_event(

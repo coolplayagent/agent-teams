@@ -249,6 +249,75 @@ def test_v2_interrupted_stream_reconnects_from_latest_event_id(
         )
 
 
+def test_v2_interrupted_stream_reconnects_from_sse_last_event_id(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=0'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "run_started", 1, {"phase": "streaming"})
+        _emit_relay_event_with_last_event_id(
+            page,
+            "text_delta",
+            None,
+            "2",
+            {"text": _FIRST_CHUNK},
+        )
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate("() => window.__v2DispatchTransportError()")
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url, index) =>
+              index > 0
+              && url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=2'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.wait_for_function(
+            "() => window.__v2EventSources[0]?.readyState === 2",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "text_delta", 3, {"text": _AFTER_RELOAD_CHUNK})
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            1,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message").filter(has_text=_AFTER_RELOAD_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        _emit_relay_event(page, "run_completed", 4, {"status": "completed"})
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 0",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 def test_v2_session_switch_closes_active_stream_and_isolates_timeline(
     browser_page: Page,
 ) -> None:
@@ -1187,11 +1256,15 @@ def _install_mock_event_source(page: Page) -> None:
               this.readyState = 2;
             }
 
-            emit(type, payload) {
+            emit(type, payload, lastEventIdOverride) {
               const data = JSON.stringify(payload);
+              const lastEventId = lastEventIdOverride === undefined ||
+                lastEventIdOverride === null
+                  ? String(payload.event_id || '')
+                  : String(lastEventIdOverride);
               const event = new MessageEvent(type, {
                 data,
-                lastEventId: String(payload.event_id || ''),
+                lastEventId,
               });
               if (type === 'message' && typeof this.onmessage === 'function') {
                 this.onmessage(event);
@@ -1211,14 +1284,14 @@ def _install_mock_event_source(page: Page) -> None:
 
           window.__v2EventSources = [];
           window.__v2EventSourceUrls = [];
-          window.__v2EmitRunEvent = (payload) => {
+          window.__v2EmitRunEvent = (payload, lastEventIdOverride) => {
             const source = window.__v2EventSources
               .filter((item) => item.readyState !== 2)
               .at(-1);
             if (!source) {
               throw new Error('No open EventSource to receive the mock event.');
             }
-            source.emit('message', payload);
+            source.emit('message', payload, lastEventIdOverride);
           };
           window.__v2OpenEventSourceCount = () =>
             window.__v2EventSources.filter((item) => item.readyState !== 2).length;
@@ -1253,9 +1326,30 @@ def _emit_relay_event(
     role_id: str = "MainAgent",
     run_id: str = _RUN_ID,
 ) -> None:
+    _emit_relay_event_with_last_event_id(
+        page,
+        event_type,
+        event_id,
+        None,
+        payload,
+        role_id=role_id,
+        run_id=run_id,
+    )
+
+
+def _emit_relay_event_with_last_event_id(
+    page: Page,
+    event_type: str,
+    event_id: int | None,
+    last_event_id: str | None,
+    payload: dict[str, object],
+    *,
+    role_id: str = "MainAgent",
+    run_id: str = _RUN_ID,
+) -> None:
     page.evaluate(
         """
-        ([eventType, eventId, payload, runId, roleId]) => {
+        ([eventType, eventId, lastEventId, payload, runId, roleId]) => {
           window.__v2EmitRunEvent({
             event_id: eventId,
             event_type: eventType,
@@ -1265,10 +1359,10 @@ def _emit_relay_event(
             run_id: runId,
             session_id: 'session-v2-stream',
             trace_id: 'trace-v2-stream',
-          });
+          }, lastEventId);
         }
         """,
-        [event_type, event_id, payload, run_id, role_id],
+        [event_type, event_id, last_event_id, payload, run_id, role_id],
     )
 
 

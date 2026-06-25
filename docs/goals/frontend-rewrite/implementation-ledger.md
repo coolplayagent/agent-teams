@@ -1851,3 +1851,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and screenshot inspection completed for this sidebar module entry slice. No Application Shell subsystem completion is claimed.
+
+## 2026-06-25 V2 Stream Last-Event-ID Browser Batch
+
+### Scope
+- Re-checked the AG-UI Runtime Stream checklist after the sidebar module browser pass and targeted a replay/resume edge that had unit evidence but lacked built-shell browser evidence.
+- Extended the V2 `/app/` browser stream harness so mock SSE messages can carry an explicit browser `lastEventId` independently from the payload `event_id`.
+- Added an interrupted-stream flow where a live `text_delta` arrives with `event_id: null` in the payload but `Last-Event-ID = 2` from the SSE frame.
+- Verified the real V2 stream client reduces that chunk, updates the local run cursor from the SSE id, handles a transport interruption, closes the stale EventSource, and reconnects to `/api/ag-ui/runs/run-v2-stream/events?after_event_id=2`.
+- Verified the resumed stream continues rendering later chunks without duplicating the pre-interruption text, then closes on `run_completed`.
+- Left full AG-UI Runtime Stream completion open; remaining work still includes broader event-type browser coverage, backend-backed interrupted timing, and paired reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k sse_last_event_id` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 11 tests.
+- No screenshot was captured because this batch adds browser-level stream cursor/replay behavior evidence rather than visible layout changes.
+
+### Reviewer
+- Main-agent browser integration verification completed for this Last-Event-ID resume slice. No AG-UI Runtime Stream subsystem completion is claimed.

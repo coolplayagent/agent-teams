@@ -2718,3 +2718,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser evidence alignment completed for this shell/navigation slice. Full Application Shell visual parity, Settings parity, streaming/replay completion, Electron readiness, and reviewer subagent sign-off remain open.
+
+## 2026-06-26 V2 Settings System Secondary Pages Browser Evidence Batch
+
+### Scope
+- Re-checked the Settings parity checklist and current browser coverage after the shell evidence alignment batch, then focused on the V1 secondary-page rule instead of flattening more settings into the root drawer.
+- Expanded the real built `/app/` Settings browser scenario so the V1 primary Settings section order remains fixed while System-owned pages stay absent from the root Settings navigation.
+- Verified the System secondary page launcher exposes MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, and Triggers, then opened each page and returned to System with the real Back control.
+- Added mock API coverage for the real endpoints those secondary pages load: `/api/mcp/servers`, `/api/mcp/servers/stdio-shell/tools`, `/api/system/configs/plugins/runtime`, `/api/system/configs/hooks`, `/api/system/configs/hooks/runtime`, `/api/system/configs/agent-runtimes`, `/api/gateway/feishu/accounts`, and `/api/gateway/wechat/accounts`.
+- Kept this as Settings information-architecture and browser evidence progress only; no product UI code changed, no settings entries were added or removed, and full save/error/destructive-state coverage remains open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections or sidebar_mouse_resize_persists_after_reload or sidebar_module_entries_open_real_surfaces"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent browser verification completed for this System secondary settings slice. Full Settings subsystem parity, all settings mutation/error states, visual reviewer pass, streaming/replay completion, and release readiness remain open.

@@ -485,10 +485,52 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
             timeout=_WAIT_TIMEOUT_MS,
         )
         system_pages = settings.locator(".at-settings-list-button")
+        expect(system_pages.filter(has_text="MCP")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(system_pages.filter(has_text="Plugins")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
         expect(system_pages.filter(has_text="Commands")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
+        expect(system_pages.filter(has_text="Hooks")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(system_pages.filter(has_text="Agent Runtime")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
         expect(system_pages.filter(has_text="GitHub")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(system_pages.filter(has_text="Triggers")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        system_pages.filter(has_text="MCP").click()
+        expect(settings.get_by_role("heading", name="MCP")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("stdio-shell")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("run_command")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.get_by_role("button", name="Back", exact=True).click()
+        expect(system_pages.filter(has_text="MCP")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        system_pages.filter(has_text="Plugins").click()
+        expect(settings.get_by_role("heading", name="Plugins")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("workspace-tools")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.get_by_role("button", name="Back", exact=True).click()
+        expect(system_pages.filter(has_text="Plugins")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
 
@@ -502,8 +544,32 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         expect(settings.get_by_text("/opsx:propose")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
-        settings.get_by_role("button", name="Back").click()
+        settings.get_by_role("button", name="Back", exact=True).click()
         expect(system_pages.filter(has_text="Commands")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        system_pages.filter(has_text="Hooks").click()
+        expect(settings.get_by_role("heading", name="Hooks")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("Session startup setup")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.get_by_role("button", name="Back", exact=True).click()
+        expect(system_pages.filter(has_text="Hooks")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        system_pages.filter(has_text="Agent Runtime").click()
+        expect(
+            settings.get_by_role("heading", name="Agent Runtime")
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(settings.get_by_text("Codex CLI")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.get_by_role("button", name="Back", exact=True).click()
+        expect(system_pages.filter(has_text="Agent Runtime")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
 
@@ -517,9 +583,32 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         expect(settings.get_by_text("Webhook base URL")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
+        settings.get_by_role("button", name="Back", exact=True).click()
+        expect(system_pages.filter(has_text="GitHub")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        system_pages.filter(has_text="Triggers").click()
+        expect(settings.get_by_role("heading", name="Triggers")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("Feishu Main")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("WeChat Main")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert "/mcp/servers" in backend.requested_paths
+        assert "/mcp/servers/stdio-shell/tools" in backend.requested_paths
+        assert "/system/configs/plugins/runtime" in backend.requested_paths
+        assert "/system/configs/hooks" in backend.requested_paths
+        assert "/system/configs/hooks/runtime" in backend.requested_paths
+        assert "/system/configs/agent-runtimes" in backend.requested_paths
         assert "/system/commands:catalog" in backend.requested_paths
         assert "/system/configs/github" in backend.requested_paths
         assert "/system/configs/github/webhook/tunnel" in backend.requested_paths
+        assert "/gateway/feishu/accounts" in backend.requested_paths
+        assert "/gateway/wechat/accounts" in backend.requested_paths
 
 
 def test_v2_appearance_dark_preset_keeps_settings_frame_fixed(
@@ -866,6 +955,24 @@ class _V2ShellBackend:
         if request.method == "GET" and path == "/system/configs":
             _fulfill_json(route, self._system_config())
             return
+        if request.method == "GET" and path == "/mcp/servers":
+            _fulfill_json(route, self._mcp_servers())
+            return
+        if request.method == "GET" and path == "/mcp/servers/stdio-shell/tools":
+            _fulfill_json(route, self._mcp_server_tools())
+            return
+        if request.method == "GET" and path == "/system/configs/plugins/runtime":
+            _fulfill_json(route, self._plugins_runtime())
+            return
+        if request.method == "GET" and path == "/system/configs/hooks":
+            _fulfill_json(route, self._hooks_config())
+            return
+        if request.method == "GET" and path == "/system/configs/hooks/runtime":
+            _fulfill_json(route, self._hooks_runtime())
+            return
+        if request.method == "GET" and path == "/system/configs/agent-runtimes":
+            _fulfill_json(route, self._agent_runtimes())
+            return
         if request.method == "GET" and path == "/system/commands:catalog":
             _fulfill_json(route, self._command_catalog())
             return
@@ -874,6 +981,12 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs/github/webhook/tunnel":
             _fulfill_json(route, self._github_tunnel_status())
+            return
+        if request.method == "GET" and path == "/gateway/feishu/accounts":
+            _fulfill_json(route, self._feishu_accounts())
+            return
+        if request.method == "GET" and path == "/gateway/wechat/accounts":
+            _fulfill_json(route, self._wechat_accounts())
             return
         if request.method == "GET" and path == "/system/skills/market/clawhub":
             _fulfill_json(route, self._skills_market())
@@ -1285,6 +1398,145 @@ class _V2ShellBackend:
                 ],
             }
         }
+
+    def _mcp_servers(self) -> list[dict[str, object]]:
+        return [
+            {
+                "discovery_status": "ready",
+                "enabled": True,
+                "last_checked_at": "2026-06-25T08:32:00Z",
+                "name": "stdio-shell",
+                "source": "app",
+                "tool_count": 1,
+                "transport": "stdio",
+            }
+        ]
+
+    def _mcp_server_tools(self) -> dict[str, object]:
+        return {
+            "enabled": True,
+            "last_checked_at": "2026-06-25T08:32:00Z",
+            "server": "stdio-shell",
+            "source": "app",
+            "status": "ready",
+            "tools": [
+                {
+                    "description": "Run workspace shell commands.",
+                    "name": "run_command",
+                }
+            ],
+            "transport": "stdio",
+        }
+
+    def _plugins_runtime(self) -> dict[str, object]:
+        return {
+            "diagnostics": [],
+            "plugins": [
+                {
+                    "command_sources": [{"name": "workspace-command"}],
+                    "description": "Workspace utilities",
+                    "enabled": True,
+                    "name": "workspace-tools",
+                    "skill_sources": [{"name": "workspace-skill"}],
+                    "valid": True,
+                }
+            ],
+        }
+
+    def _hooks_config(self) -> dict[str, object]:
+        return {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "command": "python hooks/start.py",
+                        "name": "Session startup setup",
+                    }
+                ]
+            }
+        }
+
+    def _hooks_runtime(self) -> dict[str, object]:
+        return {
+            "loaded_hooks": [
+                {
+                    "event": "SessionStart",
+                    "handler": "python hooks/start.py",
+                    "name": "Session startup setup",
+                    "source": "project",
+                }
+            ],
+            "sources": [
+                {
+                    "path": "C:/repo/.relay/hooks",
+                    "source": "project",
+                }
+            ],
+        }
+
+    def _agent_runtimes(self) -> list[dict[str, object]]:
+        return [
+            {
+                "agent_id": "codex-acp",
+                "description": "ACP adapter for OpenAI's coding assistant",
+                "name": "Codex CLI",
+                "protocol": "acp",
+                "transport": "registry",
+            }
+        ]
+
+    def _feishu_accounts(self) -> list[dict[str, object]]:
+        return [
+            {
+                "account_id": "feishu-main",
+                "created_at": "2026-06-25T08:00:00Z",
+                "display_name": "Feishu Main",
+                "name": "feishu-main",
+                "secret_status": {
+                    "app_secret_configured": True,
+                    "encrypt_key_configured": True,
+                    "verification_token_configured": True,
+                },
+                "source_config": {
+                    "app_id": "cli_app_id",
+                    "app_name": "Relay Bot",
+                    "provider": "feishu",
+                    "trigger_rule": "mention_only",
+                },
+                "status": "enabled",
+                "target_config": {
+                    "normal_root_role_id": "MainAgent",
+                    "orchestration_preset_id": None,
+                    "session_mode": "normal",
+                    "shell_safety_policy_enabled": True,
+                    "thinking": {"enabled": True, "effort": "medium"},
+                    "workspace_id": _WORKSPACE_ID,
+                    "yolo": True,
+                },
+                "updated_at": "2026-06-25T08:00:00Z",
+            }
+        ]
+
+    def _wechat_accounts(self) -> list[dict[str, object]]:
+        return [
+            {
+                "account_id": "wechat-main",
+                "base_url": "http://127.0.0.1:5900",
+                "cdn_base_url": "http://127.0.0.1:5901",
+                "created_at": "2026-06-25T08:00:00Z",
+                "display_name": "WeChat Main",
+                "normal_root_role_id": "MainAgent",
+                "orchestration_preset_id": None,
+                "route_tag": "desktop",
+                "running": True,
+                "session_mode": "normal",
+                "status": "enabled",
+                "sync_cursor": "cursor-v2",
+                "thinking": {"enabled": False, "effort": None},
+                "updated_at": "2026-06-25T08:00:00Z",
+                "workspace_id": _WORKSPACE_ID,
+                "yolo": True,
+            }
+        ]
 
     def _skills_market(self) -> dict[str, object]:
         return {

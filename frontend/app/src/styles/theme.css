@@ -11,6 +11,7 @@
   --at-text-muted: #62665f;
   --at-primary: #2f6f5e;
   --at-accent: var(--at-primary);
+  --at-success: #257a4f;
   --at-warning: #a16207;
   --at-danger: #b42318;
   --at-font-ui: "Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -41,6 +42,7 @@
   --at-text: #f1f2ed;
   --at-text-muted: #b4b8ad;
   --at-primary: #6fa38e;
+  --at-success: #7ebf95;
   --at-warning: #d99a2b;
   --at-danger: #f97066;
   --at-code-bg: #242721;
@@ -6140,6 +6142,38 @@ body {
   padding: 12px;
   border: 1px solid var(--at-border);
   border-radius: 8px;
+}
+
+.at-model-profile-form {
+  max-width: 760px;
+}
+
+.at-model-profile-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.at-model-profile-switch-field {
+  align-self: end;
+}
+
+.at-model-profile-probe-state {
+  max-width: 760px;
+  padding: 10px 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  color: var(--at-muted);
+  font-size: 13px;
+}
+
+.at-model-profile-probe-state.is-ok {
+  border-color: color-mix(in srgb, var(--at-success) 35%, var(--at-border));
+  color: var(--at-success);
+}
+
+.at-model-profile-probe-state.is-error {
+  border-color: color-mix(in srgb, var(--at-danger) 42%, var(--at-border));
+  color: var(--at-danger);
 }
 
 .at-model-profile-properties {

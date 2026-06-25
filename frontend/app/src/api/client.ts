@@ -80,6 +80,8 @@ import type {
   McpServerSummary,
   McpServerToolsSummary,
   McpServerUpdateRequest,
+  ModelConnectivityProbeRequest,
+  ModelConnectivityProbeResult,
   ModelProfileSaveRequest,
   ModelProfilesPayload,
   NotificationConfig,
@@ -795,6 +797,15 @@ export function deleteModelProfile(profileId: string): Promise<{ status: string 
 export function reloadModelConfig(): Promise<{ status: string }> {
   return requestJson<{ status: string }>("/system/configs/model:reload", {
     method: "POST",
+  });
+}
+
+export function probeModelConnection(
+  payload: ModelConnectivityProbeRequest,
+): Promise<ModelConnectivityProbeResult> {
+  return requestJson<ModelConnectivityProbeResult>("/system/configs/model:probe", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

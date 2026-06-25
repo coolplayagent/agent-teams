@@ -20,6 +20,7 @@ import {
   getRoleConfig,
   getRoleConfigOptions,
   listRoleConfigs,
+  probeModelConnection,
   reloadModelConfig,
   saveGeneralConfig,
   saveModelProfile,
@@ -29,6 +30,7 @@ import {
 import type {
   GeneralConfig,
   ModalityCapabilities,
+  ModelConnectivityProbeResult,
   ModelProfileRecord,
   ModelProfileSaveRequest,
   OrchestrationConfig,
@@ -638,18 +640,37 @@ function SettingsModels({
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [optimisticProfile, setOptimisticProfile] = useState<{
+    profile: ModelProfileRecord;
+    profileId: string;
+  } | null>(null);
+  const [probeStates, setProbeStates] = useState<Record<string, ModelProbeState>>({});
   const entries = useMemo(
     () => Object.entries(profiles ?? {}).sort(([left], [right]) => left.localeCompare(right)),
     [profiles],
   );
   const selectedProfile =
-    selectedProfileId !== null ? profiles?.[selectedProfileId] : undefined;
+    selectedProfileId !== null
+      ? profiles?.[selectedProfileId] ??
+        (optimisticProfile?.profileId === selectedProfileId
+          ? optimisticProfile.profile
+          : undefined)
+      : undefined;
 
   useEffect(() => {
-    if (selectedProfileId !== null && profiles?.[selectedProfileId] === undefined) {
+    if (selectedProfileId === null) {
+      return;
+    }
+    if (profiles?.[selectedProfileId] !== undefined) {
+      if (optimisticProfile?.profileId === selectedProfileId) {
+        setOptimisticProfile(null);
+      }
+      return;
+    }
+    if (optimisticProfile?.profileId !== selectedProfileId) {
       setSelectedProfileId(null);
     }
-  }, [profiles, selectedProfileId]);
+  }, [optimisticProfile, profiles, selectedProfileId]);
 
   const setDefaultMutation = useMutation({
     mutationFn: async ({
@@ -686,6 +707,7 @@ function SettingsModels({
     onSuccess: (_result, profileId) => {
       if (selectedProfileId === profileId) {
         setSelectedProfileId(null);
+        setOptimisticProfile(null);
       }
       void message.success(t("settingsModelDeleted", { name: profileId }));
       void queryClient.invalidateQueries({ queryKey: ["settings", "models", "profiles"] });
@@ -694,6 +716,79 @@ function SettingsModels({
       void message.error(
         mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
       );
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async ({
+      currentProfileId,
+      nextProfileId,
+      profile,
+      values,
+    }: {
+      currentProfileId: string;
+      nextProfileId: string;
+      profile: ModelProfileRecord;
+      values: ModelProfileFormValues;
+    }) => {
+      const request = buildModelProfileSaveRequest(profile, {
+        sourceName: currentProfileId,
+        values,
+      });
+      const result = await saveModelProfile(nextProfileId, request);
+      await reloadModelConfig();
+      return { nextProfile: modelProfileRecordFromSaveRequest(profile, request), nextProfileId, result };
+    },
+    onSuccess: ({ nextProfile, nextProfileId }, variables) => {
+      setOptimisticProfile({ profile: nextProfile, profileId: nextProfileId });
+      queryClient.setQueryData<Record<string, ModelProfileRecord>>(
+        ["settings", "models", "profiles"],
+        (current) => {
+          const nextProfiles = { ...(current ?? {}) };
+          if (variables.currentProfileId !== nextProfileId) {
+            delete nextProfiles[variables.currentProfileId];
+          }
+          nextProfiles[nextProfileId] = nextProfile;
+          return nextProfiles;
+        },
+      );
+      setSelectedProfileId(nextProfileId);
+      void message.success(t("settingsModelSaved", { name: nextProfileId }));
+      void queryClient.invalidateQueries({ queryKey: ["settings", "models", "profiles"] });
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
+      );
+    },
+  });
+
+  const probeMutation = useMutation({
+    mutationFn: async (profileId: string) => {
+      const timeoutSeconds = finiteNumber(
+        profiles?.[profileId]?.connect_timeout_seconds,
+        15,
+      );
+      const result = await probeModelConnection({
+        profile_name: profileId,
+        timeout_ms: Math.round(timeoutSeconds * 1000),
+      });
+      return { profileId, result };
+    },
+    onSuccess: ({ profileId, result }) => {
+      setProbeStates((current) => ({
+        ...current,
+        [profileId]: { result },
+      }));
+    },
+    onError: (mutationError, profileId) => {
+      setProbeStates((current) => ({
+        ...current,
+        [profileId]: {
+          error:
+            mutationError instanceof Error ? mutationError.message : t("settingsModelTestFailed"),
+        },
+      }));
     },
   });
 
@@ -706,6 +801,21 @@ function SettingsModels({
   const requestDelete = (profileId: string) => {
     deleteMutation.mutate(profileId);
   };
+  const requestSave = (
+    currentProfileId: string,
+    nextProfileId: string,
+    profile: ModelProfileRecord,
+    values: ModelProfileFormValues,
+  ) => {
+    saveMutation.mutate({ currentProfileId, nextProfileId, profile, values });
+  };
+  const requestProbe = (profileId: string) => {
+    setProbeStates((current) => ({
+      ...current,
+      [profileId]: { result: undefined },
+    }));
+    probeMutation.mutate(profileId);
+  };
 
   return (
     <SettingsSection title={t("settingsModels")}>
@@ -715,10 +825,15 @@ function SettingsModels({
           <ModelProfileDetail
             onBack={() => setSelectedProfileId(null)}
             onDelete={requestDelete}
+            onProbe={requestProbe}
+            onSave={requestSave}
             onSetDefault={requestDefault}
             deleting={deleteMutation.isPending}
+            probeState={probeStates[selectedProfileId] ?? null}
+            probing={probeMutation.isPending && probeMutation.variables === selectedProfileId}
             profile={selectedProfile}
             profileId={selectedProfileId}
+            saving={saveMutation.isPending}
             settingDefault={setDefaultMutation.isPending}
           />
         ) : (
@@ -764,6 +879,13 @@ function SettingsModels({
                         >
                           {t("settingsModelSetDefaultShort")}
                         </Button>
+                        <Button
+                          loading={probeMutation.isPending && probeMutation.variables === profileId}
+                          onClick={() => requestProbe(profileId)}
+                          size="small"
+                        >
+                          {t("settingsModelTest")}
+                        </Button>
                         <Popconfirm
                           cancelText={t("sidebarDeleteCancel")}
                           okText={t("sidebarDeleteConfirm")}
@@ -787,30 +909,86 @@ function SettingsModels({
   );
 }
 
+interface ModelProfileFormValues {
+  base_url?: string;
+  connect_timeout_seconds?: string;
+  context_window?: string;
+  fallback_policy_id?: string;
+  fallback_priority?: string;
+  is_default?: boolean;
+  max_tokens?: string;
+  model?: string;
+  profile_id?: string;
+  provider?: string;
+  ssl_verify?: string;
+  temperature?: string;
+  top_p?: string;
+}
+
+interface ModelProbeState {
+  result?: ModelConnectivityProbeResult;
+  error?: string;
+}
+
 function ModelProfileDetail({
   deleting,
   onBack,
   onDelete,
+  onProbe,
+  onSave,
   onSetDefault,
+  probeState,
+  probing,
   profile,
   profileId,
+  saving,
   settingDefault,
 }: {
   deleting: boolean;
   onBack: () => void;
   onDelete: (profileId: string) => void;
+  onProbe: (profileId: string) => void;
+  onSave: (
+    currentProfileId: string,
+    nextProfileId: string,
+    profile: ModelProfileRecord,
+    values: ModelProfileFormValues,
+  ) => void;
   onSetDefault: (profileId: string, profile: ModelProfileRecord) => void;
+  probeState: ModelProbeState | null;
+  probing: boolean;
   profile: ModelProfileRecord;
   profileId: string;
+  saving: boolean;
   settingDefault: boolean;
 }) {
   const t = useTranslations();
+  const [form] = Form.useForm<ModelProfileFormValues>();
   const input = capabilityModes(
     profile.resolved_capabilities?.input ?? profile.capabilities?.input,
   );
   const output = capabilityModes(
     profile.resolved_capabilities?.output ?? profile.capabilities?.output,
   );
+  const probeMessage =
+    probeState?.error ??
+    (probeState?.result !== undefined ? formatModelProbeResult(probeState.result, t) : null);
+  const probeTone =
+    probeState?.error !== undefined || probeState?.result?.ok === false ? "is-error" : "is-ok";
+
+  useEffect(() => {
+    form.setFieldsValue(modelProfileToFormValues(profileId, profile));
+  }, [form, profile, profileId]);
+
+  const submitProfile = (values: ModelProfileFormValues) => {
+    const nextProfileId = values.profile_id?.trim() ?? "";
+    if (!nextProfileId) {
+      void form.validateFields(["profile_id"]);
+      return;
+    }
+    onSave(profileId, nextProfileId, profile, values);
+  };
+
   return (
     <div className="at-settings-detail-page at-model-profile-detail">
       <div className="at-settings-detail-header">
@@ -819,6 +997,12 @@ function ModelProfileDetail({
           <Typography.Text>{modelProfileDetail(profile)}</Typography.Text>
         </div>
         <div className="at-settings-detail-actions">
+          <Button loading={saving} onClick={() => form.submit()} type="primary">
+            {t("settingsSave")}
+          </Button>
+          <Button loading={probing} onClick={() => onProbe(profileId)}>
+            {t("settingsModelTest")}
+          </Button>
           <Button
             disabled={profile.is_default === true}
             loading={settingDefault}
@@ -839,6 +1023,78 @@ function ModelProfileDetail({
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
       </div>
+      {probeMessage !== null ? (
+        <div className={`at-model-profile-probe-state ${probeTone}`}>{probeMessage}</div>
+      ) : null}
+      <Form
+        className="at-settings-form at-settings-wide-form at-model-profile-form"
+        form={form}
+        layout="vertical"
+        onFinish={submitProfile}
+      >
+        <div className="at-settings-form-card at-model-profile-form-grid">
+          <Form.Item
+            label={t("settingsModelProfileId")}
+            name="profile_id"
+            rules={[{ message: t("settingsModelProfileIdRequired"), required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label={t("settingsModelProvider")}
+            name="provider"
+            rules={[{ message: t("settingsModelProviderRequired"), required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label={t("settingsModelName")}
+            name="model"
+            rules={[{ message: t("settingsModelNameRequired"), required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label={t("settingsModelBaseUrl")}
+            name="base_url"
+            rules={[{ message: t("settingsModelBaseUrlRequired"), required: true }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item label={t("settingsModelTemperature")} name="temperature">
+            <Input inputMode="decimal" type="number" />
+          </Form.Item>
+          <Form.Item label={t("settingsModelTopP")} name="top_p">
+            <Input inputMode="decimal" type="number" />
+          </Form.Item>
+          <Form.Item label={t("settingsModelContextWindow")} name="context_window">
+            <Input inputMode="numeric" type="number" />
+          </Form.Item>
+          <Form.Item label={t("settingsModelMaxTokens")} name="max_tokens">
+            <Input inputMode="numeric" type="number" />
+          </Form.Item>
+          <Form.Item label={t("settingsModelTimeoutSeconds")} name="connect_timeout_seconds">
+            <Input inputMode="decimal" type="number" />
+          </Form.Item>
+          <Form.Item label={t("settingsModelFallbackPolicy")} name="fallback_policy_id">
+            <Input />
+          </Form.Item>
+          <Form.Item label={t("settingsModelFallbackPriority")} name="fallback_priority">
+            <Input inputMode="numeric" type="number" />
+          </Form.Item>
+          <Form.Item label={t("settingsModelSslVerify")} name="ssl_verify">
+            <Input placeholder={t("settingsModelSslVerifyPlaceholder")} />
+          </Form.Item>
+          <Form.Item
+            className="at-model-profile-switch-field"
+            label={t("settingsModelDefault")}
+            name="is_default"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+        </div>
+      </Form>
       <div className="at-settings-facts at-settings-workspace-facts">
         <Fact
           label={t("settingsModelProvider")}
@@ -868,21 +1124,59 @@ function ModelProfileDetail({
 
 function buildModelProfileSaveRequest(
   profile: ModelProfileRecord,
-  options: { isDefault?: boolean } = {},
+  options: {
+    isDefault?: boolean;
+    sourceName?: string;
+    values?: ModelProfileFormValues;
+  } = {},
 ): ModelProfileSaveRequest {
+  const values = options.values;
   const request: ModelProfileSaveRequest = {
-    base_url: profile.base_url ?? "",
-    connect_timeout_seconds: finiteNumber(profile.connect_timeout_seconds, 15),
-    context_window: integerOrNull(profile.context_window),
-    fallback_policy_id: profile.fallback_policy_id ?? null,
-    fallback_priority: finiteNumber(profile.fallback_priority, 0),
-    is_default: options.isDefault === true ? true : profile.is_default === true,
-    model: profile.model ?? "",
-    provider: profile.provider ?? "openai_compatible",
-    temperature: finiteNumber(profile.temperature, 0.7),
-    top_p: finiteNumber(profile.top_p, 1),
+    base_url: values?.base_url?.trim() ?? profile.base_url ?? "",
+    connect_timeout_seconds:
+      values !== undefined
+        ? positiveNumberFromText(
+            values.connect_timeout_seconds,
+            finiteNumber(profile.connect_timeout_seconds, 15),
+          )
+        : finiteNumber(profile.connect_timeout_seconds, 15),
+    context_window:
+      values !== undefined
+        ? positiveIntegerOrNullFromText(values.context_window)
+        : integerOrNull(profile.context_window),
+    fallback_policy_id:
+      values !== undefined ? trimmedStringOrNull(values.fallback_policy_id) : profile.fallback_policy_id ?? null,
+    fallback_priority:
+      values !== undefined
+        ? nonNegativeIntegerFromText(
+            values.fallback_priority,
+            finiteNumber(profile.fallback_priority, 0),
+          )
+        : finiteNumber(profile.fallback_priority, 0),
+    is_default:
+      options.isDefault === true
+        ? true
+        : values !== undefined
+          ? values.is_default === true
+          : profile.is_default === true,
+    model: values?.model?.trim() ?? profile.model ?? "",
+    provider: values?.provider?.trim() ?? profile.provider ?? "openai_compatible",
+    temperature:
+      values !== undefined
+        ? finiteNumberFromText(values.temperature, finiteNumber(profile.temperature, 0.7))
+        : finiteNumber(profile.temperature, 0.7),
+    top_p:
+      values !== undefined
+        ? finiteNumberFromText(values.top_p, finiteNumber(profile.top_p, 1))
+        : finiteNumber(profile.top_p, 1),
   };
-  if (profile.max_tokens !== undefined) {
+  if (values !== undefined) {
+    request.max_tokens = positiveIntegerOrNullFromText(values.max_tokens);
+    const sslVerify = optionalBooleanFromText(values.ssl_verify);
+    if (sslVerify !== null) {
+      request.ssl_verify = sslVerify;
+    }
+  } else if (profile.max_tokens !== undefined) {
     request.max_tokens = integerOrNull(profile.max_tokens);
   }
   if (profile.catalog_provider_id !== undefined) {
@@ -894,8 +1188,11 @@ function buildModelProfileSaveRequest(
   if (profile.catalog_model_name !== undefined) {
     request.catalog_model_name = profile.catalog_model_name;
   }
-  if (profile.ssl_verify === true || profile.ssl_verify === false) {
+  if (values === undefined && (profile.ssl_verify === true || profile.ssl_verify === false)) {
     request.ssl_verify = profile.ssl_verify;
+  }
+  if (options.sourceName !== undefined) {
+    request.source_name = options.sourceName;
   }
   if (profile.api_key !== undefined) {
     request.api_key = profile.api_key;
@@ -918,12 +1215,129 @@ function buildModelProfileSaveRequest(
   return request;
 }
 
+function modelProfileToFormValues(
+  profileId: string,
+  profile: ModelProfileRecord,
+): ModelProfileFormValues {
+  return {
+    base_url: profile.base_url ?? "",
+    connect_timeout_seconds: String(finiteNumber(profile.connect_timeout_seconds, 15)),
+    context_window:
+      typeof profile.context_window === "number" && Number.isFinite(profile.context_window)
+        ? String(profile.context_window)
+        : "",
+    fallback_policy_id: profile.fallback_policy_id ?? "",
+    fallback_priority: String(finiteNumber(profile.fallback_priority, 0)),
+    is_default: profile.is_default === true,
+    max_tokens:
+      typeof profile.max_tokens === "number" && Number.isFinite(profile.max_tokens)
+        ? String(profile.max_tokens)
+        : "",
+    model: profile.model ?? "",
+    profile_id: profileId,
+    provider: profile.provider ?? "openai_compatible",
+    ssl_verify: serializeOptionalBoolean(profile.ssl_verify),
+    temperature: String(finiteNumber(profile.temperature, 0.7)),
+    top_p: String(finiteNumber(profile.top_p, 1)),
+  };
+}
+
+function modelProfileRecordFromSaveRequest(
+  profile: ModelProfileRecord,
+  request: ModelProfileSaveRequest,
+): ModelProfileRecord {
+  return {
+    ...profile,
+    base_url: request.base_url,
+    catalog_model_name: request.catalog_model_name,
+    catalog_provider_id: request.catalog_provider_id,
+    catalog_provider_name: request.catalog_provider_name,
+    codeagent_auth: request.codeagent_auth,
+    connect_timeout_seconds: request.connect_timeout_seconds,
+    context_window: request.context_window,
+    fallback_policy_id: request.fallback_policy_id,
+    fallback_priority: request.fallback_priority,
+    headers: request.headers,
+    is_default: request.is_default,
+    maas_auth: request.maas_auth,
+    max_tokens: request.max_tokens,
+    model: request.model,
+    provider: request.provider,
+    speech_realtime: request.speech_realtime,
+    ssl_verify: request.ssl_verify,
+    temperature: request.temperature,
+    top_p: request.top_p,
+  };
+}
+
+function formatModelProbeResult(
+  result: ModelConnectivityProbeResult,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (result.ok) {
+    return t("settingsModelTestPassed", { latency: String(result.latency_ms) });
+  }
+  return t("settingsModelTestFailedDetail", {
+    error: result.error_message ?? result.error_code ?? t("settingsUnknown"),
+  });
+}
+
 function finiteNumber(value: number | null | undefined, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function integerOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function finiteNumberFromText(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function positiveNumberFromText(value: string | undefined, fallback: number): number {
+  const parsed = finiteNumberFromText(value, fallback);
+  return parsed > 0 ? parsed : fallback;
+}
+
+function nonNegativeIntegerFromText(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : Math.max(0, Math.floor(fallback));
+}
+
+function positiveIntegerOrNullFromText(value: string | undefined): number | null {
+  const normalized = value?.trim() ?? "";
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function trimmedStringOrNull(value: string | undefined): string | null {
+  const normalized = value?.trim() ?? "";
+  return normalized ? normalized : null;
+}
+
+function optionalBooleanFromText(value: string | undefined): boolean | null {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return null;
+}
+
+function serializeOptionalBoolean(value: boolean | null | undefined): string {
+  if (value === true) {
+    return "true";
+  }
+  if (value === false) {
+    return "false";
+  }
+  return "";
 }
 
 function SettingsOrchestration({

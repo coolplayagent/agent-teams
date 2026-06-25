@@ -55,6 +55,7 @@ import {
   listRoleConfigs,
   listSshProfiles,
   listMcpServers,
+  probeModelConnection,
   probeSshProfileConnection,
   probeClawHubConnectivity,
   probeGitHubConnectivity,
@@ -148,6 +149,7 @@ vi.mock("../api/client", () => ({
   listMcpServers: vi.fn(),
   listSshProfiles: vi.fn(),
   listWorkspaces: vi.fn(),
+  probeModelConnection: vi.fn(),
   probeSshProfileConnection: vi.fn(),
   probeClawHubConnectivity: vi.fn(),
   probeGitHubConnectivity: vi.fn(),
@@ -238,6 +240,7 @@ const listRoleConfigsMock = vi.mocked(listRoleConfigs);
 const listMcpServersMock = vi.mocked(listMcpServers);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
+const probeModelConnectionMock = vi.mocked(probeModelConnection);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
 const probeClawHubConnectivityMock = vi.mocked(probeClawHubConnectivity);
 const probeGitHubConnectivityMock = vi.mocked(probeGitHubConnectivity);
@@ -1138,6 +1141,18 @@ beforeEach(() => {
   saveModelProfileMock.mockResolvedValue({ status: "ok" });
   deleteModelProfileMock.mockResolvedValue({ status: "ok" });
   reloadModelConfigMock.mockResolvedValue({ status: "ok" });
+  probeModelConnectionMock.mockResolvedValue({
+    checked_at: "2026-06-26T00:00:00Z",
+    diagnostics: {
+      auth_valid: true,
+      endpoint_reachable: true,
+      rate_limited: false,
+    },
+    latency_ms: 42,
+    model: "gpt-5-vision",
+    ok: true,
+    provider: "openai",
+  });
   saveOrchestrationConfigMock.mockResolvedValue({ status: "ok" });
   saveRoleConfigMock.mockImplementation((_roleId, document) =>
     Promise.resolve(document),
@@ -1764,6 +1779,88 @@ describe("SettingsDrawer", () => {
 
     await waitFor(() => expect(deleteModelProfileMock).toHaveBeenCalledWith("stt"));
     await waitFor(() => expect(reloadModelConfigMock).toHaveBeenCalledTimes(2));
+  }, 25000);
+
+  it("edits and tests an existing model profile from the detail page", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+
+    const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
+    expect(visionRow).not.toBeNull();
+    fireEvent.click(within(visionRow as HTMLElement).getByRole("button", { name: /vision/ }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Test" }));
+    await waitFor(() =>
+      expect(probeModelConnectionMock).toHaveBeenCalledWith({
+        profile_name: "vision",
+        timeout_ms: 15000,
+      }),
+    );
+    expect(await screen.findByText("Connection ok in 42ms.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Profile ID"), {
+      target: { value: "vision-renamed" },
+    });
+    fireEvent.change(screen.getByLabelText("Model"), {
+      target: { value: "gpt-5.1-vision" },
+    });
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "https://models.example/v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Context window"), {
+      target: { value: "128000" },
+    });
+    fireEvent.change(screen.getByLabelText("Max tokens"), {
+      target: { value: "4096" },
+    });
+    fireEvent.change(screen.getByLabelText("Fallback policy"), {
+      target: { value: "same_provider_then_other_provider" },
+    });
+    fireEvent.change(screen.getByLabelText("SSL verify"), {
+      target: { value: "true" },
+    });
+    saveModelProfileMock.mockImplementationOnce((nextProfileId, payload) => {
+      getModelProfilesMock.mockResolvedValue({
+        default: {
+          is_default: true,
+          model: "gpt-5-mini",
+          provider: "openai",
+        },
+        [nextProfileId]: {
+          base_url: payload.base_url,
+          connect_timeout_seconds: payload.connect_timeout_seconds,
+          context_window: payload.context_window,
+          is_default: payload.is_default,
+          max_tokens: payload.max_tokens,
+          model: payload.model,
+          provider: payload.provider,
+          temperature: payload.temperature,
+          top_p: payload.top_p,
+        },
+      });
+      return Promise.resolve({ status: "ok" });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "vision-renamed",
+      expect.objectContaining({
+        base_url: "https://models.example/v1",
+        context_window: 128000,
+        max_tokens: 4096,
+        model: "gpt-5.1-vision",
+        provider: "openai",
+        source_name: "vision",
+        ssl_verify: true,
+      }),
+    );
+    await waitFor(() => expect(reloadModelConfigMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText("Profile ID")).toHaveValue("vision-renamed");
   }, 25000);
 
   it("manages MCP servers through the MCP config clients", async () => {

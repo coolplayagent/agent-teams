@@ -1086,6 +1086,127 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         assert "/gateway/wechat/accounts" in backend.requested_paths
 
 
+def test_v2_model_profile_detail_saves_and_tests_existing_profile(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        settings.get_by_role("navigation", name="Settings sections").get_by_role(
+            "button",
+            name="Models",
+        ).click()
+
+        expect(settings.get_by_role("heading", name="Models")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        vision_row = settings.locator(".at-model-profile-row").filter(has_text="vision")
+        expect(vision_row).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        vision_row.locator(".at-model-profile-row-main").click()
+
+        profile_id_input = settings.get_by_label("Profile ID")
+        expect(profile_id_input).to_have_value("vision", timeout=_WAIT_TIMEOUT_MS)
+        expect(settings.get_by_label("Base URL")).to_have_value(
+            "https://vision.example/v1",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and response.url.endswith("/api/system/configs/model:probe")
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            settings.get_by_role("button", name="Test").click()
+
+        assert backend.model_probe_payloads == [
+            {"profile_name": "vision", "timeout_ms": 15000}
+        ]
+        expect(settings.get_by_text("Connection ok in 51ms.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        profile_id_input.fill("vision-browser")
+        settings.get_by_label("Model").fill("gpt-5.1-vision")
+        settings.get_by_label("Base URL").fill("https://vision.changed.example/v1")
+        settings.get_by_label("Context window").fill("128000")
+        settings.get_by_label("Max tokens").fill("4096")
+        settings.get_by_label("Fallback policy").fill("same_provider_then_other_provider")
+        settings.get_by_label("SSL verify").fill("true")
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and response.url.endswith("/api/system/configs/model:reload")
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            with page.expect_response(
+                lambda response: (
+                    response.request.method == "PUT"
+                    and response.url.endswith(
+                        "/api/system/configs/model/profiles/vision-browser"
+                    )
+                    and response.status == 200
+                ),
+                timeout=_WAIT_TIMEOUT_MS,
+            ):
+                settings.get_by_role("button", name="Save").click()
+        assert backend.model_profile_save_requests == ["vision-browser"]
+        assert backend.model_profile_save_payloads[-1] == {
+            "base_url": "https://vision.changed.example/v1",
+            "connect_timeout_seconds": 15,
+            "context_window": 128000,
+            "fallback_policy_id": "same_provider_then_other_provider",
+            "fallback_priority": 0,
+            "is_default": False,
+            "max_tokens": 4096,
+            "model": "gpt-5.1-vision",
+            "provider": "openai",
+            "source_name": "vision",
+            "ssl_verify": True,
+            "temperature": 0.7,
+            "top_p": 1,
+        }
+        assert backend.model_profile_reload_count == 1
+        expect(page.get_by_text("Saved model profile vision-browser.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_label("Profile ID")).to_have_value(
+            "vision-browser",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        metrics = cast(
+            dict[str, int],
+            page.evaluate(
+                """() => ({
+                    bodyHeight: document.body.scrollHeight,
+                    documentHeight: document.documentElement.scrollHeight,
+                    viewportHeight: window.innerHeight,
+                })""",
+            ),
+        )
+        assert metrics["bodyHeight"] == metrics["viewportHeight"]
+        assert metrics["documentHeight"] == metrics["viewportHeight"]
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-model-profile-detail.png"))
+
+
 def test_v2_web_settings_save_success_and_error_feedback(
     browser_page: Page,
 ) -> None:
@@ -1484,6 +1605,32 @@ class _V2ShellBackend:
         self.rounds_request_count = 0
         self.runtime_tools_system_path_added = False
         self.runtime_tools_system_path_requests: list[str] = []
+        self.model_profile_reload_count = 0
+        self.model_profile_save_payloads: list[dict[str, object]] = []
+        self.model_profile_save_requests: list[str] = []
+        self.model_probe_payloads: list[dict[str, object]] = []
+        self.model_profiles: dict[str, dict[str, object]] = {
+            "default": {
+                "base_url": "https://models.example/v1",
+                "connect_timeout_seconds": 15,
+                "context_window": 128000,
+                "is_default": True,
+                "model": "gpt-5-mini",
+                "provider": "openai_compatible",
+                "temperature": 0.7,
+                "top_p": 1.0,
+            },
+            "vision": {
+                "base_url": "https://vision.example/v1",
+                "connect_timeout_seconds": 15,
+                "input_modalities": ["text", "image"],
+                "is_default": False,
+                "model": "gpt-5-vision",
+                "provider": "openai",
+                "temperature": 0.7,
+                "top_p": 1.0,
+            },
+        }
         self.snapshot_request_count = 0
         self.ssh_delete_requests: list[str] = []
         self.ssh_profiles: list[dict[str, object]] = [
@@ -1608,11 +1755,53 @@ class _V2ShellBackend:
             )
             return
         if request.method == "GET" and path == "/system/configs/model/profiles":
+            _fulfill_json(route, self.model_profiles)
+            return
+        if request.method == "PUT" and path.startswith(
+            "/system/configs/model/profiles/"
+        ):
+            profile_id = unquote(
+                path.removeprefix("/system/configs/model/profiles/"),
+            )
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.model_profile_save_requests.append(profile_id)
+            self.model_profile_save_payloads.append(payload)
+            source_name = payload.get("source_name")
+            if isinstance(source_name, str) and source_name in self.model_profiles:
+                self.model_profiles.pop(source_name)
+            self.model_profiles[profile_id] = {
+                key: value
+                for key, value in payload.items()
+                if key != "source_name"
+            }
+            _fulfill_json(route, {"status": "ok"})
+            return
+        if request.method == "POST" and path == "/system/configs/model:reload":
+            self.model_profile_reload_count += 1
+            _fulfill_json(route, {"status": "ok"})
+            return
+        if request.method == "POST" and path == "/system/configs/model:probe":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.model_probe_payloads.append(payload)
             _fulfill_json(
                 route,
                 {
-                    "default_profile_id": "default",
-                    "profiles": [{"label": "Default", "profile_id": "default"}],
+                    "checked_at": "2026-06-26T00:00:00Z",
+                    "diagnostics": {
+                        "auth_valid": True,
+                        "endpoint_reachable": True,
+                        "rate_limited": False,
+                    },
+                    "latency_ms": 51,
+                    "model": "gpt-5-vision",
+                    "ok": True,
+                    "provider": "openai",
                 },
             )
             return

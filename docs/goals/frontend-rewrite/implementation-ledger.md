@@ -3151,3 +3151,28 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Hegel reviewer FAIL is recorded as active for the broader Settings subsystem. This batch addresses only part of the Model Profiles P1 and does not claim full Settings completion.
+
+## 2026-06-26 V2 Settings Model Profile Edit/Test Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, the V1 Model Profiles module, backend model-config router, and Hegel Settings FAIL before choosing this slice; continued the Settings P1 recovery without adding or removing root Settings entries.
+- Restored another V1-backed Model Profiles path inside the existing Models detail page: existing profiles can now be tested through the real model probe endpoint, edited in-place, renamed with `source_name`, saved through the real profile save endpoint, and reloaded afterward.
+- Added typed frontend contracts and API client coverage for `POST /api/system/configs/model:probe`.
+- Kept the V1 secondary-page logic intact: Model Profiles remains under the existing Settings > Models surface, and no System child pages were flattened into the root Settings list.
+- Fixed a save/rename state edge case found by screenshot inspection: the detail page now keeps an optimistic selected profile after save so a transient or stale refetch cannot kick the user back to the profile list.
+- Added built `/app/` browser evidence for Settings > Models > existing profile detail: the scenario tests the profile, edits/renames it, saves it through real mocked endpoints, waits for `model:reload`, verifies the detail remains open, confirms the shell remains fixed to the viewport, and captures `.tmp/frontend-v2-settings/v2-model-profile-detail.png`.
+- Re-tested the live in-app browser at `http://127.0.0.1:8000/app/`; the shell remained fixed at `720/720`, but the running server continued to serve the previous JS/CSS hashes after normal and hard refresh, so the new feature verification was performed against the freshly built `/app/` harness instead of claiming live-8000 feature evidence.
+- Kept this as partial Model Profiles recovery only. Add-new-profile, full catalog selection/discovery, CodeAgent/MaaS auth flows, Plugins/Hooks mutation parity, Roles/Orchestration parity, broader visual review, and Hegel reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "model profile"` passed with 2 selected tests.
+- `npm test -- --run src/test/apiClient.test.ts -t "model profiles"` passed with 1 selected test.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "model_profile_detail"` passed with 1 selected test.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-settings/v2-model-profile-detail.png` confirmed the real built V2 shell stayed framed and the Models detail form remained open after save.
+- `npm test -- --run src/test/apiClient.test.ts` passed with 28 tests.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 18 tests.
+
+### Reviewer
+- Hegel reviewer FAIL remains active for the broader Settings subsystem. This batch addresses only the existing-profile edit/test portion of the Model Profiles P1 and does not claim full Settings completion.

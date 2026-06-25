@@ -62,6 +62,7 @@ import {
   listWorkspaces,
   openWorkspaceRoot,
   pickWorkspace,
+  probeModelConnection,
   probeSshProfileConnection,
   probeClawHubConnectivity,
   probeGitHubConnectivity,
@@ -2686,9 +2687,24 @@ describe("api client", () => {
       temperature: 0.7,
       top_p: 1,
     };
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(new Response(JSON.stringify({ status: "ok" }), { status: 200 })),
-    );
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      const body =
+        url === "/api/system/configs/model:probe"
+          ? {
+              checked_at: "2026-06-26T00:00:00Z",
+              diagnostics: {
+                auth_valid: true,
+                endpoint_reachable: true,
+                rate_limited: false,
+              },
+              latency_ms: 42,
+              model: "gpt-5-mini",
+              ok: true,
+              provider: "openai_compatible",
+            }
+          : { status: "ok" };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(saveModelProfile("default/profile", profilePayload)).resolves.toEqual({
@@ -2696,6 +2712,14 @@ describe("api client", () => {
     });
     await expect(deleteModelProfile("old/profile")).resolves.toEqual({ status: "ok" });
     await expect(reloadModelConfig()).resolves.toEqual({ status: "ok" });
+    await expect(
+      probeModelConnection({ profile_name: "default/profile", timeout_ms: 15000 }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        latency_ms: 42,
+        ok: true,
+      }),
+    );
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -2716,6 +2740,14 @@ describe("api client", () => {
       3,
       "/api/system/configs/model:reload",
       expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/configs/model:probe",
+      expect.objectContaining({
+        body: JSON.stringify({ profile_name: "default/profile", timeout_ms: 15000 }),
         method: "POST",
       }),
     );

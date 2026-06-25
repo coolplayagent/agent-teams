@@ -1316,6 +1316,47 @@ export interface ModelProfileSaveRequest {
   source_name?: string | null;
 }
 
+export interface ModelConnectivityProbeRequest {
+  profile_name?: string | null;
+  override?: ModelConnectivityProbeOverride | null;
+  timeout_ms?: number | null;
+}
+
+export interface ModelConnectivityProbeOverride {
+  provider?: string | null;
+  model?: string | null;
+  base_url?: string | null;
+  api_key?: string | null;
+  headers?: JsonValue[] | null;
+  maas_auth?: JsonValue | null;
+  codeagent_auth?: JsonValue | null;
+  ssl_verify?: boolean | null;
+  temperature?: number | null;
+  top_p?: number | null;
+  max_tokens?: number | null;
+}
+
+export interface ModelConnectivityProbeResult {
+  ok: boolean;
+  provider: string;
+  model: string;
+  latency_ms: number;
+  checked_at: string;
+  diagnostics: {
+    endpoint_reachable: boolean;
+    auth_valid: boolean;
+    rate_limited: boolean;
+  };
+  token_usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  retryable?: boolean;
+}
+
 export interface ModalityCapabilities {
   audio?: boolean | null;
   image?: boolean | null;

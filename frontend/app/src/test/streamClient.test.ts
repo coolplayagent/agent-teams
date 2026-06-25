@@ -242,6 +242,26 @@ describe("openRunStream", () => {
     expect(stream.states[0].runs["run-1"].entries[0].text).toBe("right run");
   });
 
+  it("does not notify state when replay delivers duplicate events", () => {
+    const stream = openTestStream();
+    const event = JSON.stringify(
+      relayEvent({
+        event_id: 5,
+        payload_json: JSON.stringify({ text: "deduped replay chunk" }),
+      }),
+    );
+
+    stream.source.dispatchMessage("message.text.delta", event);
+    stream.source.dispatchMessage("message.text.delta", event);
+
+    expect(stream.states).toHaveLength(1);
+    expect(stream.states[0].runs["run-1"]).toMatchObject({
+      lastEventId: 5,
+      status: "open",
+    });
+    expect(stream.states[0].runs["run-1"].entries).toHaveLength(1);
+  });
+
   it("closes once when a terminal event arrives", () => {
     const stream = openTestStream();
 

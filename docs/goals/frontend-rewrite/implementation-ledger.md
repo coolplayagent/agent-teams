@@ -1751,3 +1751,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser interaction verification completed for this sidebar resize slice. No Application Shell subsystem completion is claimed.
+
+## 2026-06-25 V2 Interrupted Stream Browser Reconnect Batch
+
+### Scope
+- Re-checked the AG-UI Runtime Stream checklist and targeted the remaining browser-level interrupted-stream recovery gap instead of adding more shell polish.
+- Extended the built V2 `/app/` browser recovery harness with a mock EventSource transport interruption while a run is actively streaming.
+- Covered the end-to-end controller path where the first EventSource receives `run_started` and a `text_delta` through event id 2, then dispatches a transport error.
+- Verified the V2 run stream controller closes the interrupted EventSource after the reconnect grace window and opens a new `/api/ag-ui/runs/run-v2-stream/events` stream with `after_event_id=2`, derived from the local runtime reducer state.
+- Verified a later `text_delta` from the replacement EventSource continues rendering without duplicating the earlier chunk, and `run_completed` closes the stream.
+- Left full AG-UI Runtime Stream completion open; remaining work includes backend-backed interrupted SSE timing, broader event-type coverage during interruption, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 9 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because it adds browser-level runtime interruption coverage rather than visible layout changes.
+
+### Reviewer
+- Main-agent browser integration verification completed for this interrupted-stream reconnect slice. No AG-UI Runtime Stream subsystem completion is claimed.

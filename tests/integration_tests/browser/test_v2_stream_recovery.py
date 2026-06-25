@@ -184,6 +184,69 @@ def test_v2_active_run_controls_inject_and_stop(browser_page: Page) -> None:
         assert backend.completed is True
 
 
+def test_v2_interrupted_stream_reconnects_from_latest_event_id(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=0'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "run_started", 1, {"phase": "streaming"})
+        _emit_relay_event(page, "text_delta", 2, {"text": _FIRST_CHUNK})
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate("() => window.__v2DispatchTransportError()")
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url, index) =>
+              index > 0
+              && url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=2'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.wait_for_function(
+            "() => window.__v2EventSources[0]?.readyState === 2",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "text_delta", 3, {"text": _AFTER_RELOAD_CHUNK})
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            1,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message").filter(has_text=_AFTER_RELOAD_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        _emit_relay_event(page, "run_completed", 4, {"status": "completed"})
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 0",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 def test_v2_recoverable_run_resume_reopens_stream_from_checkpoint(
     browser_page: Page,
 ) -> None:
@@ -999,6 +1062,13 @@ def _install_mock_event_source(page: Page) -> None:
                 listener.call(this, event);
               }
             }
+
+            dispatchTransportError() {
+              const event = new Event('error');
+              for (const listener of this.listeners.get('error') || []) {
+                listener.call(this, event);
+              }
+            }
           }
 
           window.__v2EventSources = [];
@@ -1014,6 +1084,15 @@ def _install_mock_event_source(page: Page) -> None:
           };
           window.__v2OpenEventSourceCount = () =>
             window.__v2EventSources.filter((item) => item.readyState !== 2).length;
+          window.__v2DispatchTransportError = () => {
+            const source = window.__v2EventSources
+              .filter((item) => item.readyState !== 2)
+              .at(-1);
+            if (!source) {
+              throw new Error('No open EventSource to receive the mock error.');
+            }
+            source.dispatchTransportError();
+          };
           window.EventSource = MockEventSource;
         })();
         """,

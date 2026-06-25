@@ -1255,6 +1255,7 @@ function MessageToolBlock({
   t: Translate;
 }) {
   const title = `${toolPhaseLabel(tool, t)}: ${tool.toolName}`;
+  const preview = toolSummaryPreview(tool);
   const hasDetails = tool.callId.trim().length > 0 || tool.body.trim().length > 0;
   return (
     <details className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
@@ -1263,6 +1264,9 @@ function MessageToolBlock({
           <Wrench aria-hidden="true" size={14} />
           <span>{title}</span>
         </span>
+        {preview ? (
+          <span className="at-message-tool-preview">{preview}</span>
+        ) : null}
       </summary>
       {hasDetails ? (
         <div className="at-message-tool-body">
@@ -2061,6 +2065,52 @@ function jsonStringArrayText(value: JsonValue | undefined): string {
   }
   const strings = value.filter((item): item is string => typeof item === "string");
   return strings.length === value.length ? strings.join("\n").trim() : "";
+}
+
+function toolSummaryPreview(tool: TimelineToolPart): string {
+  if (tool.phase === "call") {
+    return truncatePreview(toolCallPreview(tool.body));
+  }
+  return truncatePreview(firstNonEmptyLine(tool.body));
+}
+
+function toolCallPreview(body: string): string {
+  const parsed = parseJsonObjectText(body);
+  if (parsed !== null) {
+    return (
+      objectRawString(parsed, "command") ||
+      objectRawString(parsed, "cmd") ||
+      objectRawString(parsed, "path") ||
+      objectRawString(parsed, "query") ||
+      objectRawString(parsed, "pattern") ||
+      objectRawString(parsed, "url") ||
+      firstNonEmptyLine(jsonValueText(parsed))
+    );
+  }
+  return firstNonEmptyLine(body);
+}
+
+function parseJsonObjectText(value: string): Record<string, JsonValue> | null {
+  try {
+    return unknownJsonObject(JSON.parse(value) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+function firstNonEmptyLine(value: string): string {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) ?? "";
+}
+
+function truncatePreview(value: string): string {
+  const singleLine = value.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= 96) {
+    return singleLine;
+  }
+  return `${singleLine.slice(0, 95)}...`;
 }
 
 function appendUniqueLine(lines: string[], value: string): void {

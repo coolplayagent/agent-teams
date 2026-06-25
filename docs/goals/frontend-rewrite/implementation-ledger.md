@@ -1455,3 +1455,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser screenshot/metrics verification completed for this framework follow-up slice. No full Shell, Message Timeline, Settings, or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes detailed message rendering polish, live stream/replay browser scenarios, settings secondary pages, and reviewer sign-off.
+
+## 2026-06-25 Message Timeline Tool Summary Follow-Up Batch
+
+### Scope
+- Rechecked the live V2 message timeline after the user-marked screenshot instead of relying on source-level assumptions.
+- Kept persisted tool calls, tool results, validation failures, and approval rows collapsed by default while adding a one-line human-readable summary beside each tool title.
+- Extracted concise call summaries from common tool arguments such as `command`, `cmd`, `path`, `query`, `pattern`, and `url`, so rows such as `glob {"pattern":"*"}` render as `glob *` instead of exposing raw JSON punctuation.
+- Preserved full tool details behind the existing disclosure control; expanding a row still reveals call ids and the complete text body for debugging.
+- Left broader streaming/replay completion work open; this batch only reduces tool-heavy timeline noise and protects the collapsed-detail behavior with tests.
+
+### Verification
+- V2 pre-fix screenshot and metrics captured at `.tmp/frontend-message-timeline-followup/v2-before-devtools.png` and `.tmp/frontend-message-timeline-followup/v2-before-metrics.json`.
+- Final V2 screenshot captured at `.tmp/frontend-message-timeline-followup/v2-after-tool-summary.png`.
+- V1 current reference screenshot captured at `.tmp/frontend-message-timeline-followup/v1-reference-current.png`.
+- Final V2 browser verification on `http://127.0.0.1:8000/app/` showed body/document height fixed to the viewport (`772 / 772`), `.at-timeline` owning the message scroll, and visible tool summaries such as `工具调用: glob *`, `工具调用: glob .*`, `工具调用: glob **/*`, and `工具错误: grep ...` with full details still behind disclosure rows.
+- `npm test -- src/test/MessageTimeline.test.tsx` in `frontend/app` passed with 45 tests.
+- `npm run build` in `frontend/app` passed, including typecheck, desktop build, and Vite production build; Vite refreshed `frontend/dist/app` with rebuilt assets `index-CJ96CMJq.js` and `index-CR_s-NpK.css`.
+
+### Reviewer
+- Main-agent browser screenshot/metrics verification completed for this message timeline tool-summary slice. No full Message Timeline or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes live stream/replay browser scenarios, refresh-during-stream recovery under actual SSE timing, detailed long-history rendering parity, and reviewer sign-off.

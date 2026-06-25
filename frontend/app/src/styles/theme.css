@@ -4058,6 +4058,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--at-text);
   font-weight: 600;
@@ -4066,6 +4067,17 @@ body {
 .at-message-tool-title span {
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-message-tool-preview {
+  flex: 1 1 auto;
+  min-width: 80px;
+  overflow: hidden;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

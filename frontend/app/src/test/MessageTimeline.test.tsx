@@ -495,6 +495,12 @@ describe("MessageTimeline", () => {
               tool_call_id: "tool-2",
               tool_name: "read_file",
             },
+            {
+              args: { pattern: "**/*.ts" },
+              kind: "tool-call",
+              tool_call_id: "tool-3",
+              tool_name: "glob",
+            },
           ],
         },
         message_id: "assistant-tools",
@@ -507,10 +513,15 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
     expect(screen.getByText("Tool result: execute_command")).toBeVisible();
     expect(screen.getByText("Tool validation: read_file")).toBeVisible();
-    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(3);
+    expect(screen.getByText("Tool call: glob")).toBeVisible();
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(4);
+    expect(toolPreviewTexts(container)).toEqual([
+      "npm test",
+      "tests passed",
+      "path is required",
+      "**/*.ts",
+    ]);
     expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
-    expect(screen.getByText("tests passed")).not.toBeVisible();
-    expect(screen.getByText("path is required")).not.toBeVisible();
 
     fireEvent.click(screen.getByText("Tool call: execute_command"));
 
@@ -548,13 +559,19 @@ describe("MessageTimeline", () => {
 
     const resultTitle = await screen.findByText("Tool result: shell");
     expect(resultTitle).toBeVisible();
-    expect(screen.getByText(/tests\/integration_tests\/frontend\/test_a.py::test_ok/)).not.toBeVisible();
+    expect(toolPreviewTexts(screenElement(resultTitle))).toEqual([
+      "tests/integration_tests/frontend/test_a.py::test_ok",
+    ]);
     expect(screen.queryByText(/"ok": true/)).not.toBeInTheDocument();
     expect(screen.queryByText(/duration_ms/)).not.toBeInTheDocument();
 
     fireEvent.click(resultTitle);
 
-    expect(screen.getByText(/tests\/integration_tests\/frontend\/test_a.py::test_ok/)).toBeVisible();
+    const resultDetails = toolPreElement(screenElement(resultTitle));
+    expect(resultDetails).toBeVisible();
+    expect(resultDetails).toHaveTextContent(
+      /tests\/integration_tests\/frontend\/test_a.py::test_ok/,
+    );
     expect(screen.queryByText(/"ok": true/)).not.toBeInTheDocument();
     expect(screen.queryByText(/duration_ms/)).not.toBeInTheDocument();
   });
@@ -605,30 +622,39 @@ describe("MessageTimeline", () => {
       },
     ]);
 
-    renderTimeline();
+    const { container } = renderTimeline();
 
     const errorTitles = await screen.findAllByText("Tool error: execute_command");
     const readErrorTitle = await screen.findByText("Tool error: read");
     expect(errorTitles).toHaveLength(3);
     expect(readErrorTitle).toBeVisible();
-    expect(screen.getByText("explicit tool failure")).not.toBeVisible();
-    expect(screen.getByText("denied by policy")).not.toBeVisible();
-    expect(screen.getByText("cd failed")).not.toBeVisible();
-    expect(screen.getByText(/File not found/)).not.toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual([
+      "explicit tool failure",
+      "denied by policy",
+      "cd failed",
+      "File not found: .",
+    ]);
+    for (const details of toolPreElements(container)) {
+      expect(details).not.toBeVisible();
+    }
     expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
     expect(screen.queryByText(/"error": "cd failed"/)).not.toBeInTheDocument();
 
     fireEvent.click(errorTitles[2]);
 
-    expect(screen.getByText("cd failed")).toBeVisible();
+    const failedDetails = toolPreElement(screenElement(errorTitles[2]));
+    expect(failedDetails).toBeVisible();
+    expect(failedDetails).toHaveTextContent("cd failed");
     expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
     expect(screen.queryByText(/"error": "cd failed"/)).not.toBeInTheDocument();
 
     fireEvent.click(readErrorTitle);
 
-    expect(screen.getByText(/File not found/)).toBeVisible();
-    expect(screen.getByText(/Type: validation_error/)).toBeVisible();
-    expect(screen.getByText(/Retryable: false/)).toBeVisible();
+    const readDetails = toolPreElement(screenElement(readErrorTitle));
+    expect(readDetails).toBeVisible();
+    expect(readDetails).toHaveTextContent(/File not found/);
+    expect(readDetails).toHaveTextContent(/Type: validation_error/);
+    expect(readDetails).toHaveTextContent(/Retryable: false/);
   });
 
   it("renders runtime tool approval requests and resolved decisions", async () => {
@@ -689,22 +715,30 @@ describe("MessageTimeline", () => {
 
     const approvalRequest = await screen.findByText("Approval requested: execute_command");
     expect(approvalRequest).toBeVisible();
-    expect(screen.getByText(/Args: npm test/)).not.toBeVisible();
-    expect(screen.getByText(/Options: Allow once, Deny/)).not.toBeVisible();
+    expect(toolPreviewTexts(screenElement(approvalRequest))).toEqual([
+      "Args: npm test",
+    ]);
+    const approvalRequestDetails = toolPreElement(screenElement(approvalRequest));
+    expect(approvalRequestDetails).not.toBeVisible();
+    expect(approvalRequestDetails).toHaveTextContent(/Args: npm test/);
+    expect(approvalRequestDetails).toHaveTextContent(/Options: Allow once, Deny/);
     const approvalDenied = screen.getByText("Approval denied: execute_command");
     expect(approvalDenied).toBeVisible();
-    expect(screen.getByText(/Action: deny/)).not.toBeVisible();
-    expect(screen.getByText(/Feedback: Unsafe command/)).not.toBeVisible();
+    expect(toolPreviewTexts(screenElement(approvalDenied))).toEqual([
+      "Action: deny",
+    ]);
+    const approvalDeniedDetails = toolPreElement(screenElement(approvalDenied));
+    expect(approvalDeniedDetails).not.toBeVisible();
+    expect(approvalDeniedDetails).toHaveTextContent(/Action: deny/);
+    expect(approvalDeniedDetails).toHaveTextContent(/Feedback: Unsafe command/);
 
     fireEvent.click(approvalRequest);
 
-    expect(screen.getByText(/Args: npm test/)).toBeVisible();
-    expect(screen.getByText(/Options: Allow once, Deny/)).toBeVisible();
+    expect(approvalRequestDetails).toBeVisible();
 
     fireEvent.click(approvalDenied);
 
-    expect(screen.getByText(/Action: deny/)).toBeVisible();
-    expect(screen.getByText(/Feedback: Unsafe command/)).toBeVisible();
+    expect(approvalDeniedDetails).toBeVisible();
   });
 
   it("renders runtime output_delta text parts from payload output", async () => {
@@ -1517,21 +1551,28 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
     expect(screen.getByText("Tool error: execute_command")).toBeVisible();
     expect(screen.getByText("Tool validation: execute_command")).toBeVisible();
-    expect(
-      screen.getByText(/Input validation failed before tool execution/),
-    ).not.toBeVisible();
+    expect(toolPreviewTexts(screenElement(screen.getByText("Tool call: execute_command"))))
+      .toContain("npm test");
+    expect(toolPreviewTexts(screenElement(screen.getByText("Tool error: execute_command"))))
+      .toContain("command failed");
+    expect(toolPreviewTexts(screenElement(screen.getByText("Tool validation: execute_command"))))
+      .toContain("Input validation failed before tool execution.");
     expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
-    expect(screen.getByText(/command failed/)).not.toBeVisible();
     expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
     expect(screen.queryByText(/"error": "command failed"/)).not.toBeInTheDocument();
-    expect(screen.getByText(/cmd is required/)).not.toBeVisible();
+    const validationDetails = toolPreElement(
+      screenElement(screen.getByText("Tool validation: execute_command")),
+    );
+    expect(validationDetails).not.toBeVisible();
+    expect(validationDetails).toHaveTextContent(/cmd is required/);
 
     fireEvent.click(screen.getByText("Tool validation: execute_command"));
 
-    expect(
-      screen.getByText(/Input validation failed before tool execution/),
-    ).toBeVisible();
-    expect(screen.getByText(/cmd is required/)).toBeVisible();
+    expect(validationDetails).toBeVisible();
+    expect(validationDetails).toHaveTextContent(
+      /Input validation failed before tool execution/,
+    );
+    expect(validationDetails).toHaveTextContent(/cmd is required/);
   });
 
   it("falls back to runtime text for malformed tool and approval payloads", async () => {
@@ -2176,6 +2217,30 @@ function timelineMaxScrollTop(timeline: HTMLElement): number {
 function timelineVirtualHeight(timeline: HTMLElement): number {
   const virtualElement = timeline.querySelector<HTMLElement>(".at-timeline-virtual");
   return Number.parseFloat(virtualElement?.style.height ?? "") || 0;
+}
+
+function toolPreviewTexts(container: ParentNode): string[] {
+  return Array.from(container.querySelectorAll(".at-message-tool-preview"))
+    .map((element) => element.textContent?.trim() ?? "")
+    .filter((text) => text.length > 0);
+}
+
+function toolPreElements(container: ParentNode): HTMLElement[] {
+  return Array.from(container.querySelectorAll(".at-message-tool pre"))
+    .filter((element): element is HTMLElement => element instanceof HTMLElement);
+}
+
+function toolPreElement(container: ParentNode): HTMLElement {
+  const element = toolPreElements(container).at(0);
+  if (element === undefined) {
+    throw new Error("Expected a tool details pre element.");
+  }
+  return element;
+}
+
+function screenElement(element: HTMLElement): HTMLElement {
+  const toolBlock = element.closest(".at-message-tool");
+  return toolBlock instanceof HTMLElement ? toolBlock : element;
 }
 
 function restoreProperty<TObject extends object, TKey extends keyof TObject>(

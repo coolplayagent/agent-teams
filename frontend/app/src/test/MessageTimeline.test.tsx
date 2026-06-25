@@ -181,7 +181,7 @@ describe("MessageTimeline", () => {
     expect(followUpRound).not.toHaveAttribute("aria-current");
   });
 
-  it("keeps single-round sessions full width without the round rail", async () => {
+  it("keeps the round rail visible for single-round sessions like V1", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         content: "Only answer",
@@ -209,8 +209,12 @@ describe("MessageTimeline", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".at-round-marker")).toHaveLength(1);
     });
-    expect(container.querySelector(".at-timeline-frame")).not.toHaveClass("has-round-rail");
-    expect(screen.queryByRole("navigation", { name: "Rounds" })).toBeNull();
+    expect(container.querySelector(".at-timeline-frame")).toHaveClass("has-round-rail");
+    expect(await screen.findByRole("navigation", { name: "Rounds" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Go to round 1: Single task" })).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
   });
 
   it("does not copy stale runtime delta chunks over hydrated answers", async () => {

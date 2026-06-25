@@ -101,7 +101,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     return undefined;
   }, [rows]);
   const activeRoundRunId = activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(rounds);
-  const hasRoundRail = !roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 1;
+  const hasRoundRail = !roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 0;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,

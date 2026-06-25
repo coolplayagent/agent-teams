@@ -1073,7 +1073,7 @@ body {
 }
 
 .at-timeline-frame.has-round-rail {
-  grid-template-columns: minmax(0, 1fr) 118px;
+  grid-template-columns: minmax(0, 1fr) 128px;
 }
 
 .at-timeline {
@@ -3599,7 +3599,7 @@ body {
   grid-row: 1;
   position: relative;
   z-index: 3;
-  width: 118px;
+  width: 128px;
   height: 100%;
   min-height: 0;
   overflow: hidden;

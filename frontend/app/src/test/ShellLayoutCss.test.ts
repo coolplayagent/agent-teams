@@ -37,6 +37,15 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps the desktop round rail at the V1 navigator width", () => {
+    expect(themeCss).toMatch(
+      /\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 128px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-rail\s*{[\s\S]*?width:\s*128px;/,
+    );
+  });
+
   it("keeps desktop composer controls compact inside the V1-width shell", () => {
     expect(themeCss).toMatch(
       /\.at-composer-controls\s*{[\s\S]*?min-width:\s*0;/,

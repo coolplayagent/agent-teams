@@ -297,6 +297,62 @@ describe("MessageTimeline", () => {
     expect(followUpRound).not.toHaveAttribute("aria-current");
   });
 
+  it("shows terminal runtime status when a persisted round status is stale", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Final recovered answer",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-output",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-output",
+          run_phase: "streaming",
+          run_status: "running",
+          run_user_message: "Recovered stream task",
+        },
+      ],
+      next_cursor: null,
+    });
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-output": {
+            entries: [
+              runtimeGenericEntry({
+                eventId: 2,
+                id: "run-output:2:0",
+                kind: "run_completed",
+                payload: { status: "completed" },
+                text: "run completed",
+              }),
+            ],
+            lastEventId: 2,
+            runId: "run-output",
+            seenEventKeys: ["run-output:2"],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Final recovered answer")).toBeVisible();
+    const marker = container.querySelector(".at-round-marker");
+    expect(marker).not.toBeNull();
+    expect(marker).toHaveTextContent("completed");
+    expect(marker).not.toHaveTextContent("running");
+    expect(marker).not.toHaveTextContent("streaming");
+  });
+
   it("surfaces round pending actions, retry details, and diagnostics", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

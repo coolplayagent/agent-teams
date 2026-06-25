@@ -2961,3 +2961,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, API-client, built-app browser, and live in-app DOM verification completed for this Board status-action slice. Full Boards/module parity, visual parity matrix completion, AG-UI stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Real SSE Rich Replay Terminal Recovery Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and latest ledger before closing this slice, then kept the work focused on the still-high-risk AG-UI stream/replay and Message Timeline parity area instead of treating the latest screenshot as the whole goal.
+- Added a built `/app/` real SSE rich-replay scenario that reconnects with `Last-Event-ID`, replays thinking, tools, token usage, model steps, state snapshot/delta, todos, notifications, subagent status/stop/resume, background task, injections, user question/request answer, manual action, output text/media, validation failure, and terminal completion events.
+- Fixed terminal stream closure so stale recovery targets are suppressed after `onClosed` or local terminal transport closure, preventing an already completed replay from immediately auto-starting again from an outdated recovery snapshot.
+- Fixed Message Timeline round metadata so a runtime-closed run can override stale persisted `running/streaming` round labels with the terminal status while preserving the existing round rail, marker, and V1-style navigation shape.
+- Verified the browser screenshot evidence at `.tmp/frontend-v2-stream/v2-real-sse-rich-replay.png`: the fake streaming recovery bar is gone, the round marker shows `completed`, and rich replay event rows render in the timeline.
+- Kept this as targeted AG-UI replay/recovery progress only; the full visual parity matrix, remaining stream edge cases, subsystem reviewer sign-off, Electron release readiness, and final V2 naming cleanup remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx src/test/RunStreamController.test.tsx` passed with 2 files and 73 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_interrupted_stream_reconnects_from_runtime_cursor or real_sse_replay_dedupes_cursor_event_before_continuing or real_sse_rich_replay"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent component, built-app browser, and screenshot verification completed for this rich replay terminal-recovery slice. Full AG-UI Runtime Stream completion, Message Timeline visual parity, visual parity matrix completion, subsystem reviewer sign-off, and release readiness remain open.

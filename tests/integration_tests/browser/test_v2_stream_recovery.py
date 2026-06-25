@@ -915,7 +915,91 @@ def test_v2_real_sse_replay_dedupes_cursor_event_before_continuing(
         expect(
             page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
         ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.get_by_text("Run run-v2-stream is streaming")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
         assert stream_state.has_last_event_id_header("2")
+
+
+def test_v2_real_sse_rich_replay_preserves_non_text_events_after_reconnect(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(rich_replay_on_resume=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert stream_state.wait_for_after_event_id(2, timeout_seconds=10.0)
+        assert stream_state.wait_for_sent_event_id(24, timeout_seconds=5.0)
+
+        _expect_timeline_text_visible(
+            page,
+            f"{_RICH_REPLAY_THINKING_PREFIX}{_RICH_REPLAY_THINKING_SUFFIX}",
+        )
+        expect(page.get_by_text("Tool call: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Tool result: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        _expect_timeline_text_visible(page, _RICH_REPLAY_TOKEN_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_MODEL_STEP_FINISHED_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_STATE_SNAPSHOT_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_STATE_DELTA_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_TODO_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_NOTIFICATION_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_SUBAGENT_STATUS_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_BACKGROUND_TASK_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_INJECTION_QUEUED_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_INJECTION_APPLIED_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_QUESTION_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_QUESTION_ANSWER_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_MANUAL_ACTION_SUMMARY)
+        _expect_timeline_text_visible(page, _RICH_REPLAY_OUTPUT_TEXT)
+        output_image = page.get_by_role("img", name=_RICH_REPLAY_OUTPUT_IMAGE)
+        expect(output_image).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(output_image).to_have_attribute("src", _RICH_REPLAY_OUTPUT_IMAGE_URL)
+        validation_header = page.get_by_text("Tool validation: execute_command")
+        expect(validation_header).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        validation_header.click()
+        expect(page.get_by_text(_RICH_REPLAY_VALIDATION_DETAILS)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        _expect_timeline_text_visible(page, _FIRST_CHUNK.strip())
+        assert stream_state.wait_for_sent_event_id(27, timeout_seconds=10.0)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.get_by_text("Run run-v2-stream is streaming")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        round_marker = page.locator(".at-round-marker").first
+        expect(round_marker).to_contain_text("completed", timeout=_WAIT_TIMEOUT_MS)
+        expect(round_marker).not_to_contain_text("running", timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.has_last_event_id_header("2")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-stream"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-real-sse-rich-replay.png"))
 
 
 def test_v2_real_sse_active_run_stop_closes_stream_and_restores_send(
@@ -2192,12 +2276,14 @@ class _RealSseStreamState:
         fail_initial_stream: bool = False,
         hold_initial_stream_until_stop: bool = False,
         replay_duplicate_event_on_resume: bool = False,
+        rich_replay_on_resume: bool = False,
         server_error_initial_stream: bool = False,
         stop_initial_stream: bool = False,
     ) -> None:
         self.fail_initial_stream = fail_initial_stream
         self.hold_initial_stream_until_stop = hold_initial_stream_until_stop
         self.replay_duplicate_event_on_resume = replay_duplicate_event_on_resume
+        self.rich_replay_on_resume = rich_replay_on_resume
         self.server_error_initial_stream = server_error_initial_stream
         self.stop_initial_stream = stop_initial_stream
         self._lock = threading.Lock()
@@ -2593,6 +2679,9 @@ def _serve_v2_app_with_real_sse(
             if after_event_id < 2:
                 time.sleep(5.0)
                 return
+            if stream_state.rich_replay_on_resume:
+                self._write_rich_replay_events()
+                return
             if stream_state.replay_duplicate_event_on_resume:
                 self._write_sse_event(
                     _ag_ui_event(
@@ -2637,6 +2726,236 @@ def _serve_v2_app_with_real_sse(
                     "run.completed",
                     "run_completed",
                     4,
+                    {"status": "completed"},
+                ),
+            )
+            time.sleep(0.5)
+
+        def _write_rich_replay_events(self) -> None:
+            for event in [
+                _ag_ui_event(
+                    "thinking.started",
+                    "thinking_started",
+                    3,
+                    {"part_index": 0},
+                ),
+                _ag_ui_event(
+                    "thinking.delta",
+                    "thinking_delta",
+                    4,
+                    {
+                        "delta": (
+                            f"{_RICH_REPLAY_THINKING_PREFIX}"
+                            f"{_RICH_REPLAY_THINKING_SUFFIX}"
+                        ),
+                        "part_index": 0,
+                    },
+                ),
+                _ag_ui_event(
+                    "tool_call.started",
+                    "tool_call",
+                    5,
+                    {
+                        "args": {"path": "README.md"},
+                        "tool_call_id": _RICH_REPLAY_TOOL_CALL_ID,
+                        "tool_name": "read",
+                    },
+                ),
+                _ag_ui_event(
+                    "tool_result.completed",
+                    "tool_result",
+                    6,
+                    {
+                        "result": {"data": _RICH_REPLAY_TOOL_OUTPUT, "ok": True},
+                        "tool_call_id": _RICH_REPLAY_TOOL_CALL_ID,
+                        "tool_name": "read",
+                    },
+                ),
+                _ag_ui_event(
+                    "token_usage.updated",
+                    "token_usage",
+                    7,
+                    {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+                ),
+                _ag_ui_event(
+                    "model_step.started",
+                    "model_step_started",
+                    8,
+                    {"summary": _RICH_REPLAY_MODEL_STEP},
+                ),
+                _ag_ui_event(
+                    "model_step.finished",
+                    "model_step_finished",
+                    9,
+                    {"summary": f"{_RICH_REPLAY_MODEL_STEP} finished"},
+                ),
+                _ag_ui_event(
+                    "state.snapshot",
+                    "state_snapshot",
+                    10,
+                    {"summary": _RICH_REPLAY_STATE_SNAPSHOT},
+                ),
+                _ag_ui_event(
+                    "state.delta",
+                    "state_delta",
+                    11,
+                    {"summary": _RICH_REPLAY_STATE_DELTA},
+                ),
+                _ag_ui_event(
+                    "todo.updated",
+                    "todo_updated",
+                    12,
+                    {
+                        "items": [
+                            {
+                                "content": "inspect replay hydration",
+                                "status": "completed",
+                            },
+                            {
+                                "content": _RICH_REPLAY_TODO_CURRENT,
+                                "status": "in_progress",
+                            },
+                            {
+                                "content": "capture replay evidence",
+                                "status": "pending",
+                            },
+                        ],
+                        "run_id": _RUN_ID,
+                        "session_id": _SESSION_ID,
+                        "updated_by_instance_id": "replay-agent",
+                        "version": 4,
+                    },
+                ),
+                _ag_ui_event(
+                    "notification.requested",
+                    "notification_requested",
+                    13,
+                    {"title": _RICH_REPLAY_NOTIFICATION},
+                ),
+                _ag_ui_event(
+                    "subagent_session.status_changed",
+                    "subagent_session_status_changed",
+                    14,
+                    {"status": "running", "title": _RICH_REPLAY_SUBAGENT_STATUS},
+                ),
+                _ag_ui_event(
+                    "background_task.started",
+                    "background_task_started",
+                    15,
+                    {"title": _RICH_REPLAY_BACKGROUND_TASK},
+                ),
+                _ag_ui_event(
+                    "injection.enqueued",
+                    "injection_enqueued",
+                    16,
+                    {
+                        "content": _RICH_REPLAY_INJECTION,
+                        "delivery_mode": "queued",
+                        "recipient_instance_id": "replay-agent",
+                        "source": "user",
+                    },
+                ),
+                _ag_ui_event(
+                    "injection.applied",
+                    "injection_applied",
+                    17,
+                    {
+                        "content": _RICH_REPLAY_INJECTION_APPLIED,
+                        "internal_delivery_mode": "guidance",
+                        "recipient_instance_id": "replay-agent",
+                        "source": "system",
+                    },
+                ),
+                _ag_ui_event(
+                    "user_question.requested",
+                    "user_question_requested",
+                    18,
+                    {
+                        "question_id": _RICH_REPLAY_QUESTION_ID,
+                        "questions": [{"question": _RICH_REPLAY_QUESTION}],
+                    },
+                ),
+                _ag_ui_event(
+                    "user_question.answered",
+                    "user_question_answered",
+                    19,
+                    {
+                        "answers": [{"selections": [{"label": "Continue"}]}],
+                        "question_id": _RICH_REPLAY_QUESTION_ID,
+                    },
+                ),
+                _ag_ui_event(
+                    "subagent.stopped",
+                    "subagent_stopped",
+                    20,
+                    {
+                        "instance_id": "subagent-rich",
+                        "reason": "stopped_by_user",
+                        "role_id": "reviewer",
+                        "task_id": "task-rich",
+                    },
+                ),
+                _ag_ui_event(
+                    "subagent.resumed",
+                    "subagent_resumed",
+                    21,
+                    {
+                        "instance_id": "subagent-rich",
+                        "role_id": "reviewer",
+                        "task_id": "task-rich",
+                    },
+                ),
+                _ag_ui_event(
+                    "run.awaiting_manual_action",
+                    "awaiting_manual_action",
+                    22,
+                    {"root_task_id": "root-rich"},
+                ),
+                _ag_ui_event(
+                    "message.output.delta",
+                    "output_delta",
+                    23,
+                    {
+                        "output": [
+                            {"kind": "text", "text": _RICH_REPLAY_OUTPUT_TEXT},
+                            {
+                                "kind": "media_ref",
+                                "mime_type": "image/png",
+                                "modality": "image",
+                                "name": _RICH_REPLAY_OUTPUT_IMAGE,
+                                "url": _RICH_REPLAY_OUTPUT_IMAGE_URL,
+                            },
+                        ],
+                    },
+                ),
+                _ag_ui_event(
+                    "tool_call.validation_failed",
+                    "tool_input_validation_failed",
+                    24,
+                    {
+                        "details": _RICH_REPLAY_VALIDATION_DETAILS,
+                        "reason": _RICH_REPLAY_VALIDATION_REASON,
+                        "tool_call_id": "call-v2-rich-validation",
+                        "tool_name": "execute_command",
+                    },
+                ),
+            ]:
+                self._write_sse_event(event)
+            time.sleep(3.0)
+            self._write_sse_event(
+                _ag_ui_event(
+                    "thinking.finished",
+                    "thinking_finished",
+                    25,
+                    {"part_index": 0},
+                ),
+            )
+            backend.completed = True
+            self._write_sse_event(
+                _ag_ui_event(
+                    "run.completed",
+                    "run_completed",
+                    27,
                     {"status": "completed"},
                 ),
             )
@@ -2865,6 +3184,44 @@ def _wait_for_v2_shell(page: Page) -> None:
         "() => document.body.dataset.bootstrapState === 'ready'",
         timeout=_WAIT_TIMEOUT_MS,
     )
+
+
+def _expect_timeline_text_visible(page: Page, text: str) -> None:
+    locator = page.get_by_text(text)
+    if locator.first.is_visible(timeout=500):
+        return
+    max_scroll = cast(
+        int,
+        page.evaluate(
+            """
+            () => {
+              const timeline = document.querySelector('.at-timeline');
+              if (!(timeline instanceof HTMLElement)) {
+                return 0;
+              }
+              return Math.max(0, timeline.scrollHeight - timeline.clientHeight);
+            }
+            """,
+        ),
+    )
+    for ratio in [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]:
+        page.evaluate(
+            """
+            (scrollTop) => {
+              const timeline = document.querySelector('.at-timeline');
+              if (!(timeline instanceof HTMLElement)) {
+                return;
+              }
+              timeline.scrollTop = scrollTop;
+              timeline.dispatchEvent(new Event('scroll'));
+            }
+            """,
+            round(max_scroll * ratio),
+        )
+        page.wait_for_timeout(150)
+        if locator.first.is_visible(timeout=500):
+            return
+    expect(locator.first).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
 
 def _emit_relay_event(

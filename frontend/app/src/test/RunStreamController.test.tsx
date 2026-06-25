@@ -122,6 +122,39 @@ describe("useRunStreamController", () => {
     );
   });
 
+  it("suppresses stale recovery targets after terminal stream closure", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as { onClosed: () => void };
+    act(() => {
+      options.onClosed();
+    });
+
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("");
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("");
+  });
+
   it("resumes from the latest local event id when recovery data is stale", () => {
     useRuntimeStore.setState({
       runtimeState: {

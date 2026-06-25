@@ -146,12 +146,16 @@ export function useRunStreamController(): RunStreamController {
     stopActiveRunStream();
   };
 
-  const finishClosedRunStream = (sessionId: string) => {
+  const finishClosedRunStream = (
+    sessionId: string,
+    terminalTargets: StartRunStreamTarget[],
+  ) => {
     clearReconnectTimer();
     reconnectAttemptRef.current = 0;
     stopContinuityRefresh();
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
+    suppressRunTargets(terminalTargets);
     setActiveRunIds([]);
     setTrackedRunIds([]);
     void queryClient.invalidateQueries({
@@ -194,7 +198,7 @@ export function useRunStreamController(): RunStreamController {
         if (streamGeneration !== streamGenerationRef.current) {
           return;
         }
-        finishClosedRunStream(options.sessionId);
+        finishClosedRunStream(options.sessionId, options.runs);
       },
       onError: (errorMessage, errorKind) => {
         if (streamGeneration !== streamGenerationRef.current) {
@@ -202,7 +206,7 @@ export function useRunStreamController(): RunStreamController {
         }
         if (errorKind === "transport") {
           if (trackedRunTargetsClosed(options.runs, runtimeStateRef.current)) {
-            finishClosedRunStream(options.sessionId);
+            finishClosedRunStream(options.sessionId, options.runs);
             return;
           }
           refreshRecoverySnapshot(options.sessionId);

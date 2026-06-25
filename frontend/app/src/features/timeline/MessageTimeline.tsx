@@ -78,9 +78,13 @@ export function MessageTimeline({
     () => roundsQuery.data ?? [],
     [roundsQuery.data],
   );
+  const displayRounds = useMemo(
+    () => roundsWithRuntimeRunState(rounds, runtimeState.runs),
+    [rounds, runtimeState.runs],
+  );
   const messageRoundLookup = useMemo(
-    () => createMessageRoundLookup(rounds),
-    [rounds],
+    () => createMessageRoundLookup(displayRounds),
+    [displayRounds],
   );
   const persistedRows = useMemo(
     () =>
@@ -120,8 +124,8 @@ export function MessageTimeline({
       insertRoundMarkerRows([
         ...persistedRows,
         ...runtimeRows.filter(timelineRowHasRenderableContent),
-      ], rounds),
-    [persistedRows, rounds, runtimeRows],
+      ], displayRounds),
+    [displayRounds, persistedRows, runtimeRows],
   );
   const streamOpenForSession = useMemo(
     () =>
@@ -146,8 +150,10 @@ export function MessageTimeline({
   const handleCopyAnswer = useCallback((row: TimelineRow | undefined) => {
     void copyLastAnswer(row, message, t);
   }, [message, t]);
-  const activeRoundRunId = activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(rounds);
-  const hasRoundRail = !roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 0;
+  const activeRoundRunId =
+    activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(displayRounds);
+  const hasRoundRail =
+    !roundsQuery.isLoading && !roundsQuery.isError && displayRounds.length > 0;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -266,7 +272,7 @@ export function MessageTimeline({
         <RoundRail
           activeRunId={activeRoundRunId}
           onSelectRun={handleRoundSelect}
-          rounds={rounds}
+          rounds={displayRounds}
           t={t}
         />
       ) : null}
@@ -785,6 +791,66 @@ function sortRoundsAscending(rounds: SessionRound[]): SessionRound[] {
 
 function roundSortKey(round: SessionRound): string {
   return round.created_at?.trim() || round.run_id;
+}
+
+function roundsWithRuntimeRunState(
+  rounds: SessionRound[],
+  runStates: Record<string, RuntimeRunState>,
+): SessionRound[] {
+  let changed = false;
+  const nextRounds = rounds.map((round) => {
+    const runState = runStates[round.run_id.trim()];
+    const runtimeStatus = runtimeRoundStatusLabel(runState);
+    if (runtimeStatus === null) {
+      return round;
+    }
+    if ((round.run_status ?? null) === runtimeStatus && (round.run_phase ?? null) === null) {
+      return round;
+    }
+    changed = true;
+    return {
+      ...round,
+      run_phase: null,
+      run_status: runtimeStatus,
+    };
+  });
+  return changed ? nextRounds : rounds;
+}
+
+function runtimeRoundStatusLabel(
+  runState: RuntimeRunState | undefined,
+): string | null {
+  if (runState === undefined || runState.status !== "closed") {
+    return null;
+  }
+  return terminalRoundStatusLabel(
+    runState.terminalEventType ?? latestTerminalEntryKind(runState.entries),
+  );
+}
+
+function latestTerminalEntryKind(entries: TimelineEntry[]): RunEventType | null {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry !== undefined && terminalRoundStatusLabel(entry.kind) !== null) {
+      return entry.kind;
+    }
+  }
+  return null;
+}
+
+function terminalRoundStatusLabel(kind: RunEventType | null): string | null {
+  switch (kind) {
+    case "run_completed":
+      return "completed";
+    case "run_failed":
+      return "failed";
+    case "run_paused":
+      return "paused";
+    case "run_stopped":
+      return "stopped";
+    default:
+      return null;
+  }
 }
 
 function latestRowRunId(rows: TimelineRow[]): string | null {

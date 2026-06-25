@@ -1302,3 +1302,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this multiplex duplicate terminal replay evidence slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.
+
+## 2026-06-25 Recovery Stream Target Tracking Batch
+
+### Scope
+- Split the React run stream controller's state into `activeRunIds` for currently open runs and `trackedRunIds` for the EventSource targets being followed.
+- RecoveryBar now compares recovery snapshot targets against `trackedRunIds`, so a stale recovery snapshot does not reopen an entire multiplex stream after one tracked run has already reached terminal state locally.
+- Composer and other active-run controls continue to use `activeRunIds`, preserving the narrower stop/inject ownership from the earlier multiplex active-run state fix.
+
+### Verification
+- `npm test -- src/test/RunStreamController.test.tsx` in `frontend/app` passed with 13 tests, including the regression that active ids shrink while tracked ids remain stable for the open EventSource.
+- `npm test -- src/test/RecoveryBar.test.tsx` in `frontend/app` passed with 19 tests, including the regression that RecoveryBar does not restart a multiplex stream when active ids are a subset but tracked ids still match the recovery targets.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt asset `index-BvAOAp4z.js`.
+
+### Reviewer
+- Main-agent targeted verification completed for this recovery stream target tracking slice. No AG-UI Runtime Stream or Run Recovery subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.

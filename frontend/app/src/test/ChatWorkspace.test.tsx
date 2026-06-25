@@ -89,5 +89,6 @@ function createRunStreamController(): RunStreamController {
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
+    trackedRunIds: [],
   };
 }

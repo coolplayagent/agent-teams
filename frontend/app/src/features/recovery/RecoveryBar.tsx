@@ -74,7 +74,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const recoveryRunStreamTargetsKey = recoveryRunStreamTargets
     .map(recoveryRunStreamTargetKey)
     .join("|");
-  const activeRunIdsKey = runStreamController.activeRunIds.join("|");
+  const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
   const recoverableRunId =
     activeRun?.should_show_recover === true ? activeRun.run_id : null;
   const showResumeAction = shouldShowResumeAction(
@@ -91,7 +91,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     }
     if (
       runStreamIdsMatchTargets(
-        runStreamController.activeRunIds,
+        runStreamController.trackedRunIds,
         recoveryRunStreamTargets,
       )
     ) {
@@ -111,7 +111,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
       sessionId,
     });
   }, [
-    activeRunIdsKey,
+    trackedRunIdsKey,
     recoveryRunStreamTargetsKey,
     recoveryRunStreamTargets,
     runStreamController,

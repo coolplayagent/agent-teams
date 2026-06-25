@@ -449,6 +449,46 @@ describe("RecoveryBar", () => {
       ...runStreamController(),
       activeRunId: "subagent-run-1",
       activeRunIds: ["subagent-run-1", "run-1"],
+      trackedRunIds: ["subagent-run-1", "run-1"],
+    };
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("subagent:reviewer");
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+  });
+
+  it("keeps a multiplex stream open when active run ids shrink but tracked ids still match recovery targets", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "running",
+          phase: "running",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "subagent",
+            command: "subagent:reviewer",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "running",
+            recent_output: [],
+            subagent_run_id: "subagent-run-1",
+          },
+        ],
+      }),
+    );
+    const controller: RunStreamController = {
+      ...runStreamController("run-1"),
+      trackedRunIds: ["run-1", "subagent-run-1"],
     };
 
     renderRecoveryBar(controller);
@@ -763,6 +803,7 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
     clearRunStream: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
+    trackedRunIds: activeRunId === null ? [] : [activeRunId],
   };
 }
 

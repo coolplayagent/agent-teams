@@ -237,6 +237,7 @@ describe("useRunStreamController", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Start streams" }));
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1,run-2");
 
     const options = streamMocks.latestOptions as MultiplexedRunStreamOptions;
     act(() => {
@@ -247,6 +248,7 @@ describe("useRunStreamController", () => {
     });
 
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-2");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1,run-2");
   });
 
   it("deduplicates multiplexed run targets before opening a replay stream", () => {
@@ -650,6 +652,7 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
         Start duplicate streams
       </button>
       <span data-testid="active-run-ids">{controller.activeRunIds.join(",")}</span>
+      <span data-testid="tracked-run-ids">{controller.trackedRunIds.join(",")}</span>
     </>
   );
 }

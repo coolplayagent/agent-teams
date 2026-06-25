@@ -38,6 +38,7 @@ export interface RunStreamController {
   clearRunStream: () => void;
   startRunStream: (options: StartRunStreamOptions) => void;
   startRunStreams: (options: StartRunStreamsOptions) => void;
+  trackedRunIds: string[];
 }
 
 interface RunStreamCallbacks {
@@ -59,6 +60,7 @@ export function useRunStreamController(): RunStreamController {
   const reconnectAttemptRef = useRef(0);
   const streamGenerationRef = useRef(0);
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
+  const [trackedRunIds, setTrackedRunIds] = useState<string[]>([]);
   const activeRunId = activeRunIds[0] ?? null;
 
   useEffect(() => {
@@ -110,6 +112,7 @@ export function useRunStreamController(): RunStreamController {
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
     setActiveRunIds([]);
+    setTrackedRunIds([]);
   };
 
   const clearRunStream = () => {
@@ -123,6 +126,7 @@ export function useRunStreamController(): RunStreamController {
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
     setActiveRunIds([]);
+    setTrackedRunIds([]);
     void queryClient.invalidateQueries({
       queryKey: ["sessions", sessionId, "messages"],
     });
@@ -234,6 +238,7 @@ export function useRunStreamController(): RunStreamController {
     stopContinuityRefresh();
     streamHandleRef.current?.close();
     setActiveRunIds(runs.map((run) => run.runId));
+    setTrackedRunIds(runs.map((run) => run.runId));
     startContinuityRefresh(options.sessionId);
     openTrackedRunStream(
       {
@@ -250,6 +255,7 @@ export function useRunStreamController(): RunStreamController {
     clearRunStream,
     startRunStream,
     startRunStreams,
+    trackedRunIds,
   };
 }
 

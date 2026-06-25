@@ -4898,6 +4898,17 @@ body {
   max-width: 480px;
 }
 
+.at-settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 480px;
+}
+
+.at-settings-form-grid .ant-form-item {
+  margin-bottom: 0;
+}
+
 .at-settings-wide-form {
   display: grid;
   gap: 16px;
@@ -5618,6 +5629,10 @@ body {
 
 .at-settings-list-row:last-child {
   border-bottom: 0;
+}
+
+.at-orchestration-list-row {
+  grid-template-columns: minmax(0, 1fr) minmax(86px, 132px) max-content max-content;
 }
 
 .at-plugin-list-row {
@@ -7081,6 +7096,7 @@ body {
   }
 
   .at-model-catalog-grid,
+  .at-settings-form-grid,
   .at-model-profile-form-grid {
     grid-template-columns: minmax(0, 1fr);
   }

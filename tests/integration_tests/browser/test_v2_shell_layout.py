@@ -1300,6 +1300,88 @@ def test_v2_roles_settings_validate_delete_and_create_real_config(
         page.screenshot(path=str(screenshot_dir / "v2-roles-create-save.png"))
 
 
+def test_v2_orchestration_settings_default_delete_and_create_real_config(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        sections = settings.get_by_role("navigation", name="Settings sections")
+
+        sections.get_by_role("button", name="Orchestration").click()
+        expect(settings.get_by_role("heading", name="Orchestration")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        shipping_row = settings.locator(".at-settings-list-row").filter(
+            has_text="Shipping"
+        )
+        expect(shipping_row).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        shipping_row.get_by_role("button", name="Set default").click()
+        _wait_for_backend_state(
+            lambda: len(backend.orchestration_save_payloads) == 1
+            and backend.orchestration_save_payloads[0][
+                "default_orchestration_preset_id"
+            ]
+            == "shipping",
+            "Orchestration default save request was not captured.",
+        )
+
+        settings.get_by_role("button", name="Default 1 roles · Review flow").click()
+        expect(settings.get_by_label("Preset ID")).to_have_value(
+            "default",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.get_by_role("button", name="Delete").click()
+        page.get_by_role("button", name="OK", exact=True).click()
+        _wait_for_backend_state(
+            lambda: len(backend.orchestration_save_payloads) == 2
+            and backend.orchestration_save_payloads[1][
+                "default_orchestration_preset_id"
+            ]
+            == "shipping"
+            and len(cast(list[object], backend.orchestration_save_payloads[1]["presets"]))
+            == 1,
+            "Orchestration delete save request was not captured.",
+        )
+
+        settings.get_by_role("button", name="New orchestration").click()
+        settings.get_by_label("Preset ID").fill("analysis")
+        settings.get_by_label("Preset name").fill("Analysis")
+        settings.get_by_label("Description").fill("Analysis flow")
+        settings.get_by_label("Orchestration prompt").fill(
+            "Analyze the work and report risks."
+        )
+        settings.get_by_role("button", name="Save").click()
+        _wait_for_backend_state(
+            lambda: len(backend.orchestration_save_payloads) == 3
+            and cast(
+                list[dict[str, object]],
+                backend.orchestration_save_payloads[2]["presets"],
+            )[-1]["preset_id"]
+            == "analysis"
+            and cast(
+                list[dict[str, object]],
+                backend.orchestration_save_payloads[2]["presets"],
+            )[-1]["role_ids"]
+            == ["reviewer"],
+            "Orchestration create save request was not captured.",
+        )
+        expect(settings.get_by_label("Preset ID")).to_have_value("analysis")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-orchestration-create-save.png"))
+
+
 def test_v2_model_profile_detail_saves_and_tests_existing_profile(
     browser_page: Page,
 ) -> None:
@@ -1989,6 +2071,42 @@ class _V2ShellBackend:
                 "version": "1.0.0",
             },
         }
+        self.orchestration_save_payloads: list[dict[str, object]] = []
+        self.orchestration_config: dict[str, object] = {
+            "default_orchestration_preset_id": "default",
+            "presets": [
+                {
+                    "description": "Review flow",
+                    "graph": {
+                        "nodes": [
+                            {
+                                "id": "review",
+                                "role_id": "reviewer",
+                            }
+                        ]
+                    },
+                    "name": "Default",
+                    "orchestration_prompt": "Coordinate review work.",
+                    "policy": {
+                        "max_orchestration_cycles": 8,
+                        "max_parallel_delegated_tasks": 4,
+                    },
+                    "preset_id": "default",
+                    "role_ids": ["reviewer"],
+                },
+                {
+                    "description": "Ship flow",
+                    "name": "Shipping",
+                    "orchestration_prompt": "Ship completed work.",
+                    "policy": {
+                        "max_orchestration_cycles": 6,
+                        "max_parallel_delegated_tasks": 2,
+                    },
+                    "preset_id": "shipping",
+                    "role_ids": ["reviewer"],
+                },
+            ],
+        }
         self.plugin_delete_requests: list[dict[str, object]] = []
         self.plugin_disable_requests: list[dict[str, object]] = []
         self.plugin_enable_requests: list[dict[str, object]] = []
@@ -2178,7 +2296,9 @@ class _V2ShellBackend:
                     "normal_mode_roles": [
                         {"name": "Main Agent", "role_id": "MainAgent"}
                     ],
-                    "subagent_roles": [],
+                    "subagent_roles": [
+                        {"name": "Reviewer", "role_id": "reviewer"}
+                    ],
                 },
             )
             return
@@ -2256,7 +2376,16 @@ class _V2ShellBackend:
             )
             return
         if request.method == "GET" and path == "/system/configs/orchestration":
-            _fulfill_json(route, {"default_preset_id": "default", "presets": []})
+            _fulfill_json(route, self.orchestration_config)
+            return
+        if request.method == "PUT" and path == "/system/configs/orchestration":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.orchestration_save_payloads.append(payload)
+            self.orchestration_config = payload
+            _fulfill_json(route, {"status": "ok"})
             return
         if request.method == "GET" and path == "/system/configs/general":
             _fulfill_json(route, {"shell_safety_policy_enabled": True})

@@ -1287,6 +1287,7 @@ export interface OrchestrationPreset {
   role_ids?: string[];
   orchestration_prompt?: string;
   policy?: OrchestrationPolicy;
+  graph?: JsonValue | null;
 }
 
 export interface OrchestrationPolicy {

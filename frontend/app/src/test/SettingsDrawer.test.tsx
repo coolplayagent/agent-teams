@@ -106,6 +106,7 @@ import {
   validateRoleConfig,
   waitWeChatGatewayLogin,
 } from "../api/client";
+import type { OrchestrationConfig } from "../api/contracts";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
 import {
@@ -313,6 +314,46 @@ const validateRoleConfigMock = vi.mocked(validateRoleConfig);
 const waitWeChatGatewayLoginMock = vi.mocked(waitWeChatGatewayLogin);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
+
+function orchestrationConfigFixture(): OrchestrationConfig {
+  return {
+    default_orchestration_preset_id: "default",
+    presets: [
+      {
+        description: "Main plus reviewer",
+        graph: {
+          nodes: [
+            {
+              id: "review",
+              role_id: "reviewer",
+            },
+          ],
+        },
+        name: "Default",
+        orchestration_prompt: "Coordinate the work.",
+        policy: {
+          auto_plan_long_tasks: true,
+          max_orchestration_cycles: 8,
+          max_parallel_delegated_tasks: 4,
+          planner_role_id: "planner",
+        },
+        preset_id: "default",
+        role_ids: ["main", "reviewer"],
+      },
+      {
+        description: "Release flow",
+        name: "Shipping",
+        orchestration_prompt: "Ship the work.",
+        policy: {
+          max_orchestration_cycles: 6,
+          max_parallel_delegated_tasks: 2,
+        },
+        preset_id: "shipping",
+        role_ids: ["reviewer"],
+      },
+    ],
+  };
+}
 
 beforeEach(() => {
   getGeneralConfigMock.mockResolvedValue({ shell_safety_policy_enabled: true });
@@ -852,23 +893,7 @@ beforeEach(() => {
     tool_count: 0,
     transport: "stdio",
   });
-  getOrchestrationConfigMock.mockResolvedValue({
-    default_orchestration_preset_id: "default",
-    presets: [
-      {
-        description: "Main plus reviewer",
-        name: "Default",
-        orchestration_prompt: "Coordinate the work.",
-        policy: {
-          auto_plan_long_tasks: true,
-          max_orchestration_cycles: 8,
-          planner_role_id: "planner",
-        },
-        preset_id: "default",
-        role_ids: ["main", "reviewer"],
-      },
-    ],
-  });
+  getOrchestrationConfigMock.mockResolvedValue(orchestrationConfigFixture());
   getRoleConfigOptionsMock.mockResolvedValue({
     coordinator_role: {
       name: "Coordinator",
@@ -1405,22 +1430,20 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(screen.getAllByText("Main Agent").length).toBeGreaterThan(0));
 
     fireEvent.click(within(sections).getByRole("button", { name: "Orchestration" }));
-    expect(await screen.findByText("Default")).toBeVisible();
-    expect(screen.getByText("2 roles · Main plus reviewer")).toBeVisible();
-    const defaultPresetRow = screen.getByText("Default").closest("button");
+    expect(await screen.findByText("2 roles · Main plus reviewer")).toBeVisible();
+    const defaultPresetRow = screen
+      .getByText("2 roles · Main plus reviewer")
+      .closest(".at-settings-list-row");
     expect(defaultPresetRow).not.toBeNull();
-    fireEvent.click(defaultPresetRow as HTMLElement);
-    expect(await screen.findByText("Preset ID")).toBeVisible();
+    fireEvent.click(within(defaultPresetRow as HTMLElement).getByRole("button", { name: /Default/ }));
+    expect(await screen.findByLabelText("Preset ID")).toBeVisible();
     const presetNameInput = screen.getByDisplayValue("Default");
     const presetDescriptionInput = screen.getByDisplayValue("Main plus reviewer");
-    const presetRolesInput = screen.getByDisplayValue("main, reviewer");
     const presetPromptInput = screen.getByDisplayValue("Coordinate the work.");
-    expect(presetRolesInput).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "main" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "reviewer" })).toBeChecked();
     fireEvent.change(presetNameInput, { target: { value: "Edited Default" } });
     fireEvent.change(presetDescriptionInput, { target: { value: "Edited reviewer flow" } });
-    fireEvent.change(presetRolesInput, {
-      target: { value: "main, reviewer, qa, reviewer" },
-    });
     fireEvent.change(presetPromptInput, {
       target: { value: "Coordinate edited work." },
     });
@@ -1430,16 +1453,36 @@ describe("SettingsDrawer", () => {
       default_orchestration_preset_id: "default",
       presets: [
         {
+          description: "Release flow",
+          name: "Shipping",
+          orchestration_prompt: "Ship the work.",
+          policy: {
+            max_orchestration_cycles: 6,
+            max_parallel_delegated_tasks: 2,
+          },
+          preset_id: "shipping",
+          role_ids: ["reviewer"],
+        },
+        {
           description: "Edited reviewer flow",
+          graph: {
+            nodes: [
+              {
+                id: "review",
+                role_id: "reviewer",
+              },
+            ],
+          },
           name: "Edited Default",
           orchestration_prompt: "Coordinate edited work.",
           policy: {
             auto_plan_long_tasks: true,
             max_orchestration_cycles: 8,
+            max_parallel_delegated_tasks: 4,
             planner_role_id: "planner",
           },
           preset_id: "default",
-          role_ids: ["main", "reviewer", "qa"],
+          role_ids: ["main", "reviewer"],
         },
       ],
     });
@@ -1733,6 +1776,80 @@ describe("SettingsDrawer", () => {
         auto_save_webhook_base_url: true,
       }),
     );
+  }, 45000);
+
+  it("sets defaults, deletes, and creates orchestration presets", async () => {
+    let orchestrationConfig = orchestrationConfigFixture();
+    getOrchestrationConfigMock.mockImplementation(async () => orchestrationConfig);
+    saveOrchestrationConfigMock.mockImplementation(async (nextConfig) => {
+      orchestrationConfig = nextConfig;
+      return { status: "ok" };
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Orchestration" }));
+
+    const shippingRow = (await screen.findByText("1 roles · Release flow")).closest(
+      ".at-settings-list-row",
+    );
+    expect(shippingRow).not.toBeNull();
+    fireEvent.click(within(shippingRow as HTMLElement).getByRole("button", { name: "Set default" }));
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(1));
+    expect(saveOrchestrationConfigMock.mock.calls[0]?.[0]).toEqual({
+      default_orchestration_preset_id: "shipping",
+      presets: orchestrationConfigFixture().presets,
+    });
+
+    const defaultRow = (await screen.findByText("2 roles · Main plus reviewer")).closest(
+      ".at-settings-list-row",
+    );
+    expect(defaultRow).not.toBeNull();
+    fireEvent.click(within(defaultRow as HTMLElement).getByRole("button", { name: /Default/ }));
+    expect(await screen.findByLabelText("Preset ID")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(2));
+    expect(saveOrchestrationConfigMock.mock.calls[1]?.[0]).toEqual({
+      default_orchestration_preset_id: "shipping",
+      presets: [orchestrationConfigFixture().presets?.[1]],
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "New orchestration" }));
+    fireEvent.change(await screen.findByLabelText("Preset ID"), {
+      target: { value: "analysis" },
+    });
+    fireEvent.change(screen.getByLabelText("Preset name"), {
+      target: { value: "Analysis" },
+    });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Analysis role flow" },
+    });
+    fireEvent.change(screen.getByLabelText("Orchestration prompt"), {
+      target: { value: "Analyze and report risks." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(3));
+    expect(saveOrchestrationConfigMock.mock.calls[2]?.[0]).toEqual({
+      default_orchestration_preset_id: "shipping",
+      presets: [
+        orchestrationConfigFixture().presets?.[1],
+        {
+          description: "Analysis role flow",
+          name: "Analysis",
+          orchestration_prompt: "Analyze and report risks.",
+          policy: {
+            max_orchestration_cycles: 8,
+            max_parallel_delegated_tasks: 4,
+          },
+          preset_id: "analysis",
+          role_ids: ["reviewer"],
+        },
+      ],
+    });
   }, 45000);
 
   it("creates and deletes agent runtimes from the System secondary page", async () => {

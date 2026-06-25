@@ -3296,3 +3296,31 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, API-client, built-app browser, and screenshot inspection completed for this role mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.
+
+## 2026-06-26 V2 Settings Orchestration Mutation Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, and Settings ledger after the Roles mutation recovery, then selected Orchestration because it was the remaining explicit Hegel Settings P1 item with a focused V1-backed mutation path.
+- Restored the V1 Orchestration settings flow inside the existing Settings > Orchestration secondary detail page: presets can now be set as default, deleted with confirmation while preserving the last-preset guard, edited with preset ID/policy/roles/prompt/graph JSON fields, and created through the real `PUT /api/system/configs/orchestration` endpoint.
+- Preserved backend semantics by treating default, delete, create, and edit as whole-config saves, matching V1 and the current backend contract rather than inventing new endpoints.
+- Added typed graph support to the V2 frontend contract so editing a preset no longer drops existing DAG JSON, and kept non-edited policy fields while exposing V1's max-cycle and max-parallel controls.
+- Preserved the V1 Settings information architecture: no primary Settings items were added or removed, Orchestration remains a root Settings surface, and System child pages remain behind the System secondary launcher.
+- Added built `/app/` browser evidence for Settings > Orchestration: the scenario sets Shipping as default, deletes the previous Default preset, creates a new Analysis preset, verifies the three real save payloads, confirms the shell remains framed, and captures `.tmp/frontend-v2-settings/v2-orchestration-create-save.png`.
+- Kept this as partial Settings recovery only. Hegel Settings FAIL still requires CodeAgent/MaaS auth and discovery parity, broader save/error/destructive-state review across Settings, visual review, and reviewer sign-off before Settings can be marked complete.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "orchestration"` passed with 1 selected test.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "renders a real settings center"` passed with 1 selected test.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "orchestration|renders a real settings center"` passed with 2 selected tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "orchestration_settings"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections or orchestration_settings"` passed with 2 selected tests.
+- `npm run lint` passed.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 23 tests.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-settings/v2-orchestration-create-save.png` confirmed the real built V2 shell stayed framed, Settings root nav was unchanged, Orchestration remained a secondary detail flow, and the created preset detail stayed open after save.
+- Main-agent in-app browser inspection on `http://127.0.0.1:8000/app/` confirmed the refreshed V2 shell had no document-level scroll, the main sidebar retained the V1 nav set, the Settings root nav retained the V1 item set, and Settings stayed in a fixed-height drawer.
+
+### Reviewer
+- Main-agent component, built-app browser, and screenshot inspection completed for this orchestration mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.

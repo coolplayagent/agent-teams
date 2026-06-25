@@ -27,7 +27,6 @@ import {
   reloadModelConfig,
   saveGeneralConfig,
   saveModelProfile,
-  saveOrchestrationConfig,
   saveRoleConfig,
   validateRoleConfig,
 } from "../../api/client";
@@ -40,9 +39,6 @@ import type {
   ModelConnectivityProbeResult,
   ModelProfileRecord,
   ModelProfileSaveRequest,
-  OrchestrationConfig,
-  OrchestrationPreset,
-  OrchestrationPolicy,
   RoleConfigDocument,
   RoleConfigSummary,
   RoleOption,
@@ -55,6 +51,7 @@ import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { GitHubSettingsSection } from "./GitHubSettingsSection";
 import { McpSettingsSection } from "./McpSettingsSection";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
+import { OrchestrationSettingsSection } from "./OrchestrationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
 import {
   AgentRuntimeSettingsSection,
@@ -216,10 +213,11 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           />
         ) : null}
         {activeSection === "orchestration" ? (
-          <SettingsOrchestration
+          <OrchestrationSettingsSection
             config={orchestrationQuery.data}
             error={orchestrationQuery.error}
             loading={orchestrationQuery.isLoading}
+            roles={rolesQuery.data}
           />
         ) : null}
         {activeSection === "web" ? <WebSettingsSection /> : null}
@@ -1798,95 +1796,11 @@ function serializeOptionalBoolean(value: boolean | null | undefined): string {
   return "";
 }
 
-function SettingsOrchestration({
-  config,
-  error,
-  loading,
-}: {
-  config: Awaited<ReturnType<typeof getOrchestrationConfig>> | undefined;
-  error: Error | null;
-  loading: boolean;
-}) {
-  const { message } = App.useApp();
-  const queryClient = useQueryClient();
-  const t = useTranslations();
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const presets = config?.presets ?? [];
-  const selectedPreset =
-    selectedPresetId !== null
-      ? presets.find((preset) => preset.preset_id === selectedPresetId)
-      : undefined;
-
-  useEffect(() => {
-    if (selectedPresetId !== null && selectedPreset === undefined) {
-      setSelectedPresetId(null);
-    }
-  }, [selectedPreset, selectedPresetId]);
-
-  const saveMutation = useMutation({
-    mutationFn: (nextConfig: OrchestrationConfig) => saveOrchestrationConfig(nextConfig),
-    onSuccess: () => {
-      void message.success(t("settingsSaved"));
-      void queryClient.invalidateQueries({ queryKey: ["settings", "orchestration"] });
-    },
-    onError: (mutationError) => {
-      void message.error(
-        mutationError instanceof Error ? mutationError.message : t("settingsSaveFailed"),
-      );
-    },
-  });
-
-  return (
-    <SettingsSection title={t("settingsOrchestration")}>
-      <SettingsQueryState error={error} loading={loading} />
-      {!loading && config !== undefined ? (
-        selectedPreset !== undefined ? (
-          <OrchestrationPresetDetail
-            config={config}
-            defaultPresetId={config.default_orchestration_preset_id}
-            onBack={() => setSelectedPresetId(null)}
-            onSave={(nextConfig) => saveMutation.mutate(nextConfig)}
-            preset={selectedPreset}
-            saving={saveMutation.isPending}
-          />
-        ) : (
-          <>
-            <div className="at-settings-facts">
-              <Fact
-                label={t("settingsDefaultPreset")}
-                value={config.default_orchestration_preset_id ?? "-"}
-              />
-              <Fact label={t("settingsPresetCount")} value={String(presets.length)} />
-            </div>
-            <SettingsList
-              emptyText={t("settingsNoOrchestrationPresets")}
-              items={presets.map((preset) => ({
-                detail: orchestrationPresetDetail(preset),
-                key: preset.preset_id,
-                meta: preset.preset_id,
-                title: preset.name ?? preset.preset_id,
-              }))}
-              onSelect={(item) => setSelectedPresetId(item.key)}
-            />
-          </>
-        )
-      ) : null}
-    </SettingsSection>
-  );
-}
-
 interface SettingsListItem {
   detail: string;
   key: string;
   meta: string;
   title: string;
-}
-
-interface OrchestrationPresetForm {
-  description?: string;
-  name?: string;
-  orchestration_prompt?: string;
-  role_ids?: string;
 }
 
 interface RoleConfigForm {
@@ -1946,84 +1860,6 @@ function SettingsList({
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function OrchestrationPresetDetail({
-  config,
-  defaultPresetId,
-  onBack,
-  onSave,
-  preset,
-  saving,
-}: {
-  config: OrchestrationConfig;
-  defaultPresetId: string | undefined;
-  onBack: () => void;
-  onSave: (config: OrchestrationConfig) => void;
-  preset: OrchestrationPreset;
-  saving: boolean;
-}) {
-  const t = useTranslations();
-  const [form] = Form.useForm<OrchestrationPresetForm>();
-  const formId = "at-orchestration-preset-form";
-  const roleIds = preset.role_ids?.map((roleId) => roleId.trim()).filter(Boolean) ?? [];
-  const policyRows = orchestrationPolicyRows(preset.policy);
-
-  useEffect(() => {
-    form.setFieldsValue(orchestrationPresetFormValues(preset));
-  }, [form, preset]);
-
-  return (
-    <div className="at-settings-detail-page at-orchestration-preset-detail">
-      <div className="at-settings-detail-header">
-        <div className="at-settings-list-main">
-          <span>{preset.name ?? preset.preset_id}</span>
-          <Typography.Text>{orchestrationPresetDetail(preset)}</Typography.Text>
-        </div>
-        <div className="at-settings-detail-actions">
-          <Button form={formId} htmlType="submit" loading={saving} type="primary">
-            {t("settingsSave")}
-          </Button>
-          <Button onClick={onBack}>{t("settingsBack")}</Button>
-        </div>
-      </div>
-      <div className="at-settings-facts at-settings-workspace-facts">
-        <Fact label={t("settingsOrchestrationPresetId")} value={preset.preset_id} />
-        <Fact
-          label={t("settingsModelDefault")}
-          value={preset.preset_id === defaultPresetId ? t("settingsEnabled") : t("settingsDisabled")}
-        />
-        <Fact label={t("settingsOrchestrationRoles")} value={String(roleIds.length)} />
-      </div>
-      <Form
-        className="at-settings-form at-orchestration-preset-form"
-        form={form}
-        id={formId}
-        layout="vertical"
-        onFinish={(values) => {
-          onSave(updateOrchestrationPreset(config, preset.preset_id, values));
-        }}
-      >
-        <Form.Item label={t("settingsPresetName")} name="name">
-          <Input autoComplete="off" />
-        </Form.Item>
-        <Form.Item label={t("settingsRoleDescription")} name="description">
-          <Input autoComplete="off" />
-        </Form.Item>
-        <Form.Item label={t("settingsOrchestrationRoles")} name="role_ids">
-          <Input autoComplete="off" />
-        </Form.Item>
-        <Form.Item label={t("settingsOrchestrationPrompt")} name="orchestration_prompt">
-          <Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} />
-        </Form.Item>
-      </Form>
-      <div className="at-settings-list at-orchestration-preset-properties">
-        {policyRows.map((row) => (
-          <PropertyRow key={row.label} label={row.label} value={row.value} />
-        ))}
-      </div>
     </div>
   );
 }
@@ -2160,47 +1996,6 @@ function modelProfileDetail(profile: ModelProfileRecord): string {
   ].filter(Boolean).join(" · ") || "-";
 }
 
-function orchestrationPresetDetail(preset: OrchestrationPreset): string {
-  const roleCount = preset.role_ids?.length ?? 0;
-  return [
-    roleCount > 0 ? `${roleCount} roles` : "",
-    preset.description?.trim() || "",
-  ].filter(Boolean).join(" · ") || "-";
-}
-
-function orchestrationPresetFormValues(
-  preset: OrchestrationPreset,
-): OrchestrationPresetForm {
-  return {
-    description: preset.description ?? "",
-    name: preset.name ?? "",
-    orchestration_prompt: preset.orchestration_prompt ?? "",
-    role_ids: preset.role_ids?.join(", ") ?? "",
-  };
-}
-
-function updateOrchestrationPreset(
-  config: OrchestrationConfig,
-  presetId: string,
-  values: OrchestrationPresetForm,
-): OrchestrationConfig {
-  return {
-    ...config,
-    presets: (config.presets ?? []).map((preset) => {
-      if (preset.preset_id !== presetId) {
-        return preset;
-      }
-      return {
-        ...preset,
-        description: optionalText(values.description),
-        name: optionalText(values.name),
-        orchestration_prompt: optionalText(values.orchestration_prompt),
-        role_ids: parseRoleIds(values.role_ids),
-      };
-    }),
-  };
-}
-
 function optionalText(value: string | undefined): string | undefined {
   const trimmed = value?.trim() ?? "";
   return trimmed || undefined;
@@ -2213,45 +2008,6 @@ function nullableText(value: string | undefined): string | null {
 
 function textValue(value: string | undefined): string {
   return value?.trim() ?? "";
-}
-
-function parseRoleIds(value: string | undefined): string[] {
-  const seen = new Set<string>();
-  const roleIds: string[] = [];
-  for (const part of (value ?? "").split(/[\n,]+/)) {
-    const roleId = part.trim();
-    if (!roleId || seen.has(roleId)) {
-      continue;
-    }
-    seen.add(roleId);
-    roleIds.push(roleId);
-  }
-  return roleIds;
-}
-
-function orchestrationPolicyRows(
-  policy: OrchestrationPolicy | undefined,
-): Array<{ label: string; value: string }> {
-  if (policy === undefined) {
-    return [];
-  }
-  return [
-    ["max_orchestration_cycles", policy.max_orchestration_cycles],
-    ["max_parallel_delegated_tasks", policy.max_parallel_delegated_tasks],
-    ["auto_plan_long_tasks", policy.auto_plan_long_tasks],
-    ["planner_role_id", policy.planner_role_id],
-    ["coordinator_inline_budget_steps", policy.coordinator_inline_budget_steps],
-    ["max_temporary_roles_per_run", policy.max_temporary_roles_per_run],
-    [
-      "prefer_temporary_roles_for_long_tasks",
-      policy.prefer_temporary_roles_for_long_tasks,
-    ],
-  ]
-    .map(([label, value]) => ({
-      label: String(label),
-      value: policyValue(value),
-    }))
-    .filter((row) => row.value !== "");
 }
 
 function policyValue(value: boolean | number | string | null | undefined): string {

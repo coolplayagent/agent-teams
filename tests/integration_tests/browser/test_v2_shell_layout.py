@@ -27,6 +27,17 @@ _VIEWPORT_HEIGHT = 720
 _WAIT_TIMEOUT_MS = 15_000
 _SESSION_ID = "session-v2-shell"
 _WORKSPACE_ID = "workspace-v2-shell"
+_IMAGE_DATA_URL = (
+    "data:image/svg+xml;charset=utf-8,"
+    "%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20"
+    "width%3D%22320%22%20height%3D%22180%22%20viewBox%3D%220%200%20320%20180%22%3E"
+    "%3Crect%20width%3D%22320%22%20height%3D%22180%22%20rx%3D%2214%22%20fill%3D%22%232f6f5e%22%2F%3E"
+    "%3Cpath%20d%3D%22M34%20124L105%2074l54%2038%2049-64%2078%2076%22%20"
+    "fill%3D%22none%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%2218%22%20"
+    "stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.88%22%2F%3E"
+    "%3Ccircle%20cx%3D%2282%22%20cy%3D%2256%22%20r%3D%2220%22%20fill%3D%22%23ffffff%22%20"
+    "opacity%3D%22.9%22%2F%3E%3C%2Fsvg%3E"
+)
 
 
 @pytest.fixture()
@@ -135,8 +146,40 @@ def test_v2_message_export_downloads_html_and_png(
         assert backend.rounds_request_count == rounds_request_count_before_export + 2
 
 
+def test_v2_timeline_image_preview_opens_in_shell(browser_page: Page) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend(include_image_message=True)
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        image = page.get_by_role("img", name="runtime-preview.svg")
+        expect(image).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.get_by_text("runtime-preview.svg")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        preview_mask = page.locator(".at-message-media .ant-image-mask")
+        expect(preview_mask).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        preview_mask.click()
+        preview = page.locator(".ant-image-preview-wrap")
+        expect(preview).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(preview.get_by_role("img", name="runtime-preview.svg")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-resource"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-image-preview-open.png"))
+
+
 class _V2ShellBackend:
-    def __init__(self) -> None:
+    def __init__(self, *, include_image_message: bool = False) -> None:
+        self.include_image_message = include_image_message
         self.rounds_request_count = 0
 
     def route(self, route: Route, request: Request) -> None:
@@ -243,6 +286,30 @@ class _V2ShellBackend:
         }
 
     def _messages(self) -> list[dict[str, object]]:
+        if self.include_image_message:
+            return [
+                {
+                    "created_at": "2026-06-25T08:00:01Z",
+                    "message_id": "assistant-v2-image",
+                    "parts": [
+                        {
+                            "kind": "text",
+                            "text": "Here is the runtime image preview.",
+                        },
+                        {
+                            "kind": "media_ref",
+                            "mime_type": "image/svg+xml",
+                            "modality": "image",
+                            "name": "runtime-preview.svg",
+                            "url": _IMAGE_DATA_URL,
+                        },
+                    ],
+                    "role": "assistant",
+                    "role_id": "MainAgent",
+                    "run_id": "run-v2-shell",
+                    "trace_id": "trace-v2-shell",
+                },
+            ]
         return [
             {
                 "content": "V2 shell resize probe",

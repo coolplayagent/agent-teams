@@ -1814,3 +1814,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this message export slice. No Resource And Assistive Features subsystem completion is claimed.
+
+## 2026-06-25 V2 Image Preview Browser Batch
+
+### Scope
+- Re-checked the Resource And Assistive Features checklist after the message export browser pass and targeted the remaining image preview browser/screenshot evidence.
+- Extended the built V2 `/app/` shell browser harness with a selected session message containing a real image `media_ref` part.
+- Verified the timeline renders the image preview and filename inside the fixed-height V2 shell rather than dropping media-only parts or reducing them to plain text.
+- Verified the actual Ant Image preview path by clicking the visible preview mask, waiting for `.ant-image-preview-wrap`, and asserting the enlarged preview image remains accessible by filename.
+- Captured screenshot evidence at `.tmp/frontend-v2-resource/v2-image-preview-open.png`; the screenshot shows the fixed shell, image thumbnail, filename, preview overlay close affordance, and composer remaining anchored.
+- Left Resource And Assistive Features completion open; notification/diagnostic availability checks, broader media-type preview, and reviewer sign-off remain open.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 3 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_shell_layout.py` passed with 0 errors.
+- No frontend build was needed because this batch adds browser evidence for existing V2 image preview behavior without changing renderer source.
+
+### Reviewer
+- Main-agent browser integration and screenshot inspection completed for this image preview slice. No Resource And Assistive Features subsystem completion is claimed.

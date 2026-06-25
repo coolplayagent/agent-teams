@@ -2253,3 +2253,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this real SSE runtime-injection slice. No Composer, Run Controls, or AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Appearance Preset Interaction Batch
+
+### Scope
+- Re-checked the Settings/Appearance checklist after the real SSE runtime-injection batch and targeted a small but user-visible settings interaction gap.
+- Fixed the custom Appearance theme preset selector so choosing a preset closes the menu like a normal selector instead of leaving the dropdown open after the selection.
+- Added focused SettingsDrawer coverage proving the Appearance preset listbox opens, selecting `Vercel` closes it, updates the trigger label, and persists the selected preset colors/settings to local appearance storage.
+- Refreshed `frontend/dist/app` for the Appearance interaction change.
+- Kept this as a focused interaction fix only; full Settings and Appearance completion remains open pending broader save/error/import visual passes and reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "closes the appearance preset menu"` passed with 1 test.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 16 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- No screenshot was captured because this batch changes a small selector close behavior and is covered by focused component assertions rather than a layout change.
+
+### Reviewer
+- Main-agent targeted verification completed for this Appearance preset interaction slice. No Settings or Appearance subsystem completion is claimed.

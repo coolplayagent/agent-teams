@@ -1986,6 +1986,27 @@ describe("SettingsDrawer", () => {
     expect(document.documentElement.dataset.translucentSidebar).toBeUndefined();
   });
 
+  it("closes the appearance preset menu after choosing a preset", async () => {
+    renderDrawer();
+
+    const presetButton = await screen.findByRole("button", {
+      name: "Theme preset",
+    });
+    fireEvent.click(presetButton);
+
+    expect(screen.getByRole("listbox")).toBeVisible();
+    fireEvent.click(screen.getByRole("option", { name: "Vercel" }));
+
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    expect(presetButton).toHaveTextContent("Vercel");
+    expect(JSON.parse(window.localStorage.getItem(appearanceStorageKey) ?? "{}")).toMatchObject({
+      accent: "#0070F3",
+      background: "#FFFFFF",
+      foreground: "#111111",
+      themePreset: "vercel",
+    });
+  });
+
   it("saves web settings while preserving the saved Exa key when the key field is blank", async () => {
     renderDrawer();
 

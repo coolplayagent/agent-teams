@@ -225,6 +225,7 @@ export function SettingsAppearanceSection({
       saveAppearanceSettings(next);
       return next;
     });
+    setPresetMenuOpen(false);
   }
 
   function selectThemeMode(nextThemeMode: ThemeMode): void {

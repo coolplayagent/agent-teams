@@ -1516,6 +1516,66 @@ describe("MessageTimeline", () => {
     }
   });
 
+  it("preserves the anchored row when replay hydration inserts rows before the viewport", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 320,
+      rowHeight: 120,
+    });
+    const roundsDeferred = deferredSessionRounds();
+    try {
+      listSessionMessagesMock.mockResolvedValue(
+        Array.from({ length: 6 }, (_, index) => ({
+          content: `Persisted message ${index + 1}`,
+          message_id: `assistant-${index + 1}`,
+          role_id: "MainAgent",
+          trace_id: `run-${index + 1}`,
+        })),
+      );
+      listSessionRoundsMock.mockReturnValue(roundsDeferred.promise);
+
+      const { container } = renderTimeline();
+
+      expect(await screen.findByText("Persisted message 6")).toBeVisible();
+      const timeline = timelineElement(container);
+      const anchorRow = container.querySelector(
+        'article.at-message[data-row-key="message:assistant-4"]',
+      );
+      expect(anchorRow).not.toBeNull();
+      const anchorTop = translateY(anchorRow);
+      timeline.scrollTop = anchorTop + 10;
+      fireEvent.scroll(timeline);
+
+      const originalQuerySelectorAll = timeline.querySelectorAll.bind(timeline);
+      const querySelectorAllSpy = vi
+        .spyOn(timeline, "querySelectorAll")
+        .mockImplementation((selectors: string) => {
+          if (selectors === ".at-timeline-row[data-row-key]") {
+            return [] as unknown as NodeListOf<Element>;
+          }
+          return originalQuerySelectorAll(selectors);
+        });
+      roundsDeferred.resolve({
+        has_more: false,
+        items: Array.from({ length: 6 }, (_, index) => ({
+          created_at: `2026-06-23T12:4${index}:00Z`,
+          run_id: `run-${index + 1}`,
+          run_status: "completed",
+          run_user_message: `Round ${index + 1}`,
+        })),
+        next_cursor: null,
+      });
+
+      await waitFor(() =>
+        expect(container.querySelectorAll(".at-round-marker")).toHaveLength(6),
+      );
+      expect(timeline.scrollTop).toBeGreaterThan(anchorTop + 180);
+      expect(timeline.scrollTop).not.toBe(anchorTop + 10);
+      querySelectorAllSpy.mockRestore();
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
   it("measures markdown rows so long blocks do not overlap following messages", async () => {
     const restoreMeasurements = mockElementMeasurements();
     try {
@@ -1573,6 +1633,29 @@ function renderTimeline(sessionId: string | null = "session-1") {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+function deferredSessionRounds(): {
+  promise: Promise<Awaited<ReturnType<typeof listSessionRounds>>>;
+  resolve: (value: Awaited<ReturnType<typeof listSessionRounds>>) => void;
+} {
+  let resolvePromise:
+    | ((value: Awaited<ReturnType<typeof listSessionRounds>>) => void)
+    | null = null;
+  const promise = new Promise<Awaited<ReturnType<typeof listSessionRounds>>>(
+    (resolve) => {
+      resolvePromise = resolve;
+    },
+  );
+  return {
+    promise,
+    resolve: (value) => {
+      if (resolvePromise === null) {
+        throw new Error("Rounds promise resolver was not initialized.");
+      }
+      resolvePromise(value);
+    },
+  };
 }
 
 function setRuntimeEntries(entries: TimelineEntry[]): void {

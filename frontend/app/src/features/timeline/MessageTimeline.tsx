@@ -150,7 +150,7 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     if (snapshot === null) {
       scrollTimelineToBottom(container);
     } else {
-      applyTimelineScrollSnapshot(container, snapshot);
+      applyTimelineScrollSnapshot(container, snapshot, rows);
     }
     scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
     syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
@@ -357,12 +357,13 @@ function captureTimelineScrollSnapshot(
 function applyTimelineScrollSnapshot(
   container: HTMLElement,
   snapshot: TimelineScrollSnapshot,
+  rows: TimelineRow[],
 ): void {
   if (snapshot.shouldFollow) {
     scrollTimelineToBottom(container);
     return;
   }
-  const anchoredScrollTop = timelineAnchorScrollTop(container, snapshot);
+  const anchoredScrollTop = timelineAnchorScrollTop(container, snapshot, rows);
   container.scrollTop = clampScrollTop(container, anchoredScrollTop);
 }
 
@@ -393,15 +394,30 @@ function captureTimelineScrollAnchor(
 function timelineAnchorScrollTop(
   container: HTMLElement,
   snapshot: TimelineScrollSnapshot,
+  rows: TimelineRow[],
 ): number {
   if (snapshot.anchor === null) {
     return snapshot.scrollTop;
   }
   const row = findTimelineAnchorRow(container, snapshot.anchor.rowKey);
   if (row === null) {
-    return snapshot.scrollTop;
+    const estimatedRowTop = estimatedTimelineRowTop(rows, snapshot.anchor.rowKey);
+    return estimatedRowTop === null
+      ? snapshot.scrollTop
+      : estimatedRowTop + snapshot.anchor.offset;
   }
   return timelineRowTop(row) + snapshot.anchor.offset;
+}
+
+function estimatedTimelineRowTop(rows: TimelineRow[], rowKey: string): number | null {
+  let top = 0;
+  for (const row of rows) {
+    if (row.key === rowKey) {
+      return top;
+    }
+    top += estimateRowSize(row);
+  }
+  return null;
 }
 
 function findTimelineAnchorRow(

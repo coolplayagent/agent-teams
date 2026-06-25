@@ -21,6 +21,8 @@ interface UiState {
 export const sidebarWidthDefault = 220;
 export const sidebarWidthMin = 220;
 export const sidebarWidthMax = 320;
+export const themeModeStorageKey = "agentTeams.themeMode";
+export const legacyThemeStorageKey = "agent_teams_theme";
 
 export const useUiStore = create<UiState>((set) => ({
   sidebarCollapsed: false,
@@ -36,7 +38,8 @@ export const useUiStore = create<UiState>((set) => ({
     set({ sidebarWidth: nextWidth });
   },
   setThemeMode: (mode) => {
-    window.localStorage.setItem("agentTeams.themeMode", mode);
+    window.localStorage.setItem(themeModeStorageKey, mode);
+    syncLegacyThemeMode(mode);
     set({ themeMode: mode });
   },
   setLanguage: (language) => {
@@ -77,11 +80,26 @@ function storedSidebarWidth(): number {
 }
 
 function storedThemeMode(): ThemeMode {
-  const raw = window.localStorage.getItem("agentTeams.themeMode");
+  const raw = window.localStorage.getItem(themeModeStorageKey);
   if (raw === "system" || raw === "light" || raw === "dark") {
     return raw;
   }
-  return "system";
+  const legacyRaw = window.localStorage.getItem(legacyThemeStorageKey);
+  if (legacyRaw === "light" || legacyRaw === "dark") {
+    return legacyRaw;
+  }
+  return "dark";
+}
+
+function syncLegacyThemeMode(mode: ThemeMode): void {
+  if (mode === "system") {
+    window.localStorage.setItem(
+      legacyThemeStorageKey,
+      window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+    );
+    return;
+  }
+  window.localStorage.setItem(legacyThemeStorageKey, mode);
 }
 
 function storedLanguage(): Language {

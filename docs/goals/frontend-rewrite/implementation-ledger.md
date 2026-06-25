@@ -1510,3 +1510,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser metrics verification completed for this visible message-layout closure slice. No full Message Timeline, Shell, Settings, or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes reliable screenshot comparison, detailed V1/V2 message rendering parity, and real stream/replay/resume browser scenarios.
+
+## 2026-06-25 V1/V2 Theme Parity Audit Batch
+
+### Scope
+- Re-scanned the frontend rewrite goal documents before editing and selected a gap tied to the broader parity goal rather than a single user screenshot.
+- Restored a reliable screenshot path with Playwright for the current local V1 and V2 routes after the in-app browser screenshot command kept timing out.
+- Captured current V1 and V2 1280x720 screenshots and layout metrics before the fix, confirming that V1 opened in the dark product theme while V2 opened light under the same empty preference state.
+- Updated the V2 UI store to read the V1 `agent_teams_theme` key when the new `agentTeams.themeMode` key is absent, and to default to V1's dark theme when neither key exists.
+- Synchronized V2 theme changes back to the V1 key so switching between `/` and `/app/` preserves the user's theme instead of splitting the product into two independent preferences.
+
+### Verification
+- Pre-fix V1 and V2 screenshots plus metrics captured at `.tmp/frontend-goal-audit-current/v1-1280x720.png`, `.tmp/frontend-goal-audit-current/v2-1280x720.png`, `.tmp/frontend-goal-audit-current/v1-metrics.json`, and `.tmp/frontend-goal-audit-current/v2-metrics.json`.
+- Final V1 and V2 screenshots plus metrics captured at `.tmp/frontend-goal-audit-theme-parity/v1-1280x720.png`, `.tmp/frontend-goal-audit-theme-parity/v2-1280x720.png`, `.tmp/frontend-goal-audit-theme-parity/v1-metrics.json`, and `.tmp/frontend-goal-audit-theme-parity/v2-metrics.json`.
+- Final V2 metrics on `http://127.0.0.1:8000/app/` loaded rebuilt asset `index-B_f5wtrc.js`, reported `htmlDataset.theme: "dark"`, `htmlDataset.themeMode: "dark"`, `body.scrollHeight === body.clientHeight === 720`, `.at-timeline` owning message scroll, and `nakedMessageCount: 0`.
+- Browser interaction verification recorded in `.tmp/frontend-goal-audit-theme-parity/theme-toggle-localstorage.json` showed an empty preference opening dark, a theme-toggle click writing both `agentTeams.themeMode: "light"` and `agent_teams_theme: "light"`, and a second click restoring both keys to `"dark"`.
+- `npm test -- uiStore.test.ts` in `frontend/app` passed with 6 tests.
+- `npm run build` in `frontend/app` passed, including typecheck, desktop build, and Vite production build; Vite refreshed `frontend/dist/app` with rebuilt asset `index-B_f5wtrc.js`.
+
+### Reviewer
+- Main-agent screenshot and browser interaction verification completed for this V1/V2 theme parity slice. No subsystem completion is claimed; remaining work includes browser-level stream/replay/refresh recovery scenarios, detailed message rendering parity, settings secondary-page review, and paired subagent review before any checklist row can be marked complete.

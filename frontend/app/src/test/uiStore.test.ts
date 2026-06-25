@@ -13,6 +13,44 @@ describe("uiStore", () => {
     expect(useUiStore.getState().sidebarWidth).toBe(sidebarWidthDefault);
   });
 
+  it("keeps the V1 dark theme default when no new preference exists", async () => {
+    const { useUiStore } = await import("../runtime/uiStore");
+
+    expect(useUiStore.getState().themeMode).toBe("dark");
+  });
+
+  it("migrates the V1 theme preference when the new theme key is absent", async () => {
+    window.localStorage.setItem("agent_teams_theme", "light");
+
+    const { useUiStore } = await import("../runtime/uiStore");
+
+    expect(useUiStore.getState().themeMode).toBe("light");
+  });
+
+  it("prefers the new theme key over the legacy V1 preference", async () => {
+    window.localStorage.setItem("agent_teams_theme", "dark");
+    window.localStorage.setItem("agentTeams.themeMode", "light");
+
+    const { useUiStore } = await import("../runtime/uiStore");
+
+    expect(useUiStore.getState().themeMode).toBe("light");
+  });
+
+  it("syncs V2 theme changes back to the V1 theme key", async () => {
+    const { legacyThemeStorageKey, themeModeStorageKey, useUiStore } =
+      await import("../runtime/uiStore");
+
+    useUiStore.getState().setThemeMode("light");
+
+    expect(window.localStorage.getItem(themeModeStorageKey)).toBe("light");
+    expect(window.localStorage.getItem(legacyThemeStorageKey)).toBe("light");
+
+    useUiStore.getState().setThemeMode("dark");
+
+    expect(window.localStorage.getItem(themeModeStorageKey)).toBe("dark");
+    expect(window.localStorage.getItem(legacyThemeStorageKey)).toBe("dark");
+  });
+
   it("migrates old generated defaults while preserving resized widths", async () => {
     window.localStorage.setItem("agentTeams.sidebarWidth", "248");
 

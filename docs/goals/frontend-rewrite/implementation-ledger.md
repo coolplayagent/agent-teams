@@ -1925,3 +1925,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent desktop security verification completed for this slice. No Desktop subsystem completion is claimed.
+
+## 2026-06-25 V2 Electron Smoke Batch
+
+### Scope
+- Re-checked the Desktop checklist after the desktop security boundary pass and targeted the missing real Electron startup evidence.
+- Added an integration smoke test that launches the packaged Electron main process with a test backend URL, connects over Chrome DevTools Protocol, and verifies the real V2 renderer loads `/app/`.
+- Verified the renderer receives only the minimal preload bridge keys (`getBackendStatus`, `getVersion`, `onBackendStatus`, and `openExternal`) while `window.require` and `window.process` remain unavailable.
+- Found and fixed a real desktop preload regression: the sandboxed renderer did not receive the ESM `preload.js`. The preload source now uses TypeScript `.cts`, the desktop build emits `preload.cjs`, and the main process loads that CommonJS preload file.
+- Added an Electron startup-failure smoke path that serves an unhealthy backend, waits for the desktop timeout, verifies the failure document, and verifies the preload backend status reports `failed`.
+- Captured screenshot evidence at `.tmp/frontend-v2-desktop/v2-electron-renderer.png` and `.tmp/frontend-v2-desktop/v2-electron-startup-failed.png`; manual inspection confirmed the renderer shell is not blank and the failure page is visible.
+- Left Desktop completion open; remaining work still includes managed local backend process launch/shutdown evidence, open-external IPC behavior under Electron, app version display decisions, and reviewer sign-off.
+
+### Verification
+- `npm run desktop:build` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 2 tests.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 0 errors.
+- `npm test -- src/test/desktopBackendPlan.test.ts src/test/desktopSecurity.test.ts` passed with 8 tests.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent Electron smoke verification and screenshot inspection completed for this slice. No Desktop subsystem completion is claimed.

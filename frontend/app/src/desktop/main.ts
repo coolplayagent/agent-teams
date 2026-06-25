@@ -74,7 +74,7 @@ async function startDesktopApp(): Promise<void> {
 
 function createMainWindow(): BrowserWindow {
   const desktopDir = dirname(fileURLToPath(import.meta.url));
-  const preload = join(desktopDir, "preload.js");
+  const preload = join(desktopDir, "preload.cjs");
   const window = new BrowserWindow(buildDesktopWindowOptions(preload));
 
   window.once("ready-to-show", () => window.show());

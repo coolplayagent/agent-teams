@@ -10,6 +10,6 @@
     "sourceMap": true,
     "types": ["node", "electron"]
   },
-  "include": ["src/desktop/**/*.ts"],
+  "include": ["src/desktop/**/*.cts", "src/desktop/**/*.ts"],
   "exclude": []
 }

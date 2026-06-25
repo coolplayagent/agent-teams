@@ -28,7 +28,7 @@ import {
   listSidebarSessions,
   listWorkspaces,
 } from "../../api/client";
-import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
+import type { SessionSidebarRecord } from "../../api/contracts";
 import { AutomationView } from "../automation/AutomationView";
 import { BoardTodosView } from "../boards/BoardTodosView";
 import { ConnectorsView } from "../connectors/ConnectorsView";
@@ -48,6 +48,7 @@ import {
 import { SubagentSessionView } from "../sessions/SubagentSessionView";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
+import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
 import {
   sidebarWidthMax,
@@ -216,7 +217,7 @@ export function AppShell() {
   );
   const topbarWorkspaceLabel = workspaceDisplayLabel(
     selectedWorkspace,
-    topbarWorkspaceId,
+    topbarWorkspaceId ?? "Agent Teams",
   );
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [
@@ -522,19 +523,6 @@ export function AppShell() {
     setSelectedSessionId(sessionId);
     openPrimaryShellView("chat", "replace");
   }
-}
-
-function workspaceDisplayLabel(
-  workspace: WorkspaceRecord | null,
-  workspaceId: string | null,
-): string {
-  return (
-    workspace?.display_name?.trim() ||
-    workspace?.name?.trim() ||
-    workspace?.workspace_id.trim() ||
-    workspaceId?.trim() ||
-    "Agent Teams"
-  );
 }
 
 function readSidebarOverlayMode(): boolean {

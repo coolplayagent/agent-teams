@@ -1374,3 +1374,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this error-event transport fallback slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted stream resume under real SSE timing, and reviewer sign-off.
+
+## 2026-06-25 V1 Framework Alignment Browser Audit Batch
+
+### Scope
+- Re-ran the large-frame comparison against live V1 and V2 before editing, then kept this batch focused on the shell/workspace frame rather than continuing into message-detail polish.
+- Restored the visible V2 workspace identity to match V1 expectations by resolving generic workspace ids such as `default` from the workspace root folder name, so the shell and workspace group show `agent-teams` instead of leaking an internal id.
+- Simplified the topbar identity back to a V1-style single visible title while preserving the selected session and status in accessible text.
+- Converted the right round rail from a reserved grid column into an overlay rail with a protected timeline gutter, keeping the workspace width aligned with the V1 frame while preventing the rail from covering message cards.
+- Preserved the fixed one-screen shell: the page body remains non-scrolling, the sidebar/workspace/composer stay inside the viewport, and `.at-timeline` remains the scroll owner for message history.
+
+### Verification
+- Browser V1 reference screenshot captured at `.tmp/frontend-framework-audit/v1-reference-ready.png`.
+- Browser V2 before screenshot and metrics captured at `.tmp/frontend-framework-audit/v2-before.png` and `.tmp/frontend-framework-audit/v2-before-metrics.json`.
+- Browser V2 final screenshot and metrics captured at `.tmp/frontend-framework-audit/v2-final.png` and `.tmp/frontend-framework-audit/v2-final-metrics.json`.
+- Final V2 browser metrics on `http://127.0.0.1:8000/app/` showed `body.scrollHeight === body.clientHeight === 720`, `.at-shell` and `.at-workspace` fixed to the viewport, `.at-timeline` as the vertical scroll owner, `visibleDefaultLabels: 0`, `workspaceGroupTitles: ["agent-teams", "agent-teams-issue-401", "desktop"]`, topbar visible text `["agent-teams", "中文", "V1"]`, and `railOverlapPx: 0`.
+- `npm test -- src/test/AppShell.test.tsx src/test/SessionsSidebar.test.tsx src/test/CurrentSessionIndicator.test.tsx src/test/ShellLayoutCss.test.ts` in `frontend/app` passed with 47 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt assets `index-BlSOqG0z.js` and `index-B5yJWOSo.css`.
+
+### Reviewer
+- Main-agent browser screenshot/metrics verification completed for this V1 framework alignment slice. No Settings page, Appearance page, Message Timeline, or AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes V1 secondary-page logic parity, appearance/settings detail pages, message rendering polish, and real stream/replay browser scenarios.

@@ -198,6 +198,35 @@ describe("SessionsSidebar", () => {
     expect(selectedSession).toHaveClass("is-selected");
   });
 
+  it("labels the generic default workspace by its root folder like V1", async () => {
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "default",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "default",
+        root_path: "C:/work/agent-teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "default",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("agent-teams")).toBeVisible();
+    expect(screen.queryByText("default")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New session in agent-teams" }),
+    ).toBeVisible();
+  });
+
   it("creates a session in the selected workspace and selects it", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

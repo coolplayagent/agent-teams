@@ -38,6 +38,7 @@ import type {
   SessionSubagentRecord,
   WorkspaceRecord,
 } from "../../api/contracts";
+import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { useTranslations, type Translate } from "../../i18n";
 import { sessionDisplayLabel } from "./sessionLabels";
@@ -1002,11 +1003,7 @@ function shortIdentifier(value: string): string {
 }
 
 function workspaceLabel(workspace: WorkspaceRecord): string {
-  return (
-    workspace.display_name?.trim() ||
-    workspace.name?.trim() ||
-    workspace.workspace_id
-  );
+  return workspaceDisplayLabel(workspace);
 }
 
 function workspaceSortLabel(sortMode: WorkspaceSortMode, t: Translate): string {

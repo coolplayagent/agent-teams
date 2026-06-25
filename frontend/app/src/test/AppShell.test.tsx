@@ -112,9 +112,9 @@ vi.mock("../features/shell/CurrentSessionIndicator", () => ({
     session: SessionSidebarRecord | null;
     workspaceLabel: string;
   }) => (
-    <div>
+    <div aria-label={session?.title ?? selectedSessionId ?? ""}>
       <span>{workspaceLabel}</span>
-      <span>{session?.title ?? selectedSessionId ?? ""}</span>
+      <span hidden>{session?.title ?? selectedSessionId ?? ""}</span>
     </div>
   ),
 }));
@@ -242,7 +242,36 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByText("Agent Teams")).toBeVisible();
-    expect(screen.getByText("Session 1")).toBeVisible();
+    expect(screen.getByLabelText("Session 1")).toHaveTextContent("Agent Teams");
+    expect(screen.getByText("Session 1")).not.toBeVisible();
+  });
+
+  it("uses the root folder label for the generic default workspace", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "default",
+      normal_root_role_id: "MainAgent",
+    });
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-1",
+        workspace_id: "default",
+        title: "Session 1",
+      },
+    ]);
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "default",
+        root_path: "C:/work/agent-teams",
+      },
+    ]);
+    useUiStore.setState({
+      selectedWorkspaceId: "default",
+    });
+
+    renderShell();
+
+    expect(await screen.findByText("agent-teams")).toBeVisible();
   });
 
   it("opens the first available session when no session was restored", async () => {
@@ -265,7 +294,9 @@ describe("AppShell", () => {
 
     renderShell();
 
-    expect(await screen.findByText("First session")).toBeVisible();
+    expect(await screen.findByLabelText("First session")).toHaveTextContent(
+      "Agent Teams",
+    );
     await waitFor(() =>
       expect(useUiStore.getState().selectedSessionId).toBe("session-first"),
     );

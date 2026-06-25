@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe("CurrentSessionIndicator", () => {
-  it("shows the selected session title and active run status", () => {
+  it("shows the workspace title while keeping the session identity accessible", () => {
     render(
       <CurrentSessionIndicator
         selectedSessionId="session-1"
@@ -25,9 +25,11 @@ describe("CurrentSessionIndicator", () => {
     );
 
     expect(screen.getByText("Agent Teams")).toBeVisible();
-    expect(screen.getByText("Frontend rewrite")).toBeVisible();
+    expect(screen.getByLabelText("Frontend rewrite running")).toHaveTextContent(
+      "Agent Teams",
+    );
+    expect(screen.getByText("Frontend rewrite running")).toHaveClass("at-sr-only");
     expect(screen.queryByText("Legacy rewrite")).not.toBeInTheDocument();
-    expect(screen.getByText("running")).toBeVisible();
   });
 
   it("falls back to the selected session id while sidebar data loads", () => {
@@ -40,6 +42,9 @@ describe("CurrentSessionIndicator", () => {
     );
 
     expect(screen.getByText("Workspace loading")).toBeVisible();
-    expect(screen.getByText("session-loading")).toBeVisible();
+    expect(screen.getByLabelText("session-loading")).toHaveTextContent(
+      "Workspace loading",
+    );
+    expect(screen.getByText("session-loading")).toHaveClass("at-sr-only");
   });
 });

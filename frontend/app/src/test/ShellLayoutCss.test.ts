@@ -50,12 +50,15 @@ describe("shell layout CSS", () => {
     );
   });
 
-  it("keeps the desktop round rail at the V1 navigator width", () => {
+  it("keeps the desktop round rail overlaid instead of reserving a chat column", () => {
     expect(themeCss).toMatch(
-      /\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 128px;/,
+      /\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
     );
     expect(themeCss).toMatch(
-      /\.at-round-rail\s*{[\s\S]*?width:\s*128px;/,
+      /\.at-round-rail\s*{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*16px;[\s\S]*?width:\s*128px;[\s\S]*?background:\s*transparent;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), max\(0px, calc\(100% - 160px\)\)\);[\s\S]*?margin-right:\s*160px;/,
     );
   });
 

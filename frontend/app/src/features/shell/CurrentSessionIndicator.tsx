@@ -1,4 +1,4 @@
-import { Tag, Typography } from "antd";
+import { Typography } from "antd";
 
 import type { SessionSidebarRecord } from "../../api/contracts";
 import { sessionDisplayLabel } from "../sessions/sessionLabels";
@@ -16,8 +16,9 @@ export function CurrentSessionIndicator({
 }: CurrentSessionIndicatorProps) {
   const label = sessionDisplayLabel(session, selectedSessionId ?? "Agent Teams");
   const status = session?.active_run_status || "";
+  const accessibleSessionLabel = status ? `${label} ${status}` : label;
   return (
-    <div className="at-topbar-identity">
+    <div className="at-topbar-identity" aria-label={accessibleSessionLabel}>
       <Typography.Text
         className="at-workspace-title"
         ellipsis
@@ -25,25 +26,7 @@ export function CurrentSessionIndicator({
       >
         {workspaceLabel}
       </Typography.Text>
-      <div className="at-current-session">
-        <Typography.Text className="at-current-session-label" ellipsis title={label}>
-          {label}
-        </Typography.Text>
-        {status ? <Tag color={statusColor(status)}>{status}</Tag> : null}
-      </div>
+      <span className="at-sr-only">{accessibleSessionLabel}</span>
     </div>
   );
-}
-
-function statusColor(status: string): string {
-  if (status === "running" || status === "queued") {
-    return "processing";
-  }
-  if (status === "failed") {
-    return "error";
-  }
-  if (status === "stopped") {
-    return "warning";
-  }
-  return "default";
 }

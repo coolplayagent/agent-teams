@@ -15,12 +15,14 @@ import {
   deleteModelProfile,
   getGeneralConfig,
   getConfigStatus,
+  getModelCatalog,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfig,
   getRoleConfigOptions,
   listRoleConfigs,
   probeModelConnection,
+  refreshModelCatalog,
   reloadModelConfig,
   saveGeneralConfig,
   saveModelProfile,
@@ -30,6 +32,9 @@ import {
 import type {
   GeneralConfig,
   ModalityCapabilities,
+  ModelCatalogModel,
+  ModelCatalogProvider,
+  ModelCatalogResult,
   ModelConnectivityProbeResult,
   ModelProfileRecord,
   ModelProfileSaveRequest,
@@ -640,11 +645,18 @@ function SettingsModels({
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [creatingProfile, setCreatingProfile] = useState(false);
+  const [catalogEnabled, setCatalogEnabled] = useState(false);
   const [optimisticProfile, setOptimisticProfile] = useState<{
     profile: ModelProfileRecord;
     profileId: string;
   } | null>(null);
   const [probeStates, setProbeStates] = useState<Record<string, ModelProbeState>>({});
+  const catalogQuery = useQuery({
+    queryKey: ["settings", "models", "catalog"],
+    queryFn: () => getModelCatalog(false),
+    enabled: catalogEnabled,
+  });
   const entries = useMemo(
     () => Object.entries(profiles ?? {}).sort(([left], [right]) => left.localeCompare(right)),
     [profiles],
@@ -656,6 +668,18 @@ function SettingsModels({
           ? optimisticProfile.profile
           : undefined)
       : undefined;
+
+  const refreshCatalogMutation = useMutation({
+    mutationFn: refreshModelCatalog,
+    onSuccess: (catalog) => {
+      queryClient.setQueryData(["settings", "models", "catalog"], catalog);
+    },
+    onError: (mutationError) => {
+      void message.error(
+        mutationError instanceof Error ? mutationError.message : t("settingsModelCatalogFailed"),
+      );
+    },
+  });
 
   useEffect(() => {
     if (selectedProfileId === null) {
@@ -726,13 +750,13 @@ function SettingsModels({
       profile,
       values,
     }: {
-      currentProfileId: string;
+      currentProfileId: string | null;
       nextProfileId: string;
       profile: ModelProfileRecord;
       values: ModelProfileFormValues;
     }) => {
       const request = buildModelProfileSaveRequest(profile, {
-        sourceName: currentProfileId,
+        sourceName: currentProfileId ?? undefined,
         values,
       });
       const result = await saveModelProfile(nextProfileId, request);
@@ -740,12 +764,14 @@ function SettingsModels({
       return { nextProfile: modelProfileRecordFromSaveRequest(profile, request), nextProfileId, result };
     },
     onSuccess: ({ nextProfile, nextProfileId }, variables) => {
+      setCreatingProfile(false);
+      setCatalogEnabled(false);
       setOptimisticProfile({ profile: nextProfile, profileId: nextProfileId });
       queryClient.setQueryData<Record<string, ModelProfileRecord>>(
         ["settings", "models", "profiles"],
         (current) => {
           const nextProfiles = { ...(current ?? {}) };
-          if (variables.currentProfileId !== nextProfileId) {
+          if (variables.currentProfileId !== null && variables.currentProfileId !== nextProfileId) {
             delete nextProfiles[variables.currentProfileId];
           }
           nextProfiles[nextProfileId] = nextProfile;
@@ -802,7 +828,7 @@ function SettingsModels({
     deleteMutation.mutate(profileId);
   };
   const requestSave = (
-    currentProfileId: string,
+    currentProfileId: string | null,
     nextProfileId: string,
     profile: ModelProfileRecord,
     values: ModelProfileFormValues,
@@ -816,16 +842,54 @@ function SettingsModels({
     }));
     probeMutation.mutate(profileId);
   };
+  const openCreateProfile = () => {
+    setSelectedProfileId(null);
+    setCreatingProfile(true);
+    setCatalogEnabled(true);
+  };
+  const cancelCreateProfile = () => {
+    setCreatingProfile(false);
+    setCatalogEnabled(false);
+  };
+  const refreshCatalog = () => {
+    setCatalogEnabled(true);
+    refreshCatalogMutation.mutate();
+  };
 
   return (
     <SettingsSection title={t("settingsModels")}>
       <SettingsQueryState error={error} loading={loading} />
       {!loading && profiles !== undefined ? (
-        selectedProfileId !== null && selectedProfile !== undefined ? (
+        creatingProfile ? (
           <ModelProfileDetail
+            catalog={catalogQuery.data}
+            catalogError={catalogQuery.error}
+            catalogLoading={catalogQuery.isLoading || refreshCatalogMutation.isPending}
+            deleting={false}
+            mode="create"
+            onBack={cancelCreateProfile}
+            onDelete={requestDelete}
+            onProbe={requestProbe}
+            onRefreshCatalog={refreshCatalog}
+            onSave={requestSave}
+            onSetDefault={requestDefault}
+            probeState={null}
+            probing={false}
+            profile={newModelProfileDraft()}
+            profileId=""
+            saving={saveMutation.isPending}
+            settingDefault={false}
+          />
+        ) : selectedProfileId !== null && selectedProfile !== undefined ? (
+          <ModelProfileDetail
+            catalog={undefined}
+            catalogError={null}
+            catalogLoading={false}
+            mode="edit"
             onBack={() => setSelectedProfileId(null)}
             onDelete={requestDelete}
             onProbe={requestProbe}
+            onRefreshCatalog={refreshCatalog}
             onSave={requestSave}
             onSetDefault={requestDefault}
             deleting={deleteMutation.isPending}
@@ -838,6 +902,11 @@ function SettingsModels({
           />
         ) : (
           <>
+            <div className="at-settings-toolbar at-model-profile-toolbar">
+              <Button onClick={openCreateProfile} type="primary">
+                {t("settingsModelNewProfile")}
+              </Button>
+            </div>
             <div className="at-settings-facts">
               <Fact label={t("settingsProfileCount")} value={String(entries.length)} />
               <Fact label={t("settingsDefaultProfile")} value={defaultProfile(entries)} />
@@ -931,10 +1000,15 @@ interface ModelProbeState {
 }
 
 function ModelProfileDetail({
+  catalog,
+  catalogError,
+  catalogLoading,
   deleting,
+  mode,
   onBack,
   onDelete,
   onProbe,
+  onRefreshCatalog,
   onSave,
   onSetDefault,
   probeState,
@@ -944,12 +1018,17 @@ function ModelProfileDetail({
   saving,
   settingDefault,
 }: {
+  catalog: ModelCatalogResult | undefined;
+  catalogError: Error | null;
+  catalogLoading: boolean;
   deleting: boolean;
+  mode: "create" | "edit";
   onBack: () => void;
   onDelete: (profileId: string) => void;
   onProbe: (profileId: string) => void;
+  onRefreshCatalog: () => void;
   onSave: (
-    currentProfileId: string,
+    currentProfileId: string | null,
     nextProfileId: string,
     profile: ModelProfileRecord,
     values: ModelProfileFormValues,
@@ -964,11 +1043,15 @@ function ModelProfileDetail({
 }) {
   const t = useTranslations();
   const [form] = Form.useForm<ModelProfileFormValues>();
+  const [catalogProfilePatch, setCatalogProfilePatch] =
+    useState<ModelProfileRecord | null>(null);
+  const effectiveProfile =
+    catalogProfilePatch !== null ? { ...profile, ...catalogProfilePatch } : profile;
   const input = capabilityModes(
-    profile.resolved_capabilities?.input ?? profile.capabilities?.input,
+    effectiveProfile.resolved_capabilities?.input ?? effectiveProfile.capabilities?.input,
   );
   const output = capabilityModes(
-    profile.resolved_capabilities?.output ?? profile.capabilities?.output,
+    effectiveProfile.resolved_capabilities?.output ?? effectiveProfile.capabilities?.output,
   );
   const probeMessage =
     probeState?.error ??
@@ -978,6 +1061,7 @@ function ModelProfileDetail({
 
   useEffect(() => {
     form.setFieldsValue(modelProfileToFormValues(profileId, profile));
+    setCatalogProfilePatch(null);
   }, [form, profile, profileId]);
 
   const submitProfile = (values: ModelProfileFormValues) => {
@@ -986,7 +1070,51 @@ function ModelProfileDetail({
       void form.validateFields(["profile_id"]);
       return;
     }
-    onSave(profileId, nextProfileId, profile, values);
+    onSave(mode === "edit" ? profileId : null, nextProfileId, effectiveProfile, values);
+  };
+
+  const selectCatalogModel = (
+    provider: ModelCatalogProvider,
+    model: ModelCatalogModel,
+  ) => {
+    const nextBaseUrl = modelCatalogBaseUrl(provider);
+    const nextProvider = provider.runtime_provider?.trim() || "openai_compatible";
+    const nextPatch: ModelProfileRecord = {
+      base_url: nextBaseUrl,
+      catalog_model_name: model.name,
+      catalog_provider_id: provider.id,
+      catalog_provider_name: provider.name,
+      capabilities: model.capabilities,
+      context_window: model.context_window ?? null,
+      input_modalities: model.input_modalities ?? [],
+      max_tokens: model.output_limit ?? null,
+      model: model.id,
+      provider: nextProvider,
+    };
+    setCatalogProfilePatch(nextPatch);
+    form.setFieldsValue({
+      base_url: nextBaseUrl,
+      context_window: model.context_window !== undefined && model.context_window !== null
+        ? String(model.context_window)
+        : "",
+      max_tokens: model.output_limit !== undefined && model.output_limit !== null
+        ? String(model.output_limit)
+        : "",
+      model: model.id,
+      provider: nextProvider,
+    });
+  };
+
+  const clearCatalogPatchOnManualEndpointEdit = (
+    changedValues: Partial<ModelProfileFormValues>,
+  ) => {
+    if (
+      "base_url" in changedValues ||
+      "model" in changedValues ||
+      "provider" in changedValues
+    ) {
+      setCatalogProfilePatch(null);
+    }
   };
 
   return (
@@ -1000,26 +1128,30 @@ function ModelProfileDetail({
           <Button loading={saving} onClick={() => form.submit()} type="primary">
             {t("settingsSave")}
           </Button>
-          <Button loading={probing} onClick={() => onProbe(profileId)}>
-            {t("settingsModelTest")}
-          </Button>
-          <Button
-            disabled={profile.is_default === true}
-            loading={settingDefault}
-            onClick={() => onSetDefault(profileId, profile)}
-          >
-            {t("settingsModelSetDefault")}
-          </Button>
-          <Popconfirm
-            cancelText={t("sidebarDeleteCancel")}
-            okText={t("sidebarDeleteConfirm")}
-            onConfirm={() => onDelete(profileId)}
-            title={t("settingsModelDeleteConfirm", { name: profileId })}
-          >
-            <Button danger loading={deleting}>
-              {t("settingsModelDelete")}
-            </Button>
-          </Popconfirm>
+          {mode === "edit" ? (
+            <>
+              <Button loading={probing} onClick={() => onProbe(profileId)}>
+                {t("settingsModelTest")}
+              </Button>
+              <Button
+                disabled={profile.is_default === true}
+                loading={settingDefault}
+                onClick={() => onSetDefault(profileId, profile)}
+              >
+                {t("settingsModelSetDefault")}
+              </Button>
+              <Popconfirm
+                cancelText={t("sidebarDeleteCancel")}
+                okText={t("sidebarDeleteConfirm")}
+                onConfirm={() => onDelete(profileId)}
+                title={t("settingsModelDeleteConfirm", { name: profileId })}
+              >
+                <Button danger loading={deleting}>
+                  {t("settingsModelDelete")}
+                </Button>
+              </Popconfirm>
+            </>
+          ) : null}
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
       </div>
@@ -1031,7 +1163,19 @@ function ModelProfileDetail({
         form={form}
         layout="vertical"
         onFinish={submitProfile}
+        onValuesChange={clearCatalogPatchOnManualEndpointEdit}
       >
+        {mode === "create" ? (
+          <ModelCatalogPicker
+            catalog={catalog}
+            error={catalogError}
+            loading={catalogLoading}
+            onRefresh={onRefreshCatalog}
+            onSelect={selectCatalogModel}
+            selectedModelId={effectiveProfile.model ?? ""}
+            selectedProviderId={effectiveProfile.catalog_provider_id ?? ""}
+          />
+        ) : null}
         <div className="at-settings-form-card at-model-profile-form-grid">
           <Form.Item
             label={t("settingsModelProfileId")}
@@ -1098,12 +1242,14 @@ function ModelProfileDetail({
       <div className="at-settings-facts at-settings-workspace-facts">
         <Fact
           label={t("settingsModelProvider")}
-          value={profile.provider ?? t("settingsProviderUnknown")}
+          value={effectiveProfile.provider ?? t("settingsProviderUnknown")}
         />
-        <Fact label={t("settingsModelName")} value={profile.model ?? "-"} />
+        <Fact label={t("settingsModelName")} value={effectiveProfile.model ?? "-"} />
         <Fact
           label={t("settingsModelDefault")}
-          value={profile.is_default === true ? t("settingsEnabled") : t("settingsDisabled")}
+          value={
+            effectiveProfile.is_default === true ? t("settingsEnabled") : t("settingsDisabled")
+          }
         />
       </div>
       <div className="at-settings-list at-model-profile-properties">
@@ -1111,12 +1257,133 @@ function ModelProfileDetail({
         <PropertyRow label={t("settingsModelOutput")} value={output || "-"} />
         <PropertyRow
           label={t("settingsModelModalities")}
-          value={modalityList(profile.input_modalities ?? []) || "-"}
+          value={modalityList(effectiveProfile.input_modalities ?? []) || "-"}
         />
         <PropertyRow
           label={t("settingsModelSpeechRealtime")}
-          value={profile.speech_realtime?.model ?? "-"}
+          value={effectiveProfile.speech_realtime?.model ?? "-"}
         />
+      </div>
+    </div>
+  );
+}
+
+function ModelCatalogPicker({
+  catalog,
+  error,
+  loading,
+  onRefresh,
+  onSelect,
+  selectedModelId,
+  selectedProviderId,
+}: {
+  catalog: ModelCatalogResult | undefined;
+  error: Error | null;
+  loading: boolean;
+  onRefresh: () => void;
+  onSelect: (provider: ModelCatalogProvider, model: ModelCatalogModel) => void;
+  selectedModelId: string;
+  selectedProviderId: string;
+}) {
+  const t = useTranslations();
+  const [providerFilter, setProviderFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+  const providers = catalog?.providers ?? [];
+  const filteredProviders = providers.filter((provider) =>
+    textIncludes(`${provider.name} ${provider.id}`, providerFilter),
+  );
+  const activeProvider =
+    providers.find((provider) => provider.id === selectedProviderId) ??
+    filteredProviders[0] ??
+    null;
+  const filteredModels = (activeProvider?.models ?? []).filter((model) =>
+    textIncludes(`${model.name} ${model.id} ${model.family ?? ""}`, modelFilter),
+  );
+  const catalogMessage = catalogStatusText(catalog, t);
+
+  return (
+    <div className="at-model-catalog-panel">
+      <div className="at-model-catalog-header">
+        <div>
+          <Typography.Text strong>{t("settingsModelCatalogTitle")}</Typography.Text>
+          <Typography.Text className="at-model-catalog-status">
+            {error !== null
+              ? t("settingsModelCatalogFailed")
+              : catalogMessage}
+          </Typography.Text>
+        </div>
+        <Button loading={loading} onClick={onRefresh} size="small">
+          {t("settingsRefresh")}
+        </Button>
+      </div>
+      <div className="at-model-catalog-grid">
+        <div className="at-model-catalog-column">
+          <Input
+            aria-label={t("settingsModelCatalogProviderSearch")}
+            onChange={(event) => setProviderFilter(event.target.value)}
+            placeholder={t("settingsModelCatalogProviderSearch")}
+            value={providerFilter}
+          />
+          <div className="at-model-catalog-list">
+            {filteredProviders.length > 0 ? (
+              filteredProviders.map((provider) => (
+                <button
+                  className={
+                    provider.id === activeProvider?.id
+                      ? "at-model-catalog-option is-active"
+                      : "at-model-catalog-option"
+                  }
+                  key={provider.id}
+                  onClick={() => {
+                    const firstModel = provider.models?.[0];
+                    if (firstModel !== undefined) {
+                      onSelect(provider, firstModel);
+                    }
+                  }}
+                  type="button"
+                >
+                  <span>{provider.name}</span>
+                  <Typography.Text>{provider.runtime_provider ?? "-"}</Typography.Text>
+                </button>
+              ))
+            ) : (
+              <div className="at-settings-empty">{t("settingsModelCatalogEmpty")}</div>
+            )}
+          </div>
+        </div>
+        <div className="at-model-catalog-column">
+          <Input
+            aria-label={t("settingsModelCatalogModelSearch")}
+            onChange={(event) => setModelFilter(event.target.value)}
+            placeholder={t("settingsModelCatalogModelSearch")}
+            value={modelFilter}
+          />
+          <div className="at-model-catalog-list">
+            {activeProvider === null ? (
+              <div className="at-settings-empty">
+                {t("settingsModelCatalogSelectProvider")}
+              </div>
+            ) : filteredModels.length > 0 ? (
+              filteredModels.map((model) => (
+                <button
+                  className={
+                    model.id === selectedModelId
+                      ? "at-model-catalog-option is-active"
+                      : "at-model-catalog-option"
+                  }
+                  key={model.id}
+                  onClick={() => onSelect(activeProvider, model)}
+                  type="button"
+                >
+                  <span>{model.name}</span>
+                  <Typography.Text>{modelCatalogModelMeta(model)}</Typography.Text>
+                </button>
+              ))
+            ) : (
+              <div className="at-settings-empty">{t("settingsModelCatalogNoModels")}</div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1268,6 +1535,86 @@ function modelProfileRecordFromSaveRequest(
     temperature: request.temperature,
     top_p: request.top_p,
   };
+}
+
+function newModelProfileDraft(): ModelProfileRecord {
+  return {
+    base_url: "",
+    connect_timeout_seconds: 15,
+    context_window: null,
+    fallback_policy_id: null,
+    fallback_priority: 0,
+    is_default: false,
+    max_tokens: null,
+    model: "",
+    provider: "openai_compatible",
+    temperature: 0.7,
+    top_p: 1,
+  };
+}
+
+function modelCatalogBaseUrl(provider: ModelCatalogProvider): string {
+  const providerApi = provider.api?.trim() ?? "";
+  if (providerApi) {
+    return providerApi;
+  }
+  const runtimeProvider = provider.runtime_provider?.trim() ?? "";
+  if (runtimeProvider === "anthropic") {
+    return "https://api.anthropic.com";
+  }
+  if (runtimeProvider === "maas") {
+    return "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/";
+  }
+  if (runtimeProvider === "codeagent") {
+    return "https://codeagentcli.rnd.huawei.com/codeAgentPro";
+  }
+  return "";
+}
+
+function catalogStatusText(
+  catalog: ModelCatalogResult | undefined,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (catalog === undefined) {
+    return t("settingsModelCatalogLoading");
+  }
+  if (!catalog.ok) {
+    return catalog.error_message ?? t("settingsModelCatalogFailed");
+  }
+  const providers = catalog.providers ?? [];
+  const modelCount = providers.reduce(
+    (total, provider) => total + (provider.models?.length ?? 0),
+    0,
+  );
+  return t("settingsModelCatalogLoaded", {
+    models: String(modelCount),
+    providers: String(providers.length),
+  });
+}
+
+function modelCatalogModelMeta(model: ModelCatalogModel): string {
+  const parts: string[] = [];
+  if (typeof model.context_window === "number") {
+    parts.push(`${model.context_window} ctx`);
+  }
+  if (typeof model.output_limit === "number") {
+    parts.push(`${model.output_limit} out`);
+  }
+  if (model.reasoning === true) {
+    parts.push("reasoning");
+  }
+  if (model.tool_call === true) {
+    parts.push("tools");
+  }
+  return parts.join(" / ") || model.id;
+}
+
+function textIncludes(value: string, query: string): boolean {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  return value.toLocaleLowerCase().includes(normalizedQuery);
 }
 
 function formatModelProbeResult(

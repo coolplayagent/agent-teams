@@ -3176,3 +3176,29 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Hegel reviewer FAIL remains active for the broader Settings subsystem. This batch addresses only the existing-profile edit/test portion of the Model Profiles P1 and does not claim full Settings completion.
+
+## 2026-06-26 V2 Settings Model Profile Create/Catalog Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, the V1 Model Profiles module, V1 catalog behavior tests, and the still-active Hegel Settings FAIL before choosing this slice; continued the Settings P1 recovery without changing the Settings root item set or flattening System secondary pages.
+- Added typed V2 frontend contracts and API clients for `GET /api/system/configs/model/catalog` and `POST /api/system/configs/model/catalog:refresh`.
+- Restored a V1-backed create path inside Settings > Models: the Models page now opens a secondary detail editor for a new profile, lazily loads the model catalog only after that create flow opens, lets the user pick a catalog provider/model, fills provider/model/base URL/context/output fields, saves through the real profile PUT endpoint, reloads model config, and keeps the saved profile detail open.
+- Preserved existing-profile edit semantics: opening the profile list or editing an existing profile does not automatically fetch the catalog, and existing profile rename/edit still uses `source_name`.
+- Added catalog metadata preservation for catalog-created saves (`catalog_provider_id`, `catalog_provider_name`, `catalog_model_name`, and capabilities) while clearing the transient catalog patch if the user manually edits endpoint/model/provider fields before saving.
+- Added built `/app/` browser evidence for the new create/catalog flow, including screenshots at `.tmp/frontend-v2-settings/v2-model-profile-catalog-picker.png` and `.tmp/frontend-v2-settings/v2-model-profile-catalog-create.png`; screenshot inspection confirmed the catalog picker stays inside the Models secondary flow and the shell remains framed/fixed.
+- Kept this as partial Model Profiles recovery only. CodeAgent SSO/password auth flows, MaaS credential flows, model discovery from custom endpoints, broader Plugins/Hooks mutation parity, Roles/Orchestration parity, visual matrix review, and Hegel reviewer sign-off remain open.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "model profile"` passed with 3 selected tests.
+- `npm test -- --run src/test/apiClient.test.ts -t "model profiles"` passed with 1 selected test.
+- `npm run typecheck` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "model_profile_create_from_catalog"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "model_profile_detail or model_profile_create_from_catalog"` passed with 2 selected tests.
+- `npm test -- --run src/test/apiClient.test.ts` passed with 28 tests.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 19 tests.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent component, API-client, built-app browser, and screenshot inspection completed for this create/catalog slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.

@@ -43,6 +43,7 @@ import {
   listWeChatGatewayAccounts,
   getMcpServer,
   getMcpServerTools,
+  getModelCatalog,
   getModelProfiles,
   getNotificationConfig,
   getOrchestrationConfig,
@@ -65,6 +66,7 @@ import {
   revealSshProfilePassword,
   revealGitHubToken,
   refreshAgentRuntimeRegistry,
+  refreshModelCatalog,
   reloadModelConfig,
   refreshMcpServerTools,
   reloadFeishuGateway,
@@ -136,6 +138,7 @@ vi.mock("../api/client", () => ({
   listWeChatGatewayAccounts: vi.fn(),
   getMcpServer: vi.fn(),
   getMcpServerTools: vi.fn(),
+  getModelCatalog: vi.fn(),
   getModelProfiles: vi.fn(),
   getNotificationConfig: vi.fn(),
   getOrchestrationConfig: vi.fn(),
@@ -158,6 +161,7 @@ vi.mock("../api/client", () => ({
   revealSshProfilePassword: vi.fn(),
   revealGitHubToken: vi.fn(),
   refreshAgentRuntimeRegistry: vi.fn(),
+  refreshModelCatalog: vi.fn(),
   reloadModelConfig: vi.fn(),
   refreshMcpServerTools: vi.fn(),
   reloadFeishuGateway: vi.fn(),
@@ -227,6 +231,7 @@ const listFeishuGatewayAccountsMock = vi.mocked(listFeishuGatewayAccounts);
 const listWeChatGatewayAccountsMock = vi.mocked(listWeChatGatewayAccounts);
 const getMcpServerMock = vi.mocked(getMcpServer);
 const getMcpServerToolsMock = vi.mocked(getMcpServerTools);
+const getModelCatalogMock = vi.mocked(getModelCatalog);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getNotificationConfigMock = vi.mocked(getNotificationConfig);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
@@ -249,6 +254,7 @@ const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
 const revealSshProfilePasswordMock = vi.mocked(revealSshProfilePassword);
 const revealGitHubTokenMock = vi.mocked(revealGitHubToken);
 const refreshAgentRuntimeRegistryMock = vi.mocked(refreshAgentRuntimeRegistry);
+const refreshModelCatalogMock = vi.mocked(refreshModelCatalog);
 const reloadModelConfigMock = vi.mocked(reloadModelConfig);
 const refreshMcpServerToolsMock = vi.mocked(refreshMcpServerTools);
 const reloadFeishuGatewayMock = vi.mocked(reloadFeishuGateway);
@@ -1138,6 +1144,38 @@ beforeEach(() => {
   });
   revealSshProfilePasswordMock.mockResolvedValue({ password: "saved-password" });
   saveGeneralConfigMock.mockResolvedValue({ status: "ok" });
+  getModelCatalogMock.mockResolvedValue({
+    ok: true,
+    providers: [
+      {
+        api: "https://openai.example/v1",
+        id: "openai",
+        models: [
+          {
+            capabilities: {
+              input: { image: true, text: true },
+              output: { text: true },
+            },
+            context_window: 128000,
+            id: "gpt-5-catalog",
+            input_modalities: ["text", "image"],
+            name: "GPT-5 Catalog",
+            output_limit: 8192,
+            reasoning: true,
+            tool_call: true,
+          },
+        ],
+        name: "OpenAI",
+        runtime_provider: "openai_compatible",
+      },
+    ],
+    source_url: "https://models.dev/api.json",
+  });
+  refreshModelCatalogMock.mockResolvedValue({
+    ok: true,
+    providers: [],
+    source_url: "https://models.dev/api.json",
+  });
   saveModelProfileMock.mockResolvedValue({ status: "ok" });
   deleteModelProfileMock.mockResolvedValue({ status: "ok" });
   reloadModelConfigMock.mockResolvedValue({ status: "ok" });
@@ -1861,6 +1899,85 @@ describe("SettingsDrawer", () => {
     );
     await waitFor(() => expect(reloadModelConfigMock).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText("Profile ID")).toHaveValue("vision-renamed");
+  }, 25000);
+
+  it("creates a model profile from the catalog without changing settings navigation", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    expect(await screen.findByText("vision")).toBeVisible();
+    expect(getModelCatalogMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "New profile" }));
+    await waitFor(() => expect(getModelCatalogMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Model catalog")).toBeVisible();
+    expect(await screen.findByText("OpenAI")).toBeVisible();
+
+    fireEvent.click((await screen.findByText("GPT-5 Catalog")).closest("button") as HTMLElement);
+    expect(screen.getByLabelText("Provider")).toHaveValue("openai_compatible");
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-5-catalog");
+    expect(screen.getByLabelText("Base URL")).toHaveValue("https://openai.example/v1");
+    expect(screen.getByLabelText("Context window")).toHaveValue(128000);
+    expect(screen.getByLabelText("Max tokens")).toHaveValue(8192);
+
+    fireEvent.change(screen.getByLabelText("Profile ID"), {
+      target: { value: "catalog-profile" },
+    });
+    saveModelProfileMock.mockImplementationOnce((nextProfileId, payload) => {
+      getModelProfilesMock.mockResolvedValue({
+        "catalog-profile": {
+          base_url: payload.base_url,
+          catalog_model_name: payload.catalog_model_name,
+          catalog_provider_id: payload.catalog_provider_id,
+          catalog_provider_name: payload.catalog_provider_name,
+          capabilities: payload.capabilities,
+          context_window: payload.context_window,
+          is_default: payload.is_default,
+          max_tokens: payload.max_tokens,
+          model: payload.model,
+          provider: payload.provider,
+          temperature: payload.temperature,
+          top_p: payload.top_p,
+        },
+        default: {
+          is_default: true,
+          model: "gpt-5-mini",
+          provider: "openai",
+        },
+      });
+      return Promise.resolve({ status: "ok" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "catalog-profile",
+      expect.objectContaining({
+        base_url: "https://openai.example/v1",
+        catalog_model_name: "GPT-5 Catalog",
+        catalog_provider_id: "openai",
+        catalog_provider_name: "OpenAI",
+        capabilities: {
+          input: { image: true, text: true },
+          output: { text: true },
+        },
+        context_window: 128000,
+        is_default: false,
+        max_tokens: 8192,
+        model: "gpt-5-catalog",
+        provider: "openai_compatible",
+        temperature: 0.7,
+        top_p: 1,
+      }),
+    );
+    expect(saveModelProfileMock.mock.calls[0]?.[1]).not.toHaveProperty("source_name");
+    await waitFor(() => expect(reloadModelConfigMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText("Profile ID")).toHaveValue("catalog-profile");
+    expect(within(sections).queryByRole("button", { name: "Plugins" })).toBeNull();
   }, 25000);
 
   it("manages MCP servers through the MCP config clients", async () => {

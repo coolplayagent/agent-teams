@@ -6108,6 +6108,11 @@ body {
   max-width: 920px;
 }
 
+.at-model-profile-toolbar {
+  max-width: 920px;
+  justify-content: flex-end;
+}
+
 .at-model-profile-row {
   grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
 }
@@ -6174,6 +6179,88 @@ body {
 .at-model-profile-probe-state.is-error {
   border-color: color-mix(in srgb, var(--at-danger) 42%, var(--at-border));
   color: var(--at-danger);
+}
+
+.at-model-catalog-panel {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  padding: 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+}
+
+.at-model-catalog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.at-model-catalog-header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.at-model-catalog-status {
+  color: var(--at-muted);
+  font-size: 12px;
+}
+
+.at-model-catalog-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.at-model-catalog-column {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.at-model-catalog-list {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.at-model-catalog-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 7px;
+  background: var(--at-bg);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-model-catalog-option:hover,
+.at-model-catalog-option:focus-visible,
+.at-model-catalog-option.is-active {
+  border-color: color-mix(in srgb, var(--at-accent) 45%, var(--at-border));
+  background: color-mix(in srgb, var(--at-accent) 9%, var(--at-bg));
+}
+
+.at-model-catalog-option > span {
+  overflow: hidden;
+  color: var(--at-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-model-catalog-option .ant-typography {
+  color: var(--at-muted);
+  font-size: 12px;
 }
 
 .at-model-profile-properties {
@@ -6969,6 +7056,11 @@ body {
 
   .at-model-profile-actions {
     justify-content: flex-start;
+  }
+
+  .at-model-catalog-grid,
+  .at-model-profile-form-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .at-trigger-row {

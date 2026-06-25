@@ -82,6 +82,7 @@ import type {
   McpServerUpdateRequest,
   ModelConnectivityProbeRequest,
   ModelConnectivityProbeResult,
+  ModelCatalogResult,
   ModelProfileSaveRequest,
   ModelProfilesPayload,
   NotificationConfig,
@@ -770,6 +771,17 @@ export function saveRoleConfig(
 
 export function getModelProfiles(): Promise<ModelProfilesPayload> {
   return requestJson<ModelProfilesPayload>("/system/configs/model/profiles");
+}
+
+export function getModelCatalog(refresh = false): Promise<ModelCatalogResult> {
+  const suffix = refresh ? "?refresh=true" : "";
+  return requestJson<ModelCatalogResult>(`/system/configs/model/catalog${suffix}`);
+}
+
+export function refreshModelCatalog(): Promise<ModelCatalogResult> {
+  return requestJson<ModelCatalogResult>("/system/configs/model/catalog:refresh", {
+    method: "POST",
+  });
 }
 
 export function saveModelProfile(

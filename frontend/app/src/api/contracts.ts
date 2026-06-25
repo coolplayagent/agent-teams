@@ -1289,6 +1289,44 @@ export interface ModelProfileRecord {
 
 export type ModelProfilesPayload = Record<string, ModelProfileRecord>;
 
+export interface ModelCatalogModel {
+  id: string;
+  name: string;
+  family?: string | null;
+  release_date?: string | null;
+  last_updated?: string | null;
+  context_window?: number | null;
+  output_limit?: number | null;
+  attachment?: boolean;
+  reasoning?: boolean;
+  temperature?: boolean;
+  tool_call?: boolean;
+  status?: string | null;
+  capabilities?: ModelCapabilities;
+  input_modalities?: string[];
+}
+
+export interface ModelCatalogProvider {
+  id: string;
+  name: string;
+  runtime_provider?: string;
+  api?: string | null;
+  doc?: string | null;
+  env?: string[];
+  models?: ModelCatalogModel[];
+}
+
+export interface ModelCatalogResult {
+  ok: boolean;
+  source_url: string;
+  fetched_at?: string | null;
+  cache_age_seconds?: number | null;
+  stale?: boolean;
+  providers?: ModelCatalogProvider[];
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
 export interface ModelProfileSaveRequest {
   provider: string;
   model: string;

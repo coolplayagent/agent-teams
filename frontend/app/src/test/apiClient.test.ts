@@ -33,6 +33,7 @@ import {
   listFeishuGatewayAccounts,
   listWeChatGatewayAccounts,
   getMemory,
+  getModelCatalog,
   getRoleConfig,
   getTaskSpecArtifactDiff,
   getRuntimeToolDownload,
@@ -72,6 +73,7 @@ import {
   revealSshProfilePassword,
   revealGitHubToken,
   refreshAgentRuntimeRegistry,
+  refreshModelCatalog,
   reloadModelConfig,
   reloadProxyConfig,
   reloadFeishuGateway,
@@ -2702,11 +2704,45 @@ describe("api client", () => {
               ok: true,
               provider: "openai_compatible",
             }
+          : url === "/api/system/configs/model/catalog" ||
+              url === "/api/system/configs/model/catalog:refresh"
+            ? {
+                ok: true,
+                providers: [
+                  {
+                    api: "https://models.example/v1",
+                    id: "openai",
+                    models: [
+                      {
+                        context_window: 128000,
+                        id: "gpt-5-mini",
+                        name: "GPT-5 Mini",
+                        output_limit: 8192,
+                      },
+                    ],
+                    name: "OpenAI",
+                    runtime_provider: "openai_compatible",
+                  },
+                ],
+                source_url: "https://models.dev/api.json",
+              }
           : { status: "ok" };
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
     });
     vi.stubGlobal("fetch", fetchMock);
 
+    await expect(getModelCatalog()).resolves.toEqual(
+      expect.objectContaining({
+        ok: true,
+        providers: expect.any(Array),
+      }),
+    );
+    await expect(refreshModelCatalog()).resolves.toEqual(
+      expect.objectContaining({
+        ok: true,
+        providers: expect.any(Array),
+      }),
+    );
     await expect(saveModelProfile("default/profile", profilePayload)).resolves.toEqual({
       status: "ok",
     });
@@ -2723,6 +2759,20 @@ describe("api client", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
+      "/api/system/configs/model/catalog",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/model/catalog:refresh",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       "/api/system/configs/model/profiles/default%2Fprofile",
       expect.objectContaining({
         body: JSON.stringify(profilePayload),
@@ -2730,21 +2780,21 @@ describe("api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+      4,
       "/api/system/configs/model/profiles/old%2Fprofile",
       expect.objectContaining({
         method: "DELETE",
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      5,
       "/api/system/configs/model:reload",
       expect.objectContaining({
         method: "POST",
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      6,
       "/api/system/configs/model:probe",
       expect.objectContaining({
         body: JSON.stringify({ profile_name: "default/profile", timeout_ms: 15000 }),

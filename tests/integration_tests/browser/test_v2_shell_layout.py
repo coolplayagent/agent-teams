@@ -1207,6 +1207,133 @@ def test_v2_model_profile_detail_saves_and_tests_existing_profile(
         page.screenshot(path=str(screenshot_dir / "v2-model-profile-detail.png"))
 
 
+def test_v2_model_profile_create_from_catalog(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        settings.get_by_role("navigation", name="Settings sections").get_by_role(
+            "button",
+            name="Models",
+        ).click()
+
+        expect(settings.get_by_role("heading", name="Models")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert "/system/configs/model/catalog" not in backend.requested_paths
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "GET"
+                and response.url.endswith("/api/system/configs/model/catalog")
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            settings.get_by_role("button", name="New profile").click()
+
+        expect(settings.get_by_text("Model catalog")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.locator(".at-model-catalog-option").filter(
+            has_text="GPT-5 Catalog",
+        ).click()
+        expect(settings.locator("input#provider")).to_have_value(
+            "openai_compatible",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.locator("input#model")).to_have_value(
+            "gpt-5-catalog",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.locator("input#base_url")).to_have_value(
+            "https://openai.example/v1",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.locator("input#profile_id").fill("catalog-browser")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(
+            path=str(screenshot_dir / "v2-model-profile-catalog-picker.png")
+        )
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and response.url.endswith("/api/system/configs/model:reload")
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            with page.expect_response(
+                lambda response: (
+                    response.request.method == "PUT"
+                    and response.url.endswith(
+                        "/api/system/configs/model/profiles/catalog-browser"
+                    )
+                    and response.status == 200
+                ),
+                timeout=_WAIT_TIMEOUT_MS,
+            ):
+                settings.get_by_role("button", name="Save").click()
+
+        assert backend.model_profile_save_requests == ["catalog-browser"]
+        assert backend.model_profile_save_payloads[-1] == {
+            "base_url": "https://openai.example/v1",
+            "capabilities": {
+                "input": {"image": True, "text": True},
+                "output": {"text": True},
+            },
+            "catalog_model_name": "GPT-5 Catalog",
+            "catalog_provider_id": "openai",
+            "catalog_provider_name": "OpenAI",
+            "connect_timeout_seconds": 15,
+            "context_window": 128000,
+            "fallback_policy_id": None,
+            "fallback_priority": 0,
+            "is_default": False,
+            "max_tokens": 8192,
+            "model": "gpt-5-catalog",
+            "provider": "openai_compatible",
+            "temperature": 0.7,
+            "top_p": 1,
+        }
+        assert backend.model_profile_reload_count == 1
+        expect(page.get_by_text("Saved model profile catalog-browser.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.locator("input#profile_id")).to_have_value(
+            "catalog-browser",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        metrics = cast(
+            dict[str, int],
+            page.evaluate(
+                """() => ({
+                    bodyHeight: document.body.scrollHeight,
+                    documentHeight: document.documentElement.scrollHeight,
+                    viewportHeight: window.innerHeight,
+                })""",
+            ),
+        )
+        assert metrics["bodyHeight"] == metrics["viewportHeight"]
+        assert metrics["documentHeight"] == metrics["viewportHeight"]
+
+        page.screenshot(path=str(screenshot_dir / "v2-model-profile-catalog-create.png"))
+
+
 def test_v2_web_settings_save_success_and_error_feedback(
     browser_page: Page,
 ) -> None:
@@ -1605,6 +1732,7 @@ class _V2ShellBackend:
         self.rounds_request_count = 0
         self.runtime_tools_system_path_added = False
         self.runtime_tools_system_path_requests: list[str] = []
+        self.model_catalog_refresh_count = 0
         self.model_profile_reload_count = 0
         self.model_profile_save_payloads: list[dict[str, object]] = []
         self.model_profile_save_requests: list[str] = []
@@ -1756,6 +1884,13 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs/model/profiles":
             _fulfill_json(route, self.model_profiles)
+            return
+        if request.method == "GET" and path == "/system/configs/model/catalog":
+            _fulfill_json(route, self._model_catalog())
+            return
+        if request.method == "POST" and path == "/system/configs/model/catalog:refresh":
+            self.model_catalog_refresh_count += 1
+            _fulfill_json(route, self._model_catalog())
             return
         if request.method == "PUT" and path.startswith(
             "/system/configs/model/profiles/"
@@ -2636,6 +2771,35 @@ class _V2ShellBackend:
                     "workspace_id": _WORKSPACE_ID,
                 },
             ],
+        }
+
+    def _model_catalog(self) -> dict[str, object]:
+        return {
+            "ok": True,
+            "providers": [
+                {
+                    "api": "https://openai.example/v1",
+                    "id": "openai",
+                    "models": [
+                        {
+                            "capabilities": {
+                                "input": {"image": True, "text": True},
+                                "output": {"text": True},
+                            },
+                            "context_window": 128000,
+                            "id": "gpt-5-catalog",
+                            "input_modalities": ["text", "image"],
+                            "name": "GPT-5 Catalog",
+                            "output_limit": 8192,
+                            "reasoning": True,
+                            "tool_call": True,
+                        },
+                    ],
+                    "name": "OpenAI",
+                    "runtime_provider": "openai_compatible",
+                },
+            ],
+            "source_url": "https://models.dev/api.json",
         }
 
     def _github_config(self) -> dict[str, object]:

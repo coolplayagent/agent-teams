@@ -1771,3 +1771,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this interrupted-stream reconnect slice. No AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Active Stream Session Switch Browser Batch
+
+### Scope
+- Re-checked the Sessions And Projects checklist after the interrupted-stream reconnect pass and targeted the required Playwright flow for switching sessions during an active stream.
+- Extended the built V2 `/app/` browser recovery harness with a second sidebar session served by the same mocked backend contract.
+- Covered the active-stream path where the first session creates a run, receives `run_started` plus a live `text_delta`, and shows the Stop control.
+- Switched to the second session from the real V2 sidebar while the first session's stream was still open.
+- Verified the stream controller closed the old EventSource, the first session's live chunk disappeared from the selected timeline, the second session's historical message rendered, and the composer returned to the normal Send state.
+- Left Sessions And Projects completion open; remaining work includes backend-backed session switch timing, unavailable session handling, project reload/back flows, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 10 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because it adds browser-level stream/session isolation coverage rather than visible layout changes.
+
+### Reviewer
+- Main-agent browser integration verification completed for this active-stream session-switch slice. No Sessions And Projects or AG-UI Runtime Stream subsystem completion is claimed.

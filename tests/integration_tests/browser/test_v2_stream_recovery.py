@@ -27,9 +27,11 @@ _VIEWPORT_WIDTH = 1280
 _VIEWPORT_HEIGHT = 860
 _WAIT_TIMEOUT_MS = 15_000
 _SESSION_ID = "session-v2-stream"
+_ALT_SESSION_ID = "session-v2-alt"
 _WORKSPACE_ID = "workspace-v2"
 _RUN_ID = "run-v2-stream"
 _PROMPT = "stream recovery probe"
+_ALT_PROMPT = "alternate session prompt"
 _FIRST_CHUNK = "first chunk "
 _AFTER_RELOAD_CHUNK = "after reload"
 _QUEUED_INJECTION = "queued follow-up"
@@ -245,6 +247,64 @@ def test_v2_interrupted_stream_reconnects_from_latest_event_id(
             "() => window.__v2OpenEventSourceCount() === 0",
             timeout=_WAIT_TIMEOUT_MS,
         )
+
+
+def test_v2_session_switch_closes_active_stream_and_isolates_timeline(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 1",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "run_started", 1, {"phase": "streaming"})
+        _emit_relay_event(page, "text_delta", 2, {"text": _FIRST_CHUNK})
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        page.locator(".at-session-select").filter(
+            has_text="V2 alternate session"
+        ).click()
+
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 0",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.wait_for_function(
+            "() => window.__v2EventSources[0]?.readyState === 2",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            0,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.locator(".at-message").filter(has_text=_ALT_PROMPT)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
 
 def test_v2_recoverable_run_resume_reopens_stream_from_checkpoint(
@@ -579,22 +639,40 @@ class _V2StreamBackend:
             _fulfill_json(route, [self._workspace()])
             return
         if request.method == "GET" and path == "/sessions/sidebar":
-            _fulfill_json(route, [self._sidebar_session()])
+            _fulfill_json(route, [self._sidebar_session(), self._alt_sidebar_session()])
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}":
             _fulfill_json(route, self._session())
             return
+        if request.method == "GET" and path == f"/sessions/{_ALT_SESSION_ID}":
+            _fulfill_json(route, self._alt_session())
+            return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/messages":
             _fulfill_json(route, self._messages())
+            return
+        if request.method == "GET" and path == f"/sessions/{_ALT_SESSION_ID}/messages":
+            _fulfill_json(route, self._alt_messages())
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/rounds":
             _fulfill_json(route, self._rounds_page())
             return
+        if request.method == "GET" and path == f"/sessions/{_ALT_SESSION_ID}/rounds":
+            _fulfill_json(route, {"has_more": False, "items": [], "next_cursor": None})
+            return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/token-usage":
             _fulfill_json(route, self._token_usage())
             return
+        if (
+            request.method == "GET"
+            and path == f"/sessions/{_ALT_SESSION_ID}/token-usage"
+        ):
+            _fulfill_json(route, self._alt_token_usage())
+            return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/recovery":
             _fulfill_json(route, self._recovery())
+            return
+        if request.method == "GET" and path == f"/sessions/{_ALT_SESSION_ID}/recovery":
+            _fulfill_json(route, self._empty_recovery())
             return
         if request.method == "GET" and path == "/roles:options":
             _fulfill_json(route, self._role_options())
@@ -743,6 +821,18 @@ class _V2StreamBackend:
             "workspace_id": _WORKSPACE_ID,
         }
 
+    def _alt_sidebar_session(self) -> dict[str, object]:
+        return {
+            "active_run_id": None,
+            "active_run_phase": "",
+            "active_run_status": "",
+            "session_id": _ALT_SESSION_ID,
+            "session_mode": "normal",
+            "title": "V2 alternate session",
+            "updated_at": "2026-06-25T08:05:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
+
     def _session(self) -> dict[str, object]:
         return {
             "can_switch_mode": False,
@@ -752,6 +842,18 @@ class _V2StreamBackend:
             "session_id": _SESSION_ID,
             "session_mode": "normal",
             "title": "V2 stream recovery",
+            "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _alt_session(self) -> dict[str, object]:
+        return {
+            "can_switch_mode": True,
+            "normal_model_profile": "default",
+            "normal_root_role_id": "MainAgent",
+            "orchestration_preset_id": "default",
+            "session_id": _ALT_SESSION_ID,
+            "session_mode": "normal",
+            "title": "V2 alternate session",
             "workspace_id": _WORKSPACE_ID,
         }
 
@@ -781,6 +883,19 @@ class _V2StreamBackend:
                 },
             )
         return messages
+
+    def _alt_messages(self) -> list[dict[str, object]]:
+        return [
+            {
+                "content": _ALT_PROMPT,
+                "created_at": "2026-06-25T08:05:01Z",
+                "message_id": "user-v2-alt",
+                "parts": [{"kind": "text", "text": _ALT_PROMPT}],
+                "role": "user",
+                "run_id": "run-v2-alt",
+                "trace_id": "trace-v2-alt",
+            },
+        ]
 
     def _rounds_page(self) -> dict[str, object]:
         run_phase = "streaming"
@@ -821,6 +936,19 @@ class _V2StreamBackend:
             "total_tool_calls": 0,
         }
 
+    def _alt_token_usage(self) -> dict[str, object]:
+        return {
+            "by_role": {},
+            "session_id": _ALT_SESSION_ID,
+            "total_cached_input_tokens": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_reasoning_output_tokens": 0,
+            "total_requests": 0,
+            "total_tokens": 0,
+            "total_tool_calls": 0,
+        }
+
     def _recovery(self) -> dict[str, object]:
         active_run = None
         if self.run_created and not self.completed:
@@ -844,6 +972,16 @@ class _V2StreamBackend:
             "paused_subagent": self._paused_subagent(),
             "pending_tool_approvals": self._pending_tool_approvals(),
             "pending_user_questions": self._pending_user_questions(),
+            "round_snapshot": None,
+        }
+
+    def _empty_recovery(self) -> dict[str, object]:
+        return {
+            "active_run": None,
+            "background_tasks": [],
+            "paused_subagent": None,
+            "pending_tool_approvals": [],
+            "pending_user_questions": [],
             "round_snapshot": None,
         }
 

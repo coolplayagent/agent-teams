@@ -144,8 +144,8 @@ export function MessageTimeline({
     return undefined;
   }, [rows]);
   const handleCopyAnswer = useCallback((row: TimelineRow | undefined) => {
-    void copyLastAnswer(row, message);
-  }, [message]);
+    void copyLastAnswer(row, message, t);
+  }, [message, t]);
   const activeRoundRunId = activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(rounds);
   const hasRoundRail = !roundsQuery.isLoading && !roundsQuery.isError && rounds.length > 0;
   const virtualizer = useVirtualizer({
@@ -2819,19 +2819,20 @@ function isAnswerRole(role: string): boolean {
 async function copyLastAnswer(
   row: TimelineRow | undefined,
   messenger: ReturnType<typeof App.useApp>["message"],
+  t: Translate,
 ): Promise<void> {
   const text = row?.text.trim() ?? "";
   if (!text) {
-    void messenger.warning("No answer content to copy.");
+    void messenger.warning(t("timelineCopyEmpty"));
     return;
   }
   try {
     if (navigator.clipboard?.writeText === undefined) {
-      throw new Error("Clipboard is unavailable.");
+      throw new Error(t("timelineClipboardUnavailable"));
     }
     await navigator.clipboard.writeText(text);
-    void messenger.success("Last answer copied.");
+    void messenger.success(t("timelineCopySuccess"));
   } catch (_error) {
-    void messenger.error("Clipboard is unavailable.");
+    void messenger.error(t("timelineClipboardUnavailable"));
   }
 }

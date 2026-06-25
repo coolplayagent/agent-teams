@@ -167,13 +167,14 @@ function buildDetailTitle(
   }
   const cached = safeNumber(usage.total_cached_input_tokens);
   const reasoning = safeNumber(usage.total_reasoning_output_tokens);
-  const cachedPart = cached > 0 ? ` cached ${formatInteger(cached)}` : "";
+  const cachedPart =
+    cached > 0 ? ` ${t("tokenDetailCached")} ${formatInteger(cached)}` : "";
   const reasoningPart =
-    reasoning > 0 ? ` reasoning ${formatInteger(reasoning)}` : "";
+    reasoning > 0 ? ` ${t("tokenDetailReasoning")} ${formatInteger(reasoning)}` : "";
   const details = [
-    `total ${formatInteger(usage.total_tokens)}`,
-    `input ${formatInteger(usage.total_input_tokens)}${cachedPart}`,
-    `output ${formatInteger(usage.total_output_tokens)}${reasoningPart}`,
+    `${t("tokenDetailTotal")} ${formatInteger(usage.total_tokens)}`,
+    `${t("tokenDetailInput")} ${formatInteger(usage.total_input_tokens)}${cachedPart}`,
+    `${t("tokenDetailOutput")} ${formatInteger(usage.total_output_tokens)}${reasoningPart}`,
   ];
   if (contextUsage !== null) {
     const contextWindow = contextUsage.contextWindow;
@@ -181,7 +182,7 @@ function buildDetailTitle(
       contextWindow === null
         ? `${t("tokenLatestInput")}: ${formatInteger(contextUsage.latestInputTokens)}`
         : `${t("tokenLatestContext")}: ${formatInteger(contextUsage.latestInputTokens)} / ${formatInteger(contextWindow)}`;
-    details.push(`context ${contextUsage.roleId} ${contextDetail}`);
+    details.push(`${t("tokenDetailContext")} ${contextUsage.roleId} ${contextDetail}`);
   }
   return details.join(" · ");
 }

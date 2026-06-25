@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getSessionTokenUsage } from "../api/client";
 import type { SessionTokenUsage as SessionTokenUsagePayload } from "../api/contracts";
 import { SessionTokenUsage } from "../features/shell/SessionTokenUsage";
+import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   getSessionTokenUsage: vi.fn(),
@@ -15,6 +16,7 @@ const getSessionTokenUsageMock = vi.mocked(getSessionTokenUsage);
 
 afterEach(() => {
   cleanup();
+  useUiStore.setState({ language: "en" });
   vi.clearAllMocks();
 });
 
@@ -119,6 +121,26 @@ describe("SessionTokenUsage", () => {
     expect(await screen.findByTitle("Token usage unavailable")).toHaveAttribute(
       "data-state",
       "error",
+    );
+  });
+
+  it("localizes the compact token strip and detail title", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getSessionTokenUsageMock.mockResolvedValue(
+      usage({ input: 112000, output: 791, total: 113000 }),
+    );
+
+    renderUsage({ primaryRoleId: "MainAgent" });
+
+    expect(await screen.findByText("用量")).toBeVisible();
+    expect(screen.queryByText("Tokens")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新 token 用量" })).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByTitle(
+          /总计 113,000 · 输入 112,000 缓存 120 · 输出 791 推理 40 · 上下文 MainAgent 最近请求输入 \/ 上下文窗口: 112,000 \/ 10,000/,
+        ),
+      ).toHaveAttribute("data-state", "ready"),
     );
   });
 });

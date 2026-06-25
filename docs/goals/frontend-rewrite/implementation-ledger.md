@@ -2577,3 +2577,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent shell component, build, and browser/DevTools verification completed for this sidebar primary entry parity slice. No full Application Shell, Settings, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Token Usage Localization Batch
+
+### Scope
+- Re-checked the Application Shell, Message Timeline, Resource Management, and Assistive Features gaps before choosing a small close-out slice, then narrowed this batch to visible mixed-language feedback in the live V2 shell.
+- Localized the compact token usage strip and its detailed tooltip in Chinese, replacing the remaining hardcoded `Tokens`, `total`, `input`, `output`, `cached`, `reasoning`, and `context` labels with i18n-backed strings.
+- Localized the last-answer copy feedback strings for empty content, success, and unavailable clipboard paths.
+- Preserved the V1 sidebar and settings item parity restored in the previous batch; this change does not add or remove sidebar/settings entries and does not flatten any secondary settings pages.
+- Refreshed `frontend/dist/app` for the token usage and timeline copy feedback change.
+- Kept this as targeted Resource Management, Assistive Features, and Message Timeline polish only; full Message Timeline streaming/replay, settings form parity, visual parity, and release readiness remain open.
+
+### Verification
+- `npm test -- --run src/test/SessionTokenUsage.test.tsx src/test/MessageTimeline.test.tsx` passed with 59 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- Browser reload of `http://127.0.0.1:8000/app/` showed `bodyOverflow = hidden`, `bodyScrollHeight = viewport height`, token text `用量 输入 112k 输出 791 总计 113k 上下文 13.6k / 1M`, no visible English `Tokens` label, localized tooltip details, and refresh label `刷新 token 用量`.
+
+### Reviewer
+- Main-agent component, build, and browser/DevTools verification completed for this token usage localization slice. No full Resource Management, Assistive Features, Message Timeline streaming/replay, visual parity, or release readiness completion is claimed.

@@ -710,6 +710,56 @@ export interface BoardTodoPreviewStartResponse {
   diagnostics: string[];
 }
 
+export interface BoardTodoPreviewRequestChangesRequest {
+  view_workspace_id?: string | null;
+  execution_policy?: BoardTodoExecutionPolicy | null;
+  runtime_target_id?: string | null;
+  queue_if_full?: boolean;
+  feedback: string;
+}
+
+export interface BoardTodoPreviewRequestChangesResponse {
+  todo_id: string;
+  board_workspace_id: string;
+  view_workspace_id: string;
+  is_fork_view?: boolean;
+  forked_from_workspace_id?: string | null;
+  template_kind: string;
+  template_source: string;
+  prompt: string;
+  execution_policy?: BoardTodoExecutionPolicy | null;
+  execution_workspace_preview?: BoardTodoExecutionWorkspacePreview | null;
+  runtime_target_id?: string | null;
+  runtime_target_options?: BoardTodoRuntimeTargetOption[];
+  concurrency: BoardTodoConcurrencySnapshot;
+  queue_preview: BoardTodoQueuePreview;
+  session_id?: string | null;
+  run_id?: string | null;
+  yolo: boolean;
+  thinking: RunThinkingConfig;
+  diagnostics: string[];
+}
+
+export interface BoardTodoStatusUpdateRequest {
+  view_workspace_id?: string | null;
+  execution_policy?: BoardTodoExecutionPolicy | null;
+  runtime_target_id?: string | null;
+  queue_if_full?: boolean;
+  feedback: string;
+  final_prompt?: string | null;
+  prompt?: string | null;
+  yolo?: boolean;
+  thinking?: RunThinkingConfig;
+}
+
+export interface BoardTodoMarkDoneRequest {
+  reason?: string | null;
+}
+
+export interface BoardTodoArchiveRequest {
+  reason?: string | null;
+}
+
 export type AutomationProjectStatus = "enabled" | "disabled";
 export type AutomationScheduleMode = "cron" | "interval" | "one_shot";
 export type AutomationIntervalUnit = "minutes" | "hours" | "days";

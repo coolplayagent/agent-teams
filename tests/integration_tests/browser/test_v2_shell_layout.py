@@ -613,6 +613,80 @@ def test_v2_board_handoff_preview_and_start_call_real_endpoints(
         page.screenshot(path=str(screenshot_dir / "v2-board-handoff-started.png"))
 
 
+def test_v2_board_request_changes_calls_real_endpoints(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        primary_nav = page.get_by_role("navigation", name="Primary navigation")
+        primary_nav.get_by_role("button", name="Board").click()
+
+        board_view = page.get_by_test_id("board-todos-view")
+        review_card = board_view.get_by_test_id("board-todo-todo-v2-review")
+        expect(review_card).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        review_card.get_by_role("button", name="Request changes").click()
+
+        drawer = page.get_by_role("dialog", name="Request board changes")
+        expect(drawer).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        drawer.get_by_label("Feedback").fill("Tighten the board card action flow.")
+        drawer.get_by_role("button", name="Preview request").click()
+
+        final_prompt = drawer.get_by_label("Final prompt")
+        expect(final_prompt).to_have_value(
+            "Previewed board request changes prompt",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        final_prompt.fill("Final browser board request changes prompt")
+        drawer.get_by_role("button", name="Request changes").click()
+
+        expect(page.get_by_text("Board change request queued.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            review_card.get_by_text("Queued board change request from browser"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(review_card.get_by_text("running")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(drawer).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.board_request_changes_preview_payloads == [
+            {
+                "feedback": "Tighten the board card action flow.",
+                "queue_if_full": True,
+                "view_workspace_id": _WORKSPACE_ID,
+            }
+        ]
+        assert backend.board_request_changes_payloads == [
+            {
+                "execution_policy": "current_workspace",
+                "feedback": "Tighten the board card action flow.",
+                "final_prompt": "Final browser board request changes prompt",
+                "queue_if_full": True,
+                "runtime_target_id": None,
+                "thinking": {"enabled": False, "effort": None},
+                "view_workspace_id": _WORKSPACE_ID,
+                "yolo": True,
+            }
+        ]
+        assert (
+            "/boards/todos/todo-v2-review:preview-request-changes"
+            in backend.requested_paths
+        )
+        assert "/boards/todos/todo-v2-review:request-changes" in backend.requested_paths
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-board"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-board-request-changes.png"))
+
+
 def test_v2_workspace_project_view_opens_real_workbench_flow(
     browser_page: Page,
 ) -> None:
@@ -1272,6 +1346,9 @@ class _V2ShellBackend:
         self.board_handoff_preview_payloads: list[dict[str, object]] = []
         self.board_handoff_start_payloads: list[dict[str, object]] = []
         self.board_handoff_started = False
+        self.board_request_changes_payloads: list[dict[str, object]] = []
+        self.board_request_changes_preview_payloads: list[dict[str, object]] = []
+        self.board_request_changes_started = False
         self.board_sync_payloads: list[dict[str, object]] = []
         self.open_root_queries: list[str] = []
         self.requested_paths: list[str] = []
@@ -1575,6 +1652,29 @@ class _V2ShellBackend:
             self.board_handoff_start_payloads.append(payload)
             self.board_handoff_started = True
             _fulfill_json(route, self._board_handoff_started_item())
+            return
+        if (
+            request.method == "POST"
+            and path == "/boards/todos/todo-v2-review:preview-request-changes"
+        ):
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.board_request_changes_preview_payloads.append(payload)
+            _fulfill_json(route, self._board_request_changes_preview())
+            return
+        if (
+            request.method == "POST"
+            and path == "/boards/todos/todo-v2-review:request-changes"
+        ):
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.board_request_changes_payloads.append(payload)
+            self.board_request_changes_started = True
+            _fulfill_json(route, self._board_request_changes_started_item())
             return
         if request.method == "GET" and path == "/memories":
             _fulfill_json(route, self._memory_query())
@@ -2307,7 +2407,16 @@ class _V2ShellBackend:
             "updated_at": "2026-06-25T08:10:00Z",
             "workspace_id": _WORKSPACE_ID,
         }
-        return self._board_response(item, revision=9, synced_at="2026-06-25T08:11:00Z")
+        review_item = (
+            self._board_request_changes_started_item()
+            if self.board_request_changes_started
+            else self._board_review_item()
+        )
+        return self._board_response_items(
+            [item, review_item, self._board_done_item()],
+            revision=9,
+            synced_at="2026-06-25T08:11:00Z",
+        )
 
     def _board_handoff_preview(self) -> dict[str, object]:
         return {
@@ -2365,6 +2474,83 @@ class _V2ShellBackend:
             "workspace_id": _WORKSPACE_ID,
         }
 
+    def _board_review_item(self) -> dict[str, object]:
+        return {
+            "body": "Review the module page actions before handoff.",
+            "created_at": "2026-06-25T08:03:00Z",
+            "item_revision": 3,
+            "last_status_reason": "Waiting for reviewer changes",
+            "pull_request_number": 17,
+            "repository_full_name": "openai/agent-teams",
+            "run_recoverable": False,
+            "source_key": "openai/agent-teams#17",
+            "source_provider": "github",
+            "source_type": "github_pull_request",
+            "status": "review",
+            "title": "Review board request changes",
+            "todo_id": "todo-v2-review",
+            "updated_at": "2026-06-25T08:14:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _board_request_changes_preview(self) -> dict[str, object]:
+        return {
+            "board_workspace_id": _WORKSPACE_ID,
+            "concurrency": {
+                "runtime_target_active": 0,
+                "runtime_target_limit": 1,
+                "source_workspace_active": 0,
+                "source_workspace_limit": 2,
+            },
+            "diagnostics": [],
+            "execution_policy": "current_workspace",
+            "execution_workspace_preview": None,
+            "is_fork_view": False,
+            "prompt": "Previewed board request changes prompt",
+            "queue_preview": {
+                "queue_if_full": True,
+                "slot_available": True,
+                "will_queue": False,
+            },
+            "runtime_target_id": None,
+            "template_kind": "request_changes",
+            "template_source": "built_in",
+            "thinking": {"enabled": False, "effort": None},
+            "todo_id": "todo-v2-review",
+            "view_workspace_id": _WORKSPACE_ID,
+            "yolo": True,
+        }
+
+    def _board_request_changes_started_item(self) -> dict[str, object]:
+        return {
+            **self._board_review_item(),
+            "item_revision": 4,
+            "last_status_reason": "Queued board change request from browser",
+            "run_id": "run-board-v2-review",
+            "run_status": "running",
+            "session_id": "session-board-v2-review",
+            "status": "in_progress",
+            "updated_at": "2026-06-25T08:27:00Z",
+        }
+
+    def _board_done_item(self) -> dict[str, object]:
+        return {
+            "body": "Completed board work can be archived from the module page.",
+            "created_at": "2026-06-25T08:05:00Z",
+            "issue_number": 403,
+            "item_revision": 2,
+            "repository_full_name": "openai/agent-teams",
+            "run_recoverable": False,
+            "source_key": "openai/agent-teams#403",
+            "source_provider": "github",
+            "source_type": "github_issue",
+            "status": "done",
+            "title": "Archive completed board action",
+            "todo_id": "todo-v2-done",
+            "updated_at": "2026-06-25T08:12:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
+
     def _board_synced(self) -> dict[str, object]:
         item = {
             "body": "The browser flow replaced the board data after POST sync.",
@@ -2391,11 +2577,20 @@ class _V2ShellBackend:
         revision: int,
         synced_at: str,
     ) -> dict[str, object]:
+        return self._board_response_items([item], revision=revision, synced_at=synced_at)
+
+    def _board_response_items(
+        self,
+        items: list[dict[str, object]],
+        *,
+        revision: int,
+        synced_at: str,
+    ) -> dict[str, object]:
         return {
             "board_workspace_id": _WORKSPACE_ID,
             "diagnostics": [],
             "is_fork_view": False,
-            "items": [item],
+            "items": items,
             "repository_full_name": "openai/agent-teams",
             "revision": revision,
             "source_groups": [
@@ -2409,11 +2604,13 @@ class _V2ShellBackend:
                 }
             ],
             "status_counts": {
-                "archived": 0,
-                "done": 1 if item["status"] == "done" else 0,
-                "in_progress": 0,
-                "review": 0,
-                "todo": 1 if item["status"] == "todo" else 0,
+                "archived": sum(1 for item in items if item["status"] == "archived"),
+                "done": sum(1 for item in items if item["status"] == "done"),
+                "in_progress": sum(
+                    1 for item in items if item["status"] == "in_progress"
+                ),
+                "review": sum(1 for item in items if item["status"] == "review"),
+                "todo": sum(1 for item in items if item["status"] == "todo"),
             },
             "synced_at": synced_at,
             "view_workspace_id": _WORKSPACE_ID,

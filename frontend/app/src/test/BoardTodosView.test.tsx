@@ -11,8 +11,13 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  archiveBoardTodo,
   listBoardTodos,
+  markBoardTodoDone,
+  previewRequestChangesBoardTodo,
   previewStartBoardTodo,
+  requestChangesBoardTodo,
+  restoreBoardTodo,
   startBoardTodo,
   syncBoardTodos,
 } from "../api/client";
@@ -25,14 +30,26 @@ import { BoardTodosView } from "../features/boards/BoardTodosView";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  archiveBoardTodo: vi.fn(),
   listBoardTodos: vi.fn(),
+  markBoardTodoDone: vi.fn(),
+  previewRequestChangesBoardTodo: vi.fn(),
   previewStartBoardTodo: vi.fn(),
+  requestChangesBoardTodo: vi.fn(),
+  restoreBoardTodo: vi.fn(),
   startBoardTodo: vi.fn(),
   syncBoardTodos: vi.fn(),
 }));
 
+const archiveBoardTodoMock = vi.mocked(archiveBoardTodo);
 const listBoardTodosMock = vi.mocked(listBoardTodos);
+const markBoardTodoDoneMock = vi.mocked(markBoardTodoDone);
+const previewRequestChangesBoardTodoMock = vi.mocked(
+  previewRequestChangesBoardTodo,
+);
 const previewStartBoardTodoMock = vi.mocked(previewStartBoardTodo);
+const requestChangesBoardTodoMock = vi.mocked(requestChangesBoardTodo);
+const restoreBoardTodoMock = vi.mocked(restoreBoardTodo);
 const startBoardTodoMock = vi.mocked(startBoardTodo);
 const syncBoardTodosMock = vi.mocked(syncBoardTodos);
 
@@ -87,9 +104,78 @@ const syncedItem: BoardTodoItem = {
   updated_at: "2026-06-24T00:30:00Z",
 };
 
+const doneItem: BoardTodoItem = {
+  ...todoItem,
+  body: "Archive the completed board item from the active board.",
+  item_revision: 3,
+  issue_number: 402,
+  status: "done",
+  title: "Archive completed board TODO",
+  todo_id: "todo-3",
+  updated_at: "2026-06-24T00:30:00Z",
+};
+
+const archivedItem: BoardTodoItem = {
+  ...doneItem,
+  archived_at: "2026-06-24T00:40:00Z",
+  item_revision: 4,
+  last_status_reason: "Archived after completion",
+  status: "archived",
+};
+
 beforeEach(() => {
   useUiStore.setState({ language: "en" });
-  listBoardTodosMock.mockResolvedValue(boardResponse([todoItem, reviewItem], 7));
+  listBoardTodosMock.mockResolvedValue(
+    boardResponse([todoItem, reviewItem, doneItem], 7),
+  );
+  archiveBoardTodoMock.mockResolvedValue(archivedItem);
+  markBoardTodoDoneMock.mockResolvedValue({
+    ...reviewItem,
+    item_revision: 5,
+    last_status_reason: "Review accepted",
+    status: "done",
+  });
+  previewRequestChangesBoardTodoMock.mockResolvedValue({
+    board_workspace_id: "workspace-1",
+    concurrency: {
+      runtime_target_active: 0,
+      runtime_target_limit: 1,
+      source_workspace_active: 0,
+      source_workspace_limit: 2,
+    },
+    diagnostics: [],
+    execution_policy: "current_workspace",
+    execution_workspace_preview: null,
+    is_fork_view: false,
+    prompt: "Preview prompt for board change request",
+    queue_preview: {
+      queue_if_full: true,
+      slot_available: true,
+      will_queue: false,
+    },
+    runtime_target_id: null,
+    template_kind: "request_changes",
+    template_source: "built_in",
+    thinking: { enabled: false, effort: null },
+    todo_id: "todo-2",
+    view_workspace_id: "workspace-1",
+    yolo: true,
+  });
+  requestChangesBoardTodoMock.mockResolvedValue({
+    ...reviewItem,
+    item_revision: 6,
+    last_status_reason: "Queued board change request",
+    run_id: "run-board-changes-1",
+    session_id: "session-board-changes-1",
+    status: "in_progress",
+  });
+  restoreBoardTodoMock.mockResolvedValue({
+    ...archivedItem,
+    archived_at: null,
+    item_revision: 5,
+    last_status_reason: "Restored from archive",
+    status: "todo",
+  });
   previewStartBoardTodoMock.mockResolvedValue({
     board_workspace_id: "workspace-1",
     concurrency: {
@@ -226,6 +312,85 @@ describe("BoardTodosView", () => {
     expect(await screen.findByText("Queued for board todo handoff")).toBeVisible();
     expect(screen.getByText("In progress")).toBeVisible();
   });
+
+  it("previews and requests changes from a review card drawer", async () => {
+    renderView();
+
+    const card = await screen.findByTestId("board-todo-todo-2");
+    fireEvent.click(
+      within(card).getByRole("button", { name: "Request changes" }),
+    );
+
+    const drawer = await screen.findByRole("dialog", {
+      name: "Request board changes",
+    });
+    const feedback = within(drawer).getByLabelText("Feedback");
+    fireEvent.change(feedback, {
+      target: { value: "Please tighten the board action copy." },
+    });
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Preview request" }),
+    );
+
+    await waitFor(() =>
+      expect(previewRequestChangesBoardTodoMock).toHaveBeenCalledWith(
+        "todo-2",
+        {
+          feedback: "Please tighten the board action copy.",
+          queue_if_full: true,
+          view_workspace_id: "workspace-1",
+        },
+      ),
+    );
+    const finalPrompt = await within(drawer).findByLabelText("Final prompt");
+    expect(finalPrompt).toHaveValue("Preview prompt for board change request");
+
+    fireEvent.change(finalPrompt, {
+      target: { value: "Final board change request prompt" },
+    });
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Request changes" }),
+    );
+
+    await waitFor(() =>
+      expect(requestChangesBoardTodoMock).toHaveBeenCalledWith("todo-2", {
+        execution_policy: "current_workspace",
+        feedback: "Please tighten the board action copy.",
+        final_prompt: "Final board change request prompt",
+        queue_if_full: true,
+        runtime_target_id: null,
+        thinking: { enabled: false, effort: null },
+        view_workspace_id: "workspace-1",
+        yolo: true,
+      }),
+    );
+    expect(await screen.findByText("Queued board change request")).toBeVisible();
+    expect(screen.getByText("In progress")).toBeVisible();
+  });
+
+  it("marks review cards done and archives done cards after confirmation", async () => {
+    renderView();
+
+    const reviewCard = await screen.findByTestId("board-todo-todo-2");
+    fireEvent.click(within(reviewCard).getByRole("button", { name: "Mark done" }));
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+
+    await waitFor(() =>
+      expect(markBoardTodoDoneMock).toHaveBeenCalledWith("todo-2"),
+    );
+    expect(await screen.findByText("Review accepted")).toBeVisible();
+
+    const doneCard = await screen.findByTestId("board-todo-todo-3");
+    fireEvent.click(within(doneCard).getByRole("button", { name: "Archive" }));
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+
+    await waitFor(() =>
+      expect(archiveBoardTodoMock).toHaveBeenCalledWith("todo-3"),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("board-todo-todo-3")).not.toBeInTheDocument(),
+    );
+  });
 });
 
 function boardResponse(
@@ -250,7 +415,7 @@ function boardResponse(
       },
     ],
     status_counts: {
-      archived: 0,
+      archived: items.filter((item) => item.status === "archived").length,
       done: items.filter((item) => item.status === "done").length,
       in_progress: items.filter((item) => item.status === "in_progress").length,
       review: items.filter((item) => item.status === "review").length,

@@ -2940,3 +2940,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component and built-app browser verification completed for this transport reconnect-exhaustion slice. Full AG-UI Runtime Stream completion, Message Timeline visual parity, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Board Status Actions Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, latest ledger, and live `/app/` shell before choosing this slice, then returned to the Board action parity gap left open by the prior handoff batch instead of continuing only stream work or one screenshot complaint.
+- Added typed frontend contracts and API client calls for `POST /api/boards/todos/{todo_id}:preview-request-changes`, `:request-changes`, `:mark-done`, `:archive`, and `:restore`.
+- Extended Board cards with status-appropriate real actions: Todo keeps Start handoff, Review can Request changes through a secondary drawer and Mark done through confirmation, Done can Archive through confirmation, and Archived can Restore when archived items are included.
+- Preserved the existing V1-aligned shell/module navigation and secondary-page behavior: no sidebar/settings entries were added or removed, and the request-changes flow stays in a drawer with preview, editable final prompt, queue/concurrency diagnostics, and backend response cache updates.
+- Added component coverage for request-changes preview/submission payloads, mark-done confirmation, archive confirmation/removal from the non-archived view, and API-client endpoint encoding/payloads.
+- Added a built `/app/` browser scenario that opens Board from primary navigation, requests changes on a Review card, verifies exact preview/request endpoint payloads, waits for the drawer to close, observes the card update to the backend-reported running state, and captures evidence at `.tmp/frontend-v2-board/v2-board-request-changes.png`.
+- Re-loaded the user's live in-app browser at `http://127.0.0.1:8000/app/`, switched to the real Board page, and verified from DOM metrics that the shell stayed fixed to the viewport (`bodyHeight` matched `viewportHeight`) with the Board view visible and actions present; direct in-app screenshot capture timed out, so the local Playwright screenshots remain the visual artifact for this batch.
+- Kept this as targeted Board status-action progress only; source settings, broader module error states, complete Connectors/Memory/Gateway/Automation/Boards reviewer sign-off, visual parity matrix completion, stream/replay completion, and release readiness remain open.
+
+### Verification
+- `npm test -- --run src/test/BoardTodosView.test.tsx src/test/apiClient.test.ts` passed with 2 files and 32 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "board_sync or board_handoff or board_request_changes"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent component, API-client, built-app browser, and live in-app DOM verification completed for this Board status-action slice. Full Boards/module parity, visual parity matrix completion, AG-UI stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.

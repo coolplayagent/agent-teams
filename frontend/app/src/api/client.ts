@@ -4,11 +4,16 @@ import type {
   AutomationProjectRecord,
   AutomationProjectSessionRecord,
   AutomationRunNowResult,
+  BoardTodoArchiveRequest,
   BoardTodoBoardResponse,
   BoardTodoItem,
+  BoardTodoMarkDoneRequest,
+  BoardTodoPreviewRequestChangesRequest,
+  BoardTodoPreviewRequestChangesResponse,
   BoardTodoPreviewStartRequest,
   BoardTodoPreviewStartResponse,
   BoardTodoStartRequest,
+  BoardTodoStatusUpdateRequest,
   BinaryToolDownloadJob,
   BinaryToolListResponse,
   BinaryToolSystemPathResult,
@@ -319,6 +324,67 @@ export function startBoardTodo(
     {
       method: "POST",
       body: JSON.stringify(request),
+    },
+  );
+}
+
+export function previewRequestChangesBoardTodo(
+  todoId: string,
+  request: BoardTodoPreviewRequestChangesRequest,
+): Promise<BoardTodoPreviewRequestChangesResponse> {
+  return requestJson<BoardTodoPreviewRequestChangesResponse>(
+    `/boards/todos/${encodeURIComponent(todoId)}:preview-request-changes`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function requestChangesBoardTodo(
+  todoId: string,
+  request: BoardTodoStatusUpdateRequest,
+): Promise<BoardTodoItem> {
+  return requestJson<BoardTodoItem>(
+    `/boards/todos/${encodeURIComponent(todoId)}:request-changes`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function markBoardTodoDone(
+  todoId: string,
+  request: BoardTodoMarkDoneRequest = {},
+): Promise<BoardTodoItem> {
+  return requestJson<BoardTodoItem>(
+    `/boards/todos/${encodeURIComponent(todoId)}:mark-done`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function archiveBoardTodo(
+  todoId: string,
+  request: BoardTodoArchiveRequest = {},
+): Promise<BoardTodoItem> {
+  return requestJson<BoardTodoItem>(
+    `/boards/todos/${encodeURIComponent(todoId)}:archive`,
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function restoreBoardTodo(todoId: string): Promise<BoardTodoItem> {
+  return requestJson<BoardTodoItem>(
+    `/boards/todos/${encodeURIComponent(todoId)}:restore`,
+    {
+      method: "POST",
     },
   );
 }

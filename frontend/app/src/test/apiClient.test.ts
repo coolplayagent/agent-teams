@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  archiveBoardTodo,
   browseClawHubSkillMarket,
   addRuntimeToolsSystemPath,
   createFeishuGatewayAccount,
@@ -62,6 +63,7 @@ import {
   probeGitHubConnectivity,
   probeGitHubWebhookConnectivity,
   probeWebConnectivity,
+  previewRequestChangesBoardTodo,
   revealSshProfilePassword,
   revealGitHubToken,
   refreshAgentRuntimeRegistry,
@@ -84,6 +86,7 @@ import {
   searchClawHubSkillMarket,
   searchMemories,
   searchWorkspacePaths,
+  markBoardTodoDone,
   stopBackgroundTask,
   stopGitHubWebhookTunnel,
   startWeChatGatewayLogin,
@@ -92,6 +95,8 @@ import {
   startRuntimeToolDownload,
   rebuildMemoryIndex,
   runAutomationProject,
+  requestChangesBoardTodo,
+  restoreBoardTodo,
   syncBoardTodos,
   testConnector,
   installClawHubMarketSkill,
@@ -357,6 +362,138 @@ describe("api client", () => {
           include_archived: false,
           workspace_id: "workspace-1",
         }),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("uses board TODO action endpoints with encoded ids", async () => {
+    const itemPayload = {
+      item_revision: 8,
+      run_recoverable: false,
+      source_key: "openai/agent-teams#401",
+      source_provider: "github",
+      source_type: "github_issue",
+      status: "in_progress",
+      title: "Board action item",
+      todo_id: "todo/2",
+      updated_at: "2026-06-24T00:00:00Z",
+      workspace_id: "workspace-1",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            board_workspace_id: "workspace-1",
+            concurrency: {
+              runtime_target_active: 0,
+              runtime_target_limit: 1,
+              source_workspace_active: 0,
+              source_workspace_limit: 2,
+            },
+            diagnostics: [],
+            execution_policy: "current_workspace",
+            execution_workspace_preview: null,
+            is_fork_view: false,
+            prompt: "Previewed change request",
+            queue_preview: {
+              queue_if_full: true,
+              slot_available: true,
+              will_queue: false,
+            },
+            runtime_target_id: null,
+            template_kind: "request_changes",
+            template_source: "built_in",
+            thinking: { enabled: false, effort: null },
+            todo_id: "todo/2",
+            view_workspace_id: "workspace-1",
+            yolo: true,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(itemPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(itemPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(itemPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(itemPayload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      previewRequestChangesBoardTodo("todo/2", {
+        feedback: "Needs another pass.",
+        queue_if_full: true,
+        view_workspace_id: "workspace-1",
+      }),
+    ).resolves.toMatchObject({ prompt: "Previewed change request" });
+    await expect(
+      requestChangesBoardTodo("todo/2", {
+        feedback: "Needs another pass.",
+        final_prompt: "Final change request",
+        queue_if_full: true,
+        view_workspace_id: "workspace-1",
+      }),
+    ).resolves.toMatchObject({ todo_id: "todo/2" });
+    await expect(markBoardTodoDone("todo/2")).resolves.toMatchObject({
+      todo_id: "todo/2",
+    });
+    await expect(archiveBoardTodo("todo/2")).resolves.toMatchObject({
+      todo_id: "todo/2",
+    });
+    await expect(restoreBoardTodo("todo/2")).resolves.toMatchObject({
+      todo_id: "todo/2",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/boards/todos/todo%2F2:preview-request-changes",
+      expect.objectContaining({
+        body: JSON.stringify({
+          feedback: "Needs another pass.",
+          queue_if_full: true,
+          view_workspace_id: "workspace-1",
+        }),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/boards/todos/todo%2F2:request-changes",
+      expect.objectContaining({
+        body: JSON.stringify({
+          feedback: "Needs another pass.",
+          final_prompt: "Final change request",
+          queue_if_full: true,
+          view_workspace_id: "workspace-1",
+        }),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/boards/todos/todo%2F2:mark-done",
+      expect.objectContaining({
+        body: JSON.stringify({}),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/boards/todos/todo%2F2:archive",
+      expect.objectContaining({
+        body: JSON.stringify({}),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/boards/todos/todo%2F2:restore",
+      expect.objectContaining({
         headers: expect.any(Headers),
         method: "POST",
       }),

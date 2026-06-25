@@ -3004,7 +3004,9 @@ body {
 
 .at-board-card-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 6px;
   padding-top: 2px;
 }
 
@@ -3012,12 +3014,14 @@ body {
   min-width: 0;
 }
 
-.at-board-handoff {
+.at-board-handoff,
+.at-board-request {
   display: grid;
   gap: 14px;
 }
 
-.at-board-handoff-item {
+.at-board-handoff-item,
+.at-board-request-item {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -3025,21 +3029,24 @@ body {
   border-bottom: 1px solid var(--at-border);
 }
 
-.at-board-handoff-item h3 {
+.at-board-handoff-item h3,
+.at-board-request-item h3 {
   margin: 0;
   color: var(--at-text);
   font-size: 14px;
   line-height: 1.35;
 }
 
-.at-board-handoff-item p {
+.at-board-handoff-item p,
+.at-board-request-item p {
   margin: 0;
   color: var(--at-text-muted);
   font-size: 12px;
   line-height: 1.45;
 }
 
-.at-board-handoff-meta {
+.at-board-handoff-meta,
+.at-board-request-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0;
@@ -3048,7 +3055,8 @@ body {
   overflow: hidden;
 }
 
-.at-board-handoff-meta > div {
+.at-board-handoff-meta > div,
+.at-board-request-meta > div {
   min-width: 0;
   padding: 8px 10px;
   border-right: 1px solid var(--at-border);
@@ -3056,13 +3064,15 @@ body {
   background: var(--at-surface);
 }
 
-.at-board-handoff-meta dt {
+.at-board-handoff-meta dt,
+.at-board-request-meta dt {
   margin: 0 0 3px;
   color: var(--at-text-muted);
   font-size: 11px;
 }
 
-.at-board-handoff-meta dd {
+.at-board-handoff-meta dd,
+.at-board-request-meta dd {
   min-width: 0;
   margin: 0;
   overflow: hidden;
@@ -3072,18 +3082,28 @@ body {
   white-space: nowrap;
 }
 
-.at-board-handoff-prompt {
+.at-board-handoff-prompt,
+.at-board-request-feedback,
+.at-board-request-prompt {
   display: grid;
   gap: 7px;
 }
 
-.at-board-handoff-prompt > span {
+.at-board-handoff-prompt > span,
+.at-board-request-feedback > span,
+.at-board-request-prompt > span {
   color: var(--at-text);
   font-size: 12px;
   font-weight: 600;
 }
 
-.at-board-handoff-actions {
+.at-board-request-preview-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.at-board-handoff-actions,
+.at-board-request-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;

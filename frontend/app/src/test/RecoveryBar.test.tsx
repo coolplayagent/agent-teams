@@ -506,6 +506,62 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("resumes a disconnected recoverable run before answering a user question", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "stopped",
+          phase: "awaiting_user_question",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+        pending_user_questions: [
+          {
+            question_id: "question-1",
+            run_id: "run-1",
+            role_id: "Planner",
+            questions: [
+              {
+                question: "Pick next step",
+                options: [{ label: "Continue" }],
+                multiple: false,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    resumeRunMock.mockResolvedValue({
+      status: "ok",
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    answerUserQuestionMock.mockResolvedValue({ status: "ok" });
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("Planner needs input");
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Continue"));
+    fireEvent.click(screen.getByRole("button", { name: "Answer" }));
+
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        runId: "run-1",
+        sessionId: "session-1",
+        afterEventId: 42,
+      }),
+    );
+    expect(answerUserQuestionMock).toHaveBeenCalledWith(
+      "run-1",
+      "question-1",
+      { answers: [{ selections: [{ label: "Continue" }] }] },
+    );
+  });
+
   it("hides the standalone resume action while the run is already streaming", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

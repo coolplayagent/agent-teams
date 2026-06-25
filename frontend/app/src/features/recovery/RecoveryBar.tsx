@@ -141,7 +141,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
 
   const approvalMutation = useMutation({
     mutationFn: async (request: ApprovalActionRequest) => {
-      if (shouldResumeBeforeApproval(activeRun, request.runId)) {
+      if (shouldResumeBeforeRecoveryAction(activeRun, request.runId)) {
         await resumeRecoverableRun(request.runId);
       }
       return resolveToolApproval(
@@ -170,7 +170,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   });
 
   const questionMutation = useMutation({
-    mutationFn: (question: PendingUserQuestion) => {
+    mutationFn: async (question: PendingUserQuestion) => {
       const answers = buildQuestionAnswer(
         question,
         questionSelections,
@@ -178,6 +178,9 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
       );
       if (answers === null) {
         throw new Error("Select an answer for each question.");
+      }
+      if (shouldResumeBeforeRecoveryAction(activeRun, question.run_id)) {
+        await resumeRecoverableRun(question.run_id);
       }
       return answerUserQuestion(question.run_id, question.question_id, answers);
     },
@@ -967,7 +970,7 @@ function shouldShowResumeAction(
   );
 }
 
-function shouldResumeBeforeApproval(
+function shouldResumeBeforeRecoveryAction(
   activeRun: RecoveryRun | null,
   runId: string,
 ): boolean {

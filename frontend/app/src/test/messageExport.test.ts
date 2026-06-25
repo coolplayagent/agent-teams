@@ -170,6 +170,49 @@ describe("messageExport", () => {
     expect(html).toContain("[image: render.png]");
   });
 
+  it("exports round pending question and retry details", () => {
+    const html = buildMessagesHtml("session-1", [
+      {
+        pending_tool_approval_count: 1,
+        pending_user_question_count: 2,
+        retry_events: [
+          {
+            attempt_number: 3,
+            error_code: "rate_limit",
+            error_message: "Try again later",
+            is_active: true,
+            kind: "retry",
+            phase: "scheduled",
+            retry_in_ms: 2500,
+            total_attempts: 5,
+          },
+          {
+            kind: "fallback",
+            phase: "activated",
+            to_profile_id: "secondary",
+          },
+        ],
+        run_id: "run-1",
+      },
+    ]);
+
+    expect(html).toContain("Round 1 pending approvals");
+    expect(html).toContain("1 pending tool approval(s).");
+    expect(html).toContain("Round 1 pending user questions");
+    expect(html).toContain("2 pending user question(s).");
+    expect(html).toContain("Round 1 retry 1");
+    expect(html).toContain("Kind: retry");
+    expect(html).toContain("Phase: scheduled");
+    expect(html).toContain("Attempt: 3/5");
+    expect(html).toContain("Retry delay: 2500ms");
+    expect(html).toContain("Error code: rate_limit");
+    expect(html).toContain("Error: Try again later");
+    expect(html).toContain("Active: true");
+    expect(html).toContain("Round 1 retry 2");
+    expect(html).toContain("Kind: fallback");
+    expect(html).toContain("Target profile: secondary");
+  });
+
   it("downloads the HTML transcript", async () => {
     const createObjectUrl = mockDownloadUrl();
     const click = vi

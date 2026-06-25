@@ -2516,3 +2516,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent projection, component, and build verification completed for this round pending/retry summary slice. No full Rounds, Todos, History, Retry, AG-UI Runtime Stream, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Round Export Retry Detail Batch
+
+### Scope
+- Re-checked the Rounds, Todos, History, And Retry checklist after the visible round summary batch, focusing on round history portability.
+- Extended HTML and PNG transcript export blocks to include pending user question counts and each retry/fallback event's kind, phase, attempt, retry delay, target profile, error code/message, and active state.
+- Preserved the existing export menu choices and paging behavior; this does not add sidebar/settings items or flatten secondary pages.
+- Refreshed `frontend/dist/app` for the export detail change.
+- Kept this as targeted round history/retry detail progress only; full round detail UI, live retry countdown, dense history visual review, and screenshot QA remain open.
+
+### Verification
+- `npm test -- --run src/test/messageExport.test.ts` passed with 9 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- No screenshot was captured because this batch changes generated transcript content rather than the app shell or a stable visible layout state.
+
+### Reviewer
+- Main-agent export and build verification completed for this round export detail slice. No full Rounds, Todos, History, Retry, visual parity, or release readiness completion is claimed.

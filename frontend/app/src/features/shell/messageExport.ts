@@ -161,6 +161,13 @@ function roundExportBlocks(rounds: SessionRound[]): ExportBlock[] {
         text: `${round.pending_tool_approval_count} pending tool approval(s).`,
       });
     }
+    if (round.pending_user_question_count !== undefined && round.pending_user_question_count > 0) {
+      blocks.push({
+        label: `Round ${index + 1} pending user questions`,
+        text: `${round.pending_user_question_count} pending user question(s).`,
+      });
+    }
+    blocks.push(...roundRetryEventBlocks(round, index));
     if (normalizedText(round.run_diagnostic_message)) {
       blocks.push({
         label: `Round ${index + 1} diagnostic`,
@@ -169,6 +176,57 @@ function roundExportBlocks(rounds: SessionRound[]): ExportBlock[] {
     }
   });
   return blocks;
+}
+
+function roundRetryEventBlocks(round: SessionRound, roundIndex: number): ExportBlock[] {
+  return (round.retry_events ?? []).flatMap((event, eventIndex) => {
+    const text = roundRetryEventText(event);
+    if (text.length === 0) {
+      return [];
+    }
+    return [
+      {
+        label: `Round ${roundIndex + 1} retry ${eventIndex + 1}`,
+        text,
+      },
+    ];
+  });
+}
+
+function roundRetryEventText(event: JsonValue): string {
+  const object = jsonObject(event);
+  if (object === null) {
+    return jsonValueText(event).trim();
+  }
+  const lines = [
+    objectString(object, "kind") ? `Kind: ${objectString(object, "kind")}` : "",
+    objectString(object, "phase") ? `Phase: ${objectString(object, "phase")}` : "",
+    retryAttemptText(object),
+    objectPositiveNumber(object, "retry_in_ms") > 0
+      ? `Retry delay: ${objectPositiveNumber(object, "retry_in_ms")}ms`
+      : "",
+    objectString(object, "to_profile_id")
+      ? `Target profile: ${objectString(object, "to_profile_id")}`
+      : "",
+    objectString(object, "error_code") ? `Error code: ${objectString(object, "error_code")}` : "",
+    objectString(object, "error_message")
+      ? `Error: ${objectString(object, "error_message")}`
+      : "",
+    jsonScalarText(object.is_active) ? `Active: ${jsonScalarText(object.is_active)}` : "",
+  ].filter(Boolean);
+  return lines.length > 0 ? lines.join("\n") : jsonValueText(event).trim();
+}
+
+function retryAttemptText(object: Record<string, JsonValue>): string {
+  const attempt = objectPositiveNumber(object, "attempt_number");
+  const total = objectPositiveNumber(object, "total_attempts");
+  if (attempt > 0 && total > 0) {
+    return `Attempt: ${attempt}/${total}`;
+  }
+  if (attempt > 0) {
+    return `Attempt: ${attempt}`;
+  }
+  return "";
 }
 
 function roundSummaryBlock(round: SessionRound, index: number): ExportBlock {
@@ -669,6 +727,41 @@ function jsonValueText(value: JsonValue): string {
     return "";
   }
   return JSON.stringify(value, null, 2);
+}
+
+function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value;
+}
+
+function objectString(
+  object: Record<string, JsonValue>,
+  key: string,
+): string {
+  const value = object[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function objectPositiveNumber(
+  object: Record<string, JsonValue>,
+  key: string,
+): number {
+  const value = object[key];
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0;
+}
+
+function jsonScalarText(value: JsonValue | undefined): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
 }
 
 function isPresentText(value: string | null): value is string {

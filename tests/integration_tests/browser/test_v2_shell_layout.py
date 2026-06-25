@@ -333,6 +333,53 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
         page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
 
 
+def test_v2_automation_toggle_calls_real_endpoint_and_updates_detail(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        primary_nav = page.get_by_role("navigation", name="Primary navigation")
+        primary_nav.get_by_role("button", name="Automation").click()
+
+        automation_detail = page.locator(".at-automation-detail")
+        expect(
+            automation_detail.get_by_role("heading", name="Daily triage"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            automation_detail.get_by_role("button", name="Disable"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        automation_detail.get_by_role("button", name="Disable").click()
+
+        expect(
+            automation_detail.get_by_role("button", name="Enable"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            automation_detail.get_by_text("Disabled", exact=True),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.automation_disable_requests == ["aut-daily"]
+        assert "/automation/projects/aut-daily:disable" in backend.requested_paths
+
+        automation_detail.get_by_role("button", name="Enable").click()
+
+        expect(
+            automation_detail.get_by_role("button", name="Disable"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            automation_detail.get_by_text("Enabled", exact=True),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.automation_enable_requests == ["aut-daily"]
+        assert "/automation/projects/aut-daily:enable" in backend.requested_paths
+
+
 def test_v2_board_sync_calls_real_endpoint_and_updates_cards(
     browser_page: Page,
 ) -> None:
@@ -1029,6 +1076,9 @@ class _V2ShellBackend:
     def __init__(self, *, include_image_message: bool = False) -> None:
         self.include_image_message = include_image_message
         self.fail_next_web_save = False
+        self.automation_enable_requests: list[str] = []
+        self.automation_disable_requests: list[str] = []
+        self.automation_project_status = "enabled"
         self.board_sync_payloads: list[dict[str, object]] = []
         self.open_root_queries: list[str] = []
         self.requested_paths: list[str] = []
@@ -1267,6 +1317,16 @@ class _V2ShellBackend:
             and path == "/automation/projects/aut-daily/sessions"
         ):
             _fulfill_json(route, [self._automation_session()])
+            return
+        if request.method == "POST" and path == "/automation/projects/aut-daily:enable":
+            self.automation_enable_requests.append("aut-daily")
+            self.automation_project_status = "enabled"
+            _fulfill_json(route, self._automation_project())
+            return
+        if request.method == "POST" and path == "/automation/projects/aut-daily:disable":
+            self.automation_disable_requests.append("aut-daily")
+            self.automation_project_status = "disabled"
+            _fulfill_json(route, self._automation_project())
             return
         if request.method == "GET" and path == "/connectors":
             _fulfill_json(route, self._connectors())
@@ -1903,7 +1963,7 @@ class _V2ShellBackend:
                 "yolo": False,
             },
             "schedule_mode": "cron",
-            "status": "enabled",
+            "status": self.automation_project_status,
             "timezone": "Asia/Shanghai",
             "trigger_id": "trigger-daily",
             "updated_at": "2026-06-25T08:20:00Z",

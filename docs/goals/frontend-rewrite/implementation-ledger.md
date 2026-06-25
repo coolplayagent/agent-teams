@@ -2826,3 +2826,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this Board sync action slice. Full module parity, visual parity matrix completion, stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Automation Toggle Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity ledger, and current worktree before choosing this slice, then moved from Board evidence to another high-value module action instead of continuing only one area.
+- Fixed Automation status mutations so successful enable/disable responses update both the selected project detail cache and the project list cache, while exact list invalidation no longer refetches and overwrites the current detail with stale data.
+- Added refresh coverage for the automation project's recent-run query after `Run now` succeeds so the Automation surface can reflect newly started runs when the user remains on the module page.
+- Strengthened the Automation component test so the Disable action must leave the detail view showing the real Enable follow-up state, not merely call the mocked endpoint.
+- Added a real built `/app/` browser scenario that opens Automation from the existing V1-aligned primary navigation, clicks Disable and Enable, verifies `POST /api/automation/projects/aut-daily:disable` and `:enable`, and confirms the detail status/button updates from the backend response.
+- Kept this as targeted Automation action and cache-correctness progress only; no sidebar/settings entries were added or removed, and full Connectors/Memory/Gateway/Automation/Boards completion still requires broader action/error/reviewer coverage.
+
+### Verification
+- `npm test -- --run src/test/AutomationView.test.tsx` passed with 4 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "automation_toggle"` passed with 1 selected test before the build.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "automation_toggle or sidebar_module_entries_open_real_surfaces"` passed with 2 selected tests after the build.
+
+### Reviewer
+- Main-agent component and built-app browser verification completed for this Automation toggle slice. Full module parity, visual parity matrix completion, stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.

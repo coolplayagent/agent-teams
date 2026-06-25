@@ -103,7 +103,13 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
       runAutomationProject(automationProjectId),
     onSuccess: (result) => {
       void message.success(t("automationRunStarted"));
-      void queryClient.invalidateQueries({ queryKey: ["automation", "projects"] });
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["automation", "projects"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["automation", "projects", result.automation_project_id, "sessions"],
+      });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       if (result.session_id.trim()) {
         onSessionSelected?.(result.session_id);
@@ -118,9 +124,13 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
   const enableMutation = useMutation({
     mutationFn: (automationProjectId: string) =>
       enableAutomationProject(automationProjectId),
-    onSuccess: () => {
+    onSuccess: (project) => {
       void message.success(t("automationEnabled"));
-      void queryClient.invalidateQueries({ queryKey: ["automation", "projects"] });
+      updateAutomationProjectCache(queryClient, project);
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["automation", "projects"],
+      });
     },
     onError: (error) => {
       void message.error(
@@ -131,9 +141,13 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
   const disableMutation = useMutation({
     mutationFn: (automationProjectId: string) =>
       disableAutomationProject(automationProjectId),
-    onSuccess: () => {
+    onSuccess: (project) => {
       void message.success(t("automationDisabled"));
-      void queryClient.invalidateQueries({ queryKey: ["automation", "projects"] });
+      updateAutomationProjectCache(queryClient, project);
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["automation", "projects"],
+      });
     },
     onError: (error) => {
       void message.error(
@@ -631,4 +645,23 @@ async function refreshAutomation(queryClient: QueryClient): Promise<void> {
     queryClient.invalidateQueries({ queryKey: ["automation", "projects"] }),
     queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
   ]);
+}
+
+function updateAutomationProjectCache(
+  queryClient: QueryClient,
+  project: AutomationProjectRecord,
+): void {
+  queryClient.setQueryData(
+    ["automation", "projects", project.automation_project_id],
+    project,
+  );
+  queryClient.setQueryData<AutomationProjectRecord[]>(
+    ["automation", "projects"],
+    (projects) =>
+      projects?.map((entry) =>
+        entry.automation_project_id === project.automation_project_id
+          ? project
+          : entry,
+      ) ?? [project],
+  );
 }

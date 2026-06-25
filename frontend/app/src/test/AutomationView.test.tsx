@@ -180,6 +180,7 @@ describe("AutomationView", () => {
     await waitFor(() =>
       expect(disableAutomationProjectMock).toHaveBeenCalledWith("aut-daily"),
     );
+    expect(await screen.findByRole("button", { name: "Enable" })).toBeVisible();
   });
 });
 

@@ -2863,3 +2863,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent built-app real SSE browser verification completed for this multiplex background stream slice. Full AG-UI Runtime Stream, Subagents, visual parity matrix, reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Round Rail Retry/Todo Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, latest ledger, and current worktree before choosing this slice, then moved to the Rounds/Todos/History/Retry requirement instead of extending the previous stream-only work.
+- Identified that round retry/todo details had component-level coverage, while the checklist still called for Playwright navigation through rounds and dense round history inspection.
+- Added a real built `/app/` browser scenario that opens the existing V1-aligned chat surface, waits for the round rail, hovers the round navigation item, and verifies the visible detail panel renders pending approvals, pending questions, retry metadata, diagnostic text, and todo items from the `/api/sessions/{session_id}/rounds?limit=100` response.
+- Extended the shell mock round fixture with real retry, todo, pending action, and diagnostic fields so the test proves the UI consumes the backend round projection instead of asserting static markup.
+- Captured local browser evidence at `.tmp/frontend-v2-rounds/v2-round-rail-detail.png`.
+- Kept this as targeted Rounds/Todos/History/Retry evidence only; no sidebar/settings entries were added or removed, no V1 secondary-page logic changed, and full round history/retry parity still requires paging and reviewer coverage.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "round_rail_opens_retry_todo_detail"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "message_export or round_rail_opens_retry_todo_detail"` passed with 2 selected tests.
+
+### Reviewer
+- Main-agent built-app browser verification completed for this round rail retry/todo slice. Full Rounds/Todos/History/Retry parity, paging coverage, visual parity matrix completion, subsystem reviewer sign-off, and release readiness remain open.

@@ -174,6 +174,57 @@ def test_v2_message_export_downloads_html_and_png(
         assert backend.rounds_request_count == rounds_request_count_before_export + 2
 
 
+def test_v2_round_rail_opens_retry_todo_detail(browser_page: Page) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        round_rail = page.get_by_role("navigation", name="Rounds")
+        expect(round_rail).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        round_button = page.get_by_role(
+            "button",
+            name="Go to round 1: V2 export prompt",
+        )
+        expect(round_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        button_class = round_button.get_attribute("class") or ""
+        assert "is-warning" in button_class
+        round_button.hover()
+
+        detail = page.get_by_label("Round detail")
+        expect(detail).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(detail.get_by_text("2 pending approvals")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(detail.get_by_text("1 pending questions")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            detail.get_by_text("Retry scheduled: attempt 3/5 · in 3s · rate limited"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            detail.get_by_text("Diagnostic: Waiting for user confirmation"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(detail.get_by_text("Todo")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(detail.get_by_text("2 items")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(detail.get_by_text("Confirm deploy window")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(detail.get_by_text("Capture approval result")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert f"/sessions/{_SESSION_ID}/rounds?limit=100" in backend.requested_urls
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-rounds"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-round-rail-detail.png"))
+
+
 def test_v2_timeline_image_preview_opens_in_shell(browser_page: Page) -> None:
     page = browser_page
     repo_root = Path(__file__).resolve().parents[3]
@@ -1561,10 +1612,38 @@ class _V2ShellBackend:
                     "has_final_output": True,
                     "intent": "V2 export prompt",
                     "intent_parts": [{"kind": "text", "text": "V2 export prompt"}],
+                    "pending_tool_approval_count": 2,
+                    "pending_user_question_count": 1,
+                    "retry_events": [
+                        {
+                            "attempt_number": 3,
+                            "error_message": "rate limited",
+                            "is_active": True,
+                            "phase": "scheduled",
+                            "retry_in_ms": 2500,
+                            "total_attempts": 5,
+                        }
+                    ],
+                    "run_diagnostic_message": "Waiting for user confirmation",
                     "run_id": "run-v2-shell",
                     "run_phase": "completed",
                     "run_status": "completed",
                     "run_user_message": "V2 export prompt",
+                    "todo": {
+                        "items": [
+                            {
+                                "content": "Confirm deploy window",
+                                "status": "in_progress",
+                            },
+                            {
+                                "content": "Capture approval result",
+                                "status": "pending",
+                            },
+                        ],
+                        "run_id": "run-v2-shell",
+                        "session_id": _SESSION_ID,
+                        "version": 2,
+                    },
                 }
             ],
             "next_cursor": None,

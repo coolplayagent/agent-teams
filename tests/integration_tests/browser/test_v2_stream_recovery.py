@@ -537,6 +537,41 @@ def test_v2_real_sse_active_run_stop_closes_stream_and_restores_send(
         )
 
 
+def test_v2_real_sse_recoverable_resume_streams_from_checkpoint(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(recoverable_stopped_run=True)
+    stream_state = _RealSseStreamState()
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        resume_button = page.get_by_role("button", name="Resume")
+        expect(resume_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-recovery").filter(has_text="stopped")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        resume_button.click()
+
+        assert stream_state.wait_for_after_event_id(7, timeout_seconds=10.0)
+        assert backend.resume_requested is True
+        assert stream_state.wait_for_sent_event_id(9, timeout_seconds=5.0)
+        expect(
+            page.locator(".at-message").filter(has_text=_RESUMED_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+
 def test_v2_session_switch_closes_active_stream_and_isolates_timeline(
     browser_page: Page,
 ) -> None:
@@ -1625,6 +1660,18 @@ def _serve_v2_app_with_real_sse(
                 stream_state.record_stop_request()
                 self._send_json({"run_id": _RUN_ID, "scope": "main", "status": "ok"})
                 return
+            if path == f"/ag-ui/runs/{_RUN_ID}:resume":
+                backend.completed = False
+                backend.resume_requested = True
+                backend.run_created = True
+                self._send_json(
+                    {
+                        "run_id": _RUN_ID,
+                        "session_id": _SESSION_ID,
+                        "status": "ok",
+                    },
+                )
+                return
             self._send_json(
                 {"detail": f"Unhandled real SSE mock API route: {path}"}, 404
             )
@@ -1663,6 +1710,35 @@ def _serve_v2_app_with_real_sse(
                         ),
                     )
                 stream_state.record_initial_stream_finished()
+                return
+            if after_event_id >= 7:
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "run.resumed",
+                        "run_resumed",
+                        8,
+                        {"phase": "streaming"},
+                    ),
+                )
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "message.text.delta",
+                        "text_delta",
+                        9,
+                        {"text": _RESUMED_CHUNK},
+                    ),
+                )
+                time.sleep(0.2)
+                backend.completed = True
+                self._write_sse_event(
+                    _ag_ui_event(
+                        "run.completed",
+                        "run_completed",
+                        10,
+                        {"status": "completed"},
+                    ),
+                )
+                time.sleep(0.5)
                 return
             if after_event_id < 2:
                 time.sleep(5.0)

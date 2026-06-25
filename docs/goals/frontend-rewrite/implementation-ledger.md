@@ -2107,3 +2107,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this Settings navigation parity slice. No Settings subsystem completion is claimed.
+
+## 2026-06-25 V2 Real SSE Recoverable Resume Browser Batch
+
+### Scope
+- Re-checked the AG-UI Runtime Stream and Run Recovery checklist after the Settings navigation parity slice and targeted the remaining real-browser recoverable resume gap.
+- Extended the built V2 `/app/` real HTTP/SSE harness with the AG-UI `POST /api/ag-ui/runs/{run_id}:resume` path instead of relying on the mock EventSource resume-only tests.
+- Added a recoverable stopped-run browser flow using native EventSource that opens the Recovery Resume control, verifies the client resumes from the saved checkpoint `after_event_id=7`, and streams `run_resumed`, `text_delta`, and `run_completed` events.
+- Verified the resumed text is visible in the real timeline, the Stop control hides after the terminal event, and the Send control returns without needing a page refresh.
+- Left full AG-UI Runtime Stream and Run Recovery completion open; remaining work includes production-backend resume/approval/question timing, broader event coverage, and paired reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k real_sse_recoverable_resume` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 15 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch verifies stream recovery timing and visible control state through browser assertions rather than changing layout or styling.
+
+### Reviewer
+- Main-agent browser integration verification completed for this real SSE recoverable resume slice. No AG-UI Runtime Stream or Run Recovery subsystem completion is claimed.

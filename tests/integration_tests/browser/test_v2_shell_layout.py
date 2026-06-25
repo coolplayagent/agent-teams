@@ -177,13 +177,110 @@ def test_v2_timeline_image_preview_opens_in_shell(browser_page: Page) -> None:
         page.screenshot(path=str(screenshot_dir / "v2-image-preview-open.png"))
 
 
+def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        expect(page.locator(".at-sidebar-nav")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert page.locator(".at-sidebar-nav-label").all_inner_texts() == [
+            "Search",
+            "Skills",
+            "Automation",
+            "Connectors",
+            "Board",
+            "Memory",
+        ]
+
+        page.get_by_role("button", name="Search").click()
+        expect(page.get_by_test_id("session-search-view")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_role("button", name="Skills").click()
+        expect(page.get_by_test_id("skills-view")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Open skill Writer")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_role("button", name="Automation").click()
+        expect(page.get_by_role("button", name="Daily triage")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_text("Keep the V2 shell parity ledger current.")
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_role("button", name="Connectors").click()
+        expect(page.get_by_test_id("connectors-view")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_test_id("connector-card-github")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_test_id("runtime-tool-card-rg")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_role("button", name="Board").click()
+        expect(page.get_by_test_id("board-todo-todo-v2-shell")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("heading", name="Keep module pages reachable"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        page.get_by_role("button", name="Memory").click()
+        expect(page.get_by_test_id("memory-view")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_test_id("memory-row-memory-v2-shell")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("heading", name="V2 shell module parity"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        for requested_path in [
+            "/system/configs",
+            "/system/skills/market/clawhub",
+            "/automation/projects",
+            "/automation/projects/aut-daily",
+            "/automation/projects/aut-daily/sessions",
+            "/connectors",
+            "/connectors/runtime-tools",
+            "/boards/todos",
+            "/memories",
+            f"/workspaces/{_WORKSPACE_ID}/memories/memory-v2-shell",
+        ]:
+            assert requested_path in backend.requested_paths
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-resource"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
+
+
 class _V2ShellBackend:
     def __init__(self, *, include_image_message: bool = False) -> None:
         self.include_image_message = include_image_message
+        self.requested_paths: list[str] = []
         self.rounds_request_count = 0
 
     def route(self, route: Route, request: Request) -> None:
         path = urlsplit(request.url).path.removeprefix("/api")
+        self.requested_paths.append(path)
         if request.method == "GET" and path == "/system/health":
             _fulfill_json(route, {"status": "ok"})
             return
@@ -246,6 +343,42 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs/general":
             _fulfill_json(route, {"shell_safety_policy_enabled": True})
+            return
+        if request.method == "GET" and path == "/system/configs":
+            _fulfill_json(route, self._system_config())
+            return
+        if request.method == "GET" and path == "/system/skills/market/clawhub":
+            _fulfill_json(route, self._skills_market())
+            return
+        if request.method == "GET" and path == "/automation/projects":
+            _fulfill_json(route, [self._automation_project()])
+            return
+        if request.method == "GET" and path == "/automation/projects/aut-daily":
+            _fulfill_json(route, self._automation_project())
+            return
+        if (
+            request.method == "GET"
+            and path == "/automation/projects/aut-daily/sessions"
+        ):
+            _fulfill_json(route, [self._automation_session()])
+            return
+        if request.method == "GET" and path == "/connectors":
+            _fulfill_json(route, self._connectors())
+            return
+        if request.method == "GET" and path == "/connectors/runtime-tools":
+            _fulfill_json(route, self._runtime_tools())
+            return
+        if request.method == "GET" and path == "/boards/todos":
+            _fulfill_json(route, self._board())
+            return
+        if request.method == "GET" and path == "/memories":
+            _fulfill_json(route, self._memory_query())
+            return
+        if (
+            request.method == "GET"
+            and path == f"/workspaces/{_WORKSPACE_ID}/memories/memory-v2-shell"
+        ):
+            _fulfill_json(route, self._memory_detail())
             return
         _fulfill_json(
             route,
@@ -352,6 +485,242 @@ class _V2ShellBackend:
                 }
             ],
             "next_cursor": None,
+        }
+
+    def _system_config(self) -> dict[str, object]:
+        return {
+            "skills": {
+                "loaded": True,
+                "skills": [
+                    {
+                        "description": "Create repeatable frontend parity notes.",
+                        "name": "skill-creator",
+                        "ref": "skill-creator",
+                        "source": "user_codex",
+                    },
+                    {
+                        "description": "Write release runbooks for V2 shell work.",
+                        "name": "runbook-writer",
+                        "ref": "runbook-writer",
+                        "source": "user_codex",
+                    },
+                ],
+            }
+        }
+
+    def _skills_market(self) -> dict[str, object]:
+        return {
+            "items": [
+                {
+                    "installed": False,
+                    "owner_display_name": "Agent Teams",
+                    "owner_handle": "agent-teams",
+                    "owner_image": None,
+                    "slug": "writer",
+                    "stats": {
+                        "comments": 1,
+                        "downloads": 25,
+                        "installs_all_time": 12,
+                        "installs_current": 8,
+                        "stars": 4,
+                        "versions": 2,
+                    },
+                    "summary": "Draft focused V2 frontend parity notes.",
+                    "title": "Writer",
+                    "version": "1.0.0",
+                }
+            ],
+            "next_cursor": None,
+            "ok": True,
+            "query": "",
+            "sort": "popular",
+        }
+
+    def _automation_project(self) -> dict[str, object]:
+        return {
+            "automation_project_id": "aut-daily",
+            "created_at": "2026-06-25T08:00:00Z",
+            "cron_expression": "0 9 * * *",
+            "delivery_binding": None,
+            "delivery_events": ["completed"],
+            "display_name": "Daily triage",
+            "interval_every": None,
+            "interval_unit": None,
+            "last_error": None,
+            "last_run_started_at": "2026-06-25T08:15:00Z",
+            "last_session_id": "session-automation",
+            "latest_terminal_run_status": "completed",
+            "latest_terminal_run_verification_status": "verified",
+            "name": "daily_triage",
+            "next_run_at": "2026-06-26T01:00:00Z",
+            "prompt": "Keep the V2 shell parity ledger current.",
+            "run_at": None,
+            "run_config": {
+                "normal_root_role_id": "MainAgent",
+                "session_mode": "normal",
+                "thinking": {"enabled": True, "effort": "medium"},
+                "yolo": False,
+            },
+            "schedule_mode": "cron",
+            "status": "enabled",
+            "timezone": "Asia/Shanghai",
+            "trigger_id": "trigger-daily",
+            "updated_at": "2026-06-25T08:20:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _automation_session(self) -> dict[str, object]:
+        return {
+            "latest_terminal_run_status": "completed",
+            "metadata": {"title": "Daily triage run"},
+            "session_id": "session-automation",
+            "updated_at": "2026-06-25T08:16:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _connectors(self) -> dict[str, object]:
+        return {
+            "items": [
+                {
+                    "account_count": 1,
+                    "auth_type": "cli",
+                    "capabilities": ["repositories", "pull_requests"],
+                    "category": "development",
+                    "connector_id": "github",
+                    "description": "GitHub repository and pull request connector.",
+                    "display_name": "GitHub",
+                    "enabled_count": 1,
+                    "last_activity_at": "2026-06-25T08:00:00Z",
+                    "last_error": None,
+                    "provider": "github",
+                    "status": "connected",
+                }
+            ],
+            "summary": {
+                "connected": 1,
+                "disabled": 0,
+                "error": 0,
+                "needs_config": 0,
+                "total": 1,
+            },
+        }
+
+    def _runtime_tools(self) -> dict[str, object]:
+        return {
+            "items": [
+                {
+                    "display_name": "ripgrep",
+                    "download_job_id": None,
+                    "error_message": None,
+                    "executable_name": "rg.exe",
+                    "path": "C:/Users/yex/.agent-teams/bin/rg.exe",
+                    "path_source": "managed",
+                    "source_kind": "github_release",
+                    "status": "ready",
+                    "target_version": None,
+                    "tool_id": "rg",
+                    "update_available": False,
+                    "version": "14.1.1",
+                }
+            ],
+            "system_path": {
+                "added": True,
+                "bin_dir": "C:/Users/yex/.agent-teams/bin",
+                "supported": True,
+            },
+        }
+
+    def _board(self) -> dict[str, object]:
+        item = {
+            "body": "Keep module pages reachable from the fixed V2 shell.",
+            "created_at": "2026-06-25T08:00:00Z",
+            "issue_number": 401,
+            "item_revision": 3,
+            "repository_full_name": "openai/agent-teams",
+            "run_recoverable": False,
+            "source_key": "openai/agent-teams#401",
+            "source_provider": "github",
+            "source_type": "github_issue",
+            "status": "todo",
+            "title": "Keep module pages reachable",
+            "todo_id": "todo-v2-shell",
+            "updated_at": "2026-06-25T08:10:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
+        return {
+            "board_workspace_id": _WORKSPACE_ID,
+            "diagnostics": [],
+            "is_fork_view": False,
+            "items": [item],
+            "repository_full_name": "openai/agent-teams",
+            "revision": 9,
+            "source_groups": [
+                {
+                    "display_name": "GitHub issues",
+                    "enabled": True,
+                    "group_id": "source-1",
+                    "kind": "github_issues",
+                    "repository_full_name": "openai/agent-teams",
+                    "source_id": "source-1",
+                }
+            ],
+            "status_counts": {
+                "archived": 0,
+                "done": 0,
+                "in_progress": 0,
+                "review": 0,
+                "todo": 1,
+            },
+            "synced_at": "2026-06-25T08:11:00Z",
+            "view_workspace_id": _WORKSPACE_ID,
+            "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _memory_summary(self) -> dict[str, object]:
+        return {
+            "confidence_score": 0.94,
+            "content_body_preview": "Keep sidebar module entries aligned with V1.",
+            "content_title": "V2 shell module parity",
+            "created_at": "2026-06-25T08:00:00Z",
+            "expires_at": None,
+            "id": "memory-v2-shell",
+            "kind": "constraint",
+            "role_id": None,
+            "scope": "workspace",
+            "session_id": None,
+            "source": "manual",
+            "status": "active",
+            "tags": ["frontend", "v2"],
+            "tier": "persistent",
+            "updated_at": "2026-06-25T08:30:00Z",
+            "version": 1,
+            "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _memory_query(self) -> dict[str, object]:
+        return {
+            "items": [self._memory_summary()],
+            "limit": 40,
+            "offset": 0,
+            "total_count": 1,
+        }
+
+    def _memory_detail(self) -> dict[str, object]:
+        return {
+            **self._memory_summary(),
+            "access_count": 2,
+            "content": {
+                "body": "Keep sidebar module entries aligned with V1.",
+                "context": "V2 frontend rewrite",
+                "outcome": "Do not flatten secondary pages into the root shell.",
+                "title": "V2 shell module parity",
+            },
+            "last_accessed_at": None,
+            "metadata": {},
+            "parent_entry_id": None,
+            "run_id": None,
+            "source_ref": "",
+            "superseded_by_id": None,
         }
 
 

@@ -1833,3 +1833,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and screenshot inspection completed for this image preview slice. No Resource And Assistive Features subsystem completion is claimed.
+
+## 2026-06-25 V2 Sidebar Module Entry Browser Batch
+
+### Scope
+- Re-checked the V2 frontend parity checklist after the resource-preview pass and targeted a broader Application Shell gap: sidebar entries needed built-shell browser evidence that they still open real secondary module pages instead of placeholder or flattened first-level content.
+- Added a focused browser integration flow for the built `/app/` shell that asserts the V1-aligned sidebar module set remains exactly `Search`, `Skills`, `Automation`, `Connectors`, `Board`, and `Memory`.
+- Clicked each sidebar module entry through the real V2 shell and verified the expected module surface appears: session search, ClawHub skills market, automation project detail, connector detail plus runtime tools, board TODO cards, and memory row/detail.
+- Extended the shell browser mock backend with the minimum real API contracts for skills, automation, connectors, runtime tools, board TODOs, and memory detail, then asserted each module hit its expected `/api/*` route.
+- Captured screenshot evidence at `.tmp/frontend-v2-resource/v2-sidebar-modules-memory.png`; manual inspection confirmed the fixed shell, V1-shaped sidebar, selected secondary Memory page, and non-flattened detail surface render in the same viewport.
+- Left Application Shell completion open; remaining work still includes broader desktop/narrow screenshot comparison, final V1/V2 visual review, and deeper message timeline/composer parity.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k sidebar_module_entries` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 4 tests.
+- No frontend build was needed because this batch adds browser evidence for existing V2 sidebar module routing without changing renderer source.
+
+### Reviewer
+- Main-agent browser integration and screenshot inspection completed for this sidebar module entry slice. No Application Shell subsystem completion is claimed.

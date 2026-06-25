@@ -2596,3 +2596,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, build, and browser/DevTools verification completed for this token usage localization slice. No full Resource Management, Assistive Features, Message Timeline streaming/replay, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Real SSE Run Stopped Browser Evidence Batch
+
+### Scope
+- Re-checked the Message Timeline, Run Recovery, and AG-UI Runtime Stream checklist after the token localization slice instead of continuing surface polish.
+- Targeted a real-browser stream lifecycle gap: V2 already had real SSE evidence for completed, failed, resume, approval, and user-question paths, but not an independent server-emitted `run_stopped` finalization path.
+- Added a real SSE browser scenario where the backend sends `run_started`, `text_delta`, and then `run_stopped` without a user Stop click.
+- Verified the UI keeps the streamed text visible, closes the EventSource, hides Stop, restores Send, and does not open another reconnect/request after the terminal stopped event.
+- Kept this as targeted AG-UI Runtime Stream evidence only; full Message Timeline streaming/replay, Run Recovery, reviewer sign-off, and release readiness remain open.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "real_sse_run_stopped_finalizes_stream_and_restores_send"` passed with 1 test selected.
+
+### Reviewer
+- Main-agent real browser integration verification completed for this `run_stopped` SSE lifecycle slice. No full AG-UI Runtime Stream, Run Recovery, Message Timeline, or release readiness completion is claimed.

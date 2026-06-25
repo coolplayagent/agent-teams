@@ -861,6 +861,39 @@ def test_v2_real_sse_run_failed_finalizes_stream_and_restores_send(
         assert stream_state.request_count() == 1
 
 
+def test_v2_real_sse_run_stopped_finalizes_stream_and_restores_send(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(stop_initial_stream=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert stream_state.wait_for_sent_event_id(3, timeout_seconds=5.0)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert stream_state.wait_for_initial_stream_finished(timeout_seconds=5.0)
+        assert stream_state.request_count() == 1
+        assert backend.completed is True
+
+
 def test_v2_real_sse_server_error_suppresses_stale_auto_recovery(
     browser_page: Page,
 ) -> None:
@@ -1925,10 +1958,12 @@ class _RealSseStreamState:
         fail_initial_stream: bool = False,
         hold_initial_stream_until_stop: bool = False,
         server_error_initial_stream: bool = False,
+        stop_initial_stream: bool = False,
     ) -> None:
         self.fail_initial_stream = fail_initial_stream
         self.hold_initial_stream_until_stop = hold_initial_stream_until_stop
         self.server_error_initial_stream = server_error_initial_stream
+        self.stop_initial_stream = stop_initial_stream
         self._lock = threading.Lock()
         self._initial_stream_finished = threading.Event()
         self._resumed_stream_seen = threading.Event()
@@ -2213,6 +2248,18 @@ def _serve_v2_app_with_real_sse(
                         {"text": _FIRST_CHUNK},
                     ),
                 )
+                if stream_state.stop_initial_stream:
+                    backend.completed = True
+                    self._write_sse_event(
+                        _ag_ui_event(
+                            "run.stopped",
+                            "run_stopped",
+                            3,
+                            {"status": "stopped"},
+                        ),
+                    )
+                    stream_state.record_initial_stream_finished()
+                    return
                 if stream_state.fail_initial_stream:
                     backend.completed = True
                     self._write_sse_event(

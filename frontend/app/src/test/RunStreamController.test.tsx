@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
 import { useRuntimeStore } from "../runtime/runtimeStore";
+import type { RunStreamOptions } from "../runtime/streamClient";
 import { useRunStreamController } from "../runtime/useRunStreamController";
 
 const streamMocks = vi.hoisted(() => ({
@@ -101,15 +102,87 @@ describe("useRunStreamController", () => {
       }),
     );
   });
+
+  it("resumes from the latest local event id when recovery data is stale", () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1"],
+        runs: {
+          "run-1": {
+            entries: [],
+            lastEventId: 108,
+            runId: "run-1",
+            seenEventKeys: ["run-1:108"],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness afterEventId={42} />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    expect(options.afterEventId).toBe(108);
+  });
+
+  it("refreshes recovery immediately when the active stream reports an error", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    act(() => {
+      options.onError("Run stream disconnected.");
+    });
+
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
+  });
 });
 
-function RunStreamHarness() {
+function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
   const controller = useRunStreamController();
   return (
     <button
       type="button"
       onClick={() =>
         controller.startRunStream({
+          afterEventId,
           runId: "run-1",
           sessionId: "session-1",
         })

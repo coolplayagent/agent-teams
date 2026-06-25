@@ -100,6 +100,7 @@ export function useRunStreamController(): RunStreamController {
         });
       },
       onError: (errorMessage) => {
+        refreshRecoverySnapshot(options.sessionId);
         void message.error(errorMessage);
       },
     });

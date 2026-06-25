@@ -21,6 +21,8 @@ interface UiState {
 export const sidebarWidthDefault = 280;
 export const sidebarWidthMin = 220;
 export const sidebarWidthMax = 320;
+export const sidebarWidthStorageKey = "agentTeams.sidebarWidth";
+export const sidebarWidthMigrationStorageKey = "agentTeams.sidebarWidthMigratedTo280";
 export const themeModeStorageKey = "agentTeams.themeMode";
 export const legacyThemeStorageKey = "agent_teams_theme";
 
@@ -34,7 +36,8 @@ export const useUiStore = create<UiState>((set) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setSidebarWidth: (width) => {
     const nextWidth = Math.min(sidebarWidthMax, Math.max(sidebarWidthMin, width));
-    window.localStorage.setItem("agentTeams.sidebarWidth", String(nextWidth));
+    window.localStorage.setItem(sidebarWidthStorageKey, String(nextWidth));
+    window.localStorage.setItem(sidebarWidthMigrationStorageKey, "true");
     set({ sidebarWidth: nextWidth });
   },
   setThemeMode: (mode) => {
@@ -65,7 +68,7 @@ export const useUiStore = create<UiState>((set) => ({
 }));
 
 function storedSidebarWidth(): number {
-  const raw = window.localStorage.getItem("agentTeams.sidebarWidth");
+  const raw = window.localStorage.getItem(sidebarWidthStorageKey);
   if (raw === null) {
     return sidebarWidthDefault;
   }
@@ -73,10 +76,20 @@ function storedSidebarWidth(): number {
   if (!Number.isFinite(parsed)) {
     return sidebarWidthDefault;
   }
-  if (parsed === 220 || parsed === 248 || parsed === 260 || parsed === 274) {
+  if (legacyGeneratedSidebarWidth(parsed) && !sidebarWidthMigrationApplied()) {
+    window.localStorage.setItem(sidebarWidthStorageKey, String(sidebarWidthDefault));
+    window.localStorage.setItem(sidebarWidthMigrationStorageKey, "true");
     return sidebarWidthDefault;
   }
   return Math.min(sidebarWidthMax, Math.max(sidebarWidthMin, parsed));
+}
+
+function legacyGeneratedSidebarWidth(width: number): boolean {
+  return width === 220 || width === 248 || width === 260 || width === 274;
+}
+
+function sidebarWidthMigrationApplied(): boolean {
+  return window.localStorage.getItem(sidebarWidthMigrationStorageKey) === "true";
 }
 
 function storedThemeMode(): ThemeMode {

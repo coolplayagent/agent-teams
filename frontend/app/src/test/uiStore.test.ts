@@ -58,8 +58,14 @@ describe("uiStore", () => {
 
     expect(compactDefaultStore.useUiStore.getState().sidebarWidth)
       .toBe(compactDefaultStore.sidebarWidthDefault);
+    expect(
+      window.localStorage.getItem(compactDefaultStore.sidebarWidthStorageKey),
+    ).toBe(String(compactDefaultStore.sidebarWidthDefault));
 
     vi.resetModules();
+    window.localStorage.removeItem(
+      compactDefaultStore.sidebarWidthMigrationStorageKey,
+    );
     window.localStorage.setItem("agentTeams.sidebarWidth", "248");
 
     const oldCompactDefaultStore = await import("../runtime/uiStore");
@@ -68,6 +74,9 @@ describe("uiStore", () => {
       .toBe(oldCompactDefaultStore.sidebarWidthDefault);
 
     vi.resetModules();
+    window.localStorage.removeItem(
+      oldCompactDefaultStore.sidebarWidthMigrationStorageKey,
+    );
     window.localStorage.setItem("agentTeams.sidebarWidth", "260");
 
     const narrowDefaultStore = await import("../runtime/uiStore");
@@ -76,6 +85,9 @@ describe("uiStore", () => {
       .toBe(narrowDefaultStore.sidebarWidthDefault);
 
     vi.resetModules();
+    window.localStorage.removeItem(
+      narrowDefaultStore.sidebarWidthMigrationStorageKey,
+    );
     window.localStorage.setItem("agentTeams.sidebarWidth", "274");
 
     const wideDefaultStore = await import("../runtime/uiStore");
@@ -89,5 +101,24 @@ describe("uiStore", () => {
     const resizedStore = await import("../runtime/uiStore");
 
     expect(resizedStore.useUiStore.getState().sidebarWidth).toBe(296);
+  });
+
+  it("preserves user-selected legacy-sized sidebar widths after migration", async () => {
+    const {
+      sidebarWidthMigrationStorageKey,
+      sidebarWidthStorageKey,
+      useUiStore,
+    } = await import("../runtime/uiStore");
+
+    useUiStore.getState().setSidebarWidth(220);
+
+    expect(window.localStorage.getItem(sidebarWidthStorageKey)).toBe("220");
+    expect(window.localStorage.getItem(sidebarWidthMigrationStorageKey)).toBe("true");
+
+    vi.resetModules();
+
+    const reloadedStore = await import("../runtime/uiStore");
+
+    expect(reloadedStore.useUiStore.getState().sidebarWidth).toBe(220);
   });
 });

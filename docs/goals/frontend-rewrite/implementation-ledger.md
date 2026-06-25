@@ -1728,3 +1728,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent visual and browser verification completed for this shell width parity slice. No Application Shell subsystem completion is claimed.
+
+## 2026-06-25 V2 Shell Sidebar Resize Browser Batch
+
+### Scope
+- Re-checked the Application Shell checklist after the 280px sidebar parity pass and targeted the remaining sidebar resize browser-flow gap.
+- Added a focused browser integration test for the built `/app/` shell that loads the real V2 bundle, drags the sidebar resizer with the mouse, verifies the sidebar width reaches 220px, reloads the page, and verifies the manually resized width persists.
+- Fixed a real interaction regression found by that browser test: the V1-style 6px resize gutter lived at `right: -6px`, but `.at-sidebar { overflow: hidden; }` clipped the clickable gutter. The sidebar now leaves overflow visible while `.ant-layout-sider-children` continues to own content clipping.
+- Replaced the broad legacy-width migration with a one-time migration flag so old generated 220/248/260/274 defaults still move to 280, while a user-selected 220px width remains stable after refresh.
+- Rebuilt `frontend/dist/app` and verified the live in-app `/app/` page still reports a 280px default sidebar, a visible 6px `col-resize` resizer, `documentScrollHeight = documentClientHeight = 720`, and `bodyOverflow = hidden`.
+- Captured `.tmp/v2-shell-resize-live-after.png` after the live-page check.
+- Left Application Shell completion open; remaining work still includes narrow viewport screenshot pairs, broader shell visual reviewer pass, and timeline/composer density comparison.
+
+### Verification
+- `npm test -- src/test/uiStore.test.ts src/test/AppShell.test.tsx src/test/ShellLayoutCss.test.ts` passed with 33 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 1 test.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_shell_layout.py` passed with 0 errors.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent browser interaction verification completed for this sidebar resize slice. No Application Shell subsystem completion is claimed.

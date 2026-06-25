@@ -11,6 +11,9 @@ describe("shell layout CSS", () => {
       /\.at-sidebar\s*{[\s\S]*?margin-right:\s*6px;/,
     );
     expect(themeCss).toMatch(
+      /\.at-sidebar\s*{[\s\S]*?overflow:\s*visible;/,
+    );
+    expect(themeCss).toMatch(
       /\.at-sidebar-resizer\s*{[\s\S]*?right:\s*-6px;[\s\S]*?width:\s*6px;/,
     );
     expect(themeCss).toMatch(

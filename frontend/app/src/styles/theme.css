@@ -199,7 +199,7 @@ body {
   height: 100%;
   margin-right: 6px;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   border-right: 1px solid var(--at-border);
   background: var(--at-sidebar) !important;
 }

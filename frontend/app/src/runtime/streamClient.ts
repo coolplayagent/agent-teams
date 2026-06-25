@@ -101,6 +101,9 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       options.onError(parsed.error, "server");
       return;
     }
+    if (!options.trackedRunIds.includes(parsed.run_id)) {
+      return;
+    }
     runtimeState = reduceRunEvent(runtimeState, parsed);
     options.onState(runtimeState);
     if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {

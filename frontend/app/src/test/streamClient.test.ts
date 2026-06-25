@@ -142,6 +142,36 @@ describe("openRunStream", () => {
     ]);
   });
 
+  it("ignores events for runs outside the single-run stream target", () => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 2,
+          payload_json: JSON.stringify({ text: "wrong run" }),
+          run_id: "run-other",
+          trace_id: "run-other",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 3,
+          payload_json: JSON.stringify({ text: "right run" }),
+        }),
+      ),
+    );
+
+    expect(stream.errors).toEqual([]);
+    expect(stream.states).toHaveLength(1);
+    expect(stream.states[0].runs["run-other"]).toBeUndefined();
+    expect(stream.states[0].runs["run-1"].entries[0].text).toBe("right run");
+  });
+
   it("closes once when a terminal event arrives", () => {
     const stream = openTestStream();
 
@@ -277,6 +307,43 @@ describe("openRunStream", () => {
     expect(stream.source.close).toHaveBeenCalledTimes(1);
     expect(stream.closedStates).toHaveLength(1);
     expect(stream.closedStates[0].activeRunIds).toEqual([]);
+  });
+
+  it("ignores untracked events while a multiplexed replay is open", () => {
+    const stream = openTestMultiplexedStream({
+      runs: [
+        { afterEventId: 4, runId: "run-a" },
+        { afterEventId: 9, runId: "run-b" },
+      ],
+    });
+
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(
+        relayEvent({
+          event_id: 99,
+          event_type: "run_completed",
+          run_id: "run-other",
+          trace_id: "run-other",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 5,
+          payload_json: JSON.stringify({ text: "run a" }),
+          run_id: "run-a",
+          trace_id: "run-a",
+        }),
+      ),
+    );
+
+    expect(stream.source.close).not.toHaveBeenCalled();
+    expect(stream.closedStates).toEqual([]);
+    expect(stream.states).toHaveLength(1);
+    expect(stream.states[0].runs["run-other"]).toBeUndefined();
   });
 
   it("rejects multiplexed streams without run targets", () => {

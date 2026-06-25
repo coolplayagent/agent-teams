@@ -227,6 +227,32 @@ describe("SessionsSidebar", () => {
     ).toBeVisible();
   });
 
+  it("does not expose the generic default workspace id before workspaces load", async () => {
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "default",
+    });
+    listWorkspacesMock.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "default",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Agent Teams")).toBeVisible();
+    expect(screen.queryByText("default")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New session in Agent Teams" }),
+    ).toBeVisible();
+  });
+
   it("creates a session in the selected workspace and selects it", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

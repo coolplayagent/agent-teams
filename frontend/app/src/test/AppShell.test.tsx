@@ -274,6 +274,32 @@ describe("AppShell", () => {
     expect(await screen.findByText("agent-teams")).toBeVisible();
   });
 
+  it("does not expose the generic default workspace id while workspace data loads", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "default",
+      normal_root_role_id: "MainAgent",
+    });
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-1",
+        workspace_id: "default",
+        title: "Session 1",
+      },
+    ]);
+    listWorkspacesMock.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    useUiStore.setState({
+      selectedWorkspaceId: "default",
+    });
+
+    renderShell();
+
+    expect(await screen.findByText("Agent Teams")).toBeVisible();
+    expect(screen.queryByText("default")).not.toBeInTheDocument();
+  });
+
   it("opens the first available session when no session was restored", async () => {
     listSidebarSessionsMock.mockResolvedValue([
       {

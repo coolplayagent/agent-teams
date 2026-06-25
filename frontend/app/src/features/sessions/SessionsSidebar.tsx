@@ -38,7 +38,10 @@ import type {
   SessionSubagentRecord,
   WorkspaceRecord,
 } from "../../api/contracts";
-import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
+import {
+  workspaceDisplayLabel,
+  workspaceFallbackLabel,
+} from "../workspaces/workspaceLabels";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { useTranslations, type Translate } from "../../i18n";
 import { sessionDisplayLabel } from "./sessionLabels";
@@ -275,7 +278,8 @@ export function SessionsSidebar({
     );
     return records.filter((session) => {
       const workspaceId = session.workspace_id ?? "";
-      const workspaceSearch = workspaceLabels.get(workspaceId) ?? workspaceId;
+      const workspaceSearch =
+        workspaceLabels.get(workspaceId) ?? workspaceFallbackLabel(workspaceId);
       return (
         sessionLabel(session).toLowerCase().includes(normalizedFilter) ||
         workspaceSearch.includes(normalizedFilter)
@@ -1066,7 +1070,10 @@ function buildSessionGroups(
       createdAt:
         workspace === undefined ? 0 : workspaceCreatedTimestampValue(workspace),
       id: workspaceId,
-      label: workspace === undefined ? workspaceId : workspaceLabel(workspace),
+      label:
+        workspace === undefined
+          ? workspaceFallbackLabel(workspaceId)
+          : workspaceLabel(workspace),
       pathHint: workspace?.root_path ?? "",
       sessions: [],
       updatedAt:

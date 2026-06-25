@@ -217,7 +217,7 @@ export function AppShell() {
   );
   const topbarWorkspaceLabel = workspaceDisplayLabel(
     selectedWorkspace,
-    topbarWorkspaceId ?? "Agent Teams",
+    topbarWorkspaceId,
   );
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [

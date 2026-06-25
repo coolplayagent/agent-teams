@@ -4468,7 +4468,8 @@ body {
 .at-appearance-theme-preview {
   position: relative;
   display: block;
-  height: clamp(92px, 18vh, 152px);
+  min-height: 120px;
+  aspect-ratio: 1.45;
   overflow: hidden;
   border: 2px solid transparent;
   border-radius: 8px;

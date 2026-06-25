@@ -82,6 +82,9 @@ describe("shell layout CSS", () => {
 
   it("keeps the appearance diff preview semantically green for additions", () => {
     expect(themeCss).toMatch(
+      /\.at-appearance-theme-preview\s*{[\s\S]*?min-height:\s*120px;[\s\S]*?aspect-ratio:\s*1\.45;/,
+    );
+    expect(themeCss).toMatch(
       /\.at-appearance-diff-preview\s*{[\s\S]*?--at-appearance-diff-added:\s*#1a7f37;[\s\S]*?--at-appearance-diff-added-bg:\s*#dafbe1;/,
     );
     expect(themeCss).toMatch(

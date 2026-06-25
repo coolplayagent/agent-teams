@@ -1,10 +1,11 @@
 import type { WorkspaceRecord } from "../../api/contracts";
 
 const genericWorkspaceIds = new Set(["default"]);
+const defaultWorkspaceLabel = "Agent Teams";
 
 export function workspaceDisplayLabel(
   workspace: WorkspaceRecord | null,
-  fallbackLabel = "Agent Teams",
+  fallbackLabel: string | null | undefined = defaultWorkspaceLabel,
 ): string {
   if (workspace !== null) {
     const explicitLabel = firstTrimmed(workspace.display_name, workspace.name);
@@ -23,7 +24,22 @@ export function workspaceDisplayLabel(
       return workspaceId;
     }
   }
-  return fallbackLabel.trim() || "Agent Teams";
+  return workspaceFallbackLabel(fallbackLabel);
+}
+
+export function workspaceFallbackLabel(
+  workspaceId: string | null | undefined,
+  fallbackLabel = defaultWorkspaceLabel,
+): string {
+  const trimmedWorkspaceId = workspaceId?.trim() ?? "";
+  if (!trimmedWorkspaceId || isGenericWorkspaceId(trimmedWorkspaceId)) {
+    return fallbackLabel;
+  }
+  return trimmedWorkspaceId;
+}
+
+function isGenericWorkspaceId(workspaceId: string): boolean {
+  return genericWorkspaceIds.has(workspaceId.toLowerCase());
 }
 
 function rootPathLabel(rootPath: string): string {

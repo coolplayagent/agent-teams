@@ -1396,3 +1396,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser screenshot/metrics verification completed for this V1 framework alignment slice. No Settings page, Appearance page, Message Timeline, or AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes V1 secondary-page logic parity, appearance/settings detail pages, message rendering polish, and real stream/replay browser scenarios.
+
+## 2026-06-25 Settings Appearance Cold-Load Audit Batch
+
+### Scope
+- Reopened V2 in the browser after the previous framework batch and caught the cold-load variant where the generic `default` workspace id could appear before workspace records finished loading.
+- Added a shared workspace fallback label path so generic ids are not exposed in the topbar, sidebar grouping, or sidebar search fallback while workspace data is still pending; once workspace data arrives, the root folder label still wins.
+- Kept the Settings section list aligned with the V1 target list used by the current parity tests and user reference, while preserving the existing secondary-page launcher for system-level pages instead of flattening MCP/plugins/commands/hooks/runtime/triggers into the first-level settings list.
+- Tightened the Appearance theme preview cards to a stable aspect ratio so the drawer viewport does not squash them vertically; the rest of the Appearance page remains a real settings surface backed by local appearance persistence rather than placeholder controls.
+
+### Verification
+- V2 pre-fix Appearance screenshot captured at `.tmp/frontend-appearance-audit/v2-appearance-before.png`.
+- Actual V1 settings Appearance screenshot and metrics captured at `.tmp/frontend-appearance-audit/v1-settings-appearance.png` and `.tmp/frontend-appearance-audit/v1-settings-appearance-metrics.json`.
+- Final V2 Appearance screenshot and metrics captured at `.tmp/frontend-appearance-audit/v2-appearance-final.png` and `.tmp/frontend-appearance-audit/v2-appearance-final-metrics.json`.
+- Final V2 browser shell metrics on `http://127.0.0.1:8000/app/` loaded rebuilt assets `index-DWqYPBtn.js` and `index-C7JYNZNZ.css`, kept `body.scrollHeight === body.clientHeight === 720`, reported `visibleDefaultLabels: 0`, and showed workspace group titles `["agent-teams", "agent-teams-issue-401", "desktop"]`.
+- Final V2 settings metrics showed first-level nav `["外观", "通用", "语音", "通知", "模型", "角色", "编排", "Web", "ClawHub", "代理", "远端工作区", "环境变量", "系统"]`, active nav `["外观"]`, settings body `overflowY: "auto"`, page body `overflowY: "hidden"`, and theme preview cards sized about `223x154`.
+- `npm test -- src/test/AppShell.test.tsx src/test/SessionsSidebar.test.tsx src/test/ShellLayoutCss.test.ts src/test/SettingsNavigationParity.test.ts` in `frontend/app` passed with 49 tests.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt assets `index-DWqYPBtn.js` and `index-C7JYNZNZ.css`.
+
+### Reviewer
+- Main-agent browser screenshot/metrics verification completed for this Settings Appearance cold-load slice. No full Settings subsystem completion is claimed; remaining work includes detailed V1/V2 pass over all settings secondary pages, save/error states, dark-mode Appearance verification, and reviewer sign-off.

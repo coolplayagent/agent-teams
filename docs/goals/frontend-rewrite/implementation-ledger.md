@@ -2628,3 +2628,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent built-app browser integration verification completed for this output-part and tool-validation replay slice. No full Message Timeline, AG-UI Runtime Stream, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V1/V2 Chat Frame Visual Audit
+
+### Scope
+- Re-checked the active V1 and V2 browser tabs after the rich replay coverage batch instead of relying on memory of earlier screenshots.
+- Captured current viewport screenshots for V1 chat and V2 chat:
+  - `.tmp/frontend-v1-chat-audit-current.png`
+  - `.tmp/frontend-v2-visual-audit-current.png`
+- Confirmed both V1 and V2 keep `body` fixed to the viewport (`overflow: hidden`, `scrollHeight = clientHeight = 943`) in the current desktop browser state.
+- Confirmed V2 keeps independent scroll containers for the session list and timeline, with the composer fixed at the bottom of the one-page shell.
+- Compared current frame metrics at `1733x943`: V2 sidebar `260px`, workspace x `266`, timeline `724px` tall, composer `135px` tall, round rail x `1589`; V1 current user/browser state showed sidebar `220px`, main x `226`, composer `78px` tall, round rail x `1489`.
+- Did not change code from this audit because the observed V1 sidebar width differs from the prior 1280px V1 metric evidence and appears tied to persisted user/sidebar state rather than a stable default. A later visual parity pass should compare reset/known sidebar state across both UIs before changing width again.
+- Kept this as visual QA evidence only; full Application Shell visual parity, same-session screenshot comparison, responsive screenshot matrix, reviewer sign-off, and release readiness remain open.
+
+### Verification
+- Browser screenshot capture succeeded for both current V1 and current V2 tabs.
+- Browser metric scripts confirmed fixed-page body behavior and V2 independent timeline/session-list scrolling.
+
+### Reviewer
+- Main-agent visual audit completed for this desktop chat-frame checkpoint. No Application Shell, visual parity, or release readiness completion is claimed.

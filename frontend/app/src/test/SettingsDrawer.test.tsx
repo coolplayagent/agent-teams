@@ -1820,10 +1820,17 @@ describe("SettingsDrawer", () => {
     fireEvent.change(screen.getByLabelText("Contrast"), {
       target: { value: "60" },
     });
+    fireEvent.change(screen.getByLabelText("Line height"), {
+      target: { value: "160" },
+    });
+    fireEvent.change(screen.getByLabelText("Message spacing"), {
+      target: { value: "95" },
+    });
     fireEvent.click(screen.getByText("On"));
     fireEvent.click(screen.getByText("+/-"));
-    expect(screen.queryByLabelText("Line height")).toBeNull();
-    expect(screen.queryByLabelText("Message spacing")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Show diagnostic information" }),
+    );
 
     expect(document.documentElement.style.getPropertyValue("--at-primary")).toBe(
       "#336699",
@@ -1838,14 +1845,30 @@ describe("SettingsDrawer", () => {
     expect(document.documentElement.style.getPropertyValue("--at-contrast-filter")).toBe(
       "contrast(1.15)",
     );
+    expect(document.documentElement.style.getPropertyValue("--at-message-line-height")).toBe(
+      "1.60",
+    );
+    expect(document.documentElement.style.getPropertyValue("--msg-line-height")).toBe(
+      "1.60",
+    );
+    expect(document.documentElement.style.getPropertyValue("--at-message-gap")).toBe(
+      "0.95rem",
+    );
+    expect(document.documentElement.style.getPropertyValue("--msg-gap")).toBe(
+      "0.95rem",
+    );
     expect(document.documentElement.dataset.translucentSidebar).toBe("true");
     expect(document.documentElement.dataset.motion).toBe("reduce");
     expect(document.documentElement.dataset.diffMarker).toBe("sign");
+    expect(document.documentElement.dataset.diagnosticsVisible).toBe("true");
     expect(JSON.parse(window.localStorage.getItem(appearanceStorageKey) ?? "{}")).toMatchObject({
       accent: "#336699",
       contrast: 60,
       diffMarker: "sign",
+      lineHeight: 160,
+      messageDensity: 95,
       motion: "reduce",
+      showDiagnostics: true,
       translucentSidebar: true,
       uiFont: '"Inter", sans-serif',
       uiFontSize: 16,

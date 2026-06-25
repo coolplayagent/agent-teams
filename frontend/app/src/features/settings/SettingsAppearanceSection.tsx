@@ -185,6 +185,9 @@ export function SettingsAppearanceSection({
   const contrastValue = appearance.contrast > 0 ? appearance.contrast : 45;
   const uiFontSize = appearance.uiFontSize > 0 ? appearance.uiFontSize : 14;
   const codeFontSize = appearance.codeFontSize > 0 ? appearance.codeFontSize : 12;
+  const lineHeight = appearance.lineHeight > 0 ? appearance.lineHeight : 148;
+  const messageDensity =
+    appearance.messageDensity > 0 ? appearance.messageDensity : 85;
   const activeThemeLabel = themeLabel(themeMode, t);
   const themeCards: ThemeCard[] = [
     { key: "system", label: t("settingsAppearanceThemeSystem") },
@@ -428,17 +431,14 @@ export function SettingsAppearanceSection({
             />
           </SettingsTableRow>
           <SettingsTableRow label={t("settingsAppearanceContrast")}>
-            <div className="at-appearance-inline-range">
-              <input
-                aria-label={t("settingsAppearanceContrast")}
-                max={80}
-                min={20}
-                onChange={(event) => updateAppearance("contrast", Number(event.target.value))}
-                type="range"
-                value={contrastValue}
-              />
-              <output>{contrastValue}</output>
-            </div>
+            <RangePill
+              label={t("settingsAppearanceContrast")}
+              max={80}
+              min={20}
+              onChange={(value) => updateAppearance("contrast", value)}
+              output={String(contrastValue)}
+              value={contrastValue}
+            />
           </SettingsTableRow>
         </div>
 
@@ -495,6 +495,28 @@ export function SettingsAppearanceSection({
               value={codeFontSize}
             />
           </SettingsTableRow>
+          <SettingsTableRow label={t("settingsAppearanceLineHeight")}>
+            <RangePill
+              label={t("settingsAppearanceLineHeight")}
+              max={200}
+              min={120}
+              onChange={(value) => updateAppearance("lineHeight", value)}
+              output={(lineHeight / 100).toFixed(2)}
+              step={2}
+              value={lineHeight}
+            />
+          </SettingsTableRow>
+          <SettingsTableRow label={t("settingsAppearanceMessageDensity")}>
+            <RangePill
+              label={t("settingsAppearanceMessageDensity")}
+              max={150}
+              min={30}
+              onChange={(value) => updateAppearance("messageDensity", value)}
+              output={(messageDensity / 100).toFixed(2)}
+              step={5}
+              value={messageDensity}
+            />
+          </SettingsTableRow>
           <SettingsTableRow
             description={t("settingsAppearanceDiffMarkerHelp")}
             label={t("settingsAppearanceDiffMarkers")}
@@ -508,6 +530,16 @@ export function SettingsAppearanceSection({
                 { label: "+/-", value: "sign" },
               ]}
               value={appearance.diffMarker}
+            />
+          </SettingsTableRow>
+          <SettingsTableRow
+            description={t("settingsAppearanceShowDiagnosticsHelp")}
+            label={t("settingsAppearanceShowDiagnostics")}
+          >
+            <Switch
+              aria-label={t("settingsAppearanceShowDiagnostics")}
+              checked={appearance.showDiagnostics}
+              onChange={(checked) => updateAppearance("showDiagnostics", checked)}
             />
           </SettingsTableRow>
         </div>
@@ -667,6 +699,39 @@ function NumberPill({
       />
       <span>{unit}</span>
     </label>
+  );
+}
+
+function RangePill({
+  label,
+  max,
+  min,
+  onChange,
+  output,
+  step,
+  value,
+}: {
+  label: string;
+  max: number;
+  min: number;
+  onChange: (value: number) => void;
+  output: string;
+  step?: number;
+  value: number;
+}) {
+  return (
+    <div className="at-appearance-inline-range">
+      <input
+        aria-label={label}
+        max={max}
+        min={min}
+        onChange={(event) => onChange(Number(event.target.value))}
+        step={step}
+        type="range"
+        value={value}
+      />
+      <output>{output}</output>
+    </div>
   );
 }
 

@@ -1611,3 +1611,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this recoverable-resume slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes backend-backed resume/replay browser evidence, approval and user-question recovery actions, multiplexed stream replay, and reviewer sign-off.
+
+## 2026-06-25 V2 Recovery Approval And Question Browser Batch
+
+### Scope
+- Continued the Run Recovery checklist from the recovery-action gap rather than switching to unrelated UI polish.
+- Extended the built V2 `/app/` browser integration harness with recoverable stopped runs that contain pending tool approvals and pending user questions.
+- Covered the no-standalone-Resume behavior when an approval or question is already the required recovery action.
+- Verified that resolving an explicit ACP option first resumes the disconnected run from `last_event_id` with `after_event_id=7`, then POSTs the selected approval payload to `/api/ag-ui/runs/run-v2-stream/tool-approvals/call-v2-approval:resolve`.
+- Verified that answering a multiple-choice user question with the reserved Other supplement first resumes the disconnected run from the saved checkpoint, then POSTs the exact answer selections and supplement to `/api/ag-ui/runs/run-v2-stream/questions/question-v2-recovery:answer`.
+- Left full Run Recovery completion open; remaining work includes backend-backed approval/question timing, background tasks, paused subagent actions, real SSE interruption recovery, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 5 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured for this batch because the committed change is browser-level recovery action coverage rather than a visual layout change.
+
+### Reviewer
+- Main-agent browser integration verification completed for this approval/question recovery slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes backend-backed action recovery, background/paused-subagent recovery, multiplexed stream replay, and paired reviewer sign-off.

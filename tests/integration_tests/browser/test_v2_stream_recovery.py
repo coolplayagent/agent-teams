@@ -35,6 +35,9 @@ _AFTER_RELOAD_CHUNK = "after reload"
 _QUEUED_INJECTION = "queued follow-up"
 _INTERRUPT_INJECTION = "interrupt now"
 _RESUMED_CHUNK = "resumed chunk"
+_APPROVAL_TOOL_CALL_ID = "call-v2-approval"
+_QUESTION_ID = "question-v2-recovery"
+_QUESTION_SUPPLEMENT = "Need release note"
 
 
 @pytest.fixture()
@@ -218,15 +221,122 @@ def test_v2_recoverable_run_resume_reopens_stream_from_checkpoint(
         ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
 
 
+def test_v2_recoverable_run_resumes_before_tool_approval(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(pending_tool_approval=True)
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        expect(page.get_by_text("execute_command")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text('{"cmd":"npm test"}')).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Resume")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_role("button", name="Allow once").click()
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=7'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert backend.resume_requested is True
+        assert backend.approval_resolutions == [
+            {"action": "approve", "option_id": "allow_once"},
+        ]
+
+
+def test_v2_recoverable_run_resumes_before_user_question_answer(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend(pending_user_question=True)
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        expect(page.get_by_text("Planner needs input")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Pick the handoff mode")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Resume")).to_be_hidden(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.get_by_text("Ship - Deploy now").click()
+        page.get_by_text("Other").click()
+        page.get_by_label("Additional answer").fill(_QUESTION_SUPPLEMENT)
+        page.get_by_role("button", name="Answer").click()
+
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=7'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert backend.resume_requested is True
+        assert backend.question_answers == [
+            {
+                "answers": [
+                    {
+                        "selections": [
+                            {"label": "Ship"},
+                            {
+                                "label": "__none_of_the_above__",
+                                "supplement": _QUESTION_SUPPLEMENT,
+                            },
+                        ],
+                    },
+                ],
+            },
+        ]
+
+
 class _V2StreamBackend:
-    def __init__(self, *, recoverable_stopped_run: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        pending_tool_approval: bool = False,
+        pending_user_question: bool = False,
+        recoverable_stopped_run: bool = False,
+    ) -> None:
+        has_pending_recovery_action = pending_tool_approval or pending_user_question
         self.completed = False
         self.injections: list[dict[str, object]] = []
-        self.last_event_id = 7 if recoverable_stopped_run else 0
+        self.last_event_id = (
+            7 if recoverable_stopped_run or has_pending_recovery_action else 0
+        )
         self.persisted_assistant_text = ""
-        self.recoverable_stopped_run = recoverable_stopped_run
+        self.pending_tool_approval = pending_tool_approval
+        self.pending_user_question = pending_user_question
+        self.recoverable_stopped_run = (
+            recoverable_stopped_run or has_pending_recovery_action
+        )
+        self.approval_resolutions: list[dict[str, object]] = []
+        self.question_answers: list[dict[str, object]] = []
         self.resume_requested = False
-        self.run_created = recoverable_stopped_run
+        self.run_created = self.recoverable_stopped_run
         self.run_payload: dict[str, object] | None = None
         self.stop_payload: dict[str, object] | None = None
 
@@ -327,6 +437,27 @@ class _V2StreamBackend:
                 },
             )
             return
+        if (
+            request.method == "POST"
+            and path
+            == f"/ag-ui/runs/{_RUN_ID}/tool-approvals/{_APPROVAL_TOOL_CALL_ID}:resolve"
+        ):
+            self.approval_resolutions.append(
+                cast(dict[str, object], json.loads(request.post_data or "{}")),
+            )
+            self.pending_tool_approval = False
+            _fulfill_json(route, {"status": "ok"})
+            return
+        if (
+            request.method == "POST"
+            and path == f"/ag-ui/runs/{_RUN_ID}/questions/{_QUESTION_ID}:answer"
+        ):
+            self.question_answers.append(
+                cast(dict[str, object], json.loads(request.post_data or "{}")),
+            )
+            self.pending_user_question = False
+            _fulfill_json(route, {"status": "ok"})
+            return
         _fulfill_json(
             route, {"detail": f"Unhandled mock API route: {path}"}, status=404
         )
@@ -406,7 +537,7 @@ class _V2StreamBackend:
         if self.completed:
             run_status = "completed"
         elif self.recoverable_stopped_run and not self.resume_requested:
-            run_phase = "stopped"
+            run_phase = self._recoverable_phase()
             run_status = "stopped"
         return {
             "has_more": False,
@@ -447,7 +578,9 @@ class _V2StreamBackend:
             )
             active_run = {
                 "last_event_id": self.last_event_id,
-                "phase": "stopped" if should_show_recover else "streaming",
+                "phase": self._recoverable_phase()
+                if should_show_recover
+                else "streaming",
                 "run_id": _RUN_ID,
                 "session_id": _SESSION_ID,
                 "should_show_recover": should_show_recover,
@@ -458,10 +591,68 @@ class _V2StreamBackend:
             "active_run": active_run,
             "background_tasks": [],
             "paused_subagent": None,
-            "pending_tool_approvals": [],
-            "pending_user_questions": [],
+            "pending_tool_approvals": self._pending_tool_approvals(),
+            "pending_user_questions": self._pending_user_questions(),
             "round_snapshot": None,
         }
+
+    def _recoverable_phase(self) -> str:
+        if self.pending_tool_approval:
+            return "awaiting_tool_approval"
+        if self.pending_user_question:
+            return "awaiting_user_question"
+        return "stopped"
+
+    def _pending_tool_approvals(self) -> list[dict[str, object]]:
+        if not self.pending_tool_approval:
+            return []
+        return [
+            {
+                "acp_options": [
+                    {
+                        "kind": "allow_once",
+                        "name": "Allow once",
+                        "optionId": "allow_once",
+                    },
+                    {
+                        "kind": "reject_once",
+                        "name": "Reject once",
+                        "optionId": "reject_once",
+                    },
+                ],
+                "args_preview": '{"cmd":"npm test"}',
+                "role_id": "MainAgent",
+                "status": "pending",
+                "tool_call_id": _APPROVAL_TOOL_CALL_ID,
+                "tool_name": "execute_command",
+            },
+        ]
+
+    def _pending_user_questions(self) -> list[dict[str, object]]:
+        if not self.pending_user_question:
+            return []
+        return [
+            {
+                "question_id": _QUESTION_ID,
+                "questions": [
+                    {
+                        "multiple": True,
+                        "options": [
+                            {
+                                "description": "Deploy now",
+                                "label": "Ship",
+                            },
+                            {"label": "__none_of_the_above__"},
+                        ],
+                        "placeholder": "Add handoff detail",
+                        "question": "Pick the handoff mode",
+                    },
+                ],
+                "role_id": "Planner",
+                "run_id": _RUN_ID,
+                "status": "pending",
+            },
+        ]
 
     def _role_options(self) -> dict[str, object]:
         main_agent = {

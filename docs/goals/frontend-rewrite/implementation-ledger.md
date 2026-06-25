@@ -3093,3 +3093,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent Settings component gate verification completed for this stabilization slice. No full Settings subsystem completion is claimed.
+
+## 2026-06-26 V2 Live Settings Information Architecture Browser Recheck Batch
+
+### Scope
+- Re-checked the live in-app browser at `http://127.0.0.1:8000/app/` after the Settings component gate stabilization, focusing on global V2 framework health before choosing further implementation work.
+- Verified the current live shell remains a fixed one-page workspace: viewport `1280x720`, `body` and `documentElement` both had `clientHeight=720` and `scrollHeight=720`, while the timeline owned its own internal scroll (`clientHeight=500`, `scrollHeight=4466`).
+- Verified the visible primary sidebar entry set remains V1-aligned and unchanged: Chat, Automation, Skills, Board, Search, Connectors, Memory, Observability, and Settings.
+- Opened Settings from the live UI and confirmed the root Settings navigation remains the V1-aligned set only: Appearance, General, Speech, Notifications, Models, Roles, Orchestration, Web, ClawHub, Proxy, Remote Workspace, Environment Variables, and System.
+- Confirmed System child pages remain behind the System secondary launcher rather than being flattened into the root Settings list: MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, and Triggers.
+- Opened the live System -> Agent Runtime secondary page and verified it renders real runtime entries and controls (`Back`, `Refresh`, `ACP registry`, `New runtime`, and runtime rows such as Amp, Claude Agent, Codex CLI, and OpenCode) while the page-level body/document stayed fixed to the viewport.
+- Direct in-app screenshot capture timed out in this batch, so this entry records DOM/metric browser evidence only; no screenshot artifact is claimed.
+- Kept this as Settings information-architecture and live layout evidence only. No Settings subsystem completion is claimed; Hegel reviewer Settings review is queued and full visual/reviewer sign-off remains open.
+
+### Verification
+- Main-agent in-app browser DOM/metric verification completed against the live `/app/` page.
+
+### Reviewer
+- Hegel reviewer `019eff12-9b1b-7943-a5c8-0c0bea9d6c44` was queued for Settings subsystem readiness review after this recheck; no PASS/FAIL result has returned yet.

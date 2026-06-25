@@ -55,6 +55,21 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(/\.at-model-profile-select\s*{[\s\S]*?width:\s*104px;/);
   });
 
+  it("keeps the appearance diff preview semantically green for additions", () => {
+    expect(themeCss).toMatch(
+      /\.at-appearance-diff-preview\s*{[\s\S]*?--at-appearance-diff-added:\s*#1a7f37;[\s\S]*?--at-appearance-diff-added-bg:\s*#dafbe1;/,
+    );
+    expect(themeCss).toMatch(
+      /:root\[data-theme="dark"\] \.at-appearance-diff-preview\s*{[\s\S]*?--at-appearance-diff-added:\s*#3fb950;[\s\S]*?--at-appearance-diff-added-bg:\s*#13351f;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-appearance-diff-side\.is-added \.at-appearance-code-line\.is-marked\s*{[\s\S]*?background:\s*var\(--at-appearance-diff-added-bg\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-appearance-diff-side\.is-added \.at-appearance-code-line > span:nth-child\(2\)\s*{[\s\S]*?color:\s*var\(--at-appearance-diff-added\);/,
+    );
+  });
+
   it("keeps the narrow workspace full width behind the sidebar overlay", () => {
     expect(themeCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.at-body\s*{[\s\S]*?position:\s*relative;/,

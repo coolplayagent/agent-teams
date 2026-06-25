@@ -5620,6 +5620,17 @@ body {
   border-bottom: 0;
 }
 
+.at-plugin-list-row {
+  grid-template-columns: minmax(0, 1fr) minmax(86px, 128px) max-content;
+}
+
+.at-plugin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .at-settings-list-main {
   display: grid;
   gap: 3px;
@@ -7047,6 +7058,10 @@ body {
   .at-settings-list-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
+  }
+
+  .at-plugin-actions {
+    justify-content: flex-start;
   }
 
   .at-model-profile-row-main {

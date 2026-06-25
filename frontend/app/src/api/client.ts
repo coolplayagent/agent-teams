@@ -125,6 +125,8 @@ import type {
   TaskSpecArtifactDiffResponse,
   TaskSpecArtifactsResponse,
   PluginsRuntimePayload,
+  PluginScopeRequest,
+  PluginUpdateRequest,
   ToolApprovalAction,
   UserQuestionAnswerSubmission,
   WorkspacePage,
@@ -1505,6 +1507,63 @@ export function getGeneralConfig(): Promise<GeneralConfig> {
 
 export function getPluginsRuntime(): Promise<PluginsRuntimePayload> {
   return requestJson<PluginsRuntimePayload>("/system/configs/plugins/runtime");
+}
+
+export function getPluginsConfig(): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>("/system/configs/plugins");
+}
+
+export function enablePlugin(
+  name: string,
+  payload: PluginScopeRequest,
+): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>(
+    `/system/configs/plugins/${encodeURIComponent(name)}:enable`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function disablePlugin(
+  name: string,
+  payload: PluginScopeRequest,
+): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>(
+    `/system/configs/plugins/${encodeURIComponent(name)}:disable`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function updatePlugin(
+  name: string,
+  payload: PluginUpdateRequest,
+): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>(
+    `/system/configs/plugins/${encodeURIComponent(name)}:update`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function deletePlugin(
+  name: string,
+  payload: PluginScopeRequest & { prune?: boolean },
+): Promise<PluginsRuntimePayload> {
+  const params = new URLSearchParams({
+    prune: payload.prune === true ? "true" : "false",
+    scope: payload.scope,
+  });
+  return requestJson<PluginsRuntimePayload>(
+    `/system/configs/plugins/${encodeURIComponent(name)}?${params.toString()}`,
+    { method: "DELETE" },
+  );
 }
 
 export function getHooksConfig(): Promise<HooksConfigPayload> {

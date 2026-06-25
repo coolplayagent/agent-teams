@@ -47,6 +47,7 @@ import {
   getModelProfiles,
   getNotificationConfig,
   getOrchestrationConfig,
+  getPluginsConfig,
   getPluginsRuntime,
   getProxyConfig,
   getRoleConfig,
@@ -86,6 +87,9 @@ import {
   saveSshProfile,
   saveWebConfig,
   setMcpServerEnabled,
+  deletePlugin,
+  disablePlugin,
+  enablePlugin,
   startWeChatGatewayLogin,
   startAgentRuntimeTestJob,
   startGitHubWebhookTunnel,
@@ -95,6 +99,7 @@ import {
   updateFeishuGatewayAccount,
   updateWeChatGatewayAccount,
   updateMcpServer,
+  updatePlugin,
   waitWeChatGatewayLogin,
 } from "../api/client";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
@@ -142,6 +147,7 @@ vi.mock("../api/client", () => ({
   getModelProfiles: vi.fn(),
   getNotificationConfig: vi.fn(),
   getOrchestrationConfig: vi.fn(),
+  getPluginsConfig: vi.fn(),
   getPluginsRuntime: vi.fn(),
   getProxyConfig: vi.fn(),
   getRoleConfig: vi.fn(),
@@ -181,6 +187,9 @@ vi.mock("../api/client", () => ({
   saveSshProfile: vi.fn(),
   saveWebConfig: vi.fn(),
   setMcpServerEnabled: vi.fn(),
+  deletePlugin: vi.fn(),
+  disablePlugin: vi.fn(),
+  enablePlugin: vi.fn(),
   startWeChatGatewayLogin: vi.fn(),
   startAgentRuntimeTestJob: vi.fn(),
   startGitHubWebhookTunnel: vi.fn(),
@@ -190,6 +199,7 @@ vi.mock("../api/client", () => ({
   updateFeishuGatewayAccount: vi.fn(),
   updateWeChatGatewayAccount: vi.fn(),
   updateMcpServer: vi.fn(),
+  updatePlugin: vi.fn(),
   waitWeChatGatewayLogin: vi.fn(),
 }));
 
@@ -235,6 +245,7 @@ const getModelCatalogMock = vi.mocked(getModelCatalog);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getNotificationConfigMock = vi.mocked(getNotificationConfig);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
+const getPluginsConfigMock = vi.mocked(getPluginsConfig);
 const getPluginsRuntimeMock = vi.mocked(getPluginsRuntime);
 const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigMock = vi.mocked(getRoleConfig);
@@ -274,6 +285,9 @@ const saveRoleConfigMock = vi.mocked(saveRoleConfig);
 const saveSshProfileMock = vi.mocked(saveSshProfile);
 const saveWebConfigMock = vi.mocked(saveWebConfig);
 const setMcpServerEnabledMock = vi.mocked(setMcpServerEnabled);
+const deletePluginMock = vi.mocked(deletePlugin);
+const disablePluginMock = vi.mocked(disablePlugin);
+const enablePluginMock = vi.mocked(enablePlugin);
 const startWeChatGatewayLoginMock = vi.mocked(startWeChatGatewayLogin);
 const startAgentRuntimeTestJobMock = vi.mocked(startAgentRuntimeTestJob);
 const startGitHubWebhookTunnelMock = vi.mocked(startGitHubWebhookTunnel);
@@ -283,6 +297,7 @@ const updateCommandMock = vi.mocked(updateCommand);
 const updateFeishuGatewayAccountMock = vi.mocked(updateFeishuGatewayAccount);
 const updateWeChatGatewayAccountMock = vi.mocked(updateWeChatGatewayAccount);
 const updateMcpServerMock = vi.mocked(updateMcpServer);
+const updatePluginMock = vi.mocked(updatePlugin);
 const waitWeChatGatewayLoginMock = vi.mocked(waitWeChatGatewayLogin);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
@@ -957,6 +972,30 @@ beforeEach(() => {
       },
     ],
   });
+  getPluginsConfigMock.mockResolvedValue({
+    diagnostics: [],
+    plugins: [
+      {
+        command_sources: [{ name: "workspace-command" }],
+        description: "Workspace utilities",
+        enabled: true,
+        name: "workspace-tools",
+        scope: "user",
+        skill_sources: [{ name: "workspace-skill" }],
+        valid: true,
+        version: "1.0.0",
+      },
+      {
+        description: "Quality checks",
+        enabled: false,
+        hook_sources: [{ name: "quality-hook" }],
+        name: "quality",
+        scope: "project",
+        valid: true,
+        version: "2.0.0",
+      },
+    ],
+  });
   getPluginsRuntimeMock.mockResolvedValue({
     diagnostics: [],
     plugins: [
@@ -965,11 +1004,17 @@ beforeEach(() => {
         description: "Workspace utilities",
         enabled: true,
         name: "workspace-tools",
+        scope: "user",
         skill_sources: [{ name: "workspace-skill" }],
         valid: true,
+        version: "1.0.0",
       },
     ],
   });
+  enablePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
+  disablePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
+  updatePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
+  deletePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   getHooksConfigMock.mockResolvedValue({
     hooks: {
       SessionStart: [
@@ -1396,6 +1441,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByText("Plugins").closest("button") as HTMLElement);
     expect(await screen.findByText("workspace-tools")).toBeVisible();
     expect(screen.getByText("2 components")).toBeVisible();
+    expect(getPluginsConfigMock).toHaveBeenCalledTimes(1);
     expect(getPluginsRuntimeMock).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
@@ -1458,6 +1504,54 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
   }, 70000);
+
+  it("manages plugins from the System secondary page", async () => {
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+
+    expect(await screen.findByText("workspace-tools")).toBeVisible();
+    expect(screen.getByText("quality")).toBeVisible();
+    expect(getPluginsConfigMock).toHaveBeenCalledTimes(1);
+    expect(getPluginsRuntimeMock).toHaveBeenCalledTimes(1);
+
+    const enabledRow = screen
+      .getByText("workspace-tools")
+      .closest(".at-plugin-list-row") as HTMLElement;
+    const disabledRow = screen
+      .getByText("quality")
+      .closest(".at-plugin-list-row") as HTMLElement;
+
+    fireEvent.click(within(disabledRow).getByRole("button", { name: "Enable" }));
+    await waitFor(() =>
+      expect(enablePluginMock).toHaveBeenCalledWith("quality", { scope: "project" }),
+    );
+
+    fireEvent.click(within(enabledRow).getByRole("button", { name: "Disable" }));
+    await waitFor(() =>
+      expect(disablePluginMock).toHaveBeenCalledWith("workspace-tools", {
+        scope: "user",
+      }),
+    );
+
+    fireEvent.click(within(enabledRow).getByRole("button", { name: "Update" }));
+    await waitFor(() =>
+      expect(updatePluginMock).toHaveBeenCalledWith("workspace-tools", {
+        scope: "user",
+        version: "1.0.0",
+      }),
+    );
+
+    fireEvent.click(within(enabledRow).getByRole("button", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+    await waitFor(() =>
+      expect(deletePluginMock).toHaveBeenCalledWith("workspace-tools", {
+        prune: false,
+        scope: "user",
+      }),
+    );
+  });
 
   it("manages GitHub settings from the System secondary page", async () => {
     getGitHubWebhookTunnelStatusMock.mockResolvedValue({

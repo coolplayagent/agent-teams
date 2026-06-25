@@ -3219,3 +3219,28 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent built-app real SSE browser verification completed for this refresh-recovery checkpoint slice. No full AG-UI Runtime Stream, Run Recovery, Message Timeline, Settings, or release completion is claimed.
+
+## 2026-06-26 V2 Settings Plugin Mutation Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, latest Hegel Settings FAIL, and current Settings ledger before choosing this slice, then returned to Settings parity instead of following only the latest annotated UI note.
+- Restored the existing V1-aligned System -> Plugins secondary page as a mutation surface: configured plugins now load from `/api/system/configs/plugins`, can be enabled, disabled, updated, and deleted through the real plugin config endpoints, and refresh both config and runtime diagnostics after mutations.
+- Added typed frontend contracts and API clients for `GET /api/system/configs/plugins`, `POST /api/system/configs/plugins/{name}:enable`, `POST /api/system/configs/plugins/{name}:disable`, `POST /api/system/configs/plugins/{name}:update`, and `DELETE /api/system/configs/plugins/{name}`.
+- Preserved the V1 Settings information architecture: no primary Settings items were added or removed, and Plugins remains behind the System secondary launcher rather than being flattened into the root Settings list.
+- Added built `/app/` browser evidence for Settings > System > Plugins: the scenario confirms Plugins is absent from the root Settings nav, opens Plugins from System, clicks Enable/Disable/Update/Delete, verifies backend request payloads and query params, and captures `.tmp/frontend-v2-settings/v2-plugin-actions.png`.
+- Kept this as partial Settings recovery only. Hegel Settings FAIL remains open for Hooks mutation parity, Roles/Orchestration create/validation/default/destructive flows, CodeAgent/MaaS auth/discovery gaps, broader visual review, and reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "plugins"` passed with 1 selected test.
+- `npm test -- --run src/test/apiClient.test.ts -t "plugins"` passed with 1 selected test.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "plugins_settings_actions"` passed with 1 selected test.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-settings/v2-plugin-actions.png` confirmed the real built V2 shell stayed framed, Settings root nav was unchanged, and Plugins remained in the System secondary page.
+- `npm test -- --run src/test/apiClient.test.ts` passed with 29 tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "settings_keeps_v1_sections or plugins_settings_actions"` passed with 2 selected tests.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with 20 tests.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent component, API-client, built-app browser, and screenshot inspection completed for this plugin mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.

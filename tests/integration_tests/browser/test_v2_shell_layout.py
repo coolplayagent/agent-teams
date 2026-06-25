@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import SimpleHTTPRequestHandler
 import json
 from pathlib import Path
+import time
 import threading
 from typing import cast
 from typing import TypedDict
@@ -1086,6 +1088,85 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         assert "/gateway/wechat/accounts" in backend.requested_paths
 
 
+def test_v2_plugins_settings_actions_call_real_endpoints(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        sections = settings.get_by_role("navigation", name="Settings sections")
+        expect(sections.get_by_role("button", name="Plugins")).to_have_count(0)
+
+        sections.get_by_role("button", name="System").click()
+        system_pages = settings.locator(".at-settings-list-button")
+        system_pages.filter(has_text="Plugins").click()
+        expect(settings.get_by_role("heading", name="Plugins")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("workspace-tools")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("quality")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        quality_row = settings.locator(".at-plugin-list-row").filter(
+            has_text="quality",
+        )
+        quality_row.get_by_role("button", name="Enable").click()
+        _wait_for_backend_state(
+            lambda: backend.plugin_enable_requests
+            == [{"name": "quality", "payload": {"scope": "project"}}],
+            "Plugin enable request was not captured.",
+        )
+
+        workspace_row = settings.locator(".at-plugin-list-row").filter(
+            has_text="workspace-tools",
+        )
+        workspace_row.get_by_role("button", name="Disable").click()
+        _wait_for_backend_state(
+            lambda: backend.plugin_disable_requests
+            == [{"name": "workspace-tools", "payload": {"scope": "user"}}],
+            "Plugin disable request was not captured.",
+        )
+
+        workspace_row.get_by_role("button", name="Update").click()
+        _wait_for_backend_state(
+            lambda: backend.plugin_update_requests
+            == [
+                {
+                    "name": "workspace-tools",
+                    "payload": {"scope": "user", "version": "1.0.0"},
+                }
+            ],
+            "Plugin update request was not captured.",
+        )
+
+        workspace_row.get_by_role("button", name="Delete").click()
+        page.get_by_role("button", name="OK", exact=True).click()
+        _wait_for_backend_state(
+            lambda: backend.plugin_delete_requests
+            == [{"name": "workspace-tools", "prune": "false", "scope": "user"}],
+            "Plugin delete request was not captured.",
+        )
+        expect(workspace_row).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
+        assert "/system/configs/plugins" in backend.requested_paths
+        assert "/system/configs/plugins/runtime" in backend.requested_paths
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-plugin-actions.png"))
+
+
 def test_v2_model_profile_detail_saves_and_tests_existing_profile(
     browser_page: Page,
 ) -> None:
@@ -1732,6 +1813,31 @@ class _V2ShellBackend:
         self.rounds_request_count = 0
         self.runtime_tools_system_path_added = False
         self.runtime_tools_system_path_requests: list[str] = []
+        self.plugin_delete_requests: list[dict[str, object]] = []
+        self.plugin_disable_requests: list[dict[str, object]] = []
+        self.plugin_enable_requests: list[dict[str, object]] = []
+        self.plugin_update_requests: list[dict[str, object]] = []
+        self.plugins: list[dict[str, object]] = [
+            {
+                "command_sources": [{"name": "workspace-command"}],
+                "description": "Workspace utilities",
+                "enabled": True,
+                "name": "workspace-tools",
+                "scope": "user",
+                "skill_sources": [{"name": "workspace-skill"}],
+                "valid": True,
+                "version": "1.0.0",
+            },
+            {
+                "description": "Quality checks",
+                "enabled": False,
+                "hook_sources": [{"name": "quality-hook"}],
+                "name": "quality",
+                "scope": "project",
+                "valid": True,
+                "version": "2.0.0",
+            },
+        ]
         self.model_catalog_refresh_count = 0
         self.model_profile_reload_count = 0
         self.model_profile_save_payloads: list[dict[str, object]] = []
@@ -2002,8 +2108,28 @@ class _V2ShellBackend:
         if request.method == "GET" and path == "/mcp/servers/stdio-shell/tools":
             _fulfill_json(route, self._mcp_server_tools())
             return
+        if request.method == "GET" and path == "/system/configs/plugins":
+            _fulfill_json(route, self._plugins_config())
+            return
         if request.method == "GET" and path == "/system/configs/plugins/runtime":
             _fulfill_json(route, self._plugins_runtime())
+            return
+        if request.method == "POST" and path.startswith(
+            "/system/configs/plugins/"
+        ):
+            if path.endswith(":enable"):
+                self._set_plugin_enabled(route, request, path, True)
+                return
+            if path.endswith(":disable"):
+                self._set_plugin_enabled(route, request, path, False)
+                return
+            if path.endswith(":update"):
+                self._update_plugin(route, request, path)
+                return
+        if request.method == "DELETE" and path.startswith(
+            "/system/configs/plugins/"
+        ):
+            self._delete_plugin(route, path, url.query)
             return
         if request.method == "GET" and path == "/system/configs/hooks":
             _fulfill_json(route, self._hooks_config())
@@ -2610,19 +2736,74 @@ class _V2ShellBackend:
             "transport": "stdio",
         }
 
+    def _plugins_config(self) -> dict[str, object]:
+        return {
+            "diagnostics": [],
+            "plugins": self.plugins,
+        }
+
+    def _plugin_name_from_path(self, path: str, suffix: str = "") -> str:
+        name = path.removeprefix("/system/configs/plugins/")
+        if suffix:
+            name = name.removesuffix(suffix)
+        return unquote(name)
+
+    def _plugin_payload(self, request: Request) -> dict[str, object]:
+        return cast(dict[str, object], json.loads(request.post_data or "{}"))
+
+    def _set_plugin_enabled(
+        self,
+        route: Route,
+        request: Request,
+        path: str,
+        enabled: bool,
+    ) -> None:
+        suffix = ":enable" if enabled else ":disable"
+        name = self._plugin_name_from_path(path, suffix)
+        payload = self._plugin_payload(request)
+        record = {"name": name, "payload": payload}
+        if enabled:
+            self.plugin_enable_requests.append(record)
+        else:
+            self.plugin_disable_requests.append(record)
+        for plugin in self.plugins:
+            if plugin.get("name") == name:
+                plugin["enabled"] = enabled
+        _fulfill_json(route, self._plugins_config())
+
+    def _update_plugin(self, route: Route, request: Request, path: str) -> None:
+        name = self._plugin_name_from_path(path, ":update")
+        payload = self._plugin_payload(request)
+        self.plugin_update_requests.append({"name": name, "payload": payload})
+        for plugin in self.plugins:
+            if plugin.get("name") == name and "version" in payload:
+                plugin["version"] = payload["version"]
+        _fulfill_json(route, self._plugins_config())
+
+    def _delete_plugin(
+        self,
+        route: Route,
+        path: str,
+        query: str,
+    ) -> None:
+        name = self._plugin_name_from_path(path)
+        values = parse_qs(query)
+        self.plugin_delete_requests.append(
+            {
+                "name": name,
+                "prune": values.get("prune", ["false"])[0],
+                "scope": values.get("scope", [""])[0],
+            }
+        )
+        self.plugins = [
+            plugin for plugin in self.plugins if plugin.get("name") != name
+        ]
+        _fulfill_json(route, self._plugins_config())
+
     def _plugins_runtime(self) -> dict[str, object]:
         return {
             "diagnostics": [],
-            "plugins": [
-                {
-                    "command_sources": [{"name": "workspace-command"}],
-                    "description": "Workspace utilities",
-                    "enabled": True,
-                    "name": "workspace-tools",
-                    "skill_sources": [{"name": "workspace-skill"}],
-                    "valid": True,
-                }
-            ],
+            "plugins": self.plugins,
         }
 
     def _hooks_config(self) -> dict[str, object]:
@@ -3323,6 +3504,18 @@ def _wait_for_v1_shell(page: Page) -> None:
         "() => document.body.dataset.bootstrapState === 'ready'",
         timeout=_WAIT_TIMEOUT_MS,
     )
+
+
+def _wait_for_backend_state(
+    predicate: Callable[[], bool],
+    failure_message: str,
+) -> None:
+    deadline = time.monotonic() + (_WAIT_TIMEOUT_MS / 1000)
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise AssertionError(failure_message)
 
 
 def _expect_sidebar_width(page: Page, width: int) -> None:

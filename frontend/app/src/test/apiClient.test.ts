@@ -9,7 +9,9 @@ import {
   deleteAgentRuntime,
   deleteBoardTodoSource,
   deleteModelProfile,
+  deletePlugin,
   disableAutomationProject,
+  disablePlugin,
   deleteFeishuGatewayAccount,
   deleteWeChatGatewayAccount,
   deleteEnvironmentVariable,
@@ -19,6 +21,7 @@ import {
   enableFeishuGatewayAccount,
   enableWeChatGatewayAccount,
   enableAutomationProject,
+  enablePlugin,
   getAgentRuntime,
   getAgentRuntimeRegistry,
   getAgentRuntimes,
@@ -34,6 +37,7 @@ import {
   listWeChatGatewayAccounts,
   getMemory,
   getModelCatalog,
+  getPluginsConfig,
   getRoleConfig,
   getTaskSpecArtifactDiff,
   getRuntimeToolDownload,
@@ -115,6 +119,7 @@ import {
   updateBoardTodoSource,
   updateFeishuGatewayAccount,
   updateWeChatGatewayAccount,
+  updatePlugin,
   updateWorkspace,
   waitWeChatGatewayLogin,
 } from "../api/client";
@@ -2180,6 +2185,85 @@ describe("api client", () => {
       9,
       "/api/system/configs/agent-runtime-test-jobs/job-1",
       expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+  });
+
+  it("manages plugins through the system config endpoints", async () => {
+    const pluginPayload = {
+      diagnostics: [],
+      plugins: [
+        {
+          enabled: true,
+          name: "quality-tools",
+          scope: "user",
+          version: "1.0.0",
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(pluginPayload), {
+          status: 200,
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getPluginsConfig()).resolves.toEqual(pluginPayload);
+    await expect(enablePlugin("quality-tools", { scope: "user" })).resolves.toEqual(
+      pluginPayload,
+    );
+    await expect(disablePlugin("quality-tools", { scope: "project" })).resolves.toEqual(
+      pluginPayload,
+    );
+    await expect(
+      updatePlugin("quality-tools", { scope: "user", version: "2.0.0" }),
+    ).resolves.toEqual(pluginPayload);
+    await expect(
+      deletePlugin("quality-tools", { prune: true, scope: "project" }),
+    ).resolves.toEqual(pluginPayload);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/plugins",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/plugins/quality-tools:enable",
+      expect.objectContaining({
+        body: JSON.stringify({ scope: "user" }),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/plugins/quality-tools:disable",
+      expect.objectContaining({
+        body: JSON.stringify({ scope: "project" }),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/configs/plugins/quality-tools:update",
+      expect.objectContaining({
+        body: JSON.stringify({ scope: "user", version: "2.0.0" }),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/system/configs/plugins/quality-tools?prune=true&scope=project",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.any(Headers),
+      }),
     );
   });
 

@@ -4,18 +4,23 @@ import { App, Button, Form, Input, Popconfirm, Progress, Select, Switch, Typogra
 import { useEffect, useState } from "react";
 
 import {
+  deletePlugin,
   deleteAgentRuntime,
+  disablePlugin,
+  enablePlugin,
   getAgentRuntime,
   getAgentRuntimeRegistry,
   getAgentRuntimes,
   getAgentRuntimeTestJob,
   getHookRuntimeView,
   getHooksConfig,
+  getPluginsConfig,
   getPluginsRuntime,
   installAgentRuntimeFromRegistry,
   refreshAgentRuntimeRegistry,
   saveAgentRuntime,
   startAgentRuntimeTestJob,
+  updatePlugin,
 } from "../../api/client";
 import type {
   AcpRegistryAgentView,
@@ -38,19 +43,66 @@ import { useTranslations } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
 type AgentRuntimeBindingConfig = AgentRuntimeSecretBinding;
+type PluginScope = NonNullable<PluginRuntimeRecord["scope"]>;
+type PluginAction = "delete" | "disable" | "enable" | "update";
+
+interface PluginActionRequest {
+  action: PluginAction;
+  plugin: PluginRuntimeRecord;
+}
 
 export function PluginsSettingsSection() {
   const t = useTranslations();
-  const query = useQuery({
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const configQuery = useQuery({
+    queryKey: ["settings", "plugins", "config"],
+    queryFn: getPluginsConfig,
+  });
+  const runtimeQuery = useQuery({
     queryKey: ["settings", "plugins", "runtime"],
     queryFn: getPluginsRuntime,
   });
-  const plugins = query.data?.plugins ?? [];
-  const diagnostics = query.data?.diagnostics ?? [];
+  const plugins = configQuery.data?.plugins ?? [];
+  const diagnostics = runtimeQuery.data?.diagnostics ?? configQuery.data?.diagnostics ?? [];
+  const actionMutation = useMutation({
+    mutationFn: async ({ action, plugin }: PluginActionRequest) => {
+      const name = pluginName(plugin);
+      if (name === null) {
+        throw new Error(t("settingsPluginsNameRequired"));
+      }
+      const scope = pluginScope(plugin);
+      if (action === "enable") {
+        return enablePlugin(name, { scope });
+      }
+      if (action === "disable") {
+        return disablePlugin(name, { scope });
+      }
+      if (action === "update") {
+        return updatePlugin(name, { scope, version: plugin.version ?? null });
+      }
+      return deletePlugin(name, { prune: false, scope });
+    },
+    onSuccess: (_result, variables) => {
+      void message.success(pluginActionSuccessMessage(variables.action, t));
+      void queryClient.invalidateQueries({ queryKey: ["settings", "plugins"] });
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("settingsPluginsActionFailed"),
+      );
+    },
+  });
+  const loading = configQuery.isLoading || runtimeQuery.isLoading;
+  const error = configQuery.error ?? runtimeQuery.error;
+  const pendingActionKey =
+    actionMutation.isPending && actionMutation.variables !== undefined
+      ? pluginActionKey(actionMutation.variables)
+      : null;
   return (
     <SettingsSection title={t("settingsPlugins")}>
-      <SettingsQueryState error={query.error} loading={query.isLoading} />
-      {!query.isLoading && query.data !== undefined ? (
+      <SettingsQueryState error={error} loading={loading} />
+      {!loading && configQuery.data !== undefined ? (
         <>
           <div className="at-settings-facts">
             <Fact label={t("settingsPluginsTotal")} value={String(plugins.length)} />
@@ -59,7 +111,23 @@ export function PluginsSettingsSection() {
               value={String(diagnostics.length)}
             />
           </div>
-          <PluginRuntimeList plugins={plugins} />
+          <div className="at-settings-section-actions at-plugin-toolbar">
+            <Button
+              icon={<RefreshCw size={15} />}
+              loading={configQuery.isFetching || runtimeQuery.isFetching}
+              onClick={() => {
+                void configQuery.refetch();
+                void runtimeQuery.refetch();
+              }}
+            >
+              {t("settingsPluginsRefresh")}
+            </Button>
+          </div>
+          <PluginRuntimeList
+            onAction={(request) => actionMutation.mutate(request)}
+            pendingActionKey={pendingActionKey}
+            plugins={plugins}
+          />
           <PluginDiagnosticsList diagnostics={diagnostics} />
         </>
       ) : null}
@@ -187,7 +255,15 @@ export function AgentRuntimeSettingsSection() {
   );
 }
 
-function PluginRuntimeList({ plugins }: { plugins: PluginRuntimeRecord[] }) {
+function PluginRuntimeList({
+  onAction,
+  pendingActionKey,
+  plugins,
+}: {
+  onAction: (request: PluginActionRequest) => void;
+  pendingActionKey: string | null;
+  plugins: PluginRuntimeRecord[];
+}) {
   const t = useTranslations();
   if (plugins.length === 0) {
     return <div className="at-settings-empty">{t("settingsPluginsEmpty")}</div>;
@@ -196,8 +272,13 @@ function PluginRuntimeList({ plugins }: { plugins: PluginRuntimeRecord[] }) {
     <div className="at-settings-list at-runtime-settings-list">
       {plugins.map((plugin) => {
         const title = pluginTitle(plugin, t("settingsPluginsUnnamed"));
+        const name = pluginName(plugin);
+        const enabled = plugin.enabled !== false;
         return (
-          <div className="at-settings-list-row" key={pluginKey(plugin, title)}>
+          <div
+            className="at-settings-list-row at-plugin-list-row"
+            key={pluginKey(plugin, title)}
+          >
             <div className="at-settings-list-main">
               <span>{title}</span>
               <Typography.Text ellipsis title={pluginDetail(plugin, t)}>
@@ -211,6 +292,42 @@ function PluginRuntimeList({ plugins }: { plugins: PluginRuntimeRecord[] }) {
             >
               {pluginStatus(plugin, t)}
             </Typography.Text>
+            <div className="at-settings-list-actions at-plugin-actions">
+              <Button
+                disabled={name === null}
+                loading={pendingActionKey === pluginActionKey({ action: enabled ? "disable" : "enable", plugin })}
+                onClick={() =>
+                  onAction({ action: enabled ? "disable" : "enable", plugin })
+                }
+                size="small"
+              >
+                {enabled ? t("settingsPluginsDisable") : t("settingsPluginsEnable")}
+              </Button>
+              <Button
+                disabled={name === null}
+                icon={<RefreshCw size={14} />}
+                loading={pendingActionKey === pluginActionKey({ action: "update", plugin })}
+                onClick={() => onAction({ action: "update", plugin })}
+                size="small"
+              >
+                {t("settingsPluginsUpdate")}
+              </Button>
+              <Popconfirm
+                disabled={name === null}
+                onConfirm={() => onAction({ action: "delete", plugin })}
+                title={t("settingsPluginsDeleteConfirm", { name: title })}
+              >
+                <Button
+                  danger
+                  disabled={name === null}
+                  icon={<Trash2 size={14} />}
+                  loading={pendingActionKey === pluginActionKey({ action: "delete", plugin })}
+                  size="small"
+                >
+                  {t("settingsPluginsDelete")}
+                </Button>
+              </Popconfirm>
+            </div>
           </div>
         );
       })}
@@ -924,11 +1041,14 @@ function hookDetail(hook: LoadedHookRecord): string {
 }
 
 function pluginTitle(plugin: PluginRuntimeRecord, fallback: string): string {
-  return plugin.name?.trim() || plugin.plugin_id?.trim() || plugin.source?.trim() || fallback;
+  return plugin.name?.trim() || plugin.plugin_id?.trim() || pluginSourceLabel(plugin) || fallback;
 }
 
 function pluginKey(plugin: PluginRuntimeRecord, title: string): string {
-  return plugin.manifest_path?.trim() || plugin.plugin_id?.trim() || plugin.name?.trim() || title;
+  return [
+    plugin.scope ?? "user",
+    plugin.manifest_path?.trim() || plugin.plugin_id?.trim() || plugin.name?.trim() || title,
+  ].join(":");
 }
 
 function pluginDetail(plugin: PluginRuntimeRecord, t: ReturnType<typeof useTranslations>): string {
@@ -954,6 +1074,49 @@ function pluginStatus(plugin: PluginRuntimeRecord, t: ReturnType<typeof useTrans
     return t("settingsDisabled");
   }
   return t("settingsEnabled");
+}
+
+function pluginName(plugin: PluginRuntimeRecord): string | null {
+  const name = plugin.name?.trim() || plugin.plugin_id?.trim();
+  return name && name.length > 0 ? name : null;
+}
+
+function pluginScope(plugin: PluginRuntimeRecord): PluginScope {
+  return plugin.scope ?? "user";
+}
+
+function pluginSourceLabel(plugin: PluginRuntimeRecord): string {
+  const source = plugin.source;
+  if (typeof source === "string") {
+    return source.trim();
+  }
+  if (source !== null && typeof source === "object" && !Array.isArray(source)) {
+    const value = source.value;
+    if (typeof value === "string") {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function pluginActionKey(request: PluginActionRequest): string {
+  return `${request.action}:${pluginScope(request.plugin)}:${pluginName(request.plugin) ?? ""}`;
+}
+
+function pluginActionSuccessMessage(
+  action: PluginAction,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (action === "enable") {
+    return t("settingsPluginsEnabled");
+  }
+  if (action === "disable") {
+    return t("settingsPluginsDisabled");
+  }
+  if (action === "update") {
+    return t("settingsPluginsUpdated");
+  }
+  return t("settingsPluginsDeleted");
 }
 
 function agentRuntimeDetail(runtime: AgentRuntimeSummary): string {

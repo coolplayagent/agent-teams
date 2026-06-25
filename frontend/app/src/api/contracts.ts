@@ -192,8 +192,11 @@ export interface PluginRuntimeRecord {
   role_sources?: JsonValue[];
   settings_sources?: JsonValue[];
   skill_sources?: JsonValue[];
-  source?: string | null;
+  scope?: "local" | "project" | "user" | null;
+  source?: JsonValue;
+  user_config?: Record<string, JsonValue>;
   valid?: boolean | null;
+  version?: string | null;
 }
 
 export interface PluginRuntimeDiagnostics {
@@ -206,6 +209,18 @@ export interface PluginRuntimeDiagnostics {
 export interface PluginsRuntimePayload {
   diagnostics?: PluginRuntimeDiagnostics[];
   plugins?: PluginRuntimeRecord[];
+}
+
+export interface PluginScopeRequest {
+  scope: "local" | "project" | "user";
+}
+
+export interface PluginUpdateRequest extends PluginScopeRequest {
+  allow_community_plugins?: boolean;
+  allow_executes_code?: boolean;
+  allow_missing_digest?: boolean;
+  allow_unclean_scan?: boolean;
+  version?: string | null;
 }
 
 export interface HooksConfigPayload {

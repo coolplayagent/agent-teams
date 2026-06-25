@@ -1709,3 +1709,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent parity inspection and component verification completed for this Agent Runtime settings slice. No Settings subsystem completion is claimed.
+
+## 2026-06-25 V2 Shell Sidebar Width Parity Batch
+
+### Scope
+- Re-checked the Application Shell checklist and compared the current V2 shell against the saved V1 reference screenshot and V1 CSS.
+- Verified V1 uses a 280px desktop sidebar in `frontend/dist/css/layout.css`, while V2 had drifted to a 220px default.
+- Restored the V2 desktop sidebar default to 280px while preserving the existing resize min/max behavior.
+- Migrated previously generated 220/248/260/274 localStorage sidebar widths back to the V1-sized default so already-open developer browsers do not stay stuck on the narrow layout.
+- Reloaded the real `/app/` page after build and verified the sidebar renders at 280px, document scroll height equals viewport height, body overflow remains hidden, and the workspace remains a fixed-height frame.
+- Captured a current V2 shell screenshot at `.tmp/v2-shell-layout-sidebar-280.png` for visual comparison against `frontend-debug-v1-reference.png`.
+- Left Application Shell completion open; remaining work includes broader desktop/narrow screenshot pairs, sidebar resize browser flow, final reviewer pass, and continued density comparison for timeline/composer details.
+
+### Verification
+- `npm test -- src/test/uiStore.test.ts src/test/AppShell.test.tsx src/test/ShellLayoutCss.test.ts` passed with 32 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- Browser verification on `http://127.0.0.1:8000/app/` after reload reported `sidebar.width = 280`, `documentScrollHeight = documentClientHeight = 720`, and `bodyOverflow = hidden`.
+
+### Reviewer
+- Main-agent visual and browser verification completed for this shell width parity slice. No Application Shell subsystem completion is claimed.

@@ -101,6 +101,40 @@ describe("openRunStream", () => {
     );
   });
 
+  it("seeds the replay cursor so boundary events are ignored after refresh", () => {
+    const stream = openTestStream({ afterEventId: 42 });
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        agUiEvent({
+          event_id: 42,
+          payload: { text: "duplicate boundary chunk" },
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        agUiEvent({
+          event_id: 43,
+          payload: { text: "fresh replay chunk" },
+        }),
+      ),
+    );
+
+    expect(stream.activities).toHaveLength(2);
+    expect(stream.states).toHaveLength(1);
+    expect(stream.states[0].runs["run-1"]).toMatchObject({
+      lastEventId: 43,
+      status: "open",
+    });
+    expect(stream.states[0].runs["run-1"].entries).toHaveLength(1);
+    expect(stream.states[0].runs["run-1"].entries[0].text).toBe(
+      "fresh replay chunk",
+    );
+  });
+
   it("reduces AG-UI state snapshot and delta events from named stream events", () => {
     const stream = openTestStream();
 
@@ -496,6 +530,55 @@ describe("openRunStream", () => {
     expect(String(stream.source.url)).toBe(
       "/api/ag-ui/runs/events?run_id=run-a&after_event_id=11&run_id=run-b&after_event_id=9",
     );
+  });
+
+  it("seeds multiplexed replay cursors so duplicate boundary events stay hidden", () => {
+    const stream = openTestMultiplexedStream({
+      runs: [
+        { afterEventId: 11, runId: "run-a" },
+        { afterEventId: 9, runId: "run-b" },
+      ],
+    });
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 11,
+          payload_json: JSON.stringify({ text: "duplicate run a" }),
+          run_id: "run-a",
+          trace_id: "run-a",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 9,
+          payload_json: JSON.stringify({ text: "duplicate run b" }),
+          run_id: "run-b",
+          trace_id: "run-b",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 12,
+          payload_json: JSON.stringify({ text: "fresh run a" }),
+          run_id: "run-a",
+          trace_id: "run-a",
+        }),
+      ),
+    );
+
+    expect(stream.activities).toHaveLength(3);
+    expect(stream.states).toHaveLength(1);
+    expect(stream.states[0].runs["run-a"].entries).toHaveLength(1);
+    expect(stream.states[0].runs["run-a"].entries[0].text).toBe("fresh run a");
+    expect(stream.states[0].runs["run-b"].entries).toHaveLength(0);
   });
 
   it("ignores untracked events while a multiplexed replay is open", () => {

@@ -1,5 +1,9 @@
 import { apiUrl } from "../api/http";
-import { reduceRunEvent, type RuntimeState } from "./reducers";
+import {
+  reduceRunEvent,
+  type RuntimeRunState,
+  type RuntimeState,
+} from "./reducers";
 import { AG_UI_EVENT_NAMES, type RunEventEnvelope } from "./events";
 
 export interface RunStreamHandle {
@@ -33,14 +37,18 @@ export interface MultiplexedRunStreamOptions {
 }
 
 export function openRunStream(options: RunStreamOptions): RunStreamHandle {
+  const run = {
+    afterEventId: Math.max(0, options.afterEventId),
+    runId: options.runId,
+  };
   return openRunEventSource({
-    initialState: options.initialState,
+    initialState: runtimeStateWithReplayCursors(options.initialState, [run]),
     onActivity: options.onActivity,
     onClosed: options.onClosed,
     onError: options.onError,
     onState: options.onState,
-    trackedRunIds: [options.runId],
-    url: runStreamUrl(options.runId, options.afterEventId),
+    trackedRunIds: [run.runId],
+    url: runStreamUrl(run.runId, run.afterEventId),
   });
 }
 
@@ -49,7 +57,7 @@ export function openMultiplexedRunStream(
 ): RunStreamHandle {
   const runs = normalizeRunStreamTargets(options.runs);
   return openRunEventSource({
-    initialState: options.initialState,
+    initialState: runtimeStateWithReplayCursors(options.initialState, runs),
     onActivity: options.onActivity,
     onClosed: options.onClosed,
     onError: options.onError,
@@ -207,6 +215,37 @@ function normalizeRunStreamTargets(runs: RunStreamTarget[]): RunStreamTarget[] {
     });
   }
   return Array.from(targetsByRunId.values());
+}
+
+function runtimeStateWithReplayCursors(
+  initialState: RuntimeState,
+  runs: RunStreamTarget[],
+): RuntimeState {
+  let nextRuns: Record<string, RuntimeRunState> | null = null;
+  for (const run of runs) {
+    if (run.afterEventId <= 0) {
+      continue;
+    }
+    const currentRun = (nextRuns ?? initialState.runs)[run.runId];
+    if (currentRun !== undefined && currentRun.lastEventId >= run.afterEventId) {
+      continue;
+    }
+    nextRuns ??= { ...initialState.runs };
+    nextRuns[run.runId] = {
+      entries: currentRun?.entries ?? [],
+      lastEventId: run.afterEventId,
+      runId: run.runId,
+      seenEventKeys: currentRun?.seenEventKeys ?? [],
+      status: currentRun?.status ?? "connecting",
+      terminalEventType: currentRun?.terminalEventType ?? null,
+    } satisfies RuntimeRunState;
+  }
+  return nextRuns === null
+    ? initialState
+    : {
+        ...initialState,
+        runs: nextRuns,
+      };
 }
 
 function trackedRunsClosed(

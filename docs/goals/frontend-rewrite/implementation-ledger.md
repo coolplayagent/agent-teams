@@ -3324,3 +3324,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component, built-app browser, and screenshot inspection completed for this orchestration mutation slice. Hegel reviewer FAIL remains active for the broader Settings subsystem, so no Settings completion is claimed.
+
+## 2026-06-26 V2 Stream Replay Cursor Recovery Batch
+
+### Scope
+- Re-checked the frontend rewrite parity checklist after the Settings Orchestration recovery and selected the Message Timeline / AG-UI stream path because streaming, replay, refresh recovery, and interrupted-stream recovery remain core completion blockers.
+- Fixed the stream client so `after_event_id` is not only sent in the EventSource URL but also seeds the local runtime state's `lastEventId` for each tracked run. This prevents a boundary replay event from rendering again after a page refresh, including multiplexed replay streams.
+- Added a browser-level built `/app/` scenario that creates a run through the real composer path, opens the initial run EventSource, renders the first live text delta, reloads the page, resumes the active run from the recovery snapshot's `last_event_id`, verifies the second EventSource uses `after_event_id=1`, and proves a duplicate boundary event stays hidden while the next replay event renders.
+- Kept this as partial stream/replay recovery only. Remaining stream completion work still includes broader live event coverage, interrupted transport retry review, tool-heavy visual replay inspection, subagent/background stream browser scenarios, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm test -- --run src/test/streamClient.test.ts` passed with 25 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "stream_replay_resumes"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "stream_replay_resumes or settings_keeps_v1_sections or orchestration_settings"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent unit and browser verification completed for this stream cursor slice. No Message Timeline / AG-UI stream subsystem completion is claimed until the remaining live, replay, refresh, interrupted, subagent, and visual review gates are closed.

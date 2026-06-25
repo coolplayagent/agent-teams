@@ -30,6 +30,7 @@ _VIEWPORT_WIDTH = 1280
 _VIEWPORT_HEIGHT = 720
 _WAIT_TIMEOUT_MS = 15_000
 _SESSION_ID = "session-v2-shell"
+_STREAM_RUN_ID = "run-v2-live"
 _WORKSPACE_ID = "workspace-v2-shell"
 _IMAGE_DATA_URL = (
     "data:image/svg+xml;charset=utf-8,"
@@ -131,6 +132,88 @@ def test_v2_sidebar_mouse_resize_persists_after_reload(browser_page: Page) -> No
             "aria-valuenow",
             "220",
         )
+
+
+def test_v2_stream_replay_resumes_from_recovery_cursor_after_reload(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("textbox", name="Prompt").fill("Stream replay probe")
+        page.get_by_role("button", name="Send").click()
+        _wait_for_backend_state(
+            lambda: len(backend.created_run_payloads) == 1,
+            "Run creation request was not captured.",
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=0')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '1',
+            )
+            """,
+            _stream_text_event(1, "First live stream chunk."),
+        )
+        expect(page.get_by_text("First live stream chunk.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        backend.recovery_active_run = _stream_recovery_run(1)
+        page.reload()
+        _wait_for_v2_shell(page)
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=1')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '1',
+            )
+            """,
+            _stream_text_event(1, "First live stream chunk."),
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '2',
+            )
+            """,
+            _stream_text_event(2, "Second replay stream chunk."),
+        )
+
+        expect(page.get_by_text("Second replay stream chunk.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("First live stream chunk.")).to_have_count(0)
 
 
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
@@ -2031,6 +2114,7 @@ class _V2ShellBackend:
         self.role_delete_requests: list[str] = []
         self.role_save_payloads: list[dict[str, object]] = []
         self.role_validate_payloads: list[dict[str, object]] = []
+        self.created_run_payloads: list[dict[str, object]] = []
         self.role_configs: dict[str, dict[str, object]] = {
             "main": {
                 "bound_agent_id": None,
@@ -2107,6 +2191,7 @@ class _V2ShellBackend:
                 },
             ],
         }
+        self.recovery_active_run: dict[str, object] | None = None
         self.plugin_delete_requests: list[dict[str, object]] = []
         self.plugin_disable_requests: list[dict[str, object]] = []
         self.plugin_enable_requests: list[dict[str, object]] = []
@@ -2278,12 +2363,28 @@ class _V2ShellBackend:
             _fulfill_json(
                 route,
                 {
-                    "active_run": None,
+                    "active_run": self.recovery_active_run,
                     "background_tasks": [],
                     "paused_subagents": [],
                     "pending_tool_approvals": [],
                     "pending_user_questions": [],
                     "recoverable_stopped_run": None,
+                },
+            )
+            return
+        if request.method == "POST" and path == "/ag-ui/runs":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.created_run_payloads.append(payload)
+            self.recovery_active_run = _stream_recovery_run(0)
+            _fulfill_json(
+                route,
+                {
+                    "run_id": _STREAM_RUN_ID,
+                    "session_id": _SESSION_ID,
+                    "target_role_id": "MainAgent",
                 },
             )
             return
@@ -3877,7 +3978,23 @@ def _serve_v2_app(repo_root: Path) -> Iterator[str]:
         server.server_close()
 
 
-def _install_shell_state(page: Page) -> None:
+def _install_shell_state(page: Page, event_source_script: str | None = None) -> None:
+    stream_script = event_source_script or """
+          window.EventSource = class EventSource {
+            constructor() {
+              this.readyState = 1;
+            }
+            addEventListener() {
+              return undefined;
+            }
+            removeEventListener() {
+              return undefined;
+            }
+            close() {
+              this.readyState = 2;
+            }
+          };
+    """
     page.add_init_script(
         """
         (() => {
@@ -3893,23 +4010,92 @@ def _install_shell_state(page: Page) -> None:
             window.localStorage.removeItem('agentTeams.sidebarWidthMigratedTo260');
             window.sessionStorage.setItem('__v2ShellResizeSeeded', 'true');
           }
+STREAM_SCRIPT
+        })();
+        """.replace("STREAM_SCRIPT", stream_script),
+    )
+
+
+def _stream_event_source_script() -> str:
+    return """
+          window.__v2StreamHarness = {
+            sources: [],
+            dispatch(index, type, payload, lastEventId = '') {
+              const source = this.sources[index];
+              if (!source) {
+                throw new Error(`Missing stream source ${index}`);
+              }
+              source.dispatch(type, payload, lastEventId);
+            },
+            urls() {
+              return this.sources.map((source) => source.url);
+            },
+          };
           window.EventSource = class EventSource {
-            constructor() {
+            constructor(url) {
+              this.url = String(url);
               this.readyState = 1;
+              this.closed = false;
+              this.listeners = {};
+              window.__v2StreamHarness.sources.push(this);
             }
-            addEventListener() {
-              return undefined;
+            addEventListener(type, listener) {
+              this.listeners[type] = [...(this.listeners[type] || []), listener];
             }
-            removeEventListener() {
-              return undefined;
+            removeEventListener(type, listener) {
+              this.listeners[type] = (this.listeners[type] || []).filter(
+                (current) => current !== listener,
+              );
             }
             close() {
               this.readyState = 2;
+              this.closed = true;
+            }
+            dispatch(type, payload, lastEventId = '') {
+              const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+              const event = new MessageEvent(type, {
+                data,
+                lastEventId: String(lastEventId),
+              });
+              if (type === 'message' && typeof this.onmessage === 'function') {
+                this.onmessage(event);
+              }
+              for (const listener of this.listeners[type] || []) {
+                if (typeof listener === 'function') {
+                  listener(event);
+                } else if (listener && typeof listener.handleEvent === 'function') {
+                  listener.handleEvent(event);
+                }
+              }
             }
           };
-        })();
-        """,
-    )
+    """
+
+
+def _stream_text_event(event_id: int, text: str) -> dict[str, object]:
+    return {
+        "event_id": event_id,
+        "event_type": "text_delta",
+        "occurred_at": "2026-06-26T00:00:00Z",
+        "payload_json": json.dumps({"text": text}),
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "trace_id": "trace-v2-stream",
+    }
+
+
+def _stream_recovery_run(last_event_id: int) -> dict[str, object]:
+    return {
+        "last_event_id": last_event_id,
+        "pending_tool_approval_count": 0,
+        "pending_user_question_count": 0,
+        "phase": "running",
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "should_show_recover": False,
+        "status": "running",
+        "stream_connected": True,
+    }
 
 
 def _wait_for_v2_shell(page: Page) -> None:

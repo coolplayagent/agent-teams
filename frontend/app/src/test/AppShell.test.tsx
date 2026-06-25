@@ -261,6 +261,7 @@ describe("AppShell", () => {
     ]);
     listWorkspacesMock.mockResolvedValue([
       {
+        name: "default",
         workspace_id: "default",
         root_path: "C:/work/agent-teams",
       },

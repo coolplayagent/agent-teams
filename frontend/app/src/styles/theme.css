@@ -3569,8 +3569,8 @@ body {
 }
 
 .at-timeline-frame.has-round-rail .at-timeline-virtual {
-  width: min(var(--at-timeline-column-width), max(0px, calc(100% - 160px)));
-  margin-right: 160px;
+  width: min(var(--at-timeline-column-width), max(0px, calc(100% - 288px)));
+  margin: 0 auto;
 }
 
 .at-timeline-row {
@@ -4129,7 +4129,7 @@ body {
   min-height: 0;
   max-height: min(38dvh, 320px);
   overflow: auto;
-  padding: 0 max(20px, calc((100% - 940px) / 2)) 16px;
+  padding: 0 24px 16px;
   background: var(--at-bg);
 }
 
@@ -4138,9 +4138,9 @@ body {
   grid-template-rows: max-content max-content;
   align-content: start;
   gap: 10px;
-  width: min(940px, 100%);
+  width: 100%;
   max-height: 100%;
-  margin: 0 auto;
+  margin: 0;
   padding: 10px;
   border: 1px solid var(--at-border);
   border-radius: 10px;

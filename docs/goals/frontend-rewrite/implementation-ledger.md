@@ -1433,3 +1433,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this terminal replay stream closure slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery under actual SSE timing, interrupted stream resume validation, message timeline polish, and reviewer sign-off.
+
+## 2026-06-25 V1 Framework Follow-Up Layout Batch
+
+### Scope
+- Re-opened live V1 and V2 in the browser before editing and captured screenshots/metrics for the shell frame, sidebar, message column, round rail, and composer.
+- Fixed generic workspace labels so a workspace named or identified as `default` no longer leaks into the topbar or sidebar group title; root folder labels such as `agent-teams` now win even when the backend record carries a generic name.
+- Moved the V2 desktop sidebar default back to the V1 width of 220px and migrated old generated V2 default widths, while preserving deliberate resized widths.
+- Re-centered the timeline reading column when the round rail is present instead of pushing it right with a fixed rail margin; the round rail remains overlaid without covering messages.
+- Expanded the composer back to a V1-wide bottom work area rather than a narrow centered card, while keeping the compact controls and fixed one-screen shell.
+
+### Verification
+- V1 reference screenshot and metrics captured at `.tmp/frontend-framework-followup/v1-reference-devtools.png` and `.tmp/frontend-framework-followup/v1-reference-metrics.json`.
+- V2 pre-fix screenshot and metrics captured at `.tmp/frontend-framework-followup/v2-before-devtools.png` and `.tmp/frontend-framework-followup/v2-before-metrics-devtools.json`.
+- V2 final wide screenshot and metrics captured at `.tmp/frontend-framework-followup/v2-final-layout-devtools.png` and `.tmp/frontend-framework-followup/v2-final-layout-metrics.json`.
+- V2 final desktop viewport screenshot and metrics captured at `.tmp/frontend-framework-followup/v2-final-1280x720.png` and `.tmp/frontend-framework-followup/v2-final-1280x720-metrics.json`.
+- Final wide metrics on `http://127.0.0.1:8000/app/` showed `body.scrollHeight === body.clientHeight === 943`, sidebar width `220`, workspace left `225.998`, timeline row left `591.328`, composer inner width `1459.349`, `railOverlapPx: 0`, `visibleDefaultLabels: []`, topbar title `agent-teams`, and workspace group titles `["agent-teams", "agent-teams-issue-401", "desktop"]`.
+- Final desktop viewport metrics showed fixed body scrolling, sidebar width `220`, composer inner width `1148.238`, `railOverlapPx: 0`, and `visibleDefaultLabels: 0`.
+- `npm test -- src/test/AppShell.test.tsx src/test/uiStore.test.ts src/test/ShellLayoutCss.test.ts src/test/MessageTimeline.test.tsx` in `frontend/app` passed with 73 tests.
+- `npm run build` in `frontend/app` passed, including typecheck, desktop build, and Vite production build; Vite refreshed `frontend/dist/app` with rebuilt assets `index-CThlZvNI.js` and `index-cwD4NfMS.css`.
+
+### Reviewer
+- Main-agent browser screenshot/metrics verification completed for this framework follow-up slice. No full Shell, Message Timeline, Settings, or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes detailed message rendering polish, live stream/replay browser scenarios, settings secondary pages, and reviewer sign-off.

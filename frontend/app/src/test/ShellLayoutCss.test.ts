@@ -45,9 +45,6 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-message-actions\s*{[\s\S]*?min-height:\s*24px;/,
     );
-    expect(themeCss).toMatch(
-      /\.at-composer-inner\s*{[\s\S]*?width:\s*min\(940px, 100%\);/,
-    );
   });
 
   it("keeps the desktop round rail overlaid instead of reserving a chat column", () => {
@@ -58,11 +55,17 @@ describe("shell layout CSS", () => {
       /\.at-round-rail\s*{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*16px;[\s\S]*?width:\s*128px;[\s\S]*?background:\s*transparent;/,
     );
     expect(themeCss).toMatch(
-      /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), max\(0px, calc\(100% - 160px\)\)\);[\s\S]*?margin-right:\s*160px;/,
+      /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), max\(0px, calc\(100% - 288px\)\)\);[\s\S]*?margin:\s*0 auto;/,
     );
   });
 
-  it("keeps desktop composer controls compact inside the V1-width shell", () => {
+  it("keeps desktop composer controls compact inside the V1-wide shell", () => {
+    expect(themeCss).toMatch(
+      /\.at-composer\s*{[\s\S]*?padding:\s*0 24px 16px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-composer-inner\s*{[\s\S]*?width:\s*100%;[\s\S]*?margin:\s*0;/,
+    );
     expect(themeCss).toMatch(
       /\.at-composer-controls\s*{[\s\S]*?min-width:\s*0;/,
     );

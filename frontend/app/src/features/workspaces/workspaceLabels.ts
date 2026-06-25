@@ -9,7 +9,7 @@ export function workspaceDisplayLabel(
 ): string {
   if (workspace !== null) {
     const explicitLabel = firstTrimmed(workspace.display_name, workspace.name);
-    if (explicitLabel) {
+    if (explicitLabel && !isGenericWorkspaceId(explicitLabel)) {
       return explicitLabel;
     }
     const workspaceId = workspace.workspace_id.trim();
@@ -21,7 +21,7 @@ export function workspaceDisplayLabel(
       return rootLabel;
     }
     if (workspaceId) {
-      return workspaceId;
+      return workspaceFallbackLabel(workspaceId);
     }
   }
   return workspaceFallbackLabel(fallbackLabel);

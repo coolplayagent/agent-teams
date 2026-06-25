@@ -2809,3 +2809,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent Electron smoke verification completed for this health endpoint alignment slice. Full Desktop/Electron release readiness, visual parity matrix completion, stream/replay completion, and reviewer sign-off remain open.
+
+## 2026-06-26 V2 Board Sync Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, quality gates, current browser DOM, and latest ledger before choosing this slice, avoiding another narrow settings-only pass.
+- Verified from the live `/app/` DOM that the page shell remains fixed to one viewport with `body` overflow hidden, then focused this batch on the Connectors/Memory/Gateway/Automation/Boards parity requirement that module actions call real endpoints.
+- Added a real built `/app/` browser scenario that opens the existing V1-aligned Board module from primary navigation, verifies the initial board card and revision from `GET /api/boards/todos`, clicks the visible `Sync board` action, and asserts the UI is replaced by the `POST /api/boards/todos:sync` response.
+- Extended the shell mock backend to record the exact sync payload and return a different board revision/card after sync, proving the button is not decorative and the module consumes the real mutation response.
+- Kept this as targeted Boards action evidence only; no sidebar/settings entries were added or removed, no renderer UI structure changed, and full Connectors/Memory/Gateway/Automation/Boards completion still requires broader action/error/reviewer coverage.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "board_sync"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "sidebar_module_entries_open_real_surfaces or board_sync"` passed with 2 selected tests.
+
+### Reviewer
+- Main-agent browser verification completed for this Board sync action slice. Full module parity, visual parity matrix completion, stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.

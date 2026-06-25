@@ -333,6 +333,49 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
         page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
 
 
+def test_v2_board_sync_calls_real_endpoint_and_updates_cards(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        primary_nav = page.get_by_role("navigation", name="Primary navigation")
+        primary_nav.get_by_role("button", name="Board").click()
+
+        board_view = page.get_by_test_id("board-todos-view")
+        expect(board_view.get_by_test_id("board-todo-todo-v2-shell")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(board_view.get_by_text("Revision")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(board_view.get_by_text("9")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        page.get_by_role("button", name="Sync board").click()
+
+        expect(board_view.get_by_test_id("board-todo-todo-v2-synced")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            board_view.get_by_text("Board sync updated the module action"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(board_view.get_by_text("10")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert backend.board_sync_payloads == [
+            {
+                "include_archived": False,
+                "workspace_id": _WORKSPACE_ID,
+            }
+        ]
+        assert "/boards/todos:sync" in backend.requested_paths
+
+
 def test_v2_workspace_project_view_opens_real_workbench_flow(
     browser_page: Page,
 ) -> None:
@@ -986,6 +1029,7 @@ class _V2ShellBackend:
     def __init__(self, *, include_image_message: bool = False) -> None:
         self.include_image_message = include_image_message
         self.fail_next_web_save = False
+        self.board_sync_payloads: list[dict[str, object]] = []
         self.open_root_queries: list[str] = []
         self.requested_paths: list[str] = []
         self.requested_urls: list[str] = []
@@ -1232,6 +1276,14 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/boards/todos":
             _fulfill_json(route, self._board())
+            return
+        if request.method == "POST" and path == "/boards/todos:sync":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.board_sync_payloads.append(payload)
+            _fulfill_json(route, self._board_synced())
             return
         if request.method == "GET" and path == "/memories":
             _fulfill_json(route, self._memory_query())
@@ -1936,13 +1988,41 @@ class _V2ShellBackend:
             "updated_at": "2026-06-25T08:10:00Z",
             "workspace_id": _WORKSPACE_ID,
         }
+        return self._board_response(item, revision=9, synced_at="2026-06-25T08:11:00Z")
+
+    def _board_synced(self) -> dict[str, object]:
+        item = {
+            "body": "The browser flow replaced the board data after POST sync.",
+            "created_at": "2026-06-25T08:20:00Z",
+            "issue_number": 402,
+            "item_revision": 4,
+            "repository_full_name": "openai/agent-teams",
+            "run_recoverable": False,
+            "source_key": "openai/agent-teams#402",
+            "source_provider": "github",
+            "source_type": "github_issue",
+            "status": "done",
+            "title": "Board sync updated the module action",
+            "todo_id": "todo-v2-synced",
+            "updated_at": "2026-06-25T08:21:00Z",
+            "workspace_id": _WORKSPACE_ID,
+        }
+        return self._board_response(item, revision=10, synced_at="2026-06-25T08:22:00Z")
+
+    def _board_response(
+        self,
+        item: dict[str, object],
+        *,
+        revision: int,
+        synced_at: str,
+    ) -> dict[str, object]:
         return {
             "board_workspace_id": _WORKSPACE_ID,
             "diagnostics": [],
             "is_fork_view": False,
             "items": [item],
             "repository_full_name": "openai/agent-teams",
-            "revision": 9,
+            "revision": revision,
             "source_groups": [
                 {
                     "display_name": "GitHub issues",
@@ -1955,12 +2035,12 @@ class _V2ShellBackend:
             ],
             "status_counts": {
                 "archived": 0,
-                "done": 0,
+                "done": 1 if item["status"] == "done" else 0,
                 "in_progress": 0,
                 "review": 0,
-                "todo": 1,
+                "todo": 1 if item["status"] == "todo" else 0,
             },
-            "synced_at": "2026-06-25T08:11:00Z",
+            "synced_at": synced_at,
             "view_workspace_id": _WORKSPACE_ID,
             "workspace_id": _WORKSPACE_ID,
         }

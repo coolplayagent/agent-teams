@@ -234,6 +234,7 @@ export function useRunStreamController(): RunStreamController {
     errorMessage: string,
   ) => {
     if (reconnectAttemptRef.current >= RUN_STREAM_RECONNECT_MAX_ATTEMPTS) {
+      suppressRunTargets(options.runs);
       stopActiveRunStream();
       void message.error(errorMessage);
       return;

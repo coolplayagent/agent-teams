@@ -433,6 +433,60 @@ def test_v2_interrupted_stream_reconnects_from_sse_last_event_id(
         )
 
 
+def test_v2_interrupted_stream_exhausts_manual_reconnects_and_restores_composer(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    page.route("**/api/**", backend.route)
+    _install_mock_event_source(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+        page.wait_for_function(
+            """
+            () => window.__v2EventSourceUrls.some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-stream/events')
+              && url.includes('after_event_id=0'))
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _emit_relay_event(page, "run_started", 1, {"phase": "streaming"})
+        _emit_relay_event(page, "text_delta", 2, {"text": _FIRST_CHUNK})
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        _dispatch_transport_error_and_wait_for_source_count(page, 2)
+        _dispatch_transport_error_and_wait_for_source_count(page, 3)
+        _dispatch_transport_error_and_wait_for_source_count(page, 4)
+        page.evaluate("() => window.__v2DispatchTransportError()")
+
+        page.wait_for_function(
+            "() => window.__v2OpenEventSourceCount() === 0",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
+        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.locator(".at-message").filter(has_text=_FIRST_CHUNK),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        page.wait_for_timeout(4000)
+        assert page.evaluate("() => window.__v2EventSourceUrls.length") == 4
+
+
 def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
     browser_page: Page,
 ) -> None:
@@ -2859,6 +2913,17 @@ def _emit_relay_event_with_last_event_id(
         }
         """,
         [event_type, event_id, last_event_id, payload, run_id, role_id],
+    )
+
+
+def _dispatch_transport_error_and_wait_for_source_count(
+    page: Page,
+    source_count: int,
+) -> None:
+    page.evaluate("() => window.__v2DispatchTransportError()")
+    page.wait_for_function(
+        f"() => window.__v2EventSourceUrls.length >= {source_count}",
+        timeout=_WAIT_TIMEOUT_MS,
     )
 
 

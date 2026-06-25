@@ -2919,3 +2919,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent component and built-app browser verification completed for this Board start-handoff slice. Full Boards action parity, Connectors/Memory/Gateway/Automation/Boards module parity, visual parity matrix completion, stream/replay completion, subsystem reviewer sign-off, and release readiness remain open.
+
+## 2026-06-26 V2 Stream Reconnect Exhaustion Recovery Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, stream/recovery coverage, and latest ledger after the Board handoff commit, then moved back to the high-risk AG-UI Runtime Stream edge cases instead of continuing only module actions.
+- Identified that V2 already had unit and browser coverage for single reconnects, replay cursors, Last-Event-ID, server-error suppression, run failed/stopped finalization, and multiplexed background streams, but lacked evidence for repeated transport interruptions exhausting the manual reconnect fallback.
+- Added controller coverage proving repeated transport failures retry from the latest local cursor for three fallback attempts, then stop opening new streams, clear active/tracked run state, and suppress the stale recovery target.
+- Added a built `/app/` browser scenario that starts a run, receives live text, forces repeated mock EventSource transport failures through the real composer/recovery shell, and verifies that after reconnect exhaustion all EventSources are closed, the Stop control disappears, Send returns, and no immediate recovery auto-start creates a fifth EventSource.
+- Fixed the discovered bug where reconnect exhaustion cleared the current stream but did not suppress the still-running recovery target, allowing RecoveryBar to immediately restart the same failed stream and leave the composer in an active-run state.
+- Kept this as targeted AG-UI transport-exhaustion progress only; full event matrix completion, long-run visual QA, subagent reviewer sign-off, and release readiness remain open.
+
+### Verification
+- `npm test -- --run src/test/RunStreamController.test.tsx` passed with 17 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "interrupted_stream_exhausts_manual_reconnects"` passed with 1 selected test.
+- `npm test -- --run src/test/RunStreamController.test.tsx src/test/RecoveryBar.test.tsx` passed with 40 tests.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k "interrupted_stream_exhausts_manual_reconnects or interrupted_stream_reconnects_from_latest_event_id or real_sse_server_error_suppresses_stale_auto_recovery"` passed with 3 selected tests.
+
+### Reviewer
+- Main-agent component and built-app browser verification completed for this transport reconnect-exhaustion slice. Full AG-UI Runtime Stream completion, Message Timeline visual parity, subsystem reviewer sign-off, and release readiness remain open.

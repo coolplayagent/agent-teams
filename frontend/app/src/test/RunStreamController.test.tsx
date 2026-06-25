@@ -422,6 +422,65 @@ describe("useRunStreamController", () => {
     expect(reconnectOptions.afterEventId).toBe(77);
   });
 
+  it("stops reconnecting after transport fallback attempts are exhausted", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const firstOptions = streamMocks.optionsList[0] as RunStreamOptions;
+    act(() => {
+      firstOptions.onState(runtimeStateWithLastEvent(77));
+    });
+
+    act(() => {
+      firstOptions.onError("Run stream disconnected.", "transport");
+      vi.advanceTimersByTime(3500);
+    });
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(2);
+
+    const secondOptions = streamMocks.optionsList[1] as RunStreamOptions;
+    act(() => {
+      secondOptions.onError("Run stream disconnected.", "transport");
+      vi.advanceTimersByTime(7000);
+    });
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(3);
+
+    const thirdOptions = streamMocks.optionsList[2] as RunStreamOptions;
+    act(() => {
+      thirdOptions.onError("Run stream disconnected.", "transport");
+      vi.advanceTimersByTime(10500);
+    });
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(4);
+
+    const finalOptions = streamMocks.optionsList[3] as RunStreamOptions;
+    act(() => {
+      finalOptions.onError("Run stream disconnected.", "transport");
+      vi.advanceTimersByTime(30000);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(4);
+    expect(streamMocks.handles[3].close).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("");
+  });
+
   it("does not reconnect transport interruptions after tracked runs are locally terminal", () => {
     vi.useFakeTimers();
     useRuntimeStore.setState({

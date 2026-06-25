@@ -1906,3 +1906,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and screenshot inspection completed for this Observability scope slice. No Observability subsystem completion is claimed.
+
+## 2026-06-25 V2 Desktop Security Boundary Batch
+
+### Scope
+- Re-checked the Desktop checklist after the Observability pass and targeted the missing evidence for renderer isolation, preload scope, and external-link handoff.
+- Extracted the Electron BrowserWindow options into a typed desktop helper so the main process uses a testable configuration with `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, and the explicit preload script path.
+- Extracted external-link normalization into a main-process helper that accepts only `http` and `https` URLs before calling Electron `shell.openExternal`.
+- Added focused frontend tests that lock the desktop renderer security settings and reject `file:` and `javascript:` external links.
+- Preserved the existing backend lifecycle path: the Electron main process still builds the backend plan, waits for health, loads `/app/`, and shows the startup failure document on backend startup failure.
+- Left Desktop completion open; remaining work still includes an Electron smoke test for real process launch/quit, startup failure rendering, backend shutdown evidence, and reviewer sign-off.
+
+### Verification
+- `npm test -- src/test/desktopBackendPlan.test.ts src/test/desktopSecurity.test.ts` passed with 8 tests.
+- `npm run desktop:build` passed.
+- `npm run lint` passed.
+- No screenshot was captured because this batch covers Electron main-process security boundaries rather than visible renderer layout.
+
+### Reviewer
+- Main-agent desktop security verification completed for this slice. No Desktop subsystem completion is claimed.

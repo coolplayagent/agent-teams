@@ -9,6 +9,8 @@ import {
   type DesktopBackendPlan,
   type DesktopBackendStatus,
 } from "./backendPlan.js";
+import { normalizeExternalHttpUrl } from "./externalLinks.js";
+import { buildDesktopWindowOptions } from "./windowOptions.js";
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
@@ -73,20 +75,7 @@ async function startDesktopApp(): Promise<void> {
 function createMainWindow(): BrowserWindow {
   const desktopDir = dirname(fileURLToPath(import.meta.url));
   const preload = join(desktopDir, "preload.js");
-  const window = new BrowserWindow({
-    height: 820,
-    minHeight: 640,
-    minWidth: 900,
-    show: false,
-    title: "Agent Teams",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload,
-      sandbox: true,
-    },
-    width: 1280,
-  });
+  const window = new BrowserWindow(buildDesktopWindowOptions(preload));
 
   window.once("ready-to-show", () => window.show());
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -188,11 +177,7 @@ function setBackendStatus(status: DesktopBackendStatus): void {
 }
 
 async function openExternalUrl(url: string): Promise<void> {
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("Only http and https links can be opened externally.");
-  }
-  await shell.openExternal(parsed.toString());
+  await shell.openExternal(normalizeExternalHttpUrl(url));
 }
 
 function loadingDocumentUrl(plan: DesktopBackendPlan): string {

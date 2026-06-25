@@ -9,7 +9,7 @@ describe("uiStore", () => {
   it("uses the V1-sized desktop sidebar default", async () => {
     const { sidebarWidthDefault, useUiStore } = await import("../runtime/uiStore");
 
-    expect(sidebarWidthDefault).toBe(280);
+    expect(sidebarWidthDefault).toBe(220);
     expect(useUiStore.getState().sidebarWidth).toBe(sidebarWidthDefault);
   });
 

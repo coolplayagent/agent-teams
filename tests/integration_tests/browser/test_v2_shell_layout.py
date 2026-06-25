@@ -286,6 +286,99 @@ def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> Non
         page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
 
 
+def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
+        settings = page.get_by_role("dialog", name="Settings")
+        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        sections = settings.get_by_role("navigation", name="Settings sections")
+        expect(sections).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert sections.get_by_role("button").all_inner_texts() == [
+            "Appearance",
+            "General",
+            "Speech",
+            "Notifications",
+            "Models",
+            "Roles",
+            "Orchestration",
+            "Web",
+            "ClawHub",
+            "Proxy",
+            "Remote workspace",
+            "Environment variables",
+            "System",
+        ]
+        for secondary_label in [
+            "MCP",
+            "Plugins",
+            "Commands",
+            "Hooks",
+            "Agent Runtime",
+            "GitHub",
+            "Triggers",
+        ]:
+            expect(sections.get_by_role("button", name=secondary_label)).to_have_count(
+                0
+            )
+
+        sections.get_by_role("button", name="System").click()
+        expect(settings.get_by_role("heading", name="System")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            settings.get_by_text("Global and workspace command files.")
+        ).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        system_pages = settings.locator(".at-settings-list-button")
+        expect(system_pages.filter(has_text="Commands")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(system_pages.filter(has_text="GitHub")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        system_pages.filter(has_text="Commands").click()
+        expect(settings.get_by_role("heading", name="Commands")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("Global commands")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("/opsx:propose")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        settings.get_by_role("button", name="Back").click()
+        expect(system_pages.filter(has_text="Commands")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        system_pages.filter(has_text="GitHub").click()
+        expect(settings.get_by_role("heading", name="GitHub")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("GitHub CLI", exact=True)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(settings.get_by_text("Webhook base URL")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert "/system/commands:catalog" in backend.requested_paths
+        assert "/system/configs/github" in backend.requested_paths
+        assert "/system/configs/github/webhook/tunnel" in backend.requested_paths
+
+
 def test_v2_narrow_shell_keeps_workspace_fixed_under_sidebar_overlay(
     browser_page: Page,
 ) -> None:
@@ -495,6 +588,15 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/system/configs":
             _fulfill_json(route, self._system_config())
+            return
+        if request.method == "GET" and path == "/system/commands:catalog":
+            _fulfill_json(route, self._command_catalog())
+            return
+        if request.method == "GET" and path == "/system/configs/github":
+            _fulfill_json(route, self._github_config())
+            return
+        if request.method == "GET" and path == "/system/configs/github/webhook/tunnel":
+            _fulfill_json(route, self._github_tunnel_status())
             return
         if request.method == "GET" and path == "/system/skills/market/clawhub":
             _fulfill_json(route, self._skills_market())
@@ -740,6 +842,44 @@ class _V2ShellBackend:
             "ok": True,
             "query": "",
             "sort": "popular",
+        }
+
+    def _command_catalog(self) -> dict[str, object]:
+        return {
+            "app_commands": [
+                {
+                    "allowed_modes": ["normal"],
+                    "aliases": ["proposal"],
+                    "argument_hint": "issue",
+                    "description": "Draft a proposal for the selected issue.",
+                    "discovery_source": "app",
+                    "name": "opsx:propose",
+                    "scope": "app",
+                    "source_path": "C:/Users/yex/.agent-teams/commands/opsx-propose.md",
+                    "template": "Draft a proposal.",
+                },
+            ],
+            "workspaces": [
+                {
+                    "can_create_commands": True,
+                    "commands": [],
+                    "root_path": "C:/Users/yex/Documents/workspace/agent-teams",
+                    "workspace_id": _WORKSPACE_ID,
+                },
+            ],
+        }
+
+    def _github_config(self) -> dict[str, object]:
+        return {
+            "token_configured": True,
+            "webhook_base_url": "https://example.invalid/hooks/github",
+        }
+
+    def _github_tunnel_status(self) -> dict[str, object]:
+        return {
+            "provider": "localhost.run",
+            "public_url": None,
+            "status": "idle",
         }
 
     def _automation_project(self) -> dict[str, object]:

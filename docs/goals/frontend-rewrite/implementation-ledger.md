@@ -2087,3 +2087,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this real SSE stop-control slice. No AG-UI Runtime Stream, Composer, or Run Recovery subsystem completion is claimed.
+
+## 2026-06-25 V2 Settings Navigation Browser Parity Batch
+
+### Scope
+- Re-checked the parity checklist after the real SSE stop-control slice and targeted the user-facing information-architecture risk in Settings rather than continuing stream-only work.
+- Added a built V2 `/app/` browser flow that opens Settings from the real top bar and verifies the V1 primary Settings section order stays fixed: Appearance, General, Speech, Notifications, Models, Roles, Orchestration, Web, ClawHub, Proxy, Remote workspace, Environment variables, and System.
+- Verified V1-style secondary System pages remain behind the System launcher instead of being flattened into the primary Settings navigation: MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, and Triggers are absent from the root Settings nav.
+- Verified secondary pages open and return inside the System Settings surface by navigating to Commands and GitHub from the real System list, with real mock API requests for `/api/system/commands:catalog`, `/api/system/configs/github`, and `/api/system/configs/github/webhook/tunnel`.
+- Left full Settings completion open; remaining work still includes all settings save/error/destructive-action coverage, visual reviewer pass across all tabs, and V1 parity confirmation for each form.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k settings_keeps_v1_sections` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 7 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_shell_layout.py` passed with 0 errors.
+- No screenshot was captured because this batch locks information architecture and secondary-page behavior with browser assertions rather than changing layout or styling.
+
+### Reviewer
+- Main-agent browser integration verification completed for this Settings navigation parity slice. No Settings subsystem completion is claimed.

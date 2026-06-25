@@ -324,6 +324,100 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("starts a live active run stream from the recovery snapshot", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "running",
+          phase: "running",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("Run run-1 is running");
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: 42,
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+    );
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
+  it("keeps a standalone stopped recoverable run on explicit resume", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "stopped",
+          phase: "stopped",
+          last_event_id: 42,
+          should_show_recover: true,
+        },
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByRole("button", { name: "Resume" });
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
+  it("starts a multiplex stream for active background subagent recovery", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "running",
+          phase: "running",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "subagent",
+            command: "subagent:reviewer",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "running",
+            recent_output: [],
+            subagent_run_id: "subagent-run-1",
+          },
+        ],
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("subagent:reviewer");
+    await waitFor(() =>
+      expect(controller.startRunStreams).toHaveBeenCalledWith({
+        runs: [
+          { afterEventId: 42, runId: "run-1" },
+          { runId: "subagent-run-1" },
+        ],
+        sessionId: "session-1",
+      }),
+    );
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+  });
+
   it("resumes a disconnected recoverable run before resolving approval", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

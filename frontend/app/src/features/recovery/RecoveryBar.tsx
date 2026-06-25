@@ -1,6 +1,6 @@
 import { Alert, App, Button, Checkbox, Input, Radio, Space, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   answerUserQuestion,
@@ -20,7 +20,10 @@ import type {
   UserQuestionPrompt,
   RecoveryRun,
 } from "../../api/contracts";
-import type { RunStreamController } from "../../runtime/useRunStreamController";
+import type {
+  RunStreamController,
+  StartRunStreamTarget,
+} from "../../runtime/useRunStreamController";
 
 const NONE_OF_THE_ABOVE_OPTION_LABEL = "__none_of_the_above__";
 
@@ -59,9 +62,19 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const pausedSubagent = visiblePausedSubagent(
     recoveryQuery.data?.paused_subagent ?? null,
   );
-  const activeBackgroundTasks = (recoveryQuery.data?.background_tasks ?? []).filter(
-    isActiveBackgroundTask,
+  const activeBackgroundTasks = useMemo(
+    () =>
+      (recoveryQuery.data?.background_tasks ?? []).filter(isActiveBackgroundTask),
+    [recoveryQuery.data?.background_tasks],
   );
+  const recoveryRunStreamTargets = useMemo(
+    () => buildRecoveryRunStreamTargets(activeRun, activeBackgroundTasks),
+    [activeBackgroundTasks, activeRun],
+  );
+  const recoveryRunStreamTargetsKey = recoveryRunStreamTargets
+    .map(recoveryRunStreamTargetKey)
+    .join("|");
+  const activeRunIdsKey = runStreamController.activeRunIds.join("|");
   const recoverableRunId =
     activeRun?.should_show_recover === true ? activeRun.run_id : null;
   const showResumeAction = shouldShowResumeAction(
@@ -69,8 +82,41 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     pendingApprovals,
     pendingQuestions,
     pausedSubagent,
-    runStreamController.activeRunId,
+    runStreamController.activeRunIds,
   );
+
+  useEffect(() => {
+    if (sessionId === null || recoveryRunStreamTargets.length === 0) {
+      return;
+    }
+    if (
+      runStreamIdsMatchTargets(
+        runStreamController.activeRunIds,
+        recoveryRunStreamTargets,
+      )
+    ) {
+      return;
+    }
+    if (recoveryRunStreamTargets.length === 1) {
+      const [target] = recoveryRunStreamTargets;
+      runStreamController.startRunStream({
+        afterEventId: target.afterEventId,
+        runId: target.runId,
+        sessionId,
+      });
+      return;
+    }
+    runStreamController.startRunStreams({
+      runs: recoveryRunStreamTargets,
+      sessionId,
+    });
+  }, [
+    activeRunIdsKey,
+    recoveryRunStreamTargetsKey,
+    recoveryRunStreamTargets,
+    runStreamController,
+    sessionId,
+  ]);
 
   const resumeRecoverableRun = async (runId: string) => {
     const result = await resumeRun(runId);
@@ -741,6 +787,105 @@ function isActiveBackgroundTask(task: RecoveryBackgroundTask): boolean {
   );
 }
 
+function buildRecoveryRunStreamTargets(
+  activeRun: RecoveryRun | null,
+  activeBackgroundTasks: RecoveryBackgroundTask[],
+): StartRunStreamTarget[] {
+  const targets: StartRunStreamTarget[] = [];
+  if (shouldStreamActiveRun(activeRun, activeBackgroundTasks)) {
+    addRecoveryRunStreamTarget(targets, activeRun.run_id, activeRun.last_event_id);
+  }
+  for (const task of activeBackgroundTasks) {
+    addRecoveryRunStreamTarget(
+      targets,
+      task.run_id,
+      activeRun?.run_id === task.run_id ? activeRun.last_event_id : undefined,
+    );
+    addRecoveryRunStreamTarget(targets, backgroundTaskOutputRunId(task), undefined);
+  }
+  return targets;
+}
+
+function shouldStreamActiveRun(
+  activeRun: RecoveryRun | null,
+  activeBackgroundTasks: RecoveryBackgroundTask[],
+): activeRun is RecoveryRun {
+  if (activeRun === null || activeRun.run_id.trim().length === 0) {
+    return false;
+  }
+  if (activeBackgroundTasks.length > 0) {
+    return true;
+  }
+  if (activeRun.should_show_recover === true) {
+    return false;
+  }
+  return (
+    isStreamingRunStatus(activeRun.status) || isStreamingRunStatus(activeRun.phase)
+  );
+}
+
+function isStreamingRunStatus(status: string | undefined): boolean {
+  switch (status?.trim().toLowerCase()) {
+    case "queued":
+    case "running":
+    case "stopping":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function backgroundTaskOutputRunId(task: RecoveryBackgroundTask): string {
+  if (task.kind === "subagent") {
+    const subagentRunId = task.subagent_run_id?.trim() ?? "";
+    if (subagentRunId) {
+      return subagentRunId;
+    }
+  }
+  return task.run_id;
+}
+
+function addRecoveryRunStreamTarget(
+  targets: StartRunStreamTarget[],
+  runId: string,
+  afterEventId: number | undefined,
+): void {
+  const normalizedRunId = runId.trim();
+  if (!normalizedRunId) {
+    return;
+  }
+  const existingIndex = targets.findIndex((target) => target.runId === normalizedRunId);
+  if (existingIndex >= 0) {
+    const existing = targets[existingIndex];
+    if (afterEventId !== undefined) {
+      targets[existingIndex] = {
+        ...existing,
+        afterEventId: Math.max(existing.afterEventId ?? 0, afterEventId),
+      };
+    }
+    return;
+  }
+  if (afterEventId === undefined) {
+    targets.push({ runId: normalizedRunId });
+    return;
+  }
+  targets.push({ afterEventId, runId: normalizedRunId });
+}
+
+function runStreamIdsMatchTargets(
+  activeRunIds: string[],
+  targets: StartRunStreamTarget[],
+): boolean {
+  return (
+    activeRunIds.length === targets.length &&
+    targets.every((target, index) => activeRunIds[index] === target.runId)
+  );
+}
+
+function recoveryRunStreamTargetKey(target: StartRunStreamTarget): string {
+  return `${target.runId}:${target.afterEventId ?? ""}`;
+}
+
 function backgroundTaskTitle(task: RecoveryBackgroundTask): string {
   const command = task.command.trim();
   if (command) {
@@ -796,12 +941,12 @@ function shouldShowResumeAction(
   pendingApprovals: PendingToolApproval[],
   pendingQuestions: PendingUserQuestion[],
   pausedSubagent: unknown,
-  activeStreamRunId: string | null,
+  activeStreamRunIds: string[],
 ): boolean {
   if (activeRun?.should_show_recover !== true || !activeRun.run_id) {
     return false;
   }
-  if (activeStreamRunId === activeRun.run_id) {
+  if (activeStreamRunIds.includes(activeRun.run_id)) {
     return false;
   }
   if (pendingApprovals.length > 0 || pendingQuestions.length > 0 || pausedSubagent) {

@@ -19,9 +19,13 @@ import {
   Check,
   ExternalLink,
   MessageSquareReply,
+  Pencil,
   Play,
+  Plus,
   RefreshCcw,
   RotateCw,
+  Settings2,
+  Trash2,
   Undo2,
   Search,
   SquareKanban,
@@ -30,7 +34,10 @@ import { useMemo, useState } from "react";
 
 import {
   archiveBoardTodo,
+  createBoardTodoSource,
+  deleteBoardTodoSource,
   listBoardTodos,
+  listBoardTodoSources,
   markBoardTodoDone,
   previewRequestChangesBoardTodo,
   previewStartBoardTodo,
@@ -38,12 +45,17 @@ import {
   restoreBoardTodo,
   startBoardTodo,
   syncBoardTodos,
+  updateBoardTodoSource,
 } from "../../api/client";
 import type {
   BoardTodoBoardResponse,
   BoardTodoItem,
   BoardTodoPreviewRequestChangesResponse,
   BoardTodoPreviewStartResponse,
+  BoardTodoSourceCreateRequest,
+  BoardTodoSourceSettingsResponse,
+  BoardTodoSourceUpdateRequest,
+  BoardTodoSourceView,
   BoardTodoStatus,
   BoardTodoStatusCounts,
   WorkspaceRecord,
@@ -88,6 +100,9 @@ export function BoardTodosView({
     useState<BoardTodoItem | null>(null);
   const [requestChangesFeedback, setRequestChangesFeedback] = useState("");
   const [requestChangesPrompt, setRequestChangesPrompt] = useState("");
+  const [sourceSettingsOpen, setSourceSettingsOpen] = useState(false);
+  const [sourceEditor, setSourceEditor] =
+    useState<BoardSourceEditorState | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [searchText, setSearchText] = useState("");
   const workspaceOptions = useMemo(
@@ -104,6 +119,10 @@ export function BoardTodosView({
     "board-todos",
     activeWorkspaceId ?? "",
     includeArchived,
+  ] as const;
+  const sourceSettingsQueryKey = [
+    "board-todo-sources",
+    activeWorkspaceId ?? "",
   ] as const;
 
   const boardQuery = useQuery({
@@ -123,6 +142,46 @@ export function BoardTodosView({
       }),
     onSuccess: (response) => {
       queryClient.setQueryData(boardQueryKey, response);
+    },
+  });
+  const sourceSettingsQuery = useQuery({
+    enabled: sourceSettingsOpen && activeWorkspaceId !== null,
+    queryFn: () => listBoardTodoSources(requireWorkspaceId(activeWorkspaceId)),
+    queryKey: sourceSettingsQueryKey,
+  });
+  const createSourceMutation = useMutation({
+    mutationFn: (request: BoardTodoSourceCreateRequest) =>
+      createBoardTodoSource(request),
+    onError: (error) => {
+      void message.error(errorText(error));
+    },
+    onSuccess: () => {
+      resetSourceEditor();
+      refreshBoardSourceData();
+      void message.success(t("boardSourceSaved"));
+    },
+  });
+  const updateSourceMutation = useMutation({
+    mutationFn: (request: BoardSourceUpdateMutationRequest) =>
+      updateBoardTodoSource(request.sourceId, request.payload),
+    onError: (error) => {
+      void message.error(errorText(error));
+    },
+    onSuccess: () => {
+      resetSourceEditor();
+      refreshBoardSourceData();
+      void message.success(t("boardSourceSaved"));
+    },
+  });
+  const deleteSourceMutation = useMutation({
+    mutationFn: (sourceId: string) => deleteBoardTodoSource(sourceId),
+    onError: (error) => {
+      void message.error(errorText(error));
+    },
+    onSuccess: () => {
+      resetSourceEditor();
+      refreshBoardSourceData();
+      void message.success(t("boardSourceDeleted"));
     },
   });
   const previewHandoffMutation = useMutation({
@@ -266,6 +325,10 @@ export function BoardTodosView({
     t("boardNoWorkspace");
   const handoffPreview = previewHandoffMutation.data;
   const requestChangesPreview = previewRequestChangesMutation.data;
+  const sourceSettingsBusy =
+    createSourceMutation.isPending
+    || updateSourceMutation.isPending
+    || deleteSourceMutation.isPending;
 
   function openStartHandoff(item: BoardTodoItem) {
     setHandoffTarget(item);
@@ -273,6 +336,86 @@ export function BoardTodosView({
     previewHandoffMutation.reset();
     startHandoffMutation.reset();
     previewHandoffMutation.mutate(item);
+  }
+
+  function openSourceSettings() {
+    setSourceSettingsOpen(true);
+    resetSourceEditor();
+  }
+
+  function closeSourceSettings() {
+    if (sourceSettingsBusy) {
+      return;
+    }
+    setSourceSettingsOpen(false);
+    resetSourceEditor();
+  }
+
+  function refreshBoardSourceData() {
+    void queryClient.invalidateQueries({ queryKey: sourceSettingsQueryKey });
+    void queryClient.invalidateQueries({ queryKey: boardQueryKey });
+  }
+
+  function startCreateSource() {
+    setSourceEditor(createEmptyBoardSourceEditor());
+    createSourceMutation.reset();
+    updateSourceMutation.reset();
+    deleteSourceMutation.reset();
+  }
+
+  function startEditSource(sourceView: BoardTodoSourceView) {
+    setSourceEditor({
+      displayName: sourceView.source.display_name,
+      enabled: sourceView.source.enabled,
+      repositoryFullName: sourceView.source.repository_full_name ?? "",
+      sourceId: sourceView.source.source_id,
+    });
+    createSourceMutation.reset();
+    updateSourceMutation.reset();
+    deleteSourceMutation.reset();
+  }
+
+  function updateSourceEditor(patch: Partial<BoardSourceEditorState>) {
+    setSourceEditor((current) => (current === null ? current : { ...current, ...patch }));
+  }
+
+  function resetSourceEditor() {
+    setSourceEditor(null);
+    createSourceMutation.reset();
+    updateSourceMutation.reset();
+    deleteSourceMutation.reset();
+  }
+
+  function saveSourceEditor() {
+    if (sourceEditor === null) {
+      return;
+    }
+    const displayName = sourceEditor.displayName.trim();
+    const repositoryFullName = sourceEditor.repositoryFullName.trim();
+    if (!displayName || !repositoryFullName) {
+      void message.error(t("boardSourceRequired"));
+      return;
+    }
+    const workspaceId = requireWorkspaceId(activeWorkspaceId);
+    if (sourceEditor.sourceId === null) {
+      createSourceMutation.mutate({
+        display_name: displayName,
+        enabled: sourceEditor.enabled,
+        kind: "github_issues",
+        repository_full_name: repositoryFullName,
+        workspace_id: workspaceId,
+      });
+      return;
+    }
+    updateSourceMutation.mutate({
+      payload: {
+        display_name: displayName,
+        enabled: sourceEditor.enabled,
+        repository_full_name: repositoryFullName,
+        workspace_id: workspaceId,
+      },
+      sourceId: sourceEditor.sourceId,
+    });
   }
 
   function closeHandoffDrawer() {
@@ -341,6 +484,16 @@ export function BoardTodosView({
           </div>
         </div>
         <div className="at-board-toolbar-actions">
+          <Tooltip title={t("boardSourceSettings")}>
+            <Button
+              aria-label={t("boardSourceSettings")}
+              disabled={activeWorkspaceId === null}
+              icon={<Settings2 size={15} />}
+              loading={sourceSettingsQuery.isFetching && sourceSettingsOpen}
+              onClick={openSourceSettings}
+              type="text"
+            />
+          </Tooltip>
           <Tooltip title={t("boardRefresh")}>
             <Button
               aria-label={t("boardRefresh")}
@@ -498,6 +651,25 @@ export function BoardTodosView({
           </div>
         )}
       </div>
+      <BoardSourceSettingsDrawer
+        busy={sourceSettingsBusy}
+        deletingSourceId={deleteSourceMutation.variables ?? null}
+        editor={sourceEditor}
+        language={language}
+        loadError={sourceSettingsQuery.error}
+        loading={sourceSettingsQuery.isFetching && sourceSettingsQuery.data === undefined}
+        onClose={closeSourceSettings}
+        onDelete={(sourceId) => deleteSourceMutation.mutate(sourceId)}
+        onEditorChange={updateSourceEditor}
+        onRefresh={() => void sourceSettingsQuery.refetch()}
+        onSave={saveSourceEditor}
+        onStartCreate={startCreateSource}
+        onStartEdit={startEditSource}
+        onStopEdit={resetSourceEditor}
+        open={sourceSettingsOpen}
+        settings={sourceSettingsQuery.data}
+        workspaceLabel={activeWorkspaceLabel}
+      />
       <BoardHandoffDrawer
         item={handoffTarget}
         onClose={closeHandoffDrawer}
@@ -736,6 +908,269 @@ function BoardTodoCard({
               </Button>
             </Popconfirm>
           ) : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function BoardSourceSettingsDrawer({
+  busy,
+  deletingSourceId,
+  editor,
+  language,
+  loadError,
+  loading,
+  onClose,
+  onDelete,
+  onEditorChange,
+  onRefresh,
+  onSave,
+  onStartCreate,
+  onStartEdit,
+  onStopEdit,
+  open,
+  settings,
+  workspaceLabel,
+}: {
+  busy: boolean;
+  deletingSourceId: string | null;
+  editor: BoardSourceEditorState | null;
+  language: Language;
+  loadError: Error | null;
+  loading: boolean;
+  onClose: () => void;
+  onDelete: (sourceId: string) => void;
+  onEditorChange: (patch: Partial<BoardSourceEditorState>) => void;
+  onRefresh: () => void;
+  onSave: () => void;
+  onStartCreate: () => void;
+  onStartEdit: (sourceView: BoardTodoSourceView) => void;
+  onStopEdit: () => void;
+  open: boolean;
+  settings: BoardTodoSourceSettingsResponse | undefined;
+  workspaceLabel: string;
+}) {
+  const t = useTranslations();
+  const sourceCount = settings?.sources.length ?? 0;
+  const canSave =
+    editor !== null
+    && editor.displayName.trim().length > 0
+    && editor.repositoryFullName.trim().length > 0
+    && !busy;
+  return (
+    <Drawer
+      destroyOnClose
+      onClose={onClose}
+      open={open}
+      title={t("boardSourceSettingsTitle")}
+      width={560}
+    >
+      <div className="at-board-sources">
+        <header className="at-board-sources-header">
+          <div>
+            <strong>{workspaceLabel}</strong>
+            <span>{t("boardSourceCount", { count: sourceCount })}</span>
+          </div>
+          <div>
+            <Tooltip title={t("boardRefresh")}>
+              <Button
+                aria-label={t("boardRefresh")}
+                icon={<RefreshCcw size={14} />}
+                loading={loading}
+                onClick={onRefresh}
+                type="text"
+              />
+            </Tooltip>
+            <Button
+              icon={<Plus size={14} />}
+              onClick={onStartCreate}
+              type="primary"
+            >
+              {t("boardSourceAdd")}
+            </Button>
+          </div>
+        </header>
+
+        {loadError !== null ? (
+          <Alert
+            description={errorText(loadError)}
+            message={t("boardSourceLoadError")}
+            showIcon
+            type="error"
+          />
+        ) : null}
+
+        {settings !== undefined && settings.diagnostics.length > 0 ? (
+          <Alert
+            description={settings.diagnostics.join(" / ")}
+            message={t("boardDiagnostics")}
+            showIcon
+            type="warning"
+          />
+        ) : null}
+
+        {loading ? (
+          <Skeleton active paragraph={{ rows: 5 }} title={false} />
+        ) : null}
+
+        {settings !== undefined && settings.sources.length === 0 ? (
+          <Empty description={t("boardSourcesEmpty")} />
+        ) : null}
+
+        {settings !== undefined && settings.sources.length > 0 ? (
+          <div className="at-board-source-list">
+            {settings.sources.map((sourceView) => (
+              <BoardSourceRow
+                deleting={deletingSourceId === sourceView.source.source_id}
+                key={sourceView.source.source_id}
+                language={language}
+                onDelete={onDelete}
+                onEdit={onStartEdit}
+                sourceView={sourceView}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {editor !== null ? (
+          <section
+            aria-label={
+              editor.sourceId === null
+                ? t("boardSourceCreateTitle")
+                : t("boardSourceEditTitle")
+            }
+            className="at-board-source-editor"
+          >
+            <header>
+              <h3>
+                {editor.sourceId === null
+                  ? t("boardSourceCreateTitle")
+                  : t("boardSourceEditTitle")}
+              </h3>
+            </header>
+            <label className="at-board-source-field">
+              <span>{t("boardSourceName")}</span>
+              <Input
+                disabled={busy}
+                onChange={(event) =>
+                  onEditorChange({ displayName: event.target.value })
+                }
+                value={editor.displayName}
+              />
+            </label>
+            <label className="at-board-source-field">
+              <span>{t("boardSourceRepository")}</span>
+              <Input
+                disabled={busy}
+                onChange={(event) =>
+                  onEditorChange({ repositoryFullName: event.target.value })
+                }
+                placeholder={t("boardSourceRepositoryPlaceholder")}
+                value={editor.repositoryFullName}
+              />
+            </label>
+            <label className="at-board-source-switch">
+              <Switch
+                checked={editor.enabled}
+                disabled={busy}
+                onChange={(enabled) => onEditorChange({ enabled })}
+              />
+              <span>{t("boardSourceEnabled")}</span>
+            </label>
+            <div className="at-board-source-editor-actions">
+              <Button disabled={busy} onClick={onStopEdit}>
+                {t("boardHandoffCancel")}
+              </Button>
+              <Button
+                disabled={!canSave}
+                loading={busy}
+                onClick={onSave}
+                type="primary"
+              >
+                {editor.sourceId === null
+                  ? t("boardSourceCreate")
+                  : t("boardSourceSave")}
+              </Button>
+            </div>
+          </section>
+        ) : null}
+      </div>
+    </Drawer>
+  );
+}
+
+function BoardSourceRow({
+  deleting,
+  language,
+  onDelete,
+  onEdit,
+  sourceView,
+}: {
+  deleting: boolean;
+  language: Language;
+  onDelete: (sourceId: string) => void;
+  onEdit: (sourceView: BoardTodoSourceView) => void;
+  sourceView: BoardTodoSourceView;
+}) {
+  const t = useTranslations();
+  const { source, state } = sourceView;
+  const lastFinished = formatDateTime(state?.last_sync_finished_at, language);
+  const diagnostics = state?.last_diagnostics ?? [];
+  return (
+    <article className="at-board-source-row">
+      <header>
+        <div>
+          <strong title={source.display_name}>{source.display_name}</strong>
+          <span title={source.repository_full_name ?? ""}>
+            {source.repository_full_name ?? t("boardSourceNoRepository")}
+          </span>
+        </div>
+        <div>
+          <Tag>{source.enabled ? t("boardSourceEnabled") : t("boardSourceDisabled")}</Tag>
+          {source.system_managed ? <Tag>{t("boardSourceSystemManaged")}</Tag> : null}
+          <Tooltip title={t("boardSourceEdit")}>
+            <Button
+              aria-label={t("boardSourceEdit")}
+              disabled={source.system_managed}
+              icon={<Pencil size={14} />}
+              onClick={() => onEdit(sourceView)}
+              type="text"
+            />
+          </Tooltip>
+          <Popconfirm
+            disabled={source.system_managed}
+            onConfirm={() => onDelete(source.source_id)}
+            title={t("boardSourceDeleteConfirm")}
+          >
+            <Button
+              aria-label={t("boardSourceDelete")}
+              danger
+              disabled={source.system_managed}
+              icon={<Trash2 size={14} />}
+              loading={deleting}
+              type="text"
+            />
+          </Popconfirm>
+        </div>
+      </header>
+      <dl className="at-board-source-meta">
+        <div>
+          <dt>{t("boardSourceKind")}</dt>
+          <dd>{formatBoardValue(source.kind)}</dd>
+        </div>
+        <div>
+          <dt>{t("boardSourceSyncStatus")}</dt>
+          <dd>{state?.last_sync_status ?? "idle"}</dd>
+        </div>
+        <div>
+          <dt>{t("boardSynced")}</dt>
+          <dd>{lastFinished || t("boardNotSynced")}</dd>
+        </div>
+      </dl>
+      {diagnostics.length > 0 ? (
+        <div className="at-board-source-diagnostics">
+          {diagnostics.join(" / ")}
         </div>
       ) : null}
     </article>
@@ -1074,6 +1509,27 @@ type BoardStatusAction = "archive" | "mark-done" | "restore";
 interface BoardStatusActionRequest {
   action: BoardStatusAction;
   item: BoardTodoItem;
+}
+
+interface BoardSourceEditorState {
+  displayName: string;
+  enabled: boolean;
+  repositoryFullName: string;
+  sourceId: string | null;
+}
+
+interface BoardSourceUpdateMutationRequest {
+  payload: BoardTodoSourceUpdateRequest;
+  sourceId: string;
+}
+
+function createEmptyBoardSourceEditor(): BoardSourceEditorState {
+  return {
+    displayName: "GitHub issues",
+    enabled: true,
+    repositoryFullName: "",
+    sourceId: null,
+  };
 }
 
 function boardStatusActionSuccess(

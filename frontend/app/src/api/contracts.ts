@@ -550,6 +550,8 @@ export type BoardTodoSourceType =
   | "manual"
   | "github_issue"
   | "github_pull_request";
+export type BoardTodoSourceKind = "manual" | "github_issues";
+export type BoardTodoSyncStatus = "idle" | "running" | "succeeded" | "failed";
 
 export interface BoardTodoStatusCounts {
   todo: number;
@@ -566,6 +568,64 @@ export interface BoardTodoSourceGroup {
   kind: string;
   repository_full_name?: string | null;
   source_id?: string | null;
+}
+
+export interface BoardTodoSource {
+  created_at: string;
+  display_name: string;
+  enabled: boolean;
+  kind: BoardTodoSourceKind;
+  provider: BoardTodoSourceProvider;
+  repository_full_name?: string | null;
+  source_id: string;
+  system_managed: boolean;
+  updated_at: string;
+  workspace_id: string;
+}
+
+export interface BoardTodoSourceState {
+  last_diagnostics: string[];
+  last_sync_finished_at?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_status: BoardTodoSyncStatus;
+  source_id: string;
+  sync_cursor?: string | null;
+  workspace_id: string;
+}
+
+export interface BoardTodoSourceView {
+  source: BoardTodoSource;
+  state?: BoardTodoSourceState | null;
+}
+
+export interface BoardTodoSourceSettingsResponse {
+  board_workspace_id: string;
+  diagnostics: string[];
+  forked_from_workspace_id?: string | null;
+  is_fork_view: boolean;
+  sources: BoardTodoSourceView[];
+  view_workspace_id: string;
+  workspace_id: string;
+}
+
+export interface BoardTodoSourceCreateRequest {
+  display_name: string;
+  enabled?: boolean;
+  kind: BoardTodoSourceKind;
+  repository_full_name?: string | null;
+  workspace_id: string;
+}
+
+export interface BoardTodoSourceUpdateRequest {
+  display_name?: string | null;
+  enabled?: boolean | null;
+  repository_full_name?: string | null;
+  workspace_id?: string | null;
+}
+
+export interface BoardTodoSourceDeleteResponse {
+  deleted: boolean;
+  source_id: string;
 }
 
 export interface BoardTodoItem {

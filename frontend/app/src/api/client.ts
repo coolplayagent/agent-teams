@@ -12,6 +12,11 @@ import type {
   BoardTodoPreviewRequestChangesResponse,
   BoardTodoPreviewStartRequest,
   BoardTodoPreviewStartResponse,
+  BoardTodoSource,
+  BoardTodoSourceCreateRequest,
+  BoardTodoSourceDeleteResponse,
+  BoardTodoSourceSettingsResponse,
+  BoardTodoSourceUpdateRequest,
   BoardTodoStartRequest,
   BoardTodoStatusUpdateRequest,
   BinaryToolDownloadJob,
@@ -300,6 +305,48 @@ export function syncBoardTodos(
       workspace_id: options.workspaceId,
     }),
   });
+}
+
+export function listBoardTodoSources(
+  workspaceId: string,
+): Promise<BoardTodoSourceSettingsResponse> {
+  const params = new URLSearchParams({ workspace_id: workspaceId });
+  return requestJson<BoardTodoSourceSettingsResponse>(
+    `/boards/todo-sources?${params.toString()}`,
+  );
+}
+
+export function createBoardTodoSource(
+  request: BoardTodoSourceCreateRequest,
+): Promise<BoardTodoSource> {
+  return requestJson<BoardTodoSource>("/boards/todo-sources", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function updateBoardTodoSource(
+  sourceId: string,
+  request: BoardTodoSourceUpdateRequest,
+): Promise<BoardTodoSource> {
+  return requestJson<BoardTodoSource>(
+    `/boards/todo-sources/${encodeURIComponent(sourceId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteBoardTodoSource(
+  sourceId: string,
+): Promise<BoardTodoSourceDeleteResponse> {
+  return requestJson<BoardTodoSourceDeleteResponse>(
+    `/boards/todo-sources/${encodeURIComponent(sourceId)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export function previewStartBoardTodo(

@@ -728,6 +728,86 @@ def test_v2_board_request_changes_calls_real_endpoints(
         page.screenshot(path=str(screenshot_dir / "v2-board-request-changes.png"))
 
 
+def test_v2_board_source_settings_call_real_endpoints(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        primary_nav = page.get_by_role("navigation", name="Primary navigation")
+        primary_nav.get_by_role("button", name="Board").click()
+
+        board_view = page.get_by_test_id("board-todos-view")
+        expect(board_view.get_by_test_id("board-todo-todo-v2-shell")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        board_view.get_by_role("button", name="Board sources").click()
+
+        drawer = page.get_by_role("dialog", name="Board sources")
+        expect(drawer).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(drawer.get_by_text("GitHub issues", exact=True)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        drawer.get_by_role("button", name="Edit source").click()
+        drawer.get_by_label("Name").fill("GitHub issues browser")
+        drawer.get_by_role("switch", name="Enabled").click()
+        drawer.get_by_role("button", name="Save").click()
+
+        expect(page.get_by_text("Board source saved.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(drawer.get_by_text("GitHub issues browser")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        drawer.get_by_role("button", name="Add source").click()
+        drawer.get_by_label("Name").fill("Agent Teams triage")
+        drawer.get_by_label("Repository").fill("openai/agent-teams-triage")
+        drawer.get_by_role("button", name="Create").click()
+
+        expect(drawer.get_by_text("Agent Teams triage")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        drawer.get_by_role("button", name="Delete source").first.click()
+        page.get_by_role("button", name="OK").click()
+
+        expect(page.get_by_text("Board source deleted.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert backend.board_source_update_payloads == [
+            {
+                "display_name": "GitHub issues browser",
+                "enabled": False,
+                "repository_full_name": "openai/agent-teams",
+                "workspace_id": _WORKSPACE_ID,
+            }
+        ]
+        assert backend.board_source_create_payloads == [
+            {
+                "display_name": "Agent Teams triage",
+                "enabled": True,
+                "kind": "github_issues",
+                "repository_full_name": "openai/agent-teams-triage",
+                "workspace_id": _WORKSPACE_ID,
+            }
+        ]
+        assert backend.board_source_delete_requests == ["source-1"]
+        assert "/boards/todo-sources" in backend.requested_paths
+        assert "/boards/todo-sources/source-1" in backend.requested_paths
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-board"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-board-source-settings.png"))
+
+
 def test_v2_workspace_project_view_opens_real_workbench_flow(
     browser_page: Page,
 ) -> None:
@@ -957,9 +1037,9 @@ def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
         )
 
         system_pages.filter(has_text="Agent Runtime").click()
-        expect(
-            settings.get_by_role("heading", name="Agent Runtime")
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(settings.get_by_role("heading", name="Agent Runtime")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS
+        )
         expect(settings.get_by_text("Codex CLI")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
@@ -1390,6 +1470,13 @@ class _V2ShellBackend:
         self.board_request_changes_payloads: list[dict[str, object]] = []
         self.board_request_changes_preview_payloads: list[dict[str, object]] = []
         self.board_request_changes_started = False
+        self.board_source_create_payloads: list[dict[str, object]] = []
+        self.board_source_delete_requests: list[str] = []
+        self.board_source_display_name = "GitHub issues"
+        self.board_source_enabled = True
+        self.board_source_created = False
+        self.board_source_deleted = False
+        self.board_source_update_payloads: list[dict[str, object]] = []
         self.board_sync_payloads: list[dict[str, object]] = []
         self.open_root_queries: list[str] = []
         self.requested_paths: list[str] = []
@@ -1538,9 +1625,8 @@ class _V2ShellBackend:
         if request.method == "GET" and path == "/system/configs/workspace/ssh-profiles":
             _fulfill_json(route, self.ssh_profiles)
             return
-        if (
-            request.method == "DELETE"
-            and path.startswith("/system/configs/workspace/ssh-profiles/")
+        if request.method == "DELETE" and path.startswith(
+            "/system/configs/workspace/ssh-profiles/"
         ):
             profile_id = unquote(
                 path.removeprefix("/system/configs/workspace/ssh-profiles/"),
@@ -1639,7 +1725,10 @@ class _V2ShellBackend:
             self.automation_project_status = "enabled"
             _fulfill_json(route, self._automation_project())
             return
-        if request.method == "POST" and path == "/automation/projects/aut-daily:disable":
+        if (
+            request.method == "POST"
+            and path == "/automation/projects/aut-daily:disable"
+        ):
             self.automation_disable_requests.append("aut-daily")
             self.automation_project_status = "disabled"
             _fulfill_json(route, self._automation_project())
@@ -1668,6 +1757,39 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == "/boards/todos":
             _fulfill_json(route, self._board())
+            return
+        if request.method == "GET" and path == "/boards/todo-sources":
+            _fulfill_json(route, self._board_source_settings())
+            return
+        if request.method == "POST" and path == "/boards/todo-sources":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.board_source_create_payloads.append(payload)
+            self.board_source_created = True
+            source_view = self._board_source("source-created")
+            _fulfill_json(route, cast(dict[str, object], source_view["source"]))
+            return
+        if request.method == "PATCH" and path == "/boards/todo-sources/source-1":
+            payload = cast(
+                dict[str, object],
+                json.loads(request.post_data or "{}"),
+            )
+            self.board_source_update_payloads.append(payload)
+            self.board_source_display_name = str(
+                payload.get("display_name", self.board_source_display_name),
+            )
+            self.board_source_enabled = bool(
+                payload.get("enabled", self.board_source_enabled),
+            )
+            source_view = self._board_source("source-1")
+            _fulfill_json(route, cast(dict[str, object], source_view["source"]))
+            return
+        if request.method == "DELETE" and path == "/boards/todo-sources/source-1":
+            self.board_source_delete_requests.append("source-1")
+            self.board_source_deleted = True
+            _fulfill_json(route, {"deleted": True, "source_id": "source-1"})
             return
         if request.method == "POST" and path == "/boards/todos:sync":
             payload = cast(
@@ -2435,22 +2557,26 @@ class _V2ShellBackend:
         }
 
     def _board(self) -> dict[str, object]:
-        item = self._board_handoff_started_item() if self.board_handoff_started else {
-            "body": "Keep module pages reachable from the fixed V2 shell.",
-            "created_at": "2026-06-25T08:00:00Z",
-            "issue_number": 401,
-            "item_revision": 3,
-            "repository_full_name": "openai/agent-teams",
-            "run_recoverable": False,
-            "source_key": "openai/agent-teams#401",
-            "source_provider": "github",
-            "source_type": "github_issue",
-            "status": "todo",
-            "title": "Keep module pages reachable",
-            "todo_id": "todo-v2-shell",
-            "updated_at": "2026-06-25T08:10:00Z",
-            "workspace_id": _WORKSPACE_ID,
-        }
+        item = (
+            self._board_handoff_started_item()
+            if self.board_handoff_started
+            else {
+                "body": "Keep module pages reachable from the fixed V2 shell.",
+                "created_at": "2026-06-25T08:00:00Z",
+                "issue_number": 401,
+                "item_revision": 3,
+                "repository_full_name": "openai/agent-teams",
+                "run_recoverable": False,
+                "source_key": "openai/agent-teams#401",
+                "source_provider": "github",
+                "source_type": "github_issue",
+                "status": "todo",
+                "title": "Keep module pages reachable",
+                "todo_id": "todo-v2-shell",
+                "updated_at": "2026-06-25T08:10:00Z",
+                "workspace_id": _WORKSPACE_ID,
+            }
+        )
         review_item = (
             self._board_request_changes_started_item()
             if self.board_request_changes_started
@@ -2621,7 +2747,9 @@ class _V2ShellBackend:
         revision: int,
         synced_at: str,
     ) -> dict[str, object]:
-        return self._board_response_items([item], revision=revision, synced_at=synced_at)
+        return self._board_response_items(
+            [item], revision=revision, synced_at=synced_at
+        )
 
     def _board_response_items(
         self,
@@ -2659,6 +2787,56 @@ class _V2ShellBackend:
             "synced_at": synced_at,
             "view_workspace_id": _WORKSPACE_ID,
             "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _board_source_settings(self) -> dict[str, object]:
+        sources = []
+        if not self.board_source_deleted:
+            sources.append(self._board_source("source-1"))
+        if self.board_source_created:
+            sources.append(self._board_source("source-created"))
+        return {
+            "board_workspace_id": _WORKSPACE_ID,
+            "diagnostics": [],
+            "is_fork_view": False,
+            "sources": sources,
+            "view_workspace_id": _WORKSPACE_ID,
+            "workspace_id": _WORKSPACE_ID,
+        }
+
+    def _board_source(self, source_id: str) -> dict[str, object]:
+        display_name = (
+            "Agent Teams triage"
+            if source_id == "source-created"
+            else self.board_source_display_name
+        )
+        repository = (
+            "openai/agent-teams-triage"
+            if source_id == "source-created"
+            else "openai/agent-teams"
+        )
+        return {
+            "source": {
+                "created_at": "2026-06-25T08:00:00Z",
+                "display_name": display_name,
+                "enabled": self.board_source_enabled,
+                "kind": "github_issues",
+                "provider": "github",
+                "repository_full_name": repository,
+                "source_id": source_id,
+                "system_managed": False,
+                "updated_at": "2026-06-25T08:20:00Z",
+                "workspace_id": _WORKSPACE_ID,
+            },
+            "state": {
+                "last_diagnostics": [],
+                "last_sync_finished_at": "2026-06-25T08:11:00Z",
+                "last_sync_started_at": "2026-06-25T08:10:00Z",
+                "last_sync_status": "succeeded",
+                "source_id": source_id,
+                "sync_cursor": "issue-cursor",
+                "workspace_id": _WORKSPACE_ID,
+            },
         }
 
     def _memory_summary(self) -> dict[str, object]:
@@ -2723,7 +2901,9 @@ def _serve_v2_app(repo_root: Path) -> Iterator[str]:
                 return str(app_root / request_path.removeprefix("/app/"))
             if request_path == "/":
                 return str(legacy_root / "index.html")
-            legacy_target = legacy_root.joinpath(*request_path.removeprefix("/").split("/"))
+            legacy_target = legacy_root.joinpath(
+                *request_path.removeprefix("/").split("/")
+            )
             if legacy_target.is_file():
                 return str(legacy_target)
             return str(legacy_root / "index.html")

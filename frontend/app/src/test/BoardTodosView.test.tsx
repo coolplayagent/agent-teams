@@ -12,7 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   archiveBoardTodo,
+  createBoardTodoSource,
   listBoardTodos,
+  listBoardTodoSources,
   markBoardTodoDone,
   previewRequestChangesBoardTodo,
   previewStartBoardTodo,
@@ -20,10 +22,12 @@ import {
   restoreBoardTodo,
   startBoardTodo,
   syncBoardTodos,
+  updateBoardTodoSource,
 } from "../api/client";
 import type {
   BoardTodoBoardResponse,
   BoardTodoItem,
+  BoardTodoSourceSettingsResponse,
   WorkspaceRecord,
 } from "../api/contracts";
 import { BoardTodosView } from "../features/boards/BoardTodosView";
@@ -31,7 +35,10 @@ import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   archiveBoardTodo: vi.fn(),
+  createBoardTodoSource: vi.fn(),
+  deleteBoardTodoSource: vi.fn(),
   listBoardTodos: vi.fn(),
+  listBoardTodoSources: vi.fn(),
   markBoardTodoDone: vi.fn(),
   previewRequestChangesBoardTodo: vi.fn(),
   previewStartBoardTodo: vi.fn(),
@@ -39,10 +46,13 @@ vi.mock("../api/client", () => ({
   restoreBoardTodo: vi.fn(),
   startBoardTodo: vi.fn(),
   syncBoardTodos: vi.fn(),
+  updateBoardTodoSource: vi.fn(),
 }));
 
 const archiveBoardTodoMock = vi.mocked(archiveBoardTodo);
+const createBoardTodoSourceMock = vi.mocked(createBoardTodoSource);
 const listBoardTodosMock = vi.mocked(listBoardTodos);
+const listBoardTodoSourcesMock = vi.mocked(listBoardTodoSources);
 const markBoardTodoDoneMock = vi.mocked(markBoardTodoDone);
 const previewRequestChangesBoardTodoMock = vi.mocked(
   previewRequestChangesBoardTodo,
@@ -52,6 +62,7 @@ const requestChangesBoardTodoMock = vi.mocked(requestChangesBoardTodo);
 const restoreBoardTodoMock = vi.mocked(restoreBoardTodo);
 const startBoardTodoMock = vi.mocked(startBoardTodo);
 const syncBoardTodosMock = vi.mocked(syncBoardTodos);
+const updateBoardTodoSourceMock = vi.mocked(updateBoardTodoSource);
 
 const workspaces: WorkspaceRecord[] = [
   {
@@ -128,7 +139,20 @@ beforeEach(() => {
   listBoardTodosMock.mockResolvedValue(
     boardResponse([todoItem, reviewItem, doneItem], 7),
   );
+  listBoardTodoSourcesMock.mockResolvedValue(sourceSettingsResponse());
   archiveBoardTodoMock.mockResolvedValue(archivedItem);
+  createBoardTodoSourceMock.mockResolvedValue({
+    created_at: "2026-06-24T00:00:00Z",
+    display_name: "Agent Teams triage",
+    enabled: true,
+    kind: "github_issues",
+    provider: "github",
+    repository_full_name: "openai/agent-teams-triage",
+    source_id: "source-2",
+    system_managed: false,
+    updated_at: "2026-06-24T00:00:00Z",
+    workspace_id: "workspace-1",
+  });
   markBoardTodoDoneMock.mockResolvedValue({
     ...reviewItem,
     item_revision: 5,
@@ -216,6 +240,18 @@ beforeEach(() => {
     status: "in_progress",
   });
   syncBoardTodosMock.mockResolvedValue(boardResponse([syncedItem], 8));
+  updateBoardTodoSourceMock.mockResolvedValue({
+    created_at: "2026-06-24T00:00:00Z",
+    display_name: "GitHub issues updated",
+    enabled: false,
+    kind: "github_issues",
+    provider: "github",
+    repository_full_name: "openai/agent-teams",
+    source_id: "source-1",
+    system_managed: false,
+    updated_at: "2026-06-24T00:05:00Z",
+    workspace_id: "workspace-1",
+  });
 });
 
 afterEach(() => {
@@ -270,6 +306,54 @@ describe("BoardTodosView", () => {
     expect(await screen.findByText("Board sync completed")).toBeVisible();
     expect(screen.getByText("8")).toBeVisible();
   });
+
+  it("opens board source settings and saves source changes", async () => {
+    renderView();
+
+    expect(await screen.findByTestId("board-todo-todo-1")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Board sources" }));
+
+    const drawer = await screen.findByRole("dialog", { name: "Board sources" });
+    expect(await within(drawer).findByText("GitHub issues")).toBeVisible();
+    expect(within(drawer).getByText("openai/agent-teams")).toBeVisible();
+    expect(listBoardTodoSourcesMock).toHaveBeenCalledWith("workspace-1");
+
+    fireEvent.click(within(drawer).getByRole("button", { name: "Edit source" }));
+    fireEvent.change(within(drawer).getByLabelText("Name"), {
+      target: { value: "GitHub issues updated" },
+    });
+    fireEvent.click(within(drawer).getByRole("switch", { name: "Enabled" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateBoardTodoSourceMock).toHaveBeenCalledWith("source-1", {
+        display_name: "GitHub issues updated",
+        enabled: false,
+        repository_full_name: "openai/agent-teams",
+        workspace_id: "workspace-1",
+      }),
+    );
+
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add source" }));
+    fireEvent.change(within(drawer).getByLabelText("Name"), {
+      target: { value: "Agent Teams triage" },
+    });
+    fireEvent.change(within(drawer).getByLabelText("Repository"), {
+      target: { value: "openai/agent-teams-triage" },
+    });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(createBoardTodoSourceMock).toHaveBeenCalledWith({
+        display_name: "Agent Teams triage",
+        enabled: true,
+        kind: "github_issues",
+        repository_full_name: "openai/agent-teams-triage",
+        workspace_id: "workspace-1",
+      }),
+    );
+  }, 15000);
 
   it("previews and starts a board TODO handoff from the card drawer", async () => {
     renderView();
@@ -422,6 +506,41 @@ function boardResponse(
       todo: items.filter((item) => item.status === "todo").length,
     },
     synced_at: "2026-06-24T00:00:00Z",
+    view_workspace_id: "workspace-1",
+    workspace_id: "workspace-1",
+  };
+}
+
+function sourceSettingsResponse(): BoardTodoSourceSettingsResponse {
+  return {
+    board_workspace_id: "workspace-1",
+    diagnostics: [],
+    is_fork_view: false,
+    sources: [
+      {
+        source: {
+          created_at: "2026-06-24T00:00:00Z",
+          display_name: "GitHub issues",
+          enabled: true,
+          kind: "github_issues",
+          provider: "github",
+          repository_full_name: "openai/agent-teams",
+          source_id: "source-1",
+          system_managed: false,
+          updated_at: "2026-06-24T00:00:00Z",
+          workspace_id: "workspace-1",
+        },
+        state: {
+          last_diagnostics: [],
+          last_sync_finished_at: "2026-06-24T00:00:00Z",
+          last_sync_started_at: "2026-06-23T23:59:00Z",
+          last_sync_status: "succeeded",
+          source_id: "source-1",
+          sync_cursor: "cursor-1",
+          workspace_id: "workspace-1",
+        },
+      },
+    ],
     view_workspace_id: "workspace-1",
     workspace_id: "workspace-1",
   };

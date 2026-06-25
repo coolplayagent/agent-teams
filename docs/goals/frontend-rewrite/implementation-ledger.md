@@ -3016,3 +3016,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent built-app browser verification completed for this malformed SSE edge case. Hegel reviewer review is still pending, so no subsystem completion is claimed.
+
+## 2026-06-26 V2 Board Source Settings Browser Evidence Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist item 10, latest ledger, and current worktree before choosing this slice, then targeted the still-open Board `todo source settings` gap instead of continuing only screenshot-level polish.
+- Added typed frontend contracts and API client calls for `GET /api/boards/todo-sources`, `POST /api/boards/todo-sources`, `PATCH /api/boards/todo-sources/{source_id}`, and `DELETE /api/boards/todo-sources/{source_id}`.
+- Added a Board-local secondary drawer for source settings, preserving the V1-aligned sidebar/settings item set and avoiding a flattened root-level management surface.
+- The drawer lists source display name, repository, enabled/system state, source kind, sync status, last sync time, and diagnostics; it supports create/edit/delete against real endpoints, while system-managed sources are read-only.
+- Added component coverage for opening the drawer, loading sources, editing an existing source, creating a new GitHub issues source, plus API-client endpoint encoding and payload coverage including delete.
+- Added a built `/app/` browser scenario that opens Board from primary navigation, opens the Board sources drawer, edits, creates, and deletes sources through real mocked endpoints, and captures evidence at `.tmp/frontend-v2-board/v2-board-source-settings.png`.
+- Re-loaded the user's live in-app browser at `http://127.0.0.1:8000/app/`, verified the shell remains fixed to the viewport with the V1-aligned sidebar entries unchanged, opened the real Board page, and opened the `看板来源` drawer; DOM metrics showed `bodyHeight` still matched `viewportHeight`.
+- Kept this as targeted Board source-settings progress only; broader Connectors/Memory/Gateway/Automation/Boards reviewer sign-off, visual parity matrix completion, AG-UI stream/replay completion, Electron readiness, and release readiness remain open.
+
+### Verification
+- `npm test -- --run src/test/BoardTodosView.test.tsx src/test/apiClient.test.ts` passed with 2 files and 34 tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "board_source_settings"` passed with 1 selected test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "board_sync or board_handoff or board_request_changes or board_source_settings"` passed with 4 selected tests.
+
+### Reviewer
+- Main-agent component, API-client, built-app browser, and live in-app DOM verification completed for this Board source-settings slice. Full module parity and subsystem reviewer sign-off remain open.

@@ -4,8 +4,10 @@ import {
   archiveBoardTodo,
   browseClawHubSkillMarket,
   addRuntimeToolsSystemPath,
+  createBoardTodoSource,
   createFeishuGatewayAccount,
   deleteAgentRuntime,
+  deleteBoardTodoSource,
   disableAutomationProject,
   deleteFeishuGatewayAccount,
   deleteWeChatGatewayAccount,
@@ -44,6 +46,7 @@ import {
   listAutomationProjectSessions,
   listAutomationProjects,
   listBoardTodos,
+  listBoardTodoSources,
   listConnectors,
   listRoleConfigs,
   listRuntimeTools,
@@ -103,6 +106,7 @@ import {
   uninstallClawHubMarketSkill,
   uninstallRuntimeSkill,
   updateSession,
+  updateBoardTodoSource,
   updateFeishuGatewayAccount,
   updateWeChatGatewayAccount,
   updateWorkspace,
@@ -496,6 +500,119 @@ describe("api client", () => {
       expect.objectContaining({
         headers: expect.any(Headers),
         method: "POST",
+      }),
+    );
+  });
+
+  it("uses board TODO source settings endpoints", async () => {
+    const sourcePayload = {
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: "GitHub issues",
+      enabled: true,
+      kind: "github_issues",
+      provider: "github",
+      repository_full_name: "openai/agent-teams",
+      source_id: "source/1",
+      system_managed: false,
+      updated_at: "2026-06-24T00:00:00Z",
+      workspace_id: "workspace-1",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            board_workspace_id: "workspace-1",
+            diagnostics: [],
+            is_fork_view: false,
+            sources: [{ source: sourcePayload, state: null }],
+            view_workspace_id: "workspace-1",
+            workspace_id: "workspace-1",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(sourcePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(sourcePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ deleted: true, source_id: "source/1" }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listBoardTodoSources("workspace-1")).resolves.toMatchObject({
+      workspace_id: "workspace-1",
+    });
+    await expect(
+      createBoardTodoSource({
+        display_name: "GitHub issues",
+        enabled: true,
+        kind: "github_issues",
+        repository_full_name: "openai/agent-teams",
+        workspace_id: "workspace-1",
+      }),
+    ).resolves.toMatchObject({ source_id: "source/1" });
+    await expect(
+      updateBoardTodoSource("source/1", {
+        display_name: "GitHub issues updated",
+        enabled: false,
+        repository_full_name: "openai/agent-teams",
+        workspace_id: "workspace-1",
+      }),
+    ).resolves.toMatchObject({ source_id: "source/1" });
+    await expect(deleteBoardTodoSource("source/1")).resolves.toEqual({
+      deleted: true,
+      source_id: "source/1",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/boards/todo-sources?workspace_id=workspace-1",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/boards/todo-sources",
+      expect.objectContaining({
+        body: JSON.stringify({
+          display_name: "GitHub issues",
+          enabled: true,
+          kind: "github_issues",
+          repository_full_name: "openai/agent-teams",
+          workspace_id: "workspace-1",
+        }),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/boards/todo-sources/source%2F1",
+      expect.objectContaining({
+        body: JSON.stringify({
+          display_name: "GitHub issues updated",
+          enabled: false,
+          repository_full_name: "openai/agent-teams",
+          workspace_id: "workspace-1",
+        }),
+        headers: expect.any(Headers),
+        method: "PATCH",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/boards/todo-sources/source%2F1",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "DELETE",
       }),
     );
   });

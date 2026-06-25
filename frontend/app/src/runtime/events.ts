@@ -9,6 +9,15 @@ export type RunEventType =
   | "background_task_updated"
   | "background_task_completed"
   | "background_task_stopped"
+  | "monitor_created"
+  | "monitor_triggered"
+  | "monitor_stopped"
+  | "llm_retry_scheduled"
+  | "llm_retry_exhausted"
+  | "llm_fallback_activated"
+  | "llm_fallback_exhausted"
+  | "state_snapshot"
+  | "state_delta"
   | "model_step_started"
   | "model_step_finished"
   | "text_delta"
@@ -21,10 +30,14 @@ export type RunEventType =
   | "tool_call_batch_sealed"
   | "tool_input_validation_failed"
   | "tool_result"
+  | "spec_checkpoint_applied"
+  | "spec_checkpoint_evaluated"
   | "injection_enqueued"
   | "injection_applied"
   | "tool_approval_requested"
   | "tool_approval_resolved"
+  | "runtime_guardrail_alert"
+  | "runtime_guardrail_report"
   | "user_question_requested"
   | "user_question_answered"
   | "notification_requested"
@@ -36,6 +49,13 @@ export type RunEventType =
   | "run_failed"
   | "awaiting_manual_action"
   | "token_usage"
+  | "hook_matched"
+  | "hook_started"
+  | "hook_completed"
+  | "hook_failed"
+  | "hook_conflict"
+  | "hook_decision_applied"
+  | "hook_deferred"
   | string;
 
 export interface RelayRunEvent {
@@ -79,6 +99,13 @@ export const AG_UI_EVENT_NAMES = [
   "run.completed",
   "run.stopped",
   "run.failed",
+  "run.awaiting_manual_action",
+  "llm_retry.scheduled",
+  "llm_retry.exhausted",
+  "llm_fallback.activated",
+  "llm_fallback.exhausted",
+  "state.snapshot",
+  "state.delta",
   "model_step.started",
   "model_step.finished",
   "message.text.delta",
@@ -107,6 +134,14 @@ export const AG_UI_EVENT_NAMES = [
   "subagent.stopped",
   "subagent.resumed",
   "notification.requested",
+  "runtime_guardrail.alert",
+  "runtime_guardrail.report",
+  "hook.started",
+  "hook.completed",
+  "hook.failed",
+  "hook.conflict",
+  "hook.decision_applied",
+  "hook.deferred",
   "relay.event",
 ] as const;
 

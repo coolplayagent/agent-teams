@@ -35,6 +35,8 @@ class RunEventType(str, Enum):
     LLM_RETRY_EXHAUSTED = "llm_retry_exhausted"
     LLM_FALLBACK_ACTIVATED = "llm_fallback_activated"
     LLM_FALLBACK_EXHAUSTED = "llm_fallback_exhausted"
+    STATE_SNAPSHOT = "state_snapshot"
+    STATE_DELTA = "state_delta"
     MODEL_STEP_STARTED = "model_step_started"
     MODEL_STEP_FINISHED = "model_step_finished"
     TEXT_DELTA = "text_delta"

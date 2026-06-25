@@ -96,6 +96,47 @@ describe("openRunStream", () => {
     );
   });
 
+  it("reduces AG-UI state snapshot and delta events from named stream events", () => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage(
+      "state.snapshot",
+      JSON.stringify(
+        agUiEvent({
+          event_id: 2,
+          payload: { title: "state snapshot visible" },
+          relay_event_type: "state_snapshot",
+          type: "state.snapshot",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "state.delta",
+      JSON.stringify(
+        agUiEvent({
+          event_id: 3,
+          payload: { summary: "state delta visible" },
+          relay_event_type: "state_delta",
+          type: "state.delta",
+        }),
+      ),
+    );
+
+    expect(stream.states).toHaveLength(2);
+    expect(stream.states[1].runs["run-1"].entries).toMatchObject([
+      {
+        eventId: 2,
+        kind: "state_snapshot",
+        text: "state snapshot visible",
+      },
+      {
+        eventId: 3,
+        kind: "state_delta",
+        text: "state delta visible",
+      },
+    ]);
+  });
+
   it("closes once when a terminal event arrives", () => {
     const stream = openTestStream();
 

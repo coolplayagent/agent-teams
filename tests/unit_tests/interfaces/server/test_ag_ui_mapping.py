@@ -55,6 +55,41 @@ from relay_teams.sessions.runs.run_models import RunEvent
             AgUiEventType.RUN_COMPLETED,
             '{"status":"completed"}',
         ),
+        (
+            RunEventType.AWAITING_MANUAL_ACTION,
+            AgUiEventType.RUN_AWAITING_MANUAL_ACTION,
+            '{"title":"Waiting for user input"}',
+        ),
+        (
+            RunEventType.LLM_RETRY_SCHEDULED,
+            AgUiEventType.LLM_RETRY_SCHEDULED,
+            '{"attempt":2,"delay_seconds":1.5}',
+        ),
+        (
+            RunEventType.LLM_FALLBACK_ACTIVATED,
+            AgUiEventType.LLM_FALLBACK_ACTIVATED,
+            '{"from_profile_id":"default","to_profile_id":"fallback"}',
+        ),
+        (
+            RunEventType.STATE_SNAPSHOT,
+            AgUiEventType.STATE_SNAPSHOT,
+            '{"state":{"phase":"running"}}',
+        ),
+        (
+            RunEventType.STATE_DELTA,
+            AgUiEventType.STATE_DELTA,
+            '{"patch":[{"op":"replace","path":"/phase","value":"paused"}]}',
+        ),
+        (
+            RunEventType.RUNTIME_GUARDRAIL_REPORT,
+            AgUiEventType.RUNTIME_GUARDRAIL_REPORT,
+            '{"status":"blocked","blocked_count":1}',
+        ),
+        (
+            RunEventType.HOOK_STARTED,
+            AgUiEventType.HOOK_STARTED,
+            '{"hook_id":"hook-1"}',
+        ),
     ],
 )
 def test_relay_run_event_to_ag_ui_event_maps_core_runtime_events(

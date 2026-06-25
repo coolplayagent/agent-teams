@@ -87,6 +87,8 @@ describe("runtime reducers", () => {
       "awaiting_manual_action",
       "llm_retry_scheduled",
       "llm_fallback_activated",
+      "state_snapshot",
+      "state_delta",
       "runtime_guardrail_alert",
       "hook_started",
       "unknown_future_event",

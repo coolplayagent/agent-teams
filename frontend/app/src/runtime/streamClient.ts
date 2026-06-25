@@ -118,6 +118,9 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   };
 
   const handleMessage = (message: MessageEvent<string>) => {
+    if (sourceClosed) {
+      return;
+    }
     const parsed = parseStreamPayload(message.data);
     if (parsed === null) {
       options.onError("Malformed run stream event.", "malformed");
@@ -153,6 +156,10 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   source.addEventListener("error", (event) => {
     handleErrorEvent(event);
   });
+
+  if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+    notifyClosed();
+  }
 
   return {
     close: closeSource,

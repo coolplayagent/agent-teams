@@ -314,6 +314,21 @@ describe("openRunStream", () => {
     });
   });
 
+  it("closes immediately when replay starts from an already terminal run", () => {
+    const stream = openTestStream({
+      initialState: runtimeStateWithClosedRun(7),
+    });
+
+    expect(stream.states).toEqual([]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].runs["run-1"]).toMatchObject({
+      lastEventId: 7,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+  });
+
   it("reports server error payloads without reducing them", () => {
     const stream = openTestStream();
 
@@ -523,6 +538,33 @@ describe("openRunStream", () => {
         }),
       ),
     );
+
+    expect(stream.states).toEqual([]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].runs["run-a"]).toMatchObject({
+      lastEventId: 11,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+    expect(stream.closedStates[0].runs["run-b"]).toMatchObject({
+      lastEventId: 12,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+  });
+
+  it("closes immediately when every multiplexed replay target is already terminal", () => {
+    const stream = openTestMultiplexedStream({
+      initialState: runtimeStateWithClosedRuns([
+        { lastEventId: 11, runId: "run-a" },
+        { lastEventId: 12, runId: "run-b" },
+      ]),
+      runs: [
+        { afterEventId: 11, runId: "run-a" },
+        { afterEventId: 12, runId: "run-b" },
+      ],
+    });
 
     expect(stream.states).toEqual([]);
     expect(stream.source.close).toHaveBeenCalledTimes(1);

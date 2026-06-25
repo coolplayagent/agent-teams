@@ -1418,3 +1418,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser screenshot/metrics verification completed for this Settings Appearance cold-load slice. No full Settings subsystem completion is claimed; remaining work includes detailed V1/V2 pass over all settings secondary pages, save/error states, dark-mode Appearance verification, and reviewer sign-off.
+
+## 2026-06-25 Terminal Replay Stream Closure Batch
+
+### Scope
+- Continued the AG-UI stream/replay hardening pass for refresh and recovery edges.
+- `streamClient` now closes and reports `onClosed` immediately when a replay stream is opened for tracked runs that are already terminal in the local runtime state.
+- Late messages arriving after a stream has been closed are ignored before payload parsing, preventing stale EventSource callbacks from surfacing malformed-event noise after terminal cleanup.
+- Covered both single-run and multiplexed replay targets so recovery does not keep a stream active while waiting for the backend to resend duplicate terminal events.
+
+### Verification
+- `npm test -- src/test/streamClient.test.ts src/test/RunStreamController.test.tsx` in `frontend/app` passed with 35 tests, including the new terminal replay closure regressions plus the existing reconnect/resume controller coverage.
+- `npm run build` in `frontend/app` passed, including typecheck, desktop build, and Vite production build; Vite refreshed `frontend/dist/app` with rebuilt asset `index-Cb3B_Qvx.js`.
+
+### Reviewer
+- Main-agent targeted verification completed for this terminal replay stream closure slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery under actual SSE timing, interrupted stream resume validation, message timeline polish, and reviewer sign-off.

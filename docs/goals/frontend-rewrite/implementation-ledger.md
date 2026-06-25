@@ -1651,3 +1651,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this background/paused recovery slice. No Run Recovery or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes backend-backed recovery timing, interrupted/multiplexed stream replay, and paired reviewer sign-off.
+
+## 2026-06-25 AG-UI Multiplex Replay Integration Batch
+
+### Scope
+- Moved from V2 mocked browser recovery evidence to a real backend AG-UI Runtime Stream gap.
+- Added an integration test for `/api/ag-ui/runs/events`, the AG-UI multiplex stream endpoint.
+- Created two manual AG-UI runs through the public `/api/ag-ui/runs` endpoint and streamed each single-run event stream to terminal so the real event log, mapper, SSE formatter, and run service were exercised before replay.
+- Replayed both runs through the multiplex endpoint with independent `run_id` and `after_event_id` query values, using a nonzero offset for the first run and zero for the second run.
+- Verified that the first run replays only events after its offset, the second run replays from the beginning, each SSE `event:` name still matches the JSON `type`, and both runs reach terminal state before the multiplex stream is accepted as closed.
+- Left full AG-UI Runtime Stream completion open; remaining work includes browser interrupted-network reconnect timing, frontend handling of real multiplex EventSource streams, event-type breadth, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/api/test_ag_ui_http_stream.py` passed with 2 tests.
+- `uv run --extra dev ruff check tests/integration_tests/api/test_ag_ui_http_stream.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/api/test_ag_ui_http_stream.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/api/test_ag_ui_http_stream.py` passed with 0 errors.
+- No screenshot was captured for this batch because the committed change is backend protocol coverage rather than visual UI behavior.
+
+### Reviewer
+- Main-agent backend integration verification completed for this multiplex replay slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes interrupted browser replay, real frontend multiplex handling, broader event coverage, and paired reviewer sign-off.

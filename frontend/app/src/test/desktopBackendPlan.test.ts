@@ -66,6 +66,37 @@ describe("desktop backend plan", () => {
     expect(plan.startupTimeoutMs).toBe(12000);
   });
 
+  it("accepts managed backend command args with host and port placeholders", () => {
+    const plan = buildDesktopBackendPlan({
+      env: {
+        AGENT_TEAMS_BACKEND_COMMAND: "node",
+        AGENT_TEAMS_BACKEND_COMMAND_ARGS_JSON: JSON.stringify([
+          "desktop-backend-stub.mjs",
+          "server",
+          "start",
+          "--host",
+          "{host}",
+          "--port",
+          "{port}",
+        ]),
+        AGENT_TEAMS_BACKEND_HOST: "127.0.0.3",
+        AGENT_TEAMS_BACKEND_PORT: "8131",
+      },
+    });
+
+    expect(plan.command).toBe("node");
+    expect(plan.args).toEqual([
+      "desktop-backend-stub.mjs",
+      "server",
+      "start",
+      "--host",
+      "127.0.0.3",
+      "--port",
+      "8131",
+    ]);
+    expect(plan.ownership).toBe("managed");
+  });
+
   it("ignores malformed external URLs and falls back to a managed backend", () => {
     const plan = buildDesktopBackendPlan({
       env: {

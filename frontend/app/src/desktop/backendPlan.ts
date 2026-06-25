@@ -32,6 +32,7 @@ export const desktopBackendUrlEnv = "AGENT_TEAMS_BACKEND_URL";
 export const desktopBackendHostEnv = "AGENT_TEAMS_BACKEND_HOST";
 export const desktopBackendPortEnv = "AGENT_TEAMS_BACKEND_PORT";
 export const desktopBackendCommandEnv = "AGENT_TEAMS_BACKEND_COMMAND";
+export const desktopBackendCommandArgsEnv = "AGENT_TEAMS_BACKEND_COMMAND_ARGS_JSON";
 export const desktopBackendStartupTimeoutEnv =
   "AGENT_TEAMS_BACKEND_STARTUP_TIMEOUT_MS";
 export const desktopBackendHealthPollEnv = "AGENT_TEAMS_BACKEND_HEALTH_POLL_MS";
@@ -76,10 +77,13 @@ export function buildDesktopBackendPlan(
 
   const command =
     options.env[desktopBackendCommandEnv]?.trim() || desktopDefaultBackendCommand;
+  const args =
+    readCommandArgs(options.env[desktopBackendCommandArgsEnv], host, port)
+    ?? ["server", "start", "--host", host, "--port", String(port)];
 
   return {
     appUrl: `${baseUrl}/app/`,
-    args: ["server", "start", "--host", host, "--port", String(port)],
+    args,
     baseUrl,
     command,
     healthPollMs,
@@ -123,4 +127,26 @@ function readPositiveInteger(value: string | undefined, fallback: number): numbe
     return fallback;
   }
   return parsed;
+}
+
+function readCommandArgs(
+  value: string | undefined,
+  host: string,
+  port: number,
+): string[] | null {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed === "") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!Array.isArray(parsed) || !parsed.every((entry) => typeof entry === "string")) {
+      return null;
+    }
+    return parsed.map((entry) =>
+      entry.replaceAll("{host}", host).replaceAll("{port}", String(port)),
+    );
+  } catch {
+    return null;
+  }
 }

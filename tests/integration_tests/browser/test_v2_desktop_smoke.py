@@ -157,6 +157,61 @@ def test_v2_electron_shows_backend_startup_failure() -> None:
             _stop_electron(process)
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") and not os.environ.get("DISPLAY"),
+    reason="Electron smoke test requires a graphical desktop session.",
+)
+def test_v2_electron_managed_backend_starts_and_stops_with_main_lifecycle() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    electron = _electron_executable(repo_root)
+    if not electron.exists():
+        pytest.skip(f"Electron executable is not installed: {electron}")
+
+    backend_port = _available_browser_safe_port()
+    backend_url = f"http://127.0.0.1:{backend_port}"
+    stub_script = _write_managed_backend_stub(repo_root)
+    request_log = (
+        repo_root / ".tmp" / "frontend-v2-desktop" / f"managed-{backend_port}.log"
+    )
+    trace_log = (
+        repo_root / ".tmp" / "frontend-v2-desktop" / f"auto-quit-{backend_port}.log"
+    )
+    process, _debug_port = _launch_electron(
+        repo_root,
+        electron,
+        None,
+        extra_env={
+            "AGENT_TEAMS_DESKTOP_AUTO_QUIT_AFTER_READY_MS": "750",
+            "AGENT_TEAMS_BACKEND_COMMAND": sys.executable,
+            "AGENT_TEAMS_BACKEND_COMMAND_ARGS_JSON": json.dumps(
+                [
+                    str(stub_script),
+                    "server",
+                    "start",
+                    "--host",
+                    "{host}",
+                    "--port",
+                    "{port}",
+                ],
+            ),
+            "AGENT_TEAMS_BACKEND_HOST": "127.0.0.1",
+            "AGENT_TEAMS_BACKEND_PORT": str(backend_port),
+            "AGENT_TEAMS_DESKTOP_AUTO_QUIT_TRACE": str(trace_log),
+            "AGENT_TEAMS_DESKTOP_MANAGED_REQUEST_LOG": str(request_log),
+        },
+        startup_timeout_ms=4_000,
+    )
+    try:
+        trace_log_text = _wait_for_text(trace_log, "fired")
+        assert "scheduled:750" in trace_log_text
+        request_log_text = request_log.read_text(encoding="utf-8")
+        assert "/api/health" in request_log_text
+        assert "/app/" in request_log_text
+        _wait_for_backend_down(backend_url)
+    finally:
+        _stop_electron(process)
+
+
 @contextmanager
 def _serve_desktop_backend(repo_root: Path, *, healthy: bool) -> Iterator[str]:
     app_root = repo_root / "frontend" / "dist" / "app"
@@ -323,6 +378,97 @@ def _send_json(
     handler.wfile.write(body)
 
 
+def _write_managed_backend_stub(repo_root: Path) -> Path:
+    stub_dir = repo_root / ".tmp" / "frontend-v2-desktop"
+    stub_dir.mkdir(parents=True, exist_ok=True)
+    stub = stub_dir / "managed_backend_stub.py"
+    stub.write_text(
+        """
+from __future__ import annotations
+
+from http.server import BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer
+import json
+import os
+import sys
+
+
+def main() -> None:
+    host = _arg_value("--host")
+    port = int(_arg_value("--port"))
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.serve_forever()
+
+
+def _arg_value(name: str) -> str:
+    try:
+        return sys.argv[sys.argv.index(name) + 1]
+    except (ValueError, IndexError) as exc:
+        raise SystemExit(f"Missing required argument: {name}") from exc
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        request_log = os.environ.get("AGENT_TEAMS_DESKTOP_MANAGED_REQUEST_LOG")
+        if request_log:
+            with open(request_log, "a", encoding="utf-8") as handle:
+                handle.write(f"{self.path}\\n")
+        if self.path == "/api/health":
+            self._json({"status": "ok"})
+            return
+        if self.path == "/app/" or self.path == "/app":
+            body = b"<!doctype html><html><body><main><h1>Managed backend ready</h1></main></body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_error(404)
+
+    def log_message(self, format: str, *args: object) -> None:
+        del format, args
+
+    def _json(self, payload: object) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+if __name__ == "__main__":
+    main()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return stub
+
+
+def _read_optional_text(path: Path) -> str:
+    if not path.exists():
+        return "<missing>"
+    return path.read_text(encoding="utf-8")
+
+
+def _wait_for_text(path: Path, text: str) -> str:
+    deadline = time.time() + 15
+    while time.time() <= deadline:
+        content = _read_optional_text(path)
+        if text in content:
+            return content
+        time.sleep(0.1)
+    raise AssertionError(
+        "\n".join(
+            [
+                f"Timed out waiting for {path} to contain {text!r}.",
+                f"current content:\n{_read_optional_text(path)}",
+            ],
+        ),
+    )
+
+
 def _electron_executable(repo_root: Path) -> Path:
     electron_root = (
         repo_root / "frontend" / "app" / "node_modules" / "electron" / "dist"
@@ -337,8 +483,9 @@ def _electron_executable(repo_root: Path) -> Path:
 def _launch_electron(
     repo_root: Path,
     electron: Path,
-    backend_url: str,
+    backend_url: str | None,
     *,
+    extra_env: dict[str, str] | None = None,
     startup_timeout_ms: int = 4_000,
 ) -> tuple[subprocess.Popen[str], int]:
     frontend_app = repo_root / "frontend" / "app"
@@ -354,9 +501,12 @@ def _launch_electron(
         {
             "AGENT_TEAMS_BACKEND_HEALTH_POLL_MS": "100",
             "AGENT_TEAMS_BACKEND_STARTUP_TIMEOUT_MS": str(startup_timeout_ms),
-            "AGENT_TEAMS_BACKEND_URL": backend_url,
         }
     )
+    if backend_url is not None:
+        env["AGENT_TEAMS_BACKEND_URL"] = backend_url
+    if extra_env is not None:
+        env.update(extra_env)
     process = subprocess.Popen(
         [
             str(electron),
@@ -379,6 +529,32 @@ def _available_port() -> int:
         sock.bind(("127.0.0.1", 0))
         _, port = cast(tuple[str, int], sock.getsockname())
         return port
+
+
+def _available_browser_safe_port() -> int:
+    server = create_browser_safe_http_server(SimpleHTTPRequestHandler)
+    try:
+        _, port = cast(tuple[str, int], server.server_address)
+        return port
+    finally:
+        server.server_close()
+
+
+def _is_backend_healthy(base_url: str) -> bool:
+    try:
+        with urlopen(f"{base_url}/api/health", timeout=0.5) as response:
+            return response.status == 200
+    except (OSError, URLError):
+        return False
+
+
+def _wait_for_backend_down(base_url: str) -> None:
+    deadline = time.time() + 10
+    while time.time() <= deadline:
+        if not _is_backend_healthy(base_url):
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"Managed backend was still healthy at {base_url}.")
 
 
 def _wait_for_cdp(port: int, process: subprocess.Popen[str]) -> None:
@@ -405,7 +581,10 @@ def _connect_to_electron_page(port: int) -> Iterator[Page]:
         try:
             yield _first_page(browser)
         finally:
-            browser.close()
+            try:
+                browser.close()
+            except Exception:
+                pass
 
 
 def _cdp_websocket_url(port: int) -> str:

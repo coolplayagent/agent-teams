@@ -1948,3 +1948,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent Electron smoke verification and screenshot inspection completed for this slice. No Desktop subsystem completion is claimed.
+
+## 2026-06-25 V2 Electron Managed Backend Lifecycle Batch
+
+### Scope
+- Re-checked the Desktop checklist after the Electron smoke pass and targeted the remaining managed local backend lifecycle evidence.
+- Added a managed backend command-args override for desktop tests while preserving the default `relay-teams server start --host <host> --port <port>` command.
+- Extended the Electron smoke coverage with a temporary backend stub launched by the real Electron main process, proving the main process starts the backend, polls `/api/health`, and requests `/app/` from the managed backend.
+- Added a narrow smoke-only auto-quit hook so the test can exercise the main-process cleanup path and verify the managed backend port is closed afterward.
+- Left Desktop completion open; remaining work still includes open-external IPC behavior under Electron, app version display decisions, and reviewer sign-off.
+
+### Verification
+- `npm run desktop:build` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py::test_v2_electron_managed_backend_starts_and_stops_with_main_lifecycle` passed with 1 test.
+- `npm test -- src/test/desktopBackendPlan.test.ts src/test/desktopSecurity.test.ts` passed with 9 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_desktop_smoke.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 0 errors.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_desktop_smoke.py` passed with 3 tests.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent Electron managed lifecycle verification completed for this slice. No Desktop subsystem completion is claimed.

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,6 +21,8 @@ let backendStatus: DesktopBackendStatus = {
   state: "starting",
 };
 let appQuitting = false;
+const desktopAutoQuitAfterReadyEnv = "AGENT_TEAMS_DESKTOP_AUTO_QUIT_AFTER_READY_MS";
+const desktopAutoQuitTraceEnv = "AGENT_TEAMS_DESKTOP_AUTO_QUIT_TRACE";
 
 app.whenReady().then(() => {
   registerIpcHandlers();
@@ -60,7 +63,9 @@ async function startDesktopApp(): Promise<void> {
       message: "Backend ready.",
       state: "ready",
     });
-    await mainWindow.loadURL(plan.appUrl);
+    const appLoad = mainWindow.loadURL(plan.appUrl);
+    scheduleAutoQuitAfterReady();
+    await appLoad;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Backend startup failed.";
     setBackendStatus({
@@ -142,6 +147,36 @@ function stopManagedBackend(): void {
   }
   backendProcess.kill();
   backendProcess = null;
+}
+
+function scheduleAutoQuitAfterReady(): void {
+  const delayMs = readNonNegativeInteger(process.env[desktopAutoQuitAfterReadyEnv]);
+  if (delayMs === null) {
+    return;
+  }
+  traceAutoQuit(`scheduled:${delayMs}`);
+  setTimeout(() => {
+    traceAutoQuit("fired");
+    appQuitting = true;
+    stopManagedBackend();
+    process.exit(0);
+  }, delayMs);
+}
+
+function traceAutoQuit(message: string): void {
+  const tracePath = process.env[desktopAutoQuitTraceEnv]?.trim();
+  if (tracePath === undefined || tracePath === "") {
+    return;
+  }
+  appendFileSync(tracePath, `${message}\n`, { encoding: "utf-8" });
+}
+
+function readNonNegativeInteger(value: string | undefined): number | null {
+  if (value === undefined || value.trim() === "") {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 async function waitForBackend(plan: DesktopBackendPlan): Promise<void> {

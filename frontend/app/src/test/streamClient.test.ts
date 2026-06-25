@@ -42,8 +42,8 @@ class MockEventSource {
     );
   }
 
-  dispatchMessage(type: string, data: string): void {
-    const event = new MessageEvent<string>(type, { data });
+  dispatchMessage(type: string, data: string, lastEventId = ""): void {
+    const event = new MessageEvent<string>(type, { data, lastEventId });
     if (type === "message") {
       this.onmessage?.call(this as unknown as EventSource, event);
     }
@@ -140,6 +140,76 @@ describe("openRunStream", () => {
         text: "state delta visible",
       },
     ]);
+  });
+
+  it("uses SSE Last-Event-ID as the replay cursor when payload event id is missing", () => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        agUiEvent({
+          event_id: null,
+          payload: { text: "cursor from sse id" },
+        }),
+      ),
+      "44",
+    );
+
+    expect(stream.states).toHaveLength(1);
+    expect(stream.states[0].runs["run-1"]).toMatchObject({
+      lastEventId: 44,
+      status: "open",
+    });
+    expect(stream.states[0].runs["run-1"].entries[0]).toMatchObject({
+      eventId: 44,
+      text: "cursor from sse id",
+    });
+  });
+
+  it("keeps payload event ids ahead of SSE Last-Event-ID values", () => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        agUiEvent({
+          event_id: 45,
+          payload: { text: "cursor from payload" },
+        }),
+      ),
+      "44",
+    );
+
+    expect(stream.states[0].runs["run-1"].lastEventId).toBe(45);
+    expect(stream.states[0].runs["run-1"].entries[0]).toMatchObject({
+      eventId: 45,
+      text: "cursor from payload",
+    });
+  });
+
+  it("ignores non-numeric SSE Last-Event-ID values", () => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        agUiEvent({
+          event_id: null,
+          payload: { text: "cursorless event" },
+        }),
+      ),
+      "event-44",
+    );
+
+    expect(stream.states[0].runs["run-1"]).toMatchObject({
+      lastEventId: 0,
+      status: "open",
+    });
+    expect(stream.states[0].runs["run-1"].entries[0]).toMatchObject({
+      eventId: 0,
+      text: "cursorless event",
+    });
   });
 
   it("ignores events for runs outside the single-run stream target", () => {

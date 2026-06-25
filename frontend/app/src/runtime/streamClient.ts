@@ -101,10 +101,11 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       options.onError(parsed.error, "server");
       return;
     }
-    if (!options.trackedRunIds.includes(parsed.run_id)) {
+    const event = withLastEventIdFallback(parsed, message.lastEventId);
+    if (!options.trackedRunIds.includes(event.run_id)) {
       return;
     }
-    runtimeState = reduceRunEvent(runtimeState, parsed);
+    runtimeState = reduceRunEvent(runtimeState, event);
     options.onState(runtimeState);
     if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
       notifyClosed();
@@ -189,6 +190,32 @@ function parseStreamPayload(rawData: string): RunEventEnvelope | StreamErrorPayl
   } catch {
     return null;
   }
+}
+
+function withLastEventIdFallback(
+  event: RunEventEnvelope,
+  lastEventId: string,
+): RunEventEnvelope {
+  if (typeof event.event_id === "number" && event.event_id > 0) {
+    return event;
+  }
+  const fallbackEventId = parsePositiveEventId(lastEventId);
+  if (fallbackEventId === null) {
+    return event;
+  }
+  return {
+    ...event,
+    event_id: fallbackEventId,
+  };
+}
+
+function parsePositiveEventId(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 interface StreamErrorPayload {

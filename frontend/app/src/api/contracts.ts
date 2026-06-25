@@ -1431,6 +1431,7 @@ export interface SessionRound {
   intent_parts?: ContentPart[];
   pending_tool_approval_count?: number;
   pending_tool_approvals?: JsonValue[];
+  pending_user_question_count?: number;
   primary_role_id?: string | null;
   retry_events?: JsonValue[];
   run_diagnostic_message?: string | null;

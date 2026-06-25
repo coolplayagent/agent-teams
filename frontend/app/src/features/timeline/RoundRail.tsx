@@ -1,6 +1,6 @@
 import type { SessionRound } from "../../api/contracts";
 import type { Translate } from "../../i18n";
-import { roundTimeLabel, roundTitle } from "./roundMetadata";
+import { roundSummary } from "./roundMetadata";
 
 interface RoundRailProps {
   activeRunId: string | null;
@@ -19,25 +19,29 @@ export function RoundRail({
     <nav aria-label={t("timelineRounds")} className="at-round-rail">
       <div className="at-round-rail-list">
         {rounds.map((round, index) => {
-          const title = roundTitle(round, index);
-          const timeLabel = roundTimeLabel(round.created_at, index);
+          const summary = roundSummary(round, index);
           const active = round.run_id === activeRunId;
+          const classNames = [
+            "at-round-rail-item",
+            active ? "is-active" : "",
+            summary.tone !== null ? `is-${summary.tone}` : "",
+          ].filter(Boolean).join(" ");
           return (
             <button
               aria-current={active ? "step" : undefined}
               aria-label={t("timelineGoToRound", {
                 round: index + 1,
-                title,
+                title: summary.title,
               })}
-              className={active ? "at-round-rail-item is-active" : "at-round-rail-item"}
+              className={classNames}
               key={round.run_id}
               onClick={() => onSelectRun(round.run_id)}
-              title={`${timeLabel} ${title}`}
+              title={`${summary.timeLabel} ${summary.title}`}
               type="button"
             >
               <span className="at-round-rail-dot" />
-              <span className="at-round-rail-time">{timeLabel}</span>
-              <span className="at-round-rail-title">{title}</span>
+              <span className="at-round-rail-time">{summary.timeLabel}</span>
+              <span className="at-round-rail-title">{summary.title}</span>
             </button>
           );
         })}

@@ -1520,6 +1520,7 @@ _TIMELINE_ROUND_KEYS = (
     "retry_events",
     "has_user_messages",
     "pending_tool_approval_count",
+    "pending_user_question_count",
     "run_started_at",
     "run_updated_at",
     "run_status",

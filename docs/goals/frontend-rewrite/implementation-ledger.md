@@ -2494,3 +2494,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent layout comparison and targeted verification completed for this sidebar-width alignment slice. No global shell, full visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Round Pending And Retry Summary Batch
+
+### Scope
+- Re-checked the Rounds, Todos, History, And Retry checklist before choosing the next change, focusing on visible round state rather than another shell-only pass.
+- Added `pending_user_question_count` to the session round projection returned through the timeline whitelist so the public phase and the frontend-visible metadata use the same batched question counts.
+- Extended V2 round metadata to summarize pending approvals, pending user questions, retry/fallback phase, retry attempt/delay/target/error details, run diagnostics, and warning/error tone from existing backend fields.
+- Updated the React round marker to show those compact metadata items and the right-side round rail dot to surface warning/error state without changing sidebar/settings navigation structure or flattening secondary pages.
+- Added English and Chinese i18n strings for the new round metadata labels.
+- Refreshed `frontend/dist/app` for the round metadata rendering change.
+- Kept this as targeted Rounds and Retry visibility progress only; full round detail pages, dense history review, live retry countdown, recovery overlay completion, and screenshot QA remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 54 tests.
+- `uv run --extra dev pytest -q tests/unit_tests/sessions/test_session_rounds_run_state_overlay.py` passed with 17 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check src/relay_teams/sessions/session_service.py src/relay_teams/sessions/session_rounds_projection.py tests/unit_tests/sessions/test_session_rounds_run_state_overlay.py` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- No screenshot was captured for this batch because the change is state-dependent metadata and is covered by focused component and backend projection tests; the visual parity batch still needs a successful screenshot pass.
+
+### Reviewer
+- Main-agent projection, component, and build verification completed for this round pending/retry summary slice. No full Rounds, Todos, History, Retry, AG-UI Runtime Stream, or release readiness completion is claimed.

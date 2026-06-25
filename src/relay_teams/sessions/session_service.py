@@ -2376,6 +2376,7 @@ class SessionService:
             if runtime is None:
                 continue
             question_count = question_counts_by_run.get(runtime.run_id, 0)
+            round_item["pending_user_question_count"] = question_count
             round_item["run_status"] = runtime.status.value
             round_item["run_phase"] = self._public_phase(
                 runtime,
@@ -2438,6 +2439,7 @@ class SessionService:
             if runtime is None:
                 continue
             question_count = question_counts_by_run.get(runtime.run_id, 0)
+            round_item["pending_user_question_count"] = question_count
             round_item["run_status"] = runtime.status.value
             round_item["run_phase"] = self._public_phase(
                 runtime,

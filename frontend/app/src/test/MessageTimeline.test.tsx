@@ -297,6 +297,52 @@ describe("MessageTimeline", () => {
     expect(followUpRound).not.toHaveAttribute("aria-current");
   });
 
+  it("surfaces round pending actions, retry details, and diagnostics", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Needs follow-up",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          pending_tool_approval_count: 2,
+          pending_user_question_count: 1,
+          retry_events: [
+            {
+              attempt_number: 3,
+              error_message: "rate limited",
+              is_active: true,
+              phase: "scheduled",
+              retry_in_ms: 2500,
+              total_attempts: 5,
+            },
+          ],
+          run_diagnostic_message: "Waiting for user confirmation",
+          run_id: "run-1",
+          run_status: "paused",
+          run_user_message: "Approve deployment",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("2 pending approvals")).toBeVisible();
+    expect(screen.getByText("1 pending questions")).toBeVisible();
+    expect(screen.getByText("Retry scheduled: attempt 3/5 · in 3s · rate limited")).toBeVisible();
+    expect(screen.getByText("Diagnostic: Waiting for user confirmation")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Go to round 1: Approve deployment" }))
+      .toHaveClass("is-warning");
+    expect(container.querySelector(".at-round-rail-dot")).not.toBeNull();
+  });
+
   it("keeps the round rail visible for single-round sessions like V1", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

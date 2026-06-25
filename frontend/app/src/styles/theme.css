@@ -3710,6 +3710,14 @@ body {
   background: var(--at-primary);
 }
 
+.at-round-rail-item.is-warning .at-round-rail-dot {
+  background: var(--at-warning);
+}
+
+.at-round-rail-item.is-error .at-round-rail-dot {
+  background: var(--at-danger);
+}
+
 .at-round-rail-time {
   grid-area: time;
   color: inherit;
@@ -3765,6 +3773,14 @@ body {
   min-width: 0;
   color: var(--at-text-muted);
   font-size: 12px;
+}
+
+.at-round-marker-meta span {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .at-round-marker-title {

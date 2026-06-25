@@ -327,6 +327,15 @@ describe("MessageTimeline", () => {
           run_id: "run-1",
           run_status: "paused",
           run_user_message: "Approve deployment",
+          todo: {
+            items: [
+              { content: "Confirm deploy window", status: "in_progress" },
+              { content: "Capture approval result", status: "pending" },
+            ],
+            run_id: "run-1",
+            session_id: "session-1",
+            version: 2,
+          },
         },
       ],
       next_cursor: null,
@@ -334,12 +343,21 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("2 pending approvals")).toBeVisible();
-    expect(screen.getByText("1 pending questions")).toBeVisible();
-    expect(screen.getByText("Retry scheduled: attempt 3/5 · in 3s · rate limited")).toBeVisible();
-    expect(screen.getByText("Diagnostic: Waiting for user confirmation")).toBeVisible();
+    await waitFor(() => expect(screen.getAllByText("2 pending approvals")).toHaveLength(2));
+    expect(screen.getAllByText("1 pending questions")).toHaveLength(2);
+    expect(screen.getAllByText("Retry scheduled: attempt 3/5 · in 3s · rate limited"))
+      .toHaveLength(2);
+    expect(screen.getAllByText("Diagnostic: Waiting for user confirmation"))
+      .toHaveLength(2);
     expect(screen.getByRole("button", { name: "Go to round 1: Approve deployment" }))
       .toHaveClass("is-warning");
+    const detail = screen.getByLabelText("Round detail");
+    expect(detail).toHaveTextContent("Todo");
+    expect(detail).toHaveTextContent("2 items");
+    expect(detail).toHaveTextContent("Confirm deploy window");
+    expect(detail).toHaveTextContent("In progress");
+    expect(detail).toHaveTextContent("Capture approval result");
+    expect(detail).toHaveTextContent("Pending");
     expect(container.querySelector(".at-round-rail-dot")).not.toBeNull();
   });
 

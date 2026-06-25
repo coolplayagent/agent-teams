@@ -1419,6 +1419,23 @@ export interface SessionRoundMessage {
   status?: string;
 }
 
+export type SessionRoundTodoStatus = "completed" | "in_progress" | "pending" | string;
+
+export interface SessionRoundTodoItem {
+  content: string;
+  status: SessionRoundTodoStatus;
+}
+
+export interface SessionRoundTodoSnapshot {
+  items?: SessionRoundTodoItem[];
+  run_id: string;
+  session_id: string;
+  updated_at?: string | null;
+  updated_by_instance_id?: string | null;
+  updated_by_role_id?: string | null;
+  version?: number;
+}
+
 export interface SessionRound {
   clear_marker_before?: JsonValue;
   compaction_marker_before?: JsonValue;
@@ -1442,6 +1459,7 @@ export interface SessionRound {
   run_status?: string | null;
   run_updated_at?: string | null;
   run_user_message?: string | null;
+  todo?: SessionRoundTodoSnapshot;
   verification_status?: string | null;
 }
 

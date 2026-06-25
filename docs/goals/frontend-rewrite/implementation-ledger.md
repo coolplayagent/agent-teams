@@ -2534,3 +2534,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent export and build verification completed for this round export detail slice. No full Rounds, Todos, History, Retry, visual parity, or release readiness completion is claimed.
+
+## 2026-06-26 V2 Round Rail Detail Batch
+
+### Scope
+- Re-checked the Rounds, Todos, History, Retry, Message Timeline, AG-UI Runtime Stream, and V1 parity checklist before choosing the next change, then narrowed this batch to a visible round-detail gap instead of continuing only shell cleanup.
+- Added typed V2 round todo snapshot contracts so the frontend can consume the backend round `todo` payload without loose structures.
+- Added V2 round rail hover/focus details with compact status, pending approval/question, retry/fallback, diagnostic, and todo-list metadata.
+- Positioned the detail as a fixed viewport overlay so it is not clipped by the timeline or rail scroll containers, while preserving the existing round rail buttons and click navigation.
+- Preserved the V1-style secondary-page model and did not add or remove sidebar/settings entries in this batch.
+- Refreshed `frontend/dist/app` for the round rail detail change.
+- Browser audit during this batch found the current V2 sidebar primary nav still differs from V1 item parity: V2 visible items are `搜索`, `技能`, `自动化`, `连接器`, `看板`, `记忆`, while V1 also includes `聊天`, `观测`, and `设置` in the sidebar sequence. That remains a next-priority global framework gap, separate from this round-detail slice.
+- Kept this as targeted Rounds/Todos/History progress only; full sidebar/settings parity, settings secondary pages, stream/replay edge cases, screenshot-based V1/V2 QA, and release readiness remain open.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 54 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- Browser reload of `http://127.0.0.1:8000/app/` showed `bodyOverflow = hidden`, `bodyScrollHeight = viewport height`, shell/sidebar/timeline fixed to the viewport, and the built CSS containing `.at-round-rail-detail` and `.at-round-rail-detail.is-open`.
+- DevTools hover verification on the built `/app/` page opened `.at-round-rail-detail is-open` with `position = fixed`, visible opacity, text content `completed`, and the detail rectangle fully inside the viewport.
+
+### Reviewer
+- Main-agent component, build, and browser/DevTools verification completed for this round rail detail slice. No full Rounds, Todos, History, Retry, AG-UI Runtime Stream, sidebar/settings parity, visual parity, or release readiness completion is claimed.

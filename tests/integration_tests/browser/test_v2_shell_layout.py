@@ -34,6 +34,7 @@ def browser_page() -> Iterator[Page]:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(
+            accept_downloads=True,
             color_scheme="dark",
             viewport={"width": _VIEWPORT_WIDTH, "height": _VIEWPORT_HEIGHT},
         )
@@ -91,7 +92,53 @@ def test_v2_sidebar_mouse_resize_persists_after_reload(browser_page: Page) -> No
         )
 
 
+def test_v2_message_export_downloads_html_and_png(
+    browser_page: Page,
+    tmp_path: Path,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        expect(page.get_by_role("button", name="Export messages")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        rounds_request_count_before_export = backend.rounds_request_count
+
+        page.get_by_role("button", name="Export messages").click()
+        with page.expect_download() as html_download_info:
+            page.get_by_role("menuitem", name="HTML").click()
+        html_download = html_download_info.value
+        assert html_download.suggested_filename == "session-v2-shell-messages.html"
+        html_path = tmp_path / html_download.suggested_filename
+        html_download.save_as(html_path)
+        html = html_path.read_text(encoding="utf-8")
+        assert "<title>session-v2-shell transcript</title>" in html
+        assert "Round 1 prompt" in html
+        assert "V2 export prompt" in html
+        assert "Exported V2 transcript content" in html
+
+        page.get_by_role("button", name="Export messages").click()
+        with page.expect_download() as png_download_info:
+            page.get_by_role("menuitem", name="PNG").click()
+        png_download = png_download_info.value
+        assert png_download.suggested_filename == "session-v2-shell-messages.png"
+        png_path = tmp_path / png_download.suggested_filename
+        png_download.save_as(png_path)
+        assert png_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+        assert backend.rounds_request_count == rounds_request_count_before_export + 2
+
+
 class _V2ShellBackend:
+    def __init__(self) -> None:
+        self.rounds_request_count = 0
+
     def route(self, route: Route, request: Request) -> None:
         path = urlsplit(request.url).path.removeprefix("/api")
         if request.method == "GET" and path == "/system/health":
@@ -110,6 +157,7 @@ class _V2ShellBackend:
             _fulfill_json(route, self._messages())
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/rounds":
+            self.rounds_request_count += 1
             _fulfill_json(route, self._rounds_page())
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/token-usage":
@@ -208,7 +256,36 @@ class _V2ShellBackend:
         ]
 
     def _rounds_page(self) -> dict[str, object]:
-        return {"has_more": False, "items": [], "next_cursor": None}
+        return {
+            "has_more": False,
+            "items": [
+                {
+                    "coordinator_messages": [
+                        {
+                            "created_at": "2026-06-25T08:00:02Z",
+                            "message": {
+                                "parts": [
+                                    {
+                                        "content": "Exported V2 transcript content",
+                                        "part_kind": "text",
+                                    }
+                                ],
+                            },
+                            "role_id": "MainAgent",
+                        }
+                    ],
+                    "created_at": "2026-06-25T08:00:01Z",
+                    "has_final_output": True,
+                    "intent": "V2 export prompt",
+                    "intent_parts": [{"kind": "text", "text": "V2 export prompt"}],
+                    "run_id": "run-v2-shell",
+                    "run_phase": "completed",
+                    "run_status": "completed",
+                    "run_user_message": "V2 export prompt",
+                }
+            ],
+            "next_cursor": None,
+        }
 
 
 @contextmanager

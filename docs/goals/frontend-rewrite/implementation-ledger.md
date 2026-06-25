@@ -1791,3 +1791,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this active-stream session-switch slice. No Sessions And Projects or AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Message Export Browser Batch
+
+### Scope
+- Re-checked the Resource And Assistive Features checklist and targeted the missing built-shell browser evidence for message export as HTML and PNG.
+- Added a focused V2 `/app/` browser integration flow that opens the real top-bar export menu, downloads the selected session transcript as HTML, reads the saved file back, and verifies the session title, round prompt, and assistant transcript content.
+- Extended the same browser flow to reopen the export menu, download the PNG transcript, save the file, and verify the PNG signature bytes.
+- Verified export uses the real `/api/sessions/{session_id}/rounds` path from the shell rather than static fixture content by asserting the export actions add two rounds requests after the shell's initial round hydration.
+- Fixed a real V2 top-bar interaction bug found by the browser test: the export button tooltip stayed open over the dropdown and intercepted menu clicks. The export menu now controls dropdown open state and hides the tooltip while the menu is open.
+- Rebuilt `frontend/dist/app` so the browser harness and served app use the fixed export menu bundle.
+- Left Resource And Assistive Features completion open; remaining work still includes image preview screenshot evidence, notification/diagnostic availability checks, and reviewer sign-off.
+
+### Verification
+- `npm run test -- --run src/test/MessageExportMenu.test.tsx src/test/messageExport.test.ts` passed with 12 tests.
+- `npm run lint` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py` passed with 2 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_shell_layout.py` passed with 0 errors.
+- No screenshot was captured for this batch because it fixes top-bar export interaction and browser download coverage rather than visible layout structure.
+
+### Reviewer
+- Main-agent browser integration verification completed for this message export slice. No Resource And Assistive Features subsystem completion is claimed.

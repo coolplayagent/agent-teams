@@ -77,6 +77,7 @@ export function MessageExportMenu({
 }: MessageExportMenuProps) {
   const t = useTranslations();
   const exporter = useMessageExporter({ messenger, sessionId });
+  const [menuOpen, setMenuOpen] = useState(false);
   const exportMenuItems: MenuProps["items"] = [
     {
       key: "html",
@@ -90,6 +91,8 @@ export function MessageExportMenu({
 
   return (
     <Dropdown
+      onOpenChange={setMenuOpen}
+      open={menuOpen}
       menu={{
         items: exportMenuItems,
         onClick: ({ key }) => {
@@ -99,7 +102,7 @@ export function MessageExportMenu({
       placement="bottomRight"
       trigger={["click"]}
     >
-      <Tooltip title={t("exportMessages")}>
+      <Tooltip open={menuOpen ? false : undefined} title={t("exportMessages")}>
         <Button
           aria-label={t("exportMessages")}
           icon={<Download size={17} />}

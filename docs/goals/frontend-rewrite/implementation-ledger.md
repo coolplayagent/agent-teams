@@ -2067,3 +2067,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration and component verification completed for this real SSE interrupted replay slice. No AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-25 V2 Real SSE Stop Control Browser Batch
+
+### Scope
+- Continued the AG-UI Runtime Stream and Composer/Run Recovery checklist after the real SSE interrupted replay fix, targeting the remaining stop-control timing gap.
+- Extended the built V2 `/app/` real HTTP/SSE browser harness with a mode that keeps the initial native EventSource stream open after `run_started` and `text_delta`.
+- Verified clicking the real Composer Stop button while the SSE stream is still open sends `POST /api/ag-ui/runs/{run_id}:stop` with `{"scope":"main"}`.
+- Verified the server-side stream observes the stop request and exits the held stream path, while the V2 UI hides Stop, restores Send, and keeps the pre-stop streamed text visible without duplication.
+- Left full AG-UI Runtime Stream and Run Recovery completion open; remaining work includes real backend resume/approval/question timing, production backend stop semantics, and paired reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py -k real_sse_active_run_stop` passed with 1 test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 14 tests.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/browser/test_v2_stream_recovery.py` passed with 0 errors.
+- No screenshot was captured because this batch verifies stream/control timing and visible button state through browser assertions rather than changing layout.
+
+### Reviewer
+- Main-agent browser integration verification completed for this real SSE stop-control slice. No AG-UI Runtime Stream, Composer, or Run Recovery subsystem completion is claimed.

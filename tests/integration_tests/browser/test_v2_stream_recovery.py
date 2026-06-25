@@ -498,6 +498,45 @@ def test_v2_real_sse_interrupted_stream_reconnects_from_runtime_cursor(
         assert stream_state.has_last_event_id_header("2")
 
 
+def test_v2_real_sse_active_run_stop_closes_stream_and_restores_send(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2StreamBackend()
+    stream_state = _RealSseStreamState(hold_initial_stream_until_stop=True)
+    _install_real_sse_shell_state(page)
+
+    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
+        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        prompt.fill(_PROMPT)
+        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
+
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        stop_button = page.get_by_role("button", name=re.compile(r"^(Stop|停止)$"))
+        expect(stop_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        stop_button.click()
+
+        assert stream_state.wait_for_stop_request(timeout_seconds=5.0)
+        assert backend.stop_payload == {"scope": "main"}
+        assert stream_state.wait_for_initial_stream_finished(timeout_seconds=5.0)
+        expect(stop_button).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
+        expect(
+            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
+            1,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 def test_v2_session_switch_closes_active_stream_and_isolates_timeline(
     browser_page: Page,
 ) -> None:
@@ -1373,11 +1412,14 @@ class _V2StreamBackend:
 
 
 class _RealSseStreamState:
-    def __init__(self) -> None:
+    def __init__(self, *, hold_initial_stream_until_stop: bool = False) -> None:
+        self.hold_initial_stream_until_stop = hold_initial_stream_until_stop
         self._lock = threading.Lock()
+        self._initial_stream_finished = threading.Event()
         self._resumed_stream_seen = threading.Event()
         self._sent_event_ids: set[int] = set()
         self._sent_initial_stream = False
+        self._stop_requested = threading.Event()
         self.stream_requests: list[dict[str, object]] = []
 
     def record_request(self, *, after_event_id: int, last_event_id: str) -> None:
@@ -1429,9 +1471,21 @@ class _RealSseStreamState:
                 for request in self.stream_requests
             )
 
+    def record_initial_stream_finished(self) -> None:
+        self._initial_stream_finished.set()
+
     def record_sent_event_id(self, event_id: int) -> None:
         with self._lock:
             self._sent_event_ids.add(event_id)
+
+    def record_stop_request(self) -> None:
+        self._stop_requested.set()
+
+    def wait_for_initial_stream_finished(self, *, timeout_seconds: float) -> bool:
+        return self._initial_stream_finished.wait(timeout=timeout_seconds)
+
+    def wait_for_stop_request(self, *, timeout_seconds: float) -> bool:
+        return self._stop_requested.wait(timeout=timeout_seconds)
 
     def _has_after_event_id(self, after_event_id: int) -> bool:
         with self._lock:
@@ -1568,6 +1622,7 @@ def _serve_v2_app_with_real_sse(
             if path == f"/ag-ui/runs/{_RUN_ID}:stop":
                 backend.completed = True
                 backend.stop_payload = self._read_json_body()
+                stream_state.record_stop_request()
                 self._send_json({"run_id": _RUN_ID, "scope": "main", "status": "ok"})
                 return
             self._send_json(
@@ -1597,6 +1652,17 @@ def _serve_v2_app_with_real_sse(
                         {"text": _FIRST_CHUNK},
                     ),
                 )
+                if stream_state.hold_initial_stream_until_stop:
+                    stream_state.wait_for_stop_request(timeout_seconds=10.0)
+                    self._write_sse_event(
+                        _ag_ui_event(
+                            "run.stopped",
+                            "run_stopped",
+                            3,
+                            {"status": "stopped"},
+                        ),
+                    )
+                stream_state.record_initial_stream_finished()
                 return
             if after_event_id < 2:
                 time.sleep(5.0)

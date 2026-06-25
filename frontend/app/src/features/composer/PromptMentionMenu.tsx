@@ -50,7 +50,11 @@ export function PromptMentionMenu({
 }
 
 function promptMentionOptionKey(option: PromptMentionOption): string {
-  return option.kind === "command"
-    ? `command:${option.commandName}`
-    : `role:${option.roleId}`;
+  if (option.kind === "command") {
+    return `command:${option.commandName}`;
+  }
+  if (option.kind === "resource") {
+    return `resource:${option.path}`;
+  }
+  return `role:${option.roleId}`;
 }

@@ -26,6 +26,7 @@ import {
   getSession,
   injectRunMessage,
   resolveCommandPrompt,
+  searchWorkspacePaths,
   stopRun,
   updateSessionTopology,
   updateSessionNormalModelProfile,
@@ -53,9 +54,12 @@ import {
 import { PromptMentionMenu } from "./PromptMentionMenu";
 import {
   applyPromptCommandOption,
+  applyPromptMentionOption,
   findPromptCommandMentionOptions,
   findLeadingRoleMentionOptions,
+  findPromptResourceMentionOptions,
   getPromptCommandContext,
+  getPromptResourceContext,
   parseLeadingRoleMention,
   type LeadingRoleMention,
   type PromptMentionOption,
@@ -161,10 +165,39 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         : null,
     [activeRunId, dismissedMentionDraft, draft],
   );
+  const promptResourceContext = useMemo(
+    () =>
+      promptCommandContext === null &&
+      activeRunId === null &&
+      dismissedMentionDraft !== draft
+        ? getPromptResourceContext(draft)
+        : null,
+    [activeRunId, dismissedMentionDraft, draft, promptCommandContext],
+  );
+  const sessionWorkspaceId = normalizeOptionalId(sessionQuery.data?.workspace_id);
   const commandCatalogQuery = useQuery({
     queryKey: ["commands", "catalog", "composer"],
     queryFn: getCommandCatalog,
     enabled: promptCommandContext !== null,
+    staleTime: 30000,
+  });
+  const resourceSearchQuery = useQuery({
+    queryKey: [
+      "workspaces",
+      sessionWorkspaceId,
+      "prompt-resources",
+      promptResourceContext?.query ?? "",
+    ],
+    queryFn: () => {
+      if (sessionWorkspaceId === null || promptResourceContext === null) {
+        throw new Error("Workspace and resource query are required.");
+      }
+      return searchWorkspacePaths(sessionWorkspaceId, promptResourceContext.query, 80);
+    },
+    enabled:
+      sessionWorkspaceId !== null &&
+      promptResourceContext !== null &&
+      promptResourceContext.query.length > 0,
     staleTime: 30000,
   });
   const roleOptions = useMemo(
@@ -227,17 +260,32 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         ? []
         : findPromptCommandMentionOptions(
             commandCatalogQuery.data,
-            sessionQuery.data?.workspace_id,
+            sessionWorkspaceId,
             promptCommandContext.query,
           ),
+    [commandCatalogQuery.data, promptCommandContext, sessionWorkspaceId],
+  );
+  const resourceMentionOptions = useMemo(
+    () =>
+      promptResourceContext === null
+        ? []
+        : findPromptResourceMentionOptions({
+            query: promptResourceContext.query,
+            resourceResponse: resourceSearchQuery.data,
+            roleOptions: roleOptionsQuery.data,
+          }),
     [
-      commandCatalogQuery.data,
-      promptCommandContext,
-      sessionQuery.data?.workspace_id,
+      promptResourceContext,
+      resourceSearchQuery.data,
+      roleOptionsQuery.data,
     ],
   );
   const promptMentionOptions =
-    promptCommandContext === null ? leadingMentionOptions : commandMentionOptions;
+    promptCommandContext !== null
+      ? commandMentionOptions
+      : promptResourceContext !== null
+        ? resourceMentionOptions
+        : leadingMentionOptions;
   const effectiveTargetRoleId = leadingRoleMention.roleId ?? targetRoleId;
   const effectivePromptText =
     leadingRoleMention.roleId === null ? draft.trim() : leadingRoleMention.promptText;
@@ -834,7 +882,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           : applyPromptCommandOption(currentDraft, context, option);
       });
     } else {
-      setDraft(`@${option.insertTerm} `);
+      setDraft((currentDraft) => {
+        const context = promptResourceContext ?? getPromptResourceContext(currentDraft);
+        return context === null
+          ? `@${option.insertTerm} `
+          : applyPromptMentionOption(currentDraft, context, option);
+      });
     }
     setDismissedMentionDraft("");
     inputRef.current?.focus();

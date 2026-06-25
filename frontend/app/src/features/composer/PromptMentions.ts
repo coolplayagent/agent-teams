@@ -3,6 +3,8 @@ import type {
   CommandDetail,
   RoleConfigOptions,
   RoleOption,
+  WorkspaceSearchResponse,
+  WorkspaceSearchResult,
 } from "../../api/contracts";
 
 export interface LeadingRoleMention {
@@ -35,8 +37,19 @@ export interface PromptCommandMentionOption {
   kind: "command";
 }
 
+export interface PromptResourceMentionOption {
+  aliases: string[];
+  description: string;
+  displayName: string;
+  insertTerm: string;
+  kind: "resource";
+  path: string;
+  resourceKind: "directory" | "file";
+}
+
 export type PromptMentionOption =
   | PromptCommandMentionOption
+  | PromptResourceMentionOption
   | PromptRoleMentionOption;
 
 interface InternalPromptRoleMentionOption extends PromptRoleMentionOption {
@@ -154,6 +167,13 @@ export interface PromptCommandContext {
   start: number;
 }
 
+export interface PromptResourceContext {
+  end: number;
+  query: string;
+  start: number;
+  trigger: "@" | "＠";
+}
+
 export function getPromptCommandContext(text: string): PromptCommandContext | null {
   const source = String(text ?? "");
   const beforeCursor = source;
@@ -175,6 +195,38 @@ export function applyPromptCommandOption(
   const after = text.slice(context.end);
   const tail = after ? (after.startsWith(" ") ? after : ` ${after}`) : " ";
   return `${before}/${option.insertTerm}${tail}`;
+}
+
+export function getPromptResourceContext(text: string): PromptResourceContext | null {
+  const source = String(text ?? "");
+  const mentionTokenMatch = source.match(/(^|\s)([@＠])([^\s]*)$/);
+  if (mentionTokenMatch === null) {
+    return null;
+  }
+  const trigger = mentionTokenMatch[2] === "＠" ? "＠" : "@";
+  const query = mentionTokenMatch[3]?.trim() ?? "";
+  const start = source.length - query.length - 1;
+  return { end: source.length, query, start, trigger };
+}
+
+export function applyPromptMentionOption(
+  text: string,
+  context: PromptResourceContext,
+  option: PromptResourceMentionOption | PromptRoleMentionOption,
+): string {
+  const before = text.slice(0, context.start);
+  const after = text.slice(context.end);
+  const shouldAppendSpace =
+    option.kind === "role" ||
+    (option.kind === "resource" && option.resourceKind !== "directory");
+  const tail = after
+    ? after.startsWith(" ")
+      ? after
+      : ` ${after}`
+    : shouldAppendSpace
+      ? " "
+      : "";
+  return `${before}${context.trigger}${option.insertTerm}${tail}`;
 }
 
 export function findPromptCommandMentionOptions(
@@ -202,6 +254,37 @@ export function findPromptCommandMentionOptions(
     .sort((left, right) => left.score - right.score || left.index - right.index)
     .slice(0, 10)
     .map((item) => item.option);
+}
+
+export function findPromptResourceMentionOptions({
+  query,
+  resourceResponse,
+  roleOptions,
+}: {
+  query: string;
+  resourceResponse: WorkspaceSearchResponse | undefined;
+  roleOptions: RoleConfigOptions | undefined;
+}): Array<PromptResourceMentionOption | PromptRoleMentionOption> {
+  const roleMentionOptions = listMentionableRoleOptions(roleOptions)
+    .map((option, index) => ({
+      index,
+      option,
+      score: mentionOptionScore(option, query),
+    }))
+    .filter((item) => item.score < Number.POSITIVE_INFINITY)
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .map((item) => item.option);
+  const resourceMentionOptions = normalizePromptResourceResponse(resourceResponse)
+    .map((option, index) => ({
+      index,
+      option,
+      score: mentionOptionScore(option, query),
+    }))
+    .filter((item) => item.score < Number.POSITIVE_INFINITY)
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .slice(0, 20)
+    .map((item) => item.option);
+  return [...roleMentionOptions, ...resourceMentionOptions].slice(0, 20);
 }
 
 function listMentionableRoleOptions(
@@ -292,6 +375,34 @@ function commandMentionOption(command: CommandDetail): PromptCommandMentionOptio
     displayName: name,
     insertTerm,
     kind: "command",
+  };
+}
+
+function normalizePromptResourceResponse(
+  response: WorkspaceSearchResponse | undefined,
+): PromptResourceMentionOption[] {
+  return (response?.results ?? [])
+    .map(resourceMentionOption)
+    .filter((option) => option !== null);
+}
+
+function resourceMentionOption(
+  result: WorkspaceSearchResult,
+): PromptResourceMentionOption | null {
+  const path = normalizeRoleId(result.path);
+  const name = normalizeRoleId(result.name) || path;
+  if (!path || !name) {
+    return null;
+  }
+  const resourceKind = result.kind === "directory" ? "directory" : "file";
+  return {
+    aliases: [name, path].map(normalizeRoleId).filter(Boolean),
+    description: path,
+    displayName: name,
+    insertTerm: resourceKind === "directory" && !path.endsWith("/") ? `${path}/` : path,
+    kind: "resource",
+    path,
+    resourceKind,
   };
 }
 

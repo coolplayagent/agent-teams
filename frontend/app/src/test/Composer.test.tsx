@@ -14,6 +14,7 @@ import {
   getSession,
   injectRunMessage,
   resolveCommandPrompt,
+  searchWorkspacePaths,
   updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../api/client";
@@ -66,6 +67,7 @@ vi.mock("../api/client", () => ({
   getSession: vi.fn(),
   injectRunMessage: vi.fn(),
   resolveCommandPrompt: vi.fn(),
+  searchWorkspacePaths: vi.fn(),
   stopRun: vi.fn(),
   updateSessionTopology: vi.fn(),
   updateSessionNormalModelProfile: vi.fn(),
@@ -87,6 +89,7 @@ const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getSessionMock = vi.mocked(getSession);
 const injectRunMessageMock = vi.mocked(injectRunMessage);
 const resolveCommandPromptMock = vi.mocked(resolveCommandPrompt);
+const searchWorkspacePathsMock = vi.mocked(searchWorkspacePaths);
 const updateSessionTopologyMock = vi.mocked(updateSessionTopology);
 const updateSessionNormalModelProfileMock = vi.mocked(
   updateSessionNormalModelProfile,
@@ -130,6 +133,11 @@ beforeEach(() => {
   resolveCommandPromptMock.mockResolvedValue({
     matched: false,
     raw_text: "",
+  });
+  searchWorkspacePathsMock.mockResolvedValue({
+    query: "",
+    results: [],
+    workspace_id: "workspace-1",
   });
 });
 
@@ -359,6 +367,79 @@ describe("Composer", () => {
     fireEvent.mouseDown(optionButton);
 
     expect(prompt).toHaveValue("/review ");
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("shows workspace resource suggestions from prompt mentions", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    searchWorkspacePathsMock.mockResolvedValue({
+      query: "src",
+      results: [
+        {
+          kind: "file",
+          name: "Composer.tsx",
+          path: "frontend/app/src/features/composer/Composer.tsx",
+        },
+      ],
+      workspace_id: "workspace-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "Inspect @src" } });
+
+    await waitFor(() =>
+      expect(searchWorkspacePathsMock).toHaveBeenCalledWith(
+        "workspace-1",
+        "src",
+        80,
+      ),
+    );
+    const optionName = await screen.findByText("@Composer.tsx");
+    expect(optionName).toBeVisible();
+    expect(
+      screen.getByText("frontend/app/src/features/composer/Composer.tsx"),
+    ).toBeVisible();
+    const optionButton = optionName.closest("button");
+    if (optionButton === null) {
+      throw new Error("Workspace resource option button was not rendered.");
+    }
+    fireEvent.mouseDown(optionButton);
+
+    expect(prompt).toHaveValue(
+      "Inspect @frontend/app/src/features/composer/Composer.tsx ",
+    );
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps directory prompt mentions open for deeper paths", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    searchWorkspacePathsMock.mockResolvedValue({
+      query: "src",
+      results: [
+        {
+          kind: "directory",
+          name: "src",
+          path: "frontend/app/src",
+        },
+      ],
+      workspace_id: "workspace-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "@src" } });
+
+    const optionButton = await screen.findByRole("option", { name: /@src/ });
+    fireEvent.mouseDown(optionButton);
+
+    expect(prompt).toHaveValue("@frontend/app/src/");
     expect(createRunMock).not.toHaveBeenCalled();
   });
 

@@ -216,6 +216,39 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
   });
 
+  it("removes completed runs from the active controller targets during multiplexed streams", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start streams" }));
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
+
+    const options = streamMocks.latestOptions as MultiplexedRunStreamOptions;
+    act(() => {
+      options.onState(runtimeStateWithRunStatuses([
+        { lastEventId: 12, runId: "run-1", status: "closed" },
+        { lastEventId: 13, runId: "run-2", status: "open" },
+      ]));
+    });
+
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-2");
+  });
+
   it("deduplicates multiplexed run targets before opening a replay stream", () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -666,8 +699,21 @@ function runtimeStateWithClosedRun(lastEventId: number): RuntimeState {
 function runtimeStateWithRuns(
   runs: Array<{ lastEventId: number; runId: string }>,
 ): RuntimeState {
+  return runtimeStateWithRunStatuses(
+    runs.map((run) => ({
+      ...run,
+      status: "open",
+    })),
+  );
+}
+
+function runtimeStateWithRunStatuses(
+  runs: Array<{ lastEventId: number; runId: string; status: "closed" | "open" }>,
+): RuntimeState {
   return {
-    activeRunIds: runs.map((run) => run.runId),
+    activeRunIds: runs
+      .filter((run) => run.status === "open")
+      .map((run) => run.runId),
     runs: Object.fromEntries(
       runs.map((run) => [
         run.runId,
@@ -676,8 +722,8 @@ function runtimeStateWithRuns(
           lastEventId: run.lastEventId,
           runId: run.runId,
           seenEventKeys: [`${run.runId}:${run.lastEventId}`],
-          status: "open",
-          terminalEventType: null,
+          status: run.status,
+          terminalEventType: run.status === "closed" ? "run_completed" : null,
         },
       ]),
     ),

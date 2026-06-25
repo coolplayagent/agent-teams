@@ -1256,3 +1256,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and test verification completed for this stream terminal transport boundary slice. No AG-UI Runtime Stream or Message Timeline subsystem completion is claimed from this batch; remaining work includes live stream/replay Playwright scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.
+
+## 2026-06-25 Multiplex Active Run State Batch
+
+### Scope
+- Continued the AG-UI stream/replay parity pass by tightening the React run stream controller's multiplexed active-run projection.
+- When a multiplexed stream state update reports one tracked run as terminal while another tracked run remains open, the controller now removes the terminal run from `activeRunIds` immediately instead of keeping it active until the whole multiplex stream closes.
+- This keeps composer stop/inject ownership and recovery active-stream matching aligned with the reducer's actual run statuses during partial terminal replay or mixed parent/subagent streams.
+
+### Verification
+- `npm test -- src/test/RunStreamController.test.tsx` in `frontend/app` passed with 13 tests, including the new regression that a closed `run-1` is removed while `run-2` remains active in the same multiplex stream.
+- `npm run typecheck` in `frontend/app` passed.
+- `npm run lint` in `frontend/app` passed.
+- `npm run build` in `frontend/app` passed and refreshed `frontend/dist/app` with rebuilt asset `index-CoqwURYH.js`.
+
+### Reviewer
+- Main-agent targeted verification completed for this multiplex active-run state slice. No AG-UI Runtime Stream subsystem completion is claimed from this batch; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery, interrupted-stream resume under real SSE timing, and reviewer sign-off.

@@ -148,6 +148,7 @@ export function useRunStreamController(): RunStreamController {
         reconnectAttemptRef.current = 0;
         runtimeStateRef.current = nextRuntimeState;
         setRuntimeState(nextRuntimeState);
+        setActiveRunIds(activeTrackedRunIds(options.runs, nextRuntimeState));
       },
       onClosed: () => {
         if (streamGeneration !== streamGenerationRef.current) {
@@ -295,4 +296,13 @@ function trackedRunTargetsClosed(
   return normalizeRunTargets(runs).every(
     (run) => runtimeState.runs[run.runId]?.status === "closed",
   );
+}
+
+function activeTrackedRunIds(
+  runs: StartRunStreamTarget[],
+  runtimeState: RuntimeState,
+): string[] {
+  return normalizeRunTargets(runs)
+    .map((run) => run.runId)
+    .filter((runId) => runtimeState.runs[runId]?.status !== "closed");
 }

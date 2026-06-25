@@ -1550,3 +1550,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser integration verification completed for this refresh recovery slice. No AG-UI Runtime Stream, Run Recovery, or Message Timeline subsystem completion is claimed; remaining work includes real backend SSE replay, interrupted stream resume, stop/resume, approvals/questions during active recovery, and detailed message rendering parity.
+
+## 2026-06-25 AG-UI HTTP Stream Replay Integration Batch
+
+### Scope
+- Re-scanned the Runtime Stream and Run Recovery checklist after the mocked V2 browser recovery scenario and targeted the next weakest evidence layer.
+- Added a real backend API integration test for `/api/ag-ui/runs` and `/api/ag-ui/runs/{run_id}/events` instead of another mocked EventSource scenario.
+- Created a manual run through the AG-UI-facing endpoint, streamed the actual AG-UI SSE output until `run_completed`, and verified each SSE `event:` name matches the JSON `type` field.
+- Reconnected with the `Last-Event-ID` header from the first streamed event and verified the replay returned exactly the later event ids and Relay event types, proving the ASGI router, AG-UI mapper, SSE formatter, event log, and run service replay path work together.
+- Left full Runtime Stream completion open; this does not yet cover interrupted network reconnect under browser EventSource timing, multiplexed real backend replay, stop/resume UI flows, approvals/questions, or reviewer sign-off.
+
+### Verification
+- `uv run --extra dev pytest -q tests/integration_tests/api/test_ag_ui_http_stream.py` passed with 1 test.
+- `uv run --extra dev ruff check tests/integration_tests/api/test_ag_ui_http_stream.py` passed.
+- `uv run --extra dev ruff format --check tests/integration_tests/api/test_ag_ui_http_stream.py` passed.
+- `uv run --extra dev basedpyright tests/integration_tests/api/test_ag_ui_http_stream.py` passed with 0 errors.
+- No screenshot was captured for this batch because it adds backend protocol coverage only; the next visual or interaction pass should resume paired V1/V2 browser evidence.
+
+### Reviewer
+- Main-agent backend integration verification completed for this AG-UI replay slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real browser interrupted-stream reconnect, multiplexed backend replay, stop/resume and recovery UI actions, approvals/questions, and reviewer sign-off.

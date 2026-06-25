@@ -62,30 +62,40 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
     () => createMessageRoundLookup(rounds),
     [rounds],
   );
+  const persistedRows = useMemo(
+    () =>
+      messages
+        .map((messageItem, index) =>
+          messageToRow(messageItem, index, messageRoundLookup),
+        )
+        .filter(timelineRowHasRenderableContent),
+    [messageRoundLookup, messages],
+  );
+  const hydratedRunIds = useMemo(
+    () => timelineRowRunIds(persistedRows),
+    [persistedRows],
+  );
   const runtimeEntries = useMemo(
     () =>
       Object.values(runtimeState.runs)
+        .filter((runState) =>
+          runState.status !== "closed" || !hydratedRunIds.has(runState.runId),
+        )
         .flatMap((runState) => runState.entries)
         .filter((entry) => entry.sessionId === sessionId),
-    [runtimeState, sessionId],
+    [hydratedRunIds, runtimeState.runs, sessionId],
   );
   const runtimeRows = useMemo(
     () => runtimeEntriesToRows(runtimeEntries),
     [runtimeEntries],
   );
   const rows = useMemo(
-    () => {
-      const persistedRows = messages
-        .map((messageItem, index) =>
-          messageToRow(messageItem, index, messageRoundLookup),
-        )
-        .filter(timelineRowHasRenderableContent);
-      return insertRoundMarkerRows([
+    () =>
+      insertRoundMarkerRows([
         ...persistedRows,
         ...runtimeRows.filter(timelineRowHasRenderableContent),
-      ], rounds);
-    },
-    [messageRoundLookup, messages, rounds, runtimeRows],
+      ], rounds),
+    [persistedRows, rounds, runtimeRows],
   );
   const streamOpenForSession = useMemo(
     () =>
@@ -155,11 +165,12 @@ export function MessageTimeline({ sessionId }: MessageTimelineProps) {
       return;
     }
     const snapshot = scrollSnapshotRef.current;
-    if (snapshot === null) {
-      scrollTimelineToBottom(container);
-    } else {
-      applyTimelineScrollSnapshot(container, snapshot, rows);
-    }
+    syncTimelineScrollPosition(
+      container,
+      snapshot === null
+        ? timelineMaxScrollTop(container)
+        : timelineScrollTopForSnapshot(container, snapshot, rows),
+    );
     scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
     syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
   }, [rows, sessionId, timelineHeight]);
@@ -347,17 +358,16 @@ function captureTimelineScrollSnapshot(
   };
 }
 
-function applyTimelineScrollSnapshot(
+function timelineScrollTopForSnapshot(
   container: HTMLElement,
   snapshot: TimelineScrollSnapshot,
   rows: TimelineRow[],
-): void {
+): number {
   if (snapshot.shouldFollow) {
-    scrollTimelineToBottom(container);
-    return;
+    return timelineMaxScrollTop(container);
   }
   const anchoredScrollTop = timelineAnchorScrollTop(container, snapshot, rows);
-  container.scrollTop = clampScrollTop(container, anchoredScrollTop);
+  return clampScrollTop(container, anchoredScrollTop);
 }
 
 function captureTimelineScrollAnchor(
@@ -423,8 +433,16 @@ function findTimelineAnchorRow(
   return rows.find((row) => row.dataset.rowKey === rowKey) ?? null;
 }
 
-function scrollTimelineToBottom(container: HTMLElement): void {
-  container.scrollTop = timelineMaxScrollTop(container);
+function syncTimelineScrollPosition(
+  container: HTMLElement,
+  scrollTop: number,
+): void {
+  const nextScrollTop = clampScrollTop(container, scrollTop);
+  container.scrollTop = nextScrollTop;
+  const ownerWindow = container.ownerDocument.defaultView;
+  ownerWindow?.setTimeout(() => {
+    container.dispatchEvent(new Event("scroll"));
+  }, 0);
 }
 
 function isTimelineNearBottom(container: HTMLElement): boolean {
@@ -754,6 +772,16 @@ function latestRoundRunId(rounds: SessionRound[]): string | null {
   return null;
 }
 
+function timelineRowRunIds(rows: TimelineRow[]): Set<string> {
+  const runIds = new Set<string>();
+  for (const row of rows) {
+    if (row.runId !== null && row.runId.trim().length > 0) {
+      runIds.add(row.runId);
+    }
+  }
+  return runIds;
+}
+
 function visibleRunIdFromRenderedRows(container: HTMLElement): string | null {
   const containerTop = container.getBoundingClientRect().top;
   const rows = Array.from(
@@ -1049,7 +1077,10 @@ function runtimeMessageRenderParts(entry: TimelineEntry): TimelineRenderPart[] |
     objectRawString(payload, "content") ||
     objectRawString(payload, "message") ||
     runtimeNestedMessageText(payload);
-  return text.trim().length > 0 ? [{ kind: "text", text: timelineDisplayText(text) }] : [];
+  if (text.trim().length === 0 || runtimeMessageTextIsProtocolPlaceholder(payload, text)) {
+    return [];
+  }
+  return [{ kind: "text", text: timelineDisplayText(text) }];
 }
 
 function runtimeNestedMessageText(payload: Record<string, JsonValue>): string {
@@ -1058,6 +1089,19 @@ function runtimeNestedMessageText(payload: Record<string, JsonValue>): string {
     return "";
   }
   return objectRawString(message, "text") || objectRawString(message, "content");
+}
+
+function runtimeMessageTextIsProtocolPlaceholder(
+  payload: Record<string, JsonValue>,
+  text: string,
+): boolean {
+  const directMessage = objectRawString(payload, "message");
+  return (
+    directMessage.trim().toLowerCase() === "message" &&
+    objectRawString(payload, "text").trim().length === 0 &&
+    objectRawString(payload, "content").trim().length === 0 &&
+    text.trim().toLowerCase() === "message"
+  );
 }
 
 function runtimeMessageContentParts(payload: Record<string, JsonValue>): ContentPart[] {

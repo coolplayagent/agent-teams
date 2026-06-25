@@ -99,6 +99,29 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("User")).not.toBeInTheDocument();
   });
 
+  it("does not render protocol placeholder text from replayed message payloads", async () => {
+    setRuntimeEntries([
+      {
+        eventId: 1,
+        id: "run-message:1:0",
+        kind: "message",
+        occurredAt: "2026-06-23T00:00:00Z",
+        payload: { message: "message" },
+        roleId: "user",
+        runId: "run-message",
+        sessionId: "session-1",
+        text: "message",
+      },
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(screen.queryByText("message")).not.toBeInTheDocument();
+    expect(screen.queryByText("User")).not.toBeInTheDocument();
+  });
+
   it("renders runtime message payload content instead of the event type", async () => {
     setRuntimeEntries([
       {
@@ -324,6 +347,7 @@ describe("MessageTimeline", () => {
       {
         message_id: "assistant-1",
         role_id: "MainAgent",
+        trace_id: "run-1",
         content: "Full persisted answer",
       },
     ]);
@@ -340,6 +364,7 @@ describe("MessageTimeline", () => {
       expect(writeText).toHaveBeenCalledWith("Full persisted answer"),
     );
     expect(writeText).not.toHaveBeenCalledWith("final chunk only");
+    expect(screen.queryByText("final chunk only")).not.toBeInTheDocument();
   });
 
   it("renders image media references with previewable images", async () => {

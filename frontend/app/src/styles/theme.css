@@ -3719,7 +3719,10 @@ body {
   left: 0;
   right: 0;
   display: grid;
-  gap: var(--at-message-gap);
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  column-gap: 8px;
+  row-gap: var(--at-message-gap);
   padding: 14px 0;
   border-bottom: 1px solid var(--at-border);
 }
@@ -3749,18 +3752,24 @@ body {
 }
 
 .at-message-role {
+  grid-column: 1 / -1;
   color: var(--at-text-muted);
   font-size: 12px;
 }
 
 .at-message-content {
+  grid-column: 1;
   display: grid;
   gap: var(--at-message-gap);
+  min-width: 0;
   max-width: 100%;
   color: var(--at-text);
 }
 
 .at-message-actions {
+  grid-column: 2;
+  align-self: start;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 4px;

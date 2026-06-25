@@ -45,6 +45,12 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-message-actions\s*{[\s\S]*?min-height:\s*24px;/,
     );
+    expect(themeCss).toMatch(
+      /\.at-message\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-actions\s*{[\s\S]*?grid-column:\s*2;[\s\S]*?justify-self:\s*end;/,
+    );
   });
 
   it("keeps the desktop round rail overlaid instead of reserving a chat column", () => {

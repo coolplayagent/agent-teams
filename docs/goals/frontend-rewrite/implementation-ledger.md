@@ -1492,3 +1492,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted verification completed for this replay activity continuation slice. No AG-UI Runtime Stream subsystem completion is claimed; remaining work includes real browser stream/replay scenarios, refresh-during-stream recovery under actual SSE timing, interrupted stream resume validation against the backend, and reviewer sign-off.
+
+## 2026-06-25 Message Timeline Layout Leak Closure Batch
+
+### Scope
+- Rechecked the live V2 message timeline after the user-marked screenshot and treated the visible shell as the source of truth for this batch.
+- Filtered closed runtime replay rows once their matching persisted run has hydrated, preventing old runtime chunks from stacking over saved messages after refresh.
+- Dropped direct AG-UI protocol placeholder payloads where `payload.message` is only the literal string `message`, so timeline rows no longer expose a naked `message` label as content.
+- Reworked message rows as a stable two-column grid so per-message actions, including copy, stay attached to their message row instead of floating away from the content column.
+- Nudged the virtualizer after programmatic bottom and anchor scroll restoration so refreshed long sessions repopulate visible rows instead of leaving the viewport visually detached from the timeline state.
+
+### Verification
+- `npm test -- MessageTimeline.test.tsx ShellLayoutCss.test.ts` in `frontend/app` passed with 53 tests, including regression coverage for protocol placeholder filtering, hydrated runtime-row suppression, and message action layout CSS.
+- `npm run build` in `frontend/app` passed, including typecheck, desktop build, and Vite production build; Vite refreshed `frontend/dist/app` with rebuilt assets `index-BVyJunYW.js` and `index-Byg9iS88.css`.
+- Final live browser metrics on `http://127.0.0.1:8000/app/` showed the document fixed to the viewport (`body.scrollHeight === document.scrollHeight === 720`), `.at-chat-view` owning a fixed-height shell, `.at-timeline` owning message scroll with `overflowY: "auto"`, the composer fixed inside the one-screen layout, `nakedMessageCount: 0`, and the visible copy action in message grid column `2`.
+- In-app browser screenshot capture repeatedly timed out with `Page.captureScreenshot`; no screenshot artifact is claimed for this batch, and the next visual pass should start by restoring a reliable screenshot/V1 comparison loop before more detail work.
+
+### Reviewer
+- Main-agent browser metrics verification completed for this visible message-layout closure slice. No full Message Timeline, Shell, Settings, or AG-UI Runtime Stream subsystem completion is claimed; remaining work includes reliable screenshot comparison, detailed V1/V2 message rendering parity, and real stream/replay/resume browser scenarios.

@@ -4410,3 +4410,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, deletion scan, and test-results cleanup completed for this slice. No Message Timeline subsystem sign-off, Rounds subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-26 Voice Input Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal after the message-copy migration and selected the next old browser UI test file by global risk: voice/composer behavior spans microphone permissions, streaming WebSocket state, audio chunking, keyboard hold-to-talk, and composer action layout.
+- Added `frontend/app/browser-tests/voice-input-audio.spec.ts` to migrate the nine browser scenarios from the Python harness: PCM byte streaming, silence auto-stop, space-hold suppression, persistent backpressure shutdown, finalize-timeout close, sample-rate negotiation, hidden voice control without STT config, audio worklet chunking, and composer action non-overlap in normal/new-session layouts.
+- Kept the coverage behavior-focused and did not change sidebar/settings information architecture or product UI structure.
+- Removed `tests/integration_tests/browser/test_voice_input_audio.py` after the TS replacement passed.
+- Kept this as targeted voice/composer browser-suite migration progress only. Remaining work still includes broader old Python UI/browser module migration, stream timeline harness migration, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/voice-input-audio.spec.ts` passed with 9 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, and cleanup completed for this slice. No Composer subsystem sign-off, voice input subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.

@@ -4347,3 +4347,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend typecheck, Python syntax, lint, format, diff, and screenshot verification completed for this Board action migration slice. No Board subsystem sign-off, browser-suite migration sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Settings Actions Migration Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, current worktree, and remaining `test_v2_shell_layout.py` V2 Python UI scan before editing. This slice targeted settings mutation flows while preserving the V1 top-level/secondary-page information architecture.
+- Added TS browser coverage in `frontend/app/browser-tests/v2-settings-actions.spec.ts` for Plugins enable/disable/update/delete under the System secondary page, Hooks validate/save under the System secondary page, Roles validate/delete/create, and Orchestration set-default/delete/create.
+- Removed the four corresponding Python UI scenarios from `tests/integration_tests/browser/test_v2_shell_layout.py`.
+- Captured and inspected `.tmp/frontend-v2-ts-settings-actions/v2-plugin-actions.png`, `.tmp/frontend-v2-ts-settings-actions/v2-hooks-editor-save.png`, `.tmp/frontend-v2-ts-settings-actions/v2-roles-create-save.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-orchestration-create-save.png`; the screenshots show the settings dialog inside the fixed shell, System secondary pages still nested, and no document-level scrolling.
+- Remaining V2 Python UI coverage in `test_v2_shell_layout.py` is now 4 scenarios: model profile detail save/test, model profile catalog create, Web settings save/error feedback, and remote workspace delete confirmation.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 4 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript project.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_v2_shell_layout.py` passed after deleting the migrated Python scenarios.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_v2_shell_layout.py` passed.
+- `uv run --extra dev ruff format --check tests\integration_tests\browser\test_v2_shell_layout.py` passed.
+- `git diff --check` passed, with only the expected Windows line-ending warning for the touched Python file.
+- `rg -n "^def test_v2_" tests\integration_tests\browser\test_v2_shell_layout.py` reports 4 remaining V2 Python UI scenarios.
+
+### Reviewer
+- Main-agent TS browser, frontend typecheck, Python syntax, lint, format, diff, and screenshot verification completed for this settings action migration slice. No Settings subsystem sign-off, browser-suite migration sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.

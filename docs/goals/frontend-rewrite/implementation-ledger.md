@@ -4208,3 +4208,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent build, unit, TS browser, syntax, and screenshot verification completed for this stream copy terminal slice. No Message Timeline subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Last-Event-ID Reconnect Migration Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, the product parity checklist, and the remaining Python UI stream coverage before selecting this slice. The next highest-risk gap was still interrupted-stream recovery, especially reconnecting from browser SSE `Last-Event-ID` when the payload itself does not include `event_id`.
+- Added TS browser coverage in `frontend/app/browser-tests/v2-stream-reconnect.spec.ts` that creates a real V2 run through the composer, emits a text delta whose cursor only exists in the SSE `lastEventId`, verifies the manual reconnect opens with `after_event_id=11`, replays the boundary chunk without duplication, renders the fresh `lastEventId=12` continuation, and restores the composer after terminal completion.
+- Removed the migrated Python UI scenarios from `tests/integration_tests/browser/test_v2_stream_recovery.py` and `tests/integration_tests/browser/test_v2_shell_layout.py`, including the now-unused shell helper for payloads without `event_id`.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-last-event-id-reconnect.png`; the screenshot shows the resumed stream inside the fixed V2 shell with the composer anchored and no document-level scrolling.
+- Kept this as targeted AG-UI Runtime Stream / Interrupted Stream Recovery browser migration progress only. Remaining work still includes mock EventSource refresh/session-switch recovery migration, background task recovery cleanup, voice/composer browser coverage, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-stream-reconnect.spec.ts` passed with 3 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py tests/integration_tests/browser/test_v2_shell_layout.py` passed after removing the migrated Python scenarios.
+- Main-agent screenshot inspection confirmed the Last-Event-ID reconnect path remains inside the fixed shell, keeps only one boundary message, and renders the continuation before terminal completion.
+
+### Reviewer
+- Main-agent TS browser, syntax, and screenshot verification completed for this Last-Event-ID reconnect slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

@@ -255,6 +255,103 @@ test("preserves non-text stream events after reconnect", async ({ page }) => {
   }
 });
 
+test("reconnects from SSE Last-Event-ID when payload event id is missing", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleStreamApi(context, runCreateRequests),
+      sessionTitle: "TS last event id reconnect",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const promptText = "Reconnect from SSE last event id";
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(promptText);
+    const sendButton = page.getByRole("button", { name: "Send" });
+    await expect(sendButton).toBeEnabled();
+    await sendButton.click();
+
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-reconnect\/events\?after_event_id=0$/,
+    );
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+
+    const boundaryChunk = "Chunk keyed only by SSE Last-Event-ID.";
+    await dispatchRunEvent(page, {
+      eventId: null,
+      lastEventId: "11",
+      payload: { text: boundaryChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText(boundaryChunk)).toBeVisible();
+
+    await dispatchEventSourceError(page);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-reconnect\/events\?after_event_id=11$/,
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await dispatchRunEvent(page, {
+      eventId: null,
+      lastEventId: "11",
+      payload: { text: boundaryChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.locator(".at-message").filter({ hasText: boundaryChunk }))
+      .toHaveCount(1);
+
+    const continuationChunk = " Fresh chunk after SSE cursor reconnect.";
+    await dispatchRunEvent(page, {
+      eventId: null,
+      lastEventId: "12",
+      payload: { text: continuationChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(
+      page.locator(".at-message").filter({ hasText: continuationChunk.trim() }),
+    ).toBeVisible();
+
+    await dispatchRunEvent(page, {
+      eventId: 13,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+    await expect(sendButton).toBeVisible();
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 Last-Event-ID reconnect should leave shell fixed-height",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-last-event-id-reconnect.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function dispatchErrorAndWaitForReconnect(
   page: Page,
   totalSourceCount: number,
@@ -301,16 +398,17 @@ function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {
 }
 
 interface BrowserRunEvent {
-  eventId: number;
+  eventId: number | null;
+  lastEventId?: string;
   payload: Record<string, unknown>;
   relayEventType: string;
   type: string;
 }
 
 async function dispatchRunEvent(page: Page, event: BrowserRunEvent): Promise<void> {
-  const payload = {
-    event_id: event.eventId,
-    occurred_at: `2026-06-26T09:00:0${event.eventId}Z`,
+  const numericEventId = event.eventId ?? Number(event.lastEventId ?? 0);
+  const payload: Record<string, unknown> = {
+    occurred_at: `2026-06-26T09:00:${String(numericEventId).padStart(2, "0")}Z`,
     payload: event.payload,
     relay_event_type: event.relayEventType,
     role_id: "MainAgent",
@@ -319,9 +417,13 @@ async function dispatchRunEvent(page: Page, event: BrowserRunEvent): Promise<voi
     trace_id: "trace-ts-reconnect",
     type: event.type,
   };
+  if (event.eventId !== null) {
+    payload.event_id = event.eventId;
+  }
   await dispatchEventSourceMessage(page, {
     data: payload,
-    lastEventId: String(event.eventId),
+    lastEventId:
+      event.lastEventId ?? (event.eventId === null ? "" : String(event.eventId)),
     type: event.type,
   });
 }

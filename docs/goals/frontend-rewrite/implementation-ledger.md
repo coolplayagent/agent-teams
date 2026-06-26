@@ -3820,3 +3820,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this project view open/reload/close slice. No Sessions And Projects subsystem, project action subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Active Stream Session Switch Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and parity checklist after the project view slice, then selected the active-stream session switch path because Sessions And Projects explicitly requires browser coverage for switching sessions while a stream is running.
+- Added a TS Playwright browser scenario that starts a real AG-UI foreground run from the composer, opens the EventSource test harness, dispatches `run.started` and live text-delta events, and verifies the source session shows streaming output and the Stop control.
+- Switched to a second sidebar session while the source run is still open, verifying the foreground stream is cleared, the EventSource handle closes, the Stop control disappears, the composer becomes usable again, and the second session hydrates its own persisted message without showing the source session stream.
+- Dispatched a late text-delta into the already closed source EventSource and verified it stays hidden, protecting the boundary where replay or delayed browser events could otherwise leak into the newly selected session.
+- Captured and inspected `.tmp/frontend-v2-ts-session-switch/v2-active-stream-session-switch.png`; the screenshot shows the fixed shell, source session still carrying its backend active-run indicator, the secondary session selected, second-session output visible, and composer controls restored.
+- Kept this as targeted Sessions And Projects / AG-UI Runtime Stream browser migration evidence only. Remaining work still includes long tool-heavy replay inspection, image preview, persisted subagent session recovery, broader stream event matrix edges, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-session-switch-stream.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-stream-create-run.spec.ts browser-tests/v2-session-switch-stream.spec.ts` passed with 3 TS browser tests.
+- Main-agent screenshot inspection confirmed session switching during an active foreground stream stays inside the fixed V2 shell, closes the foreground EventSource, and restores composer controls in the selected session.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this active stream session switch slice. No Sessions And Projects subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

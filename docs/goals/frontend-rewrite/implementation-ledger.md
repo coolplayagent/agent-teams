@@ -3801,3 +3801,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this round rail detail and composer visual fix slice. No Message Timeline, Rounds/Todos/History/Retry, composer subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Project View Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and parity checklist after the round rail slice, then selected the project view open/reload/close workflow because it protects a V1 secondary workspace surface and the fixed-shell frame instead of staying focused on message detail polish.
+- Added a TS Playwright browser scenario that opens the real workspace project view from the left workspace group action, preserving the V1 secondary-page navigation model rather than flattening project content into primary navigation.
+- Verified the project view uses real mocked API data for workspace metadata, snapshot, diff listing, diff preview, file tree, and file preview; the scenario switches from Changes to Files, opens `README.md`, clicks Reload, and checks the refreshed workspace snapshot request.
+- Verified the Back control returns to the chat workspace, the project view unmounts, no unhandled API route was hit, and the document remains fixed-height so the workspace/session sidebar does not scroll with main content.
+- Captured and inspected `.tmp/frontend-v2-ts-project-view/v2-project-view-files.png`; the final screenshot shows the project view inside the main workspace with the sidebar, workspace group, selected session, file preview, and file tree all stable, and no tooltip pollution.
+- Kept this as targeted Sessions And Projects / Project View TS browser migration evidence only. Remaining work still includes session switch during active stream, project remove/open-root mutation coverage, image preview, persisted subagent recovery, wider stream/replay edge cases, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-project-view.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-project-view.spec.ts` passed with 2 TS browser tests.
+- Main-agent screenshot inspection confirmed the project view stays inside the fixed V2 shell and returns to chat without leaving the secondary page mounted.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this project view open/reload/close slice. No Sessions And Projects subsystem, project action subsystem, browser-suite migration, or V2 frontend completion is claimed.

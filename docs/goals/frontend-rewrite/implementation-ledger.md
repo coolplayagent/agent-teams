@@ -3688,3 +3688,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and artifact verification completed for this message export slice. No Message Timeline, export-control subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Observability Spec Lineage Batch
+
+### Scope
+- Re-checked the frontend rewrite goal after the message export slice, then selected the Observability top-bar flow because it protects a V1 secondary surface that should not be flattened into the primary shell.
+- Added a TS Playwright browser scenario that opens Observability from the real top bar, verifies global metrics, switches to the session scope, and confirms the session breakdown renders mocked backend data.
+- Extended the scenario through Spec Lineage by mocking the session rounds, task run projection, spec artifact versions, artifact diff, and checkpoint evaluation endpoints. The test verifies the selected task, the diff field, the added requirement, and the evaluation summary.
+- Added fixed-shell and unhandled-route assertions so this path also guards against the outer-document scroll regression and accidental missing API mocks.
+- Captured and inspected `.tmp/frontend-v2-ts-observability/v2-observability-session.png` and `.tmp/frontend-v2-ts-observability/v2-observability-spec-lineage.png`; the final screenshots show the sidebar/workspace frame fixed, the unchanged primary navigation entries, the Observability secondary content in the main surface, and the Spec Lineage diff visible without tooltip pollution.
+- Kept this as targeted Application Shell / Observability / Spec Lineage TS browser migration progress only. Remaining work still includes long tool-heavy message replay review, more stream event matrix boundaries, project view and module action parity, desktop checks, broader V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-observability.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-observability.spec.ts` passed with 2 TS browser tests.
+- Main-agent screenshot inspection confirmed the Observability surface and Spec Lineage section render as stable V2 UI states inside the fixed shell.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this Observability / Spec Lineage slice. No Application Shell, Observability, Spec Lineage, browser-suite migration, or V2 frontend completion is claimed.

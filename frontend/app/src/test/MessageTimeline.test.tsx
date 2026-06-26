@@ -214,6 +214,51 @@ describe("MessageTimeline", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Latest answer"));
   });
 
+  it("does not let runtime terminal rows replace the copied answer", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:0",
+        text: "Streamed answer before terminal state",
+      }),
+      {
+        eventId: 3,
+        id: "run-output:3:1",
+        kind: "run_completed",
+        occurredAt: "2026-06-23T00:00:03Z",
+        payload: { status: "completed" },
+        roleId: "MainAgent",
+        runId: "run-output",
+        sessionId: "session-1",
+        text: "run.completed",
+      },
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Streamed answer before terminal state"))
+      .toBeVisible();
+    expect(await screen.findByText("Run completed: status completed")).toBeVisible();
+    const copyButton = await screen.findByRole("button", {
+      name: "Copy last answer",
+    });
+    await waitFor(() => expect(copyButton).toBeEnabled());
+    fireEvent.click(copyButton);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        "Streamed answer before terminal state",
+      ),
+    );
+    expect(writeText).not.toHaveBeenCalledWith("Run completed: status completed");
+  });
+
   it("renders the round rail from session rounds and marks selected rounds", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

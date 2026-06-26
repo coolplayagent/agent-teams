@@ -12,6 +12,7 @@ import {
   screenshotPath,
   serveFrontendDist,
   SESSION_ID,
+  waitForEventSourceOpenCount,
   waitForEventSourceUrl,
   waitForV2Shell,
   type MockApiRouteContext,
@@ -107,6 +108,85 @@ test("creates a run from the V2 composer and renders live stream output", async 
   }
 });
 
+test("keeps copy last answer disabled until the live stream reaches terminal state", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await installClipboardProbe(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleStreamApi(context, runCreateRequests),
+      sessionTitle: "TS stream copy terminal",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const promptText = "Copy should wait for terminal state";
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await prompt.fill(promptText);
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-stream\/events\?after_event_id=0$/,
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: "Terminal copy should wait." },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText("Terminal copy should wait.")).toBeVisible();
+
+    const copyButton = page.getByRole("button", { name: "Copy last answer" });
+    await expect(copyButton).toBeVisible();
+    await expect(copyButton).toBeDisabled();
+    await expectCopiedText(page, null);
+
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(copyButton).toBeEnabled();
+    await copyButton.click();
+    await expectCopiedText(page, "Terminal copy should wait.");
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "copy last answer terminal state should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-copy-last-answer-terminal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleStreamApi(
   context: MockApiRouteContext,
   runCreateRequests: CapturedRunCreateRequest[],
@@ -132,6 +212,33 @@ function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {
     return {};
   }
   return parsed as CapturedRunCreateRequest;
+}
+
+async function installClipboardProbe(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          window.localStorage.setItem("agentTeams.browserTestCopiedText", text);
+        },
+      },
+    });
+    window.localStorage.removeItem("agentTeams.browserTestCopiedText");
+  });
+}
+
+async function expectCopiedText(
+  page: Page,
+  expectedText: string | null,
+): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem("agentTeams.browserTestCopiedText"),
+      ),
+    )
+    .toBe(expectedText);
 }
 
 interface BrowserRunEvent {

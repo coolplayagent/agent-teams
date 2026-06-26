@@ -258,49 +258,6 @@ def test_v2_active_run_controls_inject_and_stop(browser_page: Page) -> None:
         assert backend.completed is True
 
 
-def test_v2_copy_last_answer_waits_for_stream_terminal(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2StreamBackend()
-    page.route("**/api/**", backend.route)
-    _install_mock_event_source(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
-        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        prompt.fill(_PROMPT)
-        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
-        page.wait_for_function(
-            "() => window.__v2OpenEventSourceCount() === 1",
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        _emit_relay_event(page, "run_started", 1, {"phase": "streaming"})
-        _emit_relay_event(page, "text_delta", 2, {"text": _FIRST_CHUNK})
-        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        copy_button = page.get_by_role("button", name="Copy last answer").first
-        expect(copy_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(copy_button).to_be_disabled(timeout=_WAIT_TIMEOUT_MS)
-
-        _emit_relay_event(page, "run_completed", 3, {"status": "completed"})
-        page.wait_for_function(
-            "() => window.__v2OpenEventSourceCount() === 0",
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(copy_button).to_be_enabled(timeout=_WAIT_TIMEOUT_MS)
-        expect(
-            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-
 def test_v2_interrupted_stream_reconnects_from_latest_event_id(
     browser_page: Page,
 ) -> None:

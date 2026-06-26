@@ -751,8 +751,19 @@ function runtimeEntryToRowWithParts(
     roundMarker: null,
     runId: entry.runId,
     source: "runtime",
-    copyable: isAnswerRole(entry.roleId) && text.trim().length > 0,
+    copyable: runtimeEntryCanBeCopied(entry, text),
   };
+}
+
+function runtimeEntryCanBeCopied(entry: TimelineEntry, text: string): boolean {
+  if (!isAnswerRole(entry.roleId) || text.trim().length === 0) {
+    return false;
+  }
+  return (
+    entry.kind === "message" ||
+    entry.kind === "output_delta" ||
+    entry.kind === "text_delta"
+  );
 }
 
 async function collectRoundRailRounds(sessionId: string): Promise<SessionRound[]> {
@@ -1187,7 +1198,7 @@ function createRuntimeTextAccumulator(
       roundMarker: null,
       runId: entry.runId,
       source: "runtime",
-      copyable: false,
+      copyable: isAnswerRole(entry.roleId) && text.trim().length > 0,
     },
   };
 }

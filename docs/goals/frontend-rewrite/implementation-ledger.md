@@ -4187,3 +4187,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent build, TS browser, syntax, and screenshot verification completed for this background subagent recovery slice. No Run Recovery subsystem, AG-UI Runtime Stream subsystem, Subagents subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Stream Copy Terminal Batch
+
+### Scope
+- Re-checked the remaining Python UI stream coverage after the background subagent recovery slice and selected `Copy last answer` terminal gating because it is a user-visible stream/composer boundary still covered only by Python browser code.
+- Added TS browser coverage in `frontend/app/browser-tests/v2-stream-create-run.spec.ts` that starts a live run from the real V2 composer, emits a text delta, verifies `Copy last answer` is visible but disabled while the EventSource is open, emits terminal completion, then verifies the button enables and writes the streamed answer to the clipboard probe.
+- Fixed a Message Timeline bug found by the new browser scenario: runtime lifecycle rows such as `run.completed` could become the latest copy target after terminal state, so copying produced `Run completed: status completed` instead of the answer. Runtime lifecycle rows still render, but only runtime `message`, `text_delta`, and `output_delta` answer rows are copy targets.
+- Added focused React coverage proving a terminal runtime row does not replace the copied answer.
+- Removed the migrated Python `test_v2_copy_last_answer_waits_for_stream_terminal` scenario from `tests/integration_tests/browser/test_v2_stream_recovery.py`.
+- Rebuilt `frontend/dist/app` and captured `.tmp/frontend-v2-ts-stream/v2-stream-copy-last-answer-terminal.png`; the screenshot shows the streamed answer, terminal row, fixed V2 shell, V1-shaped sidebar, and anchored composer with the copy affordance attached to the answer row.
+- Kept this as targeted Message Timeline / AG-UI Runtime Stream TS browser migration progress only. Remaining work still includes mock EventSource refresh/reconnect/session-switch Python migration, background task recovery cleanup, voice/composer browser coverage, final V1/V2 visual audit, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run test -- MessageTimeline.test.tsx` passed with 59 unit tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-stream-create-run.spec.ts` passed with 2 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenario.
+- Main-agent screenshot inspection confirmed the copy affordance remains in the fixed shell and the browser test verifies clipboard text is the streamed answer, not the terminal status row.
+
+### Reviewer
+- Main-agent build, unit, TS browser, syntax, and screenshot verification completed for this stream copy terminal slice. No Message Timeline subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

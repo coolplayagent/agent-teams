@@ -3876,3 +3876,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this tool-heavy refresh replay slice. No Message Timeline subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Subagent Session View Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and parity checklist after the tool-heavy refresh replay slice, then selected the subagent session view because the Subagents checklist requires a Playwright scenario for selecting and observing a subagent.
+- Added a TS browser scenario that starts from the real V2 shell, exposes a parent sidebar session with `subagent_count`, expands the nested subagent list, and opens the secondary read-only subagent session view instead of flattening subagent content into the primary navigation.
+- Verified the subagent view hydrates history from `/sessions/{session_id}/agents/{instance_id}/messages`, starts the subagent EventSource from `after_event_id=41`, renders live subagent output, receives `run.completed`, then refetches the subagent history and sidebar state.
+- Verified the terminal state updates both the main subagent badge and nested sidebar item to `completed`, and the Back control returns to the parent chat workspace without leaving the subagent page mounted.
+- Captured and inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-completed.png`; the screenshot shows the nested sidebar subagent item, secondary subagent page header, completed badge, and final persisted subagent answer inside the fixed shell.
+- Kept this as targeted Subagents / Sessions browser evidence only. Remaining work still includes broader subagent stream cleanup and failure states, desktop checks, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-subagent-session.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-subagent-session.spec.ts` passed with 2 TS browser tests.
+- Main-agent screenshot inspection confirmed the subagent session remains a secondary page within the fixed V2 shell, with nested sidebar structure preserved.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this subagent session view slice. No Subagents subsystem, Sessions subsystem, browser-suite migration, or V2 frontend completion is claimed.

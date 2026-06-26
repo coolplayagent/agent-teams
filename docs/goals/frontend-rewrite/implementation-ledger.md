@@ -4049,3 +4049,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, syntax, and screenshot verification completed for this paused-subagent recovery slice. No Run Recovery subsystem, Subagents subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Duplicate Python Coverage Cleanup Batch
+
+### Scope
+- Re-checked the remaining Python `test_v2_stream_recovery.py` scenarios against existing TS browser specs after the paused-subagent slice.
+- Removed Python scenarios that are already covered by `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts`: real SSE server-error stale suppression, malformed-event stale suppression, `run.failed`, `run.stopped`, active Stop, active Queue/Interrupt injection, and recoverable approval/question actions that resume before resolving the pending action.
+- Kept the Python scenarios that still need dedicated TS migration, including runtime-cursor reconnect, refresh recovery checkpoint, cursor-event dedupe, rich non-text replay, standalone recoverable resume, background/multiplex subagent recovery, and recoverable parent/subagent stream isolation.
+- Did not capture new screenshots in this cleanup batch because no renderer code or TS scenario changed; the existing TS real-SSE suite retains screenshot coverage for the removed Python paths.
+- Kept this as targeted AG-UI Runtime Stream / Run Recovery browser-suite migration cleanup only. Remaining work still includes the harder replay/refresh/multiplex stream edges, message copy and voice/composer browser coverage, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the duplicate Python scenarios.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 8 TS browser tests.
+- Residual scan now shows the remaining real-SSE Python scenarios are the richer replay/refresh/multiplex cases that still need separate migration work.
+
+### Reviewer
+- Main-agent TS browser and syntax verification completed for this duplicate real-SSE cleanup slice. No AG-UI Runtime Stream subsystem, Run Recovery subsystem, browser-suite migration, or V2 frontend completion is claimed.

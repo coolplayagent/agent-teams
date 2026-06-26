@@ -3972,3 +3972,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this real SSE terminal lifecycle slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Active Control Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and current ledger after the terminal lifecycle slice, then selected active-run controls because streaming/replay semantics remain one of the largest V2 completion risks.
+- Extended the native EventSource TS browser suite with active Stop and Queue/Interrupt scenarios. The tests create a real foreground AG-UI run from the composer, keep the browser EventSource path active, and verify active controls against the fixed V2 shell.
+- Found and fixed a stale recovery race where a successful Stop cleared local stream state, but the next recovery snapshot could still rehydrate the same running `active_run` and bring back the Stop controls.
+- Added explicit run suppression to `clearRunStream({ suppressRunIds })` and changed the Composer Stop success path to suppress only the stopped run id, preserving ordinary session-switch and unmount clear behavior.
+- Added unit coverage for Composer stop suppression and for the controller distinction between ordinary clear and explicit suppressed clear.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-active-stop-restored.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-active-inject-controls.png`; the screenshots show the fixed shell, V1 sidebar shape, active Queue/Interrupt controls before stop, and restored Send controls with no stale recovery banner after stop.
+- Kept this as targeted AG-UI Runtime Stream / Run Recovery / TS browser migration progress only. Remaining work still includes broader real-SSE replay/resume edges, remaining Python browser migration, desktop checks, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run test -- Composer.test.tsx RunStreamController.test.tsx` passed with 70 unit tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 6 TS browser tests.
+- `npm run test -- RecoveryBar.test.tsx` passed with 25 unit tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-recovery.spec.ts` passed with 5 TS browser tests.
+- Main-agent screenshot inspection confirmed explicit Stop suppresses stale recovery, Queue/Interrupt inject into the existing run without a second run create, and the shell remains fixed-height.
+
+### Reviewer
+- Main-agent TS browser, unit, build, recovery, and screenshot verification completed for this real SSE active-control slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

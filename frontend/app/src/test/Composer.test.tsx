@@ -15,6 +15,7 @@ import {
   injectRunMessage,
   resolveCommandPrompt,
   searchWorkspacePaths,
+  stopRun,
   updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../api/client";
@@ -90,6 +91,7 @@ const getSessionMock = vi.mocked(getSession);
 const injectRunMessageMock = vi.mocked(injectRunMessage);
 const resolveCommandPromptMock = vi.mocked(resolveCommandPrompt);
 const searchWorkspacePathsMock = vi.mocked(searchWorkspacePaths);
+const stopRunMock = vi.mocked(stopRun);
 const updateSessionTopologyMock = vi.mocked(updateSessionTopology);
 const updateSessionNormalModelProfileMock = vi.mocked(
   updateSessionNormalModelProfile,
@@ -1727,6 +1729,26 @@ describe("Composer", () => {
       }),
     );
     expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("stops an active run and suppresses the stale recovery target", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    stopRunMock.mockResolvedValue({
+      scope: "main",
+      status: "ok",
+    });
+    const controller = runStreamController("run-1");
+
+    renderComposer(controller);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    await waitFor(() => expect(stopRunMock).toHaveBeenCalledWith("run-1"));
+    expect(controller.clearRunStream).toHaveBeenCalledWith({
+      suppressRunIds: ["run-1"],
+    });
   });
 
   it("keeps leading role mention text raw during runtime injection", async () => {

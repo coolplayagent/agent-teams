@@ -19,6 +19,8 @@ const SCREENSHOT_FOLDER = "frontend-v2-ts-stream";
 const PROMPT = "Real SSE stale recovery probe";
 const FIRST_CHUNK = "Real SSE chunk before malformed frame.";
 const FAILURE_MESSAGE = "real SSE provider failed before completion";
+const QUEUED_INJECTION = "real SSE queued follow-up";
+const INTERRUPT_INJECTION = "real SSE interrupt follow-up";
 const STOPPED_MESSAGE = "real SSE run stopped before completion";
 const STREAM_UNAVAILABLE = "run recovery stream is no longer available";
 
@@ -64,8 +66,31 @@ test("finalizes a real SSE run.stopped event without stale reconnect", async ({
   });
 });
 
+test("stops a real SSE active run and suppresses stale reconnect", async ({
+  page,
+}) => {
+  await runRealSseActiveControlScenario(page, {
+    mode: "active-stop",
+    screenshotName: "v2-real-sse-active-stop-restored.png",
+  });
+});
+
+test("injects into a real SSE active run without creating a second run", async ({
+  page,
+}) => {
+  await runRealSseActiveControlScenario(page, {
+    mode: "active-inject",
+    screenshotName: "v2-real-sse-active-inject-controls.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
+  screenshotName: string;
+}
+
+interface RealSseActiveControlOptions {
+  mode: "active-inject" | "active-stop";
   screenshotName: string;
 }
 
@@ -77,8 +102,16 @@ interface RealSseTerminalOptions {
 }
 
 interface RealSseState {
+  injectionRequests: RealSseInjectionRequest[];
   runCreated: boolean;
+  runCreateCount: number;
+  stopRequests: unknown[];
   streamRequests: RealSseRequest[];
+}
+
+interface RealSseInjectionRequest {
+  content?: unknown;
+  mode?: unknown;
 }
 
 interface RealSseRequest {
@@ -92,7 +125,10 @@ async function runRealSseStaleRecoveryScenario(
 ): Promise<void> {
   const appServer = await serveFrontendDist();
   const state: RealSseState = {
+    injectionRequests: [],
     runCreated: false,
+    runCreateCount: 0,
+    stopRequests: [],
     streamRequests: [],
   };
   const unhandledApiRoutes: string[] = [];
@@ -159,7 +195,10 @@ async function runRealSseTerminalScenario(
 ): Promise<void> {
   const appServer = await serveFrontendDist();
   const state: RealSseState = {
+    injectionRequests: [],
     runCreated: false,
+    runCreateCount: 0,
+    stopRequests: [],
     streamRequests: [],
   };
   const unhandledApiRoutes: string[] = [];
@@ -218,13 +257,111 @@ async function runRealSseTerminalScenario(
   }
 }
 
+async function runRealSseActiveControlScenario(
+  page: Page,
+  options: RealSseActiveControlOptions,
+): Promise<void> {
+  const appServer = await serveFrontendDist();
+  const state: RealSseState = {
+    injectionRequests: [],
+    runCreated: false,
+    runCreateCount: 0,
+    stopRequests: [],
+    streamRequests: [],
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: `TS ${options.mode}`,
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(PROMPT);
+    await page.getByRole("button", { exact: true, name: "Send" }).click();
+
+    await expect.poll(() => state.streamRequests).toEqual([
+      {
+        afterEventId: "0",
+        lastEventId: null,
+      },
+    ]);
+    await expect(page.getByText(FIRST_CHUNK)).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeVisible();
+
+    if (options.mode === "active-inject") {
+      await expect(page.getByRole("button", { exact: true, name: "Queue" })).toBeVisible();
+      await expect(page.getByRole("button", { exact: true, name: "Interrupt" })).toBeVisible();
+      await prompt.fill(QUEUED_INJECTION);
+      await page.getByRole("button", { exact: true, name: "Queue" }).click();
+      await expect(prompt).toHaveValue("");
+      await prompt.fill(INTERRUPT_INJECTION);
+      await page.getByRole("button", { exact: true, name: "Interrupt" }).click();
+      await expect(prompt).toHaveValue("");
+      expect(state.injectionRequests).toEqual([
+        { content: QUEUED_INJECTION, mode: "queued" },
+        { content: INTERRUPT_INJECTION, mode: "interrupt" },
+      ]);
+      expect(state.runCreateCount).toBe(1);
+      expect(state.stopRequests).toEqual([]);
+      await page.mouse.move(320, 120);
+      await page.screenshot({
+        path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+      });
+    }
+
+    await page.getByRole("button", { exact: true, name: "Stop" }).click();
+    await expect.poll(() => state.stopRequests).toEqual([{ scope: "main" }]);
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(prompt).toBeEnabled();
+    await expect(page.getByText(FIRST_CHUNK)).toBeVisible();
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+
+    await page.waitForTimeout(4_000);
+    expect(state.streamRequests).toEqual([
+      {
+        afterEventId: "0",
+        lastEventId: null,
+      },
+    ]);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      `${options.mode} should stop the real SSE stream without stale reconnect`,
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    if (options.mode === "active-stop") {
+      await page.mouse.move(320, 120);
+      await page.screenshot({
+        path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+      });
+    }
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
-  mode: RealSseScenarioOptions["mode"] | RealSseTerminalOptions["mode"],
+  mode:
+    | RealSseActiveControlOptions["mode"]
+    | RealSseScenarioOptions["mode"]
+    | RealSseTerminalOptions["mode"],
 ): Promise<boolean> {
   if (context.method === "POST" && context.path === "/ag-ui/runs") {
     state.runCreated = true;
+    state.runCreateCount += 1;
     await context.fulfillJson({
       run_id: RUN_ID,
       session_id: SESSION_ID,
@@ -256,6 +393,17 @@ async function handleRealSseApi(
     });
     return true;
   }
+  if (context.method === "POST" && context.path === `/ag-ui/runs/${RUN_ID}:stop`) {
+    state.stopRequests.push(requestPayload(context));
+    await context.fulfillJson({ scope: "main", status: "ok" });
+    return true;
+  }
+  if (context.method === "POST" && context.path === `/ag-ui/runs/${RUN_ID}/inject`) {
+    const payload = requestPayload(context);
+    state.injectionRequests.push(readInjectionRequest(payload));
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
   return false;
 }
 
@@ -283,7 +431,10 @@ function recoverySnapshot(state: RealSseState): Record<string, unknown> {
 }
 
 function sseBody(
-  mode: RealSseScenarioOptions["mode"] | RealSseTerminalOptions["mode"],
+  mode:
+    | RealSseActiveControlOptions["mode"]
+    | RealSseScenarioOptions["mode"]
+    | RealSseTerminalOptions["mode"],
 ): string {
   if (mode === "server-error") {
     return sseFrame({
@@ -330,6 +481,30 @@ function sseBody(
       }),
     ].join("");
   }
+  if (mode === "active-inject" || mode === "active-stop") {
+    return [
+      sseFrame({
+        data: runEvent({
+          eventId: 1,
+          payload: { phase: "streaming" },
+          relayEventType: "run_started",
+          type: "run.started",
+        }),
+        event: "run.started",
+        id: 1,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 2,
+          payload: { text: FIRST_CHUNK },
+          relayEventType: "text_delta",
+          type: "message.text.delta",
+        }),
+        event: "message.text.delta",
+        id: 2,
+      }),
+    ].join("");
+  }
   return [
     sseFrame({
       data: runEvent({
@@ -356,6 +531,25 @@ function sseBody(
       event: "message.text.delta",
     }),
   ].join("");
+}
+
+function requestPayload(context: MockApiRouteContext): unknown {
+  const postData = context.route.request().postData();
+  if (postData === null || postData.trim().length === 0) {
+    return null;
+  }
+  return JSON.parse(postData) as unknown;
+}
+
+function readInjectionRequest(payload: unknown): RealSseInjectionRequest {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return {};
+  }
+  const record = payload as Record<string, unknown>;
+  return {
+    content: record.content,
+    mode: record.mode,
+  };
 }
 
 interface SseFrameOptions {

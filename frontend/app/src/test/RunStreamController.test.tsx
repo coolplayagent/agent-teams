@@ -148,11 +148,46 @@ describe("useRunStreamController", () => {
     });
 
     expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
-    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("");
-    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+    expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
 
     fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
-    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("");
+    expect(screen.getByTestId("suppressed-run-ids")).toBeEmptyDOMElement();
+  });
+
+  it("suppresses explicitly cleared run targets without changing ordinary clears", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear stream" }));
+    expect(screen.getByTestId("suppressed-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear stream suppressing run" }));
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
+    expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(screen.getByTestId("suppressed-run-ids")).toBeEmptyDOMElement();
   });
 
   it("resumes from the latest local event id when recovery data is stale", () => {
@@ -799,6 +834,12 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
       </button>
       <button type="button" onClick={() => controller.clearRunStream()}>
         Clear stream
+      </button>
+      <button
+        type="button"
+        onClick={() => controller.clearRunStream({ suppressRunIds: ["run-1"] })}
+      >
+        Clear stream suppressing run
       </button>
       <button
         type="button"

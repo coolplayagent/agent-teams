@@ -375,13 +375,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   });
 
   const stopRunMutation = useMutation({
-    mutationFn: async () => {
-      if (activeRunId === null) {
-        throw new Error(t("composerNoActiveRunStop"));
-      }
-      return stopRun(activeRunId);
+    mutationFn: async (runId: string) => {
+      return stopRun(runId);
     },
-    onSuccess: () => {
+    onSuccess: (_result, runId) => {
       if (sessionId !== null) {
         queryClient.setQueryData<RecoverySnapshot | undefined>(
           sessionRecoveryQueryKey(sessionId),
@@ -389,7 +386,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             current === undefined ? current : { ...current, active_run: null },
         );
       }
-      runStreamController.clearRunStream();
+      runStreamController.clearRunStream({ suppressRunIds: [runId] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       if (sessionId !== null) {
         void queryClient.invalidateQueries({
@@ -781,7 +778,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                   danger
                   icon={<Pause size={16} />}
                   loading={stopRunMutation.isPending}
-                  onClick={() => stopRunMutation.mutate()}
+                  onClick={() => {
+                    stopRunMutation.mutate(activeRunId);
+                  }}
                 >
                   {t("composerStop")}
                 </Button>

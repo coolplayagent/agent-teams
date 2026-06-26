@@ -37,11 +37,15 @@ export interface StartRunStreamsOptions {
 export interface RunStreamController {
   activeRunId: string | null;
   activeRunIds: string[];
-  clearRunStream: () => void;
+  clearRunStream: (options?: ClearRunStreamOptions) => void;
   startRunStream: (options: StartRunStreamOptions) => void;
   startRunStreams: (options: StartRunStreamsOptions) => void;
   suppressedRunIds: string[];
   trackedRunIds: string[];
+}
+
+export interface ClearRunStreamOptions {
+  suppressRunIds?: string[];
 }
 
 interface RunStreamCallbacks {
@@ -142,7 +146,15 @@ export function useRunStreamController(): RunStreamController {
     });
   };
 
-  const clearRunStream = () => {
+  const clearRunStream = (options?: ClearRunStreamOptions) => {
+    const suppressRunIds = options?.suppressRunIds ?? [];
+    if (suppressRunIds.length > 0) {
+      suppressRunTargets(
+        suppressRunIds.map((runId) => ({
+          runId,
+        })),
+      );
+    }
     stopActiveRunStream();
   };
 

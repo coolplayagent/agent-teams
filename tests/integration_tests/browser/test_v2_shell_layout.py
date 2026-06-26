@@ -592,6 +592,88 @@ def test_v2_recovery_approval_and_question_actions_call_real_endpoints(
         expect(recovery.get_by_text("Planner needs input")).to_have_count(0)
 
 
+def test_v2_recovery_resume_stopped_run_reconnects_from_checkpoint(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    backend.recovery_active_run = {
+        "last_event_id": 42,
+        "pending_tool_approval_count": 0,
+        "pending_user_question_count": 0,
+        "phase": "stopped",
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "should_show_recover": True,
+        "status": "stopped",
+        "stream_connected": False,
+    }
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        recovery = page.locator(".at-recovery")
+        expect(recovery.get_by_text("Run run-v2-live is stopped")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_role("button", name="Resume")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert page.evaluate("() => window.__v2StreamHarness?.urls().length === 0")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-recovery"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-recovery-resume-before.png"))
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and response.url.endswith("/api/ag-ui/runs/run-v2-live:resume")
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            recovery.get_by_role("button", name="Resume").click()
+
+        assert backend.resume_run_requests == [_STREAM_RUN_ID]
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().some((url) =>
+              url.includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=42')
+            )
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_role("button", name="Resume")).to_have_count(0)
+
+        page.evaluate(
+            """
+            (event) => {
+              const urls = window.__v2StreamHarness.urls();
+              const index = urls.findIndex((url) =>
+                url.includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=42')
+              );
+              window.__v2StreamHarness.dispatch(
+                index,
+                'message.text.delta',
+                event,
+                '43',
+              );
+            }
+            """,
+            _stream_text_event(43, "Resumed stopped run output."),
+        )
+        expect(page.get_by_text("Resumed stopped run output.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
+        page.screenshot(path=str(screenshot_dir / "v2-recovery-resume-after.png"))
+
+
 def test_v2_recovery_background_subagent_stream_renders_in_timeline(
     browser_page: Page,
 ) -> None:
@@ -2876,6 +2958,7 @@ class _V2ShellBackend:
         self.recovery_active_run: dict[str, object] | None = None
         self.recovery_background_tasks: list[dict[str, object]] = []
         self.background_task_stop_requests: list[dict[str, str]] = []
+        self.resume_run_requests: list[str] = []
         self.pending_tool_approvals: list[dict[str, object]] = []
         self.pending_user_questions: list[dict[str, object]] = []
         self.question_answer_payloads: list[dict[str, object]] = []
@@ -3086,6 +3169,13 @@ class _V2ShellBackend:
                     "target_role_id": "MainAgent",
                 },
             )
+            return
+        if (
+            request.method == "POST"
+            and path.startswith("/ag-ui/runs/")
+            and path.endswith(":resume")
+        ):
+            self._resume_run(route, path)
             return
         if (
             request.method == "POST"
@@ -3532,6 +3622,29 @@ class _V2ShellBackend:
             if question.get("question_id") != question_id
         ]
         _fulfill_json(route, {"status": "ok"})
+
+    def _resume_run(self, route: Route, path: str) -> None:
+        run_id = _split_run_action_path(path, ":resume")
+        self.resume_run_requests.append(run_id)
+        self.recovery_active_run = {
+            "last_event_id": 42,
+            "pending_tool_approval_count": 0,
+            "pending_user_question_count": 0,
+            "phase": "running",
+            "run_id": run_id,
+            "session_id": _SESSION_ID,
+            "should_show_recover": False,
+            "status": "running",
+            "stream_connected": False,
+        }
+        _fulfill_json(
+            route,
+            {
+                "run_id": run_id,
+                "session_id": _SESSION_ID,
+                "status": "ok",
+            },
+        )
 
     def _stop_background_task(self, route: Route, path: str) -> None:
         run_id, background_task_id = _split_background_task_stop_path(path)
@@ -5064,6 +5177,13 @@ def _split_nested_action_path(
     if not separator or not rest.endswith(suffix):
         raise AssertionError(f"Unexpected nested AG-UI action path: {path}")
     return unquote(run_id), unquote(rest.removesuffix(suffix))
+
+
+def _split_run_action_path(path: str, suffix: str) -> str:
+    nested_path = path.removeprefix("/ag-ui/runs/")
+    if not nested_path.endswith(suffix):
+        raise AssertionError(f"Unexpected AG-UI run action path: {path}")
+    return unquote(nested_path.removesuffix(suffix))
 
 
 def _split_background_task_stop_path(path: str) -> tuple[str, str]:

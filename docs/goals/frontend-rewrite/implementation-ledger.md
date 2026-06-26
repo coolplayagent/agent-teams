@@ -3460,3 +3460,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this background task stop slice. No Run Recovery, Subagents, AG-UI Runtime Stream, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 Recovery Resume Browser Batch
+
+### Scope
+- Re-checked the Run Recovery and AG-UI Runtime Stream gates after the background task stop slice and selected recoverable stopped-run resume because it remained component-tested but lacked built `/app/` browser evidence.
+- Added a browser-level scenario that loads a stopped recoverable run with `should_show_recover=true` and `last_event_id=42`, verifies the visible recovery Resume action, and confirms no EventSource is opened before the user clicks Resume.
+- Extended the browser mock backend with the real `/ag-ui/runs/{run_id}:resume` route, request capture, and recovery snapshot transition from stopped to running.
+- Verified clicking Resume calls the real endpoint, starts the run EventSource from `after_event_id=42`, removes the standalone Resume action, renders resumed live output in the timeline, and keeps the document fixed to the viewport.
+- Captured `.tmp/frontend-v2-recovery/v2-recovery-resume-before.png` and `.tmp/frontend-v2-recovery/v2-recovery-resume-after.png` and inspected them to confirm the stopped, resumed, and running UI states in the real V2 shell.
+- Kept this as targeted Run Recovery / AG-UI stream progress only. Remaining work still includes recovery action error states in the built shell, broader recovery visual review, terminal subagent refresh cleanup, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k recovery_resume_stopped_run_reconnects_from_checkpoint` passed with 1 selected browser test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "recovery_resume_stopped_run or recovery_background_task_stop or recovery_approval_and_question_actions or stream_replay_resumes"` passed with 4 selected browser tests.
+- Main-agent screenshot inspection confirmed Resume is visible only for the stopped recoverable run, the resumed run opens a live stream from the stored checkpoint, and the shell remains fixed-height after resumed output arrives.
+
+### Reviewer
+- Main-agent browser verification completed for this stopped-run resume slice. No Run Recovery, AG-UI Runtime Stream, Message Timeline, or V2 frontend completion is claimed.

@@ -76,20 +76,26 @@ describe("shell layout CSS", () => {
       /\.at-composer-inner\s*{[\s\S]*?width:\s*100%;[\s\S]*?margin:\s*0;/,
     );
     expect(themeCss).toMatch(
-      /\.at-composer-controls\s*{[\s\S]*?min-width:\s*0;/,
+      /\.at-composer-controls\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;[\s\S]*?min-width:\s*0;/,
     );
     expect(themeCss).toMatch(
-      /\.at-composer-control-set\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-width:\s*0;/,
+      /\.at-composer-control-set\s*{[\s\S]*?display:\s*flex !important;[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?min-width:\s*0;/,
     );
     expect(themeCss).toMatch(
-      /\.at-composer-controls > \.ant-space:last-child\s*{[\s\S]*?flex:\s*0 0 auto;/,
+      /\.at-composer-controls > \.ant-space:last-child\s*{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?justify-content:\s*flex-end;/,
     );
-    expect(themeCss).toMatch(/\.at-session-mode-control\s*{[\s\S]*?width:\s*116px;/);
+    expect(themeCss).toMatch(/\.at-session-mode-control\s*{[\s\S]*?width:\s*204px;/);
     expect(themeCss).toMatch(
-      /\.at-normal-root-role-select,\s*\.at-orchestration-preset-select\s*{[\s\S]*?width:\s*96px;/,
+      /\.at-session-mode-control \.ant-segmented-item\s*{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
-    expect(themeCss).toMatch(/\.at-role-select\s*{[\s\S]*?width:\s*96px;/);
-    expect(themeCss).toMatch(/\.at-model-profile-select\s*{[\s\S]*?width:\s*104px;/);
+    expect(themeCss).toMatch(
+      /\.at-session-mode-control \.ant-segmented-item-label\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-normal-root-role-select,\s*\.at-orchestration-preset-select\s*{[\s\S]*?width:\s*116px;/,
+    );
+    expect(themeCss).toMatch(/\.at-role-select\s*{[\s\S]*?width:\s*116px;/);
+    expect(themeCss).toMatch(/\.at-model-profile-select\s*{[\s\S]*?width:\s*128px;/);
   });
 
   it("keeps the appearance diff preview semantically green for additions", () => {

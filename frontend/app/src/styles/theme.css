@@ -4750,21 +4750,31 @@ body {
 }
 
 .at-composer-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   min-width: 0;
 }
 
 .at-composer-control-set {
-  flex: 1 1 auto;
+  align-items: center;
+  column-gap: 6px !important;
+  display: flex !important;
+  flex-wrap: wrap;
   min-width: 0;
   row-gap: 6px !important;
 }
 
+.at-composer-control-set > .ant-space-item {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .at-composer-controls > .ant-space:last-child {
-  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .at-thinking-control {
@@ -4778,20 +4788,31 @@ body {
 
 .at-session-mode-control {
   min-width: 0;
-  width: 116px;
+  width: 204px;
+}
+
+.at-session-mode-control .ant-segmented-item {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.at-session-mode-control .ant-segmented-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .at-normal-root-role-select,
 .at-orchestration-preset-select {
-  width: 96px;
+  width: 116px;
 }
 
 .at-role-select {
-  width: 96px;
+  width: 116px;
 }
 
 .at-model-profile-select {
-  width: 104px;
+  width: 128px;
 }
 
 .at-thinking-effort-select {

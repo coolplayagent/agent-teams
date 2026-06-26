@@ -3573,3 +3573,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this route-switch harness slice. No V2 frontend completion, Message Timeline completion, or browser-suite migration completion is claimed.
+
+## 2026-06-26 V2 TS Browser Stream Composer Batch
+
+### Scope
+- Re-checked the updated frontend rewrite goal after the TS route-switch harness slice and continued the TS-owned browser migration instead of adding new Python UI browser coverage.
+- Extracted the TS browser static server, API mock, fixed-shell assertions, screenshot helpers, and mock EventSource control into `browser-tests/support/frontend-app.ts` so route-switch and stream/replay tests can share one precise fixture.
+- Added a TS Playwright browser scenario that uses the real V2 composer to create a run, verifies the `POST /ag-ui/runs` payload, opens the run EventSource from `after_event_id=0`, dispatches AG-UI started/text/completed events, and confirms live output plus terminal state render in the fixed shell.
+- Re-ran screenshot inspection and fixed a real visible composer regression: desktop controls were technically inside the frame but the session-mode segmented control visually overlapped the following selects. Updated the composer controls layout and added CSS and browser assertions to guard against future control overlap.
+- Rebuilt `frontend/dist/app` so the served V2 app and TS browser screenshots use the current source bundle.
+- Captured and inspected `.tmp/frontend-v2-ts-route-switch/ts-v2-after-new-ui-switch.png`, `.tmp/frontend-v2-ts-stream/v2-stream-create-run.png`, and the V1 return screenshots. The final V2 screenshots show no outer document scroll and no composer control overlap.
+- Kept this as TS browser harness and AG-UI stream-create progress only. Remaining work still includes stream replay refresh/interruption edge matrix migration, long tool-heavy visual replay review, settings appearance parity, broader V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test -- ShellLayoutCss.test.ts` passed with 7 selected CSS layout tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-stream-create-run.spec.ts` passed with 2 TS browser tests.
+- Main-agent screenshot inspection confirmed the built V2 shell stayed fixed-height during route switching and stream completion, and the composer controls no longer visually overlap.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this composer stream slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.

@@ -938,8 +938,8 @@ function runtimeEntryIsCoveredByHydratedOutput(
   hydratedText: string,
 ): boolean {
   if (entry.kind === "text_delta" || entry.kind === "output_delta") {
-    const entryText = normalizedTimelineText(entry.text);
-    if (entryText.length > 0 && hydratedText.includes(entryText)) {
+    const entryTexts = runtimeHydrationComparisonTexts(entry);
+    if (entryTexts.some((entryText) => hydratedText.includes(entryText))) {
       return true;
     }
     const replayAfterEventId = runState.replayAfterEventId ?? 0;
@@ -950,6 +950,18 @@ function runtimeEntryIsCoveredByHydratedOutput(
     entry.kind === "run_resumed" ||
     entry.kind === "run_completed"
   );
+}
+
+function runtimeHydrationComparisonTexts(entry: TimelineEntry): string[] {
+  if (entry.kind === "output_delta") {
+    const parts = runtimeOutputParts(entry) ?? [];
+    return parts
+      .filter((part): part is TimelineTextPart => part.kind === "text")
+      .map((part) => normalizedTimelineText(part.text))
+      .filter((text) => text.length > 0);
+  }
+  const text = normalizedTimelineText(entry.text);
+  return text.length > 0 ? [text] : [];
 }
 
 function normalizedTimelineText(value: string): string {

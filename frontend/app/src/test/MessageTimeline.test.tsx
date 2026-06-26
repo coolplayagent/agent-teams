@@ -172,6 +172,34 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Closed runtime answer")).toBeVisible();
   });
 
+  it("hides closed runtime output once persisted assistant text covers it", async () => {
+    const resumedText = "Resumed output after the hydrated cursor.";
+    setRuntimeEntries([
+      runtimeOutputDeltaEntry({
+        eventId: 7,
+        id: "run-output:7:0",
+        payload: {
+          output: [{ kind: "text", text: resumedText }],
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [{ content: resumedText, part_kind: "text" }],
+        },
+        message_id: "assistant-run-output",
+        role_id: "MainAgent",
+        run_id: "run-output",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText(resumedText)).toBeVisible();
+    expect(screen.queryAllByText(resumedText)).toHaveLength(1);
+  });
+
   it("copies the latest non-user answer", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

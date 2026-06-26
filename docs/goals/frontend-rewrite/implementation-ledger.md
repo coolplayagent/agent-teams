@@ -4225,3 +4225,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, syntax, and screenshot verification completed for this Last-Event-ID reconnect slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Stream Recovery Python Cleanup Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and remaining Python UI stream coverage before editing, then selected the already-covered mock EventSource stream recovery scenarios so the browser suite keeps moving toward TS ownership without narrowing the product goal.
+- Removed five migrated Python UI scenarios from `tests/integration_tests/browser/test_v2_stream_recovery.py`: active refresh replay, active run queue/interrupt/stop controls, latest-event reconnect, reconnect exhaustion, and non-text reconnect replay.
+- Verified the removed scenarios are covered by stronger TS browser suites: `v2-stream-refresh.spec.ts`, `v2-stream-reconnect.spec.ts`, and real-SSE active/rich replay coverage in `v2-real-sse-stale-recovery.spec.ts`.
+- Fixed a replay/terminal duplication bug found while validating the migration cleanup: closed runtime `output_delta` text was not compared against hydrated assistant text because the runtime entry text was the protocol event label, so terminal refresh could render the same resumed output twice. `MessageTimeline` now compares hydrated text against text extracted from runtime output parts.
+- Added focused React coverage proving hydrated assistant text suppresses the already-closed runtime output text while preserving the existing behavior where a closed runtime answer remains visible if only the user prompt is hydrated.
+- Rebuilt `frontend/dist/app` and inspected `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png`; the screenshot shows a single resumed output row inside the fixed shell with the composer anchored.
+- Remaining Python UI stream-recovery work is now limited to four scenarios in `test_v2_stream_recovery.py`: active session switch isolation, recoverable resume from checkpoint, background task collapse/stop, and background multiplex stream recovery.
+
+### Verification
+- `npm run test -- MessageTimeline.test.tsx` passed with 60 unit tests.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-stream-refresh.spec.ts browser-tests/v2-stream-reconnect.spec.ts` passed with 5 TS browser tests.
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts -g "active run|rich real SSE replay"` passed with 3 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_stream_recovery.py` passed.
+
+### Reviewer
+- Main-agent build, unit, TS browser, syntax, lint, and screenshot verification completed for this stream-recovery cleanup slice. No AG-UI Runtime Stream subsystem, Message Timeline subsystem, browser-suite migration, or V2 frontend completion is claimed.

@@ -4031,3 +4031,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and artifact verification completed for this message export decode migration slice. No Message Timeline subsystem, export-control subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Paused Subagent Recovery Batch
+
+### Scope
+- Re-checked the remaining V2 Python recovery coverage after the message export migration, then selected paused subagent recovery because it is a focused Run Recovery/Subagents boundary still covered only by a Python browser scenario.
+- Added a built-shell TS browser scenario in `frontend/app/browser-tests/v2-recovery.spec.ts` that renders a recovery snapshot with `paused_subagent`, verifies the paused subagent follow-up copy and detail line, confirms the standalone Resume action is hidden, and confirms no EventSource stream is opened for this attention-only recovery state.
+- Removed the corresponding `test_v2_paused_subagent_recovery_displays_followup_state` scenario from `tests/integration_tests/browser/test_v2_stream_recovery.py` after the TS replacement passed.
+- Captured and inspected `.tmp/frontend-v2-ts-recovery/v2-paused-subagent-recovery.png`; the screenshot shows the fixed V2 shell, V1-shaped sidebar, paused-subagent recovery panel, stable composer, and no document-level scrolling.
+- Kept this as targeted Run Recovery / Subagents TS browser migration progress only. Remaining work still includes rich real-SSE replay, background subagent stream edges, message copy and voice/composer browser coverage, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenario.
+- `npm run test:browser -- --project=chromium browser-tests/v2-recovery.spec.ts` passed with 6 TS browser tests.
+- Main-agent screenshot inspection confirmed paused-subagent recovery remains inside the fixed shell and suppresses the standalone Resume action.
+
+### Reviewer
+- Main-agent TS browser, syntax, and screenshot verification completed for this paused-subagent recovery slice. No Run Recovery subsystem, Subagents subsystem, browser-suite migration, or V2 frontend completion is claimed.

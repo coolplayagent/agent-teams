@@ -1740,36 +1740,6 @@ def test_v2_real_sse_recoverable_parent_streams_background_subagent_only(
         ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
 
 
-def test_v2_paused_subagent_recovery_displays_followup_state(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2StreamBackend(paused_subagent=True)
-    page.route("**/api/**", backend.route)
-    _install_mock_event_source(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        expect(page.get_by_text("Recovery needs attention")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_text("Paused subagent: reviewer")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.get_by_text("Waiting for follow-up in the paused subagent panel."),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.get_by_text("instance: reviewer-1")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_role("button", name="Resume")).to_be_hidden(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-
 class _V2StreamBackend:
     def __init__(
         self,

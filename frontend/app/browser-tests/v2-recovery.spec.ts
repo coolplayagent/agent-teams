@@ -445,6 +445,59 @@ test("stops a recovered background task and refreshes the snapshot", async ({
   }
 });
 
+test("shows paused subagent recovery without a standalone resume action", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = recoveryMockState({
+    activeRun: false,
+    pausedSubagent: pausedSubagentRecord(),
+    questionPending: false,
+    toolApprovalPending: false,
+  });
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRecoveryApi(context, state),
+      sessionTitle: "TS paused subagent recovery",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const recovery = page.locator(".at-recovery");
+    await expect(recovery.getByText("Recovery needs attention")).toBeVisible();
+    await expect(recovery.getByText("Paused subagent: reviewer")).toBeVisible();
+    await expect(
+      recovery.getByText("Waiting for follow-up in the paused subagent panel."),
+    ).toBeVisible();
+    await expect(
+      recovery.getByText(
+        "instance: reviewer-1 | task: task-review-1 | waiting for input",
+      ),
+    ).toBeVisible();
+    await expect(recovery.getByRole("button", { name: "Resume" })).toHaveCount(0);
+    await expect.poll(() => eventSourceUrls(page)).toEqual([]);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "paused subagent recovery should stay inside the fixed V2 shell",
+    );
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-paused-subagent-recovery.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleRecoveryApi(
   context: MockApiRouteContext,
   state: RecoveryMockState,
@@ -573,6 +626,7 @@ interface RecoveryMockState {
   failNextToolApproval: boolean;
   backgroundTasks: Record<string, unknown>[];
   lastEventId: number;
+  pausedSubagent: Record<string, unknown> | null;
   phase: string;
   questionAnswerRequests: RecoveryQuestionAnswerRequest[];
   questionDescription: string;
@@ -607,6 +661,7 @@ interface RecoveryMockStateOptions {
   failNextQuestionAnswer?: boolean;
   failNextToolApproval?: boolean;
   lastEventId?: number;
+  pausedSubagent?: Record<string, unknown> | null;
   phase?: string;
   questionDescription?: string;
   questionPending?: boolean;
@@ -625,6 +680,7 @@ function recoveryMockState(
     failNextQuestionAnswer: options.failNextQuestionAnswer ?? false,
     failNextToolApproval: options.failNextToolApproval ?? false,
     lastEventId: options.lastEventId ?? 42,
+    pausedSubagent: options.pausedSubagent ?? null,
     phase: options.phase ?? "awaiting_tool_approval",
     questionAnswerRequests: [],
     questionDescription: options.questionDescription ?? "Keep streaming",
@@ -655,7 +711,7 @@ function recoverySnapshotResponse(
         }
       : null,
     background_tasks: state.backgroundTasks,
-    paused_subagent: null,
+    paused_subagent: state.pausedSubagent,
     pending_tool_approvals: state.toolApprovalPending ? [toolApprovalRecord()] : [],
     pending_user_questions: state.questionPending
       ? [userQuestionRecord(state.questionDescription)]
@@ -737,6 +793,15 @@ function backgroundCommandTaskRecord(): Record<string, unknown> {
     run_id: BACKGROUND_RUN_ID,
     session_id: SESSION_ID,
     status: "running",
+  };
+}
+
+function pausedSubagentRecord(): Record<string, unknown> {
+  return {
+    instance_id: "reviewer-1",
+    reason: "waiting for input",
+    role_id: "reviewer",
+    task_id: "task-review-1",
   };
 }
 

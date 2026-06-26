@@ -691,6 +691,70 @@ def test_v2_recovery_background_subagent_stream_renders_in_timeline(
         page.screenshot(path=str(screenshot_dir / "v2-background-subagent-stream.png"))
 
 
+def test_v2_recovery_background_task_stop_refreshes_snapshot(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    backend.recovery_background_tasks = [
+        {
+            "background_task_id": "background-task-1",
+            "command": "python worker.py",
+            "cwd": "C:/repo",
+            "execution_mode": "background",
+            "kind": "command",
+            "recent_output": ["worker booted"],
+            "run_id": "background-run-1",
+            "session_id": _SESSION_ID,
+            "status": "running",
+        }
+    ]
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        recovery = page.locator(".at-recovery")
+        expect(recovery.get_by_text("Background task is still active")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_text("python worker.py")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_text("Running")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-recovery"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-background-task-stop-before.png"))
+
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and response.url.endswith(
+                    "/api/runs/background-run-1/background-tasks/background-task-1:stop"
+                )
+                and response.status == 200
+            ),
+            timeout=_WAIT_TIMEOUT_MS,
+        ):
+            recovery.get_by_role("button", name="Stop").click()
+
+        assert backend.background_task_stop_requests == [
+            {
+                "background_task_id": "background-task-1",
+                "run_id": "background-run-1",
+            }
+        ]
+        expect(page.locator(".at-recovery")).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
+        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
+        page.screenshot(path=str(screenshot_dir / "v2-background-task-stop-after.png"))
+
+
 def test_v2_persisted_subagent_session_stream_resumes_from_sidebar(
     browser_page: Page,
 ) -> None:
@@ -2811,6 +2875,7 @@ class _V2ShellBackend:
         }
         self.recovery_active_run: dict[str, object] | None = None
         self.recovery_background_tasks: list[dict[str, object]] = []
+        self.background_task_stop_requests: list[dict[str, str]] = []
         self.pending_tool_approvals: list[dict[str, object]] = []
         self.pending_user_questions: list[dict[str, object]] = []
         self.question_answer_payloads: list[dict[str, object]] = []
@@ -3037,6 +3102,14 @@ class _V2ShellBackend:
             and path.endswith(":answer")
         ):
             self._answer_user_question(route, request, path)
+            return
+        if (
+            request.method == "POST"
+            and path.startswith("/runs/")
+            and "/background-tasks/" in path
+            and path.endswith(":stop")
+        ):
+            self._stop_background_task(route, path)
             return
         if request.method == "GET" and path == "/roles:options":
             _fulfill_json(
@@ -3459,6 +3532,33 @@ class _V2ShellBackend:
             if question.get("question_id") != question_id
         ]
         _fulfill_json(route, {"status": "ok"})
+
+    def _stop_background_task(self, route: Route, path: str) -> None:
+        run_id, background_task_id = _split_background_task_stop_path(path)
+        self.background_task_stop_requests.append(
+            {
+                "background_task_id": background_task_id,
+                "run_id": run_id,
+            },
+        )
+        stopped_task: dict[str, object] | None = None
+        for task in self.recovery_background_tasks:
+            if task.get("background_task_id") == background_task_id:
+                task["status"] = "stopped"
+                stopped_task = task
+                break
+        _fulfill_json(
+            route,
+            {
+                "background_task": stopped_task
+                or {
+                    "background_task_id": background_task_id,
+                    "run_id": run_id,
+                    "session_id": _SESSION_ID,
+                    "status": "stopped",
+                }
+            },
+        )
 
     def _workspace(self) -> dict[str, object]:
         return {
@@ -4964,6 +5064,14 @@ def _split_nested_action_path(
     if not separator or not rest.endswith(suffix):
         raise AssertionError(f"Unexpected nested AG-UI action path: {path}")
     return unquote(run_id), unquote(rest.removesuffix(suffix))
+
+
+def _split_background_task_stop_path(path: str) -> tuple[str, str]:
+    nested_path = path.removeprefix("/runs/")
+    run_id, separator, rest = nested_path.partition("/background-tasks/")
+    if not separator or not rest.endswith(":stop"):
+        raise AssertionError(f"Unexpected background task stop path: {path}")
+    return unquote(run_id), unquote(rest.removesuffix(":stop"))
 
 
 def _wait_for_v2_shell(page: Page) -> None:

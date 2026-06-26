@@ -3441,3 +3441,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this persisted subagent session stream slice. No Subagents, Message Timeline, AG-UI Runtime Stream, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 Recovery Background Task Stop Browser Batch
+
+### Scope
+- Re-checked the Run Recovery quality gate after the persisted subagent stream slice and selected background task stop because it remained a visible recovery control that needed built `/app/` proof rather than component-only evidence.
+- Added a browser-level scenario that loads a recovery snapshot with a running background command task and no active foreground run, verifies the fixed shell shows the background task panel and Stop action, then clicks Stop through the visible UI.
+- Extended the browser mock backend with the real `/runs/{run_id}/background-tasks/{background_task_id}:stop` route, request capture, and state mutation so the subsequent recovery refetch sees the task as stopped.
+- Verified the UI removes the recovery panel after the stop mutation and refetch, proving the button is not a fake control and the active background task filter reconciles terminal state.
+- Captured `.tmp/frontend-v2-recovery/v2-background-task-stop-before.png` and `.tmp/frontend-v2-recovery/v2-background-task-stop-after.png` and inspected them to confirm the Stop control and post-stop fixed shell state.
+- Kept this as targeted Run Recovery progress only. Remaining work still includes stopped-run resume browser flow, recovery action error states in the built shell, broader visual review of recovery styling, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k recovery_background_task_stop_refreshes_snapshot` passed with 1 selected browser test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "recovery_background_task_stop or background_subagent_stream or recovery_approval_and_question_actions"` passed with 3 selected browser tests.
+- Main-agent screenshot inspection confirmed the background task Stop control appeared inside the built V2 recovery panel and disappeared after the real stop endpoint refreshed recovery state.
+
+### Reviewer
+- Main-agent browser verification completed for this background task stop slice. No Run Recovery, Subagents, AG-UI Runtime Stream, or V2 frontend completion is claimed.

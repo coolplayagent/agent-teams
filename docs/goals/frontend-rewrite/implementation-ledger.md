@@ -3857,3 +3857,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this image preview slice. No Resource And Assistive Features subsystem, Message Timeline subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Tool-Heavy Refresh Replay Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and parity checklist after the image preview slice, then selected a refresh replay boundary because the remaining risk is not just live text streaming but replay continuation while the timeline already contains hydrated tool output.
+- Extended the TS stream-refresh browser scenario so a run starts from the real composer, emits text, tool call, tool result, and token usage events, then the page reloads as if the browser refreshed during the active stream.
+- Hydrated the post-refresh timeline with persisted text plus tool-heavy message parts, verified the recovery snapshot opens `/api/ag-ui/runs/run-ts-tool-refresh/events?after_event_id=5`, and dispatched a duplicate `event_id=5` text delta to prove cursor replay duplicates stay hidden.
+- Continued the stream after the hydrated cursor with a validation failure and structured `output_delta` text, verified the tool count changes only for the new validation event, and finalized the run with `run.completed` so the Stop control clears.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png`; the screenshot shows the active recovery banner, hydrated tool call/result/error rows, resumed validation row, resumed output, fixed sidebar, and composer controls staying inside one viewport.
+- Kept this as targeted Message Timeline / AG-UI refresh replay evidence only. Remaining work still includes persisted subagent session recovery, broader event matrix edges, desktop checks, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-stream-refresh.spec.ts` passed with 2 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-stream-refresh.spec.ts` passed with 3 TS browser tests.
+- Main-agent screenshot inspection confirmed tool-heavy refresh replay remains visually stable and continues from the hydrated event cursor without duplicating old output.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this tool-heavy refresh replay slice. No Message Timeline subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

@@ -31,6 +31,8 @@ _VIEWPORT_HEIGHT = 720
 _WAIT_TIMEOUT_MS = 15_000
 _SESSION_ID = "session-v2-shell"
 _STREAM_RUN_ID = "run-v2-live"
+_SUBAGENT_INSTANCE_ID = "subagent-reviewer-1"
+_SUBAGENT_RUN_ID = "subagent_run_reviewer_1"
 _WORKSPACE_ID = "workspace-v2-shell"
 _IMAGE_DATA_URL = (
     "data:image/svg+xml;charset=utf-8,"
@@ -687,6 +689,142 @@ def test_v2_recovery_background_subagent_stream_renders_in_timeline(
         screenshot_dir = repo_root / ".tmp" / "frontend-v2-recovery"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(screenshot_dir / "v2-background-subagent-stream.png"))
+
+
+def test_v2_persisted_subagent_session_stream_resumes_from_sidebar(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend(include_subagent_session=True)
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("button", name="Toggle subagent sessions").click()
+        subagent_button = page.get_by_role(
+            "button",
+            name="Open subagent session Reviewer review pass",
+        )
+        expect(subagent_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        subagent_button.click()
+
+        subagent_view = page.locator(".at-subagent-session-view")
+        expect(
+            subagent_view.get_by_role("heading", name="Reviewer review pass"),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(subagent_view.get_by_text("Read-only subagent session")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(subagent_view.get_by_text("Persisted reviewer note.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        _wait_for_backend_state(
+            lambda: backend.subagent_messages_request_count >= 1,
+            "Subagent messages were not requested.",
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/subagent_run_reviewer_1/events?after_event_id=4')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '5',
+            )
+            """,
+            _stream_text_event_for_run(
+                5,
+                _SUBAGENT_RUN_ID,
+                "First reviewer live chunk.",
+                "reviewer",
+            ),
+        )
+        expect(subagent_view.get_by_text("First reviewer live chunk.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate("() => window.__v2StreamHarness.transportError(0)")
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 2
+              && window.__v2StreamHarness.urls()[1]
+                .includes('/api/ag-ui/runs/subagent_run_reviewer_1/events?after_event_id=5')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              1,
+              'message.text.delta',
+              event,
+              '5',
+            )
+            """,
+            _stream_text_event_for_run(
+                5,
+                _SUBAGENT_RUN_ID,
+                "First reviewer live chunk.",
+                "reviewer",
+            ),
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              1,
+              'message.text.delta',
+              event,
+              '6',
+            )
+            """,
+            _stream_text_event_for_run(
+                6,
+                _SUBAGENT_RUN_ID,
+                "Second reviewer resumed chunk.",
+                "reviewer",
+            ),
+        )
+
+        expect(subagent_view.get_by_text("First reviewer live chunk.")).to_have_count(1)
+        expect(
+            subagent_view.get_by_text("Second reviewer resumed chunk."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        metrics = cast(
+            dict[str, object],
+            page.evaluate(
+                """() => ({
+                    bodyHeight: document.body.scrollHeight,
+                    documentHeight: document.documentElement.scrollHeight,
+                    viewportHeight: window.innerHeight,
+                    workspaceOverflow: getComputedStyle(
+                      document.querySelector('.at-workspace')
+                    ).overflow,
+                    subagentBodyOverflow: getComputedStyle(
+                      document.querySelector('.at-subagent-session-body')
+                    ).overflow,
+                })""",
+            ),
+        )
+        assert metrics["bodyHeight"] == metrics["viewportHeight"]
+        assert metrics["documentHeight"] == metrics["viewportHeight"]
+        assert metrics["workspaceOverflow"] == "hidden"
+        assert metrics["subagentBodyOverflow"] == "hidden"
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-subagents"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-persisted-subagent-stream.png"))
 
 
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
@@ -2558,8 +2696,14 @@ def test_v2_observability_topbar_opens_and_switches_scope(
 
 
 class _V2ShellBackend:
-    def __init__(self, *, include_image_message: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        include_image_message: bool = False,
+        include_subagent_session: bool = False,
+    ) -> None:
         self.include_image_message = include_image_message
+        self.include_subagent_session = include_subagent_session
         self.fail_next_web_save = False
         self.automation_enable_requests: list[str] = []
         self.automation_disable_requests: list[str] = []
@@ -2582,6 +2726,7 @@ class _V2ShellBackend:
         self.requested_paths: list[str] = []
         self.requested_urls: list[str] = []
         self.rounds_request_count = 0
+        self.subagent_messages_request_count = 0
         self.runtime_tools_system_path_added = False
         self.runtime_tools_system_path_requests: list[str] = []
         self.role_delete_requests: list[str] = []
@@ -2811,6 +2956,17 @@ class _V2ShellBackend:
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/messages":
             _fulfill_json(route, self._messages())
+            return
+        if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/subagents":
+            _fulfill_json(route, self._session_subagents())
+            return
+        if (
+            request.method == "GET"
+            and path
+            == f"/sessions/{_SESSION_ID}/agents/{_SUBAGENT_INSTANCE_ID}/messages"
+        ):
+            self.subagent_messages_request_count += 1
+            _fulfill_json(route, self._subagent_messages())
             return
         if request.method == "GET" and path == f"/sessions/{_SESSION_ID}/rounds":
             self.rounds_request_count += 1
@@ -3422,7 +3578,7 @@ class _V2ShellBackend:
         }
 
     def _sidebar_session(self) -> dict[str, object]:
-        return {
+        session = {
             "active_run_id": None,
             "active_run_phase": "",
             "active_run_status": "",
@@ -3432,6 +3588,9 @@ class _V2ShellBackend:
             "updated_at": "2026-06-25T08:00:00Z",
             "workspace_id": _WORKSPACE_ID,
         }
+        if self.include_subagent_session:
+            session["subagent_count"] = 1
+        return session
 
     def _session(self) -> dict[str, object]:
         return {
@@ -3479,6 +3638,45 @@ class _V2ShellBackend:
                 "role": "user",
                 "run_id": "run-v2-shell",
                 "trace_id": "trace-v2-shell",
+            },
+        ]
+
+    def _session_subagents(self) -> list[dict[str, object]]:
+        if not self.include_subagent_session:
+            return []
+        return [
+            {
+                "created_at": "2026-06-25T08:00:03Z",
+                "instance_id": _SUBAGENT_INSTANCE_ID,
+                "interactive": False,
+                "last_event_id": 4,
+                "role_id": "reviewer",
+                "run_id": _SUBAGENT_RUN_ID,
+                "run_phase": "running",
+                "run_status": "running",
+                "session_id": _SESSION_ID,
+                "status": "running",
+                "subagent_instance_id": _SUBAGENT_INSTANCE_ID,
+                "subagent_kind": "normal",
+                "subagent_role_id": "reviewer",
+                "subagent_run_id": _SUBAGENT_RUN_ID,
+                "title": "Reviewer review pass",
+                "updated_at": "2026-06-25T08:00:04Z",
+                "workspace_id": _WORKSPACE_ID,
+            }
+        ]
+
+    def _subagent_messages(self) -> list[dict[str, object]]:
+        return [
+            {
+                "content": "Persisted reviewer note.",
+                "created_at": "2026-06-25T08:00:04Z",
+                "message_id": "assistant-v2-subagent",
+                "parts": [{"kind": "text", "text": "Persisted reviewer note."}],
+                "role": "assistant",
+                "role_id": "reviewer",
+                "run_id": _SUBAGENT_RUN_ID,
+                "trace_id": "trace-v2-subagent",
             },
         ]
 

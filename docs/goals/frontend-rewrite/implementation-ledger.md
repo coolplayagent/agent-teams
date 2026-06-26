@@ -3422,3 +3422,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this background subagent stream slice. No Subagents, Run Recovery, or AG-UI Runtime Stream subsystem completion is claimed.
+
+## 2026-06-26 V2 Persisted Subagent Session Stream Browser Batch
+
+### Scope
+- Re-checked the Subagents, AG-UI Runtime Stream, and V1 secondary-page behavior gaps after the background subagent stream slice, then selected persisted subagent session entry because it remained uncovered at the built `/app/` browser layer.
+- Added a browser-level scenario that preserves the V1-style sidebar hierarchy: the parent session exposes only a subagent count, the subagent list loads after expanding the parent, and selecting the subagent opens the read-only secondary session page instead of flattening content into the primary chat view.
+- Verified the secondary page loads persisted agent messages from `/sessions/{session_id}/agents/{instance_id}/messages`, starts the subagent EventSource from `last_event_id=4`, renders a live reviewer delta, survives a simulated EventSource transport interruption, reconnects with `after_event_id=5`, deduplicates the boundary event, and renders the resumed delta.
+- Added fixed-frame assertions for the persisted subagent page so the body and document stay at the viewport height while the workspace and subagent body keep internal overflow hidden.
+- Captured `.tmp/frontend-v2-subagents/v2-persisted-subagent-stream.png` and inspected it to confirm the sidebar, topbar, secondary subagent header, status badge, persisted output, and resumed stream output stayed inside the fixed V2 shell.
+- Kept this as targeted Subagents and AG-UI stream progress only. Remaining work still includes full message-timeline visual polish, terminal subagent refresh across route changes, background stop/error browser states, broader V1/V2 visual comparison, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k persisted_subagent_session_stream_resumes_from_sidebar` passed with 1 selected browser test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "background_subagent_stream or persisted_subagent_session_stream"` passed with 2 selected browser tests.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-subagents/v2-persisted-subagent-stream.png` confirmed the built V2 shell stayed framed while the persisted reviewer message and resumed live subagent stream rendered in the secondary session view.
+
+### Reviewer
+- Main-agent browser verification completed for this persisted subagent session stream slice. No Subagents, Message Timeline, AG-UI Runtime Stream, or V2 frontend completion is claimed.

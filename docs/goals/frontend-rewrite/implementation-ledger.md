@@ -3839,3 +3839,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this active stream session switch slice. No Sessions And Projects subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Image Preview Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and parity checklist after the active stream session-switch slice, then selected image preview because Resource And Assistive Features explicitly requires screenshot evidence and the existing coverage was still component-level only.
+- Added a TS Playwright browser scenario that hydrates a persisted assistant message containing a real `media_ref` image part, verifies the inline image and caption render through the V2 timeline, then clicks the Ant Image preview mask a user actually sees.
+- Verified the preview overlay mask, close control, and preview image become visible, and captured the settled overlay state after the opening animation so the screenshot proves the modal preview rather than only the inline thumbnail.
+- Kept the scenario inside the existing fixed-shell guardrails: no unhandled API routes, no document-level scroll, and no composer-control overlap before opening the preview; after Escape closes the overlay, the fixed V2 shell is still stable.
+- Captured and inspected `.tmp/frontend-v2-ts-image-preview/v2-image-preview-open.png`; the screenshot shows the darkened shell, inline media behind the overlay, centered image preview, and close control.
+- Kept this as targeted Resource And Assistive Features / Message Timeline browser evidence only. Remaining work still includes long tool-heavy replay inspection, persisted subagent session recovery, broader stream event matrix edges, desktop checks, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-image-preview.spec.ts` passed with 1 TS browser test.
+- Main-agent screenshot inspection confirmed image media renders and opens the real preview overlay without breaking the fixed V2 shell.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this image preview slice. No Resource And Assistive Features subsystem, Message Timeline subsystem, browser-suite migration, or V2 frontend completion is claimed.

@@ -879,65 +879,6 @@ def test_v2_real_sse_interrupted_stream_reconnects_from_runtime_cursor(
         assert stream_state.has_last_event_id_header("2")
 
 
-def test_v2_real_sse_refresh_recovery_reopens_stream_from_checkpoint(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2StreamBackend()
-    stream_state = _RealSseStreamState(hold_initial_stream_after_first_chunk=True)
-    _install_real_sse_shell_state(page)
-
-    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
-        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        prompt.fill(_PROMPT)
-        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
-
-        assistant_message = page.locator(".at-message").filter(has_text=_FIRST_CHUNK)
-        expect(assistant_message).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        assert stream_state.wait_for_sent_event_id(2, timeout_seconds=5.0)
-        backend.last_event_id = 2
-        backend.persisted_assistant_text = _FIRST_CHUNK
-
-        request_count_before_reload = stream_state.request_count()
-        assert request_count_before_reload == 1
-
-        page.reload()
-        _wait_for_v2_shell(page)
-        assert stream_state.wait_for_request_count_at_least(
-            request_count_before_reload + 1,
-            timeout_seconds=10.0,
-        )
-        stream_state.release_initial_stream()
-        request_snapshots = stream_state.request_snapshots()
-        latest_request = request_snapshots[-1]
-        assert latest_request == {
-            "after_event_id": 2,
-            "last_event_id": "",
-            "run_id": _RUN_ID,
-        }
-
-        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
-            1,
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.locator(".at-message").filter(has_text=_REAL_SSE_RESUMED_CHUNK),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        assert stream_state.wait_for_sent_event_id(4, timeout_seconds=5.0)
-        expect(
-            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
-        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
-        expect(
-            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        assert backend.run_create_count == 1
-
-
 def test_v2_real_sse_replay_dedupes_cursor_event_before_continuing(
     browser_page: Page,
 ) -> None:

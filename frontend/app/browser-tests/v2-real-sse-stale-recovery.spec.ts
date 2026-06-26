@@ -25,6 +25,7 @@ const RECOVERY_ACTION_FEEDBACK = "Use the existing TS browser command.";
 const RECOVERY_ACTION_LAST_EVENT_ID = 7;
 const RECOVERY_ACTION_RESUMED_CHUNK = "real SSE recovery action resumed chunk";
 const RECOVERY_QUESTION_SUPPLEMENT = "Need release note coverage";
+const REFRESH_RESUMED_CHUNK = "real SSE refresh resumed chunk";
 const STOPPED_MESSAGE = "real SSE run stopped before completion";
 const STREAM_UNAVAILABLE = "run recovery stream is no longer available";
 const TOOL_CALL_ID = "call-ts-real-sse-approval";
@@ -117,6 +118,15 @@ test("resumes a real SSE recoverable run from the standalone action", async ({
   });
 });
 
+test("reopens a real SSE stream from the recovery checkpoint after refresh", async ({
+  page,
+}) => {
+  await runRealSseRefreshRecoveryScenario(page, {
+    mode: "refresh-recovery",
+    screenshotName: "v2-real-sse-refresh-recovery.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
@@ -129,6 +139,11 @@ interface RealSseActiveControlOptions {
 
 interface RealSseRecoveryActionOptions {
   mode: "recovery-approval" | "recovery-question";
+  screenshotName: string;
+}
+
+interface RealSseRefreshRecoveryOptions {
+  mode: "refresh-recovery";
   screenshotName: string;
 }
 
@@ -151,6 +166,7 @@ interface RealSseState {
   lastEventId: number;
   pendingToolApproval: boolean;
   pendingUserQuestion: boolean;
+  persistedAssistantText: string;
   questionAnswers: RealSseRecoveryActionRequest[];
   requestSequence: string[];
   resumeRequests: string[];
@@ -547,12 +563,80 @@ async function runRealSseStandaloneResumeScenario(
   }
 }
 
+async function runRealSseRefreshRecoveryScenario(
+  page: Page,
+  options: RealSseRefreshRecoveryOptions,
+): Promise<void> {
+  const appServer = await serveFrontendDist();
+  const state = createRealSseState();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: "TS real SSE refresh",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(PROMPT);
+    await page.getByRole("button", { exact: true, name: "Send" }).click();
+
+    await expect.poll(() => state.streamRequests).toEqual([
+      {
+        afterEventId: "0",
+        lastEventId: null,
+      },
+    ]);
+    await expect(page.getByText(FIRST_CHUNK)).toBeVisible();
+    expect(state.lastEventId).toBe(2);
+    expect(state.persistedAssistantText).toBe(FIRST_CHUNK);
+    expect(state.runCreateCount).toBe(1);
+
+    await page.reload();
+    await waitForV2Shell(page);
+    await expect(page.locator(".at-message").filter({ hasText: FIRST_CHUNK }))
+      .toHaveCount(1);
+    await expect.poll(() => state.streamRequests.at(-1)).toEqual({
+      afterEventId: "2",
+      lastEventId: null,
+    });
+    await expect(page.getByText(REFRESH_RESUMED_CHUNK)).toBeVisible();
+    await expect(page.locator(".at-message").filter({ hasText: FIRST_CHUNK }))
+      .toHaveCount(1);
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+    expect(state.runCreateCount).toBe(1);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "real SSE refresh recovery should continue from the persisted checkpoint inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
   mode:
     | RealSseActiveControlOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
+    | RealSseRefreshRecoveryOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
@@ -568,7 +652,7 @@ async function handleRealSseApi(
     return true;
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
-    await context.fulfillJson([]);
+    await context.fulfillJson(realSsePersistedMessages(state));
     return true;
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/recovery`) {
@@ -581,12 +665,19 @@ async function handleRealSseApi(
       lastEventId: context.route.request().headers()["last-event-id"] ?? null,
     });
     state.requestSequence.push("stream");
+    const afterEventId = context.url.searchParams.get("after_event_id");
+    if (mode === "refresh-recovery" && afterEventId === "0") {
+      state.lastEventId = 2;
+      state.persistedAssistantText = FIRST_CHUNK;
+    }
+    const completeRefreshAfterFulfill =
+      mode === "refresh-recovery" && afterEventId === "2";
     if (mode === "recovery-approval" || mode === "recovery-question") {
       state.completed = true;
       state.lastEventId = 10;
     }
     await context.route.fulfill({
-      body: sseBody(mode),
+      body: sseBody(mode, afterEventId),
       contentType: "text/event-stream",
       headers: {
         "Cache-Control": "no-cache",
@@ -594,6 +685,10 @@ async function handleRealSseApi(
       },
       status: 200,
     });
+    if (completeRefreshAfterFulfill) {
+      state.completed = true;
+      state.lastEventId = 4;
+    }
     return true;
   }
   if (context.method === "POST" && context.path === `/ag-ui/runs/${RUN_ID}:resume`) {
@@ -688,9 +783,11 @@ function sseBody(
   mode:
     | RealSseActiveControlOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
+    | RealSseRefreshRecoveryOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
+  afterEventId: string | null = null,
 ): string {
   if (mode === "server-error") {
     return sseFrame({
@@ -775,6 +872,55 @@ function sseBody(
       }),
     ].join("");
   }
+  if (mode === "refresh-recovery") {
+    if (afterEventId === "2") {
+      return [
+        sseFrame({
+          data: runEvent({
+            eventId: 3,
+            payload: { text: REFRESH_RESUMED_CHUNK },
+            relayEventType: "text_delta",
+            type: "message.text.delta",
+          }),
+          event: "message.text.delta",
+          id: 3,
+        }),
+        sseFrame({
+          data: runEvent({
+            eventId: 4,
+            payload: { status: "completed" },
+            relayEventType: "run_completed",
+            type: "run.completed",
+          }),
+          event: "run.completed",
+          id: 4,
+        }),
+      ].join("");
+    }
+    return [
+      "retry: 60000\n\n",
+      sseFrame({
+        data: runEvent({
+          eventId: 1,
+          payload: { phase: "streaming" },
+          relayEventType: "run_started",
+          type: "run.started",
+        }),
+        event: "run.started",
+        id: 1,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 2,
+          payload: { text: FIRST_CHUNK },
+          relayEventType: "text_delta",
+          type: "message.text.delta",
+        }),
+        event: "message.text.delta",
+        id: 2,
+      }),
+    ].join("");
+  }
   if (mode === "active-inject" || mode === "active-stop") {
     return [
       sseFrame({
@@ -835,6 +981,7 @@ function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState
     lastEventId: 0,
     pendingToolApproval: false,
     pendingUserQuestion: false,
+    persistedAssistantText: "",
     questionAnswers: [],
     requestSequence: [],
     resumeRequests: [],
@@ -845,6 +992,27 @@ function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState
     streamRequests: [],
     ...overrides,
   };
+}
+
+function realSsePersistedMessages(state: RealSseState): Record<string, unknown>[] {
+  if (!state.persistedAssistantText.trim()) {
+    return [];
+  }
+  return [
+    {
+      message: {
+        parts: [
+          {
+            content: state.persistedAssistantText,
+            part_kind: "text",
+          },
+        ],
+      },
+      message_id: "real-sse-refresh-hydrated",
+      role_id: "MainAgent",
+      run_id: RUN_ID,
+    },
+  ];
 }
 
 function sequenceIndex(state: RealSseState, item: string): number {

@@ -4084,3 +4084,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, syntax, and screenshot verification completed for this standalone real-SSE resume slice. No Run Recovery subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Refresh Checkpoint Batch
+
+### Scope
+- Re-checked the frontend rewrite goal before continuing and selected refresh checkpoint recovery because stream/replay/refresh behavior remains one of the largest V2 completion risks.
+- Added a native EventSource TS browser scenario to `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts` that starts a real SSE run, hydrates the first assistant chunk as persisted history, reloads the app, verifies the next stream opens from `after_event_id=2`, and renders only the post-checkpoint continuation once.
+- Fixed the timeline hydration filter so a closed run with hydrated assistant output suppresses duplicate pre-checkpoint runtime deltas while still keeping live runtime deltas whose `event_id` is greater than the replay cursor.
+- Added `replayAfterEventId` to runtime replay cursor state and unit coverage proving post-refresh runtime deltas remain visible when hydration only covers earlier output.
+- Removed the migrated Python `test_v2_real_sse_refresh_recovery_reopens_stream_from_checkpoint` scenario from `tests/integration_tests/browser/test_v2_stream_recovery.py`.
+- Rebuilt `frontend/dist/app` so the browser harness serves the updated V2 runtime code.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-refresh-recovery.png`; the screenshot shows the hydrated pre-refresh chunk once, the resumed chunk after reload, a fixed-height shell, stable V1-shaped sidebar, and restored composer.
+- Kept this as targeted AG-UI Runtime Stream / Refresh Recovery TS browser migration progress only. Remaining work still includes cursor-event dedupe, rich non-text replay, multiplex/subagent stream recovery, message copy and voice/composer browser coverage, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test -- MessageTimeline.test.tsx` passed with 58 unit tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 10 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenario.
+- Main-agent screenshot inspection confirmed refresh recovery continues through real SSE from the persisted checkpoint and stays inside the fixed shell.
+
+### Reviewer
+- Main-agent build, unit, TS browser, syntax, and screenshot verification completed for this refresh-checkpoint recovery slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

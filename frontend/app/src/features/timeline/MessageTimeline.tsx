@@ -95,8 +95,8 @@ export function MessageTimeline({
         .filter(timelineRowHasRenderableContent),
     [fallbackRunId, messageRoundLookup, messages],
   );
-  const hydratedOutputRunIds = useMemo(
-    () => timelineOutputRunIds(persistedRows),
+  const hydratedOutputTextByRunId = useMemo(
+    () => timelineOutputTextByRunId(persistedRows),
     [persistedRows],
   );
   const runtimeEntries = useMemo(
@@ -105,15 +105,15 @@ export function MessageTimeline({
         .flatMap((runState) =>
           runState.entries.filter(
             (entry) =>
-              runtimeEntryMatchesScope(entry, sessionId, runtimeRunId) &&
-              shouldKeepRuntimeEntryAfterHydration(
-                runState,
-                entry,
-                hydratedOutputRunIds,
-              ),
+                runtimeEntryMatchesScope(entry, sessionId, runtimeRunId) &&
+                shouldKeepRuntimeEntryAfterHydration(
+                  runState,
+                  entry,
+                  hydratedOutputTextByRunId,
+                ),
           ),
         ),
-    [hydratedOutputRunIds, runtimeRunId, runtimeState.runs, sessionId],
+    [hydratedOutputTextByRunId, runtimeRunId, runtimeState.runs, sessionId],
   );
   const runtimeRows = useMemo(
     () => runtimeEntriesToRows(runtimeEntries),
@@ -873,31 +873,40 @@ function latestRoundRunId(rounds: SessionRound[]): string | null {
   return null;
 }
 
-function timelineOutputRunIds(rows: TimelineRow[]): Set<string> {
-  const runIds = new Set<string>();
+function timelineOutputTextByRunId(rows: TimelineRow[]): Map<string, string> {
+  const textByRunId = new Map<string, string>();
   for (const row of rows) {
     if (!isAnswerRole(row.role)) {
       continue;
     }
-    if (row.runId !== null && row.runId.trim().length > 0) {
-      runIds.add(row.runId);
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0) {
+      continue;
+    }
+    const text = normalizedTimelineText(row.text);
+    if (text.length > 0) {
+      textByRunId.set(
+        runId,
+        [textByRunId.get(runId) ?? "", text].filter(Boolean).join(" "),
+      );
     }
   }
-  return runIds;
+  return textByRunId;
 }
 
 function shouldKeepRuntimeEntryAfterHydration(
   runState: RuntimeRunState,
   entry: TimelineEntry,
-  hydratedOutputRunIds: Set<string>,
+  hydratedOutputTextByRunId: Map<string, string>,
 ): boolean {
   if (runState.status !== "closed") {
     return true;
   }
-  if (!hydratedOutputRunIds.has(runState.runId)) {
+  const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
+  if (hydratedText === undefined) {
     return true;
   }
-  return !runtimeEntryIsCoveredByHydratedOutput(entry);
+  return !runtimeEntryIsCoveredByHydratedOutput(entry, runState, hydratedText);
 }
 
 function runtimeEntryMatchesScope(
@@ -912,14 +921,28 @@ function runtimeEntryMatchesScope(
   return scopedRunId.length === 0 || entry.runId === scopedRunId;
 }
 
-function runtimeEntryIsCoveredByHydratedOutput(entry: TimelineEntry): boolean {
+function runtimeEntryIsCoveredByHydratedOutput(
+  entry: TimelineEntry,
+  runState: RuntimeRunState,
+  hydratedText: string,
+): boolean {
+  if (entry.kind === "text_delta" || entry.kind === "output_delta") {
+    const entryText = normalizedTimelineText(entry.text);
+    if (entryText.length > 0 && hydratedText.includes(entryText)) {
+      return true;
+    }
+    const replayAfterEventId = runState.replayAfterEventId ?? 0;
+    return !(replayAfterEventId > 0 && entry.eventId > replayAfterEventId);
+  }
   return (
-    entry.kind === "text_delta" ||
-    entry.kind === "output_delta" ||
     entry.kind === "run_started" ||
     entry.kind === "run_resumed" ||
     entry.kind === "run_completed"
   );
+}
+
+function normalizedTimelineText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function visibleRunIdFromRenderedRows(container: HTMLElement): string | null {

@@ -234,6 +234,10 @@ function runtimeStateWithReplayCursors(
     nextRuns[run.runId] = {
       entries: currentRun?.entries ?? [],
       lastEventId: run.afterEventId,
+      replayAfterEventId: Math.max(
+        currentRun?.replayAfterEventId ?? 0,
+        run.afterEventId,
+      ),
       runId: run.runId,
       seenEventKeys: currentRun?.seenEventKeys ?? [],
       status: currentRun?.status ?? "connecting",

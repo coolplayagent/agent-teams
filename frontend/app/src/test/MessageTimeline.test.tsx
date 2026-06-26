@@ -510,6 +510,62 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("final chunk only")).not.toBeInTheDocument();
   });
 
+  it("keeps post-checkpoint runtime deltas when hydration only covers earlier output", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-refresh": {
+            runId: "run-refresh",
+            status: "closed",
+            lastEventId: 4,
+            replayAfterEventId: 2,
+            seenEventKeys: [],
+            terminalEventType: "run_completed",
+            entries: [
+              {
+                id: "run-refresh:3:0",
+                sessionId: "session-1",
+                runId: "run-refresh",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "Post-refresh continuation",
+                payload: { text: "Post-refresh continuation" },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-refresh:4:1",
+                sessionId: "session-1",
+                runId: "run-refresh",
+                roleId: "MainAgent",
+                kind: "run_completed",
+                text: "completed",
+                payload: { status: "completed" },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-refresh",
+        role_id: "MainAgent",
+        run_id: "run-refresh",
+        content: "Checkpoint chunk",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Checkpoint chunk")).toBeVisible();
+    expect(await screen.findByText("Post-refresh continuation")).toBeVisible();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
+  });
+
   it("keeps closed runtime tool events when a hydrated answer covers the same run", async () => {
     useRuntimeStore.setState({
       runtimeState: {

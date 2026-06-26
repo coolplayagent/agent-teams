@@ -25,6 +25,7 @@ export interface RuntimeRunState {
   runId: string;
   status: StreamStatus;
   lastEventId: number;
+  replayAfterEventId?: number;
   seenEventKeys: string[];
   terminalEventType: RunEventType | null;
   entries: TimelineEntry[];

@@ -3630,3 +3630,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this non-text reconnect slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.
+
+## 2026-06-26 V2 TS Browser Refresh Replay Batch
+
+### Scope
+- Re-checked the frontend rewrite goal after the non-text reconnect slice and selected refresh replay because it is a required stream/replay/recovery parity path and was still represented by old Python browser coverage rather than TS-owned browser evidence.
+- Added a TS Playwright browser scenario that creates a run through the real V2 composer, streams an initial assistant text delta, records the backend recovery checkpoint at `last_event_id=2`, reloads `/app/`, and verifies RecoveryBar opens the resumed EventSource from `after_event_id=2`.
+- Mocked persisted session messages after reload so the hydrated assistant output appears exactly once, then delivered a new post-reload delta through the resumed stream and verified the visible message is not duplicated.
+- Completed the stream with a terminal `run.completed` event, updated the persisted message payload to include both chunks, and verified the Stop control disappears, the stream closes, and the fixed-height shell/composer layout stays intact.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-stream-refresh-replay.png`; the screenshot shows the built V2 shell fixed to one viewport, the sidebar/workspace frame stable, and the refreshed output rendered as one assistant message.
+- Kept this as targeted Message Timeline / AG-UI refresh recovery progress only. Remaining work still includes broader replay event matrix coverage, long tool-heavy visual replay review, settings appearance parity, broader V1/V2 audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-stream-refresh.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-stream-create-run.spec.ts browser-tests/v2-stream-reconnect.spec.ts browser-tests/v2-stream-refresh.spec.ts` passed with 4 TS browser tests.
+- Main-agent screenshot inspection confirmed refresh recovery resumes from the stored checkpoint without duplicate hydrated text and keeps the V2 shell fixed-height.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this refresh replay slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.

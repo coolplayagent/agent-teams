@@ -53,6 +53,45 @@ interface ToolSummaryPayload {
   error: ToolSummaryVisualState;
 }
 
+interface SessionSwitchPayload {
+  hydratedSessionOneText: string;
+  hydratedSessionOneThinkingCount: number;
+  sessionOneThinkingCount: number;
+  sessionTwoText: string;
+}
+
+interface PrimaryAliasPayload {
+  overlayAfterPersist: unknown;
+  text: string;
+  thinkingCount: number;
+  toolCount: number;
+}
+
+interface RepeatedSessionSwitchPayload {
+  finalRunAThinkingCount: number;
+  finalRunBThinkingCount: number;
+  foreignLeakCount: number;
+  iterations: number;
+  maxIntroOccurrences: number;
+  maxToolDuplicateCount: number;
+  overlayAfterFullRunA: unknown;
+  overlayAfterFullRunB: unknown;
+}
+
+interface PartialThinkingReplayPayload {
+  introOccurrences: number;
+  overlayAfterPersist: unknown;
+  planOccurrences: number;
+  thinkingCount: number;
+  toolCount: number;
+}
+
+interface ConcurrentDirectStreamPayload {
+  runACursorCountAfterFinalize: number;
+  runAText: string;
+  runBText: string;
+}
+
 interface StreamTimelineHarnessWindow {
   __streamTimelineHarness: Record<string, () => unknown> & {
     readToolSummaryVisualWeight: (toolCallId: string) => ToolSummaryVisualState;
@@ -303,6 +342,120 @@ test("completed tool summaries render muted by default", async ({ page }) => {
   }
 });
 
+test("session switching keeps stream overlays isolated", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<SessionSwitchPayload>(
+      page,
+      "renderSessionSwitchIsolation",
+    );
+
+    expect(payload.sessionTwoText).not.toContain("S1 private thought");
+    expect(payload.sessionTwoText).toContain("S2 visible thought");
+    expect(payload.sessionOneThinkingCount).toBe(1);
+    expect(payload.hydratedSessionOneThinkingCount).toBe(1);
+    expect(countSubstring(payload.hydratedSessionOneText, "S1 private thought")).toBe(
+      1,
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("main history overlay dedupes primary alias", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<PrimaryAliasPayload>(
+      page,
+      "renderMainPrimaryAliasDedup",
+    );
+
+    expect(payload.thinkingCount).toBe(1);
+    expect(payload.toolCount).toBe(1);
+    expect(countSubstring(payload.text, "DUP_THINK")).toBe(1);
+    expect(payload.overlayAfterPersist).toBeNull();
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("repeated session switch stress does not duplicate stream blocks", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<RepeatedSessionSwitchPayload>(
+      page,
+      "renderRepeatedSessionSwitchStress",
+    );
+
+    expect(payload.iterations).toBe(120);
+    expect(payload.maxIntroOccurrences).toBe(1);
+    expect(payload.maxToolDuplicateCount).toBe(1);
+    expect(payload.foreignLeakCount).toBe(0);
+    expect(payload.finalRunAThinkingCount).toBe(3);
+    expect(payload.finalRunBThinkingCount).toBe(3);
+    expect(payload.overlayAfterFullRunA).toBeNull();
+    expect(payload.overlayAfterFullRunB).toBeNull();
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("partial overlay replay does not duplicate earlier thinking blocks", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<PartialThinkingReplayPayload>(
+      page,
+      "renderPartialThinkingReplayStress",
+    );
+
+    expect(payload.introOccurrences).toBe(1);
+    expect(payload.planOccurrences).toBe(1);
+    expect(payload.thinkingCount).toBe(2);
+    expect(payload.toolCount).toBe(2);
+    expect(payload.overlayAfterPersist).toBeNull();
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("direct stream state is isolated across concurrent primary runs", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<ConcurrentDirectStreamPayload>(
+      page,
+      "renderConcurrentPrimaryDirectStreamStress",
+    );
+
+    expect(countSubstring(payload.runAText, "A late")).toBe(1);
+    expect(payload.runBText).not.toContain("A late");
+    expect(countSubstring(payload.runBText, "B first")).toBe(1);
+    expect(payload.runACursorCountAfterFinalize).toBe(0);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openStreamTimelineHarness(
   page: Page,
   baseUrl: string,
@@ -360,6 +513,13 @@ function textOverlayTriples(
     ]);
 }
 
+function countSubstring(source: string, needle: string): number {
+  if (!needle) {
+    return 0;
+  }
+  return source.split(needle).length - 1;
+}
+
 function handleHarnessRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -390,12 +550,16 @@ function streamTimelineHarnessHtml(): string {
   <div id="chat-messages"></div>
   <script type="module">
     import {
+      appendThinkingChunk,
       appendStreamChunk,
       appendToolCallBlock,
       applyStreamOverlayEvent,
       clearAllStreamState,
+      finalizeStream,
+      finalizeThinking,
       getCoordinatorStreamOverlay,
       getOrCreateStreamBlock,
+      startThinkingBlock,
       updateToolResult,
     } from "/js/components/messageRenderer/stream.js";
     import {
@@ -430,6 +594,21 @@ function streamTimelineHarnessHtml(): string {
       const target = String(needle || "");
       if (!target) return 0;
       return haystack.split(target).length - 1;
+    }
+
+    function maxDuplicateToolCount(container) {
+      const counts = new Map();
+      Array.from(container.querySelectorAll(".tool-block")).forEach(block => {
+        const key = block.dataset.toolCallId || block.textContent || "";
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+      return Math.max(0, ...Array.from(counts.values()));
+    }
+
+    function waitForAnimationFrame() {
+      return new Promise(resolve => {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+      });
     }
 
     function cssColorAlpha(value) {
@@ -870,6 +1049,473 @@ function streamTimelineHarnessHtml(): string {
         return {
           completed: readToolSummaryVisualState(container.querySelector('[data-tool-call-id="call-muted-tool"]')),
           error: readToolSummaryVisualState(container.querySelector('[data-tool-call-id="call-error-tool"]')),
+        };
+      },
+
+      renderSessionSwitchIsolation() {
+        clearAllStreamState();
+        const sessionOne = makeContainer("session-one");
+        const sessionTwo = makeContainer("session-two");
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 0 },
+          { runId: "run-s1", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 0, text: "S1 private thought" },
+          { runId: "run-s1", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_finished",
+          { part_index: 0 },
+          { runId: "run-s1", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        applyStreamOverlayEvent(
+          "run_completed",
+          {},
+          { runId: "run-s1", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 0 },
+          { runId: "run-s2", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 0, text: "S2 visible thought" },
+          { runId: "run-s2", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        renderHistory(sessionTwo, [], {
+          runId: "run-s2",
+          streamOverlayEntry: getCoordinatorStreamOverlay("run-s2"),
+        });
+        renderHistory(sessionOne, [], {
+          runId: "run-s1",
+          streamOverlayEntry: getCoordinatorStreamOverlay("run-s1"),
+        });
+        const sessionOneThinkingCount = sessionOne.querySelectorAll(".thinking-block").length;
+        renderHistory(sessionOne, [{
+          role: "assistant",
+          role_id: "main-role",
+          instance_id: "primary",
+          message: {
+            parts: [{
+              part_kind: "thinking",
+              part_index: 0,
+              content: "S1 private thought",
+            }],
+          },
+        }], {
+          runId: "run-s1",
+          runStatus: "completed",
+          streamOverlayEntry: getCoordinatorStreamOverlay("run-s1"),
+        });
+        return {
+          sessionTwoText: sessionTwo.textContent || "",
+          sessionOneThinkingCount,
+          hydratedSessionOneThinkingCount: sessionOne.querySelectorAll(".thinking-block").length,
+          hydratedSessionOneText: sessionOne.textContent || "",
+        };
+      },
+
+      renderMainPrimaryAliasDedup() {
+        clearAllStreamState();
+        const container = makeContainer("primary-alias-dedup");
+        const runId = "run-primary-alias-dedup";
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 0 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "alias-1" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 0, text: "DUP_THINK" },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "alias-2" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_finished",
+          { part_index: 0 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "alias-3" },
+        );
+        applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "load_skill",
+            tool_call_id: "call-alias-load",
+            args: { name: "deepresearch" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "alias-4" },
+        );
+        renderHistory(container, [{
+          role: "assistant",
+          role_id: "Coordinator",
+          instance_id: "inst-main-after-switch",
+          created_at: "2026-04-26T09:46:41Z",
+          message: {
+            parts: [
+              { part_kind: "thinking", part_index: 0, content: "DUP_THINK" },
+              {
+                part_kind: "tool-call",
+                tool_name: "load_skill",
+                tool_call_id: "call-alias-load",
+                args: { name: "deepresearch" },
+              },
+            ],
+          },
+        }], {
+          runId,
+          runStatus: "running",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        return {
+          thinkingCount: container.querySelectorAll(".thinking-block").length,
+          toolCount: container.querySelectorAll(".tool-block").length,
+          text: container.textContent || "",
+          overlayAfterPersist: getCoordinatorStreamOverlay(runId),
+        };
+      },
+
+      renderRepeatedSessionSwitchStress() {
+        clearAllStreamState();
+        const container = makeContainer("session-switch-stress");
+        const runA = "session-17606bc3-run";
+        const runB = "session-70b72c62-run";
+        const seedRun = (runId, label) => {
+          applyStreamOverlayEvent(
+            "thinking_started",
+            { part_index: 0 },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-think-intro-start" },
+          );
+          applyStreamOverlayEvent(
+            "thinking_delta",
+            { part_index: 0, text: label + " intro thinking" },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-think-intro-delta" },
+          );
+          applyStreamOverlayEvent(
+            "thinking_finished",
+            { part_index: 0 },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-think-intro-finish" },
+          );
+          applyStreamOverlayEvent(
+            "tool_call",
+            {
+              tool_name: "load_skill",
+              tool_call_id: label + "-load-deepresearch",
+              args: { name: "deepresearch" },
+            },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-tool-1" },
+          );
+          applyStreamOverlayEvent(
+            "tool_call",
+            {
+              tool_name: "load_skill",
+              tool_call_id: label + "-load-pptx",
+              args: { name: "pptx-craft" },
+            },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-tool-2" },
+          );
+          applyStreamOverlayEvent(
+            "thinking_started",
+            { part_index: 1 },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-think-plan-start" },
+          );
+          applyStreamOverlayEvent(
+            "thinking_delta",
+            { part_index: 1, text: label + " plan thinking" },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-think-plan-delta" },
+          );
+          applyStreamOverlayEvent(
+            "thinking_finished",
+            { part_index: 1 },
+            { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: label + "-think-plan-finish" },
+          );
+        };
+        const persistedPartial = (label) => [{
+          role: "assistant",
+          role_id: "Coordinator",
+          instance_id: label + "-persisted-instance-after-switch",
+          created_at: "2026-04-26T09:46:41Z",
+          message: {
+            parts: [
+              { part_kind: "thinking", part_index: 0, content: label + " intro thinking" },
+              {
+                part_kind: "tool-call",
+                tool_name: "load_skill",
+                tool_call_id: label + "-load-deepresearch",
+                args: { name: "deepresearch" },
+              },
+              {
+                part_kind: "tool-call",
+                tool_name: "load_skill",
+                tool_call_id: label + "-load-pptx",
+                args: { name: "pptx-craft" },
+              },
+            ],
+          },
+        }];
+        const persistedFull = (label) => [{
+          role: "assistant",
+          role_id: "Coordinator",
+          instance_id: label + "-persisted-instance-after-switch",
+          created_at: "2026-04-26T09:46:41Z",
+          message: {
+            parts: [
+              { part_kind: "thinking", part_index: 0, content: label + " intro thinking" },
+              {
+                part_kind: "tool-call",
+                tool_name: "load_skill",
+                tool_call_id: label + "-load-deepresearch",
+                args: { name: "deepresearch" },
+              },
+              {
+                part_kind: "tool-call",
+                tool_name: "load_skill",
+                tool_call_id: label + "-load-pptx",
+                args: { name: "pptx-craft" },
+              },
+              { part_kind: "thinking", part_index: 1, content: label + " plan thinking" },
+              { part_kind: "thinking", part_index: 2, content: label + " final planning thought" },
+            ],
+          },
+        }];
+        const renderRun = (runId, label, messages, runStatus = "running") => {
+          renderHistory(container, messages, {
+            runId,
+            runStatus,
+            streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+            timelineView: "main",
+            canonicalStreamKey: "primary",
+          });
+          const text = container.textContent || "";
+          return {
+            introOccurrences: countSubstring(text, label + " intro thinking"),
+            foreignOccurrences: countSubstring(text, (label === "A" ? "B" : "A") + " intro thinking"),
+            maxToolDuplicateCount: maxDuplicateToolCount(container),
+          };
+        };
+        seedRun(runA, "A");
+        seedRun(runB, "B");
+        let maxIntroOccurrences = 0;
+        let maxToolDuplicateCount = 0;
+        let foreignLeakCount = 0;
+        for (let i = 0; i < 120; i += 1) {
+          Object.defineProperty(document, "hidden", {
+            configurable: true,
+            value: i % 7 === 0,
+          });
+          document.dispatchEvent(new Event("visibilitychange"));
+          const label = i % 2 === 0 ? "A" : "B";
+          const result = renderRun(
+            label === "A" ? runA : runB,
+            label,
+            persistedPartial(label),
+          );
+          maxIntroOccurrences = Math.max(maxIntroOccurrences, result.introOccurrences);
+          maxToolDuplicateCount = Math.max(maxToolDuplicateCount, result.maxToolDuplicateCount);
+          foreignLeakCount += result.foreignOccurrences;
+        }
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 2 },
+          { runId: runA, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "A-think-final-start" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 2, text: "A final planning thought" },
+          { runId: runA, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "A-think-final-delta" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_finished",
+          { part_index: 2 },
+          { runId: runA, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "A-think-final-finish" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 2 },
+          { runId: runB, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "B-think-final-start" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 2, text: "B final planning thought" },
+          { runId: runB, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "B-think-final-delta" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_finished",
+          { part_index: 2 },
+          { runId: runB, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "B-think-final-finish" },
+        );
+        renderRun(runA, "A", persistedFull("A"), "completed");
+        const finalRunAThinkingCount = container.querySelectorAll(".thinking-block").length;
+        const overlayAfterFullRunA = getCoordinatorStreamOverlay(runA);
+        renderRun(runB, "B", persistedFull("B"), "completed");
+        const finalRunBThinkingCount = container.querySelectorAll(".thinking-block").length;
+        const overlayAfterFullRunB = getCoordinatorStreamOverlay(runB);
+        return {
+          iterations: 120,
+          maxIntroOccurrences,
+          maxToolDuplicateCount,
+          foreignLeakCount,
+          finalRunAThinkingCount,
+          finalRunBThinkingCount,
+          overlayAfterFullRunA,
+          overlayAfterFullRunB,
+        };
+      },
+
+      renderPartialThinkingReplayStress() {
+        clearAllStreamState();
+        const container = makeContainer("partial-thinking-replay-stress");
+        const runId = "session-7f051512";
+        const introPrefix = "The user wants me to: use deepresearch and pptx-craft";
+        const introFull = introPrefix + " before loading both skills and planning the workflow.";
+        const planFull = "Now I have both skills loaded. Let me plan the workflow in detail.";
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 0 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-1" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 0, text: introPrefix },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-2" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_finished",
+          { part_index: 0 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-3" },
+        );
+        applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "load_skill",
+            tool_call_id: "partial-load-deepresearch",
+            args: { name: "deepresearch" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-4" },
+        );
+        applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "load_skill",
+            tool_call_id: "partial-load-pptx",
+            args: { name: "pptx-craft" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-5" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 1 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-6" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 1, text: planFull },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-7" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_finished",
+          { part_index: 1 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "partial-8" },
+        );
+        const messages = [
+          {
+            role: "assistant",
+            role_id: "Coordinator",
+            instance_id: "persisted-main-before-switch",
+            created_at: "2026-04-26T09:46:41Z",
+            message: {
+              parts: [
+                { part_kind: "thinking", part_index: 0, content: introFull },
+                {
+                  part_kind: "tool-call",
+                  tool_name: "load_skill",
+                  tool_call_id: "partial-load-deepresearch",
+                  args: { name: "deepresearch" },
+                },
+                {
+                  part_kind: "tool-call",
+                  tool_name: "load_skill",
+                  tool_call_id: "partial-load-pptx",
+                  args: { name: "pptx-craft" },
+                },
+              ],
+            },
+          },
+          {
+            role: "assistant",
+            role_id: "Coordinator",
+            instance_id: "persisted-main-after-switch",
+            created_at: "2026-04-26T09:46:49Z",
+            message: {
+              parts: [
+                { part_kind: "thinking", part_index: 1, content: planFull },
+                { part_kind: "text", content: "Starting the long research loop." },
+              ],
+            },
+          },
+        ];
+        for (let i = 0; i < 180; i += 1) {
+          Object.defineProperty(document, "hidden", {
+            configurable: true,
+            value: i % 5 === 0,
+          });
+          document.dispatchEvent(new Event("visibilitychange"));
+          renderHistory(container, messages, {
+            runId,
+            runStatus: "running",
+            streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+            timelineView: "main",
+            canonicalStreamKey: "primary",
+          });
+        }
+        const text = container.textContent || "";
+        return {
+          introOccurrences: countSubstring(text, introPrefix),
+          planOccurrences: countSubstring(text, planFull),
+          thinkingCount: container.querySelectorAll(".thinking-block").length,
+          toolCount: container.querySelectorAll(".tool-block").length,
+          overlayAfterPersist: getCoordinatorStreamOverlay(runId),
+        };
+      },
+
+      async renderConcurrentPrimaryDirectStreamStress() {
+        clearAllStreamState();
+        const runA = "session-7f051512";
+        const runB = "session-8bcc5caa";
+        const roleId = "Coordinator";
+        const containerA = makeContainer("direct-stream-run-a");
+        const containerB = makeContainer("direct-stream-run-b");
+        getOrCreateStreamBlock(containerA, "primary", roleId, "Main Agent", runA);
+        appendStreamChunk("primary", "A first", runA, roleId, "Main Agent");
+        startThinkingBlock("primary", 0, {
+          container: containerA,
+          runId: runA,
+          roleId,
+          label: "Main Agent",
+        });
+        appendThinkingChunk("primary", 0, "A thought", {
+          container: containerA,
+          runId: runA,
+          roleId,
+          label: "Main Agent",
+        });
+        finalizeThinking("primary", 0, {
+          container: containerA,
+          runId: runA,
+          roleId,
+        });
+        getOrCreateStreamBlock(containerB, "primary", roleId, "Main Agent", runB);
+        appendStreamChunk("primary", "B first", runB, roleId, "Main Agent");
+        appendStreamChunk("primary", " A late", runA, roleId, "Main Agent");
+        finalizeStream("primary", roleId, { runId: runA });
+        await waitForAnimationFrame();
+        return {
+          runAText: containerA.textContent || "",
+          runBText: containerB.textContent || "",
+          runACursorCountAfterFinalize: containerA.querySelectorAll(".streaming-cursor").length,
         };
       },
     };

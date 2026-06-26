@@ -4167,3 +4167,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent build, TS browser, syntax, and screenshot verification completed for this runtime-cursor reconnect slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Background Subagent Recovery Batch
+
+### Scope
+- Re-checked the remaining V2 stream/replay Python UI surface after the runtime-cursor reconnect slice and selected background subagent recovery because it spans Run Recovery, AG-UI multiplex streams, and the subagent boundary that must not be flattened into the parent chat.
+- Added TS browser coverage in `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts` for a recovered active parent run with a running background subagent task. The scenario verifies the frontend opens `/api/ag-ui/runs/events` once with `run_id=run-ts-real-sse-stale&after_event_id=5` and `run_id=subagent-run-ts-real-sse&after_event_id=0`, then renders both parent and reviewer subagent deltas through the single stream.
+- Added TS browser coverage for a recoverable/stopped parent run with a running background subagent task. The scenario verifies the parent run is not included in automatic recovery, no multiplex stream opens, only `/api/ag-ui/runs/subagent-run-ts-real-sse/events?after_event_id=0` is requested, and the reviewer subagent output renders while the parent stays recoverable.
+- Removed the migrated Python scenarios `test_v2_real_sse_background_task_recovery_streams_multiplexed_runs` and `test_v2_real_sse_recoverable_parent_streams_background_subagent_only` from `tests/integration_tests/browser/test_v2_stream_recovery.py`.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-background-subagent-multiplex.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-background-subagent-only.png`; both screenshots show the recovered output inside the fixed V2 shell, V1-shaped sidebar, anchored composer, and no document-level scroll.
+- Kept this as targeted Run Recovery / AG-UI Runtime Stream / Subagents TS browser migration progress only. Remaining work still includes mock EventSource refresh/session-switch recovery migration, background task stop migration, message copy and voice/composer browser coverage, final V1/V2 visual audit, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts -g "background subagent"` passed with 2 TS browser tests.
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 15 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenarios.
+- Main-agent screenshot inspection confirmed multiplexed parent/subagent recovery and background-subagent-only recovery both remain inside the fixed shell and preserve the expected parent/subagent stream isolation.
+
+### Reviewer
+- Main-agent build, TS browser, syntax, and screenshot verification completed for this background subagent recovery slice. No Run Recovery subsystem, AG-UI Runtime Stream subsystem, Subagents subsystem, browser-suite migration, or V2 frontend completion is claimed.

@@ -17,9 +17,13 @@ import {
 } from "./support/frontend-app";
 
 const RUN_ID = "run-ts-real-sse-stale";
+const SUBAGENT_RUN_ID = "subagent-run-ts-real-sse";
+const BACKGROUND_TASK_ID = "background-task-ts-real-sse";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-stream";
 const PROMPT = "Real SSE stale recovery probe";
 const FIRST_CHUNK = "Real SSE chunk before malformed frame.";
+const MAIN_MULTIPLEX_CHUNK = "real SSE main multiplex chunk";
+const SUBAGENT_MULTIPLEX_CHUNK = "real SSE subagent multiplex chunk";
 const DUPLICATE_REPLAY_CHUNK = "real SSE after duplicate replay";
 const FAILURE_MESSAGE = "real SSE provider failed before completion";
 const QUEUED_INJECTION = "real SSE queued follow-up";
@@ -208,6 +212,24 @@ test("reconnects a real SSE interruption from the runtime cursor", async ({
   });
 });
 
+test("streams real SSE recovered background subagent output through multiplexed runs", async ({
+  page,
+}) => {
+  await runRealSseBackgroundSubagentScenario(page, {
+    mode: "background-subagent-multiplex",
+    screenshotName: "v2-real-sse-background-subagent-multiplex.png",
+  });
+});
+
+test("streams only the real SSE background subagent for a recoverable parent", async ({
+  page,
+}) => {
+  await runRealSseBackgroundSubagentScenario(page, {
+    mode: "background-subagent-only",
+    screenshotName: "v2-real-sse-background-subagent-only.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
@@ -243,6 +265,11 @@ interface RealSseRuntimeCursorReconnectOptions {
   screenshotName: string;
 }
 
+interface RealSseBackgroundSubagentOptions {
+  mode: "background-subagent-multiplex" | "background-subagent-only";
+  screenshotName: string;
+}
+
 interface RealSseStandaloneResumeOptions {
   mode: "recoverable-resume";
   screenshotName: string;
@@ -257,9 +284,11 @@ interface RealSseTerminalOptions {
 
 interface RealSseState {
   approvalResolutions: RealSseRecoveryActionRequest[];
+  backgroundSubagentRecovery: boolean;
   completed: boolean;
   injectionRequests: RealSseInjectionRequest[];
   lastEventId: number;
+  multiplexRequests: RealSseMultiplexRequest[];
   pendingToolApproval: boolean;
   pendingUserQuestion: boolean;
   persistedAssistantText: string;
@@ -271,6 +300,7 @@ interface RealSseState {
   shouldShowRecover: boolean;
   stopRequests: unknown[];
   streamRequests: RealSseRequest[];
+  subagentStreamRequests: RealSseRequest[];
 }
 
 interface RealSseInjectionRequest {
@@ -286,6 +316,11 @@ interface RealSseRecoveryActionRequest {
 interface RealSseRequest {
   afterEventId: string | null;
   lastEventId: string | null;
+}
+
+interface RealSseMultiplexRequest {
+  lastEventId: string | null;
+  runOffsets: Record<string, string>;
 }
 
 async function runRealSseStaleRecoveryScenario(
@@ -933,11 +968,78 @@ async function runRealSseRuntimeCursorReconnectScenario(
   }
 }
 
+async function runRealSseBackgroundSubagentScenario(
+  page: Page,
+  options: RealSseBackgroundSubagentOptions,
+): Promise<void> {
+  const state = createRealSseState({
+    backgroundSubagentRecovery: true,
+    lastEventId: options.mode === "background-subagent-multiplex" ? 5 : 7,
+    runCreated: true,
+    shouldShowRecover: options.mode === "background-subagent-only",
+  });
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: "TS real SSE background subagent",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    if (options.mode === "background-subagent-multiplex") {
+      await expect.poll(() => state.multiplexRequests).toEqual([
+        {
+          lastEventId: null,
+          runOffsets: {
+            [RUN_ID]: "5",
+            [SUBAGENT_RUN_ID]: "0",
+          },
+        },
+      ]);
+      await expectTimelineTextVisible(page, MAIN_MULTIPLEX_CHUNK);
+    } else {
+      await expect.poll(() => state.subagentStreamRequests).toEqual([
+        {
+          afterEventId: "0",
+          lastEventId: null,
+        },
+      ]);
+      expect(state.multiplexRequests).toEqual([]);
+      expect(state.streamRequests).toEqual([]);
+    }
+
+    await expectTimelineTextVisible(page, SUBAGENT_MULTIPLEX_CHUNK);
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      `${options.mode} should keep recovered subagent output inside the fixed shell`,
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
   mode:
     | RealSseActiveControlOptions["mode"]
+    | RealSseBackgroundSubagentOptions["mode"]
     | RealSseDuplicateReplayOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
@@ -971,6 +1073,50 @@ async function handleRealSseApi(
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/recovery`) {
     await context.fulfillJson(recoverySnapshot(state));
+    return true;
+  }
+  if (
+    mode === "background-subagent-multiplex" &&
+    context.method === "GET" &&
+    context.path === "/ag-ui/runs/events"
+  ) {
+    state.multiplexRequests.push({
+      lastEventId: context.route.request().headers()["last-event-id"] ?? null,
+      runOffsets: runOffsetsFromSearchParams(context.url.searchParams),
+    });
+    await context.route.fulfill({
+      body: backgroundSubagentMultiplexSseFrames(),
+      contentType: "text/event-stream",
+      headers: {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+      },
+      status: 200,
+    });
+    state.completed = true;
+    state.backgroundSubagentRecovery = false;
+    state.lastEventId = 7;
+    return true;
+  }
+  if (
+    mode === "background-subagent-only" &&
+    context.method === "GET" &&
+    context.path === `/ag-ui/runs/${SUBAGENT_RUN_ID}/events`
+  ) {
+    state.subagentStreamRequests.push({
+      afterEventId: context.url.searchParams.get("after_event_id"),
+      lastEventId: context.route.request().headers()["last-event-id"] ?? null,
+    });
+    await context.route.fulfill({
+      body: backgroundSubagentOnlySseFrames(),
+      contentType: "text/event-stream",
+      headers: {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+      },
+      status: 200,
+    });
+    state.backgroundSubagentRecovery = false;
     return true;
   }
   if (context.method === "GET" && context.path === `/ag-ui/runs/${RUN_ID}/events`) {
@@ -1364,7 +1510,9 @@ function recoverySnapshot(state: RealSseState): Record<string, unknown> {
           stream_connected: false,
         }
       : null,
-    background_tasks: [],
+    background_tasks: state.backgroundSubagentRecovery
+      ? [backgroundSubagentTaskRecord()]
+      : [],
     paused_subagent: null,
     pending_tool_approvals: state.pendingToolApproval ? [toolApprovalRecord()] : [],
     pending_user_questions: state.pendingUserQuestion ? [userQuestionRecord()] : [],
@@ -1385,9 +1533,27 @@ function recoveryPhase(state: RealSseState): string {
   return "stopped";
 }
 
+function backgroundSubagentTaskRecord(): Record<string, unknown> {
+  return {
+    background_task_id: BACKGROUND_TASK_ID,
+    command: "reviewer subagent",
+    cwd: "C:/Users/yex/Documents/workspace/agent-teams",
+    execution_mode: "background",
+    kind: "subagent",
+    recent_output: ["reviewing recovered stream"],
+    role_id: "reviewer",
+    run_id: RUN_ID,
+    session_id: SESSION_ID,
+    status: "running",
+    subagent_run_id: SUBAGENT_RUN_ID,
+    title: "reviewer subagent",
+  };
+}
+
 function sseBody(
   mode:
     | RealSseActiveControlOptions["mode"]
+    | RealSseBackgroundSubagentOptions["mode"]
     | RealSseDuplicateReplayOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
@@ -1718,6 +1884,84 @@ function sseBody(
   ].join("");
 }
 
+function backgroundSubagentMultiplexSseFrames(): string {
+  return [
+    sseFrame({
+      data: runEvent({
+        eventId: 6,
+        payload: { text: MAIN_MULTIPLEX_CHUNK },
+        relayEventType: "text_delta",
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 6,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 2,
+        payload: { text: SUBAGENT_MULTIPLEX_CHUNK },
+        relayEventType: "text_delta",
+        roleId: "reviewer",
+        runId: SUBAGENT_RUN_ID,
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 2,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 7,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 7,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 4,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        roleId: "reviewer",
+        runId: SUBAGENT_RUN_ID,
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 4,
+    }),
+  ].join("");
+}
+
+function backgroundSubagentOnlySseFrames(): string {
+  return [
+    sseFrame({
+      data: runEvent({
+        eventId: 1,
+        payload: { text: SUBAGENT_MULTIPLEX_CHUNK },
+        relayEventType: "text_delta",
+        roleId: "reviewer",
+        runId: SUBAGENT_RUN_ID,
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 1,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 2,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        roleId: "reviewer",
+        runId: SUBAGENT_RUN_ID,
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 2,
+    }),
+  ].join("");
+}
+
 function richReplaySseFrames(): string {
   return [
     sseFrame({
@@ -2025,9 +2269,11 @@ function richReplaySseFrames(): string {
 function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState {
   return {
     approvalResolutions: [],
+    backgroundSubagentRecovery: false,
     completed: false,
     injectionRequests: [],
     lastEventId: 0,
+    multiplexRequests: [],
     pendingToolApproval: false,
     pendingUserQuestion: false,
     persistedAssistantText: "",
@@ -2039,6 +2285,7 @@ function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState
     shouldShowRecover: false,
     stopRequests: [],
     streamRequests: [],
+    subagentStreamRequests: [],
     ...overrides,
   };
 }
@@ -2222,6 +2469,18 @@ function requestPayload(context: MockApiRouteContext): unknown {
   return JSON.parse(postData) as unknown;
 }
 
+function runOffsetsFromSearchParams(
+  searchParams: URLSearchParams,
+): Record<string, string> {
+  const runIds = searchParams.getAll("run_id");
+  const afterEventIds = searchParams.getAll("after_event_id");
+  const offsets: Record<string, string> = {};
+  for (const [index, runId] of runIds.entries()) {
+    offsets[runId] = afterEventIds[index] ?? "0";
+  }
+  return offsets;
+}
+
 function readInjectionRequest(payload: unknown): RealSseInjectionRequest {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     return {};
@@ -2253,6 +2512,8 @@ interface RunEventOptions {
   eventId: number;
   payload: Record<string, unknown>;
   relayEventType: string;
+  roleId?: string;
+  runId?: string;
   type: string;
 }
 
@@ -2263,8 +2524,8 @@ function runEvent(options: RunEventOptions): Record<string, unknown> {
     occurred_at: `2026-06-26T12:00:${second}Z`,
     payload: options.payload,
     relay_event_type: options.relayEventType,
-    role_id: "MainAgent",
-    run_id: RUN_ID,
+    role_id: options.roleId ?? "MainAgent",
+    run_id: options.runId ?? RUN_ID,
     session_id: SESSION_ID,
     trace_id: "trace-ts-real-sse-stale",
     type: options.type,

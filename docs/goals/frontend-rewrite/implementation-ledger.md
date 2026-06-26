@@ -4066,3 +4066,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and syntax verification completed for this duplicate real-SSE cleanup slice. No AG-UI Runtime Stream subsystem, Run Recovery subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Standalone Resume Batch
+
+### Scope
+- Re-checked the remaining real-SSE Python recovery scenarios after the duplicate cleanup slice, then selected standalone recoverable Resume because the TS suite covered approval/question resume ordering but not the plain Resume button path.
+- Added a native EventSource TS browser scenario to `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts` that starts from a stopped recoverable snapshot, clicks the standalone Resume action, verifies `/ag-ui/runs/{run_id}:resume`, opens the stream from `after_event_id=7`, renders resumed text plus terminal completion, clears recovery UI, and restores Send.
+- Removed `test_v2_real_sse_recoverable_resume_streams_from_checkpoint` from `tests/integration_tests/browser/test_v2_stream_recovery.py` after the TS replacement passed.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-recoverable-resume.png`; the screenshot shows the recovered transcript inside the fixed V2 shell, stable V1-shaped sidebar, cleared recovery banner, and anchored composer.
+- Kept this as targeted Run Recovery / AG-UI Runtime Stream TS browser migration progress only. Remaining work still includes refresh checkpoint replay, cursor-event dedupe, rich non-text replay, multiplex/subagent stream recovery, message copy and voice/composer browser coverage, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenario.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 9 TS browser tests.
+- Main-agent screenshot inspection confirmed standalone Resume continues through real SSE from the checkpoint and ends in a stable fixed shell.
+
+### Reviewer
+- Main-agent TS browser, syntax, and screenshot verification completed for this standalone real-SSE resume slice. No Run Recovery subsystem, AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

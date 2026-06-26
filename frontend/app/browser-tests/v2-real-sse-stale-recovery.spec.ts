@@ -108,6 +108,15 @@ test("resumes a real SSE recoverable run before answering user question", async 
   });
 });
 
+test("resumes a real SSE recoverable run from the standalone action", async ({
+  page,
+}) => {
+  await runRealSseStandaloneResumeScenario(page, {
+    mode: "recoverable-resume",
+    screenshotName: "v2-real-sse-recoverable-resume.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
@@ -120,6 +129,11 @@ interface RealSseActiveControlOptions {
 
 interface RealSseRecoveryActionOptions {
   mode: "recovery-approval" | "recovery-question";
+  screenshotName: string;
+}
+
+interface RealSseStandaloneResumeOptions {
+  mode: "recoverable-resume";
   screenshotName: string;
 }
 
@@ -476,6 +490,63 @@ async function runRealSseRecoveryActionScenario(
   }
 }
 
+async function runRealSseStandaloneResumeScenario(
+  page: Page,
+  options: RealSseStandaloneResumeOptions,
+): Promise<void> {
+  const appServer = await serveFrontendDist();
+  const state = createRealSseState({
+    lastEventId: RECOVERY_ACTION_LAST_EVENT_ID,
+    runCreated: true,
+    shouldShowRecover: true,
+  });
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: "TS recoverable resume",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const recovery = page.locator(".at-recovery");
+    await expect(recovery.getByText(`Run ${RUN_ID} is stopped`)).toBeVisible();
+    await expect(recovery.getByRole("button", { name: "Resume" })).toBeVisible();
+
+    await recovery.getByRole("button", { name: "Resume" }).click();
+
+    await expect.poll(() => state.resumeRequests).toEqual([RUN_ID]);
+    await expect.poll(() => state.streamRequests).toEqual([
+      {
+        afterEventId: String(RECOVERY_ACTION_LAST_EVENT_ID),
+        lastEventId: null,
+      },
+    ]);
+    await expect(page.getByText(RECOVERY_ACTION_RESUMED_CHUNK)).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "standalone recoverable resume should continue through real SSE inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
@@ -483,6 +554,7 @@ async function handleRealSseApi(
     | RealSseActiveControlOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseScenarioOptions["mode"]
+    | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
 ): Promise<boolean> {
   if (context.method === "POST" && context.path === "/ag-ui/runs") {
@@ -617,6 +689,7 @@ function sseBody(
     | RealSseActiveControlOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseScenarioOptions["mode"]
+    | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
 ): string {
   if (mode === "server-error") {
@@ -664,7 +737,11 @@ function sseBody(
       }),
     ].join("");
   }
-  if (mode === "recovery-approval" || mode === "recovery-question") {
+  if (
+    mode === "recoverable-resume" ||
+    mode === "recovery-approval" ||
+    mode === "recovery-question"
+  ) {
     return [
       sseFrame({
         data: runEvent({

@@ -1061,41 +1061,6 @@ def test_v2_real_sse_rich_replay_preserves_non_text_events_after_reconnect(
         page.screenshot(path=str(screenshot_dir / "v2-real-sse-rich-replay.png"))
 
 
-def test_v2_real_sse_recoverable_resume_streams_from_checkpoint(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2StreamBackend(recoverable_stopped_run=True)
-    stream_state = _RealSseStreamState()
-    _install_real_sse_shell_state(page)
-
-    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        resume_button = page.get_by_role("button", name="Resume")
-        expect(resume_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.locator(".at-recovery").filter(has_text="stopped")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        resume_button.click()
-
-        assert stream_state.wait_for_after_event_id(7, timeout_seconds=10.0)
-        assert backend.resume_requested is True
-        assert stream_state.wait_for_sent_event_id(9, timeout_seconds=5.0)
-        expect(
-            page.locator(".at-message").filter(has_text=_RESUMED_CHUNK),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(
-            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
-        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
-        expect(
-            page.get_by_role("button", name=re.compile(r"^(Send|发送)$")),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-
 def test_v2_session_switch_closes_active_stream_and_isolates_timeline(
     browser_page: Page,
 ) -> None:

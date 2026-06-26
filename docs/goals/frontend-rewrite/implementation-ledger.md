@@ -4385,9 +4385,11 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite production build for `frontend/dist/app`.
 - `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 8 TS browser tests.
 - `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- Reviewer Hegel additionally ran `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts`; it passed with 2 TS browser tests.
 - `rg -n "^def test_v2_" tests\integration_tests\browser` reports no V2 Python UI test functions.
 - `rg -n "test_v2_shell_layout|_V2ShellBackend|_serve_v2_app" tests frontend -g "*.py" -g "*.ts" -g "*.tsx"` reports no code references to the deleted Python fixture.
 - `git diff --check` passed, with only the expected Windows line-ending warnings.
 
 ### Reviewer
-- Main-agent build, TS browser, frontend lint/typecheck, deletion scan, and screenshot verification completed for this settings model/web/workspace migration slice. No Settings subsystem sign-off, full browser-suite migration sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.
+- Hegel returned PASS for this Settings model/web/workspace migration slice. Review findings: no blocker; `WebSettingsSection` inline `Alert` is appropriate and does not replace the toast; `frontend/dist/app` points at the rebuilt asset; deleting `test_v2_shell_layout.py` is justified by the replacement TS browser coverage and no active references remain.
+- Main-agent build, TS browser, frontend lint/typecheck, deletion scan, screenshot verification, and reviewer follow-up cleanup completed for this slice. No full Settings subsystem completion, full browser-suite migration sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.

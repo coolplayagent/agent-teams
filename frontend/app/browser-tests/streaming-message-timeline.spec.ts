@@ -131,6 +131,34 @@ interface RunCleanupPayload {
   overlayAfterClear: unknown;
 }
 
+interface OutputDeltaOverlayPayload {
+  cursorCount: number;
+  textStreaming: boolean;
+}
+
+interface MediaOverlayPayload {
+  imageCount: number;
+  imageNames: string[];
+}
+
+interface TerminalOverlayPayload {
+  firstOccurrences: number;
+  secondOccurrences: number;
+  textStreaming: boolean;
+}
+
+interface StoppedReplayPayload {
+  firstCursorCount: number;
+  firstThinkingCount: number;
+  firstToolCount: number;
+  overlayAfterFirst: unknown;
+  overlayAfterSecond: unknown;
+  secondCursorCount: number;
+  secondGroupCount: number;
+  secondThinkingCount: number;
+  secondToolCount: number;
+}
+
 interface StreamTimelineHarnessWindow {
   __streamTimelineHarness: Record<string, () => unknown> & {
     readToolSummaryVisualWeight: (toolCallId: string) => ToolSummaryVisualState;
@@ -633,6 +661,110 @@ test("run stream cleanup clears overlay and event dedupe", async ({ page }) => {
     expect(payload.beforeClearToolCount).toBe(1);
     expect(payload.overlayAfterClear).toBeNull();
     expect(payload.afterReplayToolCount).toBe(1);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("output delta overlay keeps text streaming state", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<OutputDeltaOverlayPayload>(
+      page,
+      "renderOutputDeltaOverlayStreamingState",
+    );
+
+    expect(payload.textStreaming).toBe(true);
+    expect(payload.cursorCount).toBe(1);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("persisted media ref filters finalized stream overlay", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<MediaOverlayPayload>(
+      page,
+      "renderPersistedMediaRefOverlayDedupe",
+    );
+
+    expect(payload.imageCount).toBe(1);
+    expect(payload.imageNames).toEqual(["image.png"]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("reused media ref from older history survives overlay", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<MediaOverlayPayload>(
+      page,
+      "renderOlderMediaRefReuseOverlay",
+    );
+
+    expect(payload.imageCount).toBe(2);
+    expect(payload.imageNames).toEqual(["image.png", "image.png"]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("terminal overlay event clears event dedupe", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<TerminalOverlayPayload>(
+      page,
+      "renderTerminalOverlayEventClearsDedupe",
+    );
+
+    expect(payload.firstOccurrences).toBe(1);
+    expect(payload.secondOccurrences).toBe(1);
+    expect(payload.textStreaming).toBe(true);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("replayed stopped session events do not duplicate history overlay", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<StoppedReplayPayload>(
+      page,
+      "renderStoppedReplayDedup",
+    );
+
+    expect(payload.firstThinkingCount).toBe(1);
+    expect(payload.secondThinkingCount).toBe(1);
+    expect(payload.firstToolCount).toBe(1);
+    expect(payload.secondToolCount).toBe(1);
+    expect(payload.firstCursorCount).toBe(0);
+    expect(payload.secondCursorCount).toBe(0);
+    expect(payload.secondGroupCount).toBe(0);
+    expect(payload.overlayAfterFirst).toBeNull();
+    expect(payload.overlayAfterSecond).toBeNull();
   } finally {
     await appServer.close();
   }
@@ -1930,6 +2062,238 @@ function streamTimelineHarnessHtml(): string {
           beforeClearToolCount,
           overlayAfterClear,
           afterReplayToolCount,
+        };
+      },
+
+      renderOutputDeltaOverlayStreamingState() {
+        clearAllStreamState();
+        const container = makeContainer("output-delta-overlay-streaming");
+        const runId = "run-output-delta-overlay";
+        applyStreamOverlayEvent(
+          "output_delta",
+          {
+            output: [{ kind: "text", text: "streamed output delta text" }],
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "output-delta-1" },
+        );
+        const overlay = getCoordinatorStreamOverlay(runId);
+        renderHistory(container, [], {
+          runId,
+          runStatus: "running",
+          streamOverlayEntry: overlay,
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        return {
+          textStreaming: overlay?.textStreaming === true,
+          cursorCount: container.querySelectorAll(".streaming-cursor").length,
+        };
+      },
+
+      renderPersistedMediaRefOverlayDedupe() {
+        clearAllStreamState();
+        const container = makeContainer("persisted-media-ref-overlay-dedupe");
+        const runId = "run-persisted-media-ref-overlay-dedupe";
+        const mediaPart = {
+          kind: "media_ref",
+          modality: "image",
+          mime_type: "image/png",
+          url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+          name: "image.png",
+        };
+        applyStreamOverlayEvent(
+          "output_delta",
+          { output: [mediaPart] },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "media-dedupe-1" },
+        );
+        renderHistory(container, [{
+          role: "assistant",
+          role_id: "Coordinator",
+          instance_id: "primary",
+          message: {
+            parts: [mediaPart],
+          },
+        }], {
+          runId,
+          runStatus: "completed",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        return {
+          imageCount: container.querySelectorAll(".msg-image-preview").length,
+          imageNames: Array.from(container.querySelectorAll(".msg-image-preview"))
+            .map(image => image.getAttribute("data-image-preview-name") || ""),
+        };
+      },
+
+      renderOlderMediaRefReuseOverlay() {
+        clearAllStreamState();
+        const container = makeContainer("older-media-ref-reuse-overlay");
+        const runId = "run-older-media-ref-reuse-overlay";
+        const mediaPart = {
+          kind: "media_ref",
+          modality: "image",
+          mime_type: "image/png",
+          url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+          name: "image.png",
+        };
+        applyStreamOverlayEvent(
+          "output_delta",
+          { output: [mediaPart] },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "media-reuse-1" },
+        );
+        renderHistory(container, [
+          {
+            role: "assistant",
+            role_id: "Coordinator",
+            instance_id: "primary",
+            message: {
+              parts: [mediaPart],
+            },
+          },
+          {
+            role: "assistant",
+            role_id: "Coordinator",
+            instance_id: "primary",
+            message: {
+              parts: [{ part_kind: "text", content: "newer persisted text" }],
+            },
+          },
+        ], {
+          runId,
+          runStatus: "running",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        return {
+          imageCount: container.querySelectorAll(".msg-image-preview").length,
+          imageNames: Array.from(container.querySelectorAll(".msg-image-preview"))
+            .map(image => image.getAttribute("data-image-preview-name") || ""),
+        };
+      },
+
+      renderTerminalOverlayEventClearsDedupe() {
+        clearAllStreamState();
+        const runId = "run-terminal-clears-overlay-dedupe";
+        applyStreamOverlayEvent(
+          "text_delta",
+          { text: "first lifecycle text" },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "repeat-event-id" },
+        );
+        applyStreamOverlayEvent(
+          "run_completed",
+          {},
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "terminal-event-id" },
+        );
+        applyStreamOverlayEvent(
+          "text_delta",
+          { text: "second lifecycle text" },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "repeat-event-id" },
+        );
+        const overlay = getCoordinatorStreamOverlay(runId);
+        const text = overlay?.parts
+          ?.filter(part => part.kind === "text")
+          ?.map(part => part.content || "")
+          ?.join("\\n") || "";
+        return {
+          firstOccurrences: countSubstring(text, "first lifecycle text"),
+          secondOccurrences: countSubstring(text, "second lifecycle text"),
+          textStreaming: overlay?.textStreaming === true,
+        };
+      },
+
+      renderStoppedReplayDedup() {
+        clearAllStreamState();
+        const container = makeContainer("stopped-replay");
+        const runId = "run-stopped-replay";
+        const messages = [{
+          role: "assistant",
+          role_id: "main-role",
+          instance_id: "primary",
+          created_at: "2026-04-25T12:00:02Z",
+          message: {
+            parts: [
+              {
+                part_kind: "thinking",
+                part_index: 0,
+                content: "persisted thought",
+              },
+              {
+                part_kind: "tool-call",
+                tool_name: "shell",
+                tool_call_id: "call-1",
+                args: { command: "date" },
+              },
+              {
+                part_kind: "text",
+                content: "final answer",
+              },
+            ],
+          },
+        }];
+        const events = [
+          ["thinking_started", { part_index: 0 }, "evt-1"],
+          ["thinking_delta", { part_index: 0, text: "persisted thought" }, "evt-2"],
+          ["thinking_finished", { part_index: 0 }, "evt-3"],
+          [
+            "tool_call",
+            {
+              tool_name: "shell",
+              tool_call_id: "call-1",
+              args: { command: "date" },
+            },
+            "evt-4",
+          ],
+          [
+            "tool_result",
+            {
+              tool_name: "shell",
+              tool_call_id: "call-1",
+              result: { ok: true, output: "done" },
+            },
+            "evt-5",
+          ],
+          ["run_stopped", {}, "evt-6"],
+        ];
+        const replayEvents = () => {
+          events.forEach(([type, payload, eventId]) => {
+            applyStreamOverlayEvent(type, payload, {
+              runId,
+              instanceId: "primary",
+              roleId: "main-role",
+              label: "Main Agent",
+              eventId,
+            });
+          });
+        };
+        replayEvents();
+        renderHistory(container, messages, {
+          runId,
+          runStatus: "stopped",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+        });
+        const firstThinkingCount = container.querySelectorAll(".thinking-block").length;
+        const firstToolCount = container.querySelectorAll(".tool-block").length;
+        const firstCursorCount = container.querySelectorAll(".streaming-cursor").length;
+        const overlayAfterFirst = getCoordinatorStreamOverlay(runId);
+        replayEvents();
+        renderHistory(container, messages, {
+          runId,
+          runStatus: "stopped",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+        });
+        return {
+          firstThinkingCount,
+          firstToolCount,
+          firstCursorCount,
+          overlayAfterFirst,
+          secondThinkingCount: container.querySelectorAll(".thinking-block").length,
+          secondToolCount: container.querySelectorAll(".tool-block").length,
+          secondCursorCount: container.querySelectorAll(".streaming-cursor").length,
+          secondGroupCount: container.querySelectorAll(".tool-group").length,
+          overlayAfterSecond: getCoordinatorStreamOverlay(runId),
         };
       },
     };

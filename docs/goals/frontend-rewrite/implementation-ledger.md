@@ -4013,3 +4013,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, syntax, and screenshot verification completed for this real SSE recoverable-action slice. No AG-UI Runtime Stream subsystem, Run Recovery subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Message Export Decode Migration Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and remaining Python browser coverage after the recoverable-action slice, then selected message export because its old Python harness still owned HTML cleanliness and PNG decode evidence outside the V2 Playwright suite.
+- Strengthened `frontend/app/browser-tests/v2-message-export.spec.ts` so the V2 top-bar export flow parses the downloaded HTML in the browser and verifies the title, heading, two-round message structure, prompt text, assistant output, pending-action summaries, retry diagnostics, tool-call arguments, and absence of legacy share classes or sidebar time leakage.
+- Added browser-side `createImageBitmap` validation for the downloaded PNG so the test proves the artifact is a decodable image, not just a file with a PNG magic header.
+- Removed `tests/integration_tests/browser/test_message_export_browser.py` after the TS replacement passed, reducing the remaining old Python UI-browser surface without preserving a parallel dist-only harness.
+- Did not capture a screenshot for this batch because no visible UI implementation changed; artifact verification comes from the downloaded HTML DOM parse and in-browser PNG decode.
+- Kept this as targeted Message Timeline / export artifact TS browser migration progress only. Remaining work still includes message copy actions, voice/composer browser coverage, remaining V2 shell and stream Python migration, long stream replay edges, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-message-export.spec.ts` passed with 1 TS browser test.
+- Residual Python browser scan still shows remaining coverage in `test_message_copy_actions.py`, `test_voice_input_audio.py`, `test_v2_shell_layout.py`, `test_v2_stream_recovery.py`, and older V1/dist browser suites.
+
+### Reviewer
+- Main-agent TS browser and artifact verification completed for this message export decode migration slice. No Message Timeline subsystem, export-control subsystem, browser-suite migration, or V2 frontend completion is claimed.

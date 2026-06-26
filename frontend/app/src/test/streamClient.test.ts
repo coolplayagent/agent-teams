@@ -343,6 +343,36 @@ describe("openRunStream", () => {
     expect(stream.closedStates[0].activeRunIds).toEqual([]);
   });
 
+  it.each([
+    ["run.failed", "run_failed"],
+    ["run.stopped", "run_stopped"],
+  ])("closes when %s terminal event arrives", (eventName, eventType) => {
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage(
+      eventName,
+      JSON.stringify(
+        relayEvent({
+          event_id: 8,
+          event_type: eventType,
+          payload_json: JSON.stringify({
+            message: `${eventType} diagnostic`,
+            status: eventType.replace("run_", ""),
+          }),
+        }),
+      ),
+    );
+
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].activeRunIds).toEqual([]);
+    expect(stream.closedStates[0].runs["run-1"]).toMatchObject({
+      lastEventId: 8,
+      status: "closed",
+      terminalEventType: eventType,
+    });
+  });
+
   it("closes when replay only delivers a duplicate terminal event", () => {
     const stream = openTestStream({
       initialState: runtimeStateWithClosedRun(7),

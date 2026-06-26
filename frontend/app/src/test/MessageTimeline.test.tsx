@@ -1590,6 +1590,56 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
+  it.each([
+    [
+      "run_failed",
+      {
+        error: "Provider failed during TS stream.",
+        root_task_id: "root-v2",
+        status: "failed",
+      },
+      "Run failed: status failed · Provider failed during TS stream. · root task root-v2",
+    ],
+    [
+      "run_stopped",
+      {
+        reason: "Stopped from TS stream.",
+        root_task_id: "root-v2",
+        status: "stopped",
+      },
+      "Run stopped: status stopped · Stopped from TS stream. · root task root-v2",
+    ],
+  ] as const)(
+    "renders %s terminal lifecycle diagnostics",
+    async (kind, payload, expectedText) => {
+      setRuntimeEntries([
+        runtimeTextDeltaEntry({
+          eventId: 1,
+          id: `${kind}:1:0`,
+          text: `Output before ${kind}.`,
+        }),
+        {
+          eventId: 2,
+          id: `${kind}:2:1`,
+          kind,
+          occurredAt: "2026-06-23T00:00:01Z",
+          payload,
+          roleId: "MainAgent",
+          runId: "run-output",
+          sessionId: "session-1",
+          text: kind.replaceAll("_", " "),
+        },
+      ]);
+      listSessionMessagesMock.mockResolvedValue([]);
+
+      renderTimeline();
+
+      expect(await screen.findByText(`Output before ${kind}.`)).toBeVisible();
+      expect(screen.getByText(expectedText)).toBeVisible();
+      expect(screen.queryByText("Live")).not.toBeInTheDocument();
+    },
+  );
+
   it("drops empty thinking blocks when start is followed by finish", async () => {
     useRuntimeStore.setState({
       runtimeState: {

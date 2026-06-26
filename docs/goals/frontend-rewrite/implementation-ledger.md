@@ -3539,3 +3539,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and screenshot verification completed for this SSE `Last-Event-ID` stream boundary slice. No Message Timeline, AG-UI Runtime Stream, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Terminal Stream Coverage Batch
+
+### Scope
+- Re-checked the updated goal after the SSE `Last-Event-ID` slice and stopped adding new `.py` UI browser coverage for the failed/stopped terminal stream path.
+- Added TS Vitest coverage for `run_failed` and `run_stopped` terminal events in the stream client, verifying each event closes the EventSource, clears active run ids, preserves the last event id, and records the correct terminal event type.
+- Added TS MessageTimeline coverage for failed and stopped run lifecycle diagnostics, verifying the user-visible terminal rows include status, diagnostic message/reason, and root task context without leaving a live indicator behind.
+- Kept this as a targeted TS migration step only. Remaining work still includes migrating the broader Python browser UI suite to a TS browser runner, preserving screenshot evidence for V1/V2 visual comparison, and completing reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/streamClient.test.ts src/test/MessageTimeline.test.tsx` passed with 84 selected TS tests.
+- `npm run typecheck` passed.
+
+### Reviewer
+- Main-agent TS verification completed for this terminal stream slice. No Message Timeline, AG-UI Runtime Stream, test-suite migration, or V2 frontend completion is claimed.

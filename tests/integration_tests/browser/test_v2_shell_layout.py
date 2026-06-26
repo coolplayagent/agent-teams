@@ -289,6 +289,100 @@ def test_v2_stream_transport_interrupt_reconnects_from_latest_event(
         )
 
 
+def test_v2_stream_reconnect_uses_sse_last_event_id_without_payload_event_id(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("textbox", name="Prompt").fill("Last event id probe")
+        page.get_by_role("button", name="Send").click()
+        _wait_for_backend_state(
+            lambda: len(backend.created_run_payloads) == 1,
+            "Run creation request was not captured.",
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=0')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '11',
+            )
+            """,
+            _ag_ui_stream_text_event_without_event_id(
+                "Chunk keyed only by SSE Last-Event-ID.",
+            ),
+        )
+        expect(
+            page.get_by_text("Chunk keyed only by SSE Last-Event-ID."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        page.evaluate("() => window.__v2StreamHarness.transportError(0)")
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 2
+              && window.__v2StreamHarness.urls()[1]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=11')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              1,
+              'message.text.delta',
+              event,
+              '11',
+            )
+            """,
+            _ag_ui_stream_text_event_without_event_id(
+                "Chunk keyed only by SSE Last-Event-ID.",
+            ),
+        )
+        expect(
+            page.get_by_text("Chunk keyed only by SSE Last-Event-ID."),
+        ).to_have_count(1, timeout=_WAIT_TIMEOUT_MS)
+
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              1,
+              'message.text.delta',
+              event,
+              '12',
+            )
+            """,
+            _ag_ui_stream_text_event_without_event_id(
+                " Fresh chunk after SSE cursor reconnect.",
+            ),
+        )
+        expect(
+            page.get_by_text("Fresh chunk after SSE cursor reconnect."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-stream"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-last-event-id-reconnect.png"))
+
+
 def test_v2_stream_terminal_event_closes_stream_and_restores_composer(
     browser_page: Page,
 ) -> None:
@@ -5298,6 +5392,19 @@ def _stream_event_source_script() -> str:
 
 def _stream_text_event(event_id: int, text: str) -> dict[str, object]:
     return _stream_text_event_for_run(event_id, _STREAM_RUN_ID, text, "MainAgent")
+
+
+def _ag_ui_stream_text_event_without_event_id(text: str) -> dict[str, object]:
+    return {
+        "occurred_at": "2026-06-26T00:00:00Z",
+        "payload": {"text": text},
+        "relay_event_type": "text_delta",
+        "role_id": "MainAgent",
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "trace_id": "trace-v2-stream",
+        "type": "message.text.delta",
+    }
 
 
 def _stream_text_event_for_run(

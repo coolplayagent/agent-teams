@@ -3521,3 +3521,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser and live in-app layout verification completed for this persisted subagent terminal refresh slice. No Subagents, AG-UI Runtime Stream, Message Timeline, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 SSE Last-Event-ID Stream Reconnect Batch
+
+### Scope
+- Re-checked the Message Timeline and AG-UI Runtime Stream checklist after the persisted subagent terminal refresh slice, then selected the SSE `Last-Event-ID` boundary because unit tests covered it but the built `/app/` browser path did not.
+- Added a browser-level scenario that creates a run through the real composer path, dispatches an AG-UI `message.text.delta` event without a payload `event_id`, relies on the SSE `lastEventId` value `11` to advance the runtime cursor, simulates a transport interruption, and verifies the reconnect EventSource opens with `after_event_id=11`.
+- Verified replaying the boundary event without a payload event id does not duplicate the visible message, while a fresh `lastEventId=12` chunk still renders into the same live assistant stream.
+- Captured `.tmp/frontend-v2-stream/v2-last-event-id-reconnect.png` and inspected it to confirm the built V2 shell stays fixed-height, the running stream controls remain reachable, and the message text remains readable after reconnect.
+- Kept this as targeted AG-UI stream/replay progress only. Remaining work still includes run failed/stopped browser finalization, broader event matrix coverage, long tool-heavy visual replay review, recovery visual review, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "stream_reconnect_uses_sse_last_event_id"` passed with 1 selected browser test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "stream_replay_resumes or stream_transport_interrupt or stream_reconnect_uses_sse_last_event_id or stream_terminal_event or stream_tool_replay"` passed with 5 selected browser tests.
+- Main-agent screenshot inspection confirmed the missing-payload-id stream uses SSE `Last-Event-ID` for reconnect, suppresses the duplicate boundary replay, and keeps the fixed V2 chat frame intact.
+
+### Reviewer
+- Main-agent browser and screenshot verification completed for this SSE `Last-Event-ID` stream boundary slice. No Message Timeline, AG-UI Runtime Stream, or V2 frontend completion is claimed.

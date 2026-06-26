@@ -92,6 +92,45 @@ interface ConcurrentDirectStreamPayload {
   runBText: string;
 }
 
+interface EmptyThinkingPayload {
+  overlayAfterReplay: {
+    parts: Array<{ finished?: boolean }>;
+  };
+  thinkingCount: number;
+}
+
+interface MissingToolReinvocationPayload {
+  results: boolean[];
+  statuses: string[];
+  toolPartCount: number;
+}
+
+interface MissingToolResultPayload {
+  args: Record<string, unknown>;
+  hasResult: boolean;
+  status: string;
+  toolCallId?: string;
+  toolPartCount: number;
+}
+
+interface RepeatedThinkingPayload {
+  latestPhraseOccurrences: number;
+  olderPhraseOccurrences: number;
+  thinkingCount: number;
+}
+
+interface UnfinishedThinkingPayload {
+  prefixOccurrences: number;
+  suffixOccurrences: number;
+  thinkingCount: number;
+}
+
+interface RunCleanupPayload {
+  afterReplayToolCount: number;
+  beforeClearToolCount: number;
+  overlayAfterClear: unknown;
+}
+
 interface StreamTimelineHarnessWindow {
   __streamTimelineHarness: Record<string, () => unknown> & {
     readToolSummaryVisualWeight: (toolCallId: string) => ToolSummaryVisualState;
@@ -456,6 +495,149 @@ test("direct stream state is isolated across concurrent primary runs", async ({
   }
 });
 
+test("empty active thinking overlay survives history replay", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<EmptyThinkingPayload>(
+      page,
+      "renderEmptyActiveThinkingOverlay",
+    );
+
+    expect(payload.thinkingCount).toBe(1);
+    expect(payload.overlayAfterReplay.parts[0]?.finished).toBe(false);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("missing tool call ids create new pending overlay invocations", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<MissingToolReinvocationPayload>(
+      page,
+      "renderMissingToolCallIdReinvocation",
+    );
+
+    expect(payload.toolPartCount).toBe(2);
+    expect(payload.statuses).toEqual(["completed", "pending"]);
+    expect(payload.results).toEqual([true, false]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("missing tool call id out-of-order result reuses overlay part", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<MissingToolResultPayload>(
+      page,
+      "renderMissingToolCallIdOutOfOrderResult",
+    );
+
+    expect(payload.toolPartCount).toBe(1);
+    expect(payload.status).toBe("completed");
+    expect(payload.hasResult).toBe(true);
+    expect(payload.args).toEqual({ command: "date" });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("ided tool result reuses pending missing id tool call", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<MissingToolResultPayload>(
+      page,
+      "renderIdedToolResultAfterMissingCallId",
+    );
+
+    expect(payload.toolPartCount).toBe(1);
+    expect(payload.status).toBe("completed");
+    expect(payload.toolCallId).toBe("call-shell-1");
+    expect(payload.hasResult).toBe(true);
+    expect(payload.args).toEqual({ command: "date" });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("repeated live thinking text from older history survives replay", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<RepeatedThinkingPayload>(
+      page,
+      "renderRepeatedLiveThinkingTextFromOlderHistory",
+    );
+
+    expect(payload.olderPhraseOccurrences).toBe(2);
+    expect(payload.latestPhraseOccurrences).toBe(1);
+    expect(payload.thinkingCount).toBe(3);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("unfinished thinking with persisted prefix survives replay", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<UnfinishedThinkingPayload>(
+      page,
+      "renderUnfinishedThinkingWithPersistedPrefix",
+    );
+
+    expect(payload.prefixOccurrences).toBe(2);
+    expect(payload.suffixOccurrences).toBe(1);
+    expect(payload.thinkingCount).toBe(2);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("run stream cleanup clears overlay and event dedupe", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<RunCleanupPayload>(
+      page,
+      "renderRunStreamCleanupReleasesOverlayAndDedupe",
+    );
+
+    expect(payload.beforeClearToolCount).toBe(1);
+    expect(payload.overlayAfterClear).toBeNull();
+    expect(payload.afterReplayToolCount).toBe(1);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openStreamTimelineHarness(
   page: Page,
   baseUrl: string,
@@ -555,6 +737,7 @@ function streamTimelineHarnessHtml(): string {
       appendToolCallBlock,
       applyStreamOverlayEvent,
       clearAllStreamState,
+      clearRunStreamState,
       finalizeStream,
       finalizeThinking,
       getCoordinatorStreamOverlay,
@@ -1516,6 +1699,237 @@ function streamTimelineHarnessHtml(): string {
           runAText: containerA.textContent || "",
           runBText: containerB.textContent || "",
           runACursorCountAfterFinalize: containerA.querySelectorAll(".streaming-cursor").length,
+        };
+      },
+
+      renderEmptyActiveThinkingOverlay() {
+        clearAllStreamState();
+        const container = makeContainer("empty-active-thinking-overlay");
+        const runId = "run-empty-thinking";
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 3 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "empty-think-1" },
+        );
+        renderHistory(container, [], {
+          runId,
+          runStatus: "running",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        return {
+          thinkingCount: container.querySelectorAll(".thinking-block").length,
+          overlayAfterReplay: getCoordinatorStreamOverlay(runId),
+        };
+      },
+
+      renderMissingToolCallIdReinvocation() {
+        clearAllStreamState();
+        const runId = "run-missing-tool-call-id";
+        applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "shell",
+            args: { command: "date" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "missing-tool-1" },
+        );
+        applyStreamOverlayEvent(
+          "tool_result",
+          {
+            tool_name: "shell",
+            result: { ok: true },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "missing-tool-2" },
+        );
+        applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "shell",
+            args: { command: "pwd" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "missing-tool-3" },
+        );
+        const parts = getCoordinatorStreamOverlay(runId).parts.filter(part => part.kind === "tool");
+        return {
+          toolPartCount: parts.length,
+          statuses: parts.map(part => part.status || ""),
+          results: parts.map(part => part.result !== undefined),
+        };
+      },
+
+      renderMissingToolCallIdOutOfOrderResult() {
+        clearAllStreamState();
+        const runId = "run-missing-tool-call-id-out-of-order";
+        applyStreamOverlayEvent(
+          "tool_result",
+          {
+            tool_name: "shell",
+            result: { ok: true, output: "done" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "missing-tool-ooo-1" },
+        );
+        applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "shell",
+            args: { command: "date" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "missing-tool-ooo-2" },
+        );
+        const parts = getCoordinatorStreamOverlay(runId).parts.filter(part => part.kind === "tool");
+        const part = parts[0] || {};
+        return {
+          toolPartCount: parts.length,
+          status: part.status || "",
+          hasResult: part.result !== undefined,
+          args: part.args || {},
+        };
+      },
+
+      renderIdedToolResultAfterMissingCallId() {
+        clearAllStreamState();
+        const runId = "run-ided-tool-result-after-missing-call-id";
+        applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "shell",
+            args: { command: "date" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "missing-tool-later-id-1" },
+        );
+        applyStreamOverlayEvent(
+          "tool_result",
+          {
+            tool_name: "shell",
+            tool_call_id: "call-shell-1",
+            result: { ok: true, output: "done" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "missing-tool-later-id-2" },
+        );
+        const parts = getCoordinatorStreamOverlay(runId).parts.filter(part => part.kind === "tool");
+        const part = parts[0] || {};
+        return {
+          toolPartCount: parts.length,
+          status: part.status || "",
+          toolCallId: part.tool_call_id || "",
+          hasResult: part.result !== undefined,
+          args: part.args || {},
+        };
+      },
+
+      renderRepeatedLiveThinkingTextFromOlderHistory() {
+        clearAllStreamState();
+        const container = makeContainer("repeated-live-thinking-text");
+        const runId = "run-repeated-live-thinking";
+        const olderPhrase = "Now let me plan the workflow.";
+        const latestPhrase = "Latest persisted thinking tail.";
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 2 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "repeat-live-1" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 2, text: olderPhrase },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "repeat-live-2" },
+        );
+        renderHistory(container, [
+          {
+            role: "assistant",
+            role_id: "Coordinator",
+            instance_id: "primary",
+            created_at: "2026-04-26T09:46:41Z",
+            message: {
+              parts: [{ part_kind: "thinking", part_index: 0, content: olderPhrase }],
+            },
+          },
+          {
+            role: "assistant",
+            role_id: "Coordinator",
+            instance_id: "primary",
+            created_at: "2026-04-26T09:46:49Z",
+            message: {
+              parts: [{ part_kind: "thinking", part_index: 1, content: latestPhrase }],
+            },
+          },
+        ], {
+          runId,
+          runStatus: "running",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        const text = container.textContent || "";
+        return {
+          olderPhraseOccurrences: countSubstring(text, olderPhrase),
+          latestPhraseOccurrences: countSubstring(text, latestPhrase),
+          thinkingCount: container.querySelectorAll(".thinking-block").length,
+        };
+      },
+
+      renderUnfinishedThinkingWithPersistedPrefix() {
+        clearAllStreamState();
+        const container = makeContainer("unfinished-thinking-prefix");
+        const runId = "run-unfinished-thinking-prefix";
+        const prefix = "Now let me analyze the session switching timeline carefully.";
+        const suffix = " This live suffix must remain visible.";
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 2 },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "thinking-prefix-1" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 2, text: prefix + suffix },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "thinking-prefix-2" },
+        );
+        renderHistory(container, [{
+          role: "assistant",
+          role_id: "Coordinator",
+          instance_id: "primary",
+          created_at: "2026-04-26T09:46:41Z",
+          message: {
+            parts: [{ part_kind: "thinking", part_index: 2, content: prefix }],
+          },
+        }], {
+          runId,
+          runStatus: "running",
+          streamOverlayEntry: getCoordinatorStreamOverlay(runId),
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        const text = container.textContent || "";
+        return {
+          prefixOccurrences: countSubstring(text, prefix),
+          suffixOccurrences: countSubstring(text, suffix.trim()),
+          thinkingCount: container.querySelectorAll(".thinking-block").length,
+        };
+      },
+
+      renderRunStreamCleanupReleasesOverlayAndDedupe() {
+        clearAllStreamState();
+        const runId = "run-cleanup-dedupe";
+        const emitToolCall = () => applyStreamOverlayEvent(
+          "tool_call",
+          {
+            tool_name: "shell",
+            tool_call_id: "call-cleanup",
+            args: { command: "date" },
+          },
+          { runId, instanceId: "primary", roleId: "Coordinator", label: "Main Agent", eventId: "cleanup-evt-1" },
+        );
+        emitToolCall();
+        const beforeClearToolCount = getCoordinatorStreamOverlay(runId)?.parts?.length || 0;
+        clearRunStreamState(runId);
+        const overlayAfterClear = getCoordinatorStreamOverlay(runId);
+        emitToolCall();
+        const afterReplayToolCount = getCoordinatorStreamOverlay(runId)?.parts?.length || 0;
+        return {
+          beforeClearToolCount,
+          overlayAfterClear,
+          afterReplayToolCount,
         };
       },
     };

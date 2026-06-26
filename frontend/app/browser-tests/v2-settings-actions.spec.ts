@@ -15,9 +15,16 @@ import {
 const SCREENSHOT_FOLDER = "frontend-v2-ts-settings-actions";
 
 interface SettingsActionState {
+  failNextWebSave: boolean;
   hooksConfig: Record<string, unknown>;
   hooksSavePayloads: Record<string, unknown>[];
   hooksValidatePayloads: Record<string, unknown>[];
+  modelCatalogRefreshCount: number;
+  modelProfileReloadCount: number;
+  modelProfileSavePayloads: Record<string, unknown>[];
+  modelProfileSaveRequests: string[];
+  modelProbePayloads: Record<string, unknown>[];
+  modelProfiles: Record<string, Record<string, unknown>>;
   orchestrationConfig: Record<string, unknown>;
   orchestrationSavePayloads: Record<string, unknown>[];
   pluginDeleteRequests: Record<string, unknown>[];
@@ -30,6 +37,10 @@ interface SettingsActionState {
   roleDeleteRequests: string[];
   roleSavePayloads: Record<string, unknown>[];
   roleValidatePayloads: Record<string, unknown>[];
+  sshDeleteRequests: string[];
+  sshProfiles: Record<string, unknown>[];
+  webConfig: Record<string, unknown>;
+  webSavePayloads: Record<string, unknown>[];
 }
 
 test("manages Plugins from the System secondary settings page", async ({
@@ -303,6 +314,377 @@ test("sets defaults, deletes, and creates orchestration presets", async ({
   }
 });
 
+test("tests and saves an existing model profile", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS model detail settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Models" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "Models" })).toBeVisible();
+    const visionRow = settings.locator(".at-model-profile-row").filter({
+      hasText: "vision",
+    });
+    await expect(visionRow).toBeVisible();
+    await visionRow.locator(".at-model-profile-row-main").click();
+
+    const profileIdInput = settings.getByLabel("Profile ID");
+    await expect(profileIdInput).toHaveValue("vision");
+    await expect(settings.getByLabel("Base URL")).toHaveValue(
+      "https://vision.example/v1",
+    );
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().endsWith("/api/system/configs/model:probe") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Test" }).click(),
+    ]);
+
+    expect(state.modelProbePayloads).toEqual([
+      { profile_name: "vision", timeout_ms: 15000 },
+    ]);
+    await expect(settings.getByText("Connection ok in 51ms.")).toBeVisible();
+
+    await profileIdInput.fill("vision-browser");
+    await settings.getByLabel("Model").fill("gpt-5.1-vision");
+    await settings.getByLabel("Base URL").fill("https://vision.changed.example/v1");
+    await settings.getByLabel("Context window").fill("128000");
+    await settings.getByLabel("Max tokens").fill("4096");
+    await settings.getByLabel("Fallback policy").fill(
+      "same_provider_then_other_provider",
+    );
+    await settings.getByLabel("SSL verify").fill("true");
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().endsWith("/api/system/configs/model:reload") &&
+          response.status() === 200,
+      ),
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response
+            .url()
+            .endsWith("/api/system/configs/model/profiles/vision-browser") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+
+    expect(state.modelProfileSaveRequests).toEqual(["vision-browser"]);
+    expect(state.modelProfileSavePayloads.at(-1)).toEqual({
+      base_url: "https://vision.changed.example/v1",
+      connect_timeout_seconds: 15,
+      context_window: 128000,
+      fallback_policy_id: "same_provider_then_other_provider",
+      fallback_priority: 0,
+      is_default: false,
+      max_tokens: 4096,
+      model: "gpt-5.1-vision",
+      provider: "openai",
+      source_name: "vision",
+      ssl_verify: true,
+      temperature: 0.7,
+      top_p: 1,
+    });
+    expect(state.modelProfileReloadCount).toBe(1);
+    await expect(page.getByText("Saved model profile vision-browser."))
+      .toBeVisible();
+    await expect(settings.getByLabel("Profile ID")).toHaveValue("vision-browser");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v2 model profile detail should stay framed");
+    await page.screenshot({
+      path: screenshotPath("v2-model-profile-detail.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("creates a model profile from the catalog", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS model catalog settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Models" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "Models" })).toBeVisible();
+    expect(state.requestedPaths).not.toContain("/system/configs/model/catalog");
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "GET" &&
+          response.url().endsWith("/api/system/configs/model/catalog") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "New profile" }).click(),
+    ]);
+
+    await expect(settings.getByText("Model catalog")).toBeVisible();
+    await settings.locator(".at-model-catalog-option").filter({
+      hasText: "GPT-5 Catalog",
+    }).click();
+    await expect(settings.locator("input#provider")).toHaveValue(
+      "openai_compatible",
+    );
+    await expect(settings.locator("input#model")).toHaveValue("gpt-5-catalog");
+    await expect(settings.locator("input#base_url")).toHaveValue(
+      "https://openai.example/v1",
+    );
+    await settings.locator("input#profile_id").fill("catalog-browser");
+
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-model-profile-catalog-picker.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().endsWith("/api/system/configs/model:reload") &&
+          response.status() === 200,
+      ),
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response
+            .url()
+            .endsWith("/api/system/configs/model/profiles/catalog-browser") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+
+    expect(state.modelProfileSaveRequests).toEqual(["catalog-browser"]);
+    expect(state.modelProfileSavePayloads.at(-1)).toEqual({
+      base_url: "https://openai.example/v1",
+      capabilities: {
+        input: { image: true, text: true },
+        output: { text: true },
+      },
+      catalog_model_name: "GPT-5 Catalog",
+      catalog_provider_id: "openai",
+      catalog_provider_name: "OpenAI",
+      connect_timeout_seconds: 15,
+      context_window: 128000,
+      fallback_policy_id: null,
+      fallback_priority: 0,
+      is_default: false,
+      max_tokens: 8192,
+      model: "gpt-5-catalog",
+      provider: "openai_compatible",
+      temperature: 0.7,
+      top_p: 1,
+    });
+    expect(state.modelProfileReloadCount).toBe(1);
+    await expect(page.getByText("Saved model profile catalog-browser."))
+      .toBeVisible();
+    await expect(settings.locator("input#profile_id")).toHaveValue(
+      "catalog-browser",
+    );
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v2 model catalog create should stay framed");
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-model-profile-catalog-create.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("saves Web settings and shows save errors", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS web settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Web" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "Web" })).toBeVisible();
+    await expect(settings.getByText("Leave blank to keep the saved API key."))
+      .toBeVisible();
+    const searxngUrl = settings.getByLabel("SearXNG instance URL");
+    await expect(searxngUrl).toHaveValue("https://search.initial.example/");
+    await expect(settings.getByText("https://searx.space")).toBeVisible();
+
+    await searxngUrl.fill("https://search.changed.example/");
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/web") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+
+    expect(state.webSavePayloads.at(-1)).toEqual({
+      exa_api_key: "saved-exa-key",
+      fallback_provider: "searxng",
+      provider: "exa",
+      searxng_instance_url: "https://search.changed.example/",
+    });
+    await expect(page.getByText("Web settings saved.")).toBeVisible();
+
+    state.failNextWebSave = true;
+    await searxngUrl.fill("https://search.failed.example/");
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/web") &&
+          response.status() === 500,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+
+    expect(state.webSavePayloads.at(-1)).toEqual({
+      exa_api_key: "saved-exa-key",
+      fallback_provider: "searxng",
+      provider: "exa",
+      searxng_instance_url: "https://search.failed.example/",
+    });
+    expect(state.webConfig.searxng_instance_url).toBe(
+      "https://search.changed.example/",
+    );
+    await expect(
+      settings.getByRole("alert").getByText("Web settings save failed in browser test."),
+    ).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-web-settings-error.png", SCREENSHOT_FOLDER),
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v2 web settings should stay framed");
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("requires confirmation before deleting remote workspace SSH profiles", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS remote workspace settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Remote workspace" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "Remote workspace" }))
+      .toBeVisible();
+    await expect(settings.getByRole("heading", { name: "devbox" })).toBeVisible();
+    await expect(settings.getByText("dev.example.com · yex · 22").first())
+      .toBeVisible();
+
+    await settings.getByRole("button", { name: "Delete" }).click();
+    let confirm = page.getByRole("dialog").filter({
+      hasText: 'Delete SSH profile "devbox"?',
+    });
+    await expect(confirm).toBeVisible();
+    expect(state.sshDeleteRequests).toEqual([]);
+
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirm).toHaveCount(0);
+    expect(state.sshDeleteRequests).toEqual([]);
+    await expect(settings.getByRole("heading", { name: "devbox" })).toBeVisible();
+
+    await settings.getByRole("button", { name: "Delete" }).click();
+    confirm = page.getByRole("dialog").filter({
+      hasText: 'Delete SSH profile "devbox"?',
+    });
+    await expect(confirm).toBeVisible();
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "DELETE" &&
+          response
+            .url()
+            .endsWith("/api/system/configs/workspace/ssh-profiles/devbox") &&
+          response.status() === 200,
+      ),
+      confirm.getByRole("button", { name: "Delete" }).click(),
+    ]);
+
+    expect(state.sshDeleteRequests).toEqual(["devbox"]);
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText("Deleted SSH profile devbox.")).toBeVisible();
+    await expect(settings.getByText("No SSH profiles.")).toBeVisible();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 remote workspace settings should stay framed",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-remote-workspace-delete.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openSettingsDialog(page: Page): Promise<Locator> {
   await page.locator(".at-topbar").getByRole("button", { name: "Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
@@ -324,9 +706,16 @@ async function openSystemSettingsPage(
 
 function settingsActionState(): SettingsActionState {
   return {
+    failNextWebSave: false,
     hooksConfig: hooksConfig(),
     hooksSavePayloads: [],
     hooksValidatePayloads: [],
+    modelCatalogRefreshCount: 0,
+    modelProfileReloadCount: 0,
+    modelProfileSavePayloads: [],
+    modelProfileSaveRequests: [],
+    modelProbePayloads: [],
+    modelProfiles: modelProfiles(),
     orchestrationConfig: orchestrationConfig(),
     orchestrationSavePayloads: [],
     pluginDeleteRequests: [],
@@ -339,6 +728,10 @@ function settingsActionState(): SettingsActionState {
     roleDeleteRequests: [],
     roleSavePayloads: [],
     roleValidatePayloads: [],
+    sshDeleteRequests: [],
+    sshProfiles: sshProfiles(),
+    webConfig: webConfig(),
+    webSavePayloads: [],
   };
 }
 
@@ -403,6 +796,58 @@ async function handleSettingsActionApi(
     });
     return true;
   }
+  if (method === "GET" && path === "/system/configs/model/profiles") {
+    await context.fulfillJson(state.modelProfiles);
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/model/catalog") {
+    await context.fulfillJson(modelCatalogResponse());
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/model/catalog:refresh") {
+    state.modelCatalogRefreshCount += 1;
+    await context.fulfillJson(modelCatalogResponse());
+    return true;
+  }
+  if (method === "PUT" && path.startsWith("/system/configs/model/profiles/")) {
+    const profileId = decodeURIComponent(
+      path.replace("/system/configs/model/profiles/", ""),
+    );
+    const payload = readJsonBody(context);
+    state.modelProfileSaveRequests.push(profileId);
+    state.modelProfileSavePayloads.push(payload);
+    const sourceName = payload.source_name;
+    if (typeof sourceName === "string") {
+      delete state.modelProfiles[sourceName];
+    }
+    state.modelProfiles[profileId] = Object.fromEntries(
+      Object.entries(payload).filter(([key]) => key !== "source_name"),
+    );
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/model:reload") {
+    state.modelProfileReloadCount += 1;
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/model:probe") {
+    const payload = readJsonBody(context);
+    state.modelProbePayloads.push(payload);
+    await context.fulfillJson({
+      checked_at: "2026-06-26T00:00:00Z",
+      diagnostics: {
+        auth_valid: true,
+        endpoint_reachable: true,
+        rate_limited: false,
+      },
+      latency_ms: 51,
+      model: "gpt-5-vision",
+      ok: true,
+      provider: "openai",
+    });
+    return true;
+  }
   if (method === "GET" && path === "/system/configs/orchestration") {
     await context.fulfillJson(state.orchestrationConfig);
     return true;
@@ -456,6 +901,47 @@ async function handleSettingsActionApi(
   }
   if (method === "GET" && path === "/system/configs/hooks/runtime") {
     await context.fulfillJson(hooksRuntimeResponse());
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/web") {
+    await context.fulfillJson(state.webConfig);
+    return true;
+  }
+  if (method === "PUT" && path === "/system/configs/web") {
+    const payload = readJsonBody(context);
+    state.webSavePayloads.push(payload);
+    if (state.failNextWebSave) {
+      state.failNextWebSave = false;
+      await context.fulfillJson(
+        { detail: "Web settings save failed in browser test." },
+        500,
+      );
+      return true;
+    }
+    state.webConfig = {
+      ...state.webConfig,
+      ...payload,
+      searxng_instance_seeds: state.webConfig.searxng_instance_seeds,
+    };
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/workspace/ssh-profiles") {
+    await context.fulfillJson(state.sshProfiles);
+    return true;
+  }
+  if (
+    method === "DELETE" &&
+    path.startsWith("/system/configs/workspace/ssh-profiles/")
+  ) {
+    const profileId = decodeURIComponent(
+      path.replace("/system/configs/workspace/ssh-profiles/", ""),
+    );
+    state.sshDeleteRequests.push(profileId);
+    state.sshProfiles = state.sshProfiles.filter(
+      (profile) => profile.ssh_profile_id !== profileId,
+    );
+    await context.fulfillJson({ status: "ok" });
     return true;
   }
   return false;
@@ -585,6 +1071,89 @@ function roleConfigSummaries(state: SettingsActionState): Record<string, unknown
     source: role.source,
     version: role.version,
   }));
+}
+
+function modelProfiles(): Record<string, Record<string, unknown>> {
+  return {
+    default: {
+      base_url: "https://models.example/v1",
+      connect_timeout_seconds: 15,
+      context_window: 128000,
+      is_default: true,
+      model: "gpt-5-mini",
+      provider: "openai_compatible",
+      temperature: 0.7,
+      top_p: 1.0,
+    },
+    vision: {
+      base_url: "https://vision.example/v1",
+      connect_timeout_seconds: 15,
+      input_modalities: ["text", "image"],
+      is_default: false,
+      model: "gpt-5-vision",
+      provider: "openai",
+      temperature: 0.7,
+      top_p: 1.0,
+    },
+  };
+}
+
+function modelCatalogResponse(): Record<string, unknown> {
+  return {
+    ok: true,
+    providers: [
+      {
+        api: "https://openai.example/v1",
+        id: "openai",
+        models: [
+          {
+            capabilities: {
+              input: { image: true, text: true },
+              output: { text: true },
+            },
+            context_window: 128000,
+            id: "gpt-5-catalog",
+            input_modalities: ["text", "image"],
+            name: "GPT-5 Catalog",
+            output_limit: 8192,
+            reasoning: true,
+            tool_call: true,
+          },
+        ],
+        name: "OpenAI",
+        runtime_provider: "openai_compatible",
+      },
+    ],
+    source_url: "https://models.dev/api.json",
+  };
+}
+
+function webConfig(): Record<string, unknown> {
+  return {
+    exa_api_key: "saved-exa-key",
+    fallback_provider: "searxng",
+    provider: "exa",
+    searxng_instance_seeds: ["https://searx.space"],
+    searxng_instance_url: "https://search.initial.example/",
+  };
+}
+
+function sshProfiles(): Record<string, unknown>[] {
+  return [
+    {
+      connect_timeout_seconds: 15,
+      created_at: "2026-06-25T08:00:00Z",
+      has_password: true,
+      has_private_key: false,
+      host: "dev.example.com",
+      port: 22,
+      private_key_name: null,
+      remote_shell: "/bin/bash",
+      ssh_profile_id: "devbox",
+      updated_at: "2026-06-25T08:05:00Z",
+      username: "yex",
+    },
+  ];
 }
 
 function orchestrationConfig(): Record<string, unknown> {

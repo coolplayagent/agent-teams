@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Typography } from "antd";
+import { Alert, App, Button, Form, Input, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
@@ -52,6 +52,12 @@ export function WebSettingsSection() {
     | undefined;
   const seeds = webQuery.data?.searxng_instance_seeds ?? [];
   const hasSavedApiKey = Boolean(webQuery.data?.exa_api_key?.trim());
+  let saveError: string | null = null;
+  if (saveMutation.error instanceof Error) {
+    saveError = saveMutation.error.message;
+  } else if (saveMutation.error !== null) {
+    saveError = t("settingsSaveFailed");
+  }
 
   function submit(values: WebFormValues) {
     const typedApiKey = values.exa_api_key.trim();
@@ -74,6 +80,9 @@ export function WebSettingsSection() {
           layout="vertical"
           onFinish={submit}
         >
+          {saveError !== null ? (
+            <Alert message={saveError} showIcon type="error" />
+          ) : null}
           <div className="at-settings-card-list">
             <div className="at-settings-form-card">
               <Form.Item label={t("settingsWebProvider")}>

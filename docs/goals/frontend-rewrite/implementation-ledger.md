@@ -4368,3 +4368,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend typecheck, Python syntax, lint, format, diff, and screenshot verification completed for this settings action migration slice. No Settings subsystem sign-off, browser-suite migration sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Settings Model/Web/Workspace Migration Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, product parity checklist, quality gates, current worktree, and remaining `test_v2_shell_layout.py` scan before editing. The selected slice closes the last Python-owned V2 shell browser scenarios while staying aligned with the broader Settings parity target.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` with TS browser coverage for model profile test/save, model catalog profile creation, Web settings save/error feedback, and remote workspace SSH delete confirmation.
+- Preserved the V1 information architecture: Models, Web, and Remote workspace remain normal top-level Settings entries, while Plugins and Hooks remain under the System secondary page from the prior settings-action slice.
+- Removed `tests/integration_tests/browser/test_v2_shell_layout.py` after the replacement TS browser scenarios passed; `rg -n "^def test_v2_" tests/integration_tests/browser` now reports no V2 Python UI test functions.
+- While checking screenshots, found that Web save failure feedback was too easy to miss in visual evidence. Added a stable inline error `Alert` to `WebSettingsSection` while keeping the existing toast, so the form has a durable error state that satisfies the Settings quality gate.
+- Captured and inspected `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-detail.png`, `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-catalog-picker.png`, `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-catalog-create.png`, `.tmp/frontend-v2-ts-settings-actions/v2-web-settings-error.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-remote-workspace-delete.png`; the screenshots show fixed shell framing, visible Web error feedback, closed remote-workspace delete confirmation after success, and no document-level scrolling.
+- Kept this as browser-suite migration and Settings error-state progress only. The full frontend rewrite still needs broader V1/V2 visual audit, subsystem reviewer sign-off, Electron release gates, stream/replay edge-case hardening, naming cleanup, and final parity matrix completion.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "saves web settings"` passed with 1 selected React test.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite production build for `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 8 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `rg -n "^def test_v2_" tests\integration_tests\browser` reports no V2 Python UI test functions.
+- `rg -n "test_v2_shell_layout|_V2ShellBackend|_serve_v2_app" tests frontend -g "*.py" -g "*.ts" -g "*.tsx"` reports no code references to the deleted Python fixture.
+- `git diff --check` passed, with only the expected Windows line-ending warnings.
+
+### Reviewer
+- Main-agent build, TS browser, frontend lint/typecheck, deletion scan, and screenshot verification completed for this settings model/web/workspace migration slice. No Settings subsystem sign-off, full browser-suite migration sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.

@@ -3669,3 +3669,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this sidebar/settings parity slice. No Application Shell, Settings, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Message Export Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and release browser gates after the sidebar/settings parity slice, then selected message export because `export a message` remains an explicit browser-check workflow and still had old Python UI coverage.
+- Added a TS Playwright browser scenario that opens the real V2 top-bar `Export messages` menu, downloads both `HTML` and `PNG`, and verifies the suggested filenames are `session-v2-shell-messages.html` and `session-v2-shell-messages.png`.
+- Mocked a real session rounds page for export with a prompt, coordinator output, pending approval/question counts, retry metadata, a diagnostic, and todo state so the exported transcript exercises the round-based export path rather than an empty placeholder.
+- Verified the downloaded HTML contains the transcript title, `Round 1 prompt`, `V2 export prompt`, and `Exported V2 transcript content`; verified the downloaded PNG starts with the PNG file signature and is produced through the browser download flow.
+- Stabilized the request-count assertion around the initial timeline rounds load, then verified the two export actions add exactly two more `/sessions/{session_id}/rounds` requests.
+- Kept this as targeted Message Timeline / export-control TS browser migration progress only. Remaining work still includes round rail, image preview, observability drilldown, project view, mobile/narrow layout, additional module action parity, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-message-export.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-message-export.spec.ts` passed with 2 TS browser tests.
+- Main-agent artifact inspection confirmed Playwright produced non-empty HTML and PNG downloads before test output cleanup.
+
+### Reviewer
+- Main-agent TS browser and artifact verification completed for this message export slice. No Message Timeline, export-control subsystem, browser-suite migration, or V2 frontend completion is claimed.

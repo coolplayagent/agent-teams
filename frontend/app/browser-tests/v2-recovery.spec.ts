@@ -20,6 +20,8 @@ import {
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-recovery";
 const RUN_ID = "run-v2-live";
+const SUBAGENT_RUN_ID = "subagent-run-1";
+const BACKGROUND_SUBAGENT_ID = "background-subagent-1";
 const TOOL_CALL_ID = "tool-approval-1";
 const QUESTION_ID = "question-1";
 
@@ -276,6 +278,98 @@ test("resumes a stopped recovery run from its checkpoint", async ({ page }) => {
   }
 });
 
+test("streams recovered background subagent output into the timeline", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = recoveryMockState({
+    backgroundTasks: [backgroundSubagentRecord()],
+    lastEventId: 5,
+    phase: "running",
+    questionPending: false,
+    status: "running",
+    toolApprovalPending: false,
+  });
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRecoveryApi(context, state),
+      sessionTitle: "TS recovery subagent",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const recovery = page.locator(".at-recovery");
+    await expect(recovery.getByText("subagent:reviewer")).toBeVisible();
+    await expect
+      .poll(() => multiplexedRecoveryStreamRequest(page, appServer.url))
+      .toEqual({
+        afterEventIds: ["5", "0"],
+        count: 1,
+        path: "/api/ag-ui/runs/events",
+        runIds: [RUN_ID, SUBAGENT_RUN_ID],
+      });
+
+    const parentText = "Parent orchestration still running.";
+    const subagentText = "Reviewer subagent stream output.";
+    await dispatchRunEvent(page, {
+      eventId: 6,
+      payload: { text: parentText },
+      relayEventType: "text_delta",
+      sourceIndex: 0,
+      type: "message.text.delta",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { text: subagentText },
+      relayEventType: "text_delta",
+      roleId: "reviewer",
+      runId: SUBAGENT_RUN_ID,
+      sourceIndex: 0,
+      type: "message.text.delta",
+    });
+
+    await expect(page.getByText(parentText)).toBeVisible();
+    await expect(page.getByText(subagentText)).toBeVisible();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "background subagent recovery stream should stay inside the fixed V2 shell",
+    );
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-background-subagent-stream.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await dispatchRunEvent(page, {
+      eventId: 7,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      sourceIndex: 0,
+      type: "run.completed",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      roleId: "reviewer",
+      runId: SUBAGENT_RUN_ID,
+      sourceIndex: 0,
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleRecoveryApi(
   context: MockApiRouteContext,
   state: RecoveryMockState,
@@ -375,6 +469,7 @@ function requestPayload(context: MockApiRouteContext): unknown {
 interface RecoveryMockState {
   failNextQuestionAnswer: boolean;
   failNextToolApproval: boolean;
+  backgroundTasks: Record<string, unknown>[];
   lastEventId: number;
   phase: string;
   questionAnswerRequests: RecoveryQuestionAnswerRequest[];
@@ -400,6 +495,7 @@ interface RecoveryQuestionAnswerRequest {
 }
 
 interface RecoveryMockStateOptions {
+  backgroundTasks?: Record<string, unknown>[];
   failNextQuestionAnswer?: boolean;
   failNextToolApproval?: boolean;
   lastEventId?: number;
@@ -415,6 +511,7 @@ function recoveryMockState(
   options: RecoveryMockStateOptions = {},
 ): RecoveryMockState {
   return {
+    backgroundTasks: options.backgroundTasks ?? [],
     failNextQuestionAnswer: options.failNextQuestionAnswer ?? false,
     failNextToolApproval: options.failNextToolApproval ?? false,
     lastEventId: options.lastEventId ?? 42,
@@ -445,7 +542,7 @@ function recoverySnapshotResponse(
       status: state.status,
       stream_connected: false,
     },
-    background_tasks: [],
+    background_tasks: state.backgroundTasks,
     paused_subagent: null,
     pending_tool_approvals: state.toolApprovalPending ? [toolApprovalRecord()] : [],
     pending_user_questions: state.questionPending
@@ -458,6 +555,9 @@ interface BrowserRunEvent {
   eventId: number;
   payload: Record<string, unknown>;
   relayEventType: string;
+  roleId?: string;
+  runId?: string;
+  sourceIndex?: number | null;
   type: string;
 }
 
@@ -467,8 +567,8 @@ async function dispatchRunEvent(page: Page, event: BrowserRunEvent): Promise<voi
     occurred_at: `2026-06-26T11:00:${String(event.eventId).padStart(2, "0")}Z`,
     payload: event.payload,
     relay_event_type: event.relayEventType,
-    role_id: "MainAgent",
-    run_id: RUN_ID,
+    role_id: event.roleId ?? "MainAgent",
+    run_id: event.runId ?? RUN_ID,
     session_id: SESSION_ID,
     trace_id: "trace-ts-recovery",
     type: event.type,
@@ -476,8 +576,42 @@ async function dispatchRunEvent(page: Page, event: BrowserRunEvent): Promise<voi
   await dispatchEventSourceMessage(page, {
     data: payload,
     lastEventId: String(event.eventId),
+    sourceIndex: event.sourceIndex,
     type: event.type,
   });
+}
+
+async function multiplexedRecoveryStreamRequest(
+  page: Page,
+  appBaseUrl: string,
+): Promise<Record<string, unknown>> {
+  const urls = await eventSourceUrls(page);
+  const streamUrl = urls.at(0) ?? "";
+  if (!streamUrl) {
+    return { afterEventIds: [], count: urls.length, path: "", runIds: [] };
+  }
+  const parsed = new URL(streamUrl, appBaseUrl);
+  return {
+    afterEventIds: parsed.searchParams.getAll("after_event_id"),
+    count: urls.length,
+    path: parsed.pathname,
+    runIds: parsed.searchParams.getAll("run_id"),
+  };
+}
+
+function backgroundSubagentRecord(): Record<string, unknown> {
+  return {
+    background_task_id: BACKGROUND_SUBAGENT_ID,
+    command: "subagent:reviewer",
+    cwd: "C:/repo",
+    execution_mode: "background",
+    kind: "subagent",
+    recent_output: ["reviewer booted"],
+    run_id: RUN_ID,
+    session_id: SESSION_ID,
+    status: "running",
+    subagent_run_id: SUBAGENT_RUN_ID,
+  };
 }
 
 function toolApprovalRecord(): Record<string, unknown> {

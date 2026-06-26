@@ -3743,3 +3743,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this recovery resume slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Background Subagent Recovery Batch
+
+### Scope
+- Re-checked the remaining old Python Run Recovery browser coverage after the stopped-run resume slice, then selected background subagent streaming because it exercises multiplexed parent/subagent recovery rather than a single active run.
+- Extended the TS recovery browser scenario to render a running parent run with a background subagent task, verify the recovered EventSource opens exactly once through `/api/ag-ui/runs/events`, and assert the multiplexed query carries `run_id=run-v2-live&after_event_id=5` plus `run_id=subagent-run-1&after_event_id=0`.
+- Dispatched text deltas for both the parent orchestration run and the reviewer subagent run through the same EventSource, verified both outputs render in the timeline, then dispatched terminal events for both runs so stream cleanup is covered explicitly.
+- Captured and inspected `.tmp/frontend-v2-ts-recovery/v2-background-subagent-stream.png`; the screenshot shows the Recovery background task panel, parent output, reviewer subagent output, fixed sidebar/workspace frame, and active-run composer controls in one stable viewport.
+- Kept this as targeted Run Recovery / AG-UI multiplexed continuation migration progress only. Remaining work still includes background task stop, persisted subagent session recovery, persisted subagent terminal refresh, round rail/todo history, broader V1/V2 visual audit, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-recovery.spec.ts` passed with 4 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-recovery.spec.ts` passed with 5 TS browser tests.
+- Main-agent screenshot inspection confirmed the background subagent recovery state renders as a stable V2 UI state and multiplexed recovery output appears without breaking the fixed shell.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this background subagent recovery slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.

@@ -3479,3 +3479,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this stopped-run resume slice. No Run Recovery, AG-UI Runtime Stream, Message Timeline, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 Recovery Action Error Browser Batch
+
+### Scope
+- Re-checked the Run Recovery gate after the stopped-run resume slice and selected approval/question error states because component tests existed but the built `/app/` browser shell still lacked visible failure-and-retry evidence.
+- Added a browser-level scenario that loads one pending tool approval and one pending user question, forces the first approval resolution to return HTTP 500, and verifies the inline tool approval error stays visible while the approval remains retryable.
+- Extended the browser mock backend with one-shot failure toggles for `/ag-ui/runs/{run_id}/tool-approvals/{tool_call_id}:resolve` and `/ag-ui/runs/{run_id}/questions/{question_id}:answer` so failures preserve pending recovery state instead of removing items.
+- Verified retrying the approval succeeds and clears the inline error, then forced the question answer endpoint to fail, verified the inline question error remains visible with the question still present, and retried successfully.
+- Captured `.tmp/frontend-v2-recovery/v2-recovery-action-errors.png` and inspected it to confirm the approval error appears inside the real V2 recovery panel rather than only in a toast or console.
+- Kept this as targeted Run Recovery error-state progress only. Remaining work still includes broader recovery visual review, terminal subagent refresh cleanup, reviewer sign-off, and release-level parity audit.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k recovery_action_errors_remain_visible_and_retryable` passed with 1 selected browser test.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "recovery_action_errors or recovery_approval_and_question_actions or recovery_resume_stopped_run or recovery_background_task_stop"` passed with 4 selected browser tests.
+- Main-agent screenshot inspection confirmed the built V2 recovery panel preserves pending approval/question controls while showing inline API failure feedback and allowing retry.
+
+### Reviewer
+- Main-agent browser verification completed for this recovery action error-state slice. No Run Recovery, AG-UI Runtime Stream, Message Timeline, or V2 frontend completion is claimed.

@@ -592,6 +592,116 @@ def test_v2_recovery_approval_and_question_actions_call_real_endpoints(
         expect(recovery.get_by_text("Planner needs input")).to_have_count(0)
 
 
+def test_v2_recovery_action_errors_remain_visible_and_retryable(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    backend.fail_next_tool_approval = True
+    backend.fail_next_user_question = True
+    backend.recovery_active_run = {
+        "last_event_id": 42,
+        "pending_tool_approval_count": 1,
+        "pending_user_question_count": 1,
+        "phase": "awaiting_tool_approval",
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "should_show_recover": False,
+        "status": "paused",
+        "stream_connected": False,
+    }
+    backend.pending_tool_approvals = [
+        {
+            "acp_options": [
+                {
+                    "kind": "allow_once",
+                    "name": "Allow once",
+                    "optionId": "allow_once",
+                }
+            ],
+            "args_preview": '{"path":"README.md"}',
+            "tool_call_id": "tool-approval-1",
+            "tool_name": "read",
+        }
+    ]
+    backend.pending_user_questions = [
+        {
+            "question_id": "question-1",
+            "questions": [
+                {
+                    "multiple": False,
+                    "options": [
+                        {
+                            "description": "Retry the pending plan",
+                            "label": "Continue",
+                        }
+                    ],
+                    "question": "Pick next step",
+                }
+            ],
+            "role_id": "Planner",
+            "run_id": _STREAM_RUN_ID,
+        }
+    ]
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        recovery = page.locator(".at-recovery")
+        expect(recovery.get_by_text("read", exact=True)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_text("Planner needs input")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        recovery.get_by_role("button", name="Allow once").click()
+        expect(
+            recovery.get_by_text("Tool approval failed in browser test."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(recovery.get_by_text("read", exact=True)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-recovery"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-recovery-action-errors.png"))
+
+        recovery.get_by_role("button", name="Allow once").click()
+        _wait_for_backend_state(
+            lambda: len(backend.tool_approval_resolve_payloads) == 1,
+            "Tool approval retry request was not captured.",
+        )
+        expect(recovery.get_by_text("read", exact=True)).to_have_count(0)
+        expect(
+            recovery.get_by_text("Tool approval failed in browser test."),
+        ).to_have_count(0)
+
+        recovery.get_by_label("Continue - Retry the pending plan").click()
+        recovery.get_by_role("button", name="Answer").click()
+        expect(
+            recovery.get_by_text("User question answer failed in browser test."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(recovery.get_by_text("Planner needs input")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        recovery.get_by_role("button", name="Answer").click()
+        _wait_for_backend_state(
+            lambda: len(backend.question_answer_payloads) == 1,
+            "User question retry request was not captured.",
+        )
+        expect(recovery.get_by_text("Planner needs input")).to_have_count(0)
+        expect(
+            recovery.get_by_text("User question answer failed in browser test."),
+        ).to_have_count(0)
+        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
+
+
 def test_v2_recovery_resume_stopped_run_reconnects_from_checkpoint(
     browser_page: Page,
 ) -> None:
@@ -2961,6 +3071,8 @@ class _V2ShellBackend:
         self.resume_run_requests: list[str] = []
         self.pending_tool_approvals: list[dict[str, object]] = []
         self.pending_user_questions: list[dict[str, object]] = []
+        self.fail_next_tool_approval = False
+        self.fail_next_user_question = False
         self.question_answer_payloads: list[dict[str, object]] = []
         self.tool_approval_resolve_payloads: list[dict[str, object]] = []
         self.plugin_delete_requests: list[dict[str, object]] = []
@@ -3580,6 +3692,14 @@ class _V2ShellBackend:
             dict[str, object],
             json.loads(request.post_data or "{}"),
         )
+        if self.fail_next_tool_approval:
+            self.fail_next_tool_approval = False
+            _fulfill_json(
+                route,
+                {"detail": "Tool approval failed in browser test."},
+                status=500,
+            )
+            return
         self.tool_approval_resolve_payloads.append(
             {
                 "payload": payload,
@@ -3609,6 +3729,14 @@ class _V2ShellBackend:
             dict[str, object],
             json.loads(request.post_data or "{}"),
         )
+        if self.fail_next_user_question:
+            self.fail_next_user_question = False
+            _fulfill_json(
+                route,
+                {"detail": "User question answer failed in browser test."},
+                status=500,
+            )
+            return
         self.question_answer_payloads.append(
             {
                 "payload": payload,

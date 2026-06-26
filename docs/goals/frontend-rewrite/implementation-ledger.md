@@ -3554,3 +3554,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS verification completed for this terminal stream slice. No Message Timeline, AG-UI Runtime Stream, test-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Route Switch Harness Batch
+
+### Scope
+- Re-checked the updated goal and continued the UI-test migration away from `.py` browser coverage toward TS-owned browser tests.
+- Added `@playwright/test`, a `test:browser` script, and a named `chromium` Playwright project that can reuse an installed Chromium through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` or the local Windows Playwright cache.
+- Added the first TS browser harness scenario for V1 -> `/app/` V2 -> V1 route switching, serving `frontend/dist` and `frontend/dist/app` from a local Node test server with precise `/api/` mocks.
+- Fixed the harness after screenshot inspection caught an overbroad `**/api/**` mock intercepting V1 static modules such as `/js/core/api/request.js`, which had produced misleading green tests with loading screenshots.
+- Added bootstrap-ready, fixed-height, backend-online, and unhandled-API assertions so screenshots are taken only after V1/V2 shells are actually stable and free of API error toasts.
+- Captured and inspected `.tmp/frontend-v2-ts-route-switch/ts-v1-root-before-switch.png`, `.tmp/frontend-v2-ts-route-switch/ts-v2-after-new-ui-switch.png`, and `.tmp/frontend-v2-ts-route-switch/ts-v1-after-return.png`. The final screenshots show clean V1/V2 frames with no startup loader, no error toasts, no outer document scroll, and intact V1/V2 switch controls.
+- Kept this as TS browser harness migration progress only. Remaining work still includes migrating the broader Python browser suite, extracting reusable API fixtures, message stream/replay browser boundaries, appearance/settings parity, and full V1/V2 visual audit.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts` passed with 1 TS browser test.
+- Main-agent screenshot inspection confirmed the route-switch screenshots represent stable UI states rather than loading or error states.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this route-switch harness slice. No V2 frontend completion, Message Timeline completion, or browser-suite migration completion is claimed.

@@ -17,6 +17,12 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "vitest/globals"]
   },
-  "include": ["src", "vite.config.ts", "vitest.setup.ts"],
+  "include": [
+    "browser-tests",
+    "playwright.config.ts",
+    "src",
+    "vite.config.ts",
+    "vitest.setup.ts"
+  ],
   "exclude": ["src/desktop/main.ts", "src/desktop/preload.cts"]
 }

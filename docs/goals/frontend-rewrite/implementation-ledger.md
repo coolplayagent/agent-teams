@@ -3707,3 +3707,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this Observability / Spec Lineage slice. No Application Shell, Observability, Spec Lineage, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Recovery Actions Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and remaining old Python browser coverage after the Observability / Spec Lineage slice, then selected recovery approvals and pending user questions because they protect real paused-run action semantics rather than static page parity.
+- Added a TS Playwright browser scenario that renders a paused active run with one pending tool approval and one pending user question, fills approval feedback, resolves the ACP `Allow once` option, selects a user-question answer, and verifies the exact AG-UI endpoint payloads.
+- Added a second TS Playwright browser scenario that forces the first tool approval and first user-question answer to fail, verifies the inline error remains visible in the Recovery panel, retries both actions successfully, and confirms the stale errors and pending rows disappear after recovery snapshot refresh.
+- Captured and inspected `.tmp/frontend-v2-ts-recovery/v2-recovery-actions.png` and `.tmp/frontend-v2-ts-recovery/v2-recovery-action-errors.png`; the final screenshots show the Recovery panel, real action buttons, disabled answer state before selection, inline error text, composer, and sidebar/workspace frame staying inside the fixed shell.
+- Kept this as targeted Run Recovery TS browser migration progress only. Remaining work still includes recoverable stopped-run resume, background task stop, background subagent streaming, persisted subagent recovery, wider stream event matrix, long tool-heavy replay review, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-recovery.spec.ts` passed with 2 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-recovery.spec.ts` passed with 3 TS browser tests.
+- Main-agent screenshot inspection confirmed both the normal recovery-action state and retryable error state render as stable V2 UI states inside the fixed shell.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this recovery action slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.

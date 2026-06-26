@@ -3780,3 +3780,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this background task stop slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Round Rail Detail Batch
+
+### Scope
+- Re-checked the remaining old Python browser coverage after the background task stop slice, then selected round rail retry/todo detail to broaden the TS browser migration into Rounds, Todos, History, And Retry instead of continuing only inside Run Recovery.
+- Added a TS Playwright browser scenario that hydrates a real timeline message plus its round projection, verifies the Rounds rail appears, checks the warning tone for pending approvals/questions, and opens the round detail hover panel.
+- Verified the detail panel shows pending approval/question counts, retry scheduling metadata, diagnostic text, todo count, and todo item statuses, and that `/sessions/{session_id}/rounds?limit=100` is requested through the browser flow.
+- Screenshot inspection caught a real dark-theme regression where the Ant Sender textarea could render as a white input in the V2 shell. Fixed the composer sender CSS to pin the input, focus, and placeholder colors to existing Agent Teams theme variables, then rebuilt `frontend/dist/app`.
+- Captured and inspected `.tmp/frontend-v2-ts-rounds/v2-round-rail-detail.png`; the final screenshot shows the round rail detail, timeline output, fixed sidebar/workspace frame, and dark composer input all rendering correctly in one stable viewport.
+- Kept this as targeted Message Timeline / Round Rail / composer visual parity progress only. Remaining work still includes image preview, project view, persisted subagent recovery, additional module actions, broader V1/V2 visual audit, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-rounds.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-rounds.spec.ts` passed with 2 TS browser tests.
+- `npm run test -- ShellLayoutCss.test.ts` passed with 7 CSS layout tests.
+- Main-agent screenshot inspection confirmed the round rail detail stays inside the fixed shell and the dark composer input no longer falls back to a white Ant textarea.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this round rail detail and composer visual fix slice. No Message Timeline, Rounds/Todos/History/Retry, composer subsystem, browser-suite migration, or V2 frontend completion is claimed.

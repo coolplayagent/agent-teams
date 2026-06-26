@@ -4653,9 +4653,22 @@ body {
 }
 
 .at-composer-sender .ant-sender-input {
+  background: var(--at-surface) !important;
+  color: var(--at-text);
   min-height: 56px;
   padding: 14px 16px !important;
   line-height: 1.45;
+  box-shadow: none;
+}
+
+.at-composer-sender .ant-sender-input:focus,
+.at-composer-sender .ant-sender-input:focus-visible {
+  background: var(--at-surface) !important;
+  color: var(--at-text);
+}
+
+.at-composer-sender .ant-sender-input::placeholder {
+  color: var(--at-text-muted);
 }
 
 .at-prompt-mention-menu {

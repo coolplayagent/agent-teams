@@ -3954,3 +3954,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, desktop build, and screenshot verification completed for this Electron smoke migration slice. No Desktop subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Terminal Lifecycle Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, parity checklist, and remaining Python V2 browser coverage after the desktop smoke migration, then selected native SSE terminal lifecycle behavior because the AG-UI Runtime Stream checklist still requires run failed/stopped handling on the real browser EventSource path.
+- Extended the TS real-SSE browser spec with `run.failed` and `run.stopped` terminal scenarios. Both scenarios create a real foreground AG-UI run from the composer, receive native `text/event-stream` frames, render live text, then receive the terminal event.
+- Verified terminal events restore composer controls, hide the Stop button, suppress stale recovery banners, avoid extra stale reconnect requests, and keep the fixed shell without document scroll or composer-control overlap.
+- Tightened Stop/Send button locators to exact accessible names so a session title such as `TS run-stopped` cannot masquerade as the run Stop action.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-run-failed-terminal.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-run-stopped-terminal.png`; screenshots show terminal summaries in the timeline with the composer restored and the shell fixed.
+- Kept this as targeted AG-UI Runtime Stream / TS browser migration progress only. Remaining work still includes broader real-SSE resume/replay and recoverable-run edges, remaining Python browser migration, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 4 TS browser tests.
+- Main-agent screenshot inspection confirmed real SSE failed/stopped terminal states render correctly and do not reopen stale recovery.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this real SSE terminal lifecycle slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

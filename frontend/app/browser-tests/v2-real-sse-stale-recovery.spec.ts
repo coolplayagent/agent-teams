@@ -18,6 +18,8 @@ const RUN_ID = "run-ts-real-sse-stale";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-stream";
 const PROMPT = "Real SSE stale recovery probe";
 const FIRST_CHUNK = "Real SSE chunk before malformed frame.";
+const FAILURE_MESSAGE = "real SSE provider failed before completion";
+const STOPPED_MESSAGE = "real SSE run stopped before completion";
 const STREAM_UNAVAILABLE = "run recovery stream is no longer available";
 
 test.setTimeout(45_000);
@@ -40,9 +42,38 @@ test("suppresses stale auto recovery after a real SSE malformed event", async ({
   });
 });
 
+test("finalizes a real SSE run.failed event without stale reconnect", async ({
+  page,
+}) => {
+  await runRealSseTerminalScenario(page, {
+    mode: "run-failed",
+    screenshotName: "v2-real-sse-run-failed-terminal.png",
+    terminalSummary: "Run failed: status failed",
+    terminalText: FAILURE_MESSAGE,
+  });
+});
+
+test("finalizes a real SSE run.stopped event without stale reconnect", async ({
+  page,
+}) => {
+  await runRealSseTerminalScenario(page, {
+    mode: "run-stopped",
+    screenshotName: "v2-real-sse-run-stopped-terminal.png",
+    terminalSummary: "Run stopped: status stopped",
+    terminalText: STOPPED_MESSAGE,
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
+}
+
+interface RealSseTerminalOptions {
+  mode: "run-failed" | "run-stopped";
+  screenshotName: string;
+  terminalSummary: string;
+  terminalText: string;
 }
 
 interface RealSseState {
@@ -80,7 +111,7 @@ async function runRealSseStaleRecoveryScenario(
     const prompt = page.getByRole("textbox", { name: "Prompt" });
     await expect(prompt).toBeEnabled();
     await prompt.fill(PROMPT);
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { exact: true, name: "Send" }).click();
 
     await expect.poll(() => state.streamRequests).toEqual([
       {
@@ -93,10 +124,10 @@ async function runRealSseStaleRecoveryScenario(
       await expect(page.getByText(FIRST_CHUNK)).toBeVisible();
     }
 
-    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden({
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
     await expect(prompt).toBeEnabled();
     await expect(page.locator(".at-recovery")).toHaveCount(0);
 
@@ -122,10 +153,75 @@ async function runRealSseStaleRecoveryScenario(
   }
 }
 
+async function runRealSseTerminalScenario(
+  page: Page,
+  options: RealSseTerminalOptions,
+): Promise<void> {
+  const appServer = await serveFrontendDist();
+  const state: RealSseState = {
+    runCreated: false,
+    streamRequests: [],
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: `TS ${options.mode}`,
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(PROMPT);
+    await page.getByRole("button", { name: "Send" }).click();
+
+    await expect.poll(() => state.streamRequests).toEqual([
+      {
+        afterEventId: "0",
+        lastEventId: null,
+      },
+    ]);
+    await expect(page.getByText(FIRST_CHUNK)).toBeVisible();
+    await expect(page.getByText(options.terminalText)).toBeVisible();
+    await expect(page.getByText(options.terminalSummary)).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(prompt).toBeEnabled();
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+
+    await page.waitForTimeout(1_500);
+    expect(state.streamRequests).toEqual([
+      {
+        afterEventId: "0",
+        lastEventId: null,
+      },
+    ]);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      `${options.mode} should close the real SSE stream inside the fixed shell`,
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
-  mode: RealSseScenarioOptions["mode"],
+  mode: RealSseScenarioOptions["mode"] | RealSseTerminalOptions["mode"],
 ): Promise<boolean> {
   if (context.method === "POST" && context.path === "/ag-ui/runs") {
     state.runCreated = true;
@@ -186,12 +282,53 @@ function recoverySnapshot(state: RealSseState): Record<string, unknown> {
   };
 }
 
-function sseBody(mode: RealSseScenarioOptions["mode"]): string {
+function sseBody(
+  mode: RealSseScenarioOptions["mode"] | RealSseTerminalOptions["mode"],
+): string {
   if (mode === "server-error") {
     return sseFrame({
       data: { error: STREAM_UNAVAILABLE },
       event: "error",
     });
+  }
+  if (mode === "run-failed" || mode === "run-stopped") {
+    const failed = mode === "run-failed";
+    return [
+      sseFrame({
+        data: runEvent({
+          eventId: 1,
+          payload: { phase: "streaming" },
+          relayEventType: "run_started",
+          type: "run.started",
+        }),
+        event: "run.started",
+        id: 1,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 2,
+          payload: { text: FIRST_CHUNK },
+          relayEventType: "text_delta",
+          type: "message.text.delta",
+        }),
+        event: "message.text.delta",
+        id: 2,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 3,
+          payload: {
+            message: failed ? FAILURE_MESSAGE : STOPPED_MESSAGE,
+            root_task_id: "root-ts-real-sse-terminal",
+            status: failed ? "failed" : "stopped",
+          },
+          relayEventType: failed ? "run_failed" : "run_stopped",
+          type: failed ? "run.failed" : "run.stopped",
+        }),
+        event: failed ? "run.failed" : "run.stopped",
+        id: 3,
+      }),
+    ].join("");
   }
   return [
     sseFrame({

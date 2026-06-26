@@ -4146,3 +4146,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent build, TS browser, syntax, and screenshot verification completed for this rich replay slice. No AG-UI Runtime Stream subsystem, Message Timeline subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Runtime Cursor Reconnect Batch
+
+### Scope
+- Re-checked the remaining V2 stream/replay Python UI surface after the rich replay slice and selected the runtime-cursor reconnect path because it exercises interrupted-stream recovery under browser-native EventSource timing.
+- Extended the TS browser support server so individual scenarios can serve real HTTP API/SSE responses from the same localhost origin while preserving the default static-server behavior for existing tests.
+- Added a native HTTP SSE scenario to `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts` that lets the first stream reach event 2, records the browser's automatic reconnect with `Last-Event-ID: 2`, then verifies the V2 runtime controller opens the manual continuation stream with `after_event_id=2`.
+- Verified the continuation chunk renders, the original chunk is not duplicated, terminal completion restores Send, and the fixed shell does not acquire document-level scrolling.
+- Removed the migrated Python `test_v2_real_sse_interrupted_stream_reconnects_from_runtime_cursor` scenario from `tests/integration_tests/browser/test_v2_stream_recovery.py`.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-runtime-cursor-reconnect.png`; the screenshot shows the interrupted stream continuation inside the fixed shell, V1-shaped sidebar, terminal completion, and anchored composer.
+- Kept this as targeted AG-UI Runtime Stream / Interrupted Stream Recovery TS browser migration progress only. Remaining work still includes mock EventSource stream refresh/session-switch Python migration, recoverable/background/multiplex recovery migration, message copy and voice/composer browser coverage, final V1/V2 visual audit, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts --grep "reconnects a real SSE interruption from the runtime cursor"` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 13 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenario.
+- Main-agent screenshot inspection confirmed runtime-cursor reconnect remains inside the fixed shell and preserves the expected continuation transcript.
+
+### Reviewer
+- Main-agent build, TS browser, syntax, and screenshot verification completed for this runtime-cursor reconnect slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

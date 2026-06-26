@@ -18,6 +18,13 @@ export interface FrontendTestServer {
   url: string;
 }
 
+export interface FrontendTestServerOptions {
+  handleRequest?: (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) => boolean | Promise<boolean>;
+}
+
 export interface MockApiRouteContext {
   fulfillJson: (body: unknown, status?: number) => Promise<void>;
   method: string;
@@ -71,9 +78,14 @@ export async function ensureScreenshotDir(
   });
 }
 
-export async function serveFrontendDist(): Promise<FrontendTestServer> {
+export async function serveFrontendDist(
+  options: FrontendTestServerOptions = {},
+): Promise<FrontendTestServer> {
   return new Promise((resolveServer) => {
-    const server = createServer((request, response) => {
+    const server = createServer(async (request, response) => {
+      if (await options.handleRequest?.(request, response)) {
+        return;
+      }
       serveStaticFile(request, response);
     });
     server.listen(0, "127.0.0.1", () => {

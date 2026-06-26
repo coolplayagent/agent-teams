@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { IncomingMessage, ServerResponse } from "node:http";
 
 import {
   ensureScreenshotDir,
@@ -11,6 +12,7 @@ import {
   serveFrontendDist,
   SESSION_ID,
   waitForV2Shell,
+  WORKSPACE_ID,
   type MockApiRouteContext,
 } from "./support/frontend-app";
 
@@ -27,6 +29,7 @@ const RECOVERY_ACTION_LAST_EVENT_ID = 7;
 const RECOVERY_ACTION_RESUMED_CHUNK = "real SSE recovery action resumed chunk";
 const RECOVERY_QUESTION_SUPPLEMENT = "Need release note coverage";
 const REFRESH_RESUMED_CHUNK = "real SSE refresh resumed chunk";
+const RUNTIME_CURSOR_RESUMED_CHUNK = "real SSE resumed chunk";
 const RICH_REPLAY_THINKING_PREFIX = "checking replay state";
 const RICH_REPLAY_THINKING_SUFFIX = " after reconnect";
 const RICH_REPLAY_THINKING = `${RICH_REPLAY_THINKING_PREFIX}${RICH_REPLAY_THINKING_SUFFIX}`;
@@ -196,6 +199,15 @@ test("preserves rich real SSE replay events after reconnect", async ({ page }) =
   });
 });
 
+test("reconnects a real SSE interruption from the runtime cursor", async ({
+  page,
+}) => {
+  await runRealSseRuntimeCursorReconnectScenario(page, {
+    mode: "runtime-cursor-reconnect",
+    screenshotName: "v2-real-sse-runtime-cursor-reconnect.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
@@ -223,6 +235,11 @@ interface RealSseDuplicateReplayOptions {
 
 interface RealSseRichReplayOptions {
   mode: "rich-replay";
+  screenshotName: string;
+}
+
+interface RealSseRuntimeCursorReconnectOptions {
+  mode: "runtime-cursor-reconnect";
   screenshotName: string;
 }
 
@@ -860,6 +877,62 @@ async function runRealSseRichReplayScenario(
   }
 }
 
+async function runRealSseRuntimeCursorReconnectScenario(
+  page: Page,
+  options: RealSseRuntimeCursorReconnectOptions,
+): Promise<void> {
+  const state = createRealSseState();
+  const unhandledApiRoutes: string[] = [];
+  const appServer = await serveFrontendDist({
+    handleRequest: (request, response) =>
+      handleRuntimeCursorHttpApi(request, response, state, unhandledApiRoutes),
+  });
+  try {
+    await installShellState(page);
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(PROMPT);
+    await page.getByRole("button", { exact: true, name: "Send" }).click();
+
+    const firstChunkMessage = page.locator(".at-message").filter({
+      hasText: FIRST_CHUNK,
+    });
+    await expect(firstChunkMessage).toBeVisible();
+    await expect.poll(() => state.streamRequests.some(
+      (request) => request.afterEventId === "0" && request.lastEventId === "2",
+    )).toBe(true);
+    await expect.poll(() => state.streamRequests.some(
+      (request) => request.afterEventId === "2",
+    )).toBe(true);
+    await expect(page.getByText(RUNTIME_CURSOR_RESUMED_CHUNK)).toBeVisible();
+    await expect(page.locator(".at-message").filter({ hasText: FIRST_CHUNK }))
+      .toHaveCount(1);
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    expect(state.runCreateCount).toBe(1);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "real SSE interruption should reconnect from the runtime cursor inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
@@ -869,6 +942,7 @@ async function handleRealSseApi(
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
     | RealSseRichReplayOptions["mode"]
+    | RealSseRuntimeCursorReconnectOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
@@ -916,12 +990,17 @@ async function handleRealSseApi(
     if (mode === "rich-replay" && afterEventId === "0") {
       state.lastEventId = 2;
     }
+    if (mode === "runtime-cursor-reconnect" && afterEventId === "0") {
+      state.lastEventId = 2;
+    }
     const completeRefreshAfterFulfill =
       mode === "refresh-recovery" && afterEventId === "2";
     const completeDuplicateReplayAfterFulfill =
       mode === "duplicate-replay" && afterEventId === "2";
     const completeRichReplayAfterFulfill =
       mode === "rich-replay" && afterEventId === "2";
+    const completeRuntimeCursorAfterFulfill =
+      mode === "runtime-cursor-reconnect" && afterEventId === "2";
     if (mode === "recovery-approval" || mode === "recovery-question") {
       state.completed = true;
       state.lastEventId = 10;
@@ -946,6 +1025,10 @@ async function handleRealSseApi(
     if (completeRichReplayAfterFulfill) {
       state.completed = true;
       state.lastEventId = 27;
+    }
+    if (completeRuntimeCursorAfterFulfill) {
+      state.completed = true;
+      state.lastEventId = 4;
     }
     return true;
   }
@@ -1001,6 +1084,271 @@ async function handleRealSseApi(
   return false;
 }
 
+async function handleRuntimeCursorHttpApi(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: RealSseState,
+  unhandledApiRoutes: string[],
+): Promise<boolean> {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  if (!url.pathname.startsWith("/api/")) {
+    return false;
+  }
+  const path = url.pathname.replace(/^\/api/, "");
+  const method = request.method ?? "GET";
+  if (method === "POST" && path === "/ag-ui/runs") {
+    state.runCreated = true;
+    state.runCreateCount += 1;
+    sendJson(response, {
+      run_id: RUN_ID,
+      session_id: SESSION_ID,
+      target_role_id: null,
+    });
+    return true;
+  }
+  if (method === "GET" && path === `/ag-ui/runs/${RUN_ID}/events`) {
+    handleRuntimeCursorSse(request, response, state, url);
+    return true;
+  }
+  if (method !== "GET") {
+    sendJson(response, { status: "ok" });
+    return true;
+  }
+  if (path === "/system/health" || path === "/system/live") {
+    sendJson(response, { status: "ok" });
+    return true;
+  }
+  if (path === "/system/control-plane") {
+    sendJson(response, { enabled: false });
+    return true;
+  }
+  if (path === "/system/configs/ui-language") {
+    sendJson(response, { language: "zh-CN" });
+    return true;
+  }
+  if (path === "/system/configs/general") {
+    sendJson(response, { shell_safety_policy_enabled: true });
+    return true;
+  }
+  if (path === "/speech/config") {
+    sendJson(response, {
+      configured: false,
+      language: "zh-CN",
+      supported_models: [],
+    });
+    return true;
+  }
+  if (path === "/workspaces") {
+    sendJson(response, [
+      {
+        display_name: "agent-teams",
+        last_session_id: SESSION_ID,
+        path: "C:/Users/yex/Documents/workspace/agent-teams",
+        updated_at: "2026-06-25T08:00:00Z",
+        workspace_id: WORKSPACE_ID,
+      },
+    ]);
+    return true;
+  }
+  if (path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    sendJson(response, {
+      has_more: false,
+      items: [runtimeCursorSidebarSession()],
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (path === "/sessions/sidebar") {
+    sendJson(response, [runtimeCursorSidebarSession()]);
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}`) {
+    sendJson(response, {
+      can_switch_mode: true,
+      created_at: "2026-06-25T08:00:00Z",
+      normal_model_profile: null,
+      normal_root_role_id: "MainAgent",
+      orchestration_preset_id: null,
+      session_id: SESSION_ID,
+      session_mode: "normal",
+      title: "TS real SSE cursor reconnect",
+      updated_at: "2026-06-25T08:30:00Z",
+      workspace_id: WORKSPACE_ID,
+    });
+    return true;
+  }
+  if (
+    path === `/sessions/${SESSION_ID}/messages` ||
+    path === `/sessions/${SESSION_ID}/subagents` ||
+    path === `/sessions/${SESSION_ID}/agents` ||
+    path === `/sessions/${SESSION_ID}/tasks` ||
+    path === "/automation/projects"
+  ) {
+    sendJson(response, []);
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/rounds`) {
+    sendJson(response, { has_more: false, items: [], next_cursor: null });
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/recovery`) {
+    sendJson(response, recoverySnapshot(state));
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/token-usage`) {
+    sendJson(response, { by_role: {}, input_tokens: 0, output_tokens: 0 });
+    return true;
+  }
+  if (path === "/roles:options") {
+    sendJson(response, {
+      coordinator_role: {
+        description: "Coordinates delegated work.",
+        name: "Coordinator",
+        role_id: "Coordinator",
+      },
+      coordinator_role_id: "Coordinator",
+      main_agent_role: {
+        description: "Handles primary chat work.",
+        name: "Main Agent",
+        role_id: "MainAgent",
+      },
+      main_agent_role_id: "MainAgent",
+      normal_mode_roles: [
+        {
+          description: "Default chat role.",
+          name: "Default",
+          role_id: "MainAgent",
+        },
+      ],
+      subagent_roles: [],
+    });
+    return true;
+  }
+  if (path === "/system/configs/model/profiles") {
+    sendJson(response, {
+      default: {
+        is_default: true,
+        model: "gpt-4o-mini",
+        provider: "openai",
+      },
+    });
+    return true;
+  }
+  if (path === "/system/configs/orchestration") {
+    sendJson(response, {
+      default_orchestration_preset_id: "team",
+      presets: [
+        {
+          name: "Team",
+          orchestration_prompt: "Coordinate delegated work.",
+          preset_id: "team",
+          role_ids: ["MainAgent"],
+        },
+      ],
+    });
+    return true;
+  }
+  unhandledApiRoutes.push(`${method} ${path}${url.search}`);
+  sendJson(response, { detail: `Unhandled real SSE HTTP route: ${path}` }, 404);
+  return true;
+}
+
+function handleRuntimeCursorSse(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: RealSseState,
+  url: URL,
+): void {
+  const afterEventId = url.searchParams.get("after_event_id") ?? "0";
+  const lastEventIdHeader = request.headers["last-event-id"];
+  const lastEventId = Array.isArray(lastEventIdHeader)
+    ? lastEventIdHeader[0] ?? null
+    : lastEventIdHeader ?? null;
+  state.streamRequests.push({
+    afterEventId,
+    lastEventId,
+  });
+  state.requestSequence.push("stream");
+  response.writeHead(200, {
+    "Cache-Control": "no-cache",
+    "Content-Type": "text/event-stream",
+    "X-Accel-Buffering": "no",
+  });
+  if (afterEventId === "2") {
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 3,
+        payload: { text: RUNTIME_CURSOR_RESUMED_CHUNK },
+        relayEventType: "text_delta",
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 3,
+    }));
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 4,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 4,
+    }));
+    state.completed = true;
+    state.lastEventId = 4;
+    response.end();
+    return;
+  }
+  if (lastEventId === "2") {
+    response.write("retry: 60000\n\n");
+    response.end();
+    return;
+  }
+  state.lastEventId = 2;
+  response.write("retry: 100\n\n");
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    }),
+    event: "run.started",
+    id: 1,
+  }));
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 2,
+      payload: { text: FIRST_CHUNK },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: 2,
+  }));
+  response.end();
+}
+
+function runtimeCursorSidebarSession(): Record<string, unknown> {
+  return {
+    active_run_status: null,
+    created_at: "2026-06-25T08:00:00Z",
+    message_count: 2,
+    session_id: SESSION_ID,
+    title: "TS real SSE cursor reconnect",
+    updated_at: "2026-06-25T08:30:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function sendJson(response: ServerResponse, body: unknown, status = 200): void {
+  response.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  response.end(JSON.stringify(body));
+}
+
 function recoverySnapshot(state: RealSseState): Record<string, unknown> {
   return {
     active_run: state.runCreated && !state.completed
@@ -1044,6 +1392,7 @@ function sseBody(
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
     | RealSseRichReplayOptions["mode"]
+    | RealSseRuntimeCursorReconnectOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
@@ -1246,6 +1595,55 @@ function sseBody(
     }
     return [
       "retry: 60000\n\n",
+      sseFrame({
+        data: runEvent({
+          eventId: 1,
+          payload: { phase: "streaming" },
+          relayEventType: "run_started",
+          type: "run.started",
+        }),
+        event: "run.started",
+        id: 1,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 2,
+          payload: { text: FIRST_CHUNK },
+          relayEventType: "text_delta",
+          type: "message.text.delta",
+        }),
+        event: "message.text.delta",
+        id: 2,
+      }),
+    ].join("");
+  }
+  if (mode === "runtime-cursor-reconnect") {
+    if (afterEventId === "2") {
+      return [
+        sseFrame({
+          data: runEvent({
+            eventId: 3,
+            payload: { text: RUNTIME_CURSOR_RESUMED_CHUNK },
+            relayEventType: "text_delta",
+            type: "message.text.delta",
+          }),
+          event: "message.text.delta",
+          id: 3,
+        }),
+        sseFrame({
+          data: runEvent({
+            eventId: 4,
+            payload: { status: "completed" },
+            relayEventType: "run_completed",
+            type: "run.completed",
+          }),
+          event: "run.completed",
+          id: 4,
+        }),
+      ].join("");
+    }
+    return [
+      "retry: 100\n\n",
       sseFrame({
         data: runEvent({
           eventId: 1,

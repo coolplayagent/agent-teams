@@ -843,42 +843,6 @@ def test_v2_interrupted_stream_preserves_non_text_events_after_reconnect(
         )
 
 
-def test_v2_real_sse_interrupted_stream_reconnects_from_runtime_cursor(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2StreamBackend()
-    stream_state = _RealSseStreamState()
-    _install_real_sse_shell_state(page)
-
-    with _serve_v2_app_with_real_sse(repo_root, backend, stream_state) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        prompt = page.get_by_label(re.compile(r"^(Prompt|提示词)$"))
-        expect(prompt).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        prompt.fill(_PROMPT)
-        page.get_by_role("button", name=re.compile(r"^(Send|发送)$")).click()
-
-        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        assert stream_state.wait_for_after_event_id(2, timeout_seconds=10.0)
-        assert stream_state.wait_for_sent_event_id(4, timeout_seconds=5.0)
-        expect(
-            page.locator(".at-message").filter(has_text=_REAL_SSE_RESUMED_CHUNK),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.locator(".at-message").filter(has_text=_FIRST_CHUNK)).to_have_count(
-            1,
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.get_by_role("button", name=re.compile(r"^(Stop|停止)$")),
-        ).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
-        assert stream_state.has_last_event_id_header("2")
-
-
 def test_v2_session_switch_closes_active_stream_and_isolates_timeline(
     browser_page: Page,
 ) -> None:

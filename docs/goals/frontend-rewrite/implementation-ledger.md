@@ -4267,3 +4267,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this stream-recovery file removal slice. No AG-UI Runtime Stream subsystem, browser-suite migration, V1/V2 visual parity, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Shell Parity Python Cleanup Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, current worktree, and remaining V2 Python UI scan before editing. This slice targets broad V1/V2 product-shape parity that already has stronger TS browser ownership.
+- Removed ten migrated Python UI scenarios from `tests/integration_tests/browser/test_v2_shell_layout.py`: V1/V2 route switching, message export, round rail detail, timeline image preview, primary sidebar module surfaces, workspace project view, V1 settings section grouping, appearance fixed-frame layout, narrow sidebar overlay layout, and observability scope/spec-lineage navigation.
+- Verified those scenarios are covered by TS browser specs in `v2-route-switch.spec.ts`, `v2-message-export.spec.ts`, `v2-rounds.spec.ts`, `v2-image-preview.spec.ts`, `v2-shell-parity.spec.ts`, `v2-project-view.spec.ts`, `v2-appearance-layout.spec.ts`, and `v2-observability.spec.ts`.
+- Kept V1 sidebar and settings-item parity explicit in TS: the sidebar test checks the V1 primary entries exactly, and the settings parity test checks the top-level sections exactly while keeping secondary System pages nested rather than flattened.
+- Captured and inspected `.tmp/frontend-v2-ts-shell/v2-settings-system-parity.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-dark-rose-pine.png`, `.tmp/frontend-v2-ts-project-view/v2-project-view-files.png`, and `.tmp/frontend-v2-ts-appearance/v2-narrow-sidebar-overlay.png`; the screenshots show fixed shell framing, non-document scrolling, V1-shaped navigation, and nested settings/project surfaces.
+- Remaining V2 Python UI coverage in `test_v2_shell_layout.py` is now 26 scenarios, concentrated around stream/recovery duplication, persisted subagent sessions, connector/automation/board/model/settings mutation flows, web/remote-workspace actions, and sidebar resizing.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-route-switch.spec.ts browser-tests/v2-message-export.spec.ts browser-tests/v2-rounds.spec.ts browser-tests/v2-image-preview.spec.ts browser-tests/v2-shell-parity.spec.ts browser-tests/v2-project-view.spec.ts browser-tests/v2-appearance-layout.spec.ts browser-tests/v2-observability.spec.ts` passed with 10 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_shell_layout.py` passed after deleting the migrated Python scenarios.
+- `git diff --check` passed, with only the expected Windows line-ending warning.
+- `rg -c "^def test_v2_" tests\integration_tests\browser\test_v2_shell_layout.py` reports 26 remaining V2 Python UI scenarios.
+
+### Reviewer
+- Main-agent TS browser, Python syntax, diff, and screenshot verification completed for this shell parity cleanup slice. No browser-suite migration, V1/V2 visual parity, subsystem sign-off, or V2 frontend completion is claimed.

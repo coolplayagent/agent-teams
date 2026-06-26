@@ -536,7 +536,9 @@ def test_v2_recovery_approval_and_question_actions_call_real_endpoints(
         _wait_for_v2_shell(page)
 
         recovery = page.locator(".at-recovery")
-        expect(recovery.get_by_text("Run run-v2-live is awaiting_tool_approval")).to_be_visible(
+        expect(
+            recovery.get_by_text("Run run-v2-live is awaiting_tool_approval")
+        ).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
         expect(recovery.get_by_text("read", exact=True)).to_be_visible(
@@ -1135,7 +1137,9 @@ def test_v2_persisted_subagent_terminal_refreshes_history_without_restart(
                 "reviewer",
             ),
         )
-        expect(subagent_view.get_by_text("Reviewer terminal live chunk.")).to_be_visible(
+        expect(
+            subagent_view.get_by_text("Reviewer terminal live chunk.")
+        ).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
         )
 
@@ -1173,300 +1177,6 @@ def test_v2_persisted_subagent_terminal_refreshes_history_without_restart(
         screenshot_dir = repo_root / ".tmp" / "frontend-v2-subagents"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(screenshot_dir / "v2-persisted-subagent-terminal.png"))
-
-
-def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-route-switch"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.route(f"{app_url}/api/**", backend.route)
-        page.goto(f"{app_url}/")
-        _wait_for_v1_shell(page)
-
-        expect(page.locator(".app-shell")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        new_ui_link = page.get_by_role("link", name="Open new interface")
-        expect(new_ui_link).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        assert page.evaluate("() => document.body.scrollHeight <= window.innerHeight")
-        page.screenshot(path=str(screenshot_dir / "v1-root-before-switch.png"))
-
-        new_ui_link.click()
-        page.wait_for_url(f"{app_url}/app/", timeout=_WAIT_TIMEOUT_MS)
-        _wait_for_v2_shell(page)
-        expect(page.locator(".at-shell")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.get_by_role("link", name="V1")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
-        page.screenshot(path=str(screenshot_dir / "v2-after-new-ui-switch.png"))
-
-        page.get_by_role("link", name="V1").click()
-        page.wait_for_url(f"{app_url}/", timeout=_WAIT_TIMEOUT_MS)
-        _wait_for_v1_shell(page)
-        expect(page.locator(".app-shell")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.get_by_role("link", name="Open new interface")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        page.screenshot(path=str(screenshot_dir / "v1-after-return.png"))
-
-
-def test_v2_message_export_downloads_html_and_png(
-    browser_page: Page,
-    tmp_path: Path,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        expect(page.get_by_role("button", name="Export messages")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        rounds_request_count_before_export = backend.rounds_request_count
-
-        page.get_by_role("button", name="Export messages").click()
-        with page.expect_download() as html_download_info:
-            page.get_by_role("menuitem", name="HTML").click()
-        html_download = html_download_info.value
-        assert html_download.suggested_filename == "session-v2-shell-messages.html"
-        html_path = tmp_path / html_download.suggested_filename
-        html_download.save_as(html_path)
-        html = html_path.read_text(encoding="utf-8")
-        assert "<title>session-v2-shell transcript</title>" in html
-        assert "Round 1 prompt" in html
-        assert "V2 export prompt" in html
-        assert "Exported V2 transcript content" in html
-
-        page.get_by_role("button", name="Export messages").click()
-        with page.expect_download() as png_download_info:
-            page.get_by_role("menuitem", name="PNG").click()
-        png_download = png_download_info.value
-        assert png_download.suggested_filename == "session-v2-shell-messages.png"
-        png_path = tmp_path / png_download.suggested_filename
-        png_download.save_as(png_path)
-        assert png_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-        assert backend.rounds_request_count == rounds_request_count_before_export + 2
-
-
-def test_v2_round_rail_opens_retry_todo_detail(browser_page: Page) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        round_rail = page.get_by_role("navigation", name="Rounds")
-        expect(round_rail).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        round_button = page.get_by_role(
-            "button",
-            name="Go to round 1: V2 export prompt",
-        )
-        expect(round_button).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        button_class = round_button.get_attribute("class") or ""
-        assert "is-warning" in button_class
-        round_button.hover()
-
-        detail = page.get_by_label("Round detail")
-        expect(detail).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(detail.get_by_text("2 pending approvals")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(detail.get_by_text("1 pending questions")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            detail.get_by_text("Retry scheduled: attempt 3/5 · in 3s · rate limited"),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(
-            detail.get_by_text("Diagnostic: Waiting for user confirmation"),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(detail.get_by_text("Todo")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(detail.get_by_text("2 items")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(detail.get_by_text("Confirm deploy window")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(detail.get_by_text("Capture approval result")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        assert f"/sessions/{_SESSION_ID}/rounds?limit=100" in backend.requested_urls
-
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-rounds"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "v2-round-rail-detail.png"))
-
-
-def test_v2_timeline_image_preview_opens_in_shell(browser_page: Page) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend(include_image_message=True)
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        image = page.get_by_role("img", name="runtime-preview.svg")
-        expect(image).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.get_by_text("runtime-preview.svg")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        preview_mask = page.locator(".at-message-media .ant-image-mask")
-        expect(preview_mask).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        preview_mask.click()
-        preview = page.locator(".ant-image-preview-wrap")
-        expect(preview).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(preview.get_by_role("img", name="runtime-preview.svg")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-resource"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "v2-image-preview-open.png"))
-
-
-def test_v2_sidebar_module_entries_open_real_surfaces(browser_page: Page) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        expect(page.locator(".at-sidebar-nav")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        primary_nav = page.get_by_role("navigation", name="Primary navigation")
-        assert page.locator(".at-sidebar-nav-label").all_inner_texts() == [
-            "Chat",
-            "Automation",
-            "Skills",
-            "Board",
-            "Search",
-            "Connectors",
-            "Memory",
-            "Observability",
-            "Settings",
-        ]
-
-        primary_nav.get_by_role("button", name="Chat").click()
-        expect(page.locator(".at-chat-view")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.locator(".at-composer")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-        primary_nav.get_by_role("button", name="Automation").click()
-        expect(page.get_by_role("button", name="Daily triage")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.get_by_text("Keep the V2 shell parity ledger current.")
-        ).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        primary_nav.get_by_role("button", name="Skills").click()
-        expect(page.get_by_test_id("skills-view")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_role("button", name="Open skill Writer")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        primary_nav.get_by_role("button", name="Board").click()
-        expect(page.get_by_test_id("board-todo-todo-v2-shell")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.get_by_role("heading", name="Keep module pages reachable"),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-        primary_nav.get_by_role("button", name="Search").click()
-        expect(page.get_by_test_id("session-search-view")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        primary_nav.get_by_role("button", name="Connectors").click()
-        expect(page.get_by_test_id("connectors-view")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_test_id("connector-card-github")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_test_id("runtime-tool-card-rg")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        primary_nav.get_by_role("button", name="Memory").click()
-        expect(page.get_by_test_id("memory-view")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.get_by_test_id("memory-row-memory-v2-shell")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            page.get_by_role("heading", name="V2 shell module parity"),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-        primary_nav.get_by_role("button", name="Observability").click()
-        observability = page.locator(".at-surface-view").filter(
-            has_text="Observability",
-        )
-        expect(
-            observability.get_by_role("heading", name="Observability")
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(observability.get_by_text("Agent loop")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        primary_nav.get_by_role("button", name="Settings").click()
-        settings = page.get_by_role("dialog", name="Settings")
-        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(
-            settings.get_by_role("navigation", name="Settings sections"),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(
-            settings.get_by_role("button", name="Appearance", exact=True),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-        for requested_path in [
-            "/system/configs",
-            "/system/skills/market/clawhub",
-            "/observability/overview",
-            "/observability/breakdowns",
-            "/automation/projects",
-            "/automation/projects/aut-daily",
-            "/automation/projects/aut-daily/sessions",
-            "/connectors",
-            "/connectors/runtime-tools",
-            "/boards/todos",
-            "/memories",
-            f"/workspaces/{_WORKSPACE_ID}/memories/memory-v2-shell",
-        ]:
-            assert requested_path in backend.requested_paths
-
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-resource"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "v2-sidebar-modules-memory.png"))
 
 
 def test_v2_connectors_runtime_tools_actions_call_real_endpoints(
@@ -1852,288 +1562,6 @@ def test_v2_board_source_settings_call_real_endpoints(
         page.screenshot(path=str(screenshot_dir / "v2-board-source-settings.png"))
 
 
-def test_v2_workspace_project_view_opens_real_workbench_flow(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        page.get_by_role(
-            "button",
-            name="Open workspace view for agent-teams",
-        ).click()
-        project_view = page.locator(".at-project-view")
-        expect(project_view).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(project_view.get_by_role("heading", name="agent-teams")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            project_view.get_by_text(
-                "C:/Users/yex/Documents/workspace/agent-teams",
-            ),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(project_view.get_by_role("tab", name="Changes 1")).to_have_attribute(
-            "aria-selected",
-            "true",
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            project_view.locator(".at-workspace-diff-path").filter(
-                has_text="frontend/app/src/App.tsx",
-            ),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(project_view.get_by_text("+new")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(project_view.get_by_text("-old")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        page.get_by_role("tab", name="Files").click()
-        expect(project_view.get_by_text("frontend")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(project_view.get_by_text("README.md")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        page.get_by_role("button", name="Open file README.md").click()
-        expect(project_view.get_by_text("# Agent Teams")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        snapshot_request_count = backend.snapshot_request_count
-        with page.expect_response(
-            lambda response: (
-                response.request.method == "GET"
-                and response.url.endswith(f"/api/workspaces/{_WORKSPACE_ID}/snapshot")
-            ),
-            timeout=_WAIT_TIMEOUT_MS,
-        ):
-            page.get_by_role("button", name="Reload workspace view").click()
-        assert backend.snapshot_request_count > snapshot_request_count
-
-        with page.expect_response(
-            lambda response: (
-                response.request.method == "POST"
-                and f"/api/workspaces/{_WORKSPACE_ID}:open-root?mount=default"
-                in response.url
-            ),
-            timeout=_WAIT_TIMEOUT_MS,
-        ):
-            page.get_by_role("button", name="Open folder").click()
-        assert backend.open_root_queries == ["mount=default"]
-        page.get_by_role("button", name="Back to chat").click()
-        expect(project_view).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
-        expect(page.locator(".at-composer")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-        for requested_path in [
-            f"/workspaces/{_WORKSPACE_ID}/snapshot",
-            f"/workspaces/{_WORKSPACE_ID}/tree",
-            f"/workspaces/{_WORKSPACE_ID}/diffs",
-            f"/workspaces/{_WORKSPACE_ID}/diff",
-            f"/workspaces/{_WORKSPACE_ID}/file",
-            f"/workspaces/{_WORKSPACE_ID}:open-root",
-        ]:
-            assert requested_path in backend.requested_paths
-
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-project"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "v2-project-view-flow.png"))
-
-
-def test_v2_settings_keeps_v1_sections_and_system_secondary_pages(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
-        settings = page.get_by_role("dialog", name="Settings")
-        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        sections = settings.get_by_role("navigation", name="Settings sections")
-        expect(sections).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        assert sections.get_by_role("button").all_inner_texts() == [
-            "Appearance",
-            "General",
-            "Speech",
-            "Notifications",
-            "Models",
-            "Roles",
-            "Orchestration",
-            "Web",
-            "ClawHub",
-            "Proxy",
-            "Remote workspace",
-            "Environment variables",
-            "System",
-        ]
-        for secondary_label in [
-            "MCP",
-            "Plugins",
-            "Commands",
-            "Hooks",
-            "Agent Runtime",
-            "GitHub",
-            "Triggers",
-        ]:
-            expect(sections.get_by_role("button", name=secondary_label)).to_have_count(
-                0
-            )
-
-        sections.get_by_role("button", name="System").click()
-        expect(settings.get_by_role("heading", name="System")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            settings.get_by_text("Global and workspace command files.")
-        ).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        system_pages = settings.locator(".at-settings-list-button")
-        expect(system_pages.filter(has_text="MCP")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(system_pages.filter(has_text="Plugins")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(system_pages.filter(has_text="Commands")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(system_pages.filter(has_text="Hooks")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(system_pages.filter(has_text="Agent Runtime")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(system_pages.filter(has_text="GitHub")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(system_pages.filter(has_text="Triggers")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        system_pages.filter(has_text="MCP").click()
-        expect(settings.get_by_role("heading", name="MCP")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("stdio-shell")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("run_command")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        settings.get_by_role("button", name="Back", exact=True).click()
-        expect(system_pages.filter(has_text="MCP")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        system_pages.filter(has_text="Plugins").click()
-        expect(settings.get_by_role("heading", name="Plugins")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("workspace-tools")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        settings.get_by_role("button", name="Back", exact=True).click()
-        expect(system_pages.filter(has_text="Plugins")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        system_pages.filter(has_text="Commands").click()
-        expect(settings.get_by_role("heading", name="Commands")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("Global commands")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("/opsx:propose")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        settings.get_by_role("button", name="Back", exact=True).click()
-        expect(system_pages.filter(has_text="Commands")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        system_pages.filter(has_text="Hooks").click()
-        expect(settings.get_by_role("heading", name="Hooks")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            settings.locator(".at-settings-list-row").filter(
-                has_text="Session startup setup"
-            )
-        ).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        settings.get_by_role("button", name="Back", exact=True).click()
-        expect(system_pages.filter(has_text="Hooks")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        system_pages.filter(has_text="Agent Runtime").click()
-        expect(settings.get_by_role("heading", name="Agent Runtime")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS
-        )
-        expect(settings.get_by_text("Codex CLI")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        settings.get_by_role("button", name="Back", exact=True).click()
-        expect(system_pages.filter(has_text="Agent Runtime")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        system_pages.filter(has_text="GitHub").click()
-        expect(settings.get_by_role("heading", name="GitHub")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("GitHub CLI", exact=True)).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("Webhook base URL")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        settings.get_by_role("button", name="Back", exact=True).click()
-        expect(system_pages.filter(has_text="GitHub")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        system_pages.filter(has_text="Triggers").click()
-        expect(settings.get_by_role("heading", name="Triggers")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("Feishu Main")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(settings.get_by_text("WeChat Main")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        assert "/mcp/servers" in backend.requested_paths
-        assert "/mcp/servers/stdio-shell/tools" in backend.requested_paths
-        assert "/system/configs/plugins/runtime" in backend.requested_paths
-        assert "/system/configs/hooks" in backend.requested_paths
-        assert "/system/configs/hooks/runtime" in backend.requested_paths
-        assert "/system/configs/agent-runtimes" in backend.requested_paths
-        assert "/system/commands:catalog" in backend.requested_paths
-        assert "/system/configs/github" in backend.requested_paths
-        assert "/system/configs/github/webhook/tunnel" in backend.requested_paths
-        assert "/gateway/feishu/accounts" in backend.requested_paths
-        assert "/gateway/wechat/accounts" in backend.requested_paths
-
-
 def test_v2_plugins_settings_actions_call_real_endpoints(
     browser_page: Page,
 ) -> None:
@@ -2170,8 +1598,10 @@ def test_v2_plugins_settings_actions_call_real_endpoints(
         )
         quality_row.get_by_role("button", name="Enable").click()
         _wait_for_backend_state(
-            lambda: backend.plugin_enable_requests
-            == [{"name": "quality", "payload": {"scope": "project"}}],
+            lambda: (
+                backend.plugin_enable_requests
+                == [{"name": "quality", "payload": {"scope": "project"}}]
+            ),
             "Plugin enable request was not captured.",
         )
 
@@ -2180,28 +1610,34 @@ def test_v2_plugins_settings_actions_call_real_endpoints(
         )
         workspace_row.get_by_role("button", name="Disable").click()
         _wait_for_backend_state(
-            lambda: backend.plugin_disable_requests
-            == [{"name": "workspace-tools", "payload": {"scope": "user"}}],
+            lambda: (
+                backend.plugin_disable_requests
+                == [{"name": "workspace-tools", "payload": {"scope": "user"}}]
+            ),
             "Plugin disable request was not captured.",
         )
 
         workspace_row.get_by_role("button", name="Update").click()
         _wait_for_backend_state(
-            lambda: backend.plugin_update_requests
-            == [
-                {
-                    "name": "workspace-tools",
-                    "payload": {"scope": "user", "version": "1.0.0"},
-                }
-            ],
+            lambda: (
+                backend.plugin_update_requests
+                == [
+                    {
+                        "name": "workspace-tools",
+                        "payload": {"scope": "user", "version": "1.0.0"},
+                    }
+                ]
+            ),
             "Plugin update request was not captured.",
         )
 
         workspace_row.get_by_role("button", name="Delete").click()
         page.get_by_role("button", name="OK", exact=True).click()
         _wait_for_backend_state(
-            lambda: backend.plugin_delete_requests
-            == [{"name": "workspace-tools", "prune": "false", "scope": "user"}],
+            lambda: (
+                backend.plugin_delete_requests
+                == [{"name": "workspace-tools", "prune": "false", "scope": "user"}]
+            ),
             "Plugin delete request was not captured.",
         )
         expect(workspace_row).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
@@ -2308,8 +1744,10 @@ def test_v2_roles_settings_validate_delete_and_create_real_config(
 
         settings.get_by_role("button", name="Validate").click()
         _wait_for_backend_state(
-            lambda: len(backend.role_validate_payloads) == 1
-            and backend.role_validate_payloads[0]["role_id"] == "reviewer",
+            lambda: (
+                len(backend.role_validate_payloads) == 1
+                and backend.role_validate_payloads[0]["role_id"] == "reviewer"
+            ),
             "Role validate request was not captured.",
         )
 
@@ -2329,10 +1767,12 @@ def test_v2_roles_settings_validate_delete_and_create_real_config(
         )
         settings.get_by_role("button", name="Save").click()
         _wait_for_backend_state(
-            lambda: len(backend.role_save_payloads) == 1
-            and backend.role_save_payloads[0]["role_id"] == "analyst"
-            and "file_name" not in backend.role_save_payloads[0]
-            and "source" not in backend.role_save_payloads[0],
+            lambda: (
+                len(backend.role_save_payloads) == 1
+                and backend.role_save_payloads[0]["role_id"] == "analyst"
+                and "file_name" not in backend.role_save_payloads[0]
+                and "source" not in backend.role_save_payloads[0]
+            ),
             "Role save request was not captured.",
         )
         expect(settings.get_by_label("Role ID")).to_have_value("analyst")
@@ -2369,11 +1809,13 @@ def test_v2_orchestration_settings_default_delete_and_create_real_config(
         expect(shipping_row).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
         shipping_row.get_by_role("button", name="Set default").click()
         _wait_for_backend_state(
-            lambda: len(backend.orchestration_save_payloads) == 1
-            and backend.orchestration_save_payloads[0][
-                "default_orchestration_preset_id"
-            ]
-            == "shipping",
+            lambda: (
+                len(backend.orchestration_save_payloads) == 1
+                and backend.orchestration_save_payloads[0][
+                    "default_orchestration_preset_id"
+                ]
+                == "shipping"
+            ),
             "Orchestration default save request was not captured.",
         )
 
@@ -2385,13 +1827,19 @@ def test_v2_orchestration_settings_default_delete_and_create_real_config(
         settings.get_by_role("button", name="Delete").click()
         page.get_by_role("button", name="OK", exact=True).click()
         _wait_for_backend_state(
-            lambda: len(backend.orchestration_save_payloads) == 2
-            and backend.orchestration_save_payloads[1][
-                "default_orchestration_preset_id"
-            ]
-            == "shipping"
-            and len(cast(list[object], backend.orchestration_save_payloads[1]["presets"]))
-            == 1,
+            lambda: (
+                len(backend.orchestration_save_payloads) == 2
+                and backend.orchestration_save_payloads[1][
+                    "default_orchestration_preset_id"
+                ]
+                == "shipping"
+                and len(
+                    cast(
+                        list[object], backend.orchestration_save_payloads[1]["presets"]
+                    )
+                )
+                == 1
+            ),
             "Orchestration delete save request was not captured.",
         )
 
@@ -2404,17 +1852,19 @@ def test_v2_orchestration_settings_default_delete_and_create_real_config(
         )
         settings.get_by_role("button", name="Save").click()
         _wait_for_backend_state(
-            lambda: len(backend.orchestration_save_payloads) == 3
-            and cast(
-                list[dict[str, object]],
-                backend.orchestration_save_payloads[2]["presets"],
-            )[-1]["preset_id"]
-            == "analysis"
-            and cast(
-                list[dict[str, object]],
-                backend.orchestration_save_payloads[2]["presets"],
-            )[-1]["role_ids"]
-            == ["reviewer"],
+            lambda: (
+                len(backend.orchestration_save_payloads) == 3
+                and cast(
+                    list[dict[str, object]],
+                    backend.orchestration_save_payloads[2]["presets"],
+                )[-1]["preset_id"]
+                == "analysis"
+                and cast(
+                    list[dict[str, object]],
+                    backend.orchestration_save_payloads[2]["presets"],
+                )[-1]["role_ids"]
+                == ["reviewer"]
+            ),
             "Orchestration create save request was not captured.",
         )
         expect(settings.get_by_label("Preset ID")).to_have_value("analysis")
@@ -2481,7 +1931,9 @@ def test_v2_model_profile_detail_saves_and_tests_existing_profile(
         settings.get_by_label("Base URL").fill("https://vision.changed.example/v1")
         settings.get_by_label("Context window").fill("128000")
         settings.get_by_label("Max tokens").fill("4096")
-        settings.get_by_label("Fallback policy").fill("same_provider_then_other_provider")
+        settings.get_by_label("Fallback policy").fill(
+            "same_provider_then_other_provider"
+        )
         settings.get_by_label("SSL verify").fill("true")
 
         with page.expect_response(
@@ -2669,7 +2121,9 @@ def test_v2_model_profile_create_from_catalog(
         assert metrics["bodyHeight"] == metrics["viewportHeight"]
         assert metrics["documentHeight"] == metrics["viewportHeight"]
 
-        page.screenshot(path=str(screenshot_dir / "v2-model-profile-catalog-create.png"))
+        page.screenshot(
+            path=str(screenshot_dir / "v2-model-profile-catalog-create.png")
+        )
 
 
 def test_v2_web_settings_save_success_and_error_feedback(
@@ -2823,223 +2277,6 @@ def test_v2_remote_workspace_delete_requires_confirmation(
         )
         expect(settings.get_by_text("No SSH profiles.")).to_be_visible(
             timeout=_WAIT_TIMEOUT_MS,
-        )
-
-
-def test_v2_appearance_dark_preset_keeps_settings_frame_fixed(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        page.locator(".at-topbar").get_by_role("button", name="Settings").click()
-        settings = page.get_by_role("dialog", name="Settings")
-        expect(settings).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(settings.get_by_role("heading", name="Appearance")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        dark_theme = settings.get_by_role("button", name="Dark")
-        expect(dark_theme).to_have_attribute("aria-pressed", "true")
-        preset_button = settings.get_by_role("button", name="Theme preset")
-        expect(preset_button).to_contain_text("Codex", timeout=_WAIT_TIMEOUT_MS)
-        preset_button.click()
-        listbox = settings.get_by_role("listbox")
-        expect(listbox).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        listbox.get_by_role("option", name="Rose Pine").click()
-
-        expect(settings.get_by_role("listbox")).to_have_count(
-            0,
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(preset_button).to_contain_text("Rose Pine", timeout=_WAIT_TIMEOUT_MS)
-
-        appearance = cast(
-            dict[str, object],
-            page.evaluate(
-                "() => JSON.parse(window.localStorage.getItem('agent_teams_appearance') || '{}')",
-            ),
-        )
-        assert appearance["themePreset"] == "rose-pine"
-        assert appearance["accent"] == "#C4A7E7"
-        assert appearance["background"] == "#191724"
-        assert appearance["foreground"] == "#E0DEF4"
-
-        metrics = _appearance_frame_metrics(page)
-        assert metrics["rootTheme"] == "dark"
-        assert metrics["accent"] == "#C4A7E7"
-        assert metrics["background"] == "#191724"
-        assert metrics["foreground"] == "#E0DEF4"
-        assert metrics["bodyOverflow"] == "hidden"
-        assert metrics["documentScrollHeight"] == _VIEWPORT_HEIGHT
-        assert metrics["settingsBodyOverflowY"] == "auto"
-        assert metrics["settingsBodyScrollHeight"] > metrics["settingsBodyClientHeight"]
-        assert len(metrics["previewHeights"]) == 3
-        assert all(height >= 110 for height in metrics["previewHeights"])
-        assert all(width >= 160 for width in metrics["previewWidths"])
-
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-settings-appearance"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "v2-appearance-dark-rose-pine.png"))
-
-
-def test_v2_narrow_shell_keeps_workspace_fixed_under_sidebar_overlay(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    page.set_viewport_size({"height": 740, "width": 390})
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        page.wait_for_function(
-            """
-            () => window.matchMedia('(max-width: 760px)').matches
-            """,
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.locator(".at-sidebar")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.locator(".at-sidebar-scrim")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.locator(".at-sidebar-resizer")).to_be_hidden(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        open_metrics = _shell_frame_metrics(page)
-        assert open_metrics["bodyOverflow"] == "hidden"
-        assert open_metrics["documentClientHeight"] == 740
-        assert open_metrics["documentScrollHeight"] == 740
-        assert open_metrics["documentScrollWidth"] <= 391
-        assert open_metrics["workspaceLeft"] == 0
-        assert open_metrics["workspaceWidth"] == 390
-        assert open_metrics["sidebarWidth"] <= 346
-        assert open_metrics["scrimLeft"] >= open_metrics["sidebarWidth"]
-
-        page.get_by_role("button", name="Close sidebar").click()
-        expect(page.locator(".at-sidebar")).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
-        closed_metrics = _shell_frame_metrics(page)
-        assert closed_metrics["documentScrollHeight"] == 740
-        assert closed_metrics["documentScrollWidth"] <= 391
-        assert closed_metrics["workspaceLeft"] == 0
-        assert closed_metrics["workspaceWidth"] == 390
-
-        page.get_by_role("button", name="Toggle sidebar").click()
-        expect(page.locator(".at-sidebar")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(page.locator(".at-sidebar-scrim")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-shell"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "v2-narrow-sidebar-overlay.png"))
-
-
-def test_v2_observability_topbar_opens_and_switches_scope(
-    browser_page: Page,
-) -> None:
-    page = browser_page
-    repo_root = Path(__file__).resolve().parents[3]
-    backend = _V2ShellBackend()
-    page.route("**/api/**", backend.route)
-    _install_shell_state(page)
-
-    with _serve_v2_app(repo_root) as app_url:
-        page.goto(f"{app_url}/app/")
-        _wait_for_v2_shell(page)
-
-        page.get_by_role("button", name="Observability").click()
-        observability = page.locator(".at-surface-view").filter(
-            has_text="Observability",
-        )
-        expect(
-            observability.get_by_role("heading", name="Observability")
-        ).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(
-            observability.locator(".at-stat")
-            .filter(has_text="Steps")
-            .filter(
-                has_text="12",
-            ),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(observability.get_by_text("Agent loop")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        observability.get_by_text("Session", exact=True).click()
-        expect(
-            observability.locator(".at-stat")
-            .filter(has_text="Steps")
-            .filter(
-                has_text="3",
-            ),
-        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        expect(observability.get_by_text("Session tools")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        spec_lineage = observability.locator(".at-spec-lineage")
-        expect(spec_lineage.get_by_role("heading", name="Spec lineage")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS
-        )
-        expect(spec_lineage.get_by_label("Task")).to_have_value(
-            "task-v2-spec",
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(spec_lineage.get_by_text("Requirements")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(spec_lineage.get_by_text("+ Keep V2 spec diff visible")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-
-        assert (
-            "/observability/overview?scope=global&time_window_minutes=1440"
-            in backend.requested_urls
-        )
-        assert (
-            "/observability/breakdowns?scope=global&time_window_minutes=1440"
-            in backend.requested_urls
-        )
-        assert (
-            "/observability/overview?"
-            f"scope=session&scope_id={_SESSION_ID}&time_window_minutes=1440"
-            in backend.requested_urls
-        )
-        assert (
-            "/observability/breakdowns?"
-            f"scope=session&scope_id={_SESSION_ID}&time_window_minutes=1440"
-            in backend.requested_urls
-        )
-        assert "/tasks/runs/run-v2-shell?include_root=true" in backend.requested_urls
-        assert "/tasks/task-v2-spec/spec-artifacts" in backend.requested_urls
-        assert (
-            "/tasks/task-v2-spec/spec-artifacts/2/diff?from_version=1"
-            in backend.requested_urls
-        )
-        assert (
-            "/tasks/task-v2-spec/spec-checkpoint-evaluations" in backend.requested_urls
-        )
-
-        screenshot_dir = repo_root / ".tmp" / "frontend-v2-observability"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot_dir / "v2-observability-session.png"))
-        spec_lineage.scroll_into_view_if_needed()
-        page.screenshot(
-            path=str(screenshot_dir / "v2-observability-spec-lineage.png"),
         )
 
 
@@ -3415,9 +2652,7 @@ class _V2ShellBackend:
                     "normal_mode_roles": [
                         {"name": "Main Agent", "role_id": "MainAgent"}
                     ],
-                    "subagent_roles": [
-                        {"name": "Reviewer", "role_id": "reviewer"}
-                    ],
+                    "subagent_roles": [{"name": "Reviewer", "role_id": "reviewer"}],
                 },
             )
             return
@@ -3462,9 +2697,7 @@ class _V2ShellBackend:
             if isinstance(source_name, str) and source_name in self.model_profiles:
                 self.model_profiles.pop(source_name)
             self.model_profiles[profile_id] = {
-                key: value
-                for key, value in payload.items()
-                if key != "source_name"
+                key: value for key, value in payload.items() if key != "source_name"
             }
             _fulfill_json(route, {"status": "ok"})
             return
@@ -3571,9 +2804,7 @@ class _V2ShellBackend:
         if request.method == "GET" and path == "/system/configs/plugins/runtime":
             _fulfill_json(route, self._plugins_runtime())
             return
-        if request.method == "POST" and path.startswith(
-            "/system/configs/plugins/"
-        ):
+        if request.method == "POST" and path.startswith("/system/configs/plugins/"):
             if path.endswith(":enable"):
                 self._set_plugin_enabled(route, request, path, True)
                 return
@@ -3583,9 +2814,7 @@ class _V2ShellBackend:
             if path.endswith(":update"):
                 self._update_plugin(route, request, path)
                 return
-        if request.method == "DELETE" and path.startswith(
-            "/system/configs/plugins/"
-        ):
+        if request.method == "DELETE" and path.startswith("/system/configs/plugins/"):
             self._delete_plugin(route, path, url.query)
             return
         if request.method == "GET" and path == "/system/configs/hooks":
@@ -4515,9 +3744,7 @@ class _V2ShellBackend:
                 "scope": values.get("scope", [""])[0],
             }
         )
-        self.plugins = [
-            plugin for plugin in self.plugins if plugin.get("name") != name
-        ]
+        self.plugins = [plugin for plugin in self.plugins if plugin.get("name") != name]
         _fulfill_json(route, self._plugins_config())
 
     def _plugins_runtime(self) -> dict[str, object]:
@@ -5180,7 +4407,9 @@ def _serve_v2_app(repo_root: Path) -> Iterator[str]:
 
 
 def _install_shell_state(page: Page, event_source_script: str | None = None) -> None:
-    stream_script = event_source_script or """
+    stream_script = (
+        event_source_script
+        or """
           window.EventSource = class EventSource {
             constructor() {
               this.readyState = 1;
@@ -5196,6 +4425,7 @@ def _install_shell_state(page: Page, event_source_script: str | None = None) -> 
             }
           };
     """
+    )
     page.add_init_script(
         """
         (() => {

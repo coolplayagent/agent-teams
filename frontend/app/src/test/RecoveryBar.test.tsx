@@ -683,7 +683,9 @@ describe("RecoveryBar", () => {
 
     renderRecoveryBar(controller);
 
-    await screen.findByText("Run run-1 is running");
+    await waitFor(() =>
+      expect(screen.queryByText("Run run-1 is running")).not.toBeInTheDocument(),
+    );
     expect(controller.startRunStream).not.toHaveBeenCalled();
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });

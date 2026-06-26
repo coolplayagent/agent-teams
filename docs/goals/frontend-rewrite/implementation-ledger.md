@@ -3895,3 +3895,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this subagent session view slice. No Subagents subsystem, Sessions subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Stale Recovery Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, parity checklist, and remaining `.py` V2 browser tests after the subagent session slice, then selected real SSE stale-recovery suppression because it protects stream/replay boundary behavior that was still covered only by Python browser tests.
+- Added a TS Playwright browser scenario that keeps the browser's native `EventSource` path active, creates a real foreground AG-UI run, fulfills `/api/ag-ui/runs/{run_id}/events` with `text/event-stream`, and verifies an explicit server `error` frame restores the composer without opening a stale second recovery stream.
+- Added a sibling TS browser scenario for a malformed SSE event after valid `run.started` and `message.text.delta` frames, verifying the persisted live output remains visible, the composer is restored, and the stream request count stays at one after the native reconnect grace window.
+- Screenshot inspection caught a stale RecoveryBar regression where suppressed active runs still displayed `Run ... is streaming` after server/malformed stream errors. Fixed RecoveryBar so suppressed pure active-run snapshots no longer render a misleading recovery banner, while pending approvals, user questions, paused subagents, and background tasks remain visible.
+- Rebuilt `frontend/dist/app` so the packaged V2 app carries the RecoveryBar fix, then re-captured `.tmp/frontend-v2-ts-stream/v2-real-sse-server-error-stale-recovery.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-malformed-stale-recovery.png`; both screenshots show the fixed shell, restored composer, native stream error toast, and no stale blue recovery bar.
+- Kept this as targeted AG-UI Runtime Stream / Run Recovery / TS browser migration progress only. Remaining work still includes broader real-SSE replay/resume edges, remaining Python browser migration, desktop checks, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run typecheck` passed.
+- `npm run test -- RecoveryBar.test.tsx` passed with 25 unit tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 2 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-recovery.spec.ts` passed with 5 TS browser tests.
+- Main-agent screenshot inspection confirmed the server-error and malformed-event states remain inside the fixed V2 shell, restore composer controls, and do not leave a stale RecoveryBar banner.
+
+### Reviewer
+- Main-agent TS browser, unit, build, and screenshot verification completed for this real SSE stale-recovery slice. No AG-UI Runtime Stream subsystem, Run Recovery subsystem, browser-suite migration, or V2 frontend completion is claimed.

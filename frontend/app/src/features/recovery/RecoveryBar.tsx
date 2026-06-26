@@ -67,6 +67,16 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const pausedSubagent = visiblePausedSubagent(
     recoveryQuery.data?.paused_subagent ?? null,
   );
+  const hasPendingRecoveryItems =
+    pendingApprovals.length > 0 ||
+    pendingQuestions.length > 0 ||
+    pausedSubagent !== null;
+  const visibleActiveRun =
+    activeRun !== null &&
+    runStreamController.suppressedRunIds.includes(activeRun.run_id) &&
+    !hasPendingRecoveryItems
+      ? null
+      : activeRun;
   const activeBackgroundTasks = useMemo(
     () =>
       (recoveryQuery.data?.background_tasks ?? []).filter(isActiveBackgroundTask),
@@ -97,9 +107,9 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
   const suppressedRunIdsKey = runStreamController.suppressedRunIds.join("|");
   const recoverableRunId =
-    activeRun?.should_show_recover === true ? activeRun.run_id : null;
+    visibleActiveRun?.should_show_recover === true ? visibleActiveRun.run_id : null;
   const showResumeAction = shouldShowResumeAction(
-    activeRun,
+    visibleActiveRun,
     pendingApprovals,
     pendingQuestions,
     pausedSubagent,
@@ -272,7 +282,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   }
   const recoveryPanelRunId = recoveryPanelRunKey(activeRun, activeBackgroundTasks);
   if (
-    activeRun === null &&
+    visibleActiveRun === null &&
     activeBackgroundTasks.length === 0 &&
     pendingQuestions.length === 0 &&
     pausedSubagent === null
@@ -287,7 +297,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
         <div className="at-recovery-body">
           <Space size={8}>
             <span>
-              {recoveryStatusText(activeRun, activeBackgroundTasks)}
+              {recoveryStatusText(visibleActiveRun, activeBackgroundTasks)}
             </span>
             {showResumeAction ? (
               <Button
@@ -319,9 +329,9 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
             tasks={activeBackgroundTasks}
           />
           <PausedSubagentPanel pausedSubagent={pausedSubagent} />
-          {activeRun === null ? null : (
+          {visibleActiveRun === null ? null : (
             <PendingApprovals
-              activeRunId={activeRun.run_id}
+              activeRunId={visibleActiveRun.run_id}
               approvals={pendingApprovals}
               busyToolCallId={
                 approvalMutation.isPending

@@ -117,9 +117,148 @@ test("exhausts manual stream reconnects and restores composer controls", async (
   }
 });
 
+test("preserves non-text stream events after reconnect", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleStreamApi(context, runCreateRequests),
+      sessionTitle: "TS non-text reconnect",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const promptText = "Reconnect non-text events";
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(promptText);
+    const sendButton = page.getByRole("button", { name: "Send" });
+    await expect(sendButton).toBeEnabled();
+    await sendButton.click();
+
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-reconnect\/events\?after_event_id=0$/,
+    );
+
+    const streamedChunk = "TS non-text base chunk.";
+    const thinkingPrefix = "TS reconnect reasoning starts ";
+    const thinkingSuffix = "and continues.";
+    const toolOutput = "TS reconnect tool output";
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: streamedChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { part_index: 0 },
+      relayEventType: "thinking_started",
+      type: "thinking.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 4,
+      payload: { delta: thinkingPrefix, part_index: 0 },
+      relayEventType: "thinking_delta",
+      type: "thinking.delta",
+    });
+
+    await expect(page.getByText(streamedChunk)).toBeVisible();
+    await expect(
+      page.locator(".at-message-thinking").filter({ hasText: thinkingPrefix }),
+    ).toBeVisible();
+
+    await dispatchErrorAndWaitForReconnect(page, 2, 4);
+
+    await dispatchRunEvent(page, {
+      eventId: 5,
+      payload: { delta: thinkingSuffix, part_index: 0 },
+      relayEventType: "thinking_delta",
+      type: "thinking.delta",
+    });
+    await expect(
+      page
+        .locator(".at-message-thinking")
+        .filter({ hasText: `${thinkingPrefix}${thinkingSuffix}` }),
+    ).toBeVisible();
+    await expect(page.locator(".at-message").filter({ hasText: streamedChunk }))
+      .toHaveCount(1);
+
+    await dispatchRunEvent(page, {
+      eventId: 6,
+      payload: {
+        args: { path: "README.md" },
+        tool_call_id: "call-ts-reconnect-read",
+        tool_name: "read",
+      },
+      relayEventType: "tool_call",
+      type: "tool_call.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 7,
+      payload: {
+        result: { data: toolOutput, ok: true },
+        tool_call_id: "call-ts-reconnect-read",
+        tool_name: "read",
+      },
+      relayEventType: "tool_result",
+      type: "tool_result.completed",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 8,
+      payload: { input_tokens: 11, output_tokens: 7, total_tokens: 18 },
+      relayEventType: "token_usage",
+      type: "token_usage.updated",
+    });
+
+    await expect(page.getByText("Tool call: read")).toBeVisible();
+    await expect(
+      page.locator(".at-message-tool-preview").getByText("README.md", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Tool result: read")).toBeVisible();
+    await expect(
+      page.locator(".at-message-tool-preview").getByText(toolOutput, {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Token usage: Total 18 · Input 11 · Output 7"),
+    ).toBeVisible();
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 non-text reconnect should leave shell fixed-height",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-stream-non-text-reconnect.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function dispatchErrorAndWaitForReconnect(
   page: Page,
   totalSourceCount: number,
+  afterEventId = 2,
 ): Promise<void> {
   await dispatchEventSourceError(page);
   await expect
@@ -127,7 +266,9 @@ async function dispatchErrorAndWaitForReconnect(
     .toHaveLength(totalSourceCount);
   await waitForEventSourceUrl(
     page,
-    /\/api\/ag-ui\/runs\/run-ts-reconnect\/events\?after_event_id=2$/,
+    new RegExp(
+      `/api/ag-ui/runs/run-ts-reconnect/events\\?after_event_id=${afterEventId}$`,
+    ),
   );
   await waitForEventSourceOpenCount(page, 1);
 }

@@ -3613,3 +3613,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this stream reconnect exhaustion slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.
+
+## 2026-06-26 V2 TS Browser Non-Text Reconnect Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and old Python stream-recovery coverage after the reconnect exhaustion slice, then selected the non-text replay-after-reconnect path for continued TS browser migration.
+- Added a TS Playwright scenario that creates a run through the real V2 composer, streams text plus thinking events, interrupts the EventSource, verifies reconnect resumes from `after_event_id=4`, and then delivers additional thinking, tool call, tool result, and token usage events through the reconnected stream.
+- Verified the message timeline preserves the original text exactly once, combines pre- and post-reconnect thinking deltas, renders compact `Tool call: read` / `Tool result: read` rows with previews instead of raw JSON, and shows the runtime token-usage diagnostic row.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-stream-non-text-reconnect.png`; the screenshot shows the V2 shell remains fixed-height while thinking, tool, and token usage rows stay readable and the active-run controls remain reachable.
+- Kept this as targeted Message Timeline / AG-UI stream recovery progress only. Remaining work still includes TS migration for refresh replay, broader event matrix coverage, long tool-heavy visual review, settings appearance parity, broader V1/V2 audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-stream-reconnect.spec.ts` passed with 2 TS browser tests.
+- Main-agent screenshot inspection confirmed non-text events survive reconnect without duplicating the base text or breaking the fixed V2 shell frame.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this non-text reconnect slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.

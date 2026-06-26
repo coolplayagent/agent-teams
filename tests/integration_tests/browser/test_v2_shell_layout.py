@@ -287,6 +287,80 @@ def test_v2_stream_transport_interrupt_reconnects_from_latest_event(
         )
 
 
+def test_v2_stream_terminal_event_closes_stream_and_restores_composer(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("textbox", name="Prompt").fill("Terminal stream probe")
+        page.get_by_role("button", name="Send").click()
+        _wait_for_backend_state(
+            lambda: len(backend.created_run_payloads) == 1,
+            "Run creation request was not captured.",
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=0')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Stop")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '1',
+            )
+            """,
+            _stream_text_event(1, "Terminal run answer."),
+        )
+        expect(page.get_by_text("Terminal run answer.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'run.completed',
+              event,
+              '2',
+            )
+            """,
+            _stream_terminal_event(2, "run_completed"),
+        )
+
+        page.wait_for_function(
+            "() => window.__v2StreamHarness?.closedStates()[0] === true",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_role("button", name="Stop")).to_have_count(0)
+        expect(page.get_by_role("textbox", name="Prompt")).to_be_enabled(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.get_by_role("textbox", name="Prompt").fill("Follow-up after completion")
+        expect(page.get_by_role("button", name="Send")).to_be_enabled(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Terminal run answer.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
     page = browser_page
     repo_root = Path(__file__).resolve().parents[3]
@@ -4108,6 +4182,9 @@ def _stream_event_source_script() -> str:
             urls() {
               return this.sources.map((source) => source.url);
             },
+            closedStates() {
+              return this.sources.map((source) => source.closed === true);
+            },
           };
           window.EventSource = class EventSource {
             constructor(url) {
@@ -4169,6 +4246,18 @@ def _stream_text_event(event_id: int, text: str) -> dict[str, object]:
         "event_type": "text_delta",
         "occurred_at": "2026-06-26T00:00:00Z",
         "payload_json": json.dumps({"text": text}),
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "trace_id": "trace-v2-stream",
+    }
+
+
+def _stream_terminal_event(event_id: int, event_type: str) -> dict[str, object]:
+    return {
+        "event_id": event_id,
+        "event_type": event_type,
+        "occurred_at": "2026-06-26T00:00:00Z",
+        "payload_json": json.dumps({"message": event_type}),
         "run_id": _STREAM_RUN_ID,
         "session_id": _SESSION_ID,
         "trace_id": "trace-v2-stream",

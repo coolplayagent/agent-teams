@@ -3357,3 +3357,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this interrupted stream slice. No Message Timeline / AG-UI stream subsystem completion is claimed.
+
+## 2026-06-26 V2 Terminal Stream Browser Finalization Batch
+
+### Scope
+- Continued the Message Timeline / AG-UI stream quality gate after interrupted reconnect coverage, focusing on terminal stream events and composer recovery.
+- Added a browser-level built `/app/` scenario that creates a run through the real composer path, receives a live text delta, dispatches a terminal `run.completed` event, verifies the EventSource is closed, verifies the Stop control disappears, confirms the prompt is usable for a follow-up message, and keeps the completed stream output visible in the timeline.
+- Extended the browser EventSource harness only inside the integration test init script so normal built-app behavior remains unchanged.
+- Kept this as partial stream/finalization evidence only. Remaining stream completion work still includes broader live event matrix coverage, subagent/background stream browser scenarios, tool-heavy interrupted stream visual review, terminal recovery across reload boundaries, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "stream_replay_resumes or stream_transport_interrupt or stream_terminal_event"` passed with 3 selected browser tests.
+
+### Reviewer
+- Main-agent browser verification completed for this terminal stream slice. No Message Timeline / AG-UI stream subsystem completion is claimed.

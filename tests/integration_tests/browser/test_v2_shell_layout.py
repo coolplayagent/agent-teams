@@ -361,6 +361,115 @@ def test_v2_stream_terminal_event_closes_stream_and_restores_composer(
         )
 
 
+def test_v2_stream_tool_replay_keeps_cards_after_reconnect(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("textbox", name="Prompt").fill("Tool replay probe")
+        page.get_by_role("button", name="Send").click()
+        _wait_for_backend_state(
+            lambda: len(backend.created_run_payloads) == 1,
+            "Run creation request was not captured.",
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=0')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'tool_call.started',
+              event,
+              '1',
+            )
+            """,
+            _stream_tool_call_event(1),
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'tool_result.completed',
+              event,
+              '2',
+            )
+            """,
+            _stream_tool_error_event(2),
+        )
+
+        expect(page.get_by_text("Tool call: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Tool error: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(".at-message-tool-preview", has_text="File not found: ."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        page.evaluate("() => window.__v2StreamHarness.transportError(0)")
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 2
+              && window.__v2StreamHarness.urls()[1]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=2')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              1,
+              'tool_result.completed',
+              event,
+              '2',
+            )
+            """,
+            _stream_tool_error_event(2),
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              1,
+              'tool_call.validation_failed',
+              event,
+              '3',
+            )
+            """,
+            _stream_tool_validation_event(3),
+        )
+
+        expect(page.get_by_text("Tool error: read")).to_have_count(1)
+        expect(page.get_by_text("Tool validation: read")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(
+            page.locator(
+                ".at-message-tool-preview",
+                has_text="Input validation failed before tool execution.",
+            ),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-stream"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-tool-reconnect.png"))
+
+
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
     page = browser_page
     repo_root = Path(__file__).resolve().parents[3]
@@ -4258,6 +4367,67 @@ def _stream_terminal_event(event_id: int, event_type: str) -> dict[str, object]:
         "event_type": event_type,
         "occurred_at": "2026-06-26T00:00:00Z",
         "payload_json": json.dumps({"message": event_type}),
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "trace_id": "trace-v2-stream",
+    }
+
+
+def _stream_tool_call_event(event_id: int) -> dict[str, object]:
+    return _stream_tool_event(
+        event_id,
+        "tool_call",
+        {
+            "args": {"path": "."},
+            "tool_call_id": "tool-read-1",
+            "tool_name": "read",
+        },
+    )
+
+
+def _stream_tool_error_event(event_id: int) -> dict[str, object]:
+    return _stream_tool_event(
+        event_id,
+        "tool_result",
+        {
+            "result": {
+                "data": None,
+                "error": {
+                    "message": "File not found: .",
+                    "retryable": False,
+                    "type": "validation_error",
+                },
+                "ok": False,
+            },
+            "tool_call_id": "tool-read-1",
+            "tool_name": "read",
+        },
+    )
+
+
+def _stream_tool_validation_event(event_id: int) -> dict[str, object]:
+    return _stream_tool_event(
+        event_id,
+        "tool_input_validation_failed",
+        {
+            "details": "Path is required before reading a file.",
+            "reason": "Input validation failed before tool execution.",
+            "tool_call_id": "tool-read-2",
+            "tool_name": "read",
+        },
+    )
+
+
+def _stream_tool_event(
+    event_id: int,
+    event_type: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "event_id": event_id,
+        "event_type": event_type,
+        "occurred_at": "2026-06-26T00:00:00Z",
+        "payload_json": json.dumps(payload),
         "run_id": _STREAM_RUN_ID,
         "session_id": _SESSION_ID,
         "trace_id": "trace-v2-stream",

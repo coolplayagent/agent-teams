@@ -3372,3 +3372,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this terminal stream slice. No Message Timeline / AG-UI stream subsystem completion is claimed.
+
+## 2026-06-26 V2 Tool Stream Browser Replay Batch
+
+### Scope
+- Re-checked the frontend rewrite checklist after terminal stream coverage and selected the tool-heavy Message Timeline / AG-UI stream path because V1 parity requires tool call, tool result, validation failure, replay, and interrupted-stream behavior to hold in the real browser UI.
+- Added a browser-level built `/app/` scenario that creates a run through the real composer path, dispatches `tool_call.started` and `tool_result.completed` events, verifies the visible timeline renders compact tool cards instead of raw JSON, simulates an EventSource interruption, verifies the reconnect uses `after_event_id=2`, replays the duplicate boundary result, and confirms only one tool error card remains before a validation failure card renders.
+- Captured `.tmp/frontend-v2-stream/v2-tool-reconnect.png` and inspected it to confirm the shell stayed fixed-height, the V1-aligned sidebar/topbar frame remained intact, and tool cards did not stretch the workspace.
+- Kept this as partial stream/tool evidence only. Remaining stream completion work still includes approval/user-question browser flows, subagent/background stream browser scenarios, terminal recovery across reload boundaries, broader visual review of long tool-heavy runs, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "stream_replay_resumes or stream_transport_interrupt or stream_terminal_event or stream_tool_replay"` passed with 4 selected browser tests.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-stream/v2-tool-reconnect.png` confirmed the built V2 shell stayed framed while tool call, tool error, and tool validation cards rendered as compact rows.
+
+### Reviewer
+- Main-agent browser verification completed for this tool stream slice. No Message Timeline / AG-UI stream subsystem completion is claimed.

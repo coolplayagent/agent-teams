@@ -4286,3 +4286,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, Python syntax, diff, and screenshot verification completed for this shell parity cleanup slice. No browser-suite migration, V1/V2 visual parity, subsystem sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Stream Recovery Shell Cleanup Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, current worktree, and remaining `test_v2_shell_layout.py` V2 Python UI scan before editing. This slice targets the high-risk streaming, replay, recovery, and persisted subagent paths that were still duplicated in Python after TS browser coverage landed.
+- Removed eleven migrated Python UI scenarios from `tests/integration_tests/browser/test_v2_shell_layout.py`: active stream refresh replay, transport reconnect from the latest event, terminal stream composer restore, tool-card replay after reconnect, recovery approval/question actions, retryable recovery action errors, stopped-run recovery resume, background subagent recovery stream, background task stop/refresh, persisted subagent stream resume, and persisted subagent terminal history refresh.
+- Verified those scenarios are covered by TS browser specs in `v2-stream-refresh.spec.ts`, `v2-stream-reconnect.spec.ts`, `v2-stream-create-run.spec.ts`, `v2-recovery.spec.ts`, and `v2-subagent-session.spec.ts`.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-stream-refresh-replay.png`, `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png`, `.tmp/frontend-v2-ts-recovery/v2-recovery-actions.png`, and `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-completed.png`; the screenshots show fixed shell framing, anchored composer/recovery surfaces, timeline replay, and subagent session refresh without document-level scrolling.
+- Remaining V2 Python UI coverage in `test_v2_shell_layout.py` is now 15 scenarios, concentrated around sidebar resizing and connectors, automation, board, plugins, hooks, roles, orchestration, model profile, web settings, and remote-workspace mutation flows.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-stream-refresh.spec.ts browser-tests/v2-stream-reconnect.spec.ts browser-tests/v2-stream-create-run.spec.ts browser-tests/v2-recovery.spec.ts browser-tests/v2-subagent-session.spec.ts` passed with 14 TS browser tests.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_v2_shell_layout.py` passed after deleting the migrated Python scenarios.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_v2_shell_layout.py` passed.
+- `uv run --extra dev ruff format --check tests\integration_tests\browser\test_v2_shell_layout.py` passed.
+- `rg -c "^def test_v2_" tests\integration_tests\browser\test_v2_shell_layout.py` reports 15 remaining V2 Python UI scenarios.
+
+### Reviewer
+- Main-agent TS browser, Python syntax, lint, format, and screenshot verification completed for this stream/recovery shell cleanup slice. No browser-suite migration, AG-UI Runtime Stream subsystem sign-off, persisted subagent subsystem sign-off, or V2 frontend completion is claimed.

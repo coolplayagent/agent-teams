@@ -3388,3 +3388,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this tool stream slice. No Message Timeline / AG-UI stream subsystem completion is claimed.
+
+## 2026-06-26 V2 Recovery Approval Question Browser Action Batch
+
+### Scope
+- Re-checked the Run Recovery and Browser Checks gates after stream tool replay coverage and selected pending approval/user-question actions because component tests already covered local behavior but the built `/app/` browser path lacked proof that the visible controls call real AG-UI endpoints.
+- Added a browser-level built `/app/` scenario that loads a recovery snapshot with one pending tool approval and one pending user question, submits ACP `Allow once` with optional feedback through `/api/ag-ui/runs/{run_id}/tool-approvals/{tool_call_id}:resolve`, then answers the question through `/api/ag-ui/runs/{run_id}/questions/{question_id}:answer` and verifies the exact request payloads.
+- Extended only the browser mock backend with mutable pending approval/question queues and endpoint capture so the UI refetch removes resolved items the same way the real backend would.
+- Captured `.tmp/frontend-v2-recovery/v2-recovery-actions.png` and inspected it to confirm the built V2 shell stayed fixed-height while approval buttons, feedback input, question choices, and composer remained reachable.
+- Kept this as partial Run Recovery browser evidence only. Remaining recovery completion work still includes stopped-run resume browser flow, approval/question error states in the built shell, subagent/background stream browser scenarios, broader visual review, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "recovery_approval_and_question_actions"` passed with 1 selected browser test.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-recovery/v2-recovery-actions.png` confirmed the real built V2 shell stayed framed with pending recovery actions visible and operable.
+
+### Reviewer
+- Main-agent browser verification completed for this recovery action slice. No Run Recovery subsystem completion is claimed.

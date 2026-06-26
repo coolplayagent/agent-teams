@@ -470,6 +470,126 @@ def test_v2_stream_tool_replay_keeps_cards_after_reconnect(
         page.screenshot(path=str(screenshot_dir / "v2-tool-reconnect.png"))
 
 
+def test_v2_recovery_approval_and_question_actions_call_real_endpoints(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    backend.recovery_active_run = {
+        "last_event_id": 42,
+        "pending_tool_approval_count": 1,
+        "pending_user_question_count": 1,
+        "phase": "awaiting_tool_approval",
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "should_show_recover": False,
+        "status": "paused",
+        "stream_connected": False,
+    }
+    backend.pending_tool_approvals = [
+        {
+            "acp_options": [
+                {
+                    "kind": "allow_once",
+                    "name": "Allow once",
+                    "optionId": "allow_once",
+                },
+                {
+                    "kind": "reject_once",
+                    "name": "Reject once",
+                    "optionId": "reject_once",
+                },
+            ],
+            "args_preview": '{"path":"README.md"}',
+            "tool_call_id": "tool-approval-1",
+            "tool_name": "read",
+        }
+    ]
+    backend.pending_user_questions = [
+        {
+            "question_id": "question-1",
+            "questions": [
+                {
+                    "multiple": False,
+                    "options": [
+                        {
+                            "description": "Keep streaming",
+                            "label": "Continue",
+                        },
+                        {"label": "Stop"},
+                    ],
+                    "question": "Pick next step",
+                }
+            ],
+            "role_id": "Planner",
+            "run_id": _STREAM_RUN_ID,
+        }
+    ]
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page)
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        recovery = page.locator(".at-recovery")
+        expect(recovery.get_by_text("Run run-v2-live is awaiting_tool_approval")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(recovery.get_by_text("read", exact=True)).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-recovery"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-recovery-actions.png"))
+
+        recovery.get_by_label("Approval feedback").fill("Looks safe")
+        recovery.get_by_role("button", name="Allow once").click()
+
+        _wait_for_backend_state(
+            lambda: len(backend.tool_approval_resolve_payloads) == 1,
+            "Tool approval resolution request was not captured.",
+        )
+        assert backend.tool_approval_resolve_payloads == [
+            {
+                "payload": {
+                    "action": "approve",
+                    "feedback": "Looks safe",
+                    "option_id": "allow_once",
+                },
+                "run_id": _STREAM_RUN_ID,
+                "tool_call_id": "tool-approval-1",
+            }
+        ]
+        expect(recovery.get_by_text("read", exact=True)).to_have_count(0)
+
+        recovery.get_by_label("Continue - Keep streaming").click()
+        recovery.get_by_role("button", name="Answer").click()
+        _wait_for_backend_state(
+            lambda: len(backend.question_answer_payloads) == 1,
+            "User question answer request was not captured.",
+        )
+        assert backend.question_answer_payloads == [
+            {
+                "payload": {
+                    "answers": [
+                        {
+                            "selections": [
+                                {
+                                    "label": "Continue",
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "question_id": "question-1",
+                "run_id": _STREAM_RUN_ID,
+            }
+        ]
+        expect(recovery.get_by_text("Planner needs input")).to_have_count(0)
+
+
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
     page = browser_page
     repo_root = Path(__file__).resolve().parents[3]
@@ -2446,6 +2566,10 @@ class _V2ShellBackend:
             ],
         }
         self.recovery_active_run: dict[str, object] | None = None
+        self.pending_tool_approvals: list[dict[str, object]] = []
+        self.pending_user_questions: list[dict[str, object]] = []
+        self.question_answer_payloads: list[dict[str, object]] = []
+        self.tool_approval_resolve_payloads: list[dict[str, object]] = []
         self.plugin_delete_requests: list[dict[str, object]] = []
         self.plugin_disable_requests: list[dict[str, object]] = []
         self.plugin_enable_requests: list[dict[str, object]] = []
@@ -2620,8 +2744,8 @@ class _V2ShellBackend:
                     "active_run": self.recovery_active_run,
                     "background_tasks": [],
                     "paused_subagents": [],
-                    "pending_tool_approvals": [],
-                    "pending_user_questions": [],
+                    "pending_tool_approvals": self.pending_tool_approvals,
+                    "pending_user_questions": self.pending_user_questions,
                     "recoverable_stopped_run": None,
                 },
             )
@@ -2641,6 +2765,22 @@ class _V2ShellBackend:
                     "target_role_id": "MainAgent",
                 },
             )
+            return
+        if (
+            request.method == "POST"
+            and path.startswith("/ag-ui/runs/")
+            and "/tool-approvals/" in path
+            and path.endswith(":resolve")
+        ):
+            self._resolve_tool_approval(route, request, path)
+            return
+        if (
+            request.method == "POST"
+            and path.startswith("/ag-ui/runs/")
+            and "/questions/" in path
+            and path.endswith(":answer")
+        ):
+            self._answer_user_question(route, request, path)
             return
         if request.method == "GET" and path == "/roles:options":
             _fulfill_json(
@@ -3005,6 +3145,64 @@ class _V2ShellBackend:
             {"detail": f"Unhandled mock API route: {path}"},
             status=404,
         )
+
+    def _resolve_tool_approval(
+        self,
+        route: Route,
+        request: Request,
+        path: str,
+    ) -> None:
+        run_id, tool_call_id = _split_nested_action_path(
+            path,
+            "/tool-approvals/",
+            ":resolve",
+        )
+        payload = cast(
+            dict[str, object],
+            json.loads(request.post_data or "{}"),
+        )
+        self.tool_approval_resolve_payloads.append(
+            {
+                "payload": payload,
+                "run_id": run_id,
+                "tool_call_id": tool_call_id,
+            },
+        )
+        self.pending_tool_approvals = [
+            approval
+            for approval in self.pending_tool_approvals
+            if approval.get("tool_call_id") != tool_call_id
+        ]
+        _fulfill_json(route, {"status": "ok"})
+
+    def _answer_user_question(
+        self,
+        route: Route,
+        request: Request,
+        path: str,
+    ) -> None:
+        run_id, question_id = _split_nested_action_path(
+            path,
+            "/questions/",
+            ":answer",
+        )
+        payload = cast(
+            dict[str, object],
+            json.loads(request.post_data or "{}"),
+        )
+        self.question_answer_payloads.append(
+            {
+                "payload": payload,
+                "question_id": question_id,
+                "run_id": run_id,
+            },
+        )
+        self.pending_user_questions = [
+            question
+            for question in self.pending_user_questions
+            if question.get("question_id") != question_id
+        ]
+        _fulfill_json(route, {"status": "ok"})
 
     def _workspace(self) -> dict[str, object]:
         return {
@@ -4446,6 +4644,18 @@ def _stream_recovery_run(last_event_id: int) -> dict[str, object]:
         "status": "running",
         "stream_connected": True,
     }
+
+
+def _split_nested_action_path(
+    path: str,
+    marker: str,
+    suffix: str,
+) -> tuple[str, str]:
+    nested_path = path.removeprefix("/ag-ui/runs/")
+    run_id, separator, rest = nested_path.partition(marker)
+    if not separator or not rest.endswith(suffix):
+        raise AssertionError(f"Unexpected nested AG-UI action path: {path}")
+    return unquote(run_id), unquote(rest.removesuffix(suffix))
 
 
 def _wait_for_v2_shell(page: Page) -> None:

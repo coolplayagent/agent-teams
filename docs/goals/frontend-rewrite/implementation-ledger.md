@@ -4125,3 +4125,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent build, TS browser, syntax, and screenshot verification completed for this cursor-dedupe replay slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Rich Replay Batch
+
+### Scope
+- Re-checked the remaining Python UI stream coverage after the cursor-dedupe slice and selected rich real-SSE replay because it covers non-text runtime semantics that are easy to regress while the UI still looks superficially correct.
+- Added a native EventSource TS browser scenario to `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts` that starts a real foreground run, reconnects from `after_event_id=2`, and replays thinking, tool call/result, token usage, model step, state snapshot/delta, todo, notification, subagent status, background task, injection, user-question, manual-action, output media, validation failure, and terminal completion events.
+- Added scroll-aware TS helpers for virtualized timeline text and selector checks so long replay assertions inspect the actual timeline instead of accidentally matching fixed composer controls or only the current viewport.
+- Mocked a rich replay round page in the TS harness and verified the round marker reaches completed state after terminal runtime state.
+- Removed the migrated Python `test_v2_real_sse_rich_replay_preserves_non_text_events_after_reconnect` scenario from `tests/integration_tests/browser/test_v2_stream_recovery.py`.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-rich-replay.png`; the screenshot shows the long replay inside the fixed V2 shell, V1-shaped sidebar, round rail, rich tool/thinking/token/model rows, and anchored composer.
+- Kept this as targeted AG-UI Runtime Stream / Message Timeline TS browser migration progress only. Remaining work still includes real-SSE runtime-cursor reconnect cleanup, multiplex/subagent stream recovery, session-switch/recovery Python migration, message copy and voice/composer browser coverage, final V1/V2 visual audit, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts --grep "preserves rich real SSE replay events after reconnect"` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 12 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenario.
+- Main-agent screenshot inspection confirmed rich replay remains inside the fixed shell and preserves the expected non-text timeline rows.
+
+### Reviewer
+- Main-agent build, TS browser, syntax, and screenshot verification completed for this rich replay slice. No AG-UI Runtime Stream subsystem, Message Timeline subsystem, browser-suite migration, or V2 frontend completion is claimed.

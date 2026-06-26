@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   ensureScreenshotDir,
@@ -27,6 +27,58 @@ const RECOVERY_ACTION_LAST_EVENT_ID = 7;
 const RECOVERY_ACTION_RESUMED_CHUNK = "real SSE recovery action resumed chunk";
 const RECOVERY_QUESTION_SUPPLEMENT = "Need release note coverage";
 const REFRESH_RESUMED_CHUNK = "real SSE refresh resumed chunk";
+const RICH_REPLAY_THINKING_PREFIX = "checking replay state";
+const RICH_REPLAY_THINKING_SUFFIX = " after reconnect";
+const RICH_REPLAY_THINKING = `${RICH_REPLAY_THINKING_PREFIX}${RICH_REPLAY_THINKING_SUFFIX}`;
+const RICH_REPLAY_TOOL_CALL_ID = "call-ts-rich-replay";
+const RICH_REPLAY_TOOL_OUTPUT = "recovered tool output";
+const RICH_REPLAY_OUTPUT_TEXT = "structured replay output part";
+const RICH_REPLAY_OUTPUT_IMAGE = "runtime-rich-image.png";
+const RICH_REPLAY_OUTPUT_IMAGE_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+const RICH_REPLAY_VALIDATION_REASON =
+  "Input validation failed before tool execution.";
+const RICH_REPLAY_VALIDATION_DETAILS = "cmd is required for replay validation";
+const RICH_REPLAY_TOKEN_SUMMARY = "Token usage: Total 18 · Input 11 · Output 7";
+const RICH_REPLAY_MODEL_STEP = "model step replay visible";
+const RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY =
+  `Model step started: ${RICH_REPLAY_MODEL_STEP}`;
+const RICH_REPLAY_MODEL_STEP_FINISHED_SUMMARY =
+  `Model step finished: ${RICH_REPLAY_MODEL_STEP} finished`;
+const RICH_REPLAY_STATE_SNAPSHOT = "state snapshot replay visible";
+const RICH_REPLAY_STATE_SNAPSHOT_SUMMARY =
+  `State snapshot: ${RICH_REPLAY_STATE_SNAPSHOT}`;
+const RICH_REPLAY_STATE_DELTA = "state delta replay visible";
+const RICH_REPLAY_STATE_DELTA_SUMMARY = `State delta: ${RICH_REPLAY_STATE_DELTA}`;
+const RICH_REPLAY_TODO_CURRENT = "verify rich replay todos";
+const RICH_REPLAY_TODO_SUMMARY =
+  `Todo updated: 3 items · 1 completed, 1 in_progress, 1 pending · Current ${RICH_REPLAY_TODO_CURRENT} · v4 · by replay-agent`;
+const RICH_REPLAY_INJECTION = "queued replay injection";
+const RICH_REPLAY_INJECTION_QUEUED_SUMMARY =
+  `Injection queued: ${RICH_REPLAY_INJECTION} · source user · mode queued · to replay-agent`;
+const RICH_REPLAY_INJECTION_APPLIED = "applied replay injection";
+const RICH_REPLAY_INJECTION_APPLIED_SUMMARY =
+  `Injection applied: ${RICH_REPLAY_INJECTION_APPLIED} · source system · mode guidance · to replay-agent`;
+const RICH_REPLAY_QUESTION_ID = "question-rich-replay";
+const RICH_REPLAY_QUESTION = "Choose replay path";
+const RICH_REPLAY_QUESTION_SUMMARY =
+  `User question: ${RICH_REPLAY_QUESTION} · #${RICH_REPLAY_QUESTION_ID}`;
+const RICH_REPLAY_QUESTION_ANSWER_SUMMARY =
+  `User question answered: 1 answer · #${RICH_REPLAY_QUESTION_ID}`;
+const RICH_REPLAY_NOTIFICATION = "notification replay visible";
+const RICH_REPLAY_NOTIFICATION_SUMMARY =
+  `Notification: ${RICH_REPLAY_NOTIFICATION}`;
+const RICH_REPLAY_SUBAGENT_STATUS = "subagent status replay visible";
+const RICH_REPLAY_SUBAGENT_STATUS_SUMMARY =
+  `Subagent status: ${RICH_REPLAY_SUBAGENT_STATUS} · status running`;
+const RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY =
+  "Subagent stopped: reason stopped_by_user · role reviewer · instance subagent-rich · task task-rich";
+const RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY =
+  "Subagent resumed: role reviewer · instance subagent-rich · task task-rich";
+const RICH_REPLAY_MANUAL_ACTION_SUMMARY = "Awaiting manual action: root task root-rich";
+const RICH_REPLAY_BACKGROUND_TASK = "background task replay visible";
+const RICH_REPLAY_BACKGROUND_TASK_SUMMARY =
+  `Background task started: ${RICH_REPLAY_BACKGROUND_TASK}`;
 const STOPPED_MESSAGE = "real SSE run stopped before completion";
 const STREAM_UNAVAILABLE = "run recovery stream is no longer available";
 const TOOL_CALL_ID = "call-ts-real-sse-approval";
@@ -137,6 +189,13 @@ test("dedupes the real SSE cursor event before continuing replay", async ({
   });
 });
 
+test("preserves rich real SSE replay events after reconnect", async ({ page }) => {
+  await runRealSseRichReplayScenario(page, {
+    mode: "rich-replay",
+    screenshotName: "v2-real-sse-rich-replay.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
@@ -159,6 +218,11 @@ interface RealSseRefreshRecoveryOptions {
 
 interface RealSseDuplicateReplayOptions {
   mode: "duplicate-replay";
+  screenshotName: string;
+}
+
+interface RealSseRichReplayOptions {
+  mode: "rich-replay";
   screenshotName: string;
 }
 
@@ -704,6 +768,98 @@ async function runRealSseDuplicateReplayScenario(
   }
 }
 
+async function runRealSseRichReplayScenario(
+  page: Page,
+  options: RealSseRichReplayOptions,
+): Promise<void> {
+  const appServer = await serveFrontendDist();
+  const state = createRealSseState();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: "TS real SSE rich replay",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(PROMPT);
+    await page.getByRole("button", { exact: true, name: "Send" }).click();
+
+    await expectTimelineTextVisible(page, FIRST_CHUNK);
+    await expect.poll(() => state.streamRequests.some(
+      (request) => request.afterEventId === "2",
+    )).toBe(true);
+
+    const thinkingSummary = await expectTimelineSelectorVisible(
+      page,
+      ".at-message-thinking-summary",
+    );
+    await thinkingSummary.click();
+    await expectTimelineTextVisible(page, RICH_REPLAY_THINKING);
+
+    for (const text of [
+      RICH_REPLAY_TOKEN_SUMMARY,
+      RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY,
+      RICH_REPLAY_MODEL_STEP_FINISHED_SUMMARY,
+      RICH_REPLAY_STATE_SNAPSHOT_SUMMARY,
+      RICH_REPLAY_STATE_DELTA_SUMMARY,
+      RICH_REPLAY_TODO_SUMMARY,
+      RICH_REPLAY_NOTIFICATION_SUMMARY,
+      RICH_REPLAY_SUBAGENT_STATUS_SUMMARY,
+      RICH_REPLAY_BACKGROUND_TASK_SUMMARY,
+      RICH_REPLAY_INJECTION_QUEUED_SUMMARY,
+      RICH_REPLAY_INJECTION_APPLIED_SUMMARY,
+      RICH_REPLAY_QUESTION_SUMMARY,
+      RICH_REPLAY_QUESTION_ANSWER_SUMMARY,
+      RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY,
+      RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY,
+      RICH_REPLAY_MANUAL_ACTION_SUMMARY,
+      RICH_REPLAY_OUTPUT_TEXT,
+    ]) {
+      await expectTimelineTextVisible(page, text);
+    }
+    await expectTimelineTextVisible(page, "Tool call: read");
+    await expectTimelineTextVisible(page, "Tool result: read");
+
+    const outputImage = page.getByRole("img", { name: RICH_REPLAY_OUTPUT_IMAGE });
+    await expect(outputImage).toBeVisible();
+    await expect(outputImage).toHaveAttribute("src", RICH_REPLAY_OUTPUT_IMAGE_URL);
+
+    await expectTimelineTextVisible(page, "Tool validation: execute_command");
+    await page.getByText("Tool validation: execute_command").first().click();
+    await expectTimelineTextVisible(page, RICH_REPLAY_VALIDATION_DETAILS);
+    await expectTimelineTextVisible(page, FIRST_CHUNK);
+
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.getByText(`Run ${RUN_ID} is streaming`)).toBeHidden();
+    const roundMarker = page.locator(".at-round-marker").first();
+    await expect(roundMarker).toContainText("completed");
+    await expect(roundMarker).not.toContainText("running");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "rich real SSE replay should preserve non-text events inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
@@ -712,6 +868,7 @@ async function handleRealSseApi(
     | RealSseDuplicateReplayOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
+    | RealSseRichReplayOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
@@ -728,6 +885,14 @@ async function handleRealSseApi(
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
     await context.fulfillJson(realSsePersistedMessages(state));
+    return true;
+  }
+  if (
+    mode === "rich-replay" &&
+    context.method === "GET" &&
+    context.path === `/sessions/${SESSION_ID}/rounds`
+  ) {
+    await context.fulfillJson(realSseRounds(state));
     return true;
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/recovery`) {
@@ -748,10 +913,15 @@ async function handleRealSseApi(
     if (mode === "duplicate-replay" && afterEventId === "0") {
       state.lastEventId = 2;
     }
+    if (mode === "rich-replay" && afterEventId === "0") {
+      state.lastEventId = 2;
+    }
     const completeRefreshAfterFulfill =
       mode === "refresh-recovery" && afterEventId === "2";
     const completeDuplicateReplayAfterFulfill =
       mode === "duplicate-replay" && afterEventId === "2";
+    const completeRichReplayAfterFulfill =
+      mode === "rich-replay" && afterEventId === "2";
     if (mode === "recovery-approval" || mode === "recovery-question") {
       state.completed = true;
       state.lastEventId = 10;
@@ -772,6 +942,10 @@ async function handleRealSseApi(
     if (completeDuplicateReplayAfterFulfill) {
       state.completed = true;
       state.lastEventId = 4;
+    }
+    if (completeRichReplayAfterFulfill) {
+      state.completed = true;
+      state.lastEventId = 27;
     }
     return true;
   }
@@ -869,6 +1043,7 @@ function sseBody(
     | RealSseDuplicateReplayOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
+    | RealSseRichReplayOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseStandaloneResumeOptions["mode"]
     | RealSseTerminalOptions["mode"],
@@ -1065,6 +1240,34 @@ function sseBody(
       }),
     ].join("");
   }
+  if (mode === "rich-replay") {
+    if (afterEventId === "2") {
+      return richReplaySseFrames();
+    }
+    return [
+      "retry: 60000\n\n",
+      sseFrame({
+        data: runEvent({
+          eventId: 1,
+          payload: { phase: "streaming" },
+          relayEventType: "run_started",
+          type: "run.started",
+        }),
+        event: "run.started",
+        id: 1,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 2,
+          payload: { text: FIRST_CHUNK },
+          relayEventType: "text_delta",
+          type: "message.text.delta",
+        }),
+        event: "message.text.delta",
+        id: 2,
+      }),
+    ].join("");
+  }
   if (mode === "active-inject" || mode === "active-stop") {
     return [
       sseFrame({
@@ -1117,6 +1320,310 @@ function sseBody(
   ].join("");
 }
 
+function richReplaySseFrames(): string {
+  return [
+    sseFrame({
+      data: runEvent({
+        eventId: 3,
+        payload: { part_index: 0 },
+        relayEventType: "thinking_started",
+        type: "thinking.started",
+      }),
+      event: "thinking.started",
+      id: 3,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 4,
+        payload: { delta: RICH_REPLAY_THINKING, part_index: 0 },
+        relayEventType: "thinking_delta",
+        type: "thinking.delta",
+      }),
+      event: "thinking.delta",
+      id: 4,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 5,
+        payload: {
+          args: { path: "README.md" },
+          tool_call_id: RICH_REPLAY_TOOL_CALL_ID,
+          tool_name: "read",
+        },
+        relayEventType: "tool_call",
+        type: "tool_call.started",
+      }),
+      event: "tool_call.started",
+      id: 5,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 6,
+        payload: {
+          result: { data: RICH_REPLAY_TOOL_OUTPUT, ok: true },
+          tool_call_id: RICH_REPLAY_TOOL_CALL_ID,
+          tool_name: "read",
+        },
+        relayEventType: "tool_result",
+        type: "tool_result.completed",
+      }),
+      event: "tool_result.completed",
+      id: 6,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 7,
+        payload: { input_tokens: 11, output_tokens: 7, total_tokens: 18 },
+        relayEventType: "token_usage",
+        type: "token_usage.updated",
+      }),
+      event: "token_usage.updated",
+      id: 7,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 8,
+        payload: { summary: RICH_REPLAY_MODEL_STEP },
+        relayEventType: "model_step_started",
+        type: "model_step.started",
+      }),
+      event: "model_step.started",
+      id: 8,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 9,
+        payload: { summary: `${RICH_REPLAY_MODEL_STEP} finished` },
+        relayEventType: "model_step_finished",
+        type: "model_step.finished",
+      }),
+      event: "model_step.finished",
+      id: 9,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 10,
+        payload: { summary: RICH_REPLAY_STATE_SNAPSHOT },
+        relayEventType: "state_snapshot",
+        type: "state.snapshot",
+      }),
+      event: "state.snapshot",
+      id: 10,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 11,
+        payload: { summary: RICH_REPLAY_STATE_DELTA },
+        relayEventType: "state_delta",
+        type: "state.delta",
+      }),
+      event: "state.delta",
+      id: 11,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 12,
+        payload: {
+          items: [
+            { content: "inspect replay hydration", status: "completed" },
+            { content: RICH_REPLAY_TODO_CURRENT, status: "in_progress" },
+            { content: "capture replay evidence", status: "pending" },
+          ],
+          run_id: RUN_ID,
+          session_id: SESSION_ID,
+          updated_by_instance_id: "replay-agent",
+          version: 4,
+        },
+        relayEventType: "todo_updated",
+        type: "todo.updated",
+      }),
+      event: "todo.updated",
+      id: 12,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 13,
+        payload: { title: RICH_REPLAY_NOTIFICATION },
+        relayEventType: "notification_requested",
+        type: "notification.requested",
+      }),
+      event: "notification.requested",
+      id: 13,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 14,
+        payload: { status: "running", title: RICH_REPLAY_SUBAGENT_STATUS },
+        relayEventType: "subagent_session_status_changed",
+        type: "subagent_session.status_changed",
+      }),
+      event: "subagent_session.status_changed",
+      id: 14,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 15,
+        payload: { title: RICH_REPLAY_BACKGROUND_TASK },
+        relayEventType: "background_task_started",
+        type: "background_task.started",
+      }),
+      event: "background_task.started",
+      id: 15,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 16,
+        payload: {
+          content: RICH_REPLAY_INJECTION,
+          delivery_mode: "queued",
+          recipient_instance_id: "replay-agent",
+          source: "user",
+        },
+        relayEventType: "injection_enqueued",
+        type: "injection.enqueued",
+      }),
+      event: "injection.enqueued",
+      id: 16,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 17,
+        payload: {
+          content: RICH_REPLAY_INJECTION_APPLIED,
+          internal_delivery_mode: "guidance",
+          recipient_instance_id: "replay-agent",
+          source: "system",
+        },
+        relayEventType: "injection_applied",
+        type: "injection.applied",
+      }),
+      event: "injection.applied",
+      id: 17,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 18,
+        payload: {
+          question_id: RICH_REPLAY_QUESTION_ID,
+          questions: [{ question: RICH_REPLAY_QUESTION }],
+        },
+        relayEventType: "user_question_requested",
+        type: "user_question.requested",
+      }),
+      event: "user_question.requested",
+      id: 18,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 19,
+        payload: {
+          answers: [{ selections: [{ label: "Continue" }] }],
+          question_id: RICH_REPLAY_QUESTION_ID,
+        },
+        relayEventType: "user_question_answered",
+        type: "user_question.answered",
+      }),
+      event: "user_question.answered",
+      id: 19,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 20,
+        payload: {
+          instance_id: "subagent-rich",
+          reason: "stopped_by_user",
+          role_id: "reviewer",
+          task_id: "task-rich",
+        },
+        relayEventType: "subagent_stopped",
+        type: "subagent.stopped",
+      }),
+      event: "subagent.stopped",
+      id: 20,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 21,
+        payload: {
+          instance_id: "subagent-rich",
+          role_id: "reviewer",
+          task_id: "task-rich",
+        },
+        relayEventType: "subagent_resumed",
+        type: "subagent.resumed",
+      }),
+      event: "subagent.resumed",
+      id: 21,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 22,
+        payload: { root_task_id: "root-rich" },
+        relayEventType: "awaiting_manual_action",
+        type: "run.awaiting_manual_action",
+      }),
+      event: "run.awaiting_manual_action",
+      id: 22,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 23,
+        payload: {
+          output: [
+            { kind: "text", text: RICH_REPLAY_OUTPUT_TEXT },
+            {
+              kind: "media_ref",
+              mime_type: "image/png",
+              modality: "image",
+              name: RICH_REPLAY_OUTPUT_IMAGE,
+              url: RICH_REPLAY_OUTPUT_IMAGE_URL,
+            },
+          ],
+        },
+        relayEventType: "output_delta",
+        type: "message.output.delta",
+      }),
+      event: "message.output.delta",
+      id: 23,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 24,
+        payload: {
+          details: RICH_REPLAY_VALIDATION_DETAILS,
+          reason: RICH_REPLAY_VALIDATION_REASON,
+          tool_call_id: "call-ts-rich-validation",
+          tool_name: "execute_command",
+        },
+        relayEventType: "tool_input_validation_failed",
+        type: "tool_call.validation_failed",
+      }),
+      event: "tool_call.validation_failed",
+      id: 24,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 25,
+        payload: { part_index: 0 },
+        relayEventType: "thinking_finished",
+        type: "thinking.finished",
+      }),
+      event: "thinking.finished",
+      id: 25,
+    }),
+    sseFrame({
+      data: runEvent({
+        eventId: 27,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 27,
+    }),
+  ].join("");
+}
+
 function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState {
   return {
     approvalResolutions: [],
@@ -1157,6 +1664,96 @@ function realSsePersistedMessages(state: RealSseState): Record<string, unknown>[
       run_id: RUN_ID,
     },
   ];
+}
+
+function realSseRounds(state: RealSseState): Record<string, unknown> {
+  return {
+    has_more: false,
+    items: [
+      {
+        coordinator_messages: [
+          {
+            message: {
+              parts: [{ part_kind: "tool-call", tool_name: "read" }],
+              usage: { input_tokens: 11, output_tokens: 7 },
+            },
+          },
+        ],
+        created_at: "2026-06-26T12:00:00Z",
+        run_id: RUN_ID,
+        run_phase: state.completed ? "completed" : "streaming",
+        run_started_at: "2026-06-26T12:00:00Z",
+        run_status: state.completed ? "completed" : "running",
+        run_updated_at: state.completed
+          ? "2026-06-26T12:00:27Z"
+          : "2026-06-26T12:00:02Z",
+        run_user_message: PROMPT,
+      },
+    ],
+    next_cursor: null,
+  };
+}
+
+async function expectTimelineTextVisible(page: Page, text: string): Promise<void> {
+  const locator = page.getByText(text).first();
+  if (await locator.isVisible({ timeout: 500 }).catch(() => false)) {
+    return;
+  }
+  const maxScroll = await page.evaluate(() => {
+    const timeline = document.querySelector(".at-timeline");
+    if (!(timeline instanceof HTMLElement)) {
+      return 0;
+    }
+    return Math.max(0, timeline.scrollHeight - timeline.clientHeight);
+  });
+  for (const ratio of [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+    await page.evaluate((scrollTop) => {
+      const timeline = document.querySelector(".at-timeline");
+      if (!(timeline instanceof HTMLElement)) {
+        return;
+      }
+      timeline.scrollTop = scrollTop;
+      timeline.dispatchEvent(new Event("scroll"));
+    }, Math.round(maxScroll * ratio));
+    await page.waitForTimeout(150);
+    if (await locator.isVisible({ timeout: 500 }).catch(() => false)) {
+      return;
+    }
+  }
+  await expect(locator).toBeVisible();
+}
+
+async function expectTimelineSelectorVisible(
+  page: Page,
+  selector: string,
+): Promise<Locator> {
+  const locator = page.locator(selector).first();
+  if (await locator.isVisible({ timeout: 500 }).catch(() => false)) {
+    return locator;
+  }
+  const maxScroll = await page.evaluate(() => {
+    const timeline = document.querySelector(".at-timeline");
+    if (!(timeline instanceof HTMLElement)) {
+      return 0;
+    }
+    return Math.max(0, timeline.scrollHeight - timeline.clientHeight);
+  });
+  for (const ratio of [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+    await page.evaluate((scrollTop) => {
+      const timeline = document.querySelector(".at-timeline");
+      if (!(timeline instanceof HTMLElement)) {
+        return;
+      }
+      timeline.scrollTop = scrollTop;
+      timeline.dispatchEvent(new Event("scroll"));
+    }, Math.round(maxScroll * ratio));
+    await page.waitForTimeout(150);
+    if (await locator.isVisible({ timeout: 500 }).catch(() => false)) {
+      return locator;
+    }
+  }
+  await expect(locator).toBeVisible();
+  return locator;
 }
 
 function countOccurrences(value: string, needle: string): number {
@@ -1262,9 +1859,10 @@ interface RunEventOptions {
 }
 
 function runEvent(options: RunEventOptions): Record<string, unknown> {
+  const second = String(options.eventId % 60).padStart(2, "0");
   return {
     event_id: options.eventId,
-    occurred_at: `2026-06-26T12:00:0${options.eventId}Z`,
+    occurred_at: `2026-06-26T12:00:${second}Z`,
     payload: options.payload,
     relay_event_type: options.relayEventType,
     role_id: "MainAgent",

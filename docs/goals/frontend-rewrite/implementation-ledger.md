@@ -4501,6 +4501,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining-scenario scan, and cleanup completed for this slice. No Message Timeline subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.
 
+## 2026-06-26 Connector Token Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, and the remaining legacy Python browser-test surface before editing. This slice targets the broader browser-suite migration while preserving V1 secondary-page and modal opening behavior.
+- Added `frontend/app/browser-tests/v1-connector-token-autofill.spec.ts` with TS browser coverage for the V1 GitHub connector modal and V1 Skills ClawHub settings modal.
+- Covered saved-token protection against browser-autofilled DOM password values: GitHub clears synthetic input and submits `{}` when only the persisted backend token should be used, while ClawHub keeps the saved token when the DOM value changed without real user input.
+- Deleted the replaced Python browser files `tests/integration_tests/browser/test_github_browser_flow.py` and `tests/integration_tests/browser/test_clawhub_browser_flow.py`.
+- Kept this as browser-suite migration progress only. Remaining frontend rewrite work still includes the large legacy browser smoke migration, the skipped backend-status pressure harness, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v1-connector-token-autofill.spec.ts` passed with 2 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `rg -n "test_github_browser_flow|test_clawhub_browser_flow|github_saved_token_wins|clawhub_saved_token_wins|sync_playwright|playwright\.sync_api" tests/integration_tests/browser frontend/app/browser-tests -g "*.py" -g "*.ts"` now reports only the remaining legacy Python browser files `test_browser_smoke.py` and `test_backend_status_pressure.py`.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, deletion scan, remaining Python browser scan, and cleanup completed for this slice. No browser-suite migration sign-off, Application Shell sign-off, Settings sign-off, Connectors sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-26 Streaming Timeline Python Harness Removal Batch
 
 ### Scope

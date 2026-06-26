@@ -203,6 +203,98 @@ interface StreamRebindSkipsUserPromptPayload {
   userText: string;
 }
 
+interface SubagentThinkingOrderPayload {
+  afterActiveThinkingParts: string[];
+  beforeActiveThinkingParts: string[];
+  beforeThinkingFinished: boolean[];
+  parts: string[];
+  textInsideThinking: string[];
+  thinkingTexts: string[];
+}
+
+interface RunningSubagentHistoryCompactionPayload {
+  groupCount: number;
+  messageCount: number;
+  parts: string[];
+}
+
+interface TerminalCollapsePayload {
+  groupCount: number;
+  groupToolCount: number;
+}
+
+interface TerminalPayloadOutputPayload {
+  cursorCount: number;
+  failedText: string;
+  occurrences: number;
+  stoppedText: string;
+  text: string;
+}
+
+interface TerminalPayloadDedupePayload {
+  messageCount: number;
+  occurrences: number;
+}
+
+interface TerminalHistoryToolFinalPayload {
+  flowCount: number;
+  groupBodyClass: string;
+  groupCount: number;
+  messageCount: number;
+  occurrences: number;
+  text: string;
+  toolBlockCount: number;
+}
+
+interface ProcessedTranscriptPayload {
+  childClasses: string[];
+  finalTexts: string[];
+  groupBodyClass: string;
+  groupCount: number;
+  groupParts: string[];
+  messageCount: number;
+  nestedMessageCount: number;
+}
+
+interface TerminalParityPayload {
+  history: ProcessedTranscriptPayload;
+  live: ProcessedTranscriptPayload;
+}
+
+interface CompletedSubagentStatusOnlyPayload extends ProcessedTranscriptPayload {
+  containsLiveLabel: boolean;
+}
+
+interface FinalMessageCollapsePayload {
+  cancelledFinalGroupCount: number;
+  cancelledFinalText: string;
+  completedNoFinalGroupCount: number;
+  completedNoFinalText: string;
+  failedFinalGroupCount: number;
+  failedFinalText: string;
+  stoppedNoFinalGroupCount: number;
+}
+
+interface SubagentSessionWidthPayload {
+  afterWidth: number;
+  afterWithinScroll: boolean;
+  beforeWidth: number;
+  beforeWithinScroll: boolean;
+}
+
+interface SubagentRoundNavigatorPayload {
+  baselineWidth: number;
+  mainHasTimelineClass: boolean;
+  mainNavVisible: boolean;
+  mainNodeCount: number;
+  staleNavVisible: boolean;
+  staleWidth: number;
+  staleWithinScroll: boolean;
+  subagentDensity: string;
+  subagentHasTimelineClass: boolean;
+  subagentNavVisible: boolean;
+}
+
 interface StreamTimelineHarnessWindow {
   __streamTimelineHarness: Record<string, () => unknown> & {
     readToolSummaryVisualWeight: (toolCallId: string) => ToolSummaryVisualState;
@@ -947,6 +1039,346 @@ test("stream rebind does not append agent delta to user prompt", async ({
   }
 });
 
+test("subagent switch back keeps thinking order and text separate", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<SubagentThinkingOrderPayload>(
+      page,
+      "renderSubagentSwitchBackThinkingOrder",
+    );
+
+    expect(payload.beforeThinkingFinished).toEqual([true, true, false]);
+    expect(payload.beforeActiveThinkingParts).toEqual(["2"]);
+    expect(payload.parts).toEqual([
+      "thinking:THINK_A",
+      "tool:call-a",
+      "text:TEXT_A",
+      "thinking:THINK_B",
+      "tool:call-b",
+      "text:TEXT_B",
+      "thinking:THINK_LIVE",
+      "text:_TAIL",
+    ]);
+    expect(payload.thinkingTexts).toEqual(["THINK_A", "THINK_B", "THINK_LIVE"]);
+    expect(payload.textInsideThinking).toEqual([]);
+    expect(payload.afterActiveThinkingParts).toEqual([]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("subagent switch back drops stale overlay thinking gaps", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<SubagentThinkingOrderPayload>(
+      page,
+      "renderSubagentSwitchBackWithoutPersistedThinking",
+    );
+
+    expect(payload.beforeThinkingFinished).toEqual([true, true, false]);
+    expect(payload.beforeActiveThinkingParts).toEqual(["2"]);
+    expect(payload.parts).toEqual([
+      "tool:call-a",
+      "text:TEXT_A",
+      "tool:call-b",
+      "text:TEXT_B",
+      "thinking:THINK_LIVE",
+      "text:_TAIL",
+    ]);
+    expect(payload.thinkingTexts).toEqual(["THINK_LIVE"]);
+    expect(payload.textInsideThinking).toEqual([]);
+    expect(payload.afterActiveThinkingParts).toEqual([]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("running subagent history uses stream-like compact DOM", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<RunningSubagentHistoryCompactionPayload>(
+      page,
+      "renderRunningSubagentHistoryCompaction",
+    );
+
+    expect(payload.messageCount).toBe(1);
+    expect(payload.groupCount).toBe(0);
+    expect(payload.parts).toEqual([
+      "text:I'll systematically explore the plugin system.",
+      "tool:read_file",
+      "text:Excellent. Now let me read all the core plugin source files.",
+      "tool:read_file",
+      "text:Let me read the remaining files.",
+      "tool:read_file",
+    ]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("terminal completed overlay does not block processed group", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<TerminalCollapsePayload>(
+      page,
+      "renderTerminalCollapseWithCompletedOverlay",
+    );
+
+    expect(payload.groupCount).toBe(1);
+    expect(payload.groupToolCount).toBe(1);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("terminal payload output renders when stream has no text", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<TerminalPayloadOutputPayload>(
+      page,
+      "renderTerminalPayloadOutput",
+    );
+
+    expect(payload.text).toContain("terminal payload final answer");
+    expect(payload.occurrences).toBe(1);
+    expect(payload.failedText).toContain("failed assistant final answer");
+    expect(payload.stoppedText).not.toContain("stopped diagnostic output");
+    expect(payload.cursorCount).toBe(0);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("terminal payload output dedupes hydrated history", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<TerminalPayloadDedupePayload>(
+      page,
+      "renderTerminalPayloadDedupesHydratedHistory",
+    );
+
+    expect(payload.occurrences).toBe(1);
+    expect(payload.messageCount).toBe(1);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("terminal history with tool history and final output renders once", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<TerminalHistoryToolFinalPayload>(
+      page,
+      "renderTerminalHistoryWithToolAndFinalOutput",
+    );
+
+    expect(payload.occurrences).toBe(1);
+    expect(payload.groupCount).toBe(1);
+    expect(payload.messageCount).toBe(1);
+    expect(payload.flowCount).toBe(0);
+    expect(payload.groupBodyClass).toBe("tool-group-body msg-content");
+    expect(payload.toolBlockCount).toBe(1);
+    expect(payload.text).toContain("terminal projected final answer");
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("live terminal finalize matches history processed transcript", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<TerminalParityPayload>(
+      page,
+      "renderLiveTerminalAndHistoryParity",
+    );
+
+    expect(payload.live).toEqual(payload.history);
+    expect(payload.live.groupCount).toBe(1);
+    expect(payload.live.messageCount).toBe(1);
+    expect(payload.live.nestedMessageCount).toBe(0);
+    expect(payload.live.groupBodyClass).toBe("tool-group-body msg-content");
+    expect(payload.live.groupParts).toEqual([
+      "tool:search",
+      "tool:read_file",
+      "text:Now let me read the remaining key files for the full picture.",
+      "tool:read_file",
+      "tool-group-final-divider",
+    ]);
+    expect(payload.live.finalTexts).toEqual(["final answer"]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("subagent live terminal matches history processed transcript", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<TerminalParityPayload>(
+      page,
+      "renderSubagentTerminalParity",
+    );
+
+    expect(payload.live).toEqual(payload.history);
+    expect(payload.live.groupCount).toBe(1);
+    expect(payload.live.messageCount).toBe(1);
+    expect(payload.live.nestedMessageCount).toBe(0);
+    expect(payload.live.groupBodyClass).toBe("tool-group-body msg-content");
+    expect(payload.live.groupParts).toEqual([
+      "tool:read_file",
+      "text:Let me read the remaining key files.",
+      "tool:read_file",
+      "tool-group-final-divider",
+    ]);
+    expect(payload.live.finalTexts).toEqual(["subagent final answer"]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("completed subagent status-only history uses processed transcript", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<CompletedSubagentStatusOnlyPayload>(
+      page,
+      "renderCompletedSubagentStatusOnlyTranscript",
+    );
+
+    expect(payload.groupCount).toBe(1);
+    expect(payload.messageCount).toBe(2);
+    expect(payload.nestedMessageCount).toBe(0);
+    expect(payload.childClasses).toEqual(["message", "tool-group", "message"]);
+    expect(payload.groupParts).toEqual([
+      "thinking-block",
+      "text:Let me inspect first.",
+      "tool:read_file",
+      "text:Next file.",
+      "tool:read_file",
+      "tool-group-final-divider",
+    ]);
+    expect(payload.finalTexts).toEqual(["final response"]);
+    expect(payload.containsLiveLabel).toBe(false);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("terminal rounds collapse only when final output is projected", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<FinalMessageCollapsePayload>(
+      page,
+      "renderFinalMessageCollapseMatrix",
+    );
+
+    expect(payload.stoppedNoFinalGroupCount).toBe(0);
+    expect(payload.failedFinalGroupCount).toBe(1);
+    expect(payload.cancelledFinalGroupCount).toBe(1);
+    expect(payload.completedNoFinalGroupCount).toBe(0);
+    expect(payload.failedFinalText).toContain("failed final answer");
+    expect(payload.completedNoFinalText).toContain("loop middle output");
+    expect(payload.cancelledFinalText).toContain("cancelled final answer");
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("subagent session width stays stable", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<SubagentSessionWidthPayload>(
+      page,
+      "measureSubagentSessionWidth",
+    );
+
+    expect(payload.beforeWidth).toBe(payload.afterWidth);
+    expect(payload.beforeWithinScroll).toBe(true);
+    expect(payload.afterWithinScroll).toBe(true);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("subagent session suppresses round navigator", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<SubagentRoundNavigatorPayload>(
+      page,
+      "renderSubagentRoundNavigatorSuppression",
+    );
+
+    expect(payload.subagentNavVisible).toBe(false);
+    expect(payload.subagentHasTimelineClass).toBe(false);
+    expect(payload.subagentDensity).toBe("");
+    expect(payload.staleNavVisible).toBe(false);
+    expect(payload.baselineWidth).toBe(payload.staleWidth);
+    expect(payload.staleWithinScroll).toBe(true);
+    expect(payload.mainNavVisible).toBe(true);
+    expect(payload.mainHasTimelineClass).toBe(true);
+    expect(payload.mainNodeCount).toBe(2);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openStreamTimelineHarness(
   page: Page,
   baseUrl: string,
@@ -1052,6 +1484,7 @@ function streamTimelineHarnessHtml(): string {
       getCoordinatorStreamOverlay,
       getInstanceStreamOverlay,
       getOrCreateStreamBlock,
+      reconcileTerminalRunStreamState,
       startThinkingBlock,
       bindStreamOverlayToContainer,
       updateToolResult,
@@ -1066,6 +1499,12 @@ function streamTimelineHarnessHtml(): string {
       applyTimelineAction,
       clearTimelineState,
     } from "/js/components/messageTimeline/store.js";
+    import {
+      routeEvent,
+    } from "/js/core/eventRouter/index.js";
+    import {
+      renderRoundNavigator,
+    } from "/js/components/rounds/navigator.js";
 
     function makeContainer(id) {
       const container = document.createElement("section");
@@ -1097,6 +1536,35 @@ function streamTimelineHarnessHtml(): string {
         counts.set(key, (counts.get(key) || 0) + 1);
       });
       return Math.max(0, ...Array.from(counts.values()));
+    }
+
+    function serializeProcessedTranscript(container) {
+      const groupBody = container.querySelector(".tool-group-body");
+      const groupParts = Array.from(groupBody?.children || []).map(child => {
+        if (child.classList.contains("tool-block")) {
+          return "tool:" + (child.dataset.toolName || "");
+        }
+        if (child.classList.contains("msg-text")) {
+          return "text:" + child.textContent.replace(/\\s+/g, " ").trim();
+        }
+        return child.className || child.tagName.toLowerCase();
+      });
+      const finalTexts = Array.from(container.querySelectorAll(":scope > .message"))
+        .filter(message => String(message.dataset.role || "").trim() !== "user")
+        .flatMap(message => Array.from(message.querySelectorAll(".msg-text")))
+        .map(item => item.textContent.replace(/\\s+/g, " ").trim())
+        .filter(Boolean);
+      return {
+        childClasses: Array.from(container.children)
+          .filter(child => child.classList.contains("tool-group") || child.classList.contains("message"))
+          .map(child => child.className),
+        groupBodyClass: groupBody?.className || "",
+        groupCount: container.querySelectorAll(".tool-group").length,
+        messageCount: container.querySelectorAll(":scope > .message").length,
+        nestedMessageCount: container.querySelectorAll(".tool-group-body > .message").length,
+        groupParts,
+        finalTexts,
+      };
     }
 
     function waitForAnimationFrame() {
@@ -2823,6 +3291,1016 @@ function streamTimelineHarnessHtml(): string {
           messageCount: container.querySelectorAll(":scope > .message").length,
           userText: userMessage?.querySelector(".msg-content")?.textContent.replace(/\\s+/g, " ").trim(),
           modelText: modelMessage?.querySelector(".msg-content")?.textContent.replace(/\\s+/g, " ").trim(),
+        };
+      },
+
+      async renderSubagentSwitchBackThinkingOrder() {
+        clearAllStreamState();
+        const firstContainer = makeContainer("subagent-thinking-order-first");
+        const runId = "subagent_run_thinking_order_switch";
+        const instanceId = "inst-thinking-order";
+        const roleId = "Explorer";
+        getOrCreateStreamBlock(firstContainer, instanceId, roleId, "Explorer", runId);
+        startThinkingBlock(instanceId, 0, {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+        appendThinkingChunk(instanceId, 0, "THINK_A", {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+        appendToolCallBlock(firstContainer, instanceId, "read_file", { path: "a.py" }, "call-a", {
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+        appendStreamChunk(instanceId, "TEXT_A", runId, roleId, "Explorer");
+        startThinkingBlock(instanceId, 1, {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+        appendThinkingChunk(instanceId, 1, "THINK_B", {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+        appendToolCallBlock(firstContainer, instanceId, "read_file", { path: "b.py" }, "call-b", {
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+        appendStreamChunk(instanceId, "TEXT_B", runId, roleId, "Explorer");
+        startThinkingBlock(instanceId, 2, {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+        appendThinkingChunk(instanceId, 2, "THINK_LIVE", {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: "Explorer",
+        });
+
+        const beforeOverlay = getInstanceStreamOverlay(runId, instanceId);
+        const rebound = makeContainer("subagent-thinking-order-rebound");
+        rebound.className = "subagent-session-body";
+        rebound.dataset.runId = runId;
+        rebound.dataset.instanceId = instanceId;
+        renderHistory(rebound, [
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "thinking", content: "THINK_A", part_index: 0 }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-a", args: { path: "a.py" } }] },
+          },
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-a", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "text", content: "TEXT_A" }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "thinking", content: "THINK_B", part_index: 1 }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-b", args: { path: "b.py" } }] },
+          },
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-b", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "text", content: "TEXT_B" }] },
+          },
+        ], {
+          runId,
+          runStatus: "running",
+          timelineView: "normal-child-session",
+          streamOverlayEntry: beforeOverlay,
+          canonicalStreamKey: instanceId,
+          separateOverlayMessage: true,
+        });
+        bindStreamOverlayToContainer(rebound, {
+          instanceId,
+          roleId,
+          label: "Explorer",
+          runId,
+        });
+        appendStreamChunk(instanceId, "_TAIL", runId, roleId, "Explorer");
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const content = rebound.querySelector(":scope > .message .msg-content");
+        const parts = Array.from(content?.children || []).map(child => {
+          if (child.classList.contains("thinking-block")) {
+            return "thinking:" + (child.querySelector(".thinking-text")?.textContent.replace(/\\s+/g, " ").trim() || "");
+          }
+          if (child.classList.contains("tool-block")) {
+            return "tool:" + (child.dataset.toolCallId || "");
+          }
+          if (child.classList.contains("msg-text")) {
+            return "text:" + child.textContent.replace(/\\s+/g, " ").trim();
+          }
+          return child.className || child.tagName.toLowerCase();
+        }).filter(Boolean);
+        const afterOverlay = getInstanceStreamOverlay(runId, instanceId);
+        return {
+          beforeThinkingFinished: (beforeOverlay?.parts || [])
+            .filter(part => part.kind === "thinking")
+            .map(part => part.finished === true),
+          beforeActiveThinkingParts: Array.from(beforeOverlay?.thinkingActiveByPart?.keys?.() || []),
+          afterActiveThinkingParts: Array.from(afterOverlay?.thinkingActiveByPart?.keys?.() || []),
+          parts,
+          thinkingTexts: Array.from(rebound.querySelectorAll(".thinking-block .thinking-text"))
+            .map(item => item.textContent.replace(/\\s+/g, " ").trim())
+            .filter(Boolean),
+          textInsideThinking: Array.from(rebound.querySelectorAll(".thinking-block .msg-text"))
+            .map(item => item.textContent.replace(/\\s+/g, " ").trim())
+            .filter(text => text.includes("TEXT") || text.includes("_TAIL")),
+        };
+      },
+
+      async renderSubagentSwitchBackWithoutPersistedThinking() {
+        clearAllStreamState();
+        const firstContainer = makeContainer("subagent-stale-thinking-first");
+        const runId = "subagent_run_stale_thinking_switch";
+        const instanceId = "inst-stale-thinking";
+        const roleId = "Explorer";
+        getOrCreateStreamBlock(firstContainer, instanceId, roleId, "Explorer", runId);
+        startThinkingBlock(instanceId, 0, { container: firstContainer, runId, roleId, label: "Explorer" });
+        appendThinkingChunk(instanceId, 0, "THINK_A", { container: firstContainer, runId, roleId, label: "Explorer" });
+        appendToolCallBlock(firstContainer, instanceId, "read_file", { path: "a.py" }, "call-a", { runId, roleId, label: "Explorer" });
+        appendStreamChunk(instanceId, "TEXT_A", runId, roleId, "Explorer");
+        startThinkingBlock(instanceId, 1, { container: firstContainer, runId, roleId, label: "Explorer" });
+        appendThinkingChunk(instanceId, 1, "THINK_B", { container: firstContainer, runId, roleId, label: "Explorer" });
+        appendToolCallBlock(firstContainer, instanceId, "read_file", { path: "b.py" }, "call-b", { runId, roleId, label: "Explorer" });
+        appendStreamChunk(instanceId, "TEXT_B", runId, roleId, "Explorer");
+        startThinkingBlock(instanceId, 2, { container: firstContainer, runId, roleId, label: "Explorer" });
+        appendThinkingChunk(instanceId, 2, "THINK_LIVE", { container: firstContainer, runId, roleId, label: "Explorer" });
+
+        const beforeOverlay = getInstanceStreamOverlay(runId, instanceId);
+        const rebound = makeContainer("subagent-stale-thinking-rebound");
+        rebound.className = "subagent-session-body";
+        rebound.dataset.runId = runId;
+        rebound.dataset.instanceId = instanceId;
+        renderHistory(rebound, [
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-a", args: { path: "a.py" } }] },
+          },
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-a", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "text", content: "TEXT_A" }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-b", args: { path: "b.py" } }] },
+          },
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-b", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "text", content: "TEXT_B" }] },
+          },
+        ], {
+          runId,
+          runStatus: "running",
+          timelineView: "normal-child-session",
+          streamOverlayEntry: beforeOverlay,
+          canonicalStreamKey: instanceId,
+          separateOverlayMessage: true,
+        });
+        bindStreamOverlayToContainer(rebound, { instanceId, roleId, label: "Explorer", runId });
+        appendStreamChunk(instanceId, "_TAIL", runId, roleId, "Explorer");
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const content = rebound.querySelector(":scope > .message .msg-content");
+        const parts = Array.from(content?.children || []).map(child => {
+          if (child.classList.contains("thinking-block")) {
+            return "thinking:" + (child.querySelector(".thinking-text")?.textContent.replace(/\\s+/g, " ").trim() || "");
+          }
+          if (child.classList.contains("tool-block")) {
+            return "tool:" + (child.dataset.toolCallId || "");
+          }
+          if (child.classList.contains("msg-text")) {
+            return "text:" + child.textContent.replace(/\\s+/g, " ").trim();
+          }
+          return child.className || child.tagName.toLowerCase();
+        }).filter(Boolean);
+        const afterOverlay = getInstanceStreamOverlay(runId, instanceId);
+        return {
+          beforeThinkingFinished: (beforeOverlay?.parts || [])
+            .filter(part => part.kind === "thinking")
+            .map(part => part.finished === true),
+          beforeActiveThinkingParts: Array.from(beforeOverlay?.thinkingActiveByPart?.keys?.() || []),
+          afterActiveThinkingParts: Array.from(afterOverlay?.thinkingActiveByPart?.keys?.() || []),
+          parts,
+          thinkingTexts: Array.from(rebound.querySelectorAll(".thinking-block .thinking-text"))
+            .map(item => item.textContent.replace(/\\s+/g, " ").trim())
+            .filter(Boolean),
+          textInsideThinking: Array.from(rebound.querySelectorAll(".thinking-block .msg-text"))
+            .map(item => item.textContent.replace(/\\s+/g, " ").trim())
+            .filter(text => text.includes("TEXT") || text.includes("_TAIL")),
+        };
+      },
+
+      renderRunningSubagentHistoryCompaction() {
+        clearAllStreamState();
+        const runId = "subagent_run_running_history_compaction";
+        const instanceId = "inst-running-history";
+        const roleId = "Writer";
+        const container = makeContainer("subagent-running-history-compaction");
+        container.className = "subagent-session-body";
+        container.dataset.runId = runId;
+        container.dataset.instanceId = instanceId;
+        renderHistory(container, [
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "text", content: "I'll systematically explore the plugin system." }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-run-1", args: { path: "src/relay_teams/plugins" } }] },
+          },
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-run-1", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "text", content: "Excellent. Now let me read all the core plugin source files." }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-run-2", args: { path: "src/relay_teams/plugins/__init__.py" } }] },
+          },
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-run-2", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "text", content: "Let me read the remaining files." }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-run-3", args: { path: "src/relay_teams/plugins/config_manager.py" } }] },
+          },
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-run-3", content: { ok: true } }] },
+          },
+        ], {
+          runId,
+          runStatus: "running",
+          timelineView: "normal-child-session",
+          canonicalStreamKey: instanceId,
+          streamOverlayEntry: null,
+        });
+        const content = container.querySelector(":scope > .message .msg-content");
+        const parts = Array.from(content?.children || []).map(child => {
+          if (child.classList.contains("tool-block")) {
+            return "tool:" + (child.dataset.toolName || "");
+          }
+          if (child.classList.contains("msg-text")) {
+            return "text:" + child.textContent.replace(/\\s+/g, " ").trim();
+          }
+          return child.className || child.tagName.toLowerCase();
+        });
+        return {
+          groupCount: container.querySelectorAll(".tool-group").length,
+          messageCount: container.querySelectorAll(":scope > .message").length,
+          parts,
+        };
+      },
+
+      renderTerminalCollapseWithCompletedOverlay() {
+        clearAllStreamState();
+        const container = makeContainer("terminal-collapse");
+        container.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+        renderHistory(container, [{
+          role: "assistant",
+          role_id: "main-role",
+          instance_id: "primary",
+          created_at: "2026-04-25T12:00:02Z",
+          message: {
+            parts: [{ part_kind: "text", content: "planning complete" }],
+          },
+        }], {
+          runId: "run-terminal-collapse",
+          runStatus: "completed",
+          hasFinalOutput: true,
+          streamOverlayEntry: {
+            roleId: "main-role",
+            instanceId: "primary",
+            streamKey: "primary",
+            label: "Main Agent",
+            parts: [{
+              kind: "tool",
+              tool_name: "write_file",
+              tool_call_id: "call-final",
+              args: { path: "page.svg" },
+              status: "completed",
+              result: { ok: true },
+            }],
+            textStreaming: false,
+            idleCursor: false,
+          },
+        });
+        return {
+          groupCount: container.querySelectorAll(".tool-group").length,
+          groupToolCount: container.querySelectorAll(".tool-group .tool-block").length,
+        };
+      },
+
+      renderTerminalPayloadOutput() {
+        clearAllStreamState();
+        const runId = "run-terminal-payload-output";
+        const container = makeContainer("terminal-payload-output");
+        container.className = "session-round-section";
+        container.dataset.runId = runId;
+        routeEvent(
+          "run_completed",
+          {
+            trace_id: runId,
+            root_task_id: "task-terminal-output",
+            output: [{ kind: "text", text: "terminal payload final answer" }],
+          },
+          {
+            run_id: runId,
+            trace_id: runId,
+            event_id: "terminal-payload-output-event",
+          },
+        );
+        const failedRunId = "run-terminal-payload-failed-output";
+        const failedContainer = makeContainer("terminal-payload-failed-output");
+        failedContainer.className = "session-round-section";
+        failedContainer.dataset.runId = failedRunId;
+        routeEvent(
+          "run_failed",
+          {
+            trace_id: failedRunId,
+            root_task_id: "task-terminal-failed-output",
+            completion_reason: "assistant_response",
+            output: [{ kind: "text", text: "failed assistant final answer" }],
+          },
+          {
+            run_id: failedRunId,
+            trace_id: failedRunId,
+            event_id: "terminal-payload-failed-output-event",
+          },
+        );
+        const stoppedRunId = "run-terminal-payload-stopped-output";
+        const stoppedContainer = makeContainer("terminal-payload-stopped-output");
+        stoppedContainer.className = "session-round-section";
+        stoppedContainer.dataset.runId = stoppedRunId;
+        routeEvent(
+          "run_stopped",
+          {
+            trace_id: stoppedRunId,
+            root_task_id: "task-terminal-stopped-output",
+            status: "stopped",
+            output: [{ kind: "text", text: "stopped diagnostic output" }],
+          },
+          {
+            run_id: stoppedRunId,
+            trace_id: stoppedRunId,
+            event_id: "terminal-payload-stopped-output-event",
+          },
+        );
+        return {
+          text: container.textContent || "",
+          failedText: failedContainer.textContent || "",
+          stoppedText: stoppedContainer.textContent || "",
+          occurrences: countSubstring(container.textContent || "", "terminal payload final answer"),
+          cursorCount: container.querySelectorAll(".streaming-cursor").length,
+        };
+      },
+
+      renderTerminalPayloadDedupesHydratedHistory() {
+        clearAllStreamState();
+        const runId = "run-terminal-payload-history-dedupe";
+        const container = makeContainer("terminal-payload-history-dedupe");
+        container.className = "session-round-section";
+        container.dataset.runId = runId;
+        const terminalText = [
+          "codehub-mr-loop skill defines these available roles:",
+          "| Role | File | Responsibility |",
+          "| --- | --- | --- |",
+          "| ci-analyzer | \`agents/ci-analyzer.md\` | Query CI pipeline status |",
+          "The previous request could not be completed because of an API or execution error.",
+        ].join("\\n\\n");
+        renderHistory(container, [{
+          role: "assistant",
+          role_id: "Coordinator",
+          instance_id: "primary",
+          message: {
+            parts: [{ part_kind: "text", content: terminalText }],
+          },
+        }], {
+          runId,
+          runStatus: "completed",
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+        });
+        routeEvent(
+          "run_completed",
+          {
+            trace_id: runId,
+            root_task_id: "task-terminal-history-dedupe",
+            output: [{ kind: "text", text: terminalText }],
+          },
+          {
+            run_id: runId,
+            trace_id: runId,
+            event_id: "terminal-payload-history-dedupe-event",
+          },
+        );
+        return {
+          text: container.textContent || "",
+          occurrences: countSubstring(container.textContent || "", "codehub-mr-loop skill"),
+          messageCount: container.querySelectorAll(".message").length,
+        };
+      },
+
+      renderTerminalHistoryWithToolAndFinalOutput() {
+        clearAllStreamState();
+        const runId = "run-terminal-history-tool-final";
+        const container = makeContainer("terminal-history-tool-final");
+        container.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+        renderHistory(container, [
+          {
+            role: "assistant",
+            role_id: "main-role",
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:02Z",
+            message: {
+              parts: [{
+                part_kind: "tool-call",
+                tool_name: "shell",
+                tool_call_id: "call-history-final",
+                args: { command: "date" },
+              }],
+            },
+          },
+          {
+            role: "user",
+            role_id: "main-role",
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:03Z",
+            message: {
+              parts: [{
+                part_kind: "tool-return",
+                tool_name: "shell",
+                tool_call_id: "call-history-final",
+                content: { ok: true, output: "tool completed" },
+              }],
+            },
+          },
+          {
+            role: "assistant",
+            role_id: "main-role",
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:04Z",
+            reconstructed: true,
+            message: {
+              parts: [{ part_kind: "text", content: "terminal projected final answer" }],
+            },
+          },
+        ], {
+          runId,
+          runStatus: "completed",
+          hasFinalOutput: true,
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+          streamOverlayEntry: null,
+        });
+        return {
+          text: container.textContent || "",
+          occurrences: countSubstring(container.textContent || "", "terminal projected final answer"),
+          groupCount: container.querySelectorAll(".tool-group").length,
+          flowCount: container.querySelectorAll(".message-history-flow").length,
+          groupBodyClass: container.querySelector(".tool-group-body")?.className || "",
+          toolBlockCount: container.querySelectorAll(".tool-block").length,
+          messageCount: container.querySelectorAll(".message").length,
+        };
+      },
+
+      renderFinalMessageCollapseMatrix() {
+        clearAllStreamState();
+        const renderCase = (id, runStatus, hasFinalOutput, parts) => {
+          const container = makeContainer(id);
+          container.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+          renderHistory(container, [{
+            role: "assistant",
+            role_id: "main-role",
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:02Z",
+            message: { parts },
+          }], {
+            runId: "run-" + id,
+            runStatus,
+            hasFinalOutput,
+            streamOverlayEntry: null,
+          });
+          return {
+            groupCount: container.querySelectorAll(".tool-group").length,
+            text: container.textContent || "",
+          };
+        };
+        const stoppedNoFinal = renderCase("stopped-no-final", "stopped", false, [
+          { part_kind: "thinking", part_index: 0, content: "stopped thought" },
+          {
+            part_kind: "tool-call",
+            tool_name: "shell",
+            tool_call_id: "call-stopped",
+            args: { command: "date" },
+          },
+        ]);
+        const failedFinal = renderCase("failed-final", "failed", true, [
+          { part_kind: "thinking", part_index: 0, content: "failed thought" },
+          {
+            part_kind: "tool-call",
+            tool_name: "shell",
+            tool_call_id: "call-failed",
+            args: { command: "date" },
+          },
+          { part_kind: "text", content: "failed final answer" },
+        ]);
+        const cancelledFinal = renderCase("cancelled-final", "cancelled", true, [
+          { part_kind: "thinking", part_index: 0, content: "cancelled thought" },
+          { part_kind: "text", content: "cancelled final answer" },
+        ]);
+        const completedNoFinal = renderCase("completed-no-final", "completed", false, [
+          { part_kind: "thinking", part_index: 0, content: "completed thought" },
+          {
+            part_kind: "tool-call",
+            tool_name: "shell",
+            tool_call_id: "call-completed",
+            args: { command: "date" },
+          },
+          { part_kind: "text", content: "loop middle output" },
+        ]);
+        return {
+          stoppedNoFinalGroupCount: stoppedNoFinal.groupCount,
+          failedFinalGroupCount: failedFinal.groupCount,
+          cancelledFinalGroupCount: cancelledFinal.groupCount,
+          completedNoFinalGroupCount: completedNoFinal.groupCount,
+          failedFinalText: failedFinal.text,
+          cancelledFinalText: cancelledFinal.text,
+          completedNoFinalText: completedNoFinal.text,
+        };
+      },
+
+      renderLiveTerminalAndHistoryParity() {
+        clearAllStreamState();
+        const runId = "run-live-history-parity";
+        const roleId = "main-role";
+        const live = makeContainer("live-history-parity-live");
+        live.className = "session-round-section";
+        live.dataset.runId = runId;
+        live.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+        getOrCreateStreamBlock(live, "primary", roleId, "Main Agent", runId);
+        appendToolCallBlock(live, "primary", "search", { q: "plugin" }, "call-1", {
+          runId,
+          roleId,
+          label: "Main Agent",
+        });
+        updateToolResult("primary", "search", { ok: true }, false, "call-1", {
+          runId,
+          roleId,
+          label: "Main Agent",
+          container: live,
+        });
+        appendToolCallBlock(live, "primary", "read_file", { path: "src/a.py" }, "call-2", {
+          runId,
+          roleId,
+          label: "Main Agent",
+        });
+        updateToolResult("primary", "read_file", { ok: true }, false, "call-2", {
+          runId,
+          roleId,
+          label: "Main Agent",
+          container: live,
+        });
+        appendStreamChunk(
+          "primary",
+          "Now let me read the remaining key files for the full picture.",
+          runId,
+          roleId,
+          "Main Agent",
+        );
+        appendToolCallBlock(live, "primary", "read_file", { path: "src/b.py" }, "call-3", {
+          runId,
+          roleId,
+          label: "Main Agent",
+        });
+        updateToolResult("primary", "read_file", { ok: true }, false, "call-3", {
+          runId,
+          roleId,
+          label: "Main Agent",
+          container: live,
+        });
+        appendStreamChunk("primary", "final answer", runId, roleId, "Main Agent");
+        reconcileTerminalRunStreamState(runId);
+
+        const history = makeContainer("live-history-parity-history");
+        history.className = "session-round-section";
+        history.dataset.runId = runId;
+        history.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+        renderHistory(history, [
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:01Z",
+            message: { parts: [{ part_kind: "tool-call", tool_name: "search", tool_call_id: "call-1", args: { q: "plugin" } }] },
+          },
+          {
+            role: "user",
+            created_at: "2026-04-25T12:00:02Z",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "search", tool_call_id: "call-1", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:03Z",
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-2", args: { path: "src/a.py" } }] },
+          },
+          {
+            role: "user",
+            created_at: "2026-04-25T12:00:04Z",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-2", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:05Z",
+            message: { parts: [{ part_kind: "text", content: "Now let me read the remaining key files for the full picture." }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:06Z",
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-3", args: { path: "src/b.py" } }] },
+          },
+          {
+            role: "user",
+            created_at: "2026-04-25T12:00:07Z",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-3", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: "primary",
+            created_at: "2026-04-25T12:00:08Z",
+            message: { parts: [{ part_kind: "text", content: "final answer" }] },
+          },
+        ], {
+          runId,
+          runStatus: "completed",
+          hasFinalOutput: true,
+          timelineView: "main",
+          canonicalStreamKey: "primary",
+          streamOverlayEntry: null,
+        });
+
+        return {
+          live: serializeProcessedTranscript(live),
+          history: serializeProcessedTranscript(history),
+        };
+      },
+
+      renderSubagentTerminalParity() {
+        clearAllStreamState();
+        const runId = "subagent_run_terminal_parity";
+        const instanceId = "inst-terminal-parity";
+        const roleId = "Writer";
+        const live = makeContainer("subagent-terminal-parity-live");
+        live.className = "subagent-session-body";
+        live.dataset.runId = runId;
+        live.dataset.instanceId = instanceId;
+        live.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+        getOrCreateStreamBlock(live, instanceId, roleId, "Writer", runId);
+        appendToolCallBlock(live, instanceId, "read_file", { path: "src/a.py" }, "call-sub-1", {
+          runId,
+          roleId,
+          label: "Writer",
+        });
+        updateToolResult(instanceId, "read_file", { ok: true }, false, "call-sub-1", {
+          runId,
+          roleId,
+          label: "Writer",
+          container: live,
+        });
+        appendStreamChunk(instanceId, "Let me read the remaining key files.", runId, roleId, "Writer");
+        appendToolCallBlock(live, instanceId, "read_file", { path: "src/b.py" }, "call-sub-2", {
+          runId,
+          roleId,
+          label: "Writer",
+        });
+        updateToolResult(instanceId, "read_file", { ok: true }, false, "call-sub-2", {
+          runId,
+          roleId,
+          label: "Writer",
+          container: live,
+        });
+        appendStreamChunk(instanceId, "subagent final answer", runId, roleId, "Writer");
+        reconcileTerminalRunStreamState(runId);
+
+        const history = makeContainer("subagent-terminal-parity-history");
+        history.className = "subagent-session-body";
+        history.dataset.runId = runId;
+        history.dataset.instanceId = instanceId;
+        history.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+        renderHistory(history, [
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: "2026-04-25T12:00:01Z",
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-sub-1", args: { path: "src/a.py" } }] },
+          },
+          {
+            role: "user",
+            created_at: "2026-04-25T12:00:02Z",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-sub-1", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: "2026-04-25T12:00:03Z",
+            message: { parts: [{ part_kind: "text", content: "Let me read the remaining key files." }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: "2026-04-25T12:00:04Z",
+            message: { parts: [{ part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-sub-2", args: { path: "src/b.py" } }] },
+          },
+          {
+            role: "user",
+            created_at: "2026-04-25T12:00:05Z",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-sub-2", content: { ok: true } }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: "2026-04-25T12:00:06Z",
+            message: { parts: [{ part_kind: "text", content: "subagent final answer" }] },
+          },
+        ], {
+          runId,
+          runStatus: "idle",
+          runPhase: "terminal",
+          timelineView: "normal-child-session",
+          canonicalStreamKey: instanceId,
+          streamOverlayEntry: null,
+        });
+
+        return {
+          live: serializeProcessedTranscript(live),
+          history: serializeProcessedTranscript(history),
+        };
+      },
+
+      renderCompletedSubagentStatusOnlyTranscript() {
+        clearAllStreamState();
+        const runId = "subagent_run_status_only";
+        const instanceId = "inst-status-only";
+        const roleId = "Explorer";
+        const container = makeContainer("subagent-status-only");
+        container.className = "subagent-session-body";
+        container.dataset.runId = runId;
+        container.dataset.instanceId = instanceId;
+        container.dataset.roundCreatedAt = "2026-04-25T12:00:00Z";
+        renderHistory(container, [
+          {
+            role: "user",
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: "2026-04-25T12:00:00Z",
+            message: { parts: [{ part_kind: "user-prompt", content: "Explore this area." }] },
+          },
+          {
+            role: "assistant",
+            role_id: roleId,
+            instance_id: instanceId,
+            created_at: "2026-04-25T12:00:01Z",
+            message: {
+              parts: [
+                { part_kind: "thinking", content: "hidden thought" },
+                { part_kind: "text", content: "Let me inspect first." },
+                { part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-status-1", args: { path: "src/a.py" } },
+                { part_kind: "text", content: "Next file." },
+                { part_kind: "tool-call", tool_name: "read_file", tool_call_id: "call-status-2", args: { path: "src/b.py" } },
+                { part_kind: "text", content: "final response" },
+              ],
+            },
+          },
+          {
+            role: "user",
+            created_at: "2026-04-25T12:00:02Z",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-status-1", content: { ok: true } }] },
+          },
+          {
+            role: "user",
+            created_at: "2026-04-25T12:00:03Z",
+            message: { parts: [{ part_kind: "tool-return", tool_name: "read_file", tool_call_id: "call-status-2", content: { ok: true } }] },
+          },
+        ], {
+          runId,
+          status: "completed",
+          timelineView: "normal-child-session",
+          canonicalStreamKey: instanceId,
+          streamOverlayEntry: null,
+        });
+        return {
+          ...serializeProcessedTranscript(container),
+          containsLiveLabel: (container.textContent || "").includes("Live"),
+        };
+      },
+
+      async renderSubagentRoundNavigatorSuppression() {
+        const existingNav = document.getElementById("round-nav-float");
+        existingNav?.remove?.();
+        document.querySelectorAll(".chat-container").forEach(node => node.remove());
+
+        const shell = document.createElement("main");
+        shell.id = "chat-container";
+        shell.className = "chat-container is-subagent-session-active";
+        shell.style.width = "960px";
+        shell.style.height = "420px";
+        shell.style.display = "flex";
+        shell.style.position = "relative";
+        const scroll = document.createElement("div");
+        scroll.className = "chat-scroll";
+        scroll.style.width = "960px";
+        scroll.style.height = "420px";
+        const wrapper = document.createElement("section");
+        wrapper.className = "subagent-session-view";
+        const body = document.createElement("div");
+        body.className = "subagent-session-body";
+        wrapper.appendChild(body);
+        scroll.appendChild(wrapper);
+        shell.appendChild(scroll);
+        document.body.appendChild(shell);
+
+        const rounds = [
+          {
+            run_id: "round-suppressed-1",
+            intent: "Suppressed round one",
+            status: "completed",
+            created_at: "2026-04-25T12:00:00Z",
+          },
+          {
+            run_id: "round-suppressed-2",
+            intent: "Suppressed round two",
+            status: "running",
+            created_at: "2026-04-25T12:02:00Z",
+          },
+        ];
+        const nextFrame = () => new Promise(resolve => {
+          window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+        });
+        const isVisible = element => {
+          if (!element) return false;
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none"
+            && style.visibility !== "hidden"
+            && Number(rect.width || 0) > 0
+            && Number(rect.height || 0) > 0;
+        };
+
+        renderRoundNavigator(rounds, () => {}, { activeRunId: "round-suppressed-1" });
+        await nextFrame();
+        const subagentNav = document.getElementById("round-nav-float");
+        const subagentNavVisible = isVisible(subagentNav);
+        const subagentHasTimelineClass = shell.classList.contains("rounds-timeline-visible");
+        const subagentDensity = shell.getAttribute("data-round-timeline-density") || "";
+
+        const baselineWidth = Math.round(wrapper.getBoundingClientRect().width);
+        const staleNav = subagentNav || document.createElement("aside");
+        staleNav.id = "round-nav-float";
+        staleNav.className = "round-nav-float round-nav-timeline";
+        staleNav.style.display = "block";
+        if (!staleNav.parentNode) {
+          shell.appendChild(staleNav);
+        }
+        shell.classList.add("rounds-timeline-visible");
+        shell.dataset.roundTimelineDensity = "full";
+        await nextFrame();
+        const staleWidth = Math.round(wrapper.getBoundingClientRect().width);
+        const scrollWidth = Math.round(scroll.getBoundingClientRect().width);
+        const staleNavVisible = isVisible(staleNav);
+
+        shell.classList.remove("is-subagent-session-active");
+        shell.classList.remove("rounds-timeline-visible");
+        delete shell.dataset.roundTimelineDensity;
+        wrapper.remove();
+        renderRoundNavigator(rounds, () => {}, { activeRunId: "round-suppressed-1" });
+        await nextFrame();
+        const mainNav = document.getElementById("round-nav-float");
+        return {
+          subagentNavVisible,
+          subagentHasTimelineClass,
+          subagentDensity,
+          staleNavVisible,
+          baselineWidth,
+          staleWidth,
+          staleWithinScroll: staleWidth <= scrollWidth,
+          mainNavVisible: isVisible(mainNav),
+          mainHasTimelineClass: shell.classList.contains("rounds-timeline-visible"),
+          mainNodeCount: mainNav?.querySelectorAll?.(".round-nav-node")?.length || 0,
+        };
+      },
+
+      measureSubagentSessionWidth() {
+        const shell = document.createElement("main");
+        shell.id = "chat-container";
+        shell.className = "chat-container";
+        shell.style.width = "960px";
+        shell.style.height = "400px";
+        shell.style.display = "block";
+        const scroll = document.createElement("div");
+        scroll.className = "chat-scroll";
+        scroll.style.width = "960px";
+        scroll.style.height = "400px";
+        const wrapper = document.createElement("section");
+        wrapper.className = "subagent-session-view";
+        const body = document.createElement("div");
+        body.className = "subagent-session-body";
+        wrapper.appendChild(body);
+        scroll.appendChild(wrapper);
+        shell.appendChild(scroll);
+        document.body.appendChild(shell);
+        const beforeWidth = Math.round(wrapper.getBoundingClientRect().width);
+        body.appendChild(document.createElement("div"));
+        const afterWidth = Math.round(wrapper.getBoundingClientRect().width);
+        const scrollWidth = Math.round(scroll.getBoundingClientRect().width);
+        return {
+          beforeWidth,
+          afterWidth,
+          beforeWithinScroll: beforeWidth <= scrollWidth,
+          afterWithinScroll: afterWidth <= scrollWidth,
         };
       },
     };

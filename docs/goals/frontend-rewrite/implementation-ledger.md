@@ -4501,6 +4501,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining-scenario scan, and cleanup completed for this slice. No Message Timeline subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.
 
+## 2026-06-26 Streaming Timeline Python Harness Removal Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, and the remaining 13 `test_streaming_message_timeline.py` browser scenarios before editing. This slice finished the stream timeline browser harness migration instead of leaving a mixed Python/TS ownership boundary.
+- Extended `frontend/app/browser-tests/streaming-message-timeline.spec.ts` with TS browser coverage for the remaining stream timeline scenarios: subagent switch-back thinking order, stale thinking gap removal, running subagent compact history DOM, terminal completed overlay grouping, terminal payload final output rendering and dedupe, terminal history final-output projection, live/history terminal transcript parity for main and subagent runs, completed subagent status-only transcript processing, final-output collapse matrix, subagent session width stability, and subagent round-navigator suppression.
+- Deleted `tests/integration_tests/browser/test_streaming_message_timeline.py` after the replacement TS browser scenarios passed. The stream timeline browser harness now lives in TS with 46 scenarios.
+- Kept this as targeted Message Timeline / AG-UI stream browser-suite migration progress only. Remaining frontend rewrite work still includes broader old Python browser module migration, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/streaming-message-timeline.spec.ts` passed with 46 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `rg -n "test_streaming_message_timeline|stream_timeline_harness|__streamTimelineHarnessReady" tests frontend -g "*.py" -g "*.ts" -g "*.tsx"` reports no lingering old Python harness references.
+- `rg -n "sync_playwright|playwright\.sync_api" tests\integration_tests\browser -g "*.py"` still reports other legacy Python browser files (`test_github_browser_flow.py`, `test_clawhub_browser_flow.py`, `test_browser_smoke.py`, and `test_backend_status_pressure.py`), so full Python browser migration remains open.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, deletion scan, remaining Python browser scan, and cleanup completed for this slice. No Message Timeline subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-26 Streaming Timeline Rebind/Subagent Harness TS Migration Batch
 
 ### Scope

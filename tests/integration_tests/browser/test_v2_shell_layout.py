@@ -590,6 +590,105 @@ def test_v2_recovery_approval_and_question_actions_call_real_endpoints(
         expect(recovery.get_by_text("Planner needs input")).to_have_count(0)
 
 
+def test_v2_recovery_background_subagent_stream_renders_in_timeline(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    backend.recovery_active_run = {
+        "last_event_id": 5,
+        "pending_tool_approval_count": 0,
+        "pending_user_question_count": 0,
+        "phase": "running",
+        "run_id": _STREAM_RUN_ID,
+        "session_id": _SESSION_ID,
+        "should_show_recover": False,
+        "status": "running",
+        "stream_connected": False,
+    }
+    backend.recovery_background_tasks = [
+        {
+            "background_task_id": "background-subagent-1",
+            "command": "subagent:reviewer",
+            "cwd": "C:/repo",
+            "execution_mode": "background",
+            "kind": "subagent",
+            "recent_output": ["reviewer booted"],
+            "run_id": _STREAM_RUN_ID,
+            "session_id": _SESSION_ID,
+            "status": "running",
+            "subagent_run_id": "subagent-run-1",
+        }
+    ]
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        recovery = page.locator(".at-recovery")
+        expect(recovery.get_by_text("subagent:reviewer")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.wait_for_function(
+            """
+            () => {
+              const urls = window.__v2StreamHarness?.urls() || [];
+              if (urls.length !== 1) return false;
+              const url = urls[0];
+              return url.includes('/api/ag-ui/runs/events?')
+                && url.includes('run_id=run-v2-live')
+                && url.includes('after_event_id=5')
+                && url.includes('run_id=subagent-run-1')
+                && url.includes('after_event_id=0');
+            }
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '6',
+            )
+            """,
+            _stream_text_event(6, "Parent orchestration still running."),
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '1',
+            )
+            """,
+            _stream_text_event_for_run(
+                1,
+                "subagent-run-1",
+                "Reviewer subagent stream output.",
+                "reviewer",
+            ),
+        )
+
+        expect(page.get_by_text("Parent orchestration still running.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("Reviewer subagent stream output.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-recovery"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-background-subagent-stream.png"))
+
+
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
     page = browser_page
     repo_root = Path(__file__).resolve().parents[3]
@@ -2566,6 +2665,7 @@ class _V2ShellBackend:
             ],
         }
         self.recovery_active_run: dict[str, object] | None = None
+        self.recovery_background_tasks: list[dict[str, object]] = []
         self.pending_tool_approvals: list[dict[str, object]] = []
         self.pending_user_questions: list[dict[str, object]] = []
         self.question_answer_payloads: list[dict[str, object]] = []
@@ -2742,7 +2842,7 @@ class _V2ShellBackend:
                 route,
                 {
                     "active_run": self.recovery_active_run,
-                    "background_tasks": [],
+                    "background_tasks": self.recovery_background_tasks,
                     "paused_subagents": [],
                     "pending_tool_approvals": self.pending_tool_approvals,
                     "pending_user_questions": self.pending_user_questions,
@@ -4548,12 +4648,22 @@ def _stream_event_source_script() -> str:
 
 
 def _stream_text_event(event_id: int, text: str) -> dict[str, object]:
+    return _stream_text_event_for_run(event_id, _STREAM_RUN_ID, text, "MainAgent")
+
+
+def _stream_text_event_for_run(
+    event_id: int,
+    run_id: str,
+    text: str,
+    role_id: str,
+) -> dict[str, object]:
     return {
         "event_id": event_id,
         "event_type": "text_delta",
         "occurred_at": "2026-06-26T00:00:00Z",
         "payload_json": json.dumps({"text": text}),
-        "run_id": _STREAM_RUN_ID,
+        "role_id": role_id,
+        "run_id": run_id,
         "session_id": _SESSION_ID,
         "trace_id": "trace-v2-stream",
     }

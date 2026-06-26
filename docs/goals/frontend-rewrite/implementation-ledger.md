@@ -3405,3 +3405,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this recovery action slice. No Run Recovery subsystem completion is claimed.
+
+## 2026-06-26 V2 Background Subagent Stream Browser Batch
+
+### Scope
+- Re-checked the Subagents, Run Recovery, and AG-UI Runtime Stream checklist items after approval/question browser coverage, then selected background subagent stream discovery because it remained a high-risk cross-subsystem gap.
+- Added a browser-level built `/app/` scenario that loads a recovery snapshot with an active parent run and a running background subagent task, verifies the visible background task panel, waits for the recovery controller to open the multiplex AG-UI EventSource with both `run-v2-live` and `subagent-run-1`, then dispatches parent and subagent stream deltas through that single stream.
+- Verified the main timeline renders both the parent orchestration output and the reviewer subagent output, and added a document-height assertion so the recovered subagent stream cannot reintroduce whole-page scrolling.
+- Captured `.tmp/frontend-v2-recovery/v2-background-subagent-stream.png` and inspected it to confirm the V2 shell stayed fixed-height with the sidebar, recovery panel, timeline, token bar, and composer all still reachable.
+- Kept this as partial subagent/background stream evidence only. Remaining work still includes selecting persisted subagent sessions in the sidebar, subagent terminal/refresh cleanup across session switches, background stop error states in the built shell, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "background_subagent_stream or recovery_approval_and_question_actions or stream_replay_resumes or stream_transport_interrupt"` passed with 4 selected browser tests.
+- Main-agent screenshot inspection of `.tmp/frontend-v2-recovery/v2-background-subagent-stream.png` confirmed the built V2 shell stayed framed while parent and reviewer subagent stream output rendered in the timeline.
+
+### Reviewer
+- Main-agent browser verification completed for this background subagent stream slice. No Subagents, Run Recovery, or AG-UI Runtime Stream subsystem completion is claimed.

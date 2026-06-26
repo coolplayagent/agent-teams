@@ -3916,3 +3916,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, unit, build, and screenshot verification completed for this real SSE stale-recovery slice. No AG-UI Runtime Stream subsystem, Run Recovery subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Appearance And Narrow Shell Batch
+
+### Scope
+- Re-checked the remaining V2 Python browser coverage after the real SSE stale-recovery slice, then selected appearance settings and narrow shell layout because they protect the large-frame UI issues called out in the Application Shell and Settings checklist.
+- Added a TS Playwright browser scenario that opens Settings from the real top bar, verifies the V1 settings drawer/secondary-page model is preserved, selects the `Rose Pine` dark appearance preset, and asserts the theme values are persisted to `agent_teams_appearance` and applied to the CSS variables.
+- Added metrics assertions that the document body remains fixed-height while the Settings section body owns its internal scroll, and that the three appearance preview tiles keep stable usable dimensions.
+- Added a narrow viewport TS browser scenario that verifies the sidebar overlay, scrim, hidden resizer, fixed workspace geometry, close/reopen controls, and document scroll constraints at `390x740`.
+- Captured and inspected `.tmp/frontend-v2-ts-appearance/v2-appearance-dark-rose-pine.png` and `.tmp/frontend-v2-ts-appearance/v2-narrow-sidebar-overlay.png`; the screenshots show the settings drawer over the dimmed workspace, preserved V1 sidebar entries/settings sections, and the mobile sidebar overlay without dragging the workspace into document scroll.
+- Kept this as targeted Application Shell / Settings / TS browser migration progress only. Remaining work still includes additional module action parity, remaining Python browser migration, desktop checks, broader real-SSE replay/resume edges, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-appearance-layout.spec.ts` passed with 2 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-shell-parity.spec.ts browser-tests/v2-appearance-layout.spec.ts` passed with 4 TS browser tests.
+- Main-agent screenshot inspection confirmed the appearance settings drawer and narrow sidebar overlay remain stable inside the fixed V2 shell.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this appearance and narrow-shell slice. No Application Shell subsystem, Settings subsystem, browser-suite migration, or V2 frontend completion is claimed.

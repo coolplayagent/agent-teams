@@ -18,6 +18,7 @@ const RUN_ID = "run-ts-real-sse-stale";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-stream";
 const PROMPT = "Real SSE stale recovery probe";
 const FIRST_CHUNK = "Real SSE chunk before malformed frame.";
+const DUPLICATE_REPLAY_CHUNK = "real SSE after duplicate replay";
 const FAILURE_MESSAGE = "real SSE provider failed before completion";
 const QUEUED_INJECTION = "real SSE queued follow-up";
 const INTERRUPT_INJECTION = "real SSE interrupt follow-up";
@@ -127,6 +128,15 @@ test("reopens a real SSE stream from the recovery checkpoint after refresh", asy
   });
 });
 
+test("dedupes the real SSE cursor event before continuing replay", async ({
+  page,
+}) => {
+  await runRealSseDuplicateReplayScenario(page, {
+    mode: "duplicate-replay",
+    screenshotName: "v2-real-sse-duplicate-replay.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
@@ -144,6 +154,11 @@ interface RealSseRecoveryActionOptions {
 
 interface RealSseRefreshRecoveryOptions {
   mode: "refresh-recovery";
+  screenshotName: string;
+}
+
+interface RealSseDuplicateReplayOptions {
+  mode: "duplicate-replay";
   screenshotName: string;
 }
 
@@ -630,11 +645,71 @@ async function runRealSseRefreshRecoveryScenario(
   }
 }
 
+async function runRealSseDuplicateReplayScenario(
+  page: Page,
+  options: RealSseDuplicateReplayOptions,
+): Promise<void> {
+  const appServer = await serveFrontendDist();
+  const state = createRealSseState();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: "TS real SSE duplicate replay",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeEnabled();
+    await prompt.fill(PROMPT);
+    await page.getByRole("button", { exact: true, name: "Send" }).click();
+
+    await expect.poll(() => state.streamRequests.at(0)).toEqual({
+      afterEventId: "0",
+      lastEventId: null,
+    });
+    const firstChunkMessage = page.locator(".at-message").filter({
+      hasText: FIRST_CHUNK,
+    });
+    await expect(firstChunkMessage).toBeVisible();
+    await expect.poll(() => state.streamRequests.some(
+      (request) => request.afterEventId === "2",
+    )).toBe(true);
+    await expect(page.getByText(DUPLICATE_REPLAY_CHUNK)).toBeVisible();
+
+    const messageText = await firstChunkMessage.first().innerText();
+    expect(countOccurrences(messageText, FIRST_CHUNK.trim())).toBe(1);
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.getByText(`Run ${RUN_ID} is streaming`)).toBeHidden();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "real SSE duplicate replay should continue once from the runtime cursor inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
   mode:
     | RealSseActiveControlOptions["mode"]
+    | RealSseDuplicateReplayOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
     | RealSseScenarioOptions["mode"]
@@ -670,8 +745,13 @@ async function handleRealSseApi(
       state.lastEventId = 2;
       state.persistedAssistantText = FIRST_CHUNK;
     }
+    if (mode === "duplicate-replay" && afterEventId === "0") {
+      state.lastEventId = 2;
+    }
     const completeRefreshAfterFulfill =
       mode === "refresh-recovery" && afterEventId === "2";
+    const completeDuplicateReplayAfterFulfill =
+      mode === "duplicate-replay" && afterEventId === "2";
     if (mode === "recovery-approval" || mode === "recovery-question") {
       state.completed = true;
       state.lastEventId = 10;
@@ -686,6 +766,10 @@ async function handleRealSseApi(
       status: 200,
     });
     if (completeRefreshAfterFulfill) {
+      state.completed = true;
+      state.lastEventId = 4;
+    }
+    if (completeDuplicateReplayAfterFulfill) {
       state.completed = true;
       state.lastEventId = 4;
     }
@@ -782,6 +866,7 @@ function recoveryPhase(state: RealSseState): string {
 function sseBody(
   mode:
     | RealSseActiveControlOptions["mode"]
+    | RealSseDuplicateReplayOptions["mode"]
     | RealSseRecoveryActionOptions["mode"]
     | RealSseRefreshRecoveryOptions["mode"]
     | RealSseScenarioOptions["mode"]
@@ -921,6 +1006,65 @@ function sseBody(
       }),
     ].join("");
   }
+  if (mode === "duplicate-replay") {
+    if (afterEventId === "2") {
+      return [
+        sseFrame({
+          data: runEvent({
+            eventId: 2,
+            payload: { text: FIRST_CHUNK },
+            relayEventType: "text_delta",
+            type: "message.text.delta",
+          }),
+          event: "message.text.delta",
+          id: 2,
+        }),
+        sseFrame({
+          data: runEvent({
+            eventId: 3,
+            payload: { text: DUPLICATE_REPLAY_CHUNK },
+            relayEventType: "text_delta",
+            type: "message.text.delta",
+          }),
+          event: "message.text.delta",
+          id: 3,
+        }),
+        sseFrame({
+          data: runEvent({
+            eventId: 4,
+            payload: { status: "completed" },
+            relayEventType: "run_completed",
+            type: "run.completed",
+          }),
+          event: "run.completed",
+          id: 4,
+        }),
+      ].join("");
+    }
+    return [
+      "retry: 60000\n\n",
+      sseFrame({
+        data: runEvent({
+          eventId: 1,
+          payload: { phase: "streaming" },
+          relayEventType: "run_started",
+          type: "run.started",
+        }),
+        event: "run.started",
+        id: 1,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 2,
+          payload: { text: FIRST_CHUNK },
+          relayEventType: "text_delta",
+          type: "message.text.delta",
+        }),
+        event: "message.text.delta",
+        id: 2,
+      }),
+    ].join("");
+  }
   if (mode === "active-inject" || mode === "active-stop") {
     return [
       sseFrame({
@@ -1013,6 +1157,13 @@ function realSsePersistedMessages(state: RealSseState): Record<string, unknown>[
       run_id: RUN_ID,
     },
   ];
+}
+
+function countOccurrences(value: string, needle: string): number {
+  if (needle.length === 0) {
+    return 0;
+  }
+  return value.split(needle).length - 1;
 }
 
 function sequenceIndex(state: RealSseState, item: string): number {

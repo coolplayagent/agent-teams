@@ -4106,3 +4106,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent build, unit, TS browser, syntax, and screenshot verification completed for this refresh-checkpoint recovery slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Cursor Dedupe Batch
+
+### Scope
+- Re-checked the remaining V2 frontend gaps after the refresh-checkpoint commit and selected cursor-event dedupe because replay semantics remain higher risk than ordinary visual polish.
+- Added a native EventSource TS browser scenario to `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts` that starts a real foreground SSE run, lets the first stream reach event 2, waits for the runtime controller to reopen from `after_event_id=2`, then sends a duplicate event 2 before the fresh event 3 continuation and terminal event 4.
+- Verified the duplicate cursor chunk is not rendered a second time, the continuation does render, the run reaches terminal completion, Send returns, and the fixed shell does not acquire document-level scrolling.
+- Removed the migrated Python `test_v2_real_sse_replay_dedupes_cursor_event_before_continuing` scenario from `tests/integration_tests/browser/test_v2_stream_recovery.py`.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-duplicate-replay.png`; the screenshot shows one pre-reconnect chunk, the post-cursor continuation, terminal completion, V1-shaped sidebar, and anchored composer.
+- Kept this as targeted AG-UI Runtime Stream / Replay TS browser migration progress only. Remaining work still includes rich non-text replay, runtime-cursor reconnect cleanup, multiplex/subagent stream recovery, message copy and voice/composer browser coverage, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 11 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenario.
+- Main-agent screenshot inspection confirmed cursor-event dedupe continues through real SSE replay and stays inside the fixed shell.
+
+### Reviewer
+- Main-agent build, TS browser, syntax, and screenshot verification completed for this cursor-dedupe replay slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.

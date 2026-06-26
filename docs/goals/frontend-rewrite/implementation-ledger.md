@@ -4393,3 +4393,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Hegel returned PASS for this Settings model/web/workspace migration slice. Review findings: no blocker; `WebSettingsSection` inline `Alert` is appropriate and does not replace the toast; `frontend/dist/app` points at the rebuilt asset; deleting `test_v2_shell_layout.py` is justified by the replacement TS browser coverage and no active references remain.
 - Main-agent build, TS browser, frontend lint/typecheck, deletion scan, screenshot verification, and reviewer follow-up cleanup completed for this slice. No full Settings subsystem completion, full browser-suite migration sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-26 Message Copy Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, and remaining migration notes before selecting this slice. The immediate gap is now broader TS ownership of old browser UI tests, not another isolated visual tweak.
+- Added `frontend/app/browser-tests/message-copy-actions.spec.ts` to migrate the six browser harness scenarios for latest-answer copy, stable streaming-copy gating, detached history mount sync, round-intent copy buttons, round-intent overlay hit testing, and round timeline scroll-anchor preservation.
+- Reused the existing TS Playwright frontend static server instead of the removed Python `sync_playwright` harness, so this browser coverage now lives with the rest of the frontend app browser tests.
+- Removed `tests/integration_tests/browser/test_message_copy_actions.py` after the replacement TS browser scenarios passed.
+- Kept this as targeted Message Timeline / Rounds browser-suite migration progress only. Remaining work still includes legacy voice/composer Python browser coverage, broader old Python UI module migration, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/message-copy-actions.spec.ts` passed with 6 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `rg -n "test_message_copy_actions|message_copy_actions|round_intent_controls" tests frontend -g "*.py" -g "*.ts" -g "*.tsx"` reports no lingering old Python harness references.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, deletion scan, and test-results cleanup completed for this slice. No Message Timeline subsystem sign-off, Rounds subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.

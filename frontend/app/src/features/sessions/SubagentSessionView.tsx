@@ -4,6 +4,8 @@ import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { listAgentMessages } from "../../api/client";
+import type { RunEventType } from "../../runtime/events";
+import { useRuntimeStore } from "../../runtime/runtimeStore";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations } from "../../i18n";
 import { MessageTimeline } from "../timeline/MessageTimeline";
@@ -25,17 +27,27 @@ export function SubagentSessionView({
   const runStreamControllerRef = useRef(runStreamController);
   const previouslyTrackedRunRef = useRef(false);
   const runId = subagent.runId.trim();
+  const runtimeTerminalEventType = useRuntimeStore((state) =>
+    runId ? state.runtimeState.runs[runId]?.terminalEventType ?? null : null,
+  );
+  const displayedSubagent = useMemo(
+    () => subagentWithRuntimeTerminalStatus(subagent, runtimeTerminalEventType),
+    [runtimeTerminalEventType, subagent],
+  );
   const streamStatusKey = [
-    subagent.status,
-    subagent.runStatus,
-    subagent.runPhase,
+    displayedSubagent.status,
+    displayedSubagent.runStatus,
+    displayedSubagent.runPhase,
   ].join("|");
   const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
   const messageQueryKey = useMemo(
     () => subagentMessagesQueryKey(subagent.sessionId, subagent.instanceId),
     [subagent.instanceId, subagent.sessionId],
   );
-  const title = subagent.title || humanizeRoleId(subagent.roleId) || subagent.instanceId;
+  const title =
+    displayedSubagent.title ||
+    humanizeRoleId(displayedSubagent.roleId) ||
+    displayedSubagent.instanceId;
 
   useEffect(() => {
     runStreamControllerRef.current = runStreamController;
@@ -92,14 +104,14 @@ export function SubagentSessionView({
           <Typography.Title className="at-subagent-session-title" level={2}>
             {title}
           </Typography.Title>
-          <span className={subagentBadgeClassName(subagent)}>
-            {subagent.runStatus || subagent.status || "idle"}
+          <span className={subagentBadgeClassName(displayedSubagent)}>
+            {displayedSubagent.runStatus || displayedSubagent.status || "idle"}
           </span>
         </div>
         <div className="at-subagent-session-meta">
           <span>{t("subagentSessionReadOnly")}</span>
-          <span>{subagent.roleId}</span>
-          <span>{subagent.instanceId}</span>
+          <span>{displayedSubagent.roleId}</span>
+          <span>{displayedSubagent.instanceId}</span>
         </div>
       </header>
       <div className="at-subagent-session-body">
@@ -116,6 +128,35 @@ export function SubagentSessionView({
       </div>
     </div>
   );
+}
+
+function subagentWithRuntimeTerminalStatus(
+  subagent: ActiveSubagentSession,
+  terminalEventType: RunEventType | null,
+): ActiveSubagentSession {
+  const terminalStatus = terminalStatusForEvent(terminalEventType);
+  if (terminalStatus === null) {
+    return subagent;
+  }
+  return {
+    ...subagent,
+    runPhase: terminalStatus,
+    runStatus: terminalStatus,
+    status: terminalStatus,
+  };
+}
+
+function terminalStatusForEvent(eventType: RunEventType | null): string | null {
+  switch (eventType) {
+    case "run_completed":
+      return "completed";
+    case "run_failed":
+      return "failed";
+    case "run_stopped":
+      return "stopped";
+    default:
+      return null;
+  }
 }
 
 function subagentMessagesQueryKey(

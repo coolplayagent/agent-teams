@@ -3498,3 +3498,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser verification completed for this recovery action error-state slice. No Run Recovery, AG-UI Runtime Stream, Message Timeline, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 Persisted Subagent Terminal Refresh Batch
+
+### Scope
+- Re-checked the Subagents, AG-UI Runtime Stream, and fixed-shell quality gates after the recovery error-state slice, then selected persisted subagent terminal refresh because it still lacked built `/app/` browser evidence and directly affects replay/terminal edge cases.
+- Added a browser-level scenario that opens a V1-style secondary subagent page from the sidebar, streams a reviewer delta, receives a terminal `run_completed` event, closes the EventSource, refetches persisted agent messages, and verifies the stream is not restarted.
+- Found and fixed a real stale-state bug from screenshot inspection: the sidebar subagent row refreshed to `completed` while the open subagent detail header still showed `running`.
+- Updated `SubagentSessionView` to derive its visible subagent status from the runtime terminal event for the viewed run, so the open secondary page reconciles terminal status even though the selected subagent props were captured when the page opened.
+- Rebuilt `frontend/dist/app` so the browser suite and served V2 app exercise the current source bundle rather than the previous Vite artifact.
+- Captured `.tmp/frontend-v2-subagents/v2-persisted-subagent-terminal.png` and inspected it to confirm the sidebar child session and subagent detail badge both show `completed`, the final persisted reviewer answer renders in the secondary page, and the shell remains fixed to the viewport.
+- Checked the live in-app browser at `http://127.0.0.1:8000/app/` after reload: the outer document/body height matched the 1280x720 viewport, `pageHasOuterVerticalScroll` was false, and the sidebar navigation still matched the V1 module set without added or removed items.
+- Kept this as targeted Subagents / AG-UI terminal refresh progress only. Remaining work still includes message-timeline visual parity, broader streaming replay/resume boundary coverage, recovery visual review, settings appearance parity, and reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/SubagentSessionView.test.tsx` passed with 4 selected component tests.
+- `npm run typecheck` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "persisted_subagent_terminal_refreshes_history_without_restart or persisted_subagent_session_stream_resumes_from_sidebar"` passed with 2 selected browser tests.
+- Main-agent screenshot inspection confirmed the terminal subagent browser page now reconciles the sidebar and detail statuses to `completed` without reopening the stream.
+
+### Reviewer
+- Main-agent browser and live in-app layout verification completed for this persisted subagent terminal refresh slice. No Subagents, AG-UI Runtime Stream, Message Timeline, or V2 frontend completion is claimed.

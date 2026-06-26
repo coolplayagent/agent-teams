@@ -128,6 +128,20 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Persisted stopped output")).toBeVisible();
     expect(controller.startRunStream).not.toHaveBeenCalled();
   });
+
+  it("uses runtime terminal state for the subagent badge", async () => {
+    const controller = createRunStreamController();
+    setRuntimeTerminalRun("subagent_run_1", "run_completed");
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({ runStatus: "running", status: "running" }),
+    });
+
+    expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(screen.getByText("completed")).toBeVisible();
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+  });
 });
 
 function renderSubagentSessionView({
@@ -220,6 +234,24 @@ function setRuntimeEntries(entries: TimelineEntry[]): void {
           seenEventKeys: [],
           status: "open",
           terminalEventType: null,
+        },
+      },
+    },
+  });
+}
+
+function setRuntimeTerminalRun(runId: string, terminalEventType: "run_completed"): void {
+  useRuntimeStore.setState({
+    runtimeState: {
+      activeRunIds: [],
+      runs: {
+        [runId]: {
+          entries: [],
+          lastEventId: 43,
+          runId,
+          seenEventKeys: [],
+          status: "closed",
+          terminalEventType,
         },
       },
     },

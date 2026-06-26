@@ -1083,6 +1083,98 @@ def test_v2_persisted_subagent_session_stream_resumes_from_sidebar(
         page.screenshot(path=str(screenshot_dir / "v2-persisted-subagent-stream.png"))
 
 
+def test_v2_persisted_subagent_terminal_refreshes_history_without_restart(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend(include_subagent_session=True)
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("button", name="Toggle subagent sessions").click()
+        page.get_by_role(
+            "button",
+            name="Open subagent session Reviewer review pass",
+        ).click()
+
+        subagent_view = page.locator(".at-subagent-session-view")
+        expect(subagent_view.get_by_text("Persisted reviewer note.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        _wait_for_backend_state(
+            lambda: backend.subagent_messages_request_count >= 1,
+            "Initial subagent history was not requested.",
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/subagent_run_reviewer_1/events?after_event_id=4')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '5',
+            )
+            """,
+            _stream_text_event_for_run(
+                5,
+                _SUBAGENT_RUN_ID,
+                "Reviewer terminal live chunk.",
+                "reviewer",
+            ),
+        )
+        expect(subagent_view.get_by_text("Reviewer terminal live chunk.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        backend.subagent_terminal_complete = True
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'run.completed',
+              event,
+              '6',
+            )
+            """,
+            _stream_terminal_event_for_run(6, "run_completed", _SUBAGENT_RUN_ID),
+        )
+        page.wait_for_function(
+            "() => window.__v2StreamHarness?.closedStates()[0] === true",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        _wait_for_backend_state(
+            lambda: backend.subagent_messages_request_count >= 2,
+            "Subagent history was not refreshed after terminal stream.",
+        )
+        expect(
+            subagent_view.get_by_text("Persisted reviewer final answer."),
+        ).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+        expect(subagent_view.locator(".at-subagent-session-badge")).to_have_text(
+            "completed",
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.wait_for_timeout(500)
+        assert page.evaluate("() => window.__v2StreamHarness.urls().length === 1")
+        assert page.evaluate("() => document.body.scrollHeight === window.innerHeight")
+
+        screenshot_dir = repo_root / ".tmp" / "frontend-v2-subagents"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(screenshot_dir / "v2-persisted-subagent-terminal.png"))
+
+
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
     page = browser_page
     repo_root = Path(__file__).resolve().parents[3]
@@ -2983,6 +3075,7 @@ class _V2ShellBackend:
         self.requested_urls: list[str] = []
         self.rounds_request_count = 0
         self.subagent_messages_request_count = 0
+        self.subagent_terminal_complete = False
         self.runtime_tools_system_path_added = False
         self.runtime_tools_system_path_requests: list[str] = []
         self.role_delete_requests: list[str] = []
@@ -3985,18 +4078,20 @@ class _V2ShellBackend:
     def _session_subagents(self) -> list[dict[str, object]]:
         if not self.include_subagent_session:
             return []
+        run_status = "completed" if self.subagent_terminal_complete else "running"
+        last_event_id = 7 if self.subagent_terminal_complete else 4
         return [
             {
                 "created_at": "2026-06-25T08:00:03Z",
                 "instance_id": _SUBAGENT_INSTANCE_ID,
                 "interactive": False,
-                "last_event_id": 4,
+                "last_event_id": last_event_id,
                 "role_id": "reviewer",
                 "run_id": _SUBAGENT_RUN_ID,
-                "run_phase": "running",
-                "run_status": "running",
+                "run_phase": run_status,
+                "run_status": run_status,
                 "session_id": _SESSION_ID,
-                "status": "running",
+                "status": run_status,
                 "subagent_instance_id": _SUBAGENT_INSTANCE_ID,
                 "subagent_kind": "normal",
                 "subagent_role_id": "reviewer",
@@ -4008,6 +4103,21 @@ class _V2ShellBackend:
         ]
 
     def _subagent_messages(self) -> list[dict[str, object]]:
+        if self.subagent_terminal_complete:
+            return [
+                {
+                    "content": "Persisted reviewer final answer.",
+                    "created_at": "2026-06-25T08:00:07Z",
+                    "message_id": "assistant-v2-subagent-final",
+                    "parts": [
+                        {"kind": "text", "text": "Persisted reviewer final answer."}
+                    ],
+                    "role": "assistant",
+                    "role_id": "reviewer",
+                    "run_id": _SUBAGENT_RUN_ID,
+                    "trace_id": "trace-v2-subagent",
+                },
+            ]
         return [
             {
                 "content": "Persisted reviewer note.",
@@ -5209,12 +5319,20 @@ def _stream_text_event_for_run(
 
 
 def _stream_terminal_event(event_id: int, event_type: str) -> dict[str, object]:
+    return _stream_terminal_event_for_run(event_id, event_type, _STREAM_RUN_ID)
+
+
+def _stream_terminal_event_for_run(
+    event_id: int,
+    event_type: str,
+    run_id: str,
+) -> dict[str, object]:
     return {
         "event_id": event_id,
         "event_type": event_type,
         "occurred_at": "2026-06-26T00:00:00Z",
         "payload_json": json.dumps({"message": event_type}),
-        "run_id": _STREAM_RUN_ID,
+        "run_id": run_id,
         "session_id": _SESSION_ID,
         "trace_id": "trace-v2-stream",
     }

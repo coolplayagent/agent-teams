@@ -3935,3 +3935,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this appearance and narrow-shell slice. No Application Shell subsystem, Settings subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Desktop Smoke Migration Batch
+
+### Scope
+- Re-checked the frontend rewrite goal after the appearance/narrow-shell slice, then selected the remaining V2 Electron desktop smoke coverage because the quality gates require desktop checks and the goal asks UI verification to move out of Python browser tests.
+- Migrated the Python Electron smoke scenarios into `frontend/app/browser-tests/v2-desktop-smoke.spec.ts`, covering renderer boot through the real Electron preload, backend startup failure UI, external-link IPC boundaries, and managed backend lifecycle start/stop.
+- Kept the V1-style shell/sidebar/settings structure untouched; the desktop renderer smoke uses the existing app shell and verifies the exposed desktop API keys, isolated `require`/`process`, backend status, and rendered markdown link.
+- Removed `tests/integration_tests/browser/test_v2_desktop_smoke.py` after the TS replacement passed, reducing the remaining `.py` UI surface without weakening the desktop release gate.
+- Captured and inspected `.tmp/frontend-v2-desktop/v2-electron-renderer.png` and `.tmp/frontend-v2-desktop/v2-electron-startup-failed.png`; screenshots show the fixed desktop shell and the standalone startup failure page.
+- Kept this as targeted Desktop / TS browser migration progress only. Remaining work still includes the broader stream/replay Python migration, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run desktop:build` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-desktop-smoke.spec.ts` passed with 4 TS Electron/browser tests.
+- Main-agent screenshot inspection confirmed the desktop renderer and startup-failure states render correctly.
+
+### Reviewer
+- Main-agent TS browser, desktop build, and screenshot verification completed for this Electron smoke migration slice. No Desktop subsystem, browser-suite migration, or V2 frontend completion is claimed.

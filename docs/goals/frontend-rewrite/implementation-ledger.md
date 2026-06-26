@@ -4305,3 +4305,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, Python syntax, lint, format, and screenshot verification completed for this stream/recovery shell cleanup slice. No browser-suite migration, AG-UI Runtime Stream subsystem sign-off, persisted subagent subsystem sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Module Actions Migration Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, current worktree, and remaining `test_v2_shell_layout.py` V2 Python UI scan before editing. This slice intentionally targeted low-coupling module action coverage so the global goal keeps moving without flattening settings/sidebar structure or mixing in broader appearance work.
+- Added TS browser coverage in `frontend/app/browser-tests/v2-module-actions.spec.ts` for three migrated behaviors: sidebar mouse resize persistence across reload, Connectors runtime tool path copy plus managed PATH update, and Automation project enable/disable toggling through the real endpoints.
+- Removed the three corresponding Python UI scenarios from `tests/integration_tests/browser/test_v2_shell_layout.py`.
+- Captured and inspected `.tmp/frontend-v2-ts-module-actions/v2-sidebar-resize-reload.png`, `.tmp/frontend-v2-ts-module-actions/v2-runtime-tools-actions.png`, and `.tmp/frontend-v2-ts-module-actions/v2-automation-toggle-actions.png`; the screenshots show fixed shell framing, anchored composer or module content, V1-shaped sidebar entries, and no document-level scrolling.
+- Remaining V2 Python UI coverage in `test_v2_shell_layout.py` is now 12 scenarios, concentrated around board sync/handoff/request/source settings, plugins/hooks/roles/orchestration settings mutations, model profile detail/create, web settings, and remote-workspace deletion.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-module-actions.spec.ts` passed with 3 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript project.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_v2_shell_layout.py` passed after deleting the migrated Python scenarios.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_v2_shell_layout.py` passed.
+- `uv run --extra dev ruff format --check tests\integration_tests\browser\test_v2_shell_layout.py` passed.
+- `git diff --check` passed, with only the expected Windows line-ending warning for the touched Python file.
+- `rg -n "^def test_v2_" tests\integration_tests\browser\test_v2_shell_layout.py` reports 12 remaining V2 Python UI scenarios.
+
+### Reviewer
+- Main-agent TS browser, frontend typecheck, Python syntax, lint, format, diff, and screenshot verification completed for this module action migration slice. No browser-suite migration, module mutation subsystem sign-off, V1/V2 visual parity sign-off, or V2 frontend completion is claimed.

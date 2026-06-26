@@ -3725,3 +3725,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this recovery action slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Recovery Resume Batch
+
+### Scope
+- Re-checked the remaining old Python Run Recovery browser coverage after the recovery action slice, then selected stopped-run resume because it protects the checkpoint continuation path for interrupted runs.
+- Extended the TS recovery browser scenario to render a recoverable stopped run with `last_event_id=42`, verify no EventSource opens before the user acts, click the real `Resume` button, and assert the `POST /ag-ui/runs/{run_id}:resume` request is captured.
+- Verified the resumed stream opens through the browser EventSource harness at `/api/ag-ui/runs/run-v2-live/events?after_event_id=42`, hides the Resume action, renders a post-resume text delta, and then receives a terminal event so the test covers stream cleanup instead of leaving teardown to close an active run.
+- Captured and inspected `.tmp/frontend-v2-ts-recovery/v2-recovery-resume-before.png` and `.tmp/frontend-v2-ts-recovery/v2-recovery-resume-after.png`; the screenshots show the stopped recovery banner before resume and the running recovered output after resume, both inside the fixed V2 shell with sidebar/workspace and composer still stable.
+- Kept this as targeted Run Recovery / AG-UI continuation migration progress only. Remaining work still includes background task stop, background subagent streaming, persisted subagent recovery, round rail/todo history, wider stream event matrix, long tool-heavy replay review, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-recovery.spec.ts` passed with 3 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-recovery.spec.ts` passed with 4 TS browser tests.
+- Main-agent screenshot inspection confirmed the stopped-run recovery before/after states render as stable V2 UI states and resume from the checkpoint without opening a stream early.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this recovery resume slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.

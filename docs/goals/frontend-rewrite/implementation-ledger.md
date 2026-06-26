@@ -3994,3 +3994,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, unit, build, recovery, and screenshot verification completed for this real SSE active-control slice. No AG-UI Runtime Stream subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Real SSE Recoverable Action Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, parity checklist, and remaining Python V2 browser stream coverage after the active-control slice, then selected recoverable action resume because it sits at the boundary of stopped runs, pending approvals/questions, and real EventSource replay.
+- Extended the native EventSource TS browser suite with two recoverable stopped-run scenarios: tool approval and user-question answer. Both start from a recovery snapshot with `should_show_recover=true`, verify the standalone Resume button is hidden while action items are pending, then trigger the recovery action.
+- Verified the UI calls `/ag-ui/runs/{run_id}:resume` before resolving the approval or question action, opens the real SSE stream from `after_event_id=7`, renders the resumed output and terminal completion, clears recovery UI, restores Send, and keeps the fixed V2 shell without composer-control overlap.
+- Removed the corresponding real-SSE Python UI scenarios from `tests/integration_tests/browser/test_v2_stream_recovery.py`, reducing the remaining `.py` browser migration surface instead of duplicating coverage.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-recovery-approval-resume.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-recovery-question-resume.png`; both screenshots show the recovered stream transcript, restored composer, V1-shaped sidebar, and no stale recovery banner.
+- Kept this as targeted AG-UI Runtime Stream / Run Recovery / TS browser migration progress only. Remaining work still includes broader real-SSE rich replay edges, remaining Python browser migration, desktop checks, final V1/V2 visual audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 8 TS browser tests.
+- `uv run --extra dev python -m py_compile tests/integration_tests/browser/test_v2_stream_recovery.py` passed after removing the migrated Python scenarios.
+- Main-agent screenshot inspection confirmed the approval and question recovery paths resume through real SSE from the checkpoint and end in a stable fixed shell.
+
+### Reviewer
+- Main-agent TS browser, syntax, and screenshot verification completed for this real SSE recoverable-action slice. No AG-UI Runtime Stream subsystem, Run Recovery subsystem, browser-suite migration, or V2 frontend completion is claimed.

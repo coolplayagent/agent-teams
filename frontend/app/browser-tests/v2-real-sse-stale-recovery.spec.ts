@@ -21,8 +21,14 @@ const FIRST_CHUNK = "Real SSE chunk before malformed frame.";
 const FAILURE_MESSAGE = "real SSE provider failed before completion";
 const QUEUED_INJECTION = "real SSE queued follow-up";
 const INTERRUPT_INJECTION = "real SSE interrupt follow-up";
+const RECOVERY_ACTION_FEEDBACK = "Use the existing TS browser command.";
+const RECOVERY_ACTION_LAST_EVENT_ID = 7;
+const RECOVERY_ACTION_RESUMED_CHUNK = "real SSE recovery action resumed chunk";
+const RECOVERY_QUESTION_SUPPLEMENT = "Need release note coverage";
 const STOPPED_MESSAGE = "real SSE run stopped before completion";
 const STREAM_UNAVAILABLE = "run recovery stream is no longer available";
+const TOOL_CALL_ID = "call-ts-real-sse-approval";
+const QUESTION_ID = "question-ts-real-sse-recovery";
 
 test.setTimeout(45_000);
 
@@ -84,6 +90,24 @@ test("injects into a real SSE active run without creating a second run", async (
   });
 });
 
+test("resumes a real SSE recoverable run before resolving tool approval", async ({
+  page,
+}) => {
+  await runRealSseRecoveryActionScenario(page, {
+    mode: "recovery-approval",
+    screenshotName: "v2-real-sse-recovery-approval-resume.png",
+  });
+});
+
+test("resumes a real SSE recoverable run before answering user question", async ({
+  page,
+}) => {
+  await runRealSseRecoveryActionScenario(page, {
+    mode: "recovery-question",
+    screenshotName: "v2-real-sse-recovery-question-resume.png",
+  });
+});
+
 interface RealSseScenarioOptions {
   mode: "malformed-event" | "server-error";
   screenshotName: string;
@@ -91,6 +115,11 @@ interface RealSseScenarioOptions {
 
 interface RealSseActiveControlOptions {
   mode: "active-inject" | "active-stop";
+  screenshotName: string;
+}
+
+interface RealSseRecoveryActionOptions {
+  mode: "recovery-approval" | "recovery-question";
   screenshotName: string;
 }
 
@@ -102,9 +131,18 @@ interface RealSseTerminalOptions {
 }
 
 interface RealSseState {
+  approvalResolutions: RealSseRecoveryActionRequest[];
+  completed: boolean;
   injectionRequests: RealSseInjectionRequest[];
+  lastEventId: number;
+  pendingToolApproval: boolean;
+  pendingUserQuestion: boolean;
+  questionAnswers: RealSseRecoveryActionRequest[];
+  requestSequence: string[];
+  resumeRequests: string[];
   runCreated: boolean;
   runCreateCount: number;
+  shouldShowRecover: boolean;
   stopRequests: unknown[];
   streamRequests: RealSseRequest[];
 }
@@ -112,6 +150,11 @@ interface RealSseState {
 interface RealSseInjectionRequest {
   content?: unknown;
   mode?: unknown;
+}
+
+interface RealSseRecoveryActionRequest {
+  payload: unknown;
+  runId: string;
 }
 
 interface RealSseRequest {
@@ -124,13 +167,7 @@ async function runRealSseStaleRecoveryScenario(
   options: RealSseScenarioOptions,
 ): Promise<void> {
   const appServer = await serveFrontendDist();
-  const state: RealSseState = {
-    injectionRequests: [],
-    runCreated: false,
-    runCreateCount: 0,
-    stopRequests: [],
-    streamRequests: [],
-  };
+  const state = createRealSseState();
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
@@ -194,13 +231,7 @@ async function runRealSseTerminalScenario(
   options: RealSseTerminalOptions,
 ): Promise<void> {
   const appServer = await serveFrontendDist();
-  const state: RealSseState = {
-    injectionRequests: [],
-    runCreated: false,
-    runCreateCount: 0,
-    stopRequests: [],
-    streamRequests: [],
-  };
+  const state = createRealSseState();
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
@@ -262,13 +293,7 @@ async function runRealSseActiveControlScenario(
   options: RealSseActiveControlOptions,
 ): Promise<void> {
   const appServer = await serveFrontendDist();
-  const state: RealSseState = {
-    injectionRequests: [],
-    runCreated: false,
-    runCreateCount: 0,
-    stopRequests: [],
-    streamRequests: [],
-  };
+  const state = createRealSseState();
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
@@ -351,11 +376,112 @@ async function runRealSseActiveControlScenario(
   }
 }
 
+async function runRealSseRecoveryActionScenario(
+  page: Page,
+  options: RealSseRecoveryActionOptions,
+): Promise<void> {
+  const appServer = await serveFrontendDist();
+  const state = createRealSseState({
+    lastEventId: RECOVERY_ACTION_LAST_EVENT_ID,
+    pendingToolApproval: options.mode === "recovery-approval",
+    pendingUserQuestion: options.mode === "recovery-question",
+    runCreated: true,
+    shouldShowRecover: true,
+  });
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
+      sessionTitle: `TS ${options.mode}`,
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const recovery = page.locator(".at-recovery");
+    if (options.mode === "recovery-approval") {
+      await expect(recovery.getByText("execute_command")).toBeVisible();
+      await expect(recovery.getByText('{"cmd":"npm test"}')).toBeVisible();
+      await expect(recovery.getByRole("button", { name: "Resume" })).toHaveCount(0);
+      await recovery.getByLabel("Approval feedback").fill(RECOVERY_ACTION_FEEDBACK);
+      await recovery.getByRole("button", { name: "Allow once" }).click();
+      await expect.poll(() => state.approvalResolutions).toEqual([
+        {
+          payload: {
+            action: "approve",
+            feedback: RECOVERY_ACTION_FEEDBACK,
+            option_id: "allow_once",
+          },
+          runId: RUN_ID,
+        },
+      ]);
+      expect(sequenceIndex(state, "resume")).toBeLessThan(sequenceIndex(state, "approval"));
+    } else {
+      await expect(recovery.getByText("Planner needs input")).toBeVisible();
+      await expect(recovery.getByText("Pick the handoff mode")).toBeVisible();
+      await expect(recovery.getByRole("button", { name: "Resume" })).toHaveCount(0);
+      await recovery.getByLabel("Ship - Deploy now").click();
+      await recovery.getByLabel("Other").click();
+      await recovery.getByLabel("Additional answer").fill(RECOVERY_QUESTION_SUPPLEMENT);
+      await recovery.getByRole("button", { name: "Answer" }).click();
+      await expect.poll(() => state.questionAnswers).toEqual([
+        {
+          payload: {
+            answers: [
+              {
+                selections: [
+                  { label: "Ship" },
+                  {
+                    label: "__none_of_the_above__",
+                    supplement: RECOVERY_QUESTION_SUPPLEMENT,
+                  },
+                ],
+              },
+            ],
+          },
+          runId: RUN_ID,
+        },
+      ]);
+      expect(sequenceIndex(state, "resume")).toBeLessThan(sequenceIndex(state, "question"));
+    }
+
+    await expect.poll(() => state.resumeRequests).toEqual([RUN_ID]);
+    await expect.poll(() => state.streamRequests).toEqual([
+      {
+        afterEventId: String(RECOVERY_ACTION_LAST_EVENT_ID),
+        lastEventId: null,
+      },
+    ]);
+    await expect(page.getByText(RECOVERY_ACTION_RESUMED_CHUNK)).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      `${options.mode} should resume through real SSE inside the fixed shell`,
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
   mode:
     | RealSseActiveControlOptions["mode"]
+    | RealSseRecoveryActionOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseTerminalOptions["mode"],
 ): Promise<boolean> {
@@ -382,6 +508,11 @@ async function handleRealSseApi(
       afterEventId: context.url.searchParams.get("after_event_id"),
       lastEventId: context.route.request().headers()["last-event-id"] ?? null,
     });
+    state.requestSequence.push("stream");
+    if (mode === "recovery-approval" || mode === "recovery-question") {
+      state.completed = true;
+      state.lastEventId = 10;
+    }
     await context.route.fulfill({
       body: sseBody(mode),
       contentType: "text/event-stream",
@@ -391,6 +522,44 @@ async function handleRealSseApi(
       },
       status: 200,
     });
+    return true;
+  }
+  if (context.method === "POST" && context.path === `/ag-ui/runs/${RUN_ID}:resume`) {
+    state.resumeRequests.push(RUN_ID);
+    state.requestSequence.push("resume");
+    state.runCreated = true;
+    state.shouldShowRecover = false;
+    await context.fulfillJson({
+      run_id: RUN_ID,
+      session_id: SESSION_ID,
+      status: "ok",
+    });
+    return true;
+  }
+  if (
+    context.method === "POST" &&
+    context.path === `/ag-ui/runs/${RUN_ID}/tool-approvals/${TOOL_CALL_ID}:resolve`
+  ) {
+    state.approvalResolutions.push({
+      payload: requestPayload(context),
+      runId: RUN_ID,
+    });
+    state.pendingToolApproval = false;
+    state.requestSequence.push("approval");
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (
+    context.method === "POST" &&
+    context.path === `/ag-ui/runs/${RUN_ID}/questions/${QUESTION_ID}:answer`
+  ) {
+    state.questionAnswers.push({
+      payload: requestPayload(context),
+      runId: RUN_ID,
+    });
+    state.pendingUserQuestion = false;
+    state.requestSequence.push("question");
+    await context.fulfillJson({ status: "ok" });
     return true;
   }
   if (context.method === "POST" && context.path === `/ag-ui/runs/${RUN_ID}:stop`) {
@@ -409,30 +578,44 @@ async function handleRealSseApi(
 
 function recoverySnapshot(state: RealSseState): Record<string, unknown> {
   return {
-    active_run: state.runCreated
+    active_run: state.runCreated && !state.completed
       ? {
-          last_event_id: 0,
-          pending_tool_approval_count: 0,
-          pending_user_question_count: 0,
-          phase: "streaming",
+          last_event_id: state.lastEventId,
+          pending_tool_approval_count: state.pendingToolApproval ? 1 : 0,
+          pending_user_question_count: state.pendingUserQuestion ? 1 : 0,
+          phase: recoveryPhase(state),
           run_id: RUN_ID,
           session_id: SESSION_ID,
-          should_show_recover: false,
-          status: "running",
+          should_show_recover: state.shouldShowRecover,
+          status: state.shouldShowRecover ? "stopped" : "running",
           stream_connected: false,
         }
       : null,
     background_tasks: [],
     paused_subagent: null,
-    pending_tool_approvals: [],
-    pending_user_questions: [],
+    pending_tool_approvals: state.pendingToolApproval ? [toolApprovalRecord()] : [],
+    pending_user_questions: state.pendingUserQuestion ? [userQuestionRecord()] : [],
     round_snapshot: null,
   };
+}
+
+function recoveryPhase(state: RealSseState): string {
+  if (!state.shouldShowRecover) {
+    return "streaming";
+  }
+  if (state.pendingToolApproval) {
+    return "awaiting_tool_approval";
+  }
+  if (state.pendingUserQuestion) {
+    return "awaiting_user_question";
+  }
+  return "stopped";
 }
 
 function sseBody(
   mode:
     | RealSseActiveControlOptions["mode"]
+    | RealSseRecoveryActionOptions["mode"]
     | RealSseScenarioOptions["mode"]
     | RealSseTerminalOptions["mode"],
 ): string {
@@ -478,6 +661,40 @@ function sseBody(
         }),
         event: failed ? "run.failed" : "run.stopped",
         id: 3,
+      }),
+    ].join("");
+  }
+  if (mode === "recovery-approval" || mode === "recovery-question") {
+    return [
+      sseFrame({
+        data: runEvent({
+          eventId: 8,
+          payload: { phase: "streaming" },
+          relayEventType: "run_resumed",
+          type: "run.resumed",
+        }),
+        event: "run.resumed",
+        id: 8,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 9,
+          payload: { text: RECOVERY_ACTION_RESUMED_CHUNK },
+          relayEventType: "text_delta",
+          type: "message.text.delta",
+        }),
+        event: "message.text.delta",
+        id: 9,
+      }),
+      sseFrame({
+        data: runEvent({
+          eventId: 10,
+          payload: { status: "completed" },
+          relayEventType: "run_completed",
+          type: "run.completed",
+        }),
+        event: "run.completed",
+        id: 10,
       }),
     ].join("");
   }
@@ -531,6 +748,79 @@ function sseBody(
       event: "message.text.delta",
     }),
   ].join("");
+}
+
+function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState {
+  return {
+    approvalResolutions: [],
+    completed: false,
+    injectionRequests: [],
+    lastEventId: 0,
+    pendingToolApproval: false,
+    pendingUserQuestion: false,
+    questionAnswers: [],
+    requestSequence: [],
+    resumeRequests: [],
+    runCreated: false,
+    runCreateCount: 0,
+    shouldShowRecover: false,
+    stopRequests: [],
+    streamRequests: [],
+    ...overrides,
+  };
+}
+
+function sequenceIndex(state: RealSseState, item: string): number {
+  const index = state.requestSequence.indexOf(item);
+  expect(index, `Expected request sequence to include ${item}`).toBeGreaterThanOrEqual(0);
+  return index;
+}
+
+function toolApprovalRecord(): Record<string, unknown> {
+  return {
+    acp_options: [
+      {
+        kind: "allow_once",
+        name: "Allow once",
+        optionId: "allow_once",
+      },
+      {
+        kind: "reject_once",
+        name: "Reject once",
+        optionId: "reject_once",
+      },
+    ],
+    args_preview: '{"cmd":"npm test"}',
+    role_id: "MainAgent",
+    status: "pending",
+    tool_call_id: TOOL_CALL_ID,
+    tool_name: "execute_command",
+  };
+}
+
+function userQuestionRecord(): Record<string, unknown> {
+  return {
+    question_id: QUESTION_ID,
+    questions: [
+      {
+        multiple: true,
+        options: [
+          {
+            description: "Deploy now",
+            label: "Ship",
+          },
+          {
+            label: "__none_of_the_above__",
+          },
+        ],
+        placeholder: "Add handoff detail",
+        question: "Pick the handoff mode",
+      },
+    ],
+    role_id: "Planner",
+    run_id: RUN_ID,
+    status: "pending",
+  };
 }
 
 function requestPayload(context: MockApiRouteContext): unknown {

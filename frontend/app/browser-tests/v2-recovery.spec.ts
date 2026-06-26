@@ -398,12 +398,19 @@ test("stops a recovered background task and refreshes the snapshot", async ({
     const recovery = page.locator(".at-recovery");
     await expect(recovery.getByText("Background task is still active"))
       .toBeVisible();
+    await expect(recovery.getByText("Background tasks")).toBeVisible();
+    await expect(recovery.getByText("1 active")).toBeVisible();
     await expect(recovery.getByText("python worker.py")).toBeVisible();
+    await expect(recovery.getByText("C:/repo")).toBeVisible();
     await expect(recovery.getByText("Running")).toBeVisible();
     await waitForEventSourceUrl(
       page,
       new RegExp(`/api/ag-ui/runs/${BACKGROUND_RUN_ID}/events\\?after_event_id=0$`),
     );
+    await recovery.getByRole("button", { name: "Hide" }).click();
+    await expect(recovery.getByText("python worker.py")).toBeHidden();
+    await recovery.getByRole("button", { name: "Show" }).click();
+    await expect(recovery.getByText("python worker.py")).toBeVisible();
     await page.mouse.move(320, 120);
     await page.screenshot({
       path: screenshotPath(

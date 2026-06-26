@@ -1019,6 +1019,10 @@ async function runRealSseBackgroundSubagentScenario(
       timeout: 15_000,
     });
     await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Queue" })).toBeHidden();
+    await expect(
+      page.getByRole("button", { exact: true, name: "Interrupt" }),
+    ).toBeHidden();
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,

@@ -4247,3 +4247,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent build, unit, TS browser, syntax, lint, and screenshot verification completed for this stream-recovery cleanup slice. No AG-UI Runtime Stream subsystem, Message Timeline subsystem, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Stream Recovery File Removal Batch
+
+### Scope
+- Re-checked the frontend rewrite goal and the current Python UI browser scan before editing. The global gap is still V2 parity plus TS-owned browser coverage, not a one-off visual tweak.
+- Mapped the final four scenarios in `tests/integration_tests/browser/test_v2_stream_recovery.py` to existing TS coverage: session-switch stream isolation, recoverable resume from checkpoint, background task recovery stop, and real-SSE background subagent multiplex recovery.
+- Added the missing TS assertions before deleting the Python file: `v2-recovery.spec.ts` now verifies the recovered background task count, command, cwd, Hide/Show collapse behavior, and stop refresh; `v2-real-sse-stale-recovery.spec.ts` now verifies recovered background subagent streams leave the foreground composer in Send-only state with Stop, Queue, and Interrupt hidden.
+- Removed `tests/integration_tests/browser/test_v2_stream_recovery.py` after the replacement coverage passed, completing the stream-recovery Python UI file migration instead of keeping duplicate `.py` browser ownership.
+- Captured and inspected `.tmp/frontend-v2-ts-recovery/v2-background-task-stop-before.png`, `.tmp/frontend-v2-ts-recovery/v2-background-task-stop-after.png`, and `.tmp/frontend-v2-ts-stream/v2-real-sse-background-subagent-multiplex.png`; the screenshots show the recovery/task output inside the fixed shell, V1-shaped sidebar, anchored composer, and no document-level scroll.
+- Remaining Python UI migration work is now concentrated in `tests/integration_tests/browser/test_v2_shell_layout.py`, which still covers broad shell, runtime, settings, workspace, model, board, connectors, observability, and responsive parity surfaces.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-session-switch-stream.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- browser-tests/v2-recovery.spec.ts` passed with 6 TS browser tests.
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts -g "background subagent"` passed with 2 TS browser tests.
+- `rg -n "def test_v2_" tests\integration_tests\browser` now shows V2 Python UI coverage only in `test_v2_shell_layout.py`.
+- `npm run build` was not rerun because this slice only changed browser tests, deleted a Python browser test file, and updated the ledger; no frontend source or `frontend/dist` artifact changed.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this stream-recovery file removal slice. No AG-UI Runtime Stream subsystem, browser-suite migration, V1/V2 visual parity, or V2 frontend completion is claimed.

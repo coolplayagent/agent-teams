@@ -22,6 +22,8 @@ const SCREENSHOT_FOLDER = "frontend-v2-ts-recovery";
 const RUN_ID = "run-v2-live";
 const SUBAGENT_RUN_ID = "subagent-run-1";
 const BACKGROUND_SUBAGENT_ID = "background-subagent-1";
+const BACKGROUND_TASK_ID = "background-task-1";
+const BACKGROUND_RUN_ID = "background-run-1";
 const TOOL_CALL_ID = "tool-approval-1";
 const QUESTION_ID = "question-1";
 
@@ -370,6 +372,79 @@ test("streams recovered background subagent output into the timeline", async ({
   }
 });
 
+test("stops a recovered background task and refreshes the snapshot", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = recoveryMockState({
+    activeRun: false,
+    backgroundTasks: [backgroundCommandTaskRecord()],
+    questionPending: false,
+    toolApprovalPending: false,
+  });
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRecoveryApi(context, state),
+      sessionTitle: "TS recovery background task",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const recovery = page.locator(".at-recovery");
+    await expect(recovery.getByText("Background task is still active"))
+      .toBeVisible();
+    await expect(recovery.getByText("python worker.py")).toBeVisible();
+    await expect(recovery.getByText("Running")).toBeVisible();
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(`/api/ag-ui/runs/${BACKGROUND_RUN_ID}/events\\?after_event_id=0$`),
+    );
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-background-task-stop-before.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await recovery.getByRole("button", { name: "Stop" }).click();
+    await expect.poll(() => state.backgroundTaskStopRequests).toEqual([
+      {
+        backgroundTaskId: BACKGROUND_TASK_ID,
+        runId: BACKGROUND_RUN_ID,
+      },
+    ]);
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "background task stop should stay inside the fixed V2 shell",
+    );
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-background-task-stop-after.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { status: "stopped" },
+      relayEventType: "run_stopped",
+      runId: BACKGROUND_RUN_ID,
+      type: "run.stopped",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleRecoveryApi(
   context: MockApiRouteContext,
   state: RecoveryMockState,
@@ -394,6 +469,14 @@ async function handleRecoveryApi(
   }
   if (context.method === "POST" && context.path === `/ag-ui/runs/${RUN_ID}:resume`) {
     await handleResumeRun(context, state);
+    return true;
+  }
+  if (
+    context.method === "POST" &&
+    context.path ===
+      `/runs/${BACKGROUND_RUN_ID}/background-tasks/${BACKGROUND_TASK_ID}:stop`
+  ) {
+    await handleBackgroundTaskStop(context, state);
     return true;
   }
   return false;
@@ -458,6 +541,23 @@ async function handleResumeRun(
   });
 }
 
+async function handleBackgroundTaskStop(
+  context: MockApiRouteContext,
+  state: RecoveryMockState,
+): Promise<void> {
+  state.backgroundTaskStopRequests.push({
+    backgroundTaskId: BACKGROUND_TASK_ID,
+    runId: BACKGROUND_RUN_ID,
+  });
+  state.backgroundTasks = [];
+  await context.fulfillJson({
+    background_task: {
+      ...backgroundCommandTaskRecord(),
+      status: "stopped",
+    },
+  });
+}
+
 function requestPayload(context: MockApiRouteContext): unknown {
   const postData = context.route.request().postData();
   if (postData === null || postData.trim().length === 0) {
@@ -467,6 +567,8 @@ function requestPayload(context: MockApiRouteContext): unknown {
 }
 
 interface RecoveryMockState {
+  activeRun: boolean;
+  backgroundTaskStopRequests: RecoveryBackgroundTaskStopRequest[];
   failNextQuestionAnswer: boolean;
   failNextToolApproval: boolean;
   backgroundTasks: Record<string, unknown>[];
@@ -494,7 +596,13 @@ interface RecoveryQuestionAnswerRequest {
   runId: string;
 }
 
+interface RecoveryBackgroundTaskStopRequest {
+  backgroundTaskId: string;
+  runId: string;
+}
+
 interface RecoveryMockStateOptions {
+  activeRun?: boolean;
   backgroundTasks?: Record<string, unknown>[];
   failNextQuestionAnswer?: boolean;
   failNextToolApproval?: boolean;
@@ -511,6 +619,8 @@ function recoveryMockState(
   options: RecoveryMockStateOptions = {},
 ): RecoveryMockState {
   return {
+    activeRun: options.activeRun ?? true,
+    backgroundTaskStopRequests: [],
     backgroundTasks: options.backgroundTasks ?? [],
     failNextQuestionAnswer: options.failNextQuestionAnswer ?? false,
     failNextToolApproval: options.failNextToolApproval ?? false,
@@ -531,17 +641,19 @@ function recoverySnapshotResponse(
   state: RecoveryMockState,
 ): Record<string, unknown> {
   return {
-    active_run: {
-      last_event_id: state.lastEventId,
-      pending_tool_approval_count: state.toolApprovalPending ? 1 : 0,
-      pending_user_question_count: state.questionPending ? 1 : 0,
-      phase: state.phase,
-      run_id: RUN_ID,
-      session_id: SESSION_ID,
-      should_show_recover: state.shouldShowRecover,
-      status: state.status,
-      stream_connected: false,
-    },
+    active_run: state.activeRun
+      ? {
+          last_event_id: state.lastEventId,
+          pending_tool_approval_count: state.toolApprovalPending ? 1 : 0,
+          pending_user_question_count: state.questionPending ? 1 : 0,
+          phase: state.phase,
+          run_id: RUN_ID,
+          session_id: SESSION_ID,
+          should_show_recover: state.shouldShowRecover,
+          status: state.status,
+          stream_connected: false,
+        }
+      : null,
     background_tasks: state.backgroundTasks,
     paused_subagent: null,
     pending_tool_approvals: state.toolApprovalPending ? [toolApprovalRecord()] : [],
@@ -611,6 +723,20 @@ function backgroundSubagentRecord(): Record<string, unknown> {
     session_id: SESSION_ID,
     status: "running",
     subagent_run_id: SUBAGENT_RUN_ID,
+  };
+}
+
+function backgroundCommandTaskRecord(): Record<string, unknown> {
+  return {
+    background_task_id: BACKGROUND_TASK_ID,
+    command: "python worker.py",
+    cwd: "C:/repo",
+    execution_mode: "background",
+    kind: "command",
+    recent_output: ["worker booted"],
+    run_id: BACKGROUND_RUN_ID,
+    session_id: SESSION_ID,
+    status: "running",
   };
 }
 

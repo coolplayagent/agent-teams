@@ -3761,3 +3761,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this background subagent recovery slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.
+
+## 2026-06-26 V2 TS Browser Background Task Stop Batch
+
+### Scope
+- Re-checked the remaining old Python Run Recovery browser coverage after the background subagent recovery slice, then selected background task stop because it protects a real recovery action endpoint and snapshot refresh path.
+- Extended the TS recovery browser scenario to render a recovery snapshot with only a running background command task, verify the task opens a recovery stream at `/api/ag-ui/runs/background-run-1/events?after_event_id=0`, and capture the pre-stop Recovery panel.
+- Clicked the real `Stop` button, verified the `POST /runs/background-run-1/background-tasks/background-task-1:stop` payload path through the TS mock, cleared the mocked task from the recovery snapshot, and confirmed the Recovery panel disappears after query invalidation.
+- Dispatched a terminal `run.stopped` event for the background run so the test covers stream cleanup instead of leaving an active background stream hanging after the stop action.
+- Captured and inspected `.tmp/frontend-v2-ts-recovery/v2-background-task-stop-before.png` and `.tmp/frontend-v2-ts-recovery/v2-background-task-stop-after.png`; the screenshots show the running task and Stop button before the action, then the fixed shell without the Recovery panel after the refreshed snapshot.
+- Kept this as targeted Run Recovery action migration progress only. Remaining work still includes persisted subagent session recovery, persisted subagent terminal refresh, round rail/todo history, project view flow, broader V1/V2 visual audit, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-recovery.spec.ts` passed with 5 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-recovery.spec.ts` passed with 6 TS browser tests.
+- Main-agent screenshot inspection confirmed the background task stop before/after states render as stable V2 UI states and the Recovery panel clears without breaking the fixed shell.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this background task stop slice. No Run Recovery, AG-UI Runtime Stream, browser-suite migration, or V2 frontend completion is claimed.

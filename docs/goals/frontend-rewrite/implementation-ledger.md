@@ -3649,3 +3649,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this refresh replay slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.
+
+## 2026-06-26 V2 TS Browser Sidebar And Settings Parity Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, product parity checklist, and quality gates after the refresh replay slice, then selected sidebar/settings parity because it protects the V1 entry set and secondary-page behavior the rewrite must preserve.
+- Added a TS Playwright browser scenario that verifies the primary sidebar labels remain exactly `Chat`, `Automation`, `Skills`, `Board`, `Search`, `Connectors`, `Memory`, `Observability`, and `Settings`, then opens each entry and confirms the target surface renders real mocked data instead of a dead placeholder.
+- Added a TS Playwright browser scenario that verifies the Settings top-level section list remains exactly aligned with V1, and that `MCP`, `Plugins`, `Commands`, `Hooks`, `Agent Runtime`, `GitHub`, and `Triggers` stay grouped under the `System` secondary page rather than being flattened into the root settings navigation.
+- Added targeted TS browser API fixtures for the module and system-settings surfaces needed by this parity path, including automation detail/sessions, skills market, board, connectors/runtime tools, memory detail, observability, MCP tools, plugins, hooks, agent runtime, GitHub, and Feishu/WeChat triggers.
+- Added an animation-aware settings-dialog settling assertion before screenshot capture after noticing the first screenshot could catch the settings panel during its slide-in transition.
+- Captured and inspected `.tmp/frontend-v2-ts-shell/v2-sidebar-module-parity.png` and `.tmp/frontend-v2-ts-shell/v2-settings-system-parity.png`; the final screenshots show the fixed V2 shell, unchanged primary sidebar entries, Settings opened with the expected V1 top-level sections, and System secondary pages reachable through Back navigation.
+- Kept this as targeted Application Shell / Settings TS browser migration progress only. Remaining work still includes broader V1/V2 visual audit, additional module action parity, remaining `.py` UI browser migration, long tool-heavy message review, desktop checks, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-shell-parity.spec.ts` passed with 2 TS browser tests.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-shell-parity.spec.ts` passed with 3 TS browser tests.
+- Main-agent screenshot inspection confirmed the settings panel is captured after its transition, secondary settings pages remain nested under System, and the sidebar module set is not added to or removed from.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this sidebar/settings parity slice. No Application Shell, Settings, browser-suite migration, or V2 frontend completion is claimed.

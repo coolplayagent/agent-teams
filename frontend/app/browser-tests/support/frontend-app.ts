@@ -34,17 +34,19 @@ export interface MockShellApiOptions {
 export interface MockEventSourceDispatch {
   data: unknown;
   lastEventId?: string;
-  sourceIndex?: number;
+  sourceIndex?: number | null;
   type: string;
 }
 
 interface BrowserTestEventSourceHarness {
   dispatch: (
-    sourceIndex: number,
+    sourceIndex: number | null,
     type: string,
     data: string,
     lastEventId: string,
   ) => void;
+  dispatchError: (sourceIndex: number | null) => void;
+  openCount: () => number;
   urls: () => string[];
 }
 
@@ -162,6 +164,21 @@ export async function installMockEventSource(page: Page): Promise<void> {
         this.readyState = BrowserTestEventSource.CLOSED;
       }
 
+      dispatchError(): void {
+        if (this.readyState === BrowserTestEventSource.CLOSED) {
+          return;
+        }
+        const event = new Event("error");
+        this.onerror?.call(this as unknown as EventSource, event);
+        for (const listener of this.listeners.get("error") ?? []) {
+          if (typeof listener === "function") {
+            listener.call(this as unknown as EventSource, event);
+          } else {
+            listener.handleEvent(event);
+          }
+        }
+      }
+
       dispatch(type: string, data: string, lastEventId: string): void {
         if (this.readyState === BrowserTestEventSource.CLOSED) {
           return;
@@ -186,19 +203,42 @@ export async function installMockEventSource(page: Page): Promise<void> {
     const sources: BrowserTestEventSource[] = [];
     window.__agentTeamsBrowserTestEventSource = {
       dispatch: (
-        sourceIndex: number,
+        sourceIndex: number | null,
         type: string,
         data: string,
         lastEventId: string,
       ) => {
-        const source = sources[sourceIndex];
+        const source = sourceAt(sourceIndex);
         if (source === undefined) {
-          throw new Error(`Missing browser test EventSource ${sourceIndex}.`);
+          throw new Error("Missing browser test EventSource.");
         }
         source.dispatch(type, data, lastEventId);
       },
+      dispatchError: (sourceIndex: number | null) => {
+        const source = sourceAt(sourceIndex);
+        if (source === undefined) {
+          throw new Error("Missing browser test EventSource for error.");
+        }
+        source.dispatchError();
+      },
+      openCount: () =>
+        sources.filter(
+          (source) => source.readyState !== BrowserTestEventSource.CLOSED,
+        ).length,
       urls: () => sources.map((source) => source.url),
     };
+
+    function sourceAt(
+      sourceIndex: number | null,
+    ): BrowserTestEventSource | undefined {
+      if (sourceIndex !== null) {
+        return sources[sourceIndex];
+      }
+      return sources
+        .filter((source) => source.readyState !== BrowserTestEventSource.CLOSED)
+        .at(-1);
+    }
+
     window.EventSource = BrowserTestEventSource as unknown as typeof EventSource;
   });
 }
@@ -223,10 +263,23 @@ export async function dispatchEventSourceMessage(
     {
       data: dispatch.data,
       lastEventId: dispatch.lastEventId ?? "",
-      sourceIndex: dispatch.sourceIndex ?? 0,
+      sourceIndex: dispatch.sourceIndex ?? null,
       type: dispatch.type,
     },
   );
+}
+
+export async function dispatchEventSourceError(
+  page: Page,
+  sourceIndex: number | null = null,
+): Promise<void> {
+  await page.evaluate((targetSourceIndex) => {
+    const harness = window.__agentTeamsBrowserTestEventSource;
+    if (harness === undefined) {
+      throw new Error("Browser test EventSource harness was not installed.");
+    }
+    harness.dispatchError(targetSourceIndex);
+  }, sourceIndex);
 }
 
 export async function waitForEventSourceUrl(
@@ -246,6 +299,19 @@ export async function waitForEventSourceUrl(
 
 export async function eventSourceUrls(page: Page): Promise<string[]> {
   return page.evaluate(() => window.__agentTeamsBrowserTestEventSource?.urls() ?? []);
+}
+
+export async function eventSourceOpenCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () => window.__agentTeamsBrowserTestEventSource?.openCount() ?? 0,
+  );
+}
+
+export async function waitForEventSourceOpenCount(
+  page: Page,
+  count: number,
+): Promise<void> {
+  await expect.poll(() => eventSourceOpenCount(page)).toBe(count);
 }
 
 export async function mockShellApi(

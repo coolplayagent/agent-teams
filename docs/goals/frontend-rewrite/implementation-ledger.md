@@ -3594,3 +3594,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser and screenshot verification completed for this composer stream slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.
+
+## 2026-06-26 V2 TS Browser Stream Reconnect Exhaustion Batch
+
+### Scope
+- Re-checked the frontend rewrite goal, quality gates, and product parity checklist after the TS browser composer slice, then selected a remaining high-risk stream recovery path from the old Python UI browser suite for TS migration.
+- Extended the shared TS browser EventSource fixture with transport-error dispatch, open-source counting, and latest-open-source targeting so TS Playwright can exercise real stream interruption behavior without adding new `.py` UI tests.
+- Added a TS Playwright browser scenario that creates a run through the real V2 composer, renders the first live text chunk, dispatches repeated transport errors, verifies manual reconnects reopen the stream from `after_event_id=2`, and confirms the fourth transport error exhausts the reconnect budget.
+- Verified the exhausted state restores the composer: Stop is hidden, the prompt is enabled, Send is visible, the previously streamed text remains rendered once, the EventSource URL history stays capped at four attempts, and the shell remains fixed-height.
+- Captured and inspected `.tmp/frontend-v2-ts-stream/v2-stream-reconnect-exhausted.png`; the screenshot shows the V2 frame, sidebar, token row, recovered composer controls, and surviving stream text in a single fixed viewport.
+- Kept this as targeted TS browser migration and AG-UI stream recovery progress only. Remaining work still includes TS migration for replay after refresh, non-text event replay after reconnect, tool-heavy long-run visual review, settings appearance parity, broader V1/V2 audit, and reviewer sign-off.
+
+### Verification
+- `npm run typecheck` passed.
+- `npm run test:browser -- --project=chromium browser-tests/v2-stream-reconnect.spec.ts` passed with 1 TS browser test.
+- `npm run test:browser -- --project=chromium browser-tests/v2-route-switch.spec.ts browser-tests/v2-stream-create-run.spec.ts browser-tests/v2-stream-reconnect.spec.ts` passed with 3 TS browser tests.
+- Main-agent screenshot inspection confirmed the final reconnect-exhausted state restores the composer and keeps the built V2 shell fixed-height without duplicate stream text.
+
+### Reviewer
+- Main-agent TS browser and screenshot verification completed for this stream reconnect exhaustion slice. No V2 frontend completion, Message Timeline completion, AG-UI Runtime Stream completion, or browser-suite migration completion is claimed.

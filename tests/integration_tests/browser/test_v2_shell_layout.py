@@ -216,6 +216,77 @@ def test_v2_stream_replay_resumes_from_recovery_cursor_after_reload(
         expect(page.get_by_text("First live stream chunk.")).to_have_count(0)
 
 
+def test_v2_stream_transport_interrupt_reconnects_from_latest_event(
+    browser_page: Page,
+) -> None:
+    page = browser_page
+    repo_root = Path(__file__).resolve().parents[3]
+    backend = _V2ShellBackend()
+    page.route("**/api/**", backend.route)
+    _install_shell_state(page, event_source_script=_stream_event_source_script())
+
+    with _serve_v2_app(repo_root) as app_url:
+        page.goto(f"{app_url}/app/")
+        _wait_for_v2_shell(page)
+
+        page.get_by_role("textbox", name="Prompt").fill("Interrupted stream probe")
+        page.get_by_role("button", name="Send").click()
+        _wait_for_backend_state(
+            lambda: len(backend.created_run_payloads) == 1,
+            "Run creation request was not captured.",
+        )
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 1
+              && window.__v2StreamHarness.urls()[0]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=0')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              0,
+              'message.text.delta',
+              event,
+              '1',
+            )
+            """,
+            _stream_text_event(1, "Before transport interruption."),
+        )
+        expect(page.get_by_text("Before transport interruption.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+        page.evaluate("() => window.__v2StreamHarness.transportError(0)")
+        page.wait_for_function(
+            """
+            () => window.__v2StreamHarness?.urls().length === 2
+              && window.__v2StreamHarness.urls()[1]
+                .includes('/api/ag-ui/runs/run-v2-live/events?after_event_id=1')
+            """,
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        page.evaluate(
+            """
+            (event) => window.__v2StreamHarness.dispatch(
+              1,
+              'message.text.delta',
+              event,
+              '2',
+            )
+            """,
+            _stream_text_event(2, "After transport reconnect."),
+        )
+
+        expect(page.get_by_text("Before transport interruption.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+        expect(page.get_by_text("After transport reconnect.")).to_be_visible(
+            timeout=_WAIT_TIMEOUT_MS,
+        )
+
+
 def test_v2_route_switches_from_v1_and_back(browser_page: Page) -> None:
     page = browser_page
     repo_root = Path(__file__).resolve().parents[3]
@@ -4027,6 +4098,13 @@ def _stream_event_source_script() -> str:
               }
               source.dispatch(type, payload, lastEventId);
             },
+            transportError(index) {
+              const source = this.sources[index];
+              if (!source) {
+                throw new Error(`Missing stream source ${index}`);
+              }
+              source.transportError();
+            },
             urls() {
               return this.sources.map((source) => source.url);
             },
@@ -4066,6 +4144,19 @@ def _stream_event_source_script() -> str:
                 } else if (listener && typeof listener.handleEvent === 'function') {
                   listener.handleEvent(event);
                 }
+              }
+            }
+            transportError() {
+              const event = new Event('error');
+              for (const listener of this.listeners.error || []) {
+                if (typeof listener === 'function') {
+                  listener(event);
+                } else if (listener && typeof listener.handleEvent === 'function') {
+                  listener.handleEvent(event);
+                }
+              }
+              if (typeof this.onerror === 'function') {
+                this.onerror(event);
               }
             }
           };

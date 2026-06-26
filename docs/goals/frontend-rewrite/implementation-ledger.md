@@ -3342,3 +3342,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent unit and browser verification completed for this stream cursor slice. No Message Timeline / AG-UI stream subsystem completion is claimed until the remaining live, replay, refresh, interrupted, subagent, and visual review gates are closed.
+
+## 2026-06-26 V2 Interrupted Stream Browser Recovery Batch
+
+### Scope
+- Continued the Message Timeline / AG-UI stream quality gate after the replay cursor fix, focusing on the checklist requirement that interrupted streams reconnect from the latest event id.
+- Added a browser-level built `/app/` scenario that creates a run through the real composer path, receives a live text delta, simulates an EventSource transport interruption, waits for the V2 run stream controller fallback reconnect, verifies the second EventSource URL uses `after_event_id=1`, and confirms subsequent stream output still renders in the timeline.
+- Extended the browser EventSource harness only inside the integration test init script so normal built-app behavior remains unchanged.
+- Kept this as partial stream/recovery evidence only. Remaining stream completion work still includes broader live event matrix coverage, subagent/background stream browser scenarios, terminal replay closure paths, visual review of tool-heavy interrupted streams, and reviewer sign-off.
+
+### Verification
+- `uv run --extra dev ruff check tests/integration_tests/browser/test_v2_shell_layout.py` passed.
+- `uv run --extra dev pytest -q tests/integration_tests/browser/test_v2_shell_layout.py -k "stream_replay_resumes or stream_transport_interrupt"` passed with 2 selected browser tests.
+
+### Reviewer
+- Main-agent browser verification completed for this interrupted stream slice. No Message Timeline / AG-UI stream subsystem completion is claimed.

@@ -4500,3 +4500,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining-scenario scan, and cleanup completed for this slice. No Message Timeline subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-26 Streaming Timeline Rebind/Subagent Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, and remaining `test_streaming_message_timeline.py` browser-test surface before editing. This slice targeted stream/subagent rebind behavior because it directly affects interrupted-stream recovery, replay recovery, and session-switch correctness.
+- Extended `frontend/app/browser-tests/streaming-message-timeline.spec.ts` with TS browser coverage for six migrated scenarios: unpersisted thinking overlay placement after history, late tool-call rebind after container rerender, randomized stream-switch pressure across 18 containers and 216 tool blocks, visible subagent overlay switch-back order, subagent render binding after switch-back, and preventing agent deltas from appending to the user prompt during stream rebind.
+- Removed the corresponding six Python browser scenarios from `tests/integration_tests/browser/test_streaming_message_timeline.py`; 13 Python scenarios remain in that file, now concentrated around subagent thinking order, running subagent compaction, terminal transcript projection, final-output collapse rules, and subagent layout.
+- Kept this as targeted Message Timeline / AG-UI stream browser-suite migration progress only. Remaining work still includes finishing the stream timeline harness migration, broader old Python UI/browser module migration, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/streaming-message-timeline.spec.ts` passed with 33 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_streaming_message_timeline.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_streaming_message_timeline.py` passed.
+- `rg -n "^def test_|^async def test_" tests\integration_tests\browser\test_streaming_message_timeline.py` reports 13 remaining Python browser scenarios.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining-scenario scan, and cleanup completed for this slice. No Message Timeline subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.

@@ -159,6 +159,50 @@ interface StoppedReplayPayload {
   secondToolCount: number;
 }
 
+interface ThinkingPlacementPayload {
+  firstMessageText: string;
+  messageCount: number;
+  secondMessageText: string;
+}
+
+interface DetachedRebindPayload {
+  afterClearToolCount: number;
+  beforeClearToolCount: number;
+  toolCallIds: string[];
+}
+
+interface RandomizedStreamPressurePayload {
+  containers: number;
+  duplicateMax: number;
+  missing: string[];
+  missingResults: string[];
+  orderMismatches: unknown[];
+  overlayCounts: number[];
+  toolBlocks: number;
+}
+
+interface VisibleSubagentOverlayPayload {
+  messageTextCount: number;
+  ordered: boolean;
+  thinkingBlockCount: number;
+  toolBlockCount: number;
+}
+
+interface SubagentRenderBindPayload {
+  completedToolCount: number;
+  messageCount: number;
+  roleLabels: string[];
+  textBlocks: string[];
+  thinkingBlockCount: number;
+  toolBlockCount: number;
+}
+
+interface StreamRebindSkipsUserPromptPayload {
+  messageCount: number;
+  modelText: string;
+  userText: string;
+}
+
 interface StreamTimelineHarnessWindow {
   __streamTimelineHarness: Record<string, () => unknown> & {
     readToolSummaryVisualWeight: (toolCallId: string) => ToolSummaryVisualState;
@@ -770,6 +814,139 @@ test("replayed stopped session events do not duplicate history overlay", async (
   }
 });
 
+test("unpersisted thinking overlay renders after history message", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<ThinkingPlacementPayload>(
+      page,
+      "renderThinkingOverlayPlacement",
+    );
+
+    expect(payload.messageCount).toBe(2);
+    expect(payload.firstMessageText).not.toContain("live thought in progress");
+    expect(payload.secondMessageText).toContain("live thought in progress");
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("late tool call rebinds after stream container rerender", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<DetachedRebindPayload>(
+      page,
+      "renderDetachedStreamRebind",
+    );
+
+    expect(payload.beforeClearToolCount).toBe(1);
+    expect(payload.afterClearToolCount).toBe(2);
+    expect(payload.toolCallIds).toEqual(["call-1", "call-2"]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("randomized stream switch pressure preserves tool calls", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<RandomizedStreamPressurePayload>(
+      page,
+      "renderRandomizedStreamSwitchPressure",
+    );
+
+    expect(payload.missing).toEqual([]);
+    expect(payload.missingResults).toEqual([]);
+    expect(payload.orderMismatches).toEqual([]);
+    expect(payload.overlayCounts).toEqual(Array.from({ length: 18 }, () => 12));
+    expect(payload.duplicateMax).toBe(1);
+    expect(payload.containers).toBe(18);
+    expect(payload.toolBlocks).toBe(216);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("visible subagent live overlay survives switch back", async ({ page }) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<VisibleSubagentOverlayPayload>(
+      page,
+      "renderVisibleSubagentOverlaySwitchBack",
+    );
+
+    expect(payload.thinkingBlockCount).toBe(1);
+    expect(payload.messageTextCount).toBe(1);
+    expect(payload.toolBlockCount).toBe(1);
+    expect(payload.ordered).toBe(true);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("subagent render bind continues stream after switch back", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<SubagentRenderBindPayload>(
+      page,
+      "renderSubagentRenderBindSwitchBack",
+    );
+
+    expect(payload.messageCount).toBe(1);
+    expect(payload.thinkingBlockCount).toBe(1);
+    expect(payload.toolBlockCount).toBe(1);
+    expect(payload.textBlocks).toEqual(["VISIBLE_TEXT_AFTER_SWITCH"]);
+    expect(payload.completedToolCount).toBe(1);
+    expect(payload.roleLabels).toEqual(["Explorer - 4de494db"]);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("stream rebind does not append agent delta to user prompt", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist({
+    handleRequest: handleHarnessRequest,
+  });
+  try {
+    await openStreamTimelineHarness(page, appServer.url);
+    const payload = await runHarness<StreamRebindSkipsUserPromptPayload>(
+      page,
+      "renderStreamRebindSkipsUserPrompt",
+    );
+
+    expect(payload.messageCount).toBe(2);
+    expect(payload.userText).toBe("TASK_PROMPT");
+    expect(payload.modelText).toBe("AGENT_DELTA");
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openStreamTimelineHarness(
   page: Page,
   baseUrl: string,
@@ -873,8 +1050,10 @@ function streamTimelineHarnessHtml(): string {
       finalizeStream,
       finalizeThinking,
       getCoordinatorStreamOverlay,
+      getInstanceStreamOverlay,
       getOrCreateStreamBlock,
       startThinkingBlock,
+      bindStreamOverlayToContainer,
       updateToolResult,
     } from "/js/components/messageRenderer/stream.js";
     import {
@@ -2294,6 +2473,356 @@ function streamTimelineHarnessHtml(): string {
           secondCursorCount: container.querySelectorAll(".streaming-cursor").length,
           secondGroupCount: container.querySelectorAll(".tool-group").length,
           overlayAfterSecond: getCoordinatorStreamOverlay(runId),
+        };
+      },
+
+      renderThinkingOverlayPlacement() {
+        clearAllStreamState();
+        const container = makeContainer("thinking-placement");
+        applyStreamOverlayEvent(
+          "thinking_started",
+          { part_index: 0 },
+          { runId: "run-placement", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        applyStreamOverlayEvent(
+          "thinking_delta",
+          { part_index: 0, text: "live thought in progress" },
+          { runId: "run-placement", instanceId: "primary", roleId: "main-role", label: "Main Agent" },
+        );
+        renderHistory(container, [{
+          role: "assistant",
+          role_id: "main-role",
+          instance_id: "primary",
+          message: {
+            parts: [{ part_kind: "text", content: "persisted final answer" }],
+          },
+        }], {
+          runId: "run-placement",
+          streamOverlayEntry: getCoordinatorStreamOverlay("run-placement"),
+        });
+        const messages = Array.from(container.querySelectorAll(":scope > .message"));
+        return {
+          messageCount: messages.length,
+          firstMessageText: messages[0]?.textContent || "",
+          secondMessageText: messages[1]?.textContent || "",
+        };
+      },
+
+      renderDetachedStreamRebind() {
+        clearAllStreamState();
+        const container = makeContainer("detached-rebind");
+        getOrCreateStreamBlock(container, "inst-live", "Writer", "Writer", "subagent_run_live");
+        appendToolCallBlock(
+          container,
+          "inst-live",
+          "shell",
+          { command: "echo before" },
+          "call-1",
+          { runId: "subagent_run_live", roleId: "Writer", label: "Writer" },
+        );
+        const beforeClearToolCount = container.querySelectorAll(".tool-block").length;
+        container.replaceChildren();
+        appendToolCallBlock(
+          container,
+          "inst-live",
+          "write_file",
+          { path: "page.svg" },
+          "call-2",
+          { runId: "subagent_run_live", roleId: "Writer", label: "Writer" },
+        );
+        return {
+          beforeClearToolCount,
+          afterClearToolCount: container.querySelectorAll(".tool-block").length,
+          toolCallIds: Array.from(container.querySelectorAll(".tool-block"))
+            .map(item => item.dataset.toolCallId || ""),
+        };
+      },
+
+      renderRandomizedStreamSwitchPressure() {
+        clearAllStreamState();
+        const containers = new Map();
+        const expected = new Map();
+        const expectedArrivalOrder = new Map();
+        const order = [];
+        let seed = 1337;
+        function random() {
+          seed = (seed * 48271) % 0x7fffffff;
+          return seed / 0x7fffffff;
+        }
+        function shuffle(items) {
+          const next = items.slice();
+          for (let index = next.length - 1; index > 0; index -= 1) {
+            const swapIndex = Math.floor(random() * (index + 1));
+            const tmp = next[index];
+            next[index] = next[swapIndex];
+            next[swapIndex] = tmp;
+          }
+          return next;
+        }
+        function keyFor(runId, instanceId) {
+          return runId + "::" + instanceId;
+        }
+        for (let sessionIndex = 0; sessionIndex < 6; sessionIndex += 1) {
+          for (const agent of ["primary", "sub-a", "sub-b"]) {
+            const runId = "run-" + sessionIndex;
+            const instanceId = agent === "primary" ? "primary" : agent + "-" + sessionIndex;
+            const roleId = agent === "primary" ? "MainAgent" : "Explorer";
+            const key = keyFor(runId, instanceId);
+            containers.set(key, makeContainer("pressure-" + sessionIndex + "-" + agent));
+            expected.set(key, []);
+            expectedArrivalOrder.set(key, []);
+            getOrCreateStreamBlock(containers.get(key), instanceId, roleId, agent, runId);
+            for (let callIndex = 0; callIndex < 12; callIndex += 1) {
+              const toolCallId = "call-" + sessionIndex + "-" + agent + "-" + callIndex;
+              expected.get(key).push(toolCallId);
+              order.push({ key, runId, instanceId, roleId, toolCallId, callIndex });
+            }
+          }
+        }
+        shuffle(order).forEach((item, index) => {
+          const container = containers.get(item.key);
+          if (index % 5 === 0) {
+            container.replaceChildren();
+          }
+          if (index % 7 === 0) {
+            const [runId, instanceId] = item.key.split("::");
+            const roleId = instanceId === "primary" ? "MainAgent" : "Explorer";
+            getOrCreateStreamBlock(container, instanceId, roleId, instanceId, runId);
+          }
+          appendToolCallBlock(
+            container,
+            item.instanceId,
+            "spawn_subagent",
+            { description: "Explore " + item.callIndex },
+            item.toolCallId,
+            {
+              runId: item.runId,
+              roleId: item.roleId,
+              label: item.instanceId === "primary" ? "Main Agent" : "Explorer",
+            },
+          );
+          expectedArrivalOrder.get(item.key).push(item.toolCallId);
+        });
+        shuffle(order).forEach((item, index) => {
+          const container = containers.get(item.key);
+          if (index % 4 === 0) {
+            container.replaceChildren();
+          }
+          updateToolResult(
+            item.instanceId,
+            "spawn_subagent",
+            "done-" + item.toolCallId,
+            false,
+            item.toolCallId,
+            {
+              container,
+              runId: item.runId,
+              roleId: item.roleId,
+              label: item.instanceId === "primary" ? "Main Agent" : "Explorer",
+            },
+          );
+        });
+        containers.forEach((container, key) => {
+          container.replaceChildren();
+          const [runId, instanceId] = key.split("::");
+          const roleId = instanceId === "primary" ? "MainAgent" : "Explorer";
+          getOrCreateStreamBlock(container, instanceId, roleId, instanceId, runId);
+        });
+        const missing = [];
+        const missingResults = [];
+        const orderMismatches = [];
+        const overlayCounts = [];
+        let duplicateMax = 0;
+        let toolBlocks = 0;
+        containers.forEach((container, key) => {
+          const rendered = Array.from(container.querySelectorAll(".tool-block"))
+            .map(item => item.dataset.toolCallId || "");
+          toolBlocks += rendered.length;
+          const renderedSet = new Set(rendered);
+          expected.get(key).forEach(toolCallId => {
+            if (!renderedSet.has(toolCallId)) {
+              missing.push(key + ":" + toolCallId);
+            }
+            if (!container.textContent.includes("done-" + toolCallId)) {
+              missingResults.push(key + ":" + toolCallId);
+            }
+          });
+          const arrivalOrder = expectedArrivalOrder.get(key) || [];
+          if (JSON.stringify(rendered) !== JSON.stringify(arrivalOrder)) {
+            orderMismatches.push({
+              key,
+              expected: arrivalOrder,
+              rendered,
+            });
+          }
+          const [runId, instanceId] = key.split("::");
+          const overlay = instanceId === "primary"
+            ? getCoordinatorStreamOverlay(runId)
+            : getInstanceStreamOverlay(runId, instanceId);
+          overlayCounts.push((overlay?.parts || []).filter(part => part.kind === "tool").length);
+          duplicateMax = Math.max(duplicateMax, maxDuplicateToolCount(container));
+        });
+        return {
+          missing,
+          missingResults,
+          orderMismatches,
+          overlayCounts,
+          duplicateMax,
+          containers: containers.size,
+          toolBlocks,
+        };
+      },
+
+      renderVisibleSubagentOverlaySwitchBack() {
+        clearAllStreamState();
+        const container = makeContainer("visible-subagent-switch-back");
+        const runId = "subagent_run_visible_switch";
+        const instanceId = "inst-visible";
+        const roleId = "Writer";
+        getOrCreateStreamBlock(container, instanceId, roleId, "Writer", runId);
+        startThinkingBlock(instanceId, 0, {
+          container,
+          runId,
+          roleId,
+          label: "Writer",
+        });
+        appendThinkingChunk(instanceId, 0, "VISIBLE_THINK", {
+          container,
+          runId,
+          roleId,
+          label: "Writer",
+        });
+        appendToolCallBlock(
+          container,
+          instanceId,
+          "shell",
+          { command: "date" },
+          "call-visible-switch",
+          { runId, roleId, label: "Writer" },
+        );
+        appendStreamChunk(instanceId, "VISIBLE_TEXT", runId, roleId, "Writer");
+
+        container.replaceChildren();
+        renderHistory(container, [], {
+          runId,
+          streamOverlayEntry: getInstanceStreamOverlay(runId, instanceId),
+          canonicalStreamKey: instanceId,
+        });
+        const thinkingEl = container.querySelector(".thinking-block");
+        const toolEl = container.querySelector(".tool-block");
+        const textEl = Array.from(container.querySelectorAll(".msg-text"))
+          .find(item => (item.textContent || "").includes("VISIBLE_TEXT")) || null;
+        return {
+          thinkingBlockCount: container.querySelectorAll(".thinking-block").length,
+          messageTextCount: Array.from(container.querySelectorAll(".msg-text"))
+            .filter(item => (item.textContent || "").includes("VISIBLE_TEXT")).length,
+          toolBlockCount: container.querySelectorAll(".tool-block").length,
+          ordered: !!(
+            thinkingEl
+            && toolEl
+            && textEl
+            && (thinkingEl.compareDocumentPosition(toolEl) & Node.DOCUMENT_POSITION_FOLLOWING)
+            && (toolEl.compareDocumentPosition(textEl) & Node.DOCUMENT_POSITION_FOLLOWING)
+          ),
+        };
+      },
+
+      renderSubagentRenderBindSwitchBack() {
+        clearAllStreamState();
+        const firstContainer = makeContainer("subagent-render-bind-first");
+        const runId = "subagent_run_render_bind_switch";
+        const instanceId = "inst-render-bind";
+        const roleId = "Explorer";
+        const overlayLabel = "Explorer - 4de494db";
+        const rebindLabel = "Explorer";
+        getOrCreateStreamBlock(firstContainer, instanceId, roleId, overlayLabel, runId);
+        startThinkingBlock(instanceId, 0, {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: overlayLabel,
+        });
+        appendThinkingChunk(instanceId, 0, "VISIBLE_THINK", {
+          container: firstContainer,
+          runId,
+          roleId,
+          label: overlayLabel,
+        });
+        appendToolCallBlock(
+          firstContainer,
+          instanceId,
+          "read_file",
+          { path: "src/a.py" },
+          "call-render-bind",
+          { runId, roleId, label: overlayLabel },
+        );
+        appendStreamChunk(instanceId, "VISIBLE_TEXT", runId, roleId, overlayLabel);
+
+        const rebound = makeContainer("subagent-render-bind-rebound");
+        rebound.className = "subagent-session-body";
+        rebound.dataset.runId = runId;
+        rebound.dataset.instanceId = instanceId;
+        renderHistory(rebound, [], {
+          runId,
+          runStatus: "running",
+          timelineView: "normal-child-session",
+          streamOverlayEntry: getInstanceStreamOverlay(runId, instanceId),
+          canonicalStreamKey: instanceId,
+          separateOverlayMessage: true,
+        });
+        bindStreamOverlayToContainer(rebound, {
+          instanceId,
+          roleId,
+          label: rebindLabel,
+          runId,
+        });
+        appendStreamChunk(instanceId, "_AFTER_SWITCH", runId, roleId, rebindLabel);
+        updateToolResult(instanceId, "read_file", { ok: true }, false, "call-render-bind", {
+          runId,
+          roleId,
+          label: rebindLabel,
+          container: rebound,
+        });
+
+        return {
+          messageCount: rebound.querySelectorAll(":scope > .message").length,
+          thinkingBlockCount: rebound.querySelectorAll(".thinking-block").length,
+          toolBlockCount: rebound.querySelectorAll(".tool-block").length,
+          completedToolCount: rebound.querySelectorAll('.tool-block[data-status="completed"]').length,
+          roleLabels: Array.from(rebound.querySelectorAll(":scope > .message"))
+            .map(item => item.dataset.roleLabel || ""),
+          textBlocks: Array.from(rebound.querySelectorAll(".msg-text"))
+            .filter(item => !item.closest(".thinking-block"))
+            .map(item => item.textContent.replace(/\\s+/g, " ").trim())
+            .filter(Boolean),
+        };
+      },
+
+      async renderStreamRebindSkipsUserPrompt() {
+        clearAllStreamState();
+        const container = makeContainer("stream-rebind-user-prompt");
+        const runId = "run_rebind_user_prompt";
+        renderHistory(container, [
+          {
+            role: "user",
+            message: { parts: [{ part_kind: "text", content: "TASK_PROMPT" }] },
+          },
+        ], {
+          runId,
+          runStatus: "running",
+          timelineView: "normal-child-session",
+        });
+        const userMessage = container.querySelector(':scope > .message[data-role="user"]');
+        userMessage.dataset.runId = runId;
+        userMessage.dataset.streamKey = "primary";
+        getOrCreateStreamBlock(container, "", "", "Explorer", runId);
+        appendStreamChunk("", "AGENT_DELTA", runId, "", "Explorer");
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const modelMessage = container.querySelector(':scope > .message[data-role="model"]');
+        return {
+          messageCount: container.querySelectorAll(":scope > .message").length,
+          userText: userMessage?.querySelector(".msg-content")?.textContent.replace(/\\s+/g, " ").trim(),
+          modelText: modelMessage?.querySelector(".msg-content")?.textContent.replace(/\\s+/g, " ").trim(),
         };
       },
     };

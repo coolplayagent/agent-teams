@@ -80,6 +80,44 @@ describe("ChatWorkspace", () => {
       expect(runStreamController.clearRunStream).toHaveBeenCalledTimes(2),
     );
   });
+
+  it("moves every session-scoped surface to the new session during a switch", async () => {
+    const runStreamController = createRunStreamController();
+    const { rerender } = render(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={runStreamController}
+        sessionId="session-1"
+        workspaceId="workspace-1"
+      />,
+    );
+
+    expect(renderedSessionIds()).toEqual({
+      composer: "session-1",
+      recovery: "session-1",
+      timeline: "session-1",
+      tokenUsage: "session-1",
+    });
+
+    rerender(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={runStreamController}
+        sessionId="session-2"
+        workspaceId="workspace-2"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(runStreamController.clearRunStream).toHaveBeenCalledTimes(1),
+    );
+    expect(renderedSessionIds()).toEqual({
+      composer: "session-2",
+      recovery: "session-2",
+      timeline: "session-2",
+      tokenUsage: "session-2",
+    });
+  });
 });
 
 function createRunStreamController(): RunStreamController {
@@ -92,4 +130,21 @@ function createRunStreamController(): RunStreamController {
     suppressedRunIds: [],
     trackedRunIds: [],
   };
+}
+
+function renderedSessionIds(): Record<string, string> {
+  return {
+    composer: textForTestId("composer"),
+    recovery: textForTestId("recovery"),
+    timeline: textForTestId("timeline"),
+    tokenUsage: textForTestId("token-usage"),
+  };
+}
+
+function textForTestId(testId: string): string {
+  const element = document.querySelector(`[data-testid="${testId}"]`);
+  if (element === null) {
+    throw new Error(`Missing test element: ${testId}`);
+  }
+  return element.textContent ?? "";
 }

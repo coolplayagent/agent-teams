@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session View Boundary TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, inspected the live `/app/` DOM/layout state, and reviewed the remaining V1 `test_session_view_ui.py` harness before editing.
+- Verified through live DOM metrics that the current V2 shell is constrained to one viewport: document scrolling is not active, workspace/body overflow is hidden, and the timeline owns message scrolling. Browser screenshot capture through the in-app browser timed out, and desktop capture could not see the browser surface, so no screenshot-based sign-off is claimed for this slice.
+- Migrated the V1 main-session restore/switch boundary intent to V2 `ChatWorkspace` component behavior: when the session changes, the active run stream is cleared and every session-scoped child surface (`RecoveryBar`, `MessageTimeline`, `SessionTokenUsage`, and `Composer`) moves to the new session id instead of continuing to render against the old session.
+- Removed `tests/integration_tests/frontend/test_session_view_ui.py` after its remaining user-facing switch-boundary intent was covered by V2 TypeScript tests.
+
+### Verification
+- `npm run test -- src/test/ChatWorkspace.test.tsx` passed all 2 ChatWorkspace tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+
+### Reviewer
+- Main-agent V2 session-boundary coverage, live DOM layout inspection, old Python UI harness removal, and focused regression verification completed for this slice. No full session switching/replay subsystem PASS, Browser Checks completion, screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Backend Status SDK TS Migration
 
 ### Scope

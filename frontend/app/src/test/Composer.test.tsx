@@ -1,6 +1,6 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClipboardEventHandler, KeyboardEventHandler, ReactNode } from "react";
 
@@ -1255,6 +1255,62 @@ describe("Composer", () => {
     expect(updateSessionTopologyMock).not.toHaveBeenCalled();
   });
 
+  it("detaches a created run to the background after switching sessions", async () => {
+    getSessionMock.mockImplementation(async (sessionId: string) => ({
+      session_id: sessionId,
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: null,
+      normal_model_profile: null,
+      orchestration_preset_id: null,
+      can_switch_mode: true,
+    }));
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    const runCreation = deferred<Awaited<ReturnType<typeof createRun>>>();
+    createRunMock.mockReturnValue(runCreation.promise);
+    const controller = runStreamController();
+    const queryClient = createComposerQueryClient();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const view = renderComposerWithClient(queryClient, controller, "session-a");
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0]).toMatchObject({
+      input: [{ text: "hello" }],
+      session_id: "session-a",
+    });
+
+    view.rerender(composerTree(queryClient, controller, "session-b"));
+
+    await act(async () => {
+      runCreation.resolve({
+        run_id: "run-a",
+        session_id: "session-a",
+      });
+      await runCreation.promise;
+    });
+
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        foreground: false,
+        runId: "run-a",
+        sessionId: "session-a",
+      }),
+    );
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-a", "messages"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+  });
+
   it("updates the current session model profile", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
@@ -1961,15 +2017,37 @@ function renderComposerWithClient(
   controller = runStreamController(),
   sessionId = "session-1",
 ) {
-  return render(
+  return render(composerTree(queryClient, controller, sessionId));
+}
+
+function composerTree(
+  queryClient: QueryClient,
+  controller = runStreamController(),
+  sessionId = "session-1",
+) {
+  return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider button={{ autoInsertSpace: false }}>
         <AntApp>
           <Composer runStreamController={controller} sessionId={sessionId} />
         </AntApp>
       </ConfigProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolvePromise: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve: resolvePromise,
+  };
 }
 
 function runStreamController(activeRunId: string | null = null): RunStreamController {

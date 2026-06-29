@@ -109,6 +109,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const inputRef = useRef<SenderRef | null>(null);
+  const sessionIdRef = useRef(sessionId);
   const [draft, setDraft] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
   const [composerStatus, setComposerStatus] = useState("");
@@ -313,6 +314,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     draftValidationMessage || attachmentValidationMessage || composerStatus;
 
   useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
     if (generalConfigQuery.data !== undefined) {
       setShellSafetyPolicyEnabled(
         generalConfigQuery.data.shell_safety_policy_enabled !== false,
@@ -362,11 +367,15 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         (current) =>
           current === undefined ? current : { ...current, can_switch_mode: false },
       );
+      const foreground = sessionIdRef.current === result.session_id;
       runStreamController.startRunStream({
+        ...(foreground ? {} : { foreground: false }),
         runId: result.run_id,
         sessionId: result.session_id,
       });
-      void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "messages"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", result.session_id, "messages"],
+      });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
     onError: (error) => {

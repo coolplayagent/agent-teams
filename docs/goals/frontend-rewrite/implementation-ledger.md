@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Pending Run Session Switch Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the current AG-UI Runtime Stream / interrupted-stream recovery / Subagents gap before closing this slice, rather than treating the latest visual note as the whole target.
+- Migrated the V2-relevant edge from `tests/integration_tests/frontend/test_subagent_streams_ui.py::test_pending_run_start_detaches_to_background_on_session_switch` into `Composer.test.tsx`: when run creation resolves after the user has already switched sessions, the created run starts as a background stream for the original session.
+- Fixed `Composer` to track the latest selected `sessionId` through a ref, start newly created runs in the foreground only when the result still belongs to the current session, and invalidate messages for `result.session_id` instead of the newly selected session.
+- Preserved the existing sidebar refresh after pending run creation resolves so the original session can surface terminal/unread state without stealing the active workspace.
+- Deleted the old V1 pending-run Python harness from `test_subagent_streams_ui.py`; that file now has 5 remaining old Python UI harness tests.
+- Kept `frontend/dist/app` unchanged in this slice because this is a focused React runtime-controller behavior migration and no served-bundle or visual sign-off is claimed here.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx -t "detaches a created run|starts a run from the composer|keeps topology locked"` passed with 3 focused Composer tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_streams_ui.py` passed after deleting the old Python harness.
+- `npm run lint` passed.
+- `rg -n "def test_" tests\integration_tests\frontend\test_subagent_streams_ui.py` shows 5 remaining old Python UI harness tests in that file.
+
+### Reviewer
+- Main-agent V2 pending-run session-switch behavior, focused regression coverage, and one old Python UI harness retirement completed for this slice. This does not claim full AG-UI Runtime Stream PASS, replay/continuation PASS, Subagents subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Paused Subagent Terminal State Migration
 
 ### Scope

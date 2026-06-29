@@ -5326,3 +5326,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent implementation, targeted MessageTimeline test, dist rebuild, tool-heavy browser replay verification, and screenshot inspection completed for this Message Timeline readability slice. No Message Timeline subsystem PASS, Runtime Stream subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Composer Disabled-State Explanations
+
+### Scope
+- Re-checked the active frontend rewrite goal, release cleanup placeholder guidance, current source scans, and Composer controls before editing. The source scan found no user-facing Chinese "not implemented" placeholders and only normal input placeholders / board TODO domain text in production source.
+- Addressed a Quality Gate gap in the Composer: disabled Send, Queue, and Interrupt buttons now expose the concrete reason through button titles without changing when actions are enabled or which API calls run.
+- Added English and Chinese copy for empty send input, active-run send redirection, busy actions, and runtime injection text requirements. Existing validation copy is reused for image/runtime injection blocks.
+- Rebuilt `frontend/dist/app` so the served V2 shell includes the disabled-state explanation copy.
+
+### Verification
+- `rg -n "TODO|placeholder|mock|fake|stub|not implemented|coming soon" frontend/app/src --glob '!**/*.test.*' --glob '!**/__snapshots__/**'` returned no production "not implemented" UI; remaining matches are normal input placeholders, board TODO terminology, and typed placeholder fields.
+- `rg -n "暂不可用|占位|稍后|后续实现|未实现" frontend/app/src --glob '!**/*.test.*' --glob '!**/__snapshots__/**'` returned no matches.
+- `npm run test -- src/test/Composer.test.tsx` passed with 53 tests, including disabled Send, Queue, and Interrupt title assertions.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+- `npm run test:browser -- browser-tests/v2-stream-create-run.spec.ts` passed with 3 browser tests covering send/create-run flows, burst new sessions, live stream terminal state, and copy-last-answer disabled behavior.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-stream-create-run.png`; composer controls remain contained in the fixed shell after the title-only disabled-state change.
+
+### Reviewer
+- Main-agent source scan, Composer implementation, targeted unit/browser verification, dist rebuild, and screenshot inspection completed for this Composer/Accessibility quality slice. No Composer subsystem PASS, final placeholder cleanup sign-off, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

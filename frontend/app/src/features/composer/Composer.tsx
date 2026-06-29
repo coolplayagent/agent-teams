@@ -486,10 +486,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     injectMessageMutation.isPending ||
     updateModelProfileMutation.isPending ||
     updateTopologyMutation.isPending;
+  const hasCreateInput = effectivePromptText.length > 0 || promptAttachments.length > 0;
   const canCreateRun =
     sessionId !== null &&
     activeRunId === null &&
-    (effectivePromptText.length > 0 || promptAttachments.length > 0) &&
+    hasCreateInput &&
     !busy &&
     !draftValidationMessage &&
     !attachmentValidationMessage &&
@@ -511,6 +512,26 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     activeRunId === null &&
     !isTopologyLocallyLocked &&
     sessionQuery.data?.can_switch_mode !== false;
+  const sendButtonTitle = canCreateRun
+    ? t("composerSend")
+    : composerSendDisabledReason({
+        activeRunId,
+        attachmentValidationMessage,
+        busy,
+        draftValidationMessage,
+        hasInput: hasCreateInput,
+        sessionId,
+        t,
+      });
+  const injectionButtonTitle = canInject
+    ? ""
+    : composerInjectDisabledReason({
+        activeRunId,
+        attachmentValidationMessage,
+        busy,
+        draft,
+        t,
+      });
   const voiceInput = useVoiceInput({
     disabled: busy || sessionId === null,
     onError: (errorMessage) => {
@@ -796,6 +817,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                     injectMessageMutation.variables === "queued"
                   }
                   onClick={() => injectMessageMutation.mutate("queued")}
+                  title={injectionButtonTitle || t("composerQueue")}
                 >
                   {t("composerQueue")}
                 </Button>
@@ -808,6 +830,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                     injectMessageMutation.variables === "interrupt"
                   }
                   onClick={() => injectMessageMutation.mutate("interrupt")}
+                  title={injectionButtonTitle || t("composerInterrupt")}
                 >
                   {t("composerInterrupt")}
                 </Button>
@@ -819,6 +842,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 loading={createRunMutation.isPending}
                 type="primary"
                 disabled={!canCreateRun}
+                title={sendButtonTitle}
               >
                 {t("composerSend")}
               </Button>
@@ -956,6 +980,72 @@ function persistThinkingState(state: RunThinkingConfig) {
   } catch (_error) {
     return;
   }
+}
+
+function composerSendDisabledReason({
+  activeRunId,
+  attachmentValidationMessage,
+  busy,
+  draftValidationMessage,
+  hasInput,
+  sessionId,
+  t,
+}: {
+  activeRunId: string | null;
+  attachmentValidationMessage: string;
+  busy: boolean;
+  draftValidationMessage: string;
+  hasInput: boolean;
+  sessionId: string | null;
+  t: Translate;
+}): string {
+  if (sessionId === null) {
+    return t("composerSelectSessionBeforeSending");
+  }
+  if (activeRunId !== null) {
+    return t("composerRunActiveUseInject");
+  }
+  if (attachmentValidationMessage) {
+    return attachmentValidationMessage;
+  }
+  if (draftValidationMessage) {
+    return draftValidationMessage;
+  }
+  if (!hasInput) {
+    return t("composerSendNeedsInput");
+  }
+  if (busy) {
+    return t("composerRunActionBusy");
+  }
+  return t("composerSend");
+}
+
+function composerInjectDisabledReason({
+  activeRunId,
+  attachmentValidationMessage,
+  busy,
+  draft,
+  t,
+}: {
+  activeRunId: string | null;
+  attachmentValidationMessage: string;
+  busy: boolean;
+  draft: string;
+  t: Translate;
+}): string {
+  if (activeRunId === null) {
+    return t("composerNoActiveRunInject");
+  }
+  if (attachmentValidationMessage) {
+    return attachmentValidationMessage;
+  }
+  if (draft.trim().length === 0) {
+    return t("composerInjectNeedsText");
+  }
+  if (busy) {
+    return t("composerRunActionBusy");
+  }
+  return t("composerQueue");
 }
 
 function normalizeThinkingState(state: RunThinkingConfig): RunThinkingConfig {

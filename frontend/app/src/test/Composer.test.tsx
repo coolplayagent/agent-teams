@@ -258,6 +258,21 @@ describe("Composer", () => {
     });
   });
 
+  it("explains why sending is disabled before input is available", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    const sendButton = await screen.findByRole("button", { name: "Send" });
+    expect(sendButton).toBeDisabled();
+    expect(sendButton).toHaveAttribute(
+      "title",
+      "Enter a prompt or attach a file before sending.",
+    );
+  });
+
   it("resolves leading slash commands before AG-UI run creation", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
@@ -1067,10 +1082,33 @@ describe("Composer", () => {
     expect(
       await screen.findByText("Runtime injections support text only."),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Queue" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+    const queueButton = screen.getByRole("button", { name: "Queue" });
+    expect(queueButton).toBeDisabled();
+    expect(queueButton).toHaveAttribute(
+      "title",
+      "Runtime injections support text only.",
+    );
+    fireEvent.click(queueButton);
 
     expect(injectRunMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("explains disabled runtime injection buttons when no text is entered", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer(runStreamController("run-1"));
+
+    expect(await screen.findByRole("button", { name: "Queue" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Queue" })).toHaveAttribute(
+      "title",
+      "Enter text to inject into the active run.",
+    );
+    expect(screen.getByRole("button", { name: "Interrupt" })).toHaveAttribute(
+      "title",
+      "Enter text to inject into the active run.",
+    );
   });
 
   it("keeps topology locked after creating the first run", async () => {

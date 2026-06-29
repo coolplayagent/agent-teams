@@ -48,6 +48,22 @@ afterEach(() => {
 });
 
 describe("RecoveryBar", () => {
+  it("force-refreshes recovery on window focus", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(recoverySnapshot());
+
+    renderRecoveryBar();
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
+    );
+
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true),
+    );
+  });
+
   it("lets the backend choose the safest ACP approval option", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({
@@ -942,6 +958,37 @@ describe("RecoveryBar", () => {
         "background-task-1",
       ),
     );
+  });
+
+  it("ignores foreground command task records in recovery background tasks", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: null,
+        background_tasks: [
+          {
+            background_task_id: "foreground-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "command",
+            command: "python script.py",
+            cwd: "C:/repo",
+            execution_mode: "foreground",
+            status: "running",
+            recent_output: [],
+          },
+        ],
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await waitFor(() => expect(getRecoverySnapshotMock).toHaveBeenCalledOnce());
+    expect(screen.queryByText("python script.py")).not.toBeInTheDocument();
+    expect(screen.queryByText("Background task is still active"))
+      .not.toBeInTheDocument();
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
 
   it("shows and tracks background tasks when no active run is registered", async () => {

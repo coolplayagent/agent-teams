@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Recovery Background Task TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Run Recovery / Browser Checks requirements, existing V2 RecoveryBar/RunStreamController/browser coverage, and the old `test_recovery_background_tasks_ui.py` harness before editing.
+- Migrated the remaining V1 recovery/background-task intent to V2 TypeScript behavior: recovery force-refreshes on window focus, foreground command task records do not open background task UI or streams, active background tasks render with stop/collapse behavior, stopped recoverable runs stay explicit, background subagent streams multiplex correctly, and terminal/stale recovery targets are suppressed by the run stream controller.
+- Kept production code unchanged because V2 already implements recovery through `RecoveryBar`, `useRunStreamController`, and browser-tested recovery flows rather than the old V1 `recovery.js` facade.
+- Removed `tests/integration_tests/frontend/test_recovery_background_tasks_ui.py` after its remaining V2-relevant behavior was covered by component, controller, and existing browser tests.
+
+### Verification
+- `npm run test -- src/test/RecoveryBar.test.tsx` passed all 27 RecoveryBar tests.
+- `npm run test -- src/test/RunStreamController.test.tsx -t "recovery|background|terminal|multiplex"` passed 13 focused stream-controller tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+
+### Reviewer
+- Main-agent V2 recovery/background-task coverage and old Python UI harness removal completed for this slice. No full Run Recovery subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Runtime Injection TS Migration
 
 ### Scope

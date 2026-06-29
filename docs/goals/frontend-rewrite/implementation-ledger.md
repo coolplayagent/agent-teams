@@ -4789,3 +4789,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, live browser layout metrics, remaining Python browser scan, and cleanup completed for this slice. No Sessions subsystem sign-off, Subagents subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Subagent Send/Switch Pressure Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, current worktree, remaining `test_browser_smoke.py` browser-test surface, existing TS subagent/session-switch coverage, and the high-risk stream/replay/recovery items before editing. This slice targets Sessions/Subagents pressure behavior plus the Python UI-browser migration, not just visual polish.
+- Extended `frontend/app/browser-tests/v2-subagent-session.spec.ts` with deterministic TS browser coverage for the old send/switch/subagent pressure flow: thirty-two sidebar seed sessions, eight rapid visible session switches, creating a new session from the V2 sidebar, sending through the AG-UI composer, verifying send feedback under 2500 ms, rendering a live run delta, switching back to the parent session, opening a subagent child view under 2500 ms, returning to the parent under 1000 ms, reopening the child, clearing the subagent view, resetting a primary module view back to chat on session selection, checking fixed-shell no-document-scroll behavior, and enforcing request-budget bounds for subagent list and sidebar index requests.
+- Removed the replaced `test_browser_session_send_switch_and_subagent_view_stay_responsive_under_load` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py` and cleaned now-unused API helper imports.
+- Kept this as targeted Sessions/Subagents/Composer browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 8 legacy scenarios in `test_browser_smoke.py`, deeper stream replay and interrupted-stream recovery browser scenarios, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts` passed with 3 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `npx tsc --noEmit --pretty false --project tsconfig.json` passed.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip|test_browser_session_send_switch_and_subagent_view_stay_responsive_under_load" tests\integration_tests\browser\test_browser_smoke.py` reports 8 remaining legacy Python browser scenarios and no replaced send/switch/subagent pressure scenario.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-send-switch-pressure.png`; it shows the parent session restored in chat, the subagent row expanded under the parent, the new running session indicator preserved in the fixed sidebar, and the composer contained at the bottom of the fixed shell.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Sessions subsystem sign-off, Subagents subsystem sign-off, Composer subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

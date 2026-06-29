@@ -1,6 +1,7 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -809,6 +810,61 @@ describe("SessionsSidebar", () => {
       runId: "subagent_run_1",
       sessionId: "session-parent",
     }));
+  });
+
+  it("reconciles expanded subagent rows after sidebar subagent cache refresh", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-parent",
+        subagent_count: 1,
+        title: "Parent session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    listSessionSubagentsMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          checkpoint_event_id: 3,
+          created_at: "2026-06-23T10:02:00Z",
+          instance_id: "subagent-instance-1",
+          role_id: "explorer",
+          run_id: "subagent_run_1",
+          run_status: "running",
+          session_id: "session-parent",
+          status: "running",
+          subagent_kind: "normal",
+          title: "Explorer review",
+          updated_at: "2026-06-23T10:03:00Z",
+        },
+      ]);
+
+    const queryClient = renderSidebar();
+
+    expect(await screen.findByText("Parent session")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Toggle subagent sessions",
+    }));
+
+    expect(await screen.findByText("No subagent sessions")).toBeVisible();
+    expect(listSessionSubagentsMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-parent", "subagents"],
+      });
+    });
+
+    expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(listSessionSubagentsMock).toHaveBeenCalledTimes(2);
   });
 
   it("selects a cross-workspace parent before opening its subagent session", async () => {

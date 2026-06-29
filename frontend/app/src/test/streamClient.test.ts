@@ -301,6 +301,61 @@ describe("openRunStream", () => {
     expect(stream.states[0].runs["run-1"].entries[0].text).toBe("right run");
   });
 
+  it("routes selected subagent run events from the replay cursor until terminal close", () => {
+    const stream = openTestStream({
+      afterEventId: 9,
+      runId: "subagent_run_1",
+    });
+
+    expect(String(stream.source.url)).toBe(
+      "/api/ag-ui/runs/subagent_run_1/events?after_event_id=9",
+    );
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(
+        relayEvent({
+          event_id: 10,
+          instance_id: "inst-sub-1",
+          payload_json: JSON.stringify({ text: "subagent output" }),
+          role_id: "Explorer",
+          run_id: "subagent_run_1",
+          trace_id: "subagent_run_1",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(
+        relayEvent({
+          event_id: 11,
+          event_type: "run_completed",
+          instance_id: "inst-sub-1",
+          payload_json: JSON.stringify({ status: "completed" }),
+          role_id: "Explorer",
+          run_id: "subagent_run_1",
+          trace_id: "subagent_run_1",
+        }),
+      ),
+    );
+
+    expect(stream.states).toHaveLength(2);
+    expect(stream.states[0].runs["subagent_run_1"].entries[0]).toMatchObject({
+      eventId: 10,
+      instanceId: "inst-sub-1",
+      roleId: "Explorer",
+      runId: "subagent_run_1",
+      text: "subagent output",
+    });
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].runs["subagent_run_1"]).toMatchObject({
+      lastEventId: 11,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+  });
+
   it("does not notify state when replay delivers duplicate events", () => {
     const stream = openTestStream();
     const event = JSON.stringify(

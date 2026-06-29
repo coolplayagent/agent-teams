@@ -2,6 +2,28 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Final Subagent Stream Harness TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the AG-UI Runtime Stream / Subagents checklist before editing, with this slice focused on the last remaining old Python UI harnesses that copied V1 `frontend/dist/js/core/stream.js`.
+- Migrated `test_normal_mode_subagent_streams_attach_route_and_detach` to V2 semantics across `streamClient.test.ts` and `SubagentSessionView.test.tsx`: selected subagent runs now prove AG-UI replay cursor routing, instance/role metadata reduction, terminal close, checkpoint-based `startRunStream`, unmount detach, and parent subagent/sidebar cache refresh.
+- Migrated `test_current_session_background_stream_routes_events_and_deduplicates_attach` into `RunStreamController.test.tsx`: background-only streams remain out of the foreground active run list, duplicate targets open one replay stream from the latest local cursor, runtime state is stored, and terminal close refreshes messages, recovery, sidebar, and token usage.
+- Migrated `test_normal_mode_subagent_discovery_reconciles_sidebar_cache` into `SessionsSidebar.test.tsx`: an expanded parent subagent list now refetches and renders newly discovered normal-mode subagents after the V2 sidebar subagent query is invalidated.
+- Deleted `tests/integration_tests/frontend/test_subagent_streams_ui.py`; the old V1 source-copy UI harness count is now 0.
+- Kept production code and `frontend/dist/app` unchanged in this slice because the existing V2 React runtime satisfied the migrated semantics once asserted.
+
+### Verification
+- `npm run test -- src/test/streamClient.test.ts -t "selected subagent|terminal event|multiplexed stream"` passed.
+- `npm run test -- src/test/RunStreamController.test.tsx -t "background stream|background-only|duplicate background"` passed.
+- `npm run test -- src/test/SubagentSessionView.test.tsx` passed.
+- `npm run test -- src/test/SessionsSidebar.test.tsx -t "subagent"` passed.
+- `npm run lint` passed.
+- `Test-Path tests\integration_tests\frontend\test_subagent_streams_ui.py` returned `False`, confirming the old V1 source-copy subagent stream harness file has been removed.
+
+### Reviewer
+- Main-agent final subagent stream harness migration completed for this slice. This does not claim full AG-UI Runtime Stream PASS, replay/continuation PASS, Subagents subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, settings secondary-page parity with V1, broad settings/connectors/memory/board/observability coverage, and subsystem reviewer sign-off.
+
 ## 2026-06-30 Screenshot-Driven Composer Framework Alignment
 
 ### Scope

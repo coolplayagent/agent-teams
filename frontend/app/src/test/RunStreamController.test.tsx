@@ -425,6 +425,125 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("background-run-1");
   });
 
+  it("deduplicates background stream targets before opening replay", () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["background-run-1"],
+        runs: {
+          "background-run-1": {
+            entries: [],
+            lastEventId: 8,
+            runId: "background-run-1",
+            seenEventKeys: ["background-run-1:8"],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Start duplicate background streams",
+    }));
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(streamMocks.openMultiplexedRunStream).not.toHaveBeenCalled();
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    expect(options.runId).toBe("background-run-1");
+    expect(options.afterEventId).toBe(8);
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent(
+      "background-run-1",
+    );
+  });
+
+  it("routes background stream state and refreshes session caches on terminal close", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start background stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+
+    act(() => {
+      options.onState(runtimeStateWithRuns([
+        { lastEventId: 2, runId: "background-run-1" },
+      ]));
+    });
+
+    expect(useRuntimeStore.getState().runtimeState.runs["background-run-1"])
+      .toMatchObject({
+        lastEventId: 2,
+        status: "open",
+      });
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent(
+      "background-run-1",
+    );
+
+    act(() => {
+      options.onState(runtimeStateWithRunStatuses([
+        { lastEventId: 3, runId: "background-run-1", status: "closed" },
+      ]));
+      options.onClosed?.(runtimeStateWithRunStatuses([
+        { lastEventId: 3, runId: "background-run-1", status: "closed" },
+      ]));
+    });
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["sessions", "session-1", "messages"],
+      }),
+    );
+    expect(streamMocks.handles[0]?.close).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent(
+      "background-run-1",
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "recovery"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "token-usage"],
+    });
+  });
+
   it("ignores stale callbacks after a newer stream target replaces the active stream", () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -1136,6 +1255,27 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
         }
       >
         Start background stream
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          controller.startRunStreams({
+            foregroundRunIds: [],
+            sessionId: "session-1",
+            runs: [
+              {
+                afterEventId: 4,
+                runId: "background-run-1",
+              },
+              {
+                afterEventId: 6,
+                runId: "background-run-1",
+              },
+            ],
+          })
+        }
+      >
+        Start duplicate background streams
       </button>
       <span data-testid="active-run-ids">{controller.activeRunIds.join(",")}</span>
       <span data-testid="suppressed-run-ids">

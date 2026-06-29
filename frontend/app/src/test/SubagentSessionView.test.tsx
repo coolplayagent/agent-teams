@@ -98,9 +98,10 @@ describe("SubagentSessionView", () => {
           run_id: "subagent_run_1",
         },
       ]);
-    const { rerenderWithController } = renderSubagentSessionView({
+    const { queryClient, rerenderWithController } = renderSubagentSessionView({
       controller: initialController,
     });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(1));
 
@@ -109,6 +110,21 @@ describe("SubagentSessionView", () => {
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
     expect(closedController.startRunStream).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: [
+        "sessions",
+        "session-parent",
+        "agents",
+        "subagent-instance-1",
+        "messages",
+      ],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-parent", "subagents"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
   });
 
   it("keeps existing subagent history visible while the terminal refresh is pending", async () => {
@@ -238,6 +254,7 @@ function renderSubagentSessionView({
   const result = render(view(controller));
   return {
     ...result,
+    queryClient,
     rerenderWithController: (nextController: RunStreamController) => {
       result.rerender(view(nextController));
     },

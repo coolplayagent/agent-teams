@@ -63,6 +63,36 @@ describe("roundMetadata", () => {
     expect(summary.promptCollapsible).toBe(false);
   });
 
+  it("formats round durations with seconds, minutes, and hours", () => {
+    expect(
+      roundSummary(
+        round({
+          run_started_at: "2026-06-23T12:00:00Z",
+          run_updated_at: "2026-06-23T12:00:34Z",
+        }),
+        0,
+      ).durationLabel,
+    ).toBe("34s");
+    expect(
+      roundSummary(
+        round({
+          run_started_at: "2026-06-23T12:00:00Z",
+          run_updated_at: "2026-06-23T12:03:04Z",
+        }),
+        0,
+      ).durationLabel,
+    ).toBe("3m 4s");
+    expect(
+      roundSummary(
+        round({
+          run_started_at: "2026-06-23T12:00:00Z",
+          run_updated_at: "2026-06-23T13:02:00Z",
+        }),
+        0,
+      ).durationLabel,
+    ).toBe("1h 2m");
+  });
+
   it("hides raw verification diagnostics until diagnostics are enabled", () => {
     const rawDiagnostic = "verification_failedruntime_guardrail:pre_execution_boundary";
 

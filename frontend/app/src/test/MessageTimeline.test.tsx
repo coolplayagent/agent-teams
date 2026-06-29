@@ -1931,15 +1931,18 @@ describe("MessageTimeline", () => {
         },
         message_id: "user-prompt",
         role: "user",
+        role_id: "writer",
       },
     ]);
 
-    renderTimeline();
+    const { container } = renderTimeline();
 
     expect(await screen.findByText("Actual user prompt")).toBeVisible();
     expect(screen.queryByText("## Skill Candidates")).not.toBeInTheDocument();
     expect(screen.queryByText(/hidden: internal routing text/)).not.toBeInTheDocument();
     expect(screen.queryByText("message")).not.toBeInTheDocument();
+    expect(screen.queryByText("writer")).not.toBeInTheDocument();
+    expect(container.querySelector(".at-message-role")).toBeNull();
   });
 
   it("compacts provider API error bodies in assistant messages", async () => {

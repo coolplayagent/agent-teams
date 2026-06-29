@@ -6191,3 +6191,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent screenshot inspection, implementation, targeted TS/browser verification, dist rebuild, lint, and Python UI harness deletion completed for this Message Timeline diagnostics slice. No Message Timeline subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Message Prompt Labels And Duration Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and remaining Python UI harness inventory before editing. This slice migrates `test_message_history_labels_ui.py` away from V1 `frontend/dist` static/module tests into V2 TS coverage.
+- Strengthened the V2 `MessageTimeline` user-prompt test so a historical user prompt with an agent-specific `role_id` renders the actual prompt content only, hides injected skill-candidate routing text, and does not surface protocol fallback text or role labels such as `writer`.
+- Fixed V2 round duration formatting to preserve the V1-style hour boundary. Round summaries now render `34s`, `3m 4s`, and `1h 2m` instead of flattening an hour-plus run into `62m`.
+- Deleted the old Python `test_message_history_labels_ui.py` harness and rebuilt `frontend/dist/app` from the source changes.
+
+### Verification
+- `npm run test -- src/test/roundMetadata.test.ts src/test/MessageTimeline.test.tsx` passed with 120 tests covering prompt-label behavior and seconds/minutes/hours duration formatting.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+- `npm run lint` passed.
+- `rg -n "test_message_history_labels_ui|formatElapsed|message_history_uses_task_prompt|elapsed_duration_keeps|1h 2m|3m 4s|Actual user prompt" frontend/app/src tests docs/goals/frontend-rewrite/implementation-ledger.md` returns only the new V2 TS coverage and this ledger entry for the migrated behavior.
+
+### Reviewer
+- Main-agent implementation, targeted TS verification, dist rebuild, lint, and Python UI harness deletion completed for this Message Timeline migration slice. No Message Timeline subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

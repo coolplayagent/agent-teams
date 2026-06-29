@@ -6943,3 +6943,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent coverage mapping, targeted TS migration, focused verification, and partial legacy harness removal completed for this Composer/run-controls slice. No Composer subsystem PASS, slash skill parity completion, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Slash Skill Composer Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the Composer/run-controls checklist, current AG-UI create-run backend contract, `/roles:options` backend response, and the remaining `test_prompt_yolo_ui.py` V1 harness before editing. This slice targets the V1 slash command/skill parity gap rather than sidebar/settings structure.
+- Added typed V2 support for `RoleConfigOptions.skills` and `RunCreateRequest.skills`, matching the existing AG-UI backend capability.
+- Extended the Composer slash mention menu so command and skill entries with the same slash name render as separate selectable options with minimal Command/Skill labels.
+- Added Composer submit behavior matching V1 priority: manually typed slash prompts still prefer command resolution; an explicitly selected slash skill skips command resolution and sends `skills`; stale selected skills fall back to command resolution; command misses can fall back to skill invocation.
+- Rebuilt `frontend/dist/app` so the served V2 shell includes the slash skill Composer behavior.
+- Removed the corresponding migrated V1 Python harness scenarios from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`. The file now has 24 remaining legacy UI scenarios, including selected-command stale fallback, image support edge cases, and new-session draft model-profile creation.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx src/test/PromptMentions.test.ts` passed with 67 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `npm run lint` passed.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+- `rg -n "test_handle_send_prefers_command_alias|test_slash_menu_shows_same_named|test_selected_same_named_skill|test_committing_resource_mention_preserves|test_stale_selected_skill" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx frontend/app/src/test/PromptMentions.test.ts` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent V1 harness mapping, implementation, targeted TS verification, dist rebuild, lint, and partial legacy harness removal completed for this Composer slash skill slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

@@ -3,6 +3,7 @@ import type {
   CommandDetail,
   RoleConfigOptions,
   RoleOption,
+  RoleSkillOption,
   WorkspaceSearchResponse,
   WorkspaceSearchResult,
 } from "../../api/contracts";
@@ -37,6 +38,17 @@ export interface PromptCommandMentionOption {
   kind: "command";
 }
 
+export interface PromptSkillMentionOption {
+  aliases: string[];
+  description: string;
+  displayName: string;
+  insertTerm: string;
+  kind: "skill";
+  skillName: string;
+  skillRef: string;
+  source: string;
+}
+
 export interface PromptResourceMentionOption {
   aliases: string[];
   description: string;
@@ -50,7 +62,8 @@ export interface PromptResourceMentionOption {
 export type PromptMentionOption =
   | PromptCommandMentionOption
   | PromptResourceMentionOption
-  | PromptRoleMentionOption;
+  | PromptRoleMentionOption
+  | PromptSkillMentionOption;
 
 interface InternalPromptRoleMentionOption extends PromptRoleMentionOption {
   aliasSet: Set<string>;
@@ -199,7 +212,7 @@ export function getPromptCommandContext(text: string): PromptCommandContext | nu
 export function applyPromptCommandOption(
   text: string,
   context: PromptCommandContext,
-  option: PromptCommandMentionOption,
+  option: PromptCommandMentionOption | PromptSkillMentionOption,
 ): string {
   const before = text.slice(0, context.start);
   const after = text.slice(context.end);
@@ -264,6 +277,63 @@ export function findPromptCommandMentionOptions(
     .sort((left, right) => left.score - right.score || left.index - right.index)
     .slice(0, 10)
     .map((item) => item.option);
+}
+
+export function findPromptSlashMentionOptions({
+  catalog,
+  query,
+  roleOptions,
+  workspaceId,
+}: {
+  catalog: CommandCatalogResponse | undefined;
+  query: string;
+  roleOptions: RoleConfigOptions | undefined;
+  workspaceId: string | null | undefined;
+}): Array<PromptCommandMentionOption | PromptSkillMentionOption> {
+  const commandOptions = findPromptCommandMentionOptions(
+    catalog,
+    workspaceId,
+    query,
+  ).map((option, index) => ({ index, option }));
+  const skillOptions = listPromptSkillMentionOptions(roleOptions)
+    .map((option, index) => ({
+      index: commandOptions.length + index,
+      option,
+      score: mentionOptionScore(option, query),
+    }))
+    .filter((item) => item.score < Number.POSITIVE_INFINITY)
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .map(({ index, option }) => ({ index, option }));
+  return [...commandOptions, ...skillOptions].slice(0, 20).map((item) => item.option);
+}
+
+export function resolvePromptSkillInvocation({
+  promptText,
+  roleOptions,
+  selectedSkill,
+}: {
+  promptText: string;
+  roleOptions: RoleConfigOptions | undefined;
+  selectedSkill: PromptSkillMentionOption | null;
+}): { args: string; skill: PromptSkillMentionOption } | null {
+  const invocation = extractPromptSlashInvocation(promptText);
+  if (invocation === null) {
+    return null;
+  }
+  const skillOptions = listPromptSkillMentionOptions(roleOptions);
+  const selected = selectedSkill === null
+    ? null
+    : skillOptions.find((option) => option.skillRef === selectedSkill.skillRef) ?? null;
+  if (
+    selected !== null &&
+    promptSlashInvocationMatchesSkill(invocation.name, selected)
+  ) {
+    return { args: invocation.args, skill: selected };
+  }
+  const matchedSkill = skillOptions.find((option) =>
+    promptSlashInvocationMatchesSkill(invocation.name, option),
+  );
+  return matchedSkill === undefined ? null : { args: invocation.args, skill: matchedSkill };
 }
 
 export function findPromptResourceMentionOptions({
@@ -387,6 +457,69 @@ function commandMentionOption(command: CommandDetail): PromptCommandMentionOptio
     insertTerm,
     kind: "command",
   };
+}
+
+function listPromptSkillMentionOptions(
+  roleOptions: RoleConfigOptions | undefined,
+): PromptSkillMentionOption[] {
+  const seen = new Set<string>();
+  const options: PromptSkillMentionOption[] = [];
+  for (const skill of roleOptions?.skills ?? []) {
+    const option = skillMentionOption(skill);
+    if (option === null || seen.has(option.skillRef.toLowerCase())) {
+      continue;
+    }
+    seen.add(option.skillRef.toLowerCase());
+    options.push(option);
+  }
+  return options;
+}
+
+function skillMentionOption(skill: RoleSkillOption): PromptSkillMentionOption | null {
+  const ref = normalizeRoleId(skill.ref);
+  const name = normalizeRoleId(skill.name) || ref;
+  if (!ref || !name) {
+    return null;
+  }
+  return {
+    aliases: uniqueMentionTerms([name, ref]),
+    description: skill.description?.trim() ?? "",
+    displayName: name,
+    insertTerm: name,
+    kind: "skill",
+    skillName: name,
+    skillRef: ref,
+    source: normalizeRoleId(skill.source),
+  };
+}
+
+function extractPromptSlashInvocation(
+  promptText: string,
+): { args: string; name: string } | null {
+  const trimmedPrompt = promptText.trim();
+  if (!trimmedPrompt.startsWith("/")) {
+    return null;
+  }
+  const match = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(trimmedPrompt);
+  if (match === null) {
+    return null;
+  }
+  const name = normalizeRoleId(match[1]);
+  if (!name) {
+    return null;
+  }
+  return {
+    args: normalizeRoleId(match[2]),
+    name,
+  };
+}
+
+function promptSlashInvocationMatchesSkill(
+  invocationName: string,
+  option: PromptSkillMentionOption,
+): boolean {
+  const normalizedName = normalizeRoleId(invocationName).toLowerCase();
+  return option.aliases.some((alias) => alias.toLowerCase() === normalizedName);
 }
 
 function normalizePromptResourceResponse(

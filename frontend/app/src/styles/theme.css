@@ -5132,6 +5132,19 @@ body {
   font-weight: 600;
 }
 
+.at-prompt-mention-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.at-prompt-mention-kind {
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
 .at-prompt-mention-description {
   color: var(--at-text-muted);
   font-size: 12px;

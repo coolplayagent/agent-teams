@@ -11,9 +11,11 @@ import {
   findLeadingRoleMentionOptions,
   findPromptCommandMentionOptions,
   findPromptResourceMentionOptions,
+  findPromptSlashMentionOptions,
   getPromptCommandContext,
   getPromptResourceContext,
   parseLeadingRoleMention,
+  resolvePromptSkillInvocation,
 } from "../features/composer/PromptMentions";
 
 describe("PromptMentions", () => {
@@ -78,6 +80,33 @@ describe("PromptMentions", () => {
         promptText: "Draft an update",
         roleId: "MainAgent",
       });
+
+    const slashOptions = findPromptSlashMentionOptions({
+      catalog: commandCatalog(),
+      query: "opsx",
+      roleOptions: roleOptions(),
+      workspaceId: "workspace-1",
+    });
+    expect(slashOptions.map((option) => option.kind)).toEqual([
+      "command",
+      "skill",
+    ]);
+    expect(slashOptions[1]).toMatchObject({
+      displayName: "opsx:propose",
+      insertTerm: "opsx:propose",
+      kind: "skill",
+      skillRef: "builtin:opsx:propose",
+    });
+    expect(resolvePromptSkillInvocation({
+      promptText: "/opsx:propose draft",
+      roleOptions: roleOptions(),
+      selectedSkill: slashOptions[1].kind === "skill" ? slashOptions[1] : null,
+    })).toMatchObject({
+      args: "draft",
+      skill: {
+        skillRef: "builtin:opsx:propose",
+      },
+    });
   });
 
   it("keeps Main Agent aliases available before role options load", () => {
@@ -224,6 +253,14 @@ function roleOptions(): RoleConfigOptions {
         description: "Writes copy",
         name: "Writer",
         role_id: "Writer",
+      },
+    ],
+    skills: [
+      {
+        description: "Run an implementation proposal skill",
+        name: "opsx:propose",
+        ref: "builtin:opsx:propose",
+        source: "builtin",
       },
     ],
     subagent_roles: [],

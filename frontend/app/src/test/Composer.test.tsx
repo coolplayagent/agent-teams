@@ -424,6 +424,328 @@ describe("Composer", () => {
     expect(createRunMock).not.toHaveBeenCalled();
   });
 
+  it("shows same-named slash command and skill suggestions separately", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [
+        {
+          aliases: [],
+          allowed_modes: ["normal"],
+          argument_hint: "",
+          description: "Command probe",
+          discovery_source: "app",
+          name: "dedupe-probe",
+          scope: "app",
+          source_path: "C:/commands/dedupe-probe.md",
+          template: "Command {{args}}",
+        },
+      ],
+      workspaces: [],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/dedu" } });
+
+    expect(await screen.findByText("Command probe")).toBeVisible();
+    expect(await screen.findByText("Skill probe")).toBeVisible();
+    expect(screen.getByText("Command")).toBeVisible();
+    expect(screen.getByText("Skill")).toBeVisible();
+    expect(screen.getAllByText("/dedupe-probe")).toHaveLength(2);
+  });
+
+  it("submits an explicitly selected slash skill without resolving it as a command", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [
+        {
+          aliases: [],
+          allowed_modes: ["normal"],
+          argument_hint: "",
+          description: "Command probe",
+          discovery_source: "app",
+          name: "dedupe-probe",
+          scope: "app",
+          source_path: "C:/commands/dedupe-probe.md",
+          template: "Command {{args}}",
+        },
+      ],
+      workspaces: [],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: true,
+      raw_text: "/dedupe-probe topic",
+      expanded_prompt: "Command should not run.",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/dedu" } });
+    const skillOption = await screen.findByText("Skill probe");
+    const skillButton = skillOption.closest("button");
+    if (skillButton === null) {
+      throw new Error("Skill suggestion button was not rendered.");
+    }
+    fireEvent.mouseDown(skillButton);
+    fireEvent.change(prompt, { target: { value: "/dedupe-probe topic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(resolveCommandPromptMock).not.toHaveBeenCalled();
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [{ kind: "text", text: "topic" }],
+        skills: ["dedupe-probe"],
+      }),
+    );
+  });
+
+  it("keeps a selected slash skill after committing a workspace mention", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [],
+      workspaces: [],
+    });
+    searchWorkspacePathsMock.mockResolvedValue({
+      query: "src",
+      results: [
+        {
+          kind: "file",
+          name: "main.py",
+          path: "src/relay_teams/main.py",
+        },
+      ],
+      workspace_id: "workspace-1",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/dedu" } });
+    const skillOption = await screen.findByText("Skill probe");
+    const skillButton = skillOption.closest("button");
+    if (skillButton === null) {
+      throw new Error("Skill suggestion button was not rendered.");
+    }
+    fireEvent.mouseDown(skillButton);
+    fireEvent.change(prompt, { target: { value: "/dedupe-probe @src" } });
+    const resourceOption = await screen.findByText("@main.py");
+    const resourceButton = resourceOption.closest("button");
+    if (resourceButton === null) {
+      throw new Error("Resource suggestion button was not rendered.");
+    }
+    fireEvent.mouseDown(resourceButton);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(resolveCommandPromptMock).not.toHaveBeenCalled();
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [
+          {
+            kind: "text",
+            text: "@src/relay_teams/main.py",
+          },
+        ],
+        skills: ["dedupe-probe"],
+      }),
+    );
+  });
+
+  it("falls back to command resolution when a selected slash skill becomes unavailable", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [],
+      workspaces: [],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: true,
+      raw_text: "/dedupe-probe topic",
+      expanded_prompt: "Command ran after skill removal.",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    const queryClient = renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/dedu" } });
+    const skillOption = await screen.findByText("Skill probe");
+    const skillButton = skillOption.closest("button");
+    if (skillButton === null) {
+      throw new Error("Skill suggestion button was not rendered.");
+    }
+    fireEvent.mouseDown(skillButton);
+    act(() => {
+      queryClient.setQueryData(["roles", "options"], {
+        normal_mode_roles: [],
+        skills: [],
+      });
+    });
+    fireEvent.change(prompt, { target: { value: "/dedupe-probe topic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(resolveCommandPromptMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-1",
+        raw_text: "/dedupe-probe topic",
+        mode: "normal",
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [
+          {
+            kind: "text",
+            text: "Command ran after skill removal.",
+          },
+        ],
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).not.toHaveProperty("skills");
+  });
+
+  it("prefers command resolution over same-named skills when no skill was selected", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Research deeply.",
+          name: "deepresearch",
+          ref: "builtin:deepresearch",
+          source: "builtin",
+        },
+      ],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: true,
+      raw_text: "/deepresearch topic",
+      parsed_name: "deepresearch",
+      resolved_name: "deepresearch",
+      args: "topic",
+      expanded_prompt: "Run the project command for the topic.",
+      expanded_prompt_length: 34,
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "/deepresearch topic" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(resolveCommandPromptMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-1",
+        raw_text: "/deepresearch topic",
+        mode: "normal",
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [
+          {
+            kind: "text",
+            text: "Run the project command for the topic.",
+          },
+        ],
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).not.toHaveProperty("skills");
+  });
+
+  it("falls back to a slash skill when command resolution misses", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: false,
+      raw_text: "/dedupe-probe topic",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "/dedupe-probe topic" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [{ kind: "text", text: "topic" }],
+        skills: ["dedupe-probe"],
+      }),
+    );
+  });
+
   it("shows workspace resource suggestions from prompt mentions", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

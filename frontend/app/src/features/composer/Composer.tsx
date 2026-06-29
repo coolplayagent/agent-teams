@@ -56,14 +56,16 @@ import { PromptMentionMenu } from "./PromptMentionMenu";
 import {
   applyPromptCommandOption,
   applyPromptMentionOption,
-  findPromptCommandMentionOptions,
+  findPromptSlashMentionOptions,
   findLeadingRoleMentionOptions,
   findPromptResourceMentionOptions,
   getPromptCommandContext,
   getPromptResourceContext,
   parseLeadingRoleMention,
+  resolvePromptSkillInvocation,
   type LeadingRoleMention,
   type PromptMentionOption,
+  type PromptSkillMentionOption,
 } from "./PromptMentions";
 import { useVoiceInput } from "./useVoiceInput";
 
@@ -122,6 +124,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     readSavedThinkingState(),
   );
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
+  const [selectedPromptSkill, setSelectedPromptSkill] =
+    useState<PromptSkillMentionOption | null>(null);
   const activeRunId = runStreamController.activeRunId;
   const roleOptionsQuery = useQuery({
     queryKey: ["roles", "options"],
@@ -264,12 +268,18 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     () =>
       promptCommandContext === null
         ? []
-        : findPromptCommandMentionOptions(
-            commandCatalogQuery.data,
-            sessionWorkspaceId,
-            promptCommandContext.query,
-          ),
-    [commandCatalogQuery.data, promptCommandContext, sessionWorkspaceId],
+        : findPromptSlashMentionOptions({
+            catalog: commandCatalogQuery.data,
+            query: promptCommandContext.query,
+            roleOptions: roleOptionsQuery.data,
+            workspaceId: sessionWorkspaceId,
+          }),
+    [
+      commandCatalogQuery.data,
+      promptCommandContext,
+      roleOptionsQuery.data,
+      sessionWorkspaceId,
+    ],
   );
   const resourceMentionOptions = useMemo(
     () =>
@@ -337,13 +347,18 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       if (draftValidationMessage) {
         throw new Error(draftValidationMessage);
       }
-      const resolvedPromptText = await resolveComposerPromptText({
+      const resolvedPrompt = await resolveComposerPromptSubmission({
         promptText: effectivePromptText,
+        roleOptions: roleOptionsQuery.data,
+        selectedSkill: selectedPromptSkill,
         session: sessionQuery.data,
         sessionMode: selectedSessionMode,
         t,
       });
-      const inputParts = buildPromptInputParts(resolvedPromptText, promptAttachments);
+      const inputParts = buildPromptInputParts(
+        resolvedPrompt.promptText,
+        promptAttachments,
+      );
       const request: RunCreateRequest = {
         session_id: sessionId,
         input: inputParts,
@@ -352,6 +367,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         thinking,
         yolo,
       };
+      if (resolvedPrompt.skills.length > 0) {
+        request.skills = resolvedPrompt.skills;
+      }
       if (generalConfigQuery.data !== undefined) {
         request.shell_safety_policy_enabled = shellSafetyPolicyEnabled;
       }
@@ -360,6 +378,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     onSuccess: (result) => {
       setDraft("");
       setPromptAttachments([]);
+      setSelectedPromptSkill(null);
       setComposerStatus("");
       queryClient.setQueryData(sessionTopologyLockQueryKey(result.session_id), true);
       queryClient.setQueryData<SessionRecord | undefined>(
@@ -945,7 +964,8 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     if (option === undefined) {
       return;
     }
-    if (option.kind === "command") {
+    if (option.kind === "command" || option.kind === "skill") {
+      setSelectedPromptSkill(option.kind === "skill" ? option : null);
       setDraft((currentDraft) => {
         const context = promptCommandContext ?? getPromptCommandContext(currentDraft);
         return context === null
@@ -953,6 +973,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           : applyPromptCommandOption(currentDraft, context, option);
       });
     } else {
+      if (option.kind === "role") {
+        setSelectedPromptSkill(null);
+      }
       setDraft((currentDraft) => {
         const context = promptResourceContext ?? getPromptResourceContext(currentDraft);
         return context === null
@@ -1140,35 +1163,63 @@ function resolveDraftValidationMessage(
   return "";
 }
 
-async function resolveComposerPromptText({
+async function resolveComposerPromptSubmission({
   promptText,
+  roleOptions,
+  selectedSkill,
   session,
   sessionMode,
   t,
 }: {
   promptText: string;
+  roleOptions: RoleConfigOptions | undefined;
+  selectedSkill: PromptSkillMentionOption | null;
   session: SessionRecord | undefined;
   sessionMode: SessionMode;
   t: Translate;
-}): Promise<string> {
+}): Promise<{ promptText: string; skills: string[] }> {
+  const selectedSkillInvocation = resolvePromptSkillInvocation({
+    promptText,
+    roleOptions,
+    selectedSkill,
+  });
+  if (selectedSkill !== null && selectedSkillInvocation !== null) {
+    return {
+      promptText: selectedSkillInvocation.args,
+      skills: [selectedSkillInvocation.skill.skillRef],
+    };
+  }
   const invocation = extractPromptSlashInvocation(promptText);
   if (invocation === null) {
-    return promptText;
+    return { promptText, skills: [] };
   }
   const workspaceId = normalizeOptionalId(session?.workspace_id);
+  if (workspaceId !== null) {
+    const response = await resolveCommandPrompt({
+      workspace_id: workspaceId,
+      raw_text: invocation.rawText,
+      mode: sessionMode,
+    });
+    if (response.matched) {
+      const expandedPrompt = normalizeProfileName(response.expanded_prompt);
+      return { promptText: expandedPrompt || promptText, skills: [] };
+    }
+  }
+  const fallbackSkillInvocation = resolvePromptSkillInvocation({
+    promptText,
+    roleOptions,
+    selectedSkill: null,
+  });
+  if (fallbackSkillInvocation !== null) {
+    return {
+      promptText: fallbackSkillInvocation.args,
+      skills: [fallbackSkillInvocation.skill.skillRef],
+    };
+  }
   if (workspaceId === null) {
     throw new Error(t("composerCommandRequiresWorkspace"));
   }
-  const response = await resolveCommandPrompt({
-    workspace_id: workspaceId,
-    raw_text: invocation.rawText,
-    mode: sessionMode,
-  });
-  if (!response.matched) {
-    return promptText;
-  }
-  const expandedPrompt = normalizeProfileName(response.expanded_prompt);
-  return expandedPrompt || promptText;
+  return { promptText, skills: [] };
 }
 
 function extractPromptSlashInvocation(promptText: string): PromptSlashInvocation | null {

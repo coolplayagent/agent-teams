@@ -1268,6 +1268,14 @@ export interface RoleConfigOptions {
   main_agent_role?: RoleOption | null;
   normal_mode_roles: RoleOption[];
   subagent_roles?: RoleOption[];
+  skills?: RoleSkillOption[];
+}
+
+export interface RoleSkillOption {
+  ref: string;
+  name: string;
+  description?: string;
+  source?: string;
 }
 
 export type RoleConfigMode = "primary" | "subagent" | "all" | (string & {});
@@ -1732,6 +1740,7 @@ export interface RunCreateRequest {
   shell_safety_policy_enabled?: boolean;
   thinking?: RunThinkingConfig;
   target_role_id?: string | null;
+  skills?: string[];
 }
 
 export type ThinkingEffort = "minimal" | "low" | "medium" | "high";

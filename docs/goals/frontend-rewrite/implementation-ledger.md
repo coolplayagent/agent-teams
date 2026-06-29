@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Round Scroll Controller TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Rounds/Todos/History checklist items, existing V2 round rail coverage, and the remaining V1 `test_round_scroll_controller_ui.py` harness before editing.
+- Migrated the V1 finite active-state lock intent to V2 `MessageTimeline` component behavior: after selecting a later round, visible earlier rows do not immediately steal the active rail state; once the selected round reaches the viewport the lock releases, and normal viewport-driven active syncing resumes when scrolling back.
+- Reused existing V2 scroll preservation coverage for the V1 scroll-anchor intent: near-bottom follow, away-from-bottom preservation, tool-detail inspection preservation, and replay hydration anchor restoration are already covered in `MessageTimeline.test.tsx`.
+- Removed `tests/integration_tests/frontend/test_round_scroll_controller_ui.py` after its remaining UI behavior was covered by V2 TypeScript tests.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "round rail active lock|renders the round rail|preserves the anchored row|preserves scroll position"` passed with the new active-lock coverage and adjacent round/scroll preservation cases.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `rg -n 'test_round_scroll_controller_ui|round_completion_scroll_policy|round_timeline_active_state|round rail active lock' frontend/app/src/test/MessageTimeline.test.tsx tests/integration_tests/frontend docs/goals/frontend-rewrite/implementation-ledger.md` returned only the new V2 coverage and ledger evidence.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI harness file removal, and focused regression verification completed for this slice. No Rounds/Todos/History subsystem PASS, Message Timeline subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Remaining Streaming Tool UI TS Migration
 
 ### Scope

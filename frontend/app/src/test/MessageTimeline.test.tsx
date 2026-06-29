@@ -427,6 +427,96 @@ describe("MessageTimeline", () => {
     }
   });
 
+  it("releases the round rail active lock after the selected round reaches the viewport", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 180,
+      rowHeight: 96,
+    });
+    const restoreRects = mockTimelineRects();
+    try {
+      listSessionMessagesMock.mockResolvedValue([
+        {
+          content: "First answer",
+          message_id: "assistant-1",
+          role_id: "MainAgent",
+          trace_id: "run-1",
+        },
+        {
+          content: "Second answer",
+          message_id: "assistant-2",
+          role_id: "MainAgent",
+          trace_id: "run-2",
+        },
+        {
+          content: "Third answer",
+          message_id: "assistant-3",
+          role_id: "MainAgent",
+          trace_id: "run-3",
+        },
+      ]);
+      listSessionRoundsMock.mockResolvedValue({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:33Z",
+            run_id: "run-1",
+            run_status: "completed",
+            run_user_message: "First task",
+          },
+          {
+            created_at: "2026-06-23T12:43:04Z",
+            run_id: "run-2",
+            run_status: "completed",
+            run_user_message: "Second task",
+          },
+          {
+            created_at: "2026-06-23T12:44:04Z",
+            run_id: "run-3",
+            run_status: "completed",
+            run_user_message: "Third task",
+          },
+        ],
+        next_cursor: null,
+      });
+
+      const { container } = renderTimeline();
+
+      const firstRound = await screen.findByRole("button", {
+        name: "Go to round 1: First task",
+      });
+      const thirdRound = await screen.findByRole("button", {
+        name: "Go to round 3: Third task",
+      });
+      const timeline = timelineElement(container);
+      timeline.scrollTop = 0;
+      fireEvent.scroll(timeline);
+      await waitFor(() => expect(firstRound).toHaveAttribute("aria-current", "step"));
+
+      fireEvent.click(thirdRound);
+
+      await waitFor(() => expect(thirdRound).toHaveAttribute("aria-current", "step"));
+      timeline.scrollTop = 0;
+      fireEvent.scroll(timeline);
+      expect(thirdRound).toHaveAttribute("aria-current", "step");
+
+      const thirdRoundRow = container.querySelector(
+        '.at-timeline-row[data-run-id="run-3"]',
+      );
+      expect(thirdRoundRow).not.toBeNull();
+      timeline.scrollTop = translateY(thirdRoundRow);
+      fireEvent.scroll(timeline);
+      await waitFor(() => expect(thirdRound).toHaveAttribute("aria-current", "step"));
+
+      timeline.scrollTop = 0;
+      fireEvent.scroll(timeline);
+      await waitFor(() => expect(firstRound).toHaveAttribute("aria-current", "step"));
+      expect(thirdRound).not.toHaveAttribute("aria-current");
+    } finally {
+      restoreRects();
+      restoreMeasurements();
+    }
+  });
+
   it("collects paged round rail history before sorting and rendering", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Tool Result Overlay TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining legacy `test_stream_session_overlay_ui.py` cases, and V2 `MessageTimeline` runtime tool-result coverage before editing.
+- Strengthened V2 component coverage for result-first tool replay: a completed result remains visible without replaying a stale lower-event-id tool call, and its collapsible details expose the useful result payload.
+- Added V2 component coverage proving a `tool_result` event without a prior `tool_call` still materializes as a visible tool error row, with preview/details content and no synthetic tool-call row.
+- Removed two replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness tests: `test_tool_result_materializes_overlay_tool_block_into_visible_container` and `test_tool_result_event_synthesizes_overlay_part_without_prior_tool_call`.
+- Kept this slice focused on runtime tool result replay/rendering evidence. No production UI code, sidebar entries, Settings sections, secondary-page routing, visible shell layout, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "completed runtime tool results|runtime tool results without a prior tool call|out-of-order parallel runtime tool calls|splits runtime text segments around tool result events|runtime tool calls, results"` passed with the new no-prior-call result case and adjacent result-first/materialized-tool coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_tool_result_materializes_overlay_tool_block_into_visible_container|test_tool_result_event_synthesizes_overlay_part_without_prior_tool_call|stream_tool_result_materialize|stream_tool_result_overlay_only|runtime tool results without a prior tool call" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned only the new TS case after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Terminal Text Finalization TS Migration
 
 ### Scope

@@ -1552,10 +1552,51 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Tool result: shell")).toBeVisible();
+    const resultTitle = await screen.findByText("Tool result: shell");
+    expect(resultTitle).toBeVisible();
     expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
     expect(screen.queryByText("echo b")).not.toBeInTheDocument();
     expect(toolPreviewTexts(container)).toEqual(["done"]);
+    const resultDetails = toolPreElement(screenElement(resultTitle));
+    expect(resultDetails).not.toBeVisible();
+    expect(resultDetails).toHaveTextContent(/done/);
+    fireEvent.click(resultTitle);
+    expect(resultDetails).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("renders runtime tool results without a prior tool call", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: {
+            ok: false,
+            error: { message: "boom" },
+          },
+          tool_call_id: "call-9",
+          tool_name: "read",
+        }),
+        run_id: "run-tool-result-only",
+        trace_id: "run-tool-result-only",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-tool-result-only",
+    });
+
+    const resultTitle = await screen.findByText("Tool error: read");
+    expect(resultTitle).toBeVisible();
+    expect(screen.queryByText("Tool call: read")).not.toBeInTheDocument();
+    expect(toolPreviewTexts(container)).toEqual(["boom"]);
+    const resultDetails = toolPreElement(screenElement(resultTitle));
+    expect(resultDetails).not.toBeVisible();
+    expect(resultDetails).toHaveTextContent(/boom/);
+    fireEvent.click(resultTitle);
+    expect(resultDetails).toBeVisible();
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 

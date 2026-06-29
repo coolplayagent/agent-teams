@@ -183,8 +183,16 @@ export function useRunStreamController(): RunStreamController {
   const openTrackedRunStream = (
     options: StartRunStreamsOptions,
     streamGeneration: number,
+    replayMode: "all" | "active" = "all",
   ) => {
-    const runs = resolveReplayTargets(options.runs, runtimeStateRef.current);
+    const runs =
+      replayMode === "active"
+        ? resolveActiveReplayTargets(options.runs, runtimeStateRef.current)
+        : resolveReplayTargets(options.runs, runtimeStateRef.current);
+    if (runs.length === 0) {
+      finishClosedRunStream(options.sessionId, options.runs);
+      return;
+    }
     const callbacks: RunStreamCallbacks = {
       initialState: runtimeStateRef.current,
       onActivity: () => {
@@ -267,7 +275,7 @@ export function useRunStreamController(): RunStreamController {
       }
       streamHandleRef.current?.close();
       streamHandleRef.current = null;
-      openTrackedRunStream(options, streamGeneration);
+      openTrackedRunStream(options, streamGeneration, "active");
     }, RUN_STREAM_MANUAL_RECONNECT_GRACE_MS * nextAttempt);
   };
 
@@ -375,6 +383,21 @@ function resolveReplayTargets(
     ),
     runId: run.runId,
   }));
+}
+
+function resolveActiveReplayTargets(
+  runs: StartRunStreamTarget[],
+  runtimeState: RuntimeState,
+): RunStreamTarget[] {
+  return normalizeRunTargets(runs)
+    .filter((run) => runtimeState.runs[run.runId]?.status !== "closed")
+    .map((run) => ({
+      afterEventId: Math.max(
+        runtimeState.runs[run.runId]?.lastEventId ?? 0,
+        run.afterEventId ?? 0,
+      ),
+      runId: run.runId,
+    }));
 }
 
 function trackedRunTargetsClosed(

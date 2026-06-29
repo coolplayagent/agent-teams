@@ -814,6 +814,86 @@ describe("useRunStreamController", () => {
       { afterEventId: 88, runId: "run-2" },
     ]);
   });
+
+  it("keeps locally terminal runs in initial multiplex replay targets", () => {
+    vi.useFakeTimers();
+    useRuntimeStore.setState({
+      runtimeState: runtimeStateWithRunStatuses([
+        { lastEventId: 77, runId: "run-1", status: "closed" },
+        { lastEventId: 88, runId: "run-2", status: "open" },
+      ]),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start streams" }));
+
+    expect(streamMocks.openRunStream).not.toHaveBeenCalled();
+    expect(streamMocks.openMultiplexedRunStream).toHaveBeenCalledTimes(1);
+    const options = streamMocks.optionsList[0] as MultiplexedRunStreamOptions;
+    expect(options.runs).toEqual([
+      { afterEventId: 77, runId: "run-1" },
+      { afterEventId: 88, runId: "run-2" },
+    ]);
+  });
+
+  it("drops locally terminal runs from multiplexed transport reconnect targets", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start streams" }));
+    const firstOptions = streamMocks.optionsList[0] as MultiplexedRunStreamOptions;
+    act(() => {
+      firstOptions.onState(runtimeStateWithRunStatuses([
+        { lastEventId: 77, runId: "run-1", status: "closed" },
+        { lastEventId: 88, runId: "run-2", status: "open" },
+      ]));
+    });
+    act(() => {
+      firstOptions.onError("Run stream disconnected.", "transport");
+      vi.advanceTimersByTime(3500);
+    });
+
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+    expect(streamMocks.openMultiplexedRunStream).toHaveBeenCalledTimes(1);
+    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
+    const reconnectOptions = streamMocks.optionsList[1] as RunStreamOptions;
+    expect(reconnectOptions.runId).toBe("run-2");
+    expect(reconnectOptions.afterEventId).toBe(88);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-2");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1,run-2");
+  });
 });
 
 function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {

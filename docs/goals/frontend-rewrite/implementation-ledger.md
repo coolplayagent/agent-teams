@@ -5004,3 +5004,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, Python syntax/lint, diff check, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, Composer topology subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Multiplex Stream Reconnect Closed-Run Filter
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, current browser-test tree, and the high-risk stream/replay/recovery items before editing. This slice targets interrupted multiplex stream recovery rather than visual shell polish.
+- Fixed a replay boundary in the V2 run stream controller: initial explicit replay still opens all requested run targets with their latest `afterEventId`, while manual reconnect after a transport interruption now filters out run targets already marked `closed` in local runtime state.
+- Added controller coverage for both sides of the boundary: initial multiplex replay keeps locally terminal targets, while a reconnect after `run-1` is locally terminal and `run-2` remains open falls back to a single-run stream for `run-2` with the latest local event id instead of resubscribing the already-closed run.
+- Kept this as targeted AG-UI runtime stream recovery progress only. Remaining frontend rewrite work still includes deeper stream/replay browser scenarios, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test -- RunStreamController.test.tsx streamClient.test.ts` passed with 50 tests.
+- `npm run build` passed, including frontend and desktop typecheck plus Vite dist rebuild.
+- `git diff --check` passed.
+- `rg --files tests frontend/app/browser-tests | rg "(browser|playwright|\.py$|\.spec\.ts$)"` shows the current browser coverage is in TS browser specs plus the non-UI Python module-loading browser integration helpers; the old `test_browser_smoke.py` file is no longer present.
+- `rg -n "sync_playwright|playwright\.sync_api|def test_browser_|pytest\.mark\.skip" tests frontend/app/browser-tests -g "*.py" -g "*.ts" -g "*.tsx"` found no remaining Python UI Playwright scenarios.
+
+### Reviewer
+- Read-only reviewer returned PASS for the replay/reconnect boundary and recommended the initial-multiplex guard that was added before commit. Main-agent source fix, targeted runtime unit tests, frontend typecheck/build, diff check, and current browser-test tree scan completed for this slice. No AG-UI Runtime Stream subsystem sign-off, browser-suite sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

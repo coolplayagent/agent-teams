@@ -7426,3 +7426,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 TS evidence check, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Secondary Surface Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, the existing V2 AppShell subagent coverage, and the remaining `test_subagent_sessions_ui.py` Python harness inventory before editing.
+- Extended `AppShell.test.tsx` so the subagent secondary workspace test now explicitly proves the main chat composer is not mounted while `SubagentSessionView` is active.
+- Removed the migrated V1 source-copy harness `test_live_subagent_open_is_guarded_after_session_switch_race` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`. The V2 behavior is covered through AppShell cross-session subagent selection and pending main-session hydration isolation rather than by scanning old `frontend/dist` bootstrap strings.
+- Kept the larger `test_opening_subagent_session_hides_main_input_container` runner for now because its V1 DOM helper details still need a direct V2 mapping before removal, even though the new AppShell assertion covers the core composer absence.
+- No production UI, sidebar/settings item inventory, stream controller, or built dist behavior changed in this slice.
+- This slice reduces the subagent Python UI harness count and strengthens secondary-surface coverage. It does not claim complete subagent stream/replay PASS, subagent gate parity, background-task subagent discovery parity, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- AppShell.test.tsx -t "subagent"` passed with 5 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 10 remaining Python UI harness scenarios.
+- `rg -n -F "test_live_subagent_open_is_guarded_after_session_switch_race" tests\integration_tests\frontend\test_subagent_sessions_ui.py frontend\app\src\test\AppShell.test.tsx docs\goals\frontend-rewrite\implementation-ledger.md` returns only this ledger entry and no remaining Python function definition.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell coverage strengthening, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

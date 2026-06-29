@@ -1110,6 +1110,7 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
     expect(screen.getByText("Subagent Explorer")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
     expect(document.querySelector("#agent-drawer")).toBeNull();
     expect(document.querySelector("#right-rail")).toBeNull();
     expect(document.querySelector(".agent-panel")).toBeNull();

@@ -20,18 +20,6 @@ def test_subagent_session_streaming_layout_is_stable() -> None:
     assert "gap:" not in body_rule
 
 
-def test_live_subagent_open_is_guarded_after_session_switch_race() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    bootstrap_script = (
-        repo_root / "frontend" / "dist" / "js" / "app" / "bootstrap.js"
-    ).read_text(encoding="utf-8")
-
-    assert "void selectSession(sessionId).then(() => {" in bootstrap_script
-    assert "if (state.currentSessionId === sessionId) {" in bootstrap_script
-    assert "void selectSubagentSession(sessionId, subagent);" in bootstrap_script
-    assert "openSelectedSubagent();" not in bootstrap_script
-
-
 def test_opening_subagent_session_hides_main_input_container(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[3]
     source_path = (

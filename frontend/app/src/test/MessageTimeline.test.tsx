@@ -910,6 +910,9 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Tool result: execute_command")).toBeVisible();
     expect(screen.getByText("Tool validation: read_file")).toBeVisible();
     expect(screen.getByText("Tool call: glob")).toBeVisible();
+    expect(screen.getByText("Tool call: execute_command"))
+      .toHaveAttribute("title", "Tool call: execute_command");
+    expect(screen.getByText("npm test")).toHaveAttribute("title", "npm test");
     expect(container.querySelectorAll(".at-message-tool")).toHaveLength(4);
     expect(toolPreviewTexts(container)).toEqual([
       "npm test",

@@ -5309,3 +5309,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent screenshot comparison, implementation, targeted unit/browser verification, dist rebuild, and live browser inspection completed for this framework slice. No Application Shell subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Tool-Heavy Timeline Summary Readability
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, and current Message Timeline renderer before editing. This slice targets a visible tool-heavy history issue from the final visual audit path: long previews could squeeze the tool phase/title down to truncated labels such as `Tool call: s...`, making dense replay history harder to scan.
+- Updated `MessageTimeline` so tool summary titles and previews keep their full text in `title` attributes for hover/inspection, while the visual row prioritizes the phase plus tool name.
+- Adjusted `.at-message-tool-title` and `.at-message-tool-preview` flex behavior so short tool titles such as `Tool call: shell`, `Tool error: shell`, and `Tool validation: read` remain readable before the preview consumes the remaining row width.
+- Rebuilt `frontend/dist/app` so the served V2 shell includes the tool summary readability fix.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 64 tests, including the updated assertion that tool titles and previews retain full `title` text.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+- `npm run test:browser -- browser-tests/v2-stream-refresh.spec.ts -g "continues a tool-heavy replay after refresh from the hydrated cursor"` passed.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png`; the tool-heavy replay now shows complete tool summary labels for read, shell, error, and validation rows while staying inside the fixed shell.
+
+### Reviewer
+- Main-agent implementation, targeted MessageTimeline test, dist rebuild, tool-heavy browser replay verification, and screenshot inspection completed for this Message Timeline readability slice. No Message Timeline subsystem PASS, Runtime Stream subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

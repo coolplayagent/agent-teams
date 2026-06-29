@@ -1992,10 +1992,10 @@ function MessageToolBlock({
       <summary className="at-message-tool-summary">
         <span className="at-message-tool-title">
           <Wrench aria-hidden="true" size={14} />
-          <span>{title}</span>
+          <span title={title}>{title}</span>
         </span>
         {preview ? (
-          <span className="at-message-tool-preview">{preview}</span>
+          <span className="at-message-tool-preview" title={preview}>{preview}</span>
         ) : null}
       </summary>
       {hasDetails ? (

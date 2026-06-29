@@ -4803,10 +4803,15 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
+  max-width: min(320px, 52%);
   color: var(--at-text);
   font-weight: 600;
+}
+
+.at-message-tool-title svg {
+  flex: 0 0 auto;
 }
 
 .at-message-tool-title span {
@@ -4817,8 +4822,8 @@ body {
 }
 
 .at-message-tool-preview {
-  flex: 1 1 auto;
-  min-width: 80px;
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   color: var(--at-text-muted);
   font-size: 12px;

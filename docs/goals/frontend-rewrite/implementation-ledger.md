@@ -4519,6 +4519,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, deletion scan, remaining Python browser scan, and cleanup completed for this slice. No browser-suite migration sign-off, Application Shell sign-off, Settings sign-off, Connectors sign-off, or V2 frontend completion is claimed.
 
+## 2026-06-29 Backend Status Pressure Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, and remaining legacy Python browser-test surface before editing. This slice removes the standalone skipped backend-status pressure browser harness from Python instead of carrying another mixed Playwright boundary.
+- Added `frontend/app/browser-tests/v2-backend-status-pressure.spec.ts` with deterministic TS browser coverage for V2 backend status behavior while ten delayed non-health API requests are pending.
+- Verified that V2 health polling continues under request pressure and the sidebar backend status remains online rather than regressing to busy or offline.
+- Deleted `tests/integration_tests/browser/test_backend_status_pressure.py` after the replacement TS browser scenario passed.
+- Kept this as targeted browser-suite migration and Application Shell status coverage only. Remaining frontend rewrite work still includes migrating the large legacy `test_browser_smoke.py`, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-backend-status-pressure.spec.ts` passed with 1 TS browser test.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `rg -n "test_backend_status_pressure|backend_status_stays_connected|sync_playwright|playwright\.sync_api" tests/integration_tests/browser frontend/app/browser-tests -g "*.py" -g "*.ts"` now reports only the remaining legacy Python browser file `test_browser_smoke.py`.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, deletion scan, remaining Python browser scan, and cleanup completed for this slice. No browser-suite migration sign-off, Application Shell sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-26 Streaming Timeline Python Harness Removal Batch
 
 ### Scope

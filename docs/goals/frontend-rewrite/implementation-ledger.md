@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Workspace Settings TS Migration
+
+### Scope
+- Re-checked the frontend rewrite goal and remaining old frontend Python UI harness inventory before editing, then selected `tests/integration_tests/frontend/test_workspace_settings_ui.py` as the next bounded Settings secondary-page migration slice.
+- Migrated V1 remote workspace SSH profile behavior into focused V2 React coverage in `WorkspaceSettingsSection.test.tsx`: create/save payloads, persisted list refresh, saved-profile probes, draft override probes, edit prefill, reveal saved password, save-without-secret-dirty preservation, focused replacement password saves, delete confirmation, and required-username validation for saves/probes.
+- Kept the existing `SettingsDrawer.test.tsx` Remote workspace coverage for the V1-aligned Settings primary section entry and the real drawer integration path instead of flattening secondary content into the top-level shell.
+- Fixed `WorkspaceSettingsSection` so editing an existing SSH profile probes and saves against the original profile id, validation failures during draft probes do not create unhandled promise rejections, and revealed saved passwords are not treated as replacement secrets unless the password field is actually focused and edited.
+- Deleted `tests/integration_tests/frontend/test_workspace_settings_ui.py`; 22 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/WorkspaceSettingsSection.test.tsx` passed.
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "remote workspace|Remote workspace"` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `Test-Path tests\integration_tests\frontend\test_workspace_settings_ui.py` returned `False`, confirming the old Python UI harness file has been removed.
+
+### Reviewer
+- Main-agent Workspace settings harness migration completed for this slice. This does not claim full Settings PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broad settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 GitHub Settings TS Migration
 
 ### Scope

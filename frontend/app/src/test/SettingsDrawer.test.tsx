@@ -2719,6 +2719,7 @@ describe("SettingsDrawer", () => {
     fireEvent.change(screen.getByLabelText("Port"), {
       target: { value: 2222 },
     });
+    fireEvent.focus(screen.getByLabelText("Password"));
     fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "changed-secret" },
     });

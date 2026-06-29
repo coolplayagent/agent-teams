@@ -11,7 +11,7 @@ import {
 import type { FormInstance } from "antd";
 import { Activity, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   deleteSshProfile,
@@ -58,8 +58,10 @@ export function WorkspaceSettingsSection() {
   const t = useTranslations();
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [editor, setEditor] = useState<SshProfileEditorState | null>(null);
+  const [passwordDirty, setPasswordDirty] = useState(false);
   const [probeState, setProbeState] = useState<ProbeState | null>(null);
   const [form] = Form.useForm<SshProfileFormValues>();
+  const passwordFocusedRef = useRef(false);
 
   const profilesQuery = useQuery({
     queryKey: ["settings", "workspace", "ssh-profiles"],
@@ -85,6 +87,8 @@ export function WorkspaceSettingsSection() {
   }, [activeProfileId, profiles]);
 
   useEffect(() => {
+    setPasswordDirty(false);
+    passwordFocusedRef.current = false;
     if (editor === null) {
       form.resetFields();
       return;
@@ -169,6 +173,7 @@ export function WorkspaceSettingsSection() {
         return;
       }
       form.setFieldValue("password", payload.password);
+      setPasswordDirty(false);
       void message.success(t("settingsWorkspacePasswordRevealed"));
     },
     onError: (error) => {
@@ -189,21 +194,36 @@ export function WorkspaceSettingsSection() {
   }
 
   function submit(values: SshProfileFormValues) {
-    const sshProfileId = values.ssh_profile_id.trim();
+    const sshProfileId =
+      editor?.mode === "edit"
+        ? editor.profile?.ssh_profile_id ?? values.ssh_profile_id.trim()
+        : values.ssh_profile_id.trim();
     saveMutation.mutate({
       sshProfileId,
-      config: configFromValues(values),
+      config: configFromValues(values, {
+        preserveSavedPassword: shouldPreserveSavedPassword(editor, passwordDirty),
+      }),
     });
   }
 
   async function probeDraft() {
-    const values = await form.validateFields();
-    const label = values.ssh_profile_id.trim() || t("settingsWorkspaceDraft");
+    let values: SshProfileFormValues;
+    try {
+      values = await form.validateFields();
+    } catch {
+      return;
+    }
+    const savedProfileId =
+      editor?.mode === "edit" ? editor.profile?.ssh_profile_id ?? null : null;
+    const label =
+      (savedProfileId ?? values.ssh_profile_id.trim()) || t("settingsWorkspaceDraft");
     probeMutation.mutate({
       label,
       request: {
-        ssh_profile_id: editor?.mode === "edit" ? label : null,
-        override: configFromValues(values),
+        ssh_profile_id: savedProfileId,
+        override: configFromValues(values, {
+          preserveSavedPassword: shouldPreserveSavedPassword(editor, passwordDirty),
+        }),
         timeout_ms: probeTimeoutMs(values),
       },
     });
@@ -293,6 +313,18 @@ export function WorkspaceSettingsSection() {
         editor={editor}
         form={form}
         onCancel={() => setEditor(null)}
+        onPasswordChange={() => {
+          if (
+            editor?.mode !== "edit" ||
+            editor.profile?.has_password !== true ||
+            passwordFocusedRef.current
+          ) {
+            setPasswordDirty(true);
+          }
+        }}
+        onPasswordFocus={() => {
+          passwordFocusedRef.current = true;
+        }}
         onProbe={probeDraft}
         onRevealPassword={(profileId) => revealMutation.mutate(profileId)}
         onSubmit={submit}
@@ -400,6 +432,8 @@ function SshProfileEditorModal({
   editor,
   form,
   onCancel,
+  onPasswordChange,
+  onPasswordFocus,
   onProbe,
   onRevealPassword,
   onSubmit,
@@ -411,6 +445,8 @@ function SshProfileEditorModal({
   editor: SshProfileEditorState | null;
   form: FormInstance<SshProfileFormValues>;
   onCancel: () => void;
+  onPasswordChange: () => void;
+  onPasswordFocus: () => void;
   onProbe: () => void;
   onRevealPassword: (profileId: string) => void;
   onSubmit: (values: SshProfileFormValues) => void;
@@ -505,6 +541,8 @@ function SshProfileEditorModal({
             <Form.Item label={t("settingsWorkspacePassword")} name="password">
               <Input.Password
                 autoComplete="off"
+                onChange={onPasswordChange}
+                onFocus={onPasswordFocus}
                 placeholder={
                   profile?.has_password
                     ? "************"
@@ -579,11 +617,14 @@ function formValuesFromProfile(
   };
 }
 
-function configFromValues(values: SshProfileFormValues): SshProfileConfig {
+function configFromValues(
+  values: SshProfileFormValues,
+  options: { preserveSavedPassword?: boolean } = {},
+): SshProfileConfig {
   return {
     host: values.host.trim(),
     username: values.username.trim(),
-    password: optionalText(values.password),
+    password: options.preserveSavedPassword ? null : optionalText(values.password),
     port: optionalNumber(values.port),
     remote_shell: optionalText(values.remote_shell),
     connect_timeout_seconds: optionalNumber(values.connect_timeout_seconds),
@@ -599,6 +640,17 @@ function optionalText(value: string | null | undefined): string | null {
 
 function optionalNumber(value: number | null | undefined): number | null {
   return value ?? null;
+}
+
+function shouldPreserveSavedPassword(
+  editor: SshProfileEditorState | null,
+  passwordDirty: boolean,
+): boolean {
+  return (
+    editor?.mode === "edit" &&
+    editor.profile?.has_password === true &&
+    passwordDirty === false
+  );
 }
 
 function probeTimeoutMs(values: Pick<SshProfileFormValues, "connect_timeout_seconds">) {

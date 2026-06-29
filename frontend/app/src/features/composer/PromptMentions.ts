@@ -147,16 +147,26 @@ function listMentionableRoleCandidates(
     normalizeRoleId(roleOptions?.main_agent_role?.role_id) ||
     "MainAgent";
   if (coordinatorRoleId) {
-    pushCandidate(coordinatorRoleId, "Coordinator");
-    pushCandidate(coordinatorRoleId, coordinatorRoleId);
+    for (const term of roleMentionTerms(coordinatorRoleId, "Coordinator")) {
+      pushCandidate(coordinatorRoleId, term);
+    }
   }
   if (mainAgentRoleId) {
-    pushCandidate(mainAgentRoleId, roleDisplayName(roleOptions?.main_agent_role));
-    pushCandidate(mainAgentRoleId, mainAgentRoleId);
+    for (const term of roleMentionTerms(
+      mainAgentRoleId,
+      roleDisplayName(roleOptions?.main_agent_role, mainAgentRoleId),
+    )) {
+      pushCandidate(mainAgentRoleId, term);
+    }
   }
   for (const role of roleOptions?.normal_mode_roles ?? []) {
-    pushCandidate(role.role_id, role.name);
-    pushCandidate(role.role_id, role.role_id);
+    for (const term of roleMentionTerms(
+      role.role_id,
+      roleDisplayName(role, role.role_id),
+      [role.name, role.role_id],
+    )) {
+      pushCandidate(role.role_id, term);
+    }
   }
   return entries;
 }
@@ -302,9 +312,7 @@ function listMentionableRoleOptions(
     if (!safeRoleId || !safeDisplayName) {
       return;
     }
-    const nextAliases = [safeDisplayName, safeRoleId, ...aliases]
-      .map(normalizeRoleId)
-      .filter(Boolean);
+    const nextAliases = roleMentionTerms(safeRoleId, safeDisplayName, aliases);
     const existing = byRoleId.get(safeRoleId);
     if (existing !== undefined) {
       if (
@@ -347,10 +355,13 @@ function listMentionableRoleOptions(
     upsertOption(coordinatorRoleId, "Coordinator");
   }
   if (mainAgentRoleId) {
-    upsertOption(mainAgentRoleId, roleDisplayName(roleOptions?.main_agent_role));
+    upsertOption(
+      mainAgentRoleId,
+      roleDisplayName(roleOptions?.main_agent_role, mainAgentRoleId),
+    );
   }
   for (const role of roleOptions?.normal_mode_roles ?? []) {
-    upsertOption(role.role_id, role.name || role.role_id, {
+    upsertOption(role.role_id, roleDisplayName(role, role.role_id), {
       aliases: [role.role_id],
       description: role.description,
     });
@@ -424,8 +435,78 @@ function mentionOptionScore(option: PromptMentionOption, query: string): number 
   return Number.POSITIVE_INFINITY;
 }
 
-function roleDisplayName(role: RoleOption | null | undefined): string {
-  return normalizeRoleId(role?.name) || normalizeRoleId(role?.role_id);
+function roleDisplayName(
+  role: RoleOption | null | undefined,
+  fallbackRoleId?: string,
+): string {
+  const explicitName = normalizeRoleId(role?.name);
+  if (explicitName) {
+    return explicitName;
+  }
+  const roleId = normalizeRoleId(role?.role_id) || normalizeRoleId(fallbackRoleId);
+  return humanizeRoleId(roleId);
+}
+
+function roleMentionTerms(
+  roleId: string,
+  displayName: string,
+  aliases: string[] = [],
+): string[] {
+  return uniqueMentionTerms([
+    displayName,
+    roleId,
+    separatedRoleAlias(roleId, " "),
+    separatedRoleAlias(roleId, "_"),
+    separatedRoleAlias(roleId, "-"),
+    ...aliases,
+  ]);
+}
+
+function separatedRoleAlias(roleId: string, separator: string): string {
+  const words = normalizeRoleId(roleId)
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  return words.join(separator);
+}
+
+function uniqueMentionTerms(values: string[]): string[] {
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const value of values) {
+    const term = normalizeRoleId(value);
+    const key = term.toLowerCase();
+    if (!term || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    terms.push(term);
+  }
+  return terms;
+}
+
+function humanizeRoleId(roleId: string): string {
+  const safeRoleId = normalizeRoleId(roleId);
+  if (!safeRoleId) {
+    return "";
+  }
+  if (isMainAgentRoleIdentifier(safeRoleId)) {
+    return "Main Agent";
+  }
+  return (
+    safeRoleId
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") || safeRoleId
+  );
+}
+
+function isMainAgentRoleIdentifier(roleId: string): boolean {
+  return normalizeRoleId(roleId).toLowerCase().replace(/[\s_-]+/g, "") === "mainagent";
 }
 
 function normalizePromptMentionSource(value: string): string {

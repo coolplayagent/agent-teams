@@ -80,6 +80,77 @@ describe("PromptMentions", () => {
       });
   });
 
+  it("keeps Main Agent aliases available before role options load", () => {
+    const roleOptionsForQuery = findLeadingRoleMentionOptions("@Main", undefined);
+    expect(roleOptionsForQuery[0]).toMatchObject({
+      displayName: "Main Agent",
+      insertTerm: "Main Agent",
+      kind: "role",
+      roleId: "MainAgent",
+    });
+    expect(parseLeadingRoleMention("@Main Agent Draft an update", undefined))
+      .toEqual({
+        error: "",
+        hasTrigger: true,
+        promptText: "Draft an update",
+        roleId: "MainAgent",
+      });
+    expect(parseLeadingRoleMention("@main_agent Draft an update", undefined))
+      .toEqual({
+        error: "",
+        hasTrigger: true,
+        promptText: "Draft an update",
+        roleId: "MainAgent",
+      });
+    expect(parseLeadingRoleMention("@Worker Draft an update", undefined))
+      .toEqual({
+        error: "",
+        hasTrigger: true,
+        promptText: "@Worker Draft an update",
+        roleId: null,
+      });
+  });
+
+  it("humanizes fallback role ids without dropping skill team prefixes", () => {
+    const skillTeamRoleId = "skill_team_codehub_mr_review_reviewer_b2c2b735";
+    const options = roleOptionsWithUnnamedRole(skillTeamRoleId);
+    const roleOptionsForQuery = findPromptResourceMentionOptions({
+      query: "skill",
+      resourceResponse: undefined,
+      roleOptions: options,
+    });
+    const skillTeamOption = roleOptionsForQuery.find(
+      (option) => option.kind === "role" && option.roleId === skillTeamRoleId,
+    );
+    if (skillTeamOption === undefined) {
+      throw new Error("Expected skill team role option.");
+    }
+    expect(skillTeamOption).toMatchObject({
+      displayName: "Skill Team Codehub Mr Review Reviewer B2c2b735",
+      insertTerm: "Skill Team Codehub Mr Review Reviewer B2c2b735",
+      kind: "role",
+      roleId: skillTeamRoleId,
+    });
+    expect(parseLeadingRoleMention(
+      "@Skill Team Codehub Mr Review Reviewer B2c2b735 Summarize the review",
+      options,
+    )).toEqual({
+      error: "",
+      hasTrigger: true,
+      promptText: "Summarize the review",
+      roleId: skillTeamRoleId,
+    });
+    expect(parseLeadingRoleMention(
+      "@skill_team_codehub_mr_review_reviewer_b2c2b735 Summarize the review",
+      options,
+    )).toEqual({
+      error: "",
+      hasTrigger: true,
+      promptText: "Summarize the review",
+      roleId: skillTeamRoleId,
+    });
+  });
+
   it("keeps directory prompt mentions open for deeper resource paths", () => {
     const resourceOptions = findPromptResourceMentionOptions({
       query: "src",
@@ -156,5 +227,20 @@ function roleOptions(): RoleConfigOptions {
       },
     ],
     subagent_roles: [],
+  };
+}
+
+function roleOptionsWithUnnamedRole(roleId: string): RoleConfigOptions {
+  const options = roleOptions();
+  return {
+    ...options,
+    normal_mode_roles: [
+      ...options.normal_mode_roles,
+      {
+        description: "Reviews merge requests.",
+        name: "",
+        role_id: roleId,
+      },
+    ],
   };
 }

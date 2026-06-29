@@ -481,6 +481,38 @@ describe("openRunStream", () => {
     expect(stream.source.close).not.toHaveBeenCalled();
   });
 
+  it("closes multiplexed streams on transport errors so reconnect can resume each run cursor", () => {
+    const stream = openTestMultiplexedStream({
+      runs: [
+        { afterEventId: 5, runId: "run-a" },
+        { afterEventId: 9, runId: "run-b" },
+      ],
+    });
+
+    stream.source.dispatchTransportError();
+
+    expect(stream.errors).toEqual([
+      { kind: "transport", message: "Run stream disconnected." },
+    ]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes multiplexed streams on malformed error events before manual reconnect", () => {
+    const stream = openTestMultiplexedStream({
+      runs: [
+        { afterEventId: 5, runId: "run-a" },
+        { afterEventId: 9, runId: "run-b" },
+      ],
+    });
+
+    stream.source.dispatchMessage("error", "{bad json");
+
+    expect(stream.errors).toEqual([
+      { kind: "transport", message: "Run stream disconnected." },
+    ]);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+  });
+
   it("opens multiplexed streams and waits for every tracked run to close", () => {
     const stream = openTestMultiplexedStream({
       runs: [

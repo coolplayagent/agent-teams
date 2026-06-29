@@ -82,6 +82,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   let runtimeState = options.initialState;
   let didNotifyClosed = false;
   let sourceClosed = false;
+  const preferManualReconnect = options.trackedRunIds.length > 1;
 
   const closeSource = () => {
     if (sourceClosed) {
@@ -148,11 +149,17 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       return;
     }
     if (!isMessageEvent(event)) {
+      if (preferManualReconnect) {
+        closeSource();
+      }
       options.onError("Run stream disconnected.", "transport");
       return;
     }
     const parsed = parseStreamPayload(event.data);
     if (parsed === null) {
+      if (preferManualReconnect) {
+        closeSource();
+      }
       options.onError("Run stream disconnected.", "transport");
       return;
     }

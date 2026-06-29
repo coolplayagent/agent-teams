@@ -7407,3 +7407,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, live browser layout inspection, V2 subagent refresh implementation, focused TS coverage, and targeted verification completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Force Refresh Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, the existing V2 `SessionsSidebar.test.tsx` force-refresh coverage, and the remaining `test_subagent_sessions_ui.py` Python harness inventory before editing.
+- Removed the migrated V1 source-copy harness `test_ensure_session_subagents_force_refresh_reaches_api` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- The V2 equivalent is covered by `SessionsSidebar.test.tsx`, which proves the first expanded subagent request calls `listSessionSubagents("session-parent", false)` and a post-invalidation refresh calls `listSessionSubagents("session-parent", true)`.
+- Did not remove the terminal-settle subagent harness in this slice because its old V1 `requireToolBoundary` retry path is not yet proven by an equivalent V2 subagent-message refresh test.
+- No production UI, sidebar/settings item inventory, secondary-surface routing, stream controller, or built dist behavior changed in this slice.
+- This slice reduces the subagent Python UI harness count only. It does not claim complete subagent stream/replay PASS, background-task subagent discovery parity, subagent terminal settle parity, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx` passed with 27 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 11 remaining Python UI harness scenarios.
+- `rg -n -F "test_ensure_session_subagents_force_refresh_reaches_api" tests\integration_tests\frontend\test_subagent_sessions_ui.py frontend\app\src\test\SessionsSidebar.test.tsx docs\goals\frontend-rewrite\implementation-ledger.md` returns only this ledger entry and no remaining Python function definition.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 TS evidence check, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

@@ -4,8 +4,10 @@ import {
   archiveBoardTodo,
   browseClawHubSkillMarket,
   addRuntimeToolsSystemPath,
+  createAutomationProject,
   createBoardTodoSource,
   createFeishuGatewayAccount,
+  deleteAutomationProject,
   deleteAgentRuntime,
   deleteBoardTodoSource,
   deleteModelProfile,
@@ -121,6 +123,7 @@ import {
   installClawHubMarketSkill,
   uninstallClawHubMarketSkill,
   uninstallRuntimeSkill,
+  updateAutomationProject,
   updateSession,
   updateBoardTodoSource,
   updateFeishuGatewayAccount,
@@ -662,12 +665,30 @@ describe("api client", () => {
       updated_at: "2026-06-24T00:00:00Z",
       workspace_id: "workspace-1",
     };
+    const createRequest = {
+      cron_expression: "0 9 * * 1-5",
+      delivery_binding: null,
+      delivery_events: ["completed" as const],
+      display_name: "Daily triage",
+      enabled: true,
+      name: "daily_triage",
+      prompt: "Summarize daily status.",
+      run_config: { session_mode: "normal" as const },
+      schedule_mode: "cron" as const,
+      timezone: "UTC",
+      workspace_id: "workspace-1",
+    };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify([projectPayload]), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(JSON.stringify([{ session_id: "session-1" }]), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(projectPayload), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
       )
       .mockResolvedValueOnce(
         new Response(
@@ -690,6 +711,17 @@ describe("api client", () => {
     await expect(listAutomationProjectSessions("aut-1")).resolves.toEqual([
       { session_id: "session-1" },
     ]);
+    await expect(createAutomationProject(createRequest)).resolves.toEqual(projectPayload);
+    await expect(
+      updateAutomationProject("aut-1", { display_name: "Daily triage" }),
+    ).resolves.toEqual(projectPayload);
+    await expect(
+      deleteAutomationProject("aut-1", {
+        cascade: true,
+        force: false,
+        reason: "cleanup",
+      }),
+    ).resolves.toEqual({ status: "ok" });
     await expect(runAutomationProject("aut-1")).resolves.toMatchObject({
       run_id: "run-1",
     });
@@ -713,6 +745,34 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "/api/automation/projects",
+      expect.objectContaining({
+        body: JSON.stringify(createRequest),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/automation/projects/aut-1",
+      expect.objectContaining({
+        body: JSON.stringify({ display_name: "Daily triage" }),
+        method: "PATCH",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/automation/projects/aut-1",
+      expect.objectContaining({
+        body: JSON.stringify({
+          cascade: true,
+          force: false,
+          reason: "cleanup",
+        }),
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
       "/api/automation/projects/aut-1:run",
       expect.objectContaining({
         body: JSON.stringify({}),
@@ -720,7 +780,7 @@ describe("api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      8,
       "/api/automation/projects/aut-1:enable",
       expect.objectContaining({
         body: JSON.stringify({}),
@@ -728,7 +788,7 @@ describe("api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      9,
       "/api/automation/projects/aut-1:disable",
       expect.objectContaining({
         body: JSON.stringify({}),

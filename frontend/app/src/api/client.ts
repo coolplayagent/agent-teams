@@ -2,7 +2,9 @@ import type {
   GeneralConfig,
   AgUiActionResponse,
   AutomationProjectRecord,
+  AutomationProjectCreateRequest,
   AutomationProjectSessionRecord,
+  AutomationProjectUpdateRequest,
   AutomationRunNowResult,
   BoardTodoArchiveRequest,
   BoardTodoBoardResponse,
@@ -450,11 +452,50 @@ export function listAutomationProjects(): Promise<AutomationProjectRecord[]> {
   return requestJson<AutomationProjectRecord[]>("/automation/projects");
 }
 
+export function createAutomationProject(
+  request: AutomationProjectCreateRequest,
+): Promise<AutomationProjectRecord> {
+  return requestJson<AutomationProjectRecord>("/automation/projects", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
 export function getAutomationProject(
   automationProjectId: string,
 ): Promise<AutomationProjectRecord> {
   return requestJson<AutomationProjectRecord>(
     `/automation/projects/${encodeURIComponent(automationProjectId)}`,
+  );
+}
+
+export function updateAutomationProject(
+  automationProjectId: string,
+  request: AutomationProjectUpdateRequest,
+): Promise<AutomationProjectRecord> {
+  return requestJson<AutomationProjectRecord>(
+    `/automation/projects/${encodeURIComponent(automationProjectId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function deleteAutomationProject(
+  automationProjectId: string,
+  options: { cascade?: boolean; force?: boolean; reason?: string | null } = {},
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/automation/projects/${encodeURIComponent(automationProjectId)}`,
+    {
+      method: "DELETE",
+      body: JSON.stringify({
+        cascade: options.cascade === true,
+        force: options.force === true,
+        reason: options.reason?.trim() || null,
+      }),
+    },
   );
 }
 

@@ -2,6 +2,28 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Automation Project Create/Run/Delete TS Browser Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining legacy Python browser surface before editing. This slice targets a real V1 workflow gap in the V2 Automation page rather than only the latest visual notes.
+- Added typed V2 API client contracts for creating, updating, and deleting automation projects through `/api/automation/projects`, `/api/automation/projects/{id}`, and the existing run/enable/disable endpoints.
+- Restored Automation page project management in the V2 shell: users can create a scheduled automation project from the Automation secondary surface, run it immediately, follow the run to the created session with the correct workspace id, and delete the project with a confirmation dialog.
+- Kept the V1-style page structure intact: the sidebar item count/order is unchanged, Automation remains a focused module page with list/detail layout, and project creation opens in a modal instead of flattening all configuration into the first-level page.
+- Fixed the automation project query-cache merge so newly-created projects are appended to cached project lists before selection, preventing the UI from snapping back to the first existing project after creation.
+- Extended `frontend/app/browser-tests/v2-module-actions.spec.ts` with a deterministic TS browser workflow for create -> run -> session handoff -> return -> delete, including request-payload assertions, fixed-shell no-document-scroll checks, and screenshot evidence.
+- Rebuilt `frontend/dist/app` so dist-served browser tests exercise the restored Automation workflow.
+- Kept the old `test_browser_workspace_and_automation_project_views` Python scenario in place for now because it still includes workspace-project interactions that are not yet fully equivalent in TS coverage. Remaining frontend rewrite work still includes migrating the remaining 6 legacy Python browser scenarios, deeper stream replay and interrupted-stream recovery coverage, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test -- apiClient.test.ts` passed with 31 unit tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-module-actions.spec.ts` passed with 4 TS browser tests.
+- Inspected `.tmp/frontend-v2-ts-module-actions/v2-automation-create-detail.png`; it shows the fixed V2 shell with sidebar navigation unchanged, Automation selected as a module page, project list and detail kept inside the shell frame, the new project selected after creation, and no document-level scroll or modal residue.
+
+### Reviewer
+- Main-agent source fix, targeted API unit test, frontend lint/typecheck/build, TS browser workflow, screenshot inspection, and remaining Python scenario accounting completed for this slice. No Automation subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Web Settings Declared Defaults And UI Language Persistence TS Migration Batch
 
 ### Scope

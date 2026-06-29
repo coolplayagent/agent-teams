@@ -1352,6 +1352,20 @@ body {
   font-weight: 400;
 }
 
+.at-automation-create-form {
+  padding-top: 4px;
+}
+
+.at-automation-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.at-automation-form-grid .ant-form-item {
+  min-width: 0;
+}
+
 .at-automation-state,
 .at-automation-loading,
 .at-automation-detail-loading {
@@ -6687,6 +6701,11 @@ body {
 
   .at-automation-detail-actions {
     flex-wrap: wrap;
+  }
+
+  .at-automation-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 
   .at-automation-run {

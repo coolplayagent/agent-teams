@@ -15,6 +15,8 @@ import {
 } from "./support/frontend-app";
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-module-actions";
+const CREATED_AUTOMATION_PROJECT_ID = "aut-browser-created";
+const CREATED_AUTOMATION_SESSION_ID = "session-automation-created";
 
 declare global {
   interface Window {
@@ -23,9 +25,17 @@ declare global {
 }
 
 interface ModuleActionState {
+  automationCreatePayloads: Record<string, unknown>[];
+  automationDeleteRequests: Array<{
+    payload: Record<string, unknown>;
+    projectId: string;
+  }>;
   automationDisableRequests: string[];
   automationEnableRequests: string[];
+  automationRunRequests: string[];
   automationStatus: "disabled" | "enabled";
+  createdAutomationProject: Record<string, unknown> | null;
+  createdAutomationSessionVisible: boolean;
   requestedPaths: string[];
   runtimeToolsSystemPathAdded: boolean;
   runtimeToolsSystemPathRequests: string[];
@@ -221,6 +231,106 @@ test("toggles an automation project through the real endpoints", async ({
   }
 });
 
+test("creates, runs, and deletes an automation project through real endpoints", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = moduleActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleModuleActionApi(context, state),
+      sessionTitle: "TS automation create",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Automation" })
+      .click();
+
+    await page.getByRole("button", { name: "New automation" }).click();
+    const dialog = page.getByRole("dialog", { name: "New automation" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Display name").fill("Browser Automation TS");
+    await dialog.getByLabel("Project ID").fill(CREATED_AUTOMATION_PROJECT_ID);
+    await dialog
+      .getByLabel("Prompt")
+      .fill("Create a browser covered V2 automation project.");
+    await dialog.getByLabel("Timezone").fill("Asia/Shanghai");
+    await dialog.getByRole("button", { name: "Create" }).click();
+    await expect(dialog).toBeHidden();
+
+    const automationDetail = page.locator(".at-automation-detail");
+    await expect(
+      automationDetail.getByRole("heading", { name: "Browser Automation TS" }),
+    ).toBeVisible();
+    expect(state.automationCreatePayloads).toHaveLength(1);
+    expect(state.automationCreatePayloads[0]).toMatchObject({
+      cron_expression: "0 9 * * 1-5",
+      display_name: "Browser Automation TS",
+      name: CREATED_AUTOMATION_PROJECT_ID,
+      prompt: "Create a browser covered V2 automation project.",
+      schedule_mode: "cron",
+      timezone: "Asia/Shanghai",
+      workspace_id: WORKSPACE_ID,
+    });
+    await expectNoDocumentScroll(
+      page,
+      "v2 automation creation should keep the shell frame fixed",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-automation-create-detail.png", SCREENSHOT_FOLDER),
+    });
+
+    await automationDetail.getByRole("button", { name: "Run now" }).click();
+    await expect
+      .poll(() => state.automationRunRequests)
+      .toEqual([CREATED_AUTOMATION_PROJECT_ID]);
+    await expect(
+      page.getByRole("button", { name: "Browser Automation TS run" }),
+    ).toBeVisible();
+
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Automation" })
+      .click();
+    await page
+      .locator(".at-automation-list")
+      .getByRole("button", { name: "Browser Automation TS" })
+      .click();
+    await automationDetail.getByRole("button", { name: "Delete" }).click();
+    const confirm = page.locator(".ant-modal-confirm");
+    await expect(
+      confirm.locator(".ant-modal-confirm-title"),
+    ).toHaveText('Delete automation project "Browser Automation TS"?');
+    await expect(
+      confirm.locator(".ant-modal-confirm-title"),
+    ).toBeVisible();
+    await confirm.getByRole("button", { name: "Delete" }).click();
+
+    await expect(
+      page.locator(".at-automation-list").getByText("Browser Automation TS"),
+    ).toHaveCount(0);
+    expect(state.automationDeleteRequests).toEqual([
+      {
+        payload: { cascade: true, force: false, reason: null },
+        projectId: CREATED_AUTOMATION_PROJECT_ID,
+      },
+    ]);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 automation delete should keep the shell frame fixed",
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function sidebarWidth(page: Page): Promise<number> {
   return page.locator(".at-sidebar").evaluate((element) =>
     Math.round(element.getBoundingClientRect().width),
@@ -245,9 +355,14 @@ async function installShellStatePreservingSidebarWidth(
 
 function moduleActionState(): ModuleActionState {
   return {
+    automationCreatePayloads: [],
+    automationDeleteRequests: [],
     automationDisableRequests: [],
     automationEnableRequests: [],
+    automationRunRequests: [],
     automationStatus: "enabled",
+    createdAutomationProject: null,
+    createdAutomationSessionVisible: false,
     requestedPaths: [],
     runtimeToolsSystemPathAdded: false,
     runtimeToolsSystemPathRequests: [],
@@ -259,6 +374,20 @@ async function handleModuleActionApi(
   state: ModuleActionState,
 ): Promise<boolean> {
   state.requestedPaths.push(context.path);
+  if (context.method === "DELETE") {
+    if (context.path === `/automation/projects/${CREATED_AUTOMATION_PROJECT_ID}`) {
+      const payload = readRecordPayload(context.route.request().postData());
+      state.automationDeleteRequests.push({
+        payload,
+        projectId: CREATED_AUTOMATION_PROJECT_ID,
+      });
+      state.createdAutomationProject = null;
+      state.createdAutomationSessionVisible = false;
+      await context.fulfillJson({ status: "ok" });
+      return true;
+    }
+    return false;
+  }
   if (context.method === "POST") {
     if (context.path === "/connectors/runtime-tools/system-path:add") {
       state.runtimeToolsSystemPathRequests.push("add");
@@ -271,6 +400,13 @@ async function handleModuleActionApi(
       });
       return true;
     }
+    if (context.path === "/automation/projects") {
+      const payload = readRecordPayload(context.route.request().postData());
+      state.automationCreatePayloads.push(payload);
+      state.createdAutomationProject = createdAutomationProject(payload);
+      await context.fulfillJson(state.createdAutomationProject);
+      return true;
+    }
     if (context.path === "/automation/projects/aut-daily:disable") {
       state.automationDisableRequests.push("aut-daily");
       state.automationStatus = "disabled";
@@ -281,6 +417,27 @@ async function handleModuleActionApi(
       state.automationEnableRequests.push("aut-daily");
       state.automationStatus = "enabled";
       await context.fulfillJson(automationProject(state));
+      return true;
+    }
+    if (context.path === `/automation/projects/${CREATED_AUTOMATION_PROJECT_ID}:run`) {
+      state.automationRunRequests.push(CREATED_AUTOMATION_PROJECT_ID);
+      state.createdAutomationSessionVisible = true;
+      if (state.createdAutomationProject !== null) {
+        state.createdAutomationProject = {
+          ...state.createdAutomationProject,
+          last_run_started_at: "2026-06-25T08:45:00Z",
+          last_session_id: CREATED_AUTOMATION_SESSION_ID,
+          latest_terminal_run_status: "queued",
+          updated_at: "2026-06-25T08:45:00Z",
+        };
+      }
+      await context.fulfillJson({
+        automation_project_id: CREATED_AUTOMATION_PROJECT_ID,
+        queued: true,
+        reused_bound_session: false,
+        run_id: "run-browser-created",
+        session_id: CREATED_AUTOMATION_SESSION_ID,
+      });
       return true;
     }
     return false;
@@ -304,10 +461,16 @@ function moduleActionResponse(
     return runtimeToolsResponse(state);
   }
   if (path === "/automation/projects") {
-    return [automationProject(state)];
+    return automationProjects(state);
   }
   if (path === "/automation/projects/aut-daily") {
     return automationProject(state);
+  }
+  if (
+    path === `/automation/projects/${CREATED_AUTOMATION_PROJECT_ID}` &&
+    state.createdAutomationProject !== null
+  ) {
+    return state.createdAutomationProject;
   }
   if (path === "/automation/projects/aut-daily/sessions") {
     return [
@@ -320,7 +483,73 @@ function moduleActionResponse(
       },
     ];
   }
+  if (path === `/automation/projects/${CREATED_AUTOMATION_PROJECT_ID}/sessions`) {
+    return state.createdAutomationSessionVisible
+      ? [createdAutomationSession()]
+      : [];
+  }
+  if (path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    return {
+      has_more: false,
+      items: sessionSidebarRecords(state, "TS automation create"),
+      next_cursor: null,
+    };
+  }
+  if (path === "/sessions/sidebar") {
+    return sessionSidebarRecords(state, "TS automation create");
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}`) {
+    return {
+      can_switch_mode: true,
+      created_at: "2026-06-25T08:45:00Z",
+      normal_model_profile: null,
+      normal_root_role_id: "MainAgent",
+      orchestration_preset_id: null,
+      session_id: CREATED_AUTOMATION_SESSION_ID,
+      session_mode: "normal",
+      title: "Browser Automation TS run",
+      updated_at: "2026-06-25T08:46:00Z",
+      workspace_id: WORKSPACE_ID,
+    };
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}/messages`) {
+    return [];
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}/subagents`) {
+    return [];
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}/agents`) {
+    return [];
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}/tasks`) {
+    return [];
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}/rounds`) {
+    return { has_more: false, items: [], next_cursor: null };
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}/recovery`) {
+    return {
+      active_run: null,
+      background_tasks: [],
+      paused_subagents: [],
+      pending_tool_approvals: [],
+      pending_user_questions: [],
+      recoverable_stopped_run: null,
+    };
+  }
+  if (path === `/sessions/${CREATED_AUTOMATION_SESSION_ID}/token-usage`) {
+    return { by_role: {}, input_tokens: 0, output_tokens: 0 };
+  }
   return undefined;
+}
+
+function automationProjects(state: ModuleActionState): Record<string, unknown>[] {
+  return [
+    automationProject(state),
+    ...(state.createdAutomationProject === null
+      ? []
+      : [state.createdAutomationProject]),
+  ];
 }
 
 function automationProject(state: ModuleActionState): Record<string, unknown> {
@@ -355,6 +584,101 @@ function automationProject(state: ModuleActionState): Record<string, unknown> {
     updated_at: "2026-06-25T08:20:00Z",
     workspace_id: WORKSPACE_ID,
   };
+}
+
+function createdAutomationProject(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const displayName = stringField(payload, "display_name") || "Browser Automation TS";
+  return {
+    automation_project_id: CREATED_AUTOMATION_PROJECT_ID,
+    created_at: "2026-06-25T08:40:00Z",
+    cron_expression: stringField(payload, "cron_expression") || null,
+    delivery_binding: null,
+    delivery_events: ["completed"],
+    display_name: displayName,
+    interval_every: null,
+    interval_unit: null,
+    last_error: null,
+    last_run_started_at: null,
+    last_session_id: null,
+    latest_terminal_run_status: null,
+    latest_terminal_run_verification_status: null,
+    name: stringField(payload, "name") || CREATED_AUTOMATION_PROJECT_ID,
+    next_run_at: "2026-06-26T01:00:00Z",
+    prompt: stringField(payload, "prompt"),
+    run_at: null,
+    run_config: {
+      normal_root_role_id: "MainAgent",
+      session_mode: "normal",
+      thinking: { effort: "medium", enabled: true },
+      yolo: false,
+    },
+    schedule_mode: "cron",
+    status: payload.enabled === false ? "disabled" : "enabled",
+    timezone: stringField(payload, "timezone") || "UTC",
+    trigger_id: "trigger-browser-created",
+    updated_at: "2026-06-25T08:40:00Z",
+    workspace_id: stringField(payload, "workspace_id") || WORKSPACE_ID,
+  };
+}
+
+function createdAutomationSession(): Record<string, unknown> {
+  return {
+    active_run_status: "queued",
+    latest_terminal_run_status: "queued",
+    metadata: { title: "Browser Automation TS run" },
+    session_id: CREATED_AUTOMATION_SESSION_ID,
+    title: "Browser Automation TS run",
+    updated_at: "2026-06-25T08:45:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function sessionSidebarRecords(
+  state: ModuleActionState,
+  title: string,
+): Record<string, unknown>[] {
+  return [
+    {
+      active_run_status: null,
+      created_at: "2026-06-25T08:00:00Z",
+      message_count: 2,
+      session_id: SESSION_ID,
+      title,
+      updated_at: "2026-06-25T08:30:00Z",
+      workspace_id: WORKSPACE_ID,
+    },
+    ...(state.createdAutomationSessionVisible
+      ? [
+          {
+            active_run_status: "queued",
+            created_at: "2026-06-25T08:45:00Z",
+            message_count: 0,
+            session_id: CREATED_AUTOMATION_SESSION_ID,
+            title: "Browser Automation TS run",
+            updated_at: "2026-06-25T08:45:00Z",
+            workspace_id: WORKSPACE_ID,
+          },
+        ]
+      : []),
+  ];
+}
+
+function readRecordPayload(rawPayload: string | null): Record<string, unknown> {
+  if (rawPayload === null || !rawPayload.trim()) {
+    return {};
+  }
+  const parsed = JSON.parse(rawPayload) as unknown;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Expected a JSON object request payload.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function stringField(payload: Record<string, unknown>, key: string): string {
+  const value = payload[key];
+  return typeof value === "string" ? value : "";
 }
 
 function connectorsResponse(): Record<string, unknown> {

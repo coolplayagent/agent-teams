@@ -906,6 +906,25 @@ export interface AutomationProjectRecord {
   workspace_id: string;
 }
 
+export interface AutomationProjectCreateRequest {
+  name: string;
+  display_name?: string | null;
+  workspace_id: string;
+  prompt: string;
+  schedule_mode: AutomationScheduleMode;
+  cron_expression?: string | null;
+  interval_every?: number | null;
+  interval_unit?: AutomationIntervalUnit | null;
+  run_at?: string | null;
+  timezone: string;
+  run_config?: AutomationRunConfig;
+  delivery_binding?: AutomationDeliveryBinding | null;
+  delivery_events?: AutomationDeliveryEvent[];
+  enabled?: boolean;
+}
+
+export type AutomationProjectUpdateRequest = Partial<AutomationProjectCreateRequest>;
+
 export interface AutomationRunNowResult {
   automation_project_id: string;
   queued: boolean;

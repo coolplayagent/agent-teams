@@ -2,23 +2,31 @@ import {
   App,
   Button,
   Empty,
+  Form,
   Input,
+  Modal,
+  Select,
   Skeleton,
   Tooltip,
   Typography,
+  type FormInstance,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   PauseCircle,
   Play,
+  Plus,
   RefreshCcw,
   RotateCw,
   Search,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  createAutomationProject,
+  deleteAutomationProject,
   disableAutomationProject,
   enableAutomationProject,
   getAutomationProject,
@@ -28,6 +36,7 @@ import {
   runAutomationProject,
 } from "../../api/client";
 import type {
+  AutomationProjectCreateRequest,
   AutomationProjectRecord,
   AutomationProjectSessionRecord,
   WorkspaceRecord,
@@ -38,10 +47,25 @@ interface AutomationViewProps {
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
 }
 
+type AutomationSchedulePreset = "custom" | "daily" | "weekdays";
+
+interface AutomationEditorValues {
+  cronExpression: string;
+  displayName: string;
+  name: string;
+  prompt: string;
+  schedulePreset: AutomationSchedulePreset;
+  time: string;
+  timezone: string;
+  workspaceId: string;
+}
+
 export function AutomationView({ onSessionSelected }: AutomationViewProps) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
+  const [createForm] = Form.useForm<AutomationEditorValues>();
   const queryClient = useQueryClient();
   const t = useTranslations();
+  const [createOpen, setCreateOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
@@ -97,6 +121,20 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
     projects.find((project) => project.automation_project_id === currentProjectId) ??
     null;
   const selectedSessions = sessionsQuery.data ?? [];
+  const openCreate = () => {
+    createForm.setFieldsValue(
+      defaultAutomationEditorValues(
+        workspacesQuery.data?.[0]?.workspace_id ??
+          selectedProject?.workspace_id ??
+          projects[0]?.workspace_id ??
+          "",
+      ),
+    );
+    setCreateOpen(true);
+  };
+  const closeCreate = () => {
+    setCreateOpen(false);
+  };
 
   const runMutation = useMutation({
     mutationFn: (automationProjectId: string) =>
@@ -112,7 +150,14 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
       });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       if (result.session_id.trim()) {
-        onSessionSelected?.(result.session_id);
+        const runProject =
+          selectedProject?.automation_project_id === result.automation_project_id
+            ? selectedProject
+            : projects.find(
+                (project) =>
+                  project.automation_project_id === result.automation_project_id,
+              );
+        onSessionSelected?.(result.session_id, runProject?.workspace_id ?? null);
       }
     },
     onError: (error) => {
@@ -155,12 +200,66 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
       );
     },
   });
+  const createMutation = useMutation({
+    mutationFn: (values: AutomationEditorValues) =>
+      createAutomationProject(automationCreateRequest(values)),
+    onSuccess: (project) => {
+      void message.success(t("automationCreated"));
+      closeCreate();
+      updateAutomationProjectCache(queryClient, project);
+      setSelectedProjectId(project.automation_project_id);
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["automation", "projects"],
+      });
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("automationCreateFailed"),
+      );
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (automationProjectId: string) =>
+      deleteAutomationProject(automationProjectId, { cascade: true }),
+    onSuccess: (_result, automationProjectId) => {
+      void message.success(t("automationDeleted"));
+      setSelectedProjectId((current) =>
+        current === automationProjectId ? null : current,
+      );
+      queryClient.setQueryData<AutomationProjectRecord[]>(
+        ["automation", "projects"],
+        (entries) =>
+          entries?.filter(
+            (entry) => entry.automation_project_id !== automationProjectId,
+          ) ?? [],
+      );
+      queryClient.removeQueries({
+        exact: true,
+        queryKey: ["automation", "projects", automationProjectId],
+      });
+      queryClient.removeQueries({
+        exact: true,
+        queryKey: ["automation", "projects", automationProjectId, "sessions"],
+      });
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["automation", "projects"],
+      });
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("automationDeleteFailed"),
+      );
+    },
+  });
 
   if (projectsQuery.isLoading) {
     return (
       <div className="at-automation-view">
         <AutomationToolbar
           filter={filter}
+          onCreate={openCreate}
           onFilterChange={setFilter}
           onRefresh={() => void refreshAutomation(queryClient)}
           refreshing={projectsQuery.isFetching}
@@ -169,6 +268,15 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
         <div className="at-automation-loading">
           <Skeleton active paragraph={{ rows: 8 }} />
         </div>
+        <AutomationCreateModal
+          form={createForm}
+          loading={createMutation.isPending}
+          onCancel={closeCreate}
+          onSubmit={(values) => createMutation.mutate(values)}
+          open={createOpen}
+          t={t}
+          workspaces={workspacesQuery.data ?? []}
+        />
       </div>
     );
   }
@@ -178,6 +286,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
       <div className="at-automation-view">
         <AutomationToolbar
           filter={filter}
+          onCreate={openCreate}
           onFilterChange={setFilter}
           onRefresh={() => void refreshAutomation(queryClient)}
           refreshing={projectsQuery.isFetching}
@@ -189,6 +298,15 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         </div>
+        <AutomationCreateModal
+          form={createForm}
+          loading={createMutation.isPending}
+          onCancel={closeCreate}
+          onSubmit={(values) => createMutation.mutate(values)}
+          open={createOpen}
+          t={t}
+          workspaces={workspacesQuery.data ?? []}
+        />
       </div>
     );
   }
@@ -197,6 +315,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
     <div className="at-automation-view">
       <AutomationToolbar
         filter={filter}
+        onCreate={openCreate}
         onFilterChange={setFilter}
         onRefresh={() => void refreshAutomation(queryClient)}
         refreshing={projectsQuery.isFetching}
@@ -240,9 +359,24 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
               busy={
                 runMutation.isPending ||
                 enableMutation.isPending ||
-                disableMutation.isPending
+                disableMutation.isPending ||
+                deleteMutation.isPending
               }
               loading={projectQuery.isLoading || sessionsQuery.isLoading}
+              onDelete={() => {
+                modal.confirm({
+                  cancelText: t("sidebarRenameCancel"),
+                  okButtonProps: { danger: true },
+                  okText: t("automationDelete"),
+                  onOk: () =>
+                    deleteMutation.mutateAsync(
+                      selectedProject.automation_project_id,
+                    ),
+                  title: t("automationDeleteConfirm", {
+                    name: automationTitle(selectedProject),
+                  }),
+                });
+              }}
               onRun={() => runMutation.mutate(selectedProject.automation_project_id)}
               onSessionSelected={onSessionSelected}
               onToggle={() => {
@@ -260,18 +394,29 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
           )}
         </main>
       </div>
+      <AutomationCreateModal
+        form={createForm}
+        loading={createMutation.isPending}
+        onCancel={closeCreate}
+        onSubmit={(values) => createMutation.mutate(values)}
+        open={createOpen}
+        t={t}
+        workspaces={workspacesQuery.data ?? []}
+      />
     </div>
   );
 }
 
 function AutomationToolbar({
   filter,
+  onCreate,
   onFilterChange,
   onRefresh,
   refreshing,
   t,
 }: {
   filter: string;
+  onCreate: () => void;
   onFilterChange: (value: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
@@ -293,6 +438,9 @@ function AutomationToolbar({
           prefix={<Search size={14} />}
           value={filter}
         />
+        <Button icon={<Plus size={15} />} onClick={onCreate} type="primary">
+          {t("automationNew")}
+        </Button>
         <Tooltip title={t("automationRefresh")}>
           <Button
             aria-label={t("automationRefresh")}
@@ -344,6 +492,7 @@ function AutomationProjectButton({
 function AutomationProjectDetail({
   busy,
   loading,
+  onDelete,
   onRun,
   onSessionSelected,
   onToggle,
@@ -354,6 +503,7 @@ function AutomationProjectDetail({
 }: {
   busy: boolean;
   loading: boolean;
+  onDelete: () => void;
   onRun: () => void;
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
   onToggle: () => void;
@@ -415,6 +565,14 @@ function AutomationProjectDetail({
               {project.status === "enabled"
                 ? t("automationDisable")
                 : t("automationEnable")}
+            </Button>
+            <Button
+              danger
+              disabled={busy}
+              icon={<Trash2 size={15} />}
+              onClick={onDelete}
+            >
+              {t("automationDelete")}
             </Button>
           </div>
         </div>
@@ -494,6 +652,188 @@ function AutomationProjectDetail({
   );
 }
 
+function AutomationCreateModal({
+  form,
+  loading,
+  onCancel,
+  onSubmit,
+  open,
+  t,
+  workspaces,
+}: {
+  form: FormInstance<AutomationEditorValues>;
+  loading: boolean;
+  onCancel: () => void;
+  onSubmit: (values: AutomationEditorValues) => void;
+  open: boolean;
+  t: Translate;
+  workspaces: WorkspaceRecord[];
+}) {
+  useEffect(() => {
+    if (!open || workspaces.length === 0 || form.getFieldValue("workspaceId")) {
+      return;
+    }
+    form.setFieldValue("workspaceId", workspaces[0]?.workspace_id ?? "");
+  }, [form, open, workspaces]);
+
+  return (
+    <Modal
+      afterOpenChange={(visible) => {
+        if (!visible) {
+          form.resetFields();
+        }
+      }}
+      cancelText={t("sidebarRenameCancel")}
+      confirmLoading={loading}
+      okText={t("automationCreate")}
+      onCancel={onCancel}
+      onOk={() => form.submit()}
+      open={open}
+      title={t("automationNew")}
+      width={620}
+    >
+      <Form
+        className="at-automation-create-form"
+        form={form}
+        layout="vertical"
+        onFinish={onSubmit}
+        requiredMark={false}
+      >
+        <div className="at-automation-form-grid">
+          <Form.Item
+            label={t("automationDisplayName")}
+            name="displayName"
+            rules={[
+              {
+                message: t("automationDisplayNameRequired"),
+                required: true,
+                whitespace: true,
+              },
+            ]}
+          >
+            <Input autoComplete="off" />
+          </Form.Item>
+          <Form.Item
+            label={t("automationName")}
+            name="name"
+            rules={[
+              {
+                message: t("automationNamePattern"),
+                pattern: /^[A-Za-z0-9_-]*$/,
+              },
+            ]}
+          >
+            <Input autoComplete="off" placeholder={t("automationNamePlaceholder")} />
+          </Form.Item>
+        </div>
+        <Form.Item
+          label={t("automationWorkspaceId")}
+          name="workspaceId"
+          rules={[
+            {
+              message: t("automationWorkspaceRequired"),
+              required: true,
+            },
+          ]}
+        >
+          <Select
+            notFoundContent={t("automationWorkspaceMissing")}
+            optionFilterProp="label"
+            options={workspaces.map((workspace) => ({
+              label: workspaceLabel(workspace),
+              value: workspace.workspace_id,
+            }))}
+            showSearch
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("automationPrompt")}
+          name="prompt"
+          rules={[
+            {
+              message: t("automationPromptRequired"),
+              required: true,
+              whitespace: true,
+            },
+          ]}
+        >
+          <Input.TextArea rows={5} />
+        </Form.Item>
+        <div className="at-automation-form-grid">
+          <Form.Item
+            label={t("automationSchedulePreset")}
+            name="schedulePreset"
+            rules={[
+              {
+                message: t("automationScheduleRequired"),
+                required: true,
+              },
+            ]}
+          >
+            <Select
+              options={[
+                { label: t("automationWeekdays"), value: "weekdays" },
+                { label: t("automationDaily"), value: "daily" },
+                { label: t("automationCustomCron"), value: "custom" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(previous, current) =>
+              previous.schedulePreset !== current.schedulePreset
+            }
+          >
+            {({ getFieldValue }) =>
+              getFieldValue("schedulePreset") === "custom" ? (
+                <Form.Item
+                  label={t("automationCronExpression")}
+                  name="cronExpression"
+                  rules={[
+                    {
+                      message: t("automationCronRequired"),
+                      required: true,
+                      whitespace: true,
+                    },
+                  ]}
+                >
+                  <Input autoComplete="off" />
+                </Form.Item>
+              ) : (
+                <Form.Item
+                  label={t("automationTime")}
+                  name="time"
+                  rules={[
+                    {
+                      message: t("automationTimeRequired"),
+                      required: true,
+                    },
+                  ]}
+                >
+                  <Input type="time" />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
+        </div>
+        <Form.Item
+          label={t("automationTimezone")}
+          name="timezone"
+          rules={[
+            {
+              message: t("automationTimezoneRequired"),
+              required: true,
+              whitespace: true,
+            },
+          ]}
+        >
+          <Input autoComplete="off" />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
 function PropertyRow({
   code = false,
   label,
@@ -514,6 +854,100 @@ function PropertyRow({
         <strong className={warning ? "is-warning" : undefined}>{value}</strong>
       )}
     </div>
+  );
+}
+
+function defaultAutomationEditorValues(workspaceId: string): AutomationEditorValues {
+  return {
+    cronExpression: "0 9 * * 1-5",
+    displayName: "",
+    name: "",
+    prompt: "",
+    schedulePreset: "weekdays",
+    time: "09:00",
+    timezone: browserTimezone(),
+    workspaceId,
+  };
+}
+
+function automationCreateRequest(
+  values: AutomationEditorValues,
+): AutomationProjectCreateRequest {
+  const displayName = values.displayName.trim();
+  return {
+    cron_expression: cronExpressionFromEditor(values),
+    delivery_binding: null,
+    delivery_events: ["completed"],
+    display_name: displayName,
+    enabled: true,
+    name: values.name.trim() || automationNameFromDisplayName(displayName),
+    prompt: values.prompt.trim(),
+    run_config: {
+      normal_root_role_id: null,
+      orchestration_preset_id: null,
+      session_mode: "normal",
+      thinking: { effort: "medium", enabled: true },
+      yolo: false,
+    },
+    schedule_mode: "cron",
+    timezone: values.timezone.trim() || "UTC",
+    workspace_id: values.workspaceId.trim(),
+  };
+}
+
+function cronExpressionFromEditor(values: AutomationEditorValues): string {
+  if (values.schedulePreset === "custom") {
+    return values.cronExpression.trim();
+  }
+  const { hour, minute } = parseTime(values.time);
+  if (values.schedulePreset === "daily") {
+    return `${minute} ${hour} * * *`;
+  }
+  return `${minute} ${hour} * * 1-5`;
+}
+
+function parseTime(value: string): { hour: number; minute: number } {
+  const [hourRaw, minuteRaw] = value.split(":");
+  return {
+    hour: clampCronPart(Number.parseInt(hourRaw ?? "", 10), 0, 23, 9),
+    minute: clampCronPart(Number.parseInt(minuteRaw ?? "", 10), 0, 59, 0),
+  };
+}
+
+function clampCronPart(
+  value: number,
+  minimum: number,
+  maximum: number,
+  fallback: number,
+): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function automationNameFromDisplayName(displayName: string): string {
+  const normalized = displayName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || `automation_${Date.now().toString(36)}`;
+}
+
+function browserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+function workspaceLabel(workspace: WorkspaceRecord): string {
+  return (
+    workspace.display_name?.trim() ||
+    workspace.name?.trim() ||
+    workspace.workspace_id
   );
 }
 
@@ -657,11 +1091,20 @@ function updateAutomationProjectCache(
   );
   queryClient.setQueryData<AutomationProjectRecord[]>(
     ["automation", "projects"],
-    (projects) =>
-      projects?.map((entry) =>
+    (projects) => {
+      if (projects === undefined) {
+        return [project];
+      }
+      const replacedProjects = projects.map((entry) =>
         entry.automation_project_id === project.automation_project_id
           ? project
           : entry,
-      ) ?? [project],
+      );
+      return projects.some(
+        (entry) => entry.automation_project_id === project.automation_project_id,
+      )
+        ? replacedProjects
+        : [project, ...projects];
+    },
   );
 }

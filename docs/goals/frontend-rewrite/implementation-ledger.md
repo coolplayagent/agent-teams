@@ -7017,3 +7017,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer static/control slice. No Composer subsystem PASS, Settings/sidebar PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Composer Image Attachment Profile Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, current V2 Composer image attachment tests, and V2 image capability resolution before editing.
+- Added V2 Composer coverage proving selected normal model profiles participate in image attachment validation: a selected image-capable profile allows an image even when the root role is text-only, while a selected text-only profile blocks an image even when the root role supports images.
+- Removed five migrated V1 Python UI harness scenarios from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`: inline-media paste/send, text-only role image blocking, selected model profile image allow, selected model profile image rejection, and unknown image support blocking. The file now has 12 remaining legacy UI scenarios.
+- Kept the pending model-profile save image validation scenarios, pasted-image footer hint scenario, role mention scenarios, title preview/abort scenarios, workspace selector source assertions, topology controls scenario, and new-session draft model-profile scenario because they still need separate V1/V2 mapping or V2-specific coverage.
+- This slice is test coverage and harness cleanup only; no production UI, Settings, sidebar inventory, backend, or dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 70 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 12.
+- `rg -n "test_handle_send_sends_pasted_image|test_handle_send_blocks_pasted_image_for_text_only|test_handle_send_allows_image_when_selected_model_profile|test_handle_send_blocks_image_when_selected_model_profile|test_handle_send_blocks_pasted_image_when_image_support|selected model profile supports image input|selected model profile rejects image input" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer image/profile slice. No Composer subsystem PASS, prompt attachment subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

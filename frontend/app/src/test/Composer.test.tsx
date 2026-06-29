@@ -1543,6 +1543,95 @@ describe("Composer", () => {
     expect(createRunMock).not.toHaveBeenCalled();
   });
 
+  it("allows image attachments when the selected model profile supports image input", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: "Writer",
+      normal_model_profile: "vision",
+      orchestration_preset_id: null,
+      can_switch_mode: true,
+    });
+    getModelProfilesMock.mockResolvedValue({
+      vision: {
+        input_modalities: ["image"],
+        model: "vision-profile-model",
+      },
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["text"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("profile-vision.png");
+
+    expect(await screen.findByText("profile-vision.png")).toBeVisible();
+    expect(screen.queryByText("Writer does not support image input."))
+      .not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0].input[0]).toMatchObject({
+      kind: "inline_media",
+      name: "profile-vision.png",
+    });
+  });
+
+  it("blocks image attachments when the selected model profile rejects image input", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: "Writer",
+      normal_model_profile: "textOnly",
+      orchestration_preset_id: null,
+      can_switch_mode: true,
+    });
+    getModelProfilesMock.mockResolvedValue({
+      textOnly: {
+        input_modalities: [],
+        model: "text-only-model",
+      },
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("profile-text-only.png");
+
+    expect(
+      await screen.findByText("text-only-model does not support image input."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
   it("blocks image attachments when image support is unknown for the selected role", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [

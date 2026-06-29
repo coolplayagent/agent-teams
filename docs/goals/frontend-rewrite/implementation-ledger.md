@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Message Renderer Facade Test TS Evidence Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining Python frontend tests, and V2 MessageTimeline copy/streaming coverage before editing. This slice targets checklist item 3 and removes another legacy dist facade export assertion.
+- Replaced `tests/unit_tests/frontend/test_message_renderer_facade_exports.py` by relying on existing V2 component coverage for copy-last-answer behavior, hydrated answer precedence, streaming cursor state, and cursor cleanup when tool calls arrive.
+- Confirmed V2 browser overlay coverage already exists in `frontend/app/browser-tests/streaming-message-timeline.spec.ts` for replay text around tool calls, stream cleanup, and output-delta overlay streaming state.
+- No source UI, sidebar, Settings navigation, or dist bundle changed in this slice.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "copies the latest|does not copy stale|shows a terminal cursor|clears the runtime text"` passed with focused V2 component tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+- `rg --files tests\unit_tests\frontend | rg "test_message_renderer_facade_exports\.py$"` returned no matches after removal.
+
+### Reviewer
+- Main-agent old Python facade-test removal, V2 test evidence mapping, focused component verification, frontend lint/typecheck, and diff check completed for this slice. No Message Timeline subsystem PASS, stream/replay browser sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Xiaoluban Gateway API Contract TS Migration
 
 ### Scope

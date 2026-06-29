@@ -2662,6 +2662,48 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
+  it("keeps unpersisted runtime text and thinking visible after terminal events", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "planning" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "still not persisted" }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "model_step_finished",
+        payload_json: JSON.stringify({ status: "completed" }),
+      }),
+      relayRunEvent({
+        event_id: 5,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("still not persisted")).toBeVisible();
+    expect(screen.getByText("Run completed: status completed")).toBeVisible();
+    const thinkingBlock = container.querySelector(".at-message-thinking");
+    expect(thinkingBlock).toHaveTextContent("planning");
+    expect(thinkingBlock).toHaveAttribute("data-streaming", "false");
+    expect(thinkingBlock).not.toHaveAttribute("open");
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+  });
+
   it.each([
     [
       "run_failed",

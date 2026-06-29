@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Terminal Cache TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, and existing V2 terminal/thinking coverage before editing.
+- Added V2 component coverage for a terminal lifecycle containing thinking, unpersisted text, `model_step_finished`, and `run_completed`, proving the unpersisted text remains visible while thinking content remains retained but no longer live/open after terminal closure.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness test `test_stream_overlay_keeps_unpersisted_cache_after_terminal_events`.
+- Kept this slice focused on terminal stream rendering evidence. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, production runtime code, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "unpersisted runtime text|closes live thinking"` passed with the existing terminal thinking test and the new terminal cache preservation test.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n 'test_stream_overlay_keeps_unpersisted_cache_after_terminal_events' tests/integration_tests/frontend/test_stream_session_overlay_ui.py` returned no matches after removal.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Injection Supersede TS Migration
 
 ### Scope

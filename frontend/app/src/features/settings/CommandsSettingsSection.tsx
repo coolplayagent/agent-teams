@@ -109,7 +109,7 @@ export function CommandsSettingsSection() {
       editor?.mode === "edit" && editor.command !== null
         ? updateCommand(buildUpdateRequest(editor.command, values))
         : createCommand(buildCreateRequest(values)),
-    onSuccess: (_, values) => {
+    onSuccess: async (_, values) => {
       void message.success(
         editor?.mode === "edit"
           ? t("settingsCommandsUpdated")
@@ -117,11 +117,24 @@ export function CommandsSettingsSection() {
       );
       setEditor(null);
       dispatchCommandsUpdated();
-      void queryClient.invalidateQueries({
-        queryKey: ["settings", "commands", "catalog"],
-      });
       if (values.name.trim()) {
         setSearchQuery(values.name.trim());
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["settings", "commands", "catalog"],
+        refetchType: "none",
+      });
+      try {
+        await queryClient.refetchQueries(
+          { queryKey: ["settings", "commands", "catalog"], type: "active" },
+          { throwOnError: true },
+        );
+      } catch (refreshError) {
+        void message.warning(
+          refreshError instanceof Error
+            ? refreshError.message
+            : t("settingsLoadFailed"),
+        );
       }
     },
     onError: (error) => {

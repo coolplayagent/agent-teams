@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Commands Settings TS Migration
+
+### Scope
+- Continued the settings secondary-page parity migration after Orchestration by selecting `tests/integration_tests/frontend/test_commands_settings_ui.py` as the next bounded old Python UI harness to retire.
+- Migrated V1 Commands settings behavior into focused V2 React coverage in `CommandsSettingsSection.test.tsx`: catalog rendering and filtering, copy-path feedback, create-editor workspace filtering for writable local workspaces, generated command paths, preview rendering, create payload serialization, current catalog preservation when a later refresh fails, and save-success plus refresh-failure feedback.
+- Kept the existing `SettingsDrawer.test.tsx` coverage for opening Commands through the V1-aligned System secondary page and editing/creating through the real Settings drawer.
+- Fixed `CommandsSettingsSection` so a successful command save still dispatches the command-updated event and reports a warning if the follow-up catalog refresh fails, instead of silently swallowing the refresh failure.
+- Deleted `tests/integration_tests/frontend/test_commands_settings_ui.py`; 24 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/CommandsSettingsSection.test.tsx` passed.
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "commands|Commands"` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `Test-Path tests\integration_tests\frontend\test_commands_settings_ui.py` returned `False`, confirming the old Python UI harness file has been removed.
+
+### Reviewer
+- Main-agent Commands settings harness migration completed for this slice. This does not claim full Settings PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broad settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 Orchestration Settings TS Migration
 
 ### Scope

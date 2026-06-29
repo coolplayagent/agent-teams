@@ -61,7 +61,7 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
 
     await primaryNav.getByRole("button", { name: "Automation" }).click();
     await expect(page.getByRole("button", { name: "Daily triage" })).toBeVisible();
-    await expect(page.getByText("Keep the V2 shell parity ledger current."))
+    await expect(page.getByText("Keep the shell parity ledger current."))
       .toBeVisible();
 
     await primaryNav.getByRole("button", { name: "Skills" }).click();
@@ -85,7 +85,7 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     await primaryNav.getByRole("button", { name: "Memory" }).click();
     await expect(page.getByTestId("memory-view")).toBeVisible();
     await expect(page.getByTestId("memory-row-memory-v2-shell")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "V2 shell module parity" }))
+    await expect(page.getByRole("heading", { name: "Shell module parity" }))
       .toBeVisible();
 
     await primaryNav.getByRole("button", { name: "Observability" }).click();
@@ -1156,7 +1156,7 @@ function skillsMarketResponse(): Record<string, unknown> {
           stars: 4,
           versions: 2,
         },
-        summary: "Draft focused V2 frontend parity notes.",
+        summary: "Draft focused frontend parity notes.",
         title: "Writer",
         version: "1.0.0",
       },
@@ -1185,7 +1185,7 @@ function automationProject(): Record<string, unknown> {
     latest_terminal_run_verification_status: "verified",
     name: "daily_triage",
     next_run_at: "2026-06-26T01:00:00Z",
-    prompt: "Keep the V2 shell parity ledger current.",
+    prompt: "Keep the shell parity ledger current.",
     run_at: null,
     run_config: {
       normal_root_role_id: "MainAgent",
@@ -1271,7 +1271,7 @@ function runtimeToolsResponse(): Record<string, unknown> {
 
 function boardResponse(): Record<string, unknown> {
   const item = {
-    body: "Keep module pages reachable from the fixed V2 shell.",
+    body: "Keep module pages reachable from the fixed shell.",
     created_at: "2026-06-25T08:00:00Z",
     issue_number: 401,
     item_revision: 3,
@@ -1320,9 +1320,9 @@ function memoryDetailResponse(): Record<string, unknown> {
     access_count: 2,
     content: {
       body: "Keep sidebar module entries aligned with V1.",
-      context: "V2 frontend rewrite",
+      context: "Frontend rewrite",
       outcome: "Do not flatten secondary pages into the root shell.",
-      title: "V2 shell module parity",
+      title: "Shell module parity",
     },
     last_accessed_at: null,
     metadata: {},
@@ -1337,7 +1337,7 @@ function memorySummary(): Record<string, unknown> {
   return {
     confidence_score: 0.96,
     content_body_preview: "Keep sidebar module entries aligned with V1.",
-    content_title: "V2 shell module parity",
+    content_title: "Shell module parity",
     created_at: "2026-06-25T08:00:00Z",
     expires_at: null,
     id: "memory-v2-shell",

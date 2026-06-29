@@ -14,8 +14,8 @@ import {
 } from "./support/frontend-app";
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-observability";
-const RUN_ID = "run-v2-shell";
-const SPEC_TASK_ID = "task-v2-spec";
+const RUN_ID = "run-shell";
+const SPEC_TASK_ID = "task-spec-lineage";
 
 test("opens observability from the top bar and renders spec lineage", async ({
   page,
@@ -105,7 +105,7 @@ test("opens observability from the top bar and renders spec lineage", async ({
     ).toBeVisible();
     await expect(specLineage.getByLabel("Task")).toHaveValue(SPEC_TASK_ID);
     await expect(specLineage.getByText("Requirements")).toBeVisible();
-    await expect(specLineage.getByText("+ Keep V2 spec diff visible"))
+    await expect(specLineage.getByText("+ Keep spec diff visible"))
       .toBeVisible();
     await expect(specLineage.getByText("Spec remains aligned with the shell target."))
       .toBeVisible();
@@ -197,13 +197,13 @@ function roundsPageResponse(): Record<string, unknown> {
       {
         created_at: "2026-06-25T08:00:01Z",
         has_final_output: true,
-        intent: "V2 observability prompt",
-        intent_parts: [{ kind: "text", text: "V2 observability prompt" }],
+        intent: "Observability prompt",
+        intent_parts: [{ kind: "text", text: "Observability prompt" }],
         run_id: RUN_ID,
         run_phase: "completed",
         run_status: "completed",
         run_updated_at: "2026-06-25T08:15:00Z",
-        run_user_message: "V2 observability prompt",
+        run_user_message: "Observability prompt",
       },
     ],
     next_cursor: null,
@@ -294,12 +294,12 @@ function runTasksResponse(): Record<string, unknown> {
       {
         objective: "Keep the task projection visible.",
         status: "completed",
-        task_id: "task-v2-plain",
+        task_id: "task-plain",
         title: "Plain task",
       },
       {
         objective: "Show spec artifact history in the shell.",
-        spec_artifact_id: "spec-v2-2",
+        spec_artifact_id: "spec-2",
         status: "completed",
         task_id: SPEC_TASK_ID,
         title: "Implement spec lineage",
@@ -313,7 +313,7 @@ function specArtifactsResponse(): Record<string, unknown> {
     task_id: SPEC_TASK_ID,
     versions: [
       {
-        artifact_id: "spec-v2-1",
+        artifact_id: "spec-1",
         created_at: "2026-06-25T08:05:00Z",
         session_id: SESSION_ID,
         task_id: SPEC_TASK_ID,
@@ -322,7 +322,7 @@ function specArtifactsResponse(): Record<string, unknown> {
         version: 1,
       },
       {
-        artifact_id: "spec-v2-2",
+        artifact_id: "spec-2",
         created_at: "2026-06-25T08:15:00Z",
         session_id: SESSION_ID,
         task_id: SPEC_TASK_ID,
@@ -338,19 +338,19 @@ function specArtifactDiffResponse(): Record<string, unknown> {
   return {
     field_changes: [
       {
-        added_items: ["Keep V2 spec diff visible"],
+        added_items: ["Keep spec diff visible"],
         change_type: "modified",
         field_label: "Requirements",
         field_name: "requirements",
         removed_items: ["Sketch spec history offline"],
       },
     ],
-    from_artifact_id: "spec-v2-1",
+    from_artifact_id: "spec-1",
     from_version: 1,
     has_changes: true,
     summary: "Spec lineage became a visible observability surface.",
     task_id: SPEC_TASK_ID,
-    to_artifact_id: "spec-v2-2",
+    to_artifact_id: "spec-2",
     to_version: 2,
   };
 }
@@ -359,11 +359,11 @@ function specCheckpointEvaluationsResponse(): Record<string, unknown> {
   return {
     evaluations: [
       {
-        artifact_id: "spec-v2-2",
+        artifact_id: "spec-2",
         checkpoint_seq: 2,
         created_at: "2026-06-25T08:16:00Z",
         drift_detected: false,
-        evaluation_id: "eval-v2-spec",
+        evaluation_id: "eval-spec-lineage",
         evaluator: "reviewer",
         overall_score: 4.5,
         session_id: SESSION_ID,

@@ -606,7 +606,7 @@ function automationProject(state: ModuleActionState): Record<string, unknown> {
     latest_terminal_run_verification_status: "verified",
     name: "daily_triage",
     next_run_at: "2026-06-26T01:00:00Z",
-    prompt: "Keep the V2 shell parity ledger current.",
+    prompt: "Keep the shell parity ledger current.",
     run_at: null,
     run_config: {
       normal_root_role_id: "MainAgent",

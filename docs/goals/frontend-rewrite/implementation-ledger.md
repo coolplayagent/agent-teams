@@ -5115,3 +5115,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted browser gate execution and screenshot inspection completed for this slice. No Observability subsystem sign-off, Export subsystem sign-off, Appearance subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Visible Fixture Naming Cleanup And Review Findings
+
+### Scope
+- Re-checked the active frontend rewrite goal, release cleanup requirement, implementation ledger, current worktree, and visible browser-test fixture text before editing. This slice targets user-facing migration naming cleanup in screenshots and fixture data while preserving technical `v2-*` test file names, helper names, screenshot directories, and mock ids that remain temporary migration/test boundaries.
+- Removed visible temporary `V2` wording from Observability, Shell parity, Module action, Board action, and Round rail browser fixtures where it would appear as session prompts, memory titles, automation prompts, board item bodies, spec diff requirements, or accessible round names.
+- Left Spec lineage `v1` / `v2` cards in place because they are artifact version labels, not product migration naming.
+- Asked a read-only reviewer to inspect subsystem 11 / release evidence across Observability, project view, spec lineage, export, media, and voice. The reviewer returned FAIL with real remaining gaps: missing Observability trends, missing task-addressable Spec lineage entry behavior, and incomplete V1-style multi-round export workflow. Those findings are carried forward as active work and no release cleanup or subsystem sign-off is claimed.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-observability.spec.ts browser-tests/v2-shell-parity.spec.ts browser-tests/v2-module-actions.spec.ts browser-tests/v2-board-actions.spec.ts browser-tests/v2-rounds.spec.ts` passed with 18 tests.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- Inspected `.tmp/frontend-v2-ts-observability/v2-observability-spec-lineage.png`; it shows Observability and Spec lineage in the fixed shell, with no visible temporary product `V2` naming beyond version labels.
+- Inspected `.tmp/frontend-v2-ts-shell/v2-sidebar-module-parity.png`; it shows V1-aligned sidebar entries and Settings secondary-page navigation inside the fixed shell.
+- Inspected `.tmp/frontend-v2-ts-rounds/v2-round-rail-detail.png`; it shows the Round rail and bottom composer contained in one viewport with the cleaned visible prompt text.
+- No `frontend/dist` rebuild was needed because this slice changed only browser-test fixtures and this ledger.
+
+### Reviewer
+- Read-only reviewer `019f1250-3460-7d00-a68c-a4d96491ace7` returned FAIL. Blocking findings: Observability trends are not rendered in the TS panel, Spec lineage is embedded but lacks the V1 task-addressable/back/reload entry path, and message export downloads work but do not preserve the V1 multi-round selection and export structure. These findings are not resolved by this cleanup commit.

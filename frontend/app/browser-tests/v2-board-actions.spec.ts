@@ -422,7 +422,7 @@ function boardResponse(state: BoardActionState): Record<string, unknown> {
   const item = state.boardHandoffStarted
     ? boardHandoffStartedItem()
     : {
-        body: "Keep module pages reachable from the fixed V2 shell.",
+        body: "Keep module pages reachable from the fixed shell.",
         created_at: "2026-06-25T08:00:00Z",
         issue_number: 401,
         item_revision: 3,
@@ -478,7 +478,7 @@ function boardHandoffPreview(): Record<string, unknown> {
 
 function boardHandoffStartedItem(): Record<string, unknown> {
   return {
-    body: "Keep module pages reachable from the fixed V2 shell.",
+    body: "Keep module pages reachable from the fixed shell.",
     created_at: "2026-06-25T08:00:00Z",
     execution_workspace_id: "workspace-v2-shell-fork",
     issue_number: 401,

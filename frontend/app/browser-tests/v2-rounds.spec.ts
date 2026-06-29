@@ -40,7 +40,7 @@ test("opens round rail retry and todo detail", async ({ page }) => {
     const roundRail = page.getByRole("navigation", { name: "Rounds" });
     await expect(roundRail).toBeVisible();
     const roundButton = page.getByRole("button", {
-      name: "Go to round 1: V2 export prompt",
+      name: "Go to round 1: Export prompt",
     });
     await expect(roundButton).toBeVisible();
     await expect(roundButton).toHaveClass(/is-warning/);
@@ -655,8 +655,8 @@ function roundRailRound(): Record<string, unknown> {
     ],
     created_at: "2026-06-25T08:00:01Z",
     has_final_output: true,
-    intent: "V2 export prompt",
-    intent_parts: [{ kind: "text", text: "V2 export prompt" }],
+    intent: "Export prompt",
+    intent_parts: [{ kind: "text", text: "Export prompt" }],
     pending_tool_approval_count: 2,
     pending_user_question_count: 1,
     retry_events: [
@@ -673,7 +673,7 @@ function roundRailRound(): Record<string, unknown> {
     run_id: ROUND_RUN_ID,
     run_phase: "completed",
     run_status: "completed",
-    run_user_message: "V2 export prompt",
+    run_user_message: "Export prompt",
     todo: {
       items: [
         {

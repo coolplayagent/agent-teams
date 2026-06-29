@@ -2182,6 +2182,11 @@ describe("Composer", () => {
 
     await screen.findByText("Orchestration");
     expect(selectRoot("Root role")).toHaveClass("ant-select-disabled");
+    await waitFor(() =>
+      expect(selectRoot("Model profile")).not.toHaveClass(
+        "ant-select-disabled",
+      ),
+    );
     fireEvent.click(screen.getByText("Orchestration"));
 
     expect(updateSessionTopologyMock).not.toHaveBeenCalled();

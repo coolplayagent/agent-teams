@@ -7072,3 +7072,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused TS coverage migration, targeted Composer verification, and partial legacy harness removal completed for this slash command abort slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Composer Topology Controls Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, and current V2 Composer topology/thinking coverage before editing.
+- Added a V2 Composer assertion for the started-session boundary: topology controls stay locked after the first run, while the normal model profile selector remains available once the session record has loaded.
+- Removed the migrated V1 Python UI harness scenario for normal/orchestration field visibility, normal root-role updates, normal model-profile updates, started-session topology locking, and thinking effort visibility. The file now has 9 remaining legacy UI scenarios.
+- Kept title preview, prompt mention autocomplete, pending model-profile save image validation, pasted-image footer hint, new-session workspace selector, and new-session model-profile draft scenarios because they still need separate mapping or missing V2 coverage.
+- This slice is test coverage and harness cleanup only; no production UI, Settings, sidebar inventory, backend, desktop, or dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 71 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 9.
+- `rg -n "test_prompt_controls_toggle_mode_specific_fields|renders persistent run controls|keeps composer topology controls scoped|switches the current session to orchestration|updates the current session normal root role|locks session topology controls|passes selected thinking settings" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the V2 TS coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused TS assertion hardening, targeted Composer verification, and partial legacy harness removal completed for this topology/thinking controls slice. No Composer subsystem PASS, streaming/replay PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

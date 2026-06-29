@@ -2245,6 +2245,8 @@ describe("MessageTimeline", () => {
       relayRunEvent({
         event_id: 1,
         event_type: "tool_result",
+        instance_id: "worker-b",
+        role_id: "Runner",
         payload_json: JSON.stringify({
           result: { ok: true, output: "b done" },
           tool_call_id: "call-b",
@@ -2254,6 +2256,8 @@ describe("MessageTimeline", () => {
       relayRunEvent({
         event_id: 2,
         event_type: "tool_call",
+        instance_id: "worker-a",
+        role_id: "Runner",
         payload_json: JSON.stringify({
           args: { command: "echo a" },
           tool_call_id: "call-a",
@@ -2263,6 +2267,8 @@ describe("MessageTimeline", () => {
       relayRunEvent({
         event_id: 3,
         event_type: "tool_call",
+        instance_id: "worker-b",
+        role_id: "Runner",
         payload_json: JSON.stringify({
           args: { command: "echo b" },
           tool_call_id: "call-b",
@@ -2278,9 +2284,16 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Tool call: shell")).toBeVisible();
     expect(container.querySelectorAll(".at-message-tool")).toHaveLength(2);
     expect(toolPreviewTexts(container)).toEqual(["b done", "echo a"]);
-    expect(toolPreElement(screenElement(resultTitle)).textContent).toContain(
-      "echo b",
-    );
+    const resultDetails = toolPreElement(screenElement(resultTitle));
+    expect(resultDetails.textContent).toContain("echo b");
+    const resultRow = messageArticle(resultTitle);
+    expect(resultRow).toHaveAttribute("data-run-id", "run-output");
+    expect(resultRow).toHaveAttribute("data-role-id", "Runner");
+    expect(resultRow).toHaveAttribute("data-instance-id", "worker-b");
+    const pendingCallRow = messageArticle(screen.getByText("Tool call: shell"));
+    expect(pendingCallRow).toHaveAttribute("data-run-id", "run-output");
+    expect(pendingCallRow).toHaveAttribute("data-role-id", "Runner");
+    expect(pendingCallRow).toHaveAttribute("data-instance-id", "worker-a");
   });
 
   it("keeps same-name runtime tool calls separate when call ids are missing", async () => {
@@ -5393,6 +5406,14 @@ function toolPreElement(container: ParentNode): HTMLElement {
 function screenElement(element: HTMLElement): HTMLElement {
   const toolBlock = element.closest(".at-message-tool");
   return toolBlock instanceof HTMLElement ? toolBlock : element;
+}
+
+function messageArticle(element: HTMLElement): HTMLElement {
+  const article = element.closest("article.at-message");
+  if (!(article instanceof HTMLElement)) {
+    throw new Error("Expected element to be inside a rendered message article.");
+  }
+  return article;
 }
 
 function restoreProperty<TObject extends object, TKey extends keyof TObject>(

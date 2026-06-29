@@ -6,44 +6,6 @@ import subprocess
 from pathlib import Path
 
 
-def test_streaming_tool_calls_keep_indexed_dom_targets_and_message_metadata() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    stream_script = (
-        repo_root
-        / "frontend"
-        / "dist"
-        / "js"
-        / "components"
-        / "messageRenderer"
-        / "stream.js"
-    ).read_text(encoding="utf-8")
-    block_script = (
-        repo_root
-        / "frontend"
-        / "dist"
-        / "js"
-        / "components"
-        / "messageRenderer"
-        / "helpers"
-        / "block.js"
-    ).read_text(encoding="utf-8")
-
-    assert (
-        "indexPendingToolBlock(st.pendingToolBlocks, toolBlock, toolName, toolCallId);"
-        in stream_script
-    )
-    assert "const indexed = resolvePendingToolBlock(" in stream_script
-    assert (
-        "const pendingToolBlocks = bindReusableToolBlocks(contentEl, overlayEntry);"
-        in stream_script
-    )
-    assert "function bindReusableToolBlocks(contentEl, overlayEntry) {" in stream_script
-    assert "wrapper.dataset.runId = runId;" in block_script
-    assert "wrapper.dataset.instanceId = instanceId;" in block_script
-    assert "wrapper.dataset.roleId = roleId;" in block_script
-    assert "wrapper.dataset.streamKey = streamKey;" in block_script
-
-
 def test_live_streaming_tool_overlay_skips_processed_group_summary() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     history_script = (

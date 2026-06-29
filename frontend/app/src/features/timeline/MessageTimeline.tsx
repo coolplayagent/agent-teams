@@ -351,6 +351,7 @@ function TimelineStateFrame({ children }: { children: ReactNode }) {
 interface TimelineRow {
   key: string;
   role: string;
+  instanceId?: string | null;
   text: string;
   kind: RunEventType | "message" | "round";
   parts: TimelineRenderPart[];
@@ -670,6 +671,8 @@ function timelineRowElement(
         streaming ? "is-streaming" : "",
       ].filter(Boolean).join(" ")}
       data-index={index}
+      data-instance-id={row.instanceId ?? undefined}
+      data-role-id={row.role}
       data-row-key={row.key}
       data-run-id={row.runId ?? undefined}
       key={row.key}
@@ -1193,6 +1196,7 @@ function runtimeEntryToRowWithParts(
   return {
     key,
     role: entry.roleId,
+    instanceId: entry.instanceId || null,
     text: text || fallbackText,
     kind: entry.kind,
     parts,
@@ -2080,6 +2084,7 @@ function createRuntimeTextAccumulator(
     row: {
       key: `runtime-text:${entry.runId}:${runtimeStreamKey(entry)}:${sequence}`,
       role: entry.roleId,
+      instanceId: entry.instanceId || null,
       text,
       kind: entry.kind,
       parts: [part],
@@ -3352,6 +3357,7 @@ function runtimeThinkingRow(
   return {
     key: `runtime-thinking:${entry.runId}:${runtimeStreamKey(entry)}:${partIndex}:${entry.eventId}`,
     role: entry.roleId,
+    instanceId: entry.instanceId || null,
     text: "",
     kind: entry.kind,
     parts: [part],

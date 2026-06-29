@@ -1,6 +1,7 @@
-import { Alert, Empty, Table, Typography } from "antd";
+import { Alert, Button, Empty, Space, Table, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 
 import {
   getTaskSpecArtifactDiff,
@@ -19,17 +20,26 @@ import type {
 import { useTranslations } from "../../i18n";
 
 interface SpecLineagePanelProps {
+  onBack?: () => void;
   sessionId: string | null;
+  standalone?: boolean;
+  taskId?: string | null;
 }
 
-export function SpecLineagePanel({ sessionId }: SpecLineagePanelProps) {
+export function SpecLineagePanel({
+  onBack,
+  sessionId,
+  standalone = false,
+  taskId = null,
+}: SpecLineagePanelProps) {
   const t = useTranslations();
+  const directTaskId = taskId?.trim() ?? "";
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const roundsQuery = useQuery({
     queryKey: ["sessions", sessionId, "rounds", "spec-lineage"],
     queryFn: () => listSessionRounds(sessionId ?? "", { limit: 10 }),
-    enabled: sessionId !== null,
+    enabled: !standalone && sessionId !== null,
   });
   const latestRunId = useMemo(
     () => latestRoundRunId(roundsQuery.data?.items ?? []),
@@ -38,13 +48,17 @@ export function SpecLineagePanel({ sessionId }: SpecLineagePanelProps) {
   const tasksQuery = useQuery({
     queryKey: ["tasks", "runs", latestRunId, "spec-lineage"],
     queryFn: () => listRunTasks(latestRunId ?? "", true),
-    enabled: latestRunId !== null,
+    enabled: !standalone && latestRunId !== null,
   });
   const specTasks = useMemo(
     () => tasksWithSpec(tasksQuery.data?.tasks ?? []),
     [tasksQuery.data?.tasks],
   );
   useEffect(() => {
+    if (standalone) {
+      setSelectedTaskId(directTaskId);
+      return;
+    }
     if (specTasks.length === 0) {
       setSelectedTaskId("");
       return;
@@ -52,7 +66,7 @@ export function SpecLineagePanel({ sessionId }: SpecLineagePanelProps) {
     if (!specTasks.some((task) => task.task_id === selectedTaskId)) {
       setSelectedTaskId(specTasks[0]?.task_id ?? "");
     }
-  }, [selectedTaskId, specTasks]);
+  }, [directTaskId, selectedTaskId, specTasks, standalone]);
 
   const artifactsQuery = useQuery({
     queryKey: ["tasks", selectedTaskId, "spec-artifacts"],
@@ -89,46 +103,96 @@ export function SpecLineagePanel({ sessionId }: SpecLineagePanelProps) {
     enabled: selectedTaskId.trim().length > 0 && (selectedVersion ?? 0) > 1,
   });
   const loading =
-    roundsQuery.isLoading ||
-    tasksQuery.isLoading ||
+    (!standalone && (roundsQuery.isLoading || tasksQuery.isLoading)) ||
     artifactsQuery.isLoading ||
     evaluationsQuery.isLoading;
+  const loadError =
+    !standalone && (roundsQuery.isError || tasksQuery.isError);
+  const taskUnavailable =
+    !standalone && specTasks.length === 0 && !loading;
+  const handleReload = () => {
+    if (!standalone) {
+      void roundsQuery.refetch();
+      void tasksQuery.refetch();
+    }
+    void artifactsQuery.refetch();
+    void evaluationsQuery.refetch();
+    if ((selectedVersion ?? 0) > 1) {
+      void diffQuery.refetch();
+    }
+  };
 
   return (
-    <section aria-label={t("specLineageTitle")} className="at-spec-lineage">
+    <section
+      aria-label={t("specLineageTitle")}
+      className={standalone ? "at-spec-lineage is-standalone" : "at-spec-lineage"}
+    >
       <div className="at-spec-lineage-header">
         <div>
           <Typography.Title level={4}>{t("specLineageTitle")}</Typography.Title>
           <Typography.Text type="secondary">
-            {latestRunId ?? t("specLineageNoRun")}
+            {standalone
+              ? selectedTaskId || t("specLineageNoTasks")
+              : latestRunId ?? t("specLineageNoRun")}
           </Typography.Text>
         </div>
+        {standalone ? (
+          <Space className="at-spec-lineage-header-actions" size={8}>
+            <Button
+              aria-label={t("specLineageReload")}
+              icon={<RefreshCw size={15} />}
+              loading={loading || diffQuery.isFetching}
+              onClick={handleReload}
+              size="small"
+            >
+              {t("specLineageReload")}
+            </Button>
+            <Button
+              aria-label={t("specLineageBack")}
+              icon={<ArrowLeft size={15} />}
+              onClick={onBack}
+              size="small"
+              type="text"
+            >
+              {t("specLineageBack")}
+            </Button>
+          </Space>
+        ) : null}
       </div>
-      {sessionId === null ? (
+      {standalone && selectedTaskId.trim().length === 0 ? (
+        <Empty description={t("specLineageNoTasks")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      ) : !standalone && sessionId === null ? (
         <Empty description={t("specLineageNoSession")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      ) : roundsQuery.isError || tasksQuery.isError ? (
+      ) : loadError ? (
         <Alert message={t("specLineageLoadError")} showIcon type="error" />
-      ) : specTasks.length === 0 && !loading ? (
+      ) : taskUnavailable ? (
         <Empty description={t("specLineageNoTasks")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <>
-          <div className="at-spec-lineage-controls">
-            <label>
+          {standalone ? (
+            <div className="at-spec-lineage-direct-task">
               <span>{t("specLineageTask")}</span>
-              <select
-                aria-label={t("specLineageTask")}
-                disabled={specTasks.length === 0}
-                onChange={(event) => setSelectedTaskId(event.target.value)}
-                value={selectedTaskId}
-              >
-                {specTasks.map((task) => (
-                  <option key={task.task_id} value={task.task_id}>
-                    {taskLabel(task)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+              <strong>{selectedTaskId}</strong>
+            </div>
+          ) : (
+            <div className="at-spec-lineage-controls">
+              <label>
+                <span>{t("specLineageTask")}</span>
+                <select
+                  aria-label={t("specLineageTask")}
+                  disabled={specTasks.length === 0}
+                  onChange={(event) => setSelectedTaskId(event.target.value)}
+                  value={selectedTaskId}
+                >
+                  {specTasks.map((task) => (
+                    <option key={task.task_id} value={task.task_id}>
+                      {taskLabel(task)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           {artifactsQuery.isError ? (
             <Alert message={t("specLineageArtifactError")} showIcon type="error" />
           ) : (

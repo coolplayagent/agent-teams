@@ -5158,3 +5158,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent implementation, build, targeted browser coverage, screenshot inspection, and diff check completed for this P1 slice. No Observability subsystem sign-off, Spec lineage sign-off, Export sign-off, final release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Task Addressed Spec Lineage Restore
+
+### Scope
+- Re-checked the reviewer FAIL findings, V1 Spec lineage implementation, TS AppShell routing, TS SpecLineagePanel, current styles, and browser coverage before editing. This slice addresses the second blocking reviewer finding: Spec lineage needed a task-addressable entry path instead of only discovering spec tasks from the latest session run.
+- Added an AppShell-level secondary view for Spec lineage that opens when the app URL contains `?task_id=...` or `#spec-lineage?task_id=...`. This does not add or remove sidebar/settings entries; Observability remains the active parent surface while the task-addressed page is open.
+- Extended `SpecLineagePanel` with a standalone mode that loads the provided task id directly from `/tasks/{task_id}/spec-artifacts`, `/tasks/{task_id}/spec-checkpoint-evaluations`, and the selected version diff endpoint, without requiring `/sessions/{session_id}/rounds` or `/tasks/runs/{run_id}` discovery.
+- Added page-level Reload and Back controls for standalone Spec lineage. Reload refetches the task's artifacts, evaluations, and diff; Back clears the `task_id` URL state and returns to the chat workspace.
+- Added focused styles and translations for the standalone page controls while keeping the embedded Observability Spec lineage layout unchanged.
+- Rebuilt `frontend/dist/app` from the source changes so the served app and browser evidence match the implementation.
+- This resolves only the task-addressable Spec lineage gap from reviewer `019f1250-3460-7d00-a68c-a4d96491ace7`. The reviewer finding for V1-style multi-round message export remains open.
+
+### Verification
+- `npm run build` passed, including frontend typecheck, desktop typecheck, desktop build, and Vite dist rebuild.
+- `npm run lint` passed.
+- `npm run test:browser -- browser-tests/v2-observability.spec.ts` passed with 3 tests covering Observability trends, embedded Spec lineage, task-addressed Spec lineage URL opening, reload, Back, and fixed-shell no-document-scroll behavior.
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts -g "keeps V1 primary sidebar entries"` passed.
+- Inspected `.tmp/frontend-v2-ts-observability/v2-spec-lineage-direct-task.png`; it shows the standalone Spec lineage secondary page inside the fixed shell, with Reload and Back controls and no added sidebar entry.
+- Inspected `.tmp/frontend-v2-ts-observability/v2-observability-spec-lineage.png`; it shows the embedded Observability Spec lineage path still works.
+
+### Reviewer
+- Main-agent implementation, build, targeted browser coverage, screenshot inspection, and shell parity check completed for this P1 slice. No Spec lineage subsystem sign-off, Export sign-off, final release cleanup sign-off, or V2 frontend completion is claimed.

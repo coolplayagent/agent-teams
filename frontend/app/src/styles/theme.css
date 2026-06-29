@@ -1824,6 +1824,22 @@ body {
   border-top: 1px solid var(--at-border);
 }
 
+.at-spec-lineage.is-standalone {
+  flex: 1 1 auto;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  margin-top: 0;
+  padding: 18px 24px;
+  overflow: auto;
+  border-top: 0;
+}
+
+.at-spec-lineage.is-standalone .at-spec-lineage-header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--at-border);
+}
+
 .at-spec-lineage-header {
   display: flex;
   align-items: flex-start;
@@ -1832,8 +1848,16 @@ body {
   min-width: 0;
 }
 
+.at-spec-lineage-header > div:first-child {
+  min-width: 0;
+}
+
 .at-spec-lineage-header h4 {
   margin: 0 0 2px !important;
+}
+
+.at-spec-lineage-header-actions {
+  flex: 0 0 auto;
 }
 
 .at-spec-lineage-controls {
@@ -1862,6 +1886,25 @@ body {
   background: var(--at-bg);
   color: var(--at-text);
   font: inherit;
+}
+
+.at-spec-lineage-direct-task {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-spec-lineage-direct-task strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .at-spec-lineage-timeline {

@@ -47,6 +47,7 @@ import { MessageExportMenu, useMessageExporter } from "./MessageExportMenu";
 import { ObservabilityPanel } from "./ObservabilityPanel";
 import { SessionSearchView } from "../search/SessionSearchView";
 import { SkillsView } from "../skills/SkillsView";
+import { SpecLineagePanel } from "./SpecLineagePanel";
 import {
   SessionsSidebar,
   type ActiveSubagentSession,
@@ -84,15 +85,19 @@ type ShellPrimaryView =
   | "skills"
   | "workspace";
 
-type ShellView = ShellPrimaryView | "subagent-session";
+type ShellView = ShellPrimaryView | "spec-lineage" | "subagent-session";
 type ShellHistoryMode = "push" | "replace";
 
 export function AppShell() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
-  const [activeView, setActiveView] = useState<ShellView>(
-    () => readInitialShellView(),
+  const initialSpecLineageTaskId = readSpecLineageTaskIdFromLocation();
+  const [activeView, setActiveView] = useState<ShellView>(() =>
+    initialSpecLineageTaskId === null ? readInitialShellView() : "spec-lineage",
+  );
+  const [specLineageTaskId, setSpecLineageTaskId] = useState<string | null>(
+    initialSpecLineageTaskId,
   );
   const [activeSubagent, setActiveSubagent] =
     useState<ActiveSubagentSession | null>(null);
@@ -120,7 +125,7 @@ export function AppShell() {
   const navigateShellView = useCallback(
     (nextView: ShellView, historyMode: ShellHistoryMode = "push") => {
       setActiveView(nextView);
-      if (nextView !== "subagent-session") {
+      if (isPrimaryShellView(nextView)) {
         writeShellViewHistory(nextView, historyMode);
       }
     },
@@ -362,7 +367,7 @@ export function AppShell() {
         onSelect: () => openPrimaryShellView("memory"),
       },
       {
-        active: !settingsOpen && activeView === "observability",
+        active: !settingsOpen && isObservabilityActive(activeView),
         icon: <Activity size={15} />,
         key: "observability",
         label: t("appObservability"),
@@ -381,13 +386,35 @@ export function AppShell() {
 
   useEffect(() => {
     writeShellViewHistory(asRestorableShellView(activeView), "replace");
+    const openSpecLineageFromLocation = () => {
+      const taskId = readSpecLineageTaskIdFromLocation();
+      if (taskId === null) {
+        return false;
+      }
+      setSettingsOpen(false);
+      setActiveSubagent(null);
+      setSpecLineageTaskId(taskId);
+      setActiveView("spec-lineage");
+      return true;
+    };
     const handleShellHistory = (event: PopStateEvent) => {
+      if (openSpecLineageFromLocation()) {
+        return;
+      }
       const nextView = shellViewFromHistoryState(event.state) ?? "chat";
       setActiveSubagent(null);
+      setSpecLineageTaskId(null);
       setActiveView(nextView);
     };
+    const handleSpecLineageHashChange = () => {
+      void openSpecLineageFromLocation();
+    };
     window.addEventListener("popstate", handleShellHistory);
-    return () => window.removeEventListener("popstate", handleShellHistory);
+    window.addEventListener("hashchange", handleSpecLineageHashChange);
+    return () => {
+      window.removeEventListener("popstate", handleShellHistory);
+      window.removeEventListener("hashchange", handleSpecLineageHashChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -471,11 +498,11 @@ export function AppShell() {
           </Button>
           <Tooltip title={t("appObservability")}>
             <Button
-              aria-label={t("appObservability")}
-              icon={<Activity size={17} />}
-              onClick={() => openPrimaryShellView("observability")}
-              type={activeView === "observability" ? "default" : "text"}
-            />
+            aria-label={t("appObservability")}
+            icon={<Activity size={17} />}
+            onClick={() => openPrimaryShellView("observability")}
+            type={isObservabilityActive(activeView) ? "default" : "text"}
+          />
           </Tooltip>
           <MessageExportMenu messenger={message} sessionId={selectedSessionId} />
           <Tooltip title={t("appSettings")}>
@@ -546,7 +573,14 @@ export function AppShell() {
           </Sider>
         ) : null}
         <Content className="at-workspace">
-          {activeView === "observability" ? (
+          {activeView === "spec-lineage" ? (
+            <SpecLineagePanel
+              onBack={handleSpecLineageBack}
+              sessionId={selectedSessionId}
+              standalone
+              taskId={specLineageTaskId}
+            />
+          ) : activeView === "observability" ? (
             <ObservabilityPanel sessionId={selectedSessionId} />
           ) : activeView === "automation" ? (
             <AutomationView onSessionSelected={handleAutomationSessionSelected} />
@@ -622,6 +656,12 @@ export function AppShell() {
       setSelectedWorkspaceId(session.workspace_id);
     }
     setSelectedSessionId(session.session_id);
+    openPrimaryShellView("chat", "replace");
+  }
+
+  function handleSpecLineageBack() {
+    clearSpecLineageTaskIdFromLocation();
+    setSpecLineageTaskId(null);
     openPrimaryShellView("chat", "replace");
   }
 
@@ -739,7 +779,45 @@ function normalizeShellView(value: unknown): ShellPrimaryView | null {
 }
 
 function asRestorableShellView(view: ShellView): ShellPrimaryView {
-  return view === "subagent-session" ? "chat" : view;
+  return isPrimaryShellView(view) ? view : "chat";
+}
+
+function isPrimaryShellView(view: ShellView): view is ShellPrimaryView {
+  return view !== "spec-lineage" && view !== "subagent-session";
+}
+
+function isObservabilityActive(view: ShellView): boolean {
+  return view === "observability" || view === "spec-lineage";
+}
+
+function readSpecLineageTaskIdFromLocation(): string | null {
+  const fromSearch = readTaskIdFromSearchParams(window.location.search);
+  if (fromSearch !== null) {
+    return fromSearch;
+  }
+  const hash = window.location.hash.trim();
+  if (!hash.startsWith("#spec-lineage")) {
+    return null;
+  }
+  const queryStart = hash.indexOf("?");
+  if (queryStart < 0) {
+    return null;
+  }
+  return readTaskIdFromSearchParams(hash.slice(queryStart));
+}
+
+function readTaskIdFromSearchParams(search: string): string | null {
+  const taskId = new URLSearchParams(search).get("task_id")?.trim() ?? "";
+  return taskId.length > 0 ? taskId : null;
+}
+
+function clearSpecLineageTaskIdFromLocation(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("task_id");
+  if (url.hash.startsWith("#spec-lineage")) {
+    url.hash = "";
+  }
+  window.history.replaceState(currentHistoryState(), "", url);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

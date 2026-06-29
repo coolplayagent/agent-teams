@@ -16,6 +16,7 @@ import {
 const SCREENSHOT_FOLDER = "frontend-v2-ts-observability";
 const RUN_ID = "run-shell";
 const SPEC_TASK_ID = "task-spec-lineage";
+const DIRECT_SPEC_TASK_ID = "task-older-spec";
 
 test("opens observability from the top bar and renders spec lineage", async ({
   page,
@@ -247,6 +248,70 @@ test("renders observability trend empty and error states", async ({ page }) => {
   }
 });
 
+test("opens task-addressed spec lineage from the URL", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const requestedUrls: string[] = [];
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleDirectSpecLineageApi(context, requestedUrls),
+      sessionTitle: "TS direct spec lineage",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/?task_id=${DIRECT_SPEC_TASK_ID}`);
+    await waitForV2Shell(page);
+
+    const specLineage = page.locator(".at-spec-lineage.is-standalone");
+    await expect(
+      specLineage.getByRole("heading", { name: "Spec lineage" }),
+    ).toBeVisible();
+    await expect(
+      specLineage.locator(".at-spec-lineage-direct-task"),
+    ).toContainText(DIRECT_SPEC_TASK_ID);
+    await expect(specLineage.getByText("Requirements")).toBeVisible();
+    await expect(specLineage.getByText("+ Restore direct lineage entry")).toBeVisible();
+    await expect(
+      specLineage.getByRole("button", { name: "Reload" }),
+    ).toBeVisible();
+    await expect(
+      specLineage.getByRole("button", { name: "Back" }),
+    ).toBeVisible();
+    expect(
+      requestedUrls.some((url) => url.includes(`/sessions/${SESSION_ID}/rounds`)),
+    ).toBe(false);
+    expect(requestedUrls.some((url) => url.includes("/tasks/runs/"))).toBe(false);
+
+    await expectNoDocumentScroll(
+      page,
+      "task-addressed spec lineage should stay inside the fixed shell",
+    );
+    await page.mouse.move(320, 160);
+    await page.screenshot({
+      path: screenshotPath("v2-spec-lineage-direct-task.png", SCREENSHOT_FOLDER),
+    });
+
+    await specLineage.getByRole("button", { name: "Reload" }).click();
+    await expect
+      .poll(() =>
+        requestedUrls.filter((url) =>
+          url === `/tasks/${DIRECT_SPEC_TASK_ID}/spec-artifacts`,
+        ).length,
+      )
+      .toBeGreaterThan(1);
+
+    await specLineage.getByRole("button", { name: "Back" }).click();
+    await expect(page.locator(".at-chat-view")).toBeVisible();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.has("task_id"))
+      .toBe(false);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleObservabilityApi(
   context: MockApiRouteContext,
   requestedUrls: string[],
@@ -261,6 +326,29 @@ async function handleObservabilityApi(
   }
   await context.fulfillJson(response);
   return true;
+}
+
+async function handleDirectSpecLineageApi(
+  context: MockApiRouteContext,
+  requestedUrls: string[],
+): Promise<boolean> {
+  if (context.method !== "GET") {
+    return false;
+  }
+  requestedUrls.push(`${context.path}${context.url.search}`);
+  if (context.path === `/tasks/${DIRECT_SPEC_TASK_ID}/spec-artifacts`) {
+    await context.fulfillJson(directSpecArtifactsResponse());
+    return true;
+  }
+  if (context.path === `/tasks/${DIRECT_SPEC_TASK_ID}/spec-artifacts/3/diff`) {
+    await context.fulfillJson(directSpecArtifactDiffResponse());
+    return true;
+  }
+  if (context.path === `/tasks/${DIRECT_SPEC_TASK_ID}/spec-checkpoint-evaluations`) {
+    await context.fulfillJson(directSpecCheckpointEvaluationsResponse());
+    return true;
+  }
+  return false;
 }
 
 function observabilityResponse(
@@ -520,5 +608,80 @@ function specCheckpointEvaluationsResponse(): Record<string, unknown> {
       },
     ],
     task_id: SPEC_TASK_ID,
+  };
+}
+
+function directSpecArtifactsResponse(): Record<string, unknown> {
+  return {
+    task_id: DIRECT_SPEC_TASK_ID,
+    versions: [
+      {
+        artifact_id: "direct-spec-1",
+        created_at: "2026-06-24T08:00:00Z",
+        session_id: SESSION_ID,
+        task_id: DIRECT_SPEC_TASK_ID,
+        trace_id: "run-older-spec",
+        updated_at: "2026-06-24T08:00:00Z",
+        version: 1,
+      },
+      {
+        artifact_id: "direct-spec-2",
+        created_at: "2026-06-24T08:10:00Z",
+        session_id: SESSION_ID,
+        task_id: DIRECT_SPEC_TASK_ID,
+        trace_id: "run-older-spec",
+        updated_at: "2026-06-24T08:10:00Z",
+        version: 2,
+      },
+      {
+        artifact_id: "direct-spec-3",
+        created_at: "2026-06-24T08:20:00Z",
+        session_id: SESSION_ID,
+        task_id: DIRECT_SPEC_TASK_ID,
+        trace_id: "run-older-spec",
+        updated_at: "2026-06-24T08:20:00Z",
+        version: 3,
+      },
+    ],
+  };
+}
+
+function directSpecArtifactDiffResponse(): Record<string, unknown> {
+  return {
+    field_changes: [
+      {
+        added_items: ["Restore direct lineage entry"],
+        change_type: "modified",
+        field_label: "Requirements",
+        field_name: "requirements",
+        removed_items: ["Only discover latest run tasks"],
+      },
+    ],
+    from_artifact_id: "direct-spec-2",
+    from_version: 2,
+    has_changes: true,
+    summary: "Direct task lineage can be opened without latest run discovery.",
+    task_id: DIRECT_SPEC_TASK_ID,
+    to_artifact_id: "direct-spec-3",
+    to_version: 3,
+  };
+}
+
+function directSpecCheckpointEvaluationsResponse(): Record<string, unknown> {
+  return {
+    evaluations: [
+      {
+        artifact_id: "direct-spec-3",
+        checkpoint_seq: 3,
+        created_at: "2026-06-24T08:21:00Z",
+        drift_detected: false,
+        evaluation_id: "eval-direct-spec",
+        evaluator: "reviewer",
+        overall_score: 4.8,
+        session_id: SESSION_ID,
+        summary: "Direct lineage remains stable.",
+        task_id: DIRECT_SPEC_TASK_ID,
+      },
+    ],
   };
 }

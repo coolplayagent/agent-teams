@@ -4375,6 +4375,60 @@ body {
   }
 }
 
+.at-history-divider {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-history-divider-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  color: var(--at-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.at-history-divider-button:hover,
+.at-history-divider-button:focus-visible {
+  border-color: var(--at-primary);
+  outline: none;
+}
+
+.at-history-divider-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-history-divider-meta {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-history-divider-action {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--at-primary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .at-round-marker {
   padding: 10px 0 8px;
   border-bottom: 1px solid var(--at-border);

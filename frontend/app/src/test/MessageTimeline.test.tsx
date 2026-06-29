@@ -550,6 +550,66 @@ describe("MessageTimeline", () => {
     expect(container.querySelector(".at-round-rail-dot")).not.toBeNull();
   });
 
+  it("collapses round history before a clear marker and expands it on demand", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Archived answer",
+        message_id: "assistant-archived",
+        role_id: "MainAgent",
+        trace_id: "run-archived",
+      },
+      {
+        content: "Current answer",
+        message_id: "assistant-current",
+        role_id: "MainAgent",
+        trace_id: "run-current",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:40:00Z",
+          run_id: "run-archived",
+          run_status: "completed",
+          run_user_message: "Archived task",
+        },
+        {
+          clear_marker_before: { cleared_at: "2026-06-23T12:42:00Z" },
+          created_at: "2026-06-23T12:42:00Z",
+          run_id: "run-current",
+          run_status: "completed",
+          run_user_message: "Current task",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Current answer")).toBeVisible();
+    expect(screen.getByText("History cleared")).toBeVisible();
+    const showHistory = screen.getByRole("button", {
+      name: /Show history before Current task/,
+    });
+    expect(showHistory).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Rounds 1 · messages 1 hidden before Current task"))
+      .toBeVisible();
+    expect(screen.queryByText("Archived answer")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Go to round 1: Archived task" }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".at-history-divider")).toHaveLength(1);
+
+    fireEvent.click(showHistory);
+
+    expect(await screen.findByText("Archived answer")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Go to round 1: Archived task" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: /Hide history before Current task/ }))
+      .toHaveAttribute("aria-expanded", "true");
+  });
+
   it("keeps the round rail visible for single-round sessions like V1", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

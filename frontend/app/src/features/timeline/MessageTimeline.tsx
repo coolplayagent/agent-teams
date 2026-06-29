@@ -57,6 +57,9 @@ export function MessageTimeline({
   const scrollSessionIdRef = useRef<string | null>(sessionId);
   const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [expandedHistorySegmentIds, setExpandedHistorySegmentIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const messagesQuery = useQuery({
     queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
@@ -82,6 +85,10 @@ export function MessageTimeline({
   const displayRounds = useMemo(
     () => roundsWithRuntimeRunState(rounds, runtimeState.runs),
     [rounds, runtimeState.runs],
+  );
+  const railRounds = useMemo(
+    () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
+    [displayRounds, expandedHistorySegmentIds],
   );
   const messageRoundLookup = useMemo(
     () => createMessageRoundLookup(displayRounds),
@@ -125,8 +132,8 @@ export function MessageTimeline({
       insertRoundMarkerRows([
         ...persistedRows,
         ...runtimeRows.filter(timelineRowHasRenderableContent),
-      ], displayRounds),
-    [displayRounds, persistedRows, runtimeRows],
+      ], displayRounds, expandedHistorySegmentIds),
+    [displayRounds, expandedHistorySegmentIds, persistedRows, runtimeRows],
   );
   const streamOpenForSession = useMemo(
     () =>
@@ -152,9 +159,9 @@ export function MessageTimeline({
     void copyLastAnswer(row, message, t);
   }, [message, t]);
   const activeRoundRunId =
-    activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(displayRounds);
+    activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(railRounds);
   const hasRoundRail =
-    !roundsQuery.isLoading && !roundsQuery.isError && displayRounds.length > 0;
+    !roundsQuery.isLoading && !roundsQuery.isError && railRounds.length > 0;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -197,10 +204,22 @@ export function MessageTimeline({
       virtualizer.scrollToIndex(rowIndex, { align: "start" });
     }
   }, [rows, virtualizer]);
+  const handleToggleHistorySegment = useCallback((segmentId: string) => {
+    setExpandedHistorySegmentIds((current) => {
+      const next = new Set(current);
+      if (next.has(segmentId)) {
+        next.delete(segmentId);
+      } else {
+        next.add(segmentId);
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     pendingRoundRunIdRef.current = null;
     setActiveRunId(null);
+    setExpandedHistorySegmentIds(new Set());
   }, [sessionId]);
 
   useLayoutEffect(() => {
@@ -283,6 +302,7 @@ export function MessageTimeline({
               lastAnswer?.key ?? null,
               streamOpenForSession,
               handleCopyAnswer,
+              handleToggleHistorySegment,
             ),
           )}
         </div>
@@ -291,7 +311,7 @@ export function MessageTimeline({
         <RoundRail
           activeRunId={activeRoundRunId}
           onSelectRun={handleRoundSelect}
-          rounds={displayRounds}
+          rounds={railRounds}
           t={t}
         />
       ) : null}
@@ -315,10 +335,19 @@ interface TimelineRow {
   text: string;
   kind: RunEventType | "message" | "round";
   parts: TimelineRenderPart[];
+  historyDivider?: TimelineHistoryDivider;
   roundMarker: TimelineRoundMarker | null;
   runId: string | null;
   source: "message" | "runtime";
   copyable: boolean;
+}
+
+interface TimelineHistoryDivider {
+  expanded: boolean;
+  hiddenMessageCount: number;
+  hiddenRoundCount: number;
+  markerTitle: string;
+  segmentId: string;
 }
 
 interface TimelineRoundMarker {
@@ -572,8 +601,24 @@ function timelineRowElement(
   lastAnswerKey: string | null,
   streamOpenForSession: boolean,
   onCopyAnswer: (row: TimelineRow | undefined) => void,
+  onToggleHistorySegment: (segmentId: string) => void,
 ) {
   const style = { transform: `translateY(${start}px)` };
+  if (row.historyDivider !== undefined) {
+    return (
+      <TimelineHistoryDividerRow
+        divider={row.historyDivider}
+        index={index}
+        key={row.key}
+        measureElement={measureElement}
+        onToggle={onToggleHistorySegment}
+        rowKey={row.key}
+        runId={row.runId}
+        style={style}
+        t={t}
+      />
+    );
+  }
   if (row.roundMarker !== null) {
     return (
       <section
@@ -627,6 +672,57 @@ function timelineRowElement(
   );
 }
 
+function TimelineHistoryDividerRow({
+  divider,
+  index,
+  measureElement,
+  onToggle,
+  rowKey,
+  runId,
+  style,
+  t,
+}: {
+  divider: TimelineHistoryDivider;
+  index: number;
+  measureElement: (element: Element | null) => void;
+  onToggle: (segmentId: string) => void;
+  rowKey: string;
+  runId: string | null;
+  style: { transform: string };
+  t: Translate;
+}) {
+  const actionLabel = divider.expanded
+    ? t("timelineHideHistorySegment", { round: divider.markerTitle })
+    : t("timelineShowHistorySegment", { round: divider.markerTitle });
+  return (
+    <section
+      className="at-timeline-row at-history-divider"
+      data-index={index}
+      data-row-key={rowKey}
+      data-run-id={runId ?? undefined}
+      ref={measureElement}
+      style={style}
+    >
+      <button
+        aria-expanded={divider.expanded}
+        className="at-history-divider-button"
+        onClick={() => onToggle(divider.segmentId)}
+        type="button"
+      >
+        <span className="at-history-divider-title">{t("timelineHistoryCleared")}</span>
+        <span className="at-history-divider-meta">
+          {t("timelineHistoryCompacted", {
+            messages: divider.hiddenMessageCount,
+            round: divider.markerTitle,
+            rounds: divider.hiddenRoundCount,
+          })}
+        </span>
+        <span className="at-history-divider-action">{actionLabel}</span>
+      </button>
+    </section>
+  );
+}
+
 function messageToRow(
   message: TimelineMessage,
   index: number,
@@ -650,6 +746,15 @@ function messageToRow(
 }
 
 function insertRoundMarkerRows(
+  baseRows: TimelineRow[],
+  rounds: SessionRound[],
+  expandedHistorySegmentIds: ReadonlySet<string>,
+): TimelineRow[] {
+  const rowsWithMarkers = insertPlainRoundMarkerRows(baseRows, rounds);
+  return insertHistoryDividerRows(rowsWithMarkers, rounds, expandedHistorySegmentIds);
+}
+
+function insertPlainRoundMarkerRows(
   baseRows: TimelineRow[],
   rounds: SessionRound[],
 ): TimelineRow[] {
@@ -680,6 +785,73 @@ function insertRoundMarkerRows(
   return rows;
 }
 
+function insertHistoryDividerRows(
+  baseRows: TimelineRow[],
+  rounds: SessionRound[],
+  expandedHistorySegmentIds: ReadonlySet<string>,
+): TimelineRow[] {
+  const boundaries = rounds.flatMap((round, index) => {
+    const runId = round.run_id.trim();
+    return runId.length > 0 && roundHasClearMarker(round)
+      ? [{ index, round, runId }]
+      : [];
+  });
+  if (boundaries.length === 0) {
+    return baseRows;
+  }
+
+  const rows: TimelineRow[] = [];
+  let segmentStart = 0;
+  for (const boundary of boundaries) {
+    const boundaryIndex = baseRows.findIndex((row, index) => (
+      index >= segmentStart &&
+      row.runId === boundary.runId &&
+      row.roundMarker?.round.run_id.trim() === boundary.runId
+    ));
+    if (boundaryIndex < 0) {
+      continue;
+    }
+    const segmentRows = baseRows.slice(segmentStart, boundaryIndex);
+    if (segmentRows.length > 0) {
+      const divider = historyDividerRow(
+        boundary.round,
+        boundary.index,
+        segmentRows,
+        expandedHistorySegmentIds,
+      );
+      if (divider.historyDivider?.expanded === true) {
+        rows.push(...segmentRows, divider);
+      } else {
+        rows.push(divider);
+      }
+    }
+    segmentStart = boundaryIndex;
+  }
+  rows.push(...baseRows.slice(segmentStart));
+  return rows;
+}
+
+function visibleRoundRailRounds(
+  rounds: SessionRound[],
+  expandedHistorySegmentIds: ReadonlySet<string>,
+): SessionRound[] {
+  const visibleRounds: SessionRound[] = [];
+  let segmentRounds: SessionRound[] = [];
+  for (const round of rounds) {
+    const runId = round.run_id.trim();
+    if (runId.length > 0 && roundHasClearMarker(round)) {
+      const segmentId = `history-before:${runId}`;
+      if (expandedHistorySegmentIds.has(segmentId)) {
+        visibleRounds.push(...segmentRounds);
+      }
+      segmentRounds = [];
+    }
+    segmentRounds.push(round);
+  }
+  visibleRounds.push(...segmentRounds);
+  return visibleRounds;
+}
+
 function roundMarkerRow(round: SessionRound, index: number): TimelineRow {
   const runId = round.run_id.trim();
   const title = roundTitle(round, index);
@@ -694,6 +866,65 @@ function roundMarkerRow(round: SessionRound, index: number): TimelineRow {
     source: "message",
     copyable: false,
   };
+}
+
+function historyDividerRow(
+  round: SessionRound,
+  index: number,
+  segmentRows: TimelineRow[],
+  expandedHistorySegmentIds: ReadonlySet<string>,
+): TimelineRow {
+  const runId = round.run_id.trim();
+  const title = roundTitle(round, index);
+  const segmentId = `history-before:${runId}`;
+  const hiddenRunIds = new Set(
+    segmentRows.flatMap((row) => (row.runId === null ? [] : [row.runId])),
+  );
+  const hiddenRoundCount = segmentRows.filter((row) => row.roundMarker !== null).length
+    || hiddenRunIds.size;
+  const hiddenMessageCount = segmentRows.filter((row) => (
+    row.roundMarker === null &&
+    row.historyDivider === undefined &&
+    timelineRowHasRenderableContent(row)
+  )).length;
+  return {
+    key: `history:${segmentId}`,
+    role: "history",
+    text: title,
+    kind: "round",
+    parts: [],
+    historyDivider: {
+      expanded: expandedHistorySegmentIds.has(segmentId),
+      hiddenMessageCount,
+      hiddenRoundCount,
+      markerTitle: title,
+      segmentId,
+    },
+    roundMarker: null,
+    runId,
+    source: "message",
+    copyable: false,
+  };
+}
+
+function roundHasClearMarker(round: SessionRound): boolean {
+  const marker = round.clear_marker_before;
+  if (marker === undefined || marker === null) {
+    return false;
+  }
+  if (typeof marker === "boolean") {
+    return marker;
+  }
+  if (typeof marker === "string") {
+    return marker.trim().length > 0;
+  }
+  if (typeof marker === "number") {
+    return Number.isFinite(marker);
+  }
+  if (Array.isArray(marker)) {
+    return marker.length > 0;
+  }
+  return Object.keys(marker).length > 0;
 }
 
 function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {

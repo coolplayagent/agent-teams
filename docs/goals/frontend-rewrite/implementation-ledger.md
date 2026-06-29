@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Round History Clear TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and parity checklist before editing. This slice targets checklist item 8, where V2 had microcompact metadata but did not yet collapse timeline/round-rail history before a `clear_marker_before` round.
+- Added V2 MessageTimeline history divider rows that participate in the same virtual scrolling model as message and round rows, so collapsed history does not create a separate scrolling surface.
+- Added an accessible history divider control with `aria-expanded`, localized English/Chinese labels, and matching round rail filtering so hidden historical rounds do not remain navigable while their timeline rows are collapsed.
+- Added TS component coverage proving archived round history is hidden before a clear marker, the divider reports the hidden round/message counts, and clicking the divider expands both the timeline history and round rail entry.
+- Removed the replaced `tests/unit_tests/frontend/test_round_history_clear_ui.py` Python source-string test.
+- No dist rebuild or screenshot is claimed for this small TS/test migration slice.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 75 focused Vitest tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 behavior implementation, focused TS component coverage, frontend lint/typecheck, diff check, and old Python file removal completed for this slice. No Rounds subsystem PASS, stream/replay sign-off, final V1/V2 visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Streaming Tool Cursor TS Migration
 
 ### Scope

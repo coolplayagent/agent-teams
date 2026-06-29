@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Visible Subagent Tool Stream TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 frontend UI harnesses, and the Message Timeline / AG-UI Runtime Stream checklist before editing.
+- Migrated the V1 `test_visible_normal_subagent_tool_call_uses_live_renderer_overlay` intent from a mocked `frontend/dist` event-router harness to V2 behavior: a normal-mode subagent `tool_call` does not render in the parent runtime stream, but does render in the selected subagent stream with the original command preview.
+- Verified the rendered subagent tool row keeps `data-run-id`, `data-role-id`, and `data-instance-id` metadata for replay/recovery targeting.
+- Removed the replaced V1 Python harness from `tests/integration_tests/frontend/test_streaming_tool_ui.py`.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "visible subagent runtime tool calls|scopes and deduplicates runtime stream rows by run"` passed with the new subagent stream coverage and adjacent run-scoping coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_streaming_tool_ui.py` passed after deleting the migrated Python function.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `rg -n 'test_visible_normal_subagent_tool_call_uses_live_renderer_overlay|renders visible subagent runtime tool calls|call-visible-subagent|subagent_run_live|subagent-body' tests/integration_tests/frontend/test_streaming_tool_ui.py frontend/app/src/test/MessageTimeline.test.tsx docs/goals/frontend-rewrite/implementation-ledger.md` returned only the new V2 coverage and ledger evidence.
+- `git diff --check` passed after normalizing the edited Python file tail.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test function removal, and focused regression verification completed for this slice. No full Streaming Tool subsystem PASS, Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Processed Transcript Grouping TS Migration
 
 ### Scope

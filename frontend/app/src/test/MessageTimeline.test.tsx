@@ -1940,6 +1940,50 @@ describe("MessageTimeline", () => {
     ).toHaveLength(1);
   });
 
+  it("renders visible subagent runtime tool calls on the selected subagent stream", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 77,
+        event_type: "tool_call",
+        instance_id: "inst-subagent",
+        role_id: "Writer",
+        run_id: "subagent_run_live",
+        trace_id: "subagent_run_live",
+        payload_json: JSON.stringify({
+          args: { command: "date" },
+          tool_call_id: "call-visible-subagent",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const mainTimeline = renderTimeline("session-1", {
+      runtimeRunId: "run-parent",
+    });
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+
+    mainTimeline.unmount();
+
+    const subagentTimeline = renderTimeline("session-1", {
+      runtimeRunId: "subagent_run_live",
+    });
+
+    const toolTitle = await screen.findByText("Tool call: shell");
+    expect(toolTitle).toBeVisible();
+    expect(toolPreviewTexts(subagentTimeline.container)).toEqual(["date"]);
+    expect(
+      subagentTimeline.container.querySelectorAll("article.at-message"),
+    ).toHaveLength(1);
+
+    const toolRow = messageArticle(toolTitle);
+    expect(toolRow).toHaveAttribute("data-run-id", "subagent_run_live");
+    expect(toolRow).toHaveAttribute("data-role-id", "Writer");
+    expect(toolRow).toHaveAttribute("data-instance-id", "inst-subagent");
+  });
+
   it("keeps same-role runtime streams separate by instance identity", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({

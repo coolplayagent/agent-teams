@@ -4809,3 +4809,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Sessions subsystem sign-off, Subagents subsystem sign-off, Composer subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Burst New Session Start Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, remaining `test_browser_smoke.py` browser-test surface, and existing V2 AG-UI composer stream coverage before editing. This slice targets Composer/session-start feedback and request-budget parity while continuing the Python UI-browser migration.
+- Extended `frontend/app/browser-tests/v2-stream-create-run.spec.ts` with deterministic TS browser coverage for three burst new-session starts: each iteration creates a real V2 sidebar session, sends through the AG-UI composer, verifies visible Stop/live feedback within the old 2500 ms budget, preserves the canonical AG-UI input payload, keeps workspace refetches at zero after initial load, bounds sidebar/recovery/model-profile request churn, rejects subagent prefetches, and keeps the fixed shell/composer layout intact.
+- Kept the migrated scenario faithful to the old burst-start semantics by proving live start feedback without forcing each run to terminal; forcing terminal events added stream-close sidebar refreshes and measured a different behavior.
+- Removed the replaced skipped `test_browser_burst_new_session_starts_stay_within_request_budget` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py` and cleaned the now-unused API helper import block.
+- Kept this as targeted Composer/Sessions/AG-UI browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 7 legacy scenarios in `test_browser_smoke.py`, deeper stream replay and interrupted-stream recovery browser scenarios, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-stream-create-run.spec.ts` passed with 3 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `npx tsc --noEmit --pretty false --project tsconfig.json` passed.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip|test_browser_burst_new_session_starts_stay_within_request_budget" tests\integration_tests\browser\test_browser_smoke.py` reports 7 remaining legacy Python browser scenarios and no replaced burst-start scenario.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-burst-new-session-starts.png`; it shows the three burst sessions with running indicators inside the fixed sidebar, live output in the chat pane, and the composer contained at the bottom of the fixed shell.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Composer subsystem sign-off, Sessions subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

@@ -15,10 +15,13 @@ import {
   waitForEventSourceOpenCount,
   waitForEventSourceUrl,
   waitForV2Shell,
+  WORKSPACE_ID,
   type MockApiRouteContext,
 } from "./support/frontend-app";
 
 const RUN_ID = "run-ts-stream";
+const BURST_NEW_SESSION_COUNT = 3;
+const BURST_SESSION_FEEDBACK_TIMEOUT_MS = 2500;
 const SCREENSHOT_FOLDER = "frontend-v2-ts-stream";
 
 interface CapturedRunCreateRequest {
@@ -27,6 +30,17 @@ interface CapturedRunCreateRequest {
   shell_safety_policy_enabled?: boolean;
   thinking?: unknown;
   yolo?: boolean;
+}
+
+interface CapturedApiRequest {
+  method: string;
+  path: string;
+}
+
+interface BurstNewSessionState {
+  apiRequests: CapturedApiRequest[];
+  createdSessionCount: number;
+  runCreateRequests: CapturedRunCreateRequest[];
 }
 
 test("creates a run from the V2 composer and renders live stream output", async ({
@@ -103,6 +117,103 @@ test("creates a run from the V2 composer and renders live stream output", async 
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
       path: screenshotPath("v2-stream-create-run.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("starts burst new sessions with fast feedback and bounded requests", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: BurstNewSessionState = {
+    apiRequests: [],
+    createdSessionCount: 0,
+    runCreateRequests: [],
+  };
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleBurstNewSessionApi(context, state),
+      sessionTitle: "TS burst seed",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.getByRole("button", { name: "TS burst seed" }))
+      .toBeVisible();
+    await expect(page.locator(".at-session-item.is-selected")).toContainText(
+      "TS burst seed",
+    );
+    state.apiRequests = [];
+
+    const feedbackTimesMs: number[] = [];
+    for (let index = 0; index < BURST_NEW_SESSION_COUNT; index += 1) {
+      await page.getByRole("button", { exact: true, name: "New session" }).click();
+      await expect(page.getByRole("button", { name: burstSessionTitle(index) }))
+        .toBeVisible();
+      await expect(page.getByText("No messages yet")).toBeVisible();
+
+      const promptText = `browser burst start ${index}`;
+      await page.getByRole("textbox", { name: "Prompt" }).fill(promptText);
+      const started = Date.now();
+      await page.getByRole("button", { name: "Send" }).click();
+      await expect(page.getByRole("button", { name: "Stop" })).toBeVisible({
+        timeout: BURST_SESSION_FEEDBACK_TIMEOUT_MS,
+      });
+      feedbackTimesMs.push(Date.now() - started);
+
+      await expect.poll(() => state.runCreateRequests.length).toBe(index + 1);
+      expect(state.runCreateRequests[index]).toMatchObject({
+        input: [{ kind: "text", text: promptText }],
+        session_id: burstSessionId(index),
+      });
+      await waitForEventSourceUrl(
+        page,
+        new RegExp(
+          `/api/ag-ui/runs/${burstRunId(index)}/events\\?after_event_id=0$`,
+        ),
+      );
+      await dispatchBurstRunEvent(page, index, {
+        eventId: 1,
+        payload: { status: "running" },
+        relayEventType: "run_started",
+        type: "run.started",
+      });
+      await dispatchBurstRunEvent(page, index, {
+        eventId: 2,
+        payload: { text: `Burst output ${index}.` },
+        relayEventType: "text_delta",
+        type: "message.text.delta",
+      });
+      await expect(page.getByText(`Burst output ${index}.`)).toBeVisible();
+    }
+
+    await page.waitForTimeout(500);
+    expect(feedbackTimesMs.every((value) => value < BURST_SESSION_FEEDBACK_TIMEOUT_MS))
+      .toBe(true);
+    expect(requestCount(state, "POST", "/sessions")).toBe(BURST_NEW_SESSION_COUNT);
+    expect(requestCount(state, "POST", "/ag-ui/runs")).toBe(
+      BURST_NEW_SESSION_COUNT,
+    );
+    expect(requestCount(state, "GET", "/workspaces")).toBe(0);
+    expect(sessionIndexRequestCount(state)).toBeLessThanOrEqual(6);
+    expect(recoveryRequestCount(state)).toBeLessThanOrEqual(6);
+    expect(subagentRequestCount(state)).toBe(0);
+    expect(requestCount(state, "GET", "/system/configs/model/profiles"))
+      .toBeLessThanOrEqual(1);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "burst new session starts should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-burst-new-session-starts.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -204,6 +315,91 @@ async function handleStreamApi(
   return true;
 }
 
+async function handleBurstNewSessionApi(
+  context: MockApiRouteContext,
+  state: BurstNewSessionState,
+): Promise<boolean> {
+  state.apiRequests.push({
+    method: context.method,
+    path: `${context.path}${context.url.search}`,
+  });
+
+  if (context.method === "POST") {
+    if (context.path === "/sessions") {
+      const session = burstSessionRecord(state.createdSessionCount);
+      state.createdSessionCount += 1;
+      await context.fulfillJson(burstSessionDetail(session));
+      return true;
+    }
+    if (context.path === "/ag-ui/runs") {
+      const request = readRunCreateRequest(context.route.request().postData());
+      state.runCreateRequests.push(request);
+      const index = Math.max(state.runCreateRequests.length - 1, 0);
+      await context.fulfillJson({
+        run_id: burstRunId(index),
+        session_id: request.session_id ?? burstSessionId(index),
+        target_role_id: null,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  if (context.method !== "GET") {
+    return false;
+  }
+  if (context.path === "/sessions/sidebar") {
+    await context.fulfillJson(burstSidebarRecords(state));
+    return true;
+  }
+  if (context.path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: burstSidebarRecords(state),
+      next_cursor: null,
+    });
+    return true;
+  }
+
+  const sessionId = sessionIdFromPath(context.path);
+  if (sessionId === null) {
+    return false;
+  }
+  const session = burstSidebarRecords(state).find(
+    (record) => record.session_id === sessionId,
+  );
+  if (session === undefined) {
+    return false;
+  }
+  if (context.path === `/sessions/${sessionId}`) {
+    await context.fulfillJson(burstSessionDetail(session));
+    return true;
+  }
+  if (context.path === `/sessions/${sessionId}/messages`) {
+    await context.fulfillJson([]);
+    return true;
+  }
+  if (context.path === `/sessions/${sessionId}/rounds`) {
+    await context.fulfillJson({ has_more: false, items: [], next_cursor: null });
+    return true;
+  }
+  if (context.path === `/sessions/${sessionId}/recovery`) {
+    await context.fulfillJson(emptyRecoverySnapshot());
+    return true;
+  }
+  if (context.path === `/sessions/${sessionId}/token-usage`) {
+    await context.fulfillJson({ by_role: {}, input_tokens: 0, output_tokens: 0 });
+    return true;
+  }
+  for (const suffix of ["/subagents", "/agents", "/tasks"]) {
+    if (context.path === `/sessions/${sessionId}${suffix}`) {
+      await context.fulfillJson([]);
+      return true;
+    }
+  }
+  return false;
+}
+
 function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {
   if (body === null || !body.trim()) {
     return {};
@@ -213,6 +409,120 @@ function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {
     return {};
   }
   return parsed as CapturedRunCreateRequest;
+}
+
+function burstSidebarRecords(
+  state: BurstNewSessionState,
+): Array<Record<string, unknown>> {
+  const createdSessions = Array.from(
+    { length: state.createdSessionCount },
+    (_, index) => burstSessionRecord(index),
+  ).reverse();
+  return [burstSeedSessionRecord(), ...createdSessions];
+}
+
+function burstSeedSessionRecord(): Record<string, unknown> {
+  return {
+    active_run_status: null,
+    created_at: "2026-06-26T13:00:00Z",
+    message_count: 1,
+    session_id: SESSION_ID,
+    title: "TS burst seed",
+    updated_at: "2026-06-26T13:00:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function burstSessionRecord(index: number): Record<string, unknown> {
+  return {
+    active_run_status: "running",
+    created_at: `2026-06-26T13:0${index + 1}:00Z`,
+    message_count: 0,
+    session_id: burstSessionId(index),
+    title: burstSessionTitle(index),
+    updated_at: `2026-06-26T13:0${index + 1}:00Z`,
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function burstSessionId(index: number): string {
+  return `session-v2-burst-${index}`;
+}
+
+function burstSessionTitle(index: number): string {
+  return `Burst session ${index}`;
+}
+
+function burstRunId(index: number): string {
+  return `run-v2-burst-${index}`;
+}
+
+function burstSessionDetail(session: Record<string, unknown>): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: session.created_at,
+    normal_model_profile: null,
+    normal_root_role_id: "MainAgent",
+    orchestration_preset_id: null,
+    session_id: session.session_id,
+    session_mode: "normal",
+    title: session.title,
+    updated_at: session.updated_at,
+    workspace_id: session.workspace_id,
+  };
+}
+
+function sessionIdFromPath(path: string): string | null {
+  const match = /^\/sessions\/([^/]+)(?:\/[^/]+)?$/.exec(path);
+  return match?.[1] ?? null;
+}
+
+function emptyRecoverySnapshot(): Record<string, unknown> {
+  return {
+    active_run: null,
+    background_tasks: [],
+    paused_subagents: [],
+    pending_tool_approvals: [],
+    pending_user_questions: [],
+    recoverable_stopped_run: null,
+  };
+}
+
+function requestCount(
+  state: BurstNewSessionState,
+  method: string,
+  path: string,
+): number {
+  return state.apiRequests.filter(
+    (request) => request.method === method && request.path === path,
+  ).length;
+}
+
+function sessionIndexRequestCount(state: BurstNewSessionState): number {
+  return state.apiRequests.filter(
+    (request) =>
+      request.method === "GET" &&
+      (request.path === "/sessions/sidebar" ||
+        request.path.startsWith(`/workspaces/${WORKSPACE_ID}/sessions/sidebar`)),
+  ).length;
+}
+
+function recoveryRequestCount(state: BurstNewSessionState): number {
+  return state.apiRequests.filter(
+    (request) =>
+      request.method === "GET" &&
+      request.path.startsWith("/sessions/") &&
+      request.path.endsWith("/recovery"),
+  ).length;
+}
+
+function subagentRequestCount(state: BurstNewSessionState): number {
+  return state.apiRequests.filter(
+    (request) =>
+      request.method === "GET" &&
+      request.path.startsWith("/sessions/") &&
+      request.path.endsWith("/subagents"),
+  ).length;
 }
 
 async function installClipboardProbe(page: Page): Promise<void> {
@@ -247,6 +557,28 @@ interface BrowserRunEvent {
   payload: Record<string, unknown>;
   relayEventType: string;
   type: string;
+}
+
+async function dispatchBurstRunEvent(
+  page: Page,
+  index: number,
+  event: BrowserRunEvent,
+): Promise<void> {
+  await dispatchEventSourceMessage(page, {
+    data: {
+      event_id: event.eventId,
+      occurred_at: `2026-06-26T13:0${index}:${String(event.eventId).padStart(2, "0")}Z`,
+      payload: event.payload,
+      relay_event_type: event.relayEventType,
+      role_id: "MainAgent",
+      run_id: burstRunId(index),
+      session_id: burstSessionId(index),
+      trace_id: `trace-v2-burst-${index}`,
+      type: event.type,
+    },
+    lastEventId: String(event.eventId),
+    type: event.type,
+  });
 }
 
 async function dispatchRunEvent(page: Page, event: BrowserRunEvent): Promise<void> {

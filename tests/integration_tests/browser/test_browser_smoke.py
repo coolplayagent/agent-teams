@@ -25,10 +25,6 @@ from playwright.sync_api import expect
 from playwright.sync_api import sync_playwright
 import pytest
 
-from integration_tests.support.api_helpers import (
-    create_session,
-    new_session_id,
-)
 from integration_tests.support.environment import IntegrationEnvironment
 
 
@@ -1249,120 +1245,6 @@ def test_browser_gateway_xiaoluban_and_automation_binding_flow(
         re.compile(r"(Xiaoluban|小鲁班)"),
         timeout=_WAIT_TIMEOUT_MS,
     )
-
-
-@pytest.mark.skip(reason="Timing-sensitive; unreliable on shared CI runners")
-def test_browser_burst_new_session_starts_stay_within_request_budget(
-    browser_page: Page,
-    integration_env: IntegrationEnvironment,
-    api_client: httpx.Client,
-) -> None:
-    create_session(
-        api_client,
-        session_id=new_session_id("browser-burst-seed"),
-    )
-
-    page = browser_page
-    api_requests: list[tuple[str, str]] = []
-    failed_requests: list[str] = []
-
-    def track_request(request: Request) -> None:
-        if request.url.startswith(f"{integration_env.api_base_url}/api/"):
-            api_requests.append(
-                (request.method, _api_path(integration_env, request.url))
-            )
-
-    def track_response(response: Response) -> None:
-        if (
-            response.url.startswith(f"{integration_env.api_base_url}/api/")
-            and response.status >= 500
-        ):
-            failed_requests.append(response.url)
-
-    page.on("request", track_request)
-    page.on("response", track_response)
-    _open_app(page, integration_env)
-    expect(page.locator(".home-new-session-btn")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator(".session-item.active")).to_have_count(
-        1,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(
-        page.locator(
-            ".chat-container.is-session-switch-pending, .chat-container.is-session-switching"
-        )
-    ).to_have_count(0, timeout=_WAIT_TIMEOUT_MS)
-    api_requests.clear()
-
-    feedback_times_ms: list[int] = []
-    for index in range(3):
-        page.locator(".home-new-session-btn").click()
-        expect(page.locator(".new-session-draft-page")).to_be_visible(
-            timeout=_WAIT_TIMEOUT_MS,
-        )
-        expect(page.locator("#prompt-input")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-        page.locator("#prompt-input").fill(f"browser burst start {index}")
-        started = time.perf_counter()
-        page.locator("#send-btn").click()
-        expect(
-            page.locator(".session-run-start-placeholder, .session-round-section").first
-        ).to_be_visible(timeout=_BURST_SESSION_FEEDBACK_TIMEOUT_MS)
-        feedback_times_ms.append(int((time.perf_counter() - started) * 1000))
-
-    page.wait_for_timeout(1000)
-
-    get_sessions = [
-        path
-        for method, path in api_requests
-        if method == "GET" and path == "/api/sessions"
-    ]
-    get_workspaces = [
-        path
-        for method, path in api_requests
-        if method == "GET"
-        and (path == "/api/workspaces" or path.startswith("/api/workspaces?"))
-    ]
-    get_recovery = [
-        path
-        for method, path in api_requests
-        if method == "GET"
-        and path.startswith("/api/sessions/")
-        and path.endswith("/recovery")
-    ]
-    get_subagents = [
-        path
-        for method, path in api_requests
-        if method == "GET"
-        and path.startswith("/api/sessions/")
-        and path.endswith("/subagents")
-    ]
-    get_model_profiles = [
-        path
-        for method, path in api_requests
-        if method == "GET" and path == "/api/system/configs/model/profiles"
-    ]
-    post_sessions = [
-        path
-        for method, path in api_requests
-        if method == "POST" and path == "/api/sessions"
-    ]
-    post_runs = [
-        path
-        for method, path in api_requests
-        if method == "POST" and path == "/api/runs"
-    ]
-
-    assert failed_requests == []
-    assert len(post_sessions) == 3
-    assert len(post_runs) == 3
-    assert max(feedback_times_ms) < _BURST_SESSION_FEEDBACK_TIMEOUT_MS
-    assert len(get_workspaces) == 0
-    assert len(get_sessions) <= 5
-    assert len(get_recovery) <= _BURST_RECOVERY_REQUEST_BUDGET
-    assert len(get_subagents) == 0
-    assert len(get_model_profiles) <= 2
 
 
 def _open_app(page: Page, integration_env: IntegrationEnvironment) -> None:

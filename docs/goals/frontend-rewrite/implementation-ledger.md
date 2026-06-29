@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Replay Dedupe TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, AG-UI Runtime Stream and Message Timeline checklist items, current V2 runtime reducer/stream controller coverage, and the legacy `test_stream_session_overlay_ui.py` replay-dedupe case before editing.
+- Added V2 `MessageTimeline` component coverage proving duplicated replay deliveries for thinking start/delta/finish plus tool call/result events are reduced through the runtime state and render as a single thinking block and a single tool block.
+- Removed the replaced `test_stream_overlay_replayed_event_ids_do_not_duplicate_parts` Python UI test from `tests/integration_tests/frontend/test_stream_session_overlay_ui.py`.
+- Kept this slice focused on replay dedupe rendering evidence. It does not change sidebar entries, Settings pages, visible layout, stream transport behavior, or the static dist bundle.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "does not duplicate replayed runtime thinking and tool parts"` passed with the new V2 component test.
+- `rg -n "test_stream_overlay_replayed_event_ids_do_not_duplicate_parts|replayed_event_ids" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, focused frontend lint/typecheck, edited-file ruff check, and diff check completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 V1 Composer Control Row Alignment
 
 ### Scope

@@ -2202,6 +2202,60 @@ describe("MessageTimeline", () => {
     expect(thinkingBlocks[1]).not.toHaveTextContent("first thought");
   });
 
+  it("does not duplicate replayed runtime thinking and tool parts", async () => {
+    const replayedEvents = [
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "deduped plan" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "thinking_finished",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "date" },
+          tool_call_id: "call-deduped-shell",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 5,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: { ok: true, output: "done" },
+          tool_call_id: "call-deduped-shell",
+          tool_name: "shell",
+        }),
+      }),
+    ];
+    setRuntimeStateFromEvents([...replayedEvents, ...replayedEvents]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Thinking")).toBeVisible();
+    const thinkingBlocks = container.querySelectorAll(".at-message-thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    expect(thinkingBlocks[0]).toHaveTextContent("deduped plan");
+    expect(thinkingBlocks[0]).not.toHaveTextContent("deduped plandeduped plan");
+    expect(screen.getAllByText("Tool call: shell")).toHaveLength(1);
+    expect(screen.getAllByText("Tool result: shell")).toHaveLength(1);
+    expect(toolPreviewTexts(screenElement(screen.getByText("Tool call: shell"))))
+      .toContain("date");
+    expect(toolPreviewTexts(screenElement(screen.getByText("Tool result: shell"))))
+      .toContain("done");
+  });
+
   it("accumulates runtime thinking events into one collapsible markdown block", async () => {
     useRuntimeStore.setState({
       runtimeState: {

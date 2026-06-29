@@ -111,17 +111,12 @@ export function MessageTimeline({
     () =>
       Object.values(runtimeState.runs)
         .flatMap((runState) =>
-          runState.entries.flatMap((entry) => {
-            if (!runtimeEntryMatchesScope(entry, sessionId, runtimeRunId)) {
-              return [];
-            }
-            const hydratedEntry = runtimeEntryAfterHydration(
-              runState,
-              entry,
-              hydratedOutputTextByRunId,
-            );
-            return hydratedEntry === null ? [] : [hydratedEntry];
-          }),
+          runtimeEntriesAfterHydration(
+            runState,
+            sessionId,
+            runtimeRunId,
+            hydratedOutputTextByRunId,
+          ),
         ),
     [hydratedOutputTextByRunId, runtimeRunId, runtimeState.runs, sessionId],
   );
@@ -412,6 +407,7 @@ interface RuntimeThinkingAccumulator {
 
 interface RuntimeTextAccumulator {
   part: TimelineTextPart;
+  placeholder: boolean;
   row: TimelineRow;
 }
 
@@ -953,7 +949,7 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
       ) {
         continue;
       }
-      closeRuntimeTextSegment(entry, activeText);
+      closeRuntimeTextSegment(entry, rows, activeText);
       rows.push(runtimeEntryToRow(entry));
       continue;
     }
@@ -968,12 +964,12 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
       ) {
         continue;
       }
-      closeRuntimeTextSegment(entry, activeText);
+      closeRuntimeTextSegment(entry, rows, activeText);
       rows.push(runtimeEntryToRow(entry));
       continue;
     }
     if (isThinkingEvent(entry.kind)) {
-      closeRuntimeTextSegment(entry, activeText);
+      closeRuntimeTextSegment(entry, rows, activeText);
       if (!applyRuntimeThinkingEvent(entry, rows, activeThinking)) {
         rows.push(runtimeEntryToRow(entry));
       }
@@ -982,7 +978,7 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
     if (entryClosesThinking(entry.kind)) {
       closeActiveThinkingForRun(entry.runId, activeThinking);
     }
-    closeRuntimeTextSegment(entry, activeText);
+    closeRuntimeTextSegment(entry, rows, activeText);
     if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
       removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
     }
@@ -1305,23 +1301,35 @@ function timelineOutputTextByRunId(rows: TimelineRow[]): Map<string, string> {
   return textByRunId;
 }
 
-function runtimeEntryAfterHydration(
+function runtimeEntriesAfterHydration(
   runState: RuntimeRunState,
-  entry: TimelineEntry,
+  sessionId: string | null,
+  runtimeRunId: string | null,
   hydratedOutputTextByRunId: Map<string, string>,
-): TimelineEntry | null {
+): TimelineEntry[] {
+  const scopedEntries = runState.entries.filter((entry) =>
+    runtimeEntryMatchesScope(entry, sessionId, runtimeRunId),
+  );
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
   if (hydratedText === undefined) {
-    return entry;
+    return scopedEntries;
   }
-  if (runState.status !== "closed") {
-    return openRuntimeTextCoveredByHydration(entry, hydratedText)
-      ? runtimeHydrationCursorEntry(entry)
-      : entry;
+  if (runState.status === "closed") {
+    return scopedEntries.filter((entry) =>
+      !runtimeEntryIsCoveredByHydratedOutput(entry, runState, hydratedText),
+    );
   }
-  return runtimeEntryIsCoveredByHydratedOutput(entry, runState, hydratedText)
-    ? null
-    : entry;
+  const hydratedEntries: TimelineEntry[] = [];
+  let suppressCoveredText = true;
+  for (const entry of scopedEntries) {
+    if (suppressCoveredText && openRuntimeTextCoveredByHydration(entry, hydratedText)) {
+      hydratedEntries.push(runtimeHydrationCursorEntry(entry));
+      continue;
+    }
+    hydratedEntries.push(entry);
+    suppressCoveredText = false;
+  }
+  return hydratedEntries;
 }
 
 function openRuntimeTextCoveredByHydration(
@@ -1585,7 +1593,7 @@ function applyRuntimeOutputDeltaEvent(
       }
       continue;
     }
-    closeRuntimeTextSegment(entry, activeText);
+    closeRuntimeTextSegment(entry, rows, activeText);
     structuredParts.push(part);
     rendered = true;
   }
@@ -1609,12 +1617,16 @@ function appendRuntimeTextSegment(
   if (existing !== undefined) {
     existing.part.text += text;
     existing.row.text = existing.part.text;
+    if (text.length > 0) {
+      existing.placeholder = false;
+    }
     return true;
   }
   const accumulator = createRuntimeTextAccumulator(
     entry,
     text,
     nextTextSegmentSequence(),
+    allowEmpty,
   );
   activeText.set(groupKey, accumulator);
   rows.push(accumulator.row);
@@ -1630,10 +1642,12 @@ function createRuntimeTextAccumulator(
   entry: TimelineEntry,
   text: string,
   sequence: number,
+  placeholder: boolean,
 ): RuntimeTextAccumulator {
   const part = timelineTextPart(text, true);
   return {
     part,
+    placeholder,
     row: {
       key: `runtime-text:${entry.runId}:${runtimeStreamKey(entry)}:${sequence}`,
       role: entry.roleId,
@@ -1650,12 +1664,20 @@ function createRuntimeTextAccumulator(
 
 function closeRuntimeTextSegment(
   entry: TimelineEntry,
+  rows: TimelineRow[],
   activeText: Map<string, RuntimeTextAccumulator>,
 ): void {
   const groupKey = runtimeTextGroupKey(entry);
   const existing = activeText.get(groupKey);
   if (existing !== undefined) {
-    existing.part.streaming = false;
+    if (existing.placeholder && existing.part.text.length === 0) {
+      const rowIndex = rows.indexOf(existing.row);
+      if (rowIndex >= 0) {
+        rows.splice(rowIndex, 1);
+      }
+    } else {
+      existing.part.streaming = false;
+    }
   }
   activeText.delete(groupKey);
 }

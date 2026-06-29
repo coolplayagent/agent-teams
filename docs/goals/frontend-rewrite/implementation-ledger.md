@@ -2,6 +2,28 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Repeated Tail Hydration TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, and the V1 history overlay replay-dedupe harness before editing.
+- Tightened V2 `MessageTimeline` hydration/runtime merging so an open run suppresses only the already-hydrated leading text/output prefix. Once a non-text runtime event such as a tool call arrives, later text deltas are treated as live tail even if their text matches earlier persisted output.
+- Updated the temporary hydrated-cursor accumulator so an empty cursor placeholder is removed instead of leaving a blank row when a later tool/media/thinking/runtime event closes that text segment.
+- Added V2 component coverage proving a repeated text delta after a tool call remains visible as live streaming output while the earlier persisted duplicate is not replayed.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/history.js` Python harness test `test_history_overlay_does_not_replay_parts_already_persisted_in_history`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle reflects the repeated-tail hydration fix.
+- Kept this slice focused on stream hydration/replay rendering semantics. No sidebar entries, Settings sections, secondary-page routing, or visible shell layout changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "repeated live text|open runtime text is already hydrated|closed runtime tool events|unpersisted runtime text"` passed with the new repeated-tail case and adjacent hydration/tool/terminal coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n 'test_history_overlay_does_not_replay_parts_already_persisted_in_history|history_overlay_dedupe' tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, runtime hydration merge fix, static app rebuild, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Hydrated Cursor TS Migration
 
 ### Scope

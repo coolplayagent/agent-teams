@@ -879,6 +879,79 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("keeps repeated live text after a tool even when earlier text is hydrated", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1"],
+        runs: {
+          "run-1": {
+            runId: "run-1",
+            status: "open",
+            lastEventId: 3,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-1:1:0",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "repeat",
+                payload: { text: "repeat" },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-1:2:1",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "tool_call",
+                text: "shell",
+                payload: {
+                  args: { command: "date" },
+                  tool_call_id: "call-repeat",
+                  tool_name: "shell",
+                },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-1:3:2",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "repeat",
+                payload: { text: "repeat" },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        run_id: "run-1",
+        content: "repeat",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() => expect(screen.queryAllByText("repeat")).toHaveLength(2));
+    expect(screen.queryAllByText("repeat")[0]).toBeVisible();
+    expect(screen.getByText("Tool call: shell")).toBeVisible();
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(1);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
   it("keeps post-checkpoint runtime deltas when hydration only covers earlier output", async () => {
     useRuntimeStore.setState({
       runtimeState: {

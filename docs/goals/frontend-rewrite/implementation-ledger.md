@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Agent Runtime Settings TS Migration
+
+### Scope
+- Re-checked the frontend rewrite goal, remaining old frontend Python UI harness inventory, and current Settings secondary-page coverage before editing, then selected `tests/integration_tests/frontend/test_agents_settings_ui.py` as the next bounded Settings migration slice.
+- Migrated V1 Agent Runtime behavior into focused V2 React coverage in `RuntimeSettingsSections.test.tsx`: stdio runtime save/test flow, Settings environment variable binding payloads, registry runtime creation with selected environment variables, and configured registry secret plus registry snapshot preservation.
+- Kept the existing `SettingsDrawer.test.tsx` coverage for opening Agent Runtime through the V1-aligned System secondary page, creating/deleting runtimes, and refreshing the ACP registry instead of flattening Agent Runtime into the primary Settings nav.
+- Fixed `RuntimeSettingsSections` so stdio and registry environment bindings use the existing Settings environment variable catalog, save selected variable values into runtime payloads, and still preserve already-configured secret bindings when the value is intentionally blank. HTTP header bindings remain explicit name/value/secret controls.
+- Deleted `tests/integration_tests/frontend/test_agents_settings_ui.py`; 21 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/RuntimeSettingsSections.test.tsx` passed.
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "renders a real settings center"` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `Test-Path tests\integration_tests\frontend\test_agents_settings_ui.py` returned `False`, confirming the old Python UI harness file has been removed.
+
+### Reviewer
+- Main-agent Agent Runtime settings harness migration completed for this slice. This does not claim full Settings PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broader settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 Workspace Settings TS Migration
 
 ### Scope

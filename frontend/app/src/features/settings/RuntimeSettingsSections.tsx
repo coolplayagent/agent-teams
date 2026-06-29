@@ -8,6 +8,7 @@ import {
   deleteAgentRuntime,
   disablePlugin,
   enablePlugin,
+  getEnvironmentVariables,
   getAgentRuntime,
   getAgentRuntimeRegistry,
   getAgentRuntimes,
@@ -35,13 +36,15 @@ import type {
   AgentRuntimeTestJob,
   AgentRuntimeTransportConfig,
   AgentRuntimeTransportType,
+  EnvironmentVariableCatalog,
+  EnvironmentVariableRecord,
   HooksConfigPayload,
   JsonValue,
   LoadedHookRecord,
   PluginRuntimeDiagnostics,
   PluginRuntimeRecord,
 } from "../../api/contracts";
-import { useTranslations } from "../../i18n";
+import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
 type AgentRuntimeBindingConfig = AgentRuntimeSecretBinding;
@@ -550,6 +553,11 @@ function AgentRuntimeEditor({
     queryFn: () => getAgentRuntime(agentId ?? ""),
     enabled: !isCreate,
   });
+  const environmentQuery = useQuery({
+    queryKey: ["settings", "environment", "variables"],
+    queryFn: getEnvironmentVariables,
+  });
+  const environmentRecords = environmentRecordsFromCatalog(environmentQuery.data);
 
   useEffect(() => {
     if (isCreate) {
@@ -569,7 +577,11 @@ function AgentRuntimeEditor({
 
   const saveMutation = useMutation({
     mutationFn: (values: AgentRuntimeFormValues) => {
-      const payload = buildAgentRuntimeSavePayload(values, query.data);
+      const payload = buildAgentRuntimeSavePayload(
+        values,
+        query.data,
+        environmentRecords,
+      );
       return saveAgentRuntime(payload.pathAgentId, payload.config);
     },
     onSuccess: async (saved) => {
@@ -599,7 +611,11 @@ function AgentRuntimeEditor({
   const testMutation = useMutation({
     mutationFn: async () => {
       const values = await form.validateFields();
-      const payload = buildAgentRuntimeSavePayload(values, query.data);
+      const payload = buildAgentRuntimeSavePayload(
+        values,
+        query.data,
+        environmentRecords,
+      );
       const saved = await saveAgentRuntime(payload.pathAgentId, payload.config);
       const job = await waitForAgentRuntimeTestJob(saved.agent_id);
       return { job, saved };
@@ -722,7 +738,11 @@ function AgentRuntimeEditor({
                   />
                 </Form.Item>
               </div>
-              <TransportFields transport={transport} />
+              <TransportFields
+                environmentLoading={environmentQuery.isLoading}
+                environmentRecords={environmentRecords}
+                transport={transport}
+              />
             </div>
             <div className="at-settings-form-card">
               <div className="at-agent-runtime-form-grid">
@@ -773,7 +793,15 @@ function AgentRuntimeEditor({
   );
 }
 
-function TransportFields({ transport }: { transport: AgentRuntimeTransportType }) {
+function TransportFields({
+  environmentLoading,
+  environmentRecords,
+  transport,
+}: {
+  environmentLoading: boolean;
+  environmentRecords: EnvironmentVariableRecord[];
+  transport: AgentRuntimeTransportType;
+}) {
   const t = useTranslations();
   if (transport === "streamable_http") {
     return (
@@ -843,6 +871,8 @@ function TransportFields({ transport }: { transport: AgentRuntimeTransportType }
         </Form.Item>
         <BindingFields
           addLabel={t("settingsAgentRuntimeAddEnv")}
+          environmentLoading={environmentLoading}
+          environmentRecords={environmentRecords}
           name="registry_env"
           title={t("settingsAgentRuntimeRegistryEnv")}
         />
@@ -863,6 +893,8 @@ function TransportFields({ transport }: { transport: AgentRuntimeTransportType }
       </Form.Item>
       <BindingFields
         addLabel={t("settingsAgentRuntimeAddEnv")}
+        environmentLoading={environmentLoading}
+        environmentRecords={environmentRecords}
         name="stdio_env"
         title={t("settingsAgentRuntimeStdioEnv")}
       />
@@ -872,14 +904,20 @@ function TransportFields({ transport }: { transport: AgentRuntimeTransportType }
 
 function BindingFields({
   addLabel,
+  environmentLoading = false,
+  environmentRecords,
   name,
   title,
 }: {
   addLabel: string;
+  environmentLoading?: boolean;
+  environmentRecords?: EnvironmentVariableRecord[];
   name: "http_headers" | "registry_env" | "stdio_env";
   title: string;
 }) {
   const t = useTranslations();
+  const isEnvironmentBinding = name === "registry_env" || name === "stdio_env";
+  const environmentOptions = environmentVariableOptions(environmentRecords ?? [], t);
   return (
     <div className="at-agent-runtime-bindings">
       <div className="at-agent-runtime-bindings-head">
@@ -905,24 +943,37 @@ function BindingFields({
                         label={t("settingsAgentRuntimeBindingName")}
                         name={[field.name, "name"]}
                       >
-                        <Input autoComplete="off" />
+                        {isEnvironmentBinding ? (
+                          <Select
+                            loading={environmentLoading}
+                            options={environmentOptions}
+                            placeholder={t("settingsAgentRuntimeBindingName")}
+                            showSearch
+                          />
+                        ) : (
+                          <Input autoComplete="off" />
+                        )}
                       </Form.Item>
-                      <Form.Item
-                        label={t("settingsAgentRuntimeBindingValue")}
-                        name={[field.name, "value"]}
-                      >
-                        <Input
-                          autoComplete="off"
-                          placeholder={t("settingsAgentRuntimeSecretPlaceholder")}
-                        />
-                      </Form.Item>
-                      <Form.Item
-                        label={t("settingsAgentRuntimeBindingSecret")}
-                        name={[field.name, "secret"]}
-                        valuePropName="checked"
-                      >
-                        <Switch />
-                      </Form.Item>
+                      {isEnvironmentBinding ? null : (
+                        <>
+                          <Form.Item
+                            label={t("settingsAgentRuntimeBindingValue")}
+                            name={[field.name, "value"]}
+                          >
+                            <Input
+                              autoComplete="off"
+                              placeholder={t("settingsAgentRuntimeSecretPlaceholder")}
+                            />
+                          </Form.Item>
+                          <Form.Item
+                            label={t("settingsAgentRuntimeBindingSecret")}
+                            name={[field.name, "secret"]}
+                            valuePropName="checked"
+                          >
+                            <Switch />
+                          </Form.Item>
+                        </>
+                      )}
                       <Button
                         aria-label={t("settingsAgentRuntimeRemoveBinding")}
                         icon={<Trash2 size={14} />}
@@ -1290,6 +1341,7 @@ function configToForm(config: AgentRuntimeConfig): AgentRuntimeFormValues {
 function buildAgentRuntimeSavePayload(
   values: AgentRuntimeFormValues,
   current: AgentRuntimeConfig | undefined,
+  environmentRecords: readonly EnvironmentVariableRecord[] = [],
 ): { config: AgentRuntimeConfig; pathAgentId: string } {
   const agentId = values.agent_id.trim();
   const name = values.name.trim();
@@ -1310,7 +1362,11 @@ function buildAgentRuntimeSavePayload(
     skill_bridge_enabled: values.skill_bridge_enabled === true,
     skill_bridge_mode: values.skill_bridge_mode ?? "inline",
     skill_bridge_skills: listFromLines(values.skill_bridge_skills),
-    transport: buildAgentRuntimeTransport(values, current?.transport),
+    transport: buildAgentRuntimeTransport(
+      values,
+      current?.transport,
+      environmentRecords,
+    ),
   };
   return {
     config,
@@ -1321,6 +1377,7 @@ function buildAgentRuntimeSavePayload(
 function buildAgentRuntimeTransport(
   values: AgentRuntimeFormValues,
   current: AgentRuntimeTransportConfig | undefined,
+  environmentRecords: readonly EnvironmentVariableRecord[] = [],
 ): AgentRuntimeTransportConfig {
   if (values.transport === "streamable_http") {
     const existing = current?.transport === "streamable_http" ? current : undefined;
@@ -1354,7 +1411,11 @@ function buildAgentRuntimeTransport(
     }
     return {
       distribution: values.registry_distribution ?? "auto",
-      env: bindingsFromForm(values.registry_env, existing?.env ?? []),
+      env: bindingsFromForm(
+        values.registry_env,
+        existing?.env ?? [],
+        environmentRecords,
+      ),
       registry_entry: existing?.registry_entry ?? null,
       registry_id: registryId,
       registry_version: existing?.registry_version ?? "",
@@ -1369,7 +1430,11 @@ function buildAgentRuntimeTransport(
   return {
     args: listFromLines(values.args),
     command,
-    env: bindingsFromForm(values.stdio_env, existing?.env ?? []),
+    env: bindingsFromForm(
+      values.stdio_env,
+      existing?.env ?? [],
+      environmentRecords,
+    ),
     transport: "stdio",
   };
 }
@@ -1402,23 +1467,71 @@ function bindingsToForm(
 function bindingsFromForm(
   rows: readonly AgentRuntimeBindingFormRow[] | undefined,
   existing: readonly AgentRuntimeBindingConfig[],
+  environmentRecords: readonly EnvironmentVariableRecord[] = [],
 ): AgentRuntimeBindingConfig[] {
   const existingByName = new Map(
     existing.map((binding) => [binding.name.trim(), binding]),
   );
+  const environmentByName = environmentRecordsByName(environmentRecords);
   return (rows ?? [])
     .map((row) => {
       const name = row.name?.trim() ?? "";
       const value = row.value ?? "";
       const existingBinding = existingByName.get(name);
+      const preserveConfigured =
+        existingBinding?.configured === true && !value.trim();
+      const environmentValue = environmentByName.get(name)?.value ?? "";
       return {
-        configured: existingBinding?.configured === true && !value.trim(),
+        configured: preserveConfigured,
         name,
-        secret: row.secret === true,
-        value,
+        secret: preserveConfigured
+          ? existingBinding?.secret === true
+          : row.secret === true,
+        value: preserveConfigured ? "" : value || environmentValue,
       };
     })
     .filter((binding) => binding.name);
+}
+
+function environmentRecordsFromCatalog(
+  catalog: EnvironmentVariableCatalog | undefined,
+): EnvironmentVariableRecord[] {
+  const recordsByName = environmentRecordsByName([
+    ...(catalog?.app ?? []),
+    ...(catalog?.system ?? []),
+  ]);
+  return Array.from(recordsByName.values()).sort((left, right) =>
+    left.key.localeCompare(right.key, undefined, { sensitivity: "base" }),
+  );
+}
+
+function environmentRecordsByName(
+  records: readonly EnvironmentVariableRecord[],
+): Map<string, EnvironmentVariableRecord> {
+  const recordsByName = new Map<string, EnvironmentVariableRecord>();
+  for (const record of records) {
+    const key = record.key.trim();
+    if (key && !recordsByName.has(key)) {
+      recordsByName.set(key, record);
+    }
+  }
+  return recordsByName;
+}
+
+function environmentVariableOptions(
+  records: readonly EnvironmentVariableRecord[],
+  t: Translate,
+) {
+  return records.map((record) => ({
+    label: `${record.key} · ${environmentScopeLabel(record, t)}`,
+    value: record.key,
+  }));
+}
+
+function environmentScopeLabel(record: EnvironmentVariableRecord, t: Translate): string {
+  return record.scope === "system"
+    ? t("settingsEnvironmentSystem")
+    : t("settingsEnvironmentApp");
 }
 
 function parseCustomConfig(value: string | undefined): Record<string, JsonValue> {

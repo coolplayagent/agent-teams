@@ -1537,7 +1537,7 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("Agent ID")).toBeVisible();
     expect(screen.getByDisplayValue("Codex CLI")).toBeVisible();
     expect(screen.getByDisplayValue("openai/codex")).toBeVisible();
-    expect(screen.getByDisplayValue("OPENAI_API_KEY")).toBeVisible();
+    expect(await screen.findByText("OPENAI_API_KEY · App")).toBeVisible();
     expect(getAgentRuntimeMock).toHaveBeenCalledWith("codex-acp");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveAgentRuntimeMock).toHaveBeenCalledTimes(1));

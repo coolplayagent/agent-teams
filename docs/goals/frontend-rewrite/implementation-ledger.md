@@ -7200,3 +7200,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness decomposition, V2 behavior implementation, focused TS coverage, targeted type/test verification, and final `test_prompt_yolo_ui.py` removal completed for this prompt mention slice. No full Composer subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, broader frontend Python UI test migration PASS, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Timeline Fallback Retry Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Message Timeline / AG-UI Runtime Stream checklist requirements, remaining old Python UI harness inventory, and current V2 `MessageTimeline` retry/fallback coverage before editing.
+- Added V2 `MessageTimeline.test.tsx` coverage for live `llm_fallback_activated` runtime events: the unsafe fallback target is rendered as text in both round marker and round rail metadata, no `<img>` node is created, and the affected round remains visibly warning-state.
+- Removed the migrated V1 source-copy harness `test_retry_timeline_escapes_fallback_target_markup` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. That old file now has 14 remaining Python UI harness scenarios.
+- This slice is focused Message Timeline runtime-event coverage and old harness migration only; no sidebar/settings item inventory, secondary-page navigation logic, production layout, backend contract, desktop shell, or built dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "fallback targets"` passed.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 114 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 14.
+- `rg -n "test_retry_timeline_escapes_fallback_target_markup|fallback targets as safe round metadata|llm_fallback_activated" tests/integration_tests/frontend/test_round_retry_timeline_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, focused V2 runtime-event coverage, targeted verification, and partial legacy harness removal completed for this fallback retry timeline slice. No full Message Timeline PASS, AG-UI Runtime Stream PASS, stream/replay recovery PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

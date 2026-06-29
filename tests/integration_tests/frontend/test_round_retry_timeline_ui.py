@@ -6,33 +6,6 @@ from pathlib import Path
 import subprocess
 
 
-def test_retry_timeline_escapes_fallback_target_markup(tmp_path: Path) -> None:
-    payload = _run_round_timeline_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const { renderRetryEventMarkup } = await import('./timeline.mjs');
-
-const html = renderRetryEventMarkup(
-    {
-        kind: 'fallback',
-        phase: 'scheduled',
-        to_profile_id: '<img src=x onerror=alert(1)>',
-    },
-    Date.now(),
-);
-
-console.log(JSON.stringify({ html }));
-""".strip(),
-    )
-
-    html = str(payload["html"])
-    assert "<img src=x onerror=alert(1)>" not in html
-    assert (
-        '<span class="round-retry-copy">Switched to &lt;img src=x onerror=alert(1)&gt;</span>'
-        in html
-    )
-
-
 def test_retry_timeline_renders_stable_retry_item_with_spinner(
     tmp_path: Path,
 ) -> None:

@@ -972,6 +972,51 @@ describe("MessageTimeline", () => {
     expect(marker).toHaveTextContent("completed");
   });
 
+  it("renders live fallback targets as safe round metadata", async () => {
+    const unsafeTarget = "<img src=x onerror=alert(1)>";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Fallback model is now active.",
+        message_id: "assistant-fallback",
+        role_id: "MainAgent",
+        trace_id: "run-output",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-output",
+          run_status: "running",
+          run_user_message: "Switch model after provider failure",
+        },
+      ],
+      next_cursor: null,
+    });
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        kind: "llm_fallback_activated",
+        payload: {
+          phase: "fallback",
+          to_profile_id: unsafeTarget,
+        },
+        text: "fallback activated",
+      }),
+    ], "open");
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Fallback model is now active.")).toBeVisible();
+    expect(screen.getAllByText(`Fallback: to ${unsafeTarget}`)).toHaveLength(2);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("button", {
+      name: "Go to round 1: Switch model after provider failure",
+    })).toHaveClass("is-warning");
+  });
+
   it("collapses round history before a clear marker and expands it on demand", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

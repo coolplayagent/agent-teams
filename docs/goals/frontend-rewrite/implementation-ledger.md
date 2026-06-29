@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Subagent Session History TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Subagents checklist, current V2 subagent session implementation, and the legacy `test_agent_panel_history_ui.py` before editing. This slice removes a V1 right-panel source-string assertion in favor of V2 subagent session behavior evidence.
+- Confirmed V2 keeps subagent sessions nested under the parent session in the sidebar and opens them as a secondary read-only session view instead of flattening runtime, memory, summary, or auxiliary tabs into a right-side agent panel.
+- Confirmed V2 `SubagentSessionView` loads persisted subagent messages through the session-scoped agent history endpoint, streams active subagent runs from the last checkpoint, refreshes history when the tracked run closes, and avoids streaming terminal subagent sessions.
+- Confirmed V2 browser overlay coverage still includes running subagent history render-bind behavior in `streaming-message-timeline.spec.ts`.
+- Removed `tests/unit_tests/frontend/test_agent_panel_history_ui.py`, which only inspected V1 `frontend/dist/js/components/agentPanel/history.js` source strings.
+- No source UI, sidebar entry set, Settings navigation, or dist bundle changed in this slice.
+
+### Verification
+- `npm run test -- src/test/SubagentSessionView.test.tsx src/test/SessionsSidebar.test.tsx -t "subagent"` passed with focused V2 subagent tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+- `rg --files tests\unit_tests\frontend | rg "test_agent_panel_history_ui\.py$"` returned no matches after removal.
+
+### Reviewer
+- Main-agent old Python V1 agent-panel test removal, V2 subagent session evidence mapping, focused TS verification, frontend lint/typecheck, and diff check completed for this slice. No Subagents subsystem PASS, stream/replay browser sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Current Session Indicator TS Migration
 
 ### Scope

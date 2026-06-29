@@ -5042,3 +5042,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser coverage, typecheck, diff check, screenshot inspection, and Playwright artifact cleanup completed for this slice. No AG-UI Runtime Stream subsystem sign-off, browser-suite sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Electron Desktop Smoke Gate Evidence
+
+### Scope
+- Re-checked the active frontend rewrite goal, quality gates, release cleanup requirements, and current worktree before running validation. This slice targets the release-level Desktop Checks gate rather than stream/replay or visual polish.
+- Ran the existing Electron browser smoke coverage against the current built desktop artifacts. The suite covers renderer loading the new app, isolated preload API shape, absence of renderer `require` and `process`, backend readiness status, startup failure UI, diagnostics copy, retry startup, external-link opening through the preload/main boundary, managed backend startup, health polling, app load, auto-quit, and managed backend shutdown.
+- Kept this as desktop-gate evidence only. Remaining frontend rewrite work still includes final V1/V2 visual audit, naming cleanup, parity checklist completion, subsystem reviewer sign-offs, release promotion decisions, and final full-check execution before completion can be claimed.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-desktop-smoke.spec.ts` passed with 4 Electron smoke tests.
+- Inspected `.tmp/frontend-v2-desktop/v2-electron-renderer.png`; it shows the Electron renderer loading the fixed V2 shell with the desktop smoke message, sidebar, composer, backend connected status, and isolated desktop controls.
+- Inspected `.tmp/frontend-v2-desktop/v2-electron-startup-failed.png`; it shows the startup failure screen with backend URL diagnostics plus Copy diagnostics and Retry startup actions.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed inside the workspace. No `frontend/dist` rebuild was needed because this slice changed only this ledger.
+
+### Reviewer
+- Main-agent Electron smoke execution, screenshot inspection, and Playwright artifact cleanup completed for this slice. No Desktop subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

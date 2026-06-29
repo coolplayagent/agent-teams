@@ -364,7 +364,7 @@ export async function mockShellApi(
       return;
     }
     if (path === "/system/configs/ui-language") {
-      await fulfillJson(route, { language: "zh-CN" });
+      await fulfillJson(route, { language: "en-US" });
       return;
     }
     if (path === "/system/configs/general") {

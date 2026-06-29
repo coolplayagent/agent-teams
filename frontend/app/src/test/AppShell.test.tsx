@@ -12,20 +12,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
+  fetchUiLanguageSettings,
   getHealth,
   getSession,
   listSidebarSessions,
   listWorkspaces,
+  saveUiLanguageSettings,
 } from "../api/client";
 import type { SessionSidebarRecord } from "../api/contracts";
 import { AppShell } from "../features/shell/AppShell";
 import { sidebarWidthDefault, useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  fetchUiLanguageSettings: vi.fn(),
   getHealth: vi.fn(),
   getSession: vi.fn(),
   listSidebarSessions: vi.fn(),
   listWorkspaces: vi.fn(),
+  saveUiLanguageSettings: vi.fn(),
 }));
 
 vi.mock("../features/composer/Composer", () => ({
@@ -156,12 +160,15 @@ vi.mock("../features/workspaces/WorkspaceProjectView", () => ({
 
 const getHealthMock = vi.mocked(getHealth);
 const getSessionMock = vi.mocked(getSession);
+const fetchUiLanguageSettingsMock = vi.mocked(fetchUiLanguageSettings);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
+const saveUiLanguageSettingsMock = vi.mocked(saveUiLanguageSettings);
 
 beforeEach(() => {
   window.history.replaceState(null, "", window.location.href);
   mockViewportMatch(false);
+  fetchUiLanguageSettingsMock.mockResolvedValue({ language: "en-US" });
   getHealthMock.mockResolvedValue({ status: "ok" });
   getSessionMock.mockResolvedValue({
     session_id: "session-1",
@@ -182,6 +189,7 @@ beforeEach(() => {
       display_name: "Agent Teams",
     },
   ]);
+  saveUiLanguageSettingsMock.mockImplementation(async (settings) => settings);
   useUiStore.setState({
     language: "en",
     selectedSessionId: "session-1",

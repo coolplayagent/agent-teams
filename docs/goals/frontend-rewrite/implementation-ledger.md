@@ -2,6 +2,31 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Web Settings Declared Defaults And UI Language Persistence TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining Python UI/browser surface, current Settings TS browser coverage, and the real Web settings structure before editing. This slice targets Settings/Web parity and the browser-suite migration rather than only the latest visual note.
+- Restored the V1 language setting contract in the V2 shell: the app now reads `/api/system/configs/ui-language` on startup, maps backend `en-US` to the internal English language state, persists topbar language toggles back through the same endpoint, and optimistically updates the query cache so the old saved value cannot flicker the UI back during a slow save.
+- Added typed V2 API client coverage for `fetchUiLanguageSettings` and `saveUiLanguageSettings`.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` with deterministic TS browser coverage for the old Web declared-defaults scenario: backend-initialized Chinese UI, Web settings secondary page navigation, Exa API key preserved text, fallback provider option labels, SearXNG URL and built-in instances, Exa provider link, Disabled hide/show roundtrip, English and Chinese language-toggle PUT payloads, and fixed-shell no-document-scroll behavior.
+- Removed the replaced `test_browser_web_settings_ui_matches_declared_defaults` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py` and cleaned the now-unused Web defaults helper code.
+- Rebuilt `frontend/dist/app` so the dist-served browser tests exercise the restored UI language persistence and Web defaults behavior.
+- Kept this as targeted Settings/Web browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 6 legacy scenarios in `test_browser_smoke.py`, deeper stream replay and interrupted-stream recovery browser scenarios, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test -- apiClient.test.ts AppShell.test.tsx` passed with 50 unit tests.
+- `npx tsc --noEmit --pretty false --project tsconfig.json` passed.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 11 TS browser tests.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-web-settings-defaults-language.png`; it shows the V1-style fixed shell with the sidebar still present, Settings using its secondary navigation, Web selected as a secondary settings page, Chinese labels restored after the language roundtrip, and the Web form contained in the drawer rather than flattened into a top-level surface.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip|test_browser_web_settings_ui_matches_declared_defaults" tests\integration_tests\browser\test_browser_smoke.py` reports 6 remaining legacy Python browser scenarios and no replaced Web defaults scenario.
+
+### Reviewer
+- Main-agent source fix, targeted API/AppShell unit tests, TS browser, frontend lint/typecheck/build, Python syntax/lint, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-23 Foundation Batch
 
 ### Scope

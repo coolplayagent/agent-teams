@@ -41,6 +41,8 @@ interface SettingsActionState {
   sshProfiles: Record<string, unknown>[];
   sshSavePayloads: Record<string, unknown>[];
   sshSaveRequests: string[];
+  uiLanguage: "en-US" | "zh-CN";
+  uiLanguageSavePayloads: Record<string, unknown>[];
   webConfig: Record<string, unknown>;
   webSavePayloads: Record<string, unknown>[];
 }
@@ -594,6 +596,129 @@ test("creates a model profile from the catalog", async ({ page }) => {
   }
 });
 
+test("matches Web settings declared defaults and persisted language", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  state.uiLanguage = "zh-CN";
+  state.webConfig = {
+    ...state.webConfig,
+    exa_api_key: "browser-web-strict-key",
+    fallback_provider: null,
+    searxng_instance_seeds: [
+      "https://search.mdosch.de/",
+      "https://searx.space",
+    ],
+    searxng_instance_url: "https://search.mdosch.de/",
+  };
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS web defaults",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: /^(Settings sections|设置分区)$/ })
+      .getByRole("button", { name: "Web" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "Web" })).toBeVisible();
+    await expect(settings.getByText("提供商", { exact: true })).toBeVisible();
+    await expect(settings.getByText("Exa API Key", { exact: true })).toBeVisible();
+    await expect(settings.getByText("回退提供商", { exact: true })).toBeVisible();
+    await expect(settings.getByText("留空会保留已保存的 API Key。"))
+      .toBeVisible();
+    await expect(settings.getByLabel("回退提供商")).toHaveValue("searxng");
+    expect(await optionPairs(settings.getByLabel("回退提供商"))).toEqual([
+      ["searxng", "SearXNG"],
+      ["disabled", "禁用"],
+    ]);
+    await expect(settings.getByLabel("SearXNG 实例 URL")).toHaveValue(
+      "https://search.mdosch.de/",
+    );
+    const builtins = settings.getByLabel("内置实例");
+    await expect(builtins.getByText("内置实例", { exact: true })).toBeVisible();
+    await expect(builtins.getByText("https://search.mdosch.de/")).toBeVisible();
+    await expect(builtins.getByText("https://searx.space")).toBeVisible();
+    const providerLink = settings.locator(".at-settings-provider-link");
+    await expect(providerLink.getByText("提供商网站", { exact: true })).toBeVisible();
+    await expect(providerLink.getByText("https://exa.ai")).toBeVisible();
+    await expect(providerLink).toHaveAttribute("href", /^https:\/\/exa\.ai\/?$/);
+
+    await settings.getByLabel("回退提供商").selectOption("disabled");
+    await expect(settings.getByLabel("SearXNG 实例 URL")).toHaveCount(0);
+    await expect(settings.getByLabel("内置实例")).toHaveCount(0);
+    await settings.getByLabel("回退提供商").selectOption("searxng");
+    await expect(settings.getByLabel("SearXNG 实例 URL")).toHaveValue(
+      "https://search.mdosch.de/",
+    );
+    await expect(settings.getByLabel("内置实例")).toBeVisible();
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/ui-language") &&
+          response.status() === 200,
+      ),
+      page
+        .locator(".at-topbar")
+        .getByRole("button", { name: "中文" })
+        .evaluate((button) => (button as HTMLElement).click()),
+    ]);
+    expect(state.uiLanguageSavePayloads.at(-1)).toEqual({ language: "en-US" });
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(settings.getByText("Provider", { exact: true })).toBeVisible();
+    await expect(settings.getByText("Fallback provider", { exact: true }))
+      .toBeVisible();
+    await expect(settings.getByLabel("SearXNG instance URL")).toHaveValue(
+      "https://search.mdosch.de/",
+    );
+    await expect(settings.getByLabel("Built-in instances")).toBeVisible();
+    expect(await optionPairs(settings.getByLabel("Fallback provider"))).toEqual([
+      ["searxng", "SearXNG"],
+      ["disabled", "Disabled"],
+    ]);
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/ui-language") &&
+          response.status() === 200,
+      ),
+      page
+        .locator(".at-topbar")
+        .getByRole("button", { name: "EN" })
+        .evaluate((button) => (button as HTMLElement).click()),
+    ]);
+    expect(state.uiLanguageSavePayloads.at(-1)).toEqual({ language: "zh-CN" });
+    await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+    await expect(settings.getByText("提供商", { exact: true })).toBeVisible();
+    await expect(settings.getByText("内置实例", { exact: true })).toBeVisible();
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v2 web defaults should stay framed");
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-web-settings-defaults-language.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("saves Web settings and shows save errors", async ({ page }) => {
   const appServer = await serveFrontendDist();
   const state = settingsActionState();
@@ -880,8 +1005,11 @@ test("requires confirmation before deleting remote workspace SSH profiles", asyn
 });
 
 async function openSettingsDialog(page: Page): Promise<Locator> {
-  await page.locator(".at-topbar").getByRole("button", { name: "Settings" }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  await page
+    .locator(".at-topbar")
+    .getByRole("button", { name: /^(Settings|设置)$/ })
+    .click();
+  const settings = page.getByRole("dialog", { name: /^(Settings|设置)$/ });
   await expect(settings).toBeVisible();
   return settings;
 }
@@ -896,6 +1024,18 @@ async function openSystemSettingsPage(
     .click();
   await settings.locator(".at-settings-list-button").filter({ hasText: pageName })
     .click();
+}
+
+async function optionPairs(select: Locator): Promise<Array<[string, string]>> {
+  return select.locator("option").evaluateAll((options) =>
+    options.map((option) => {
+      const item = option as HTMLOptionElement;
+      return [
+        item.value,
+        item.label || item.textContent?.trim() || "",
+      ] as [string, string];
+    }),
+  );
 }
 
 function settingsActionState(): SettingsActionState {
@@ -926,6 +1066,8 @@ function settingsActionState(): SettingsActionState {
     sshProfiles: sshProfiles(),
     sshSavePayloads: [],
     sshSaveRequests: [],
+    uiLanguage: "en-US",
+    uiLanguageSavePayloads: [],
     webConfig: webConfig(),
     webSavePayloads: [],
   };
@@ -940,6 +1082,20 @@ async function handleSettingsActionApi(
   const path = context.path;
   if (method === "GET" && path === "/system/configs") {
     await context.fulfillJson(systemConfigResponse());
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/ui-language") {
+    await context.fulfillJson({ language: state.uiLanguage });
+    return true;
+  }
+  if (method === "PUT" && path === "/system/configs/ui-language") {
+    const payload = readJsonBody(context);
+    state.uiLanguageSavePayloads.push(payload);
+    const language = payload.language;
+    if (language === "en-US" || language === "zh-CN") {
+      state.uiLanguage = language;
+    }
+    await context.fulfillJson({ language: state.uiLanguage });
     return true;
   }
   if (method === "GET" && path === "/roles:options") {

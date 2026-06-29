@@ -12,10 +12,6 @@ from typing import cast
 from uuid import uuid4
 
 import httpx
-from relay_teams.env.web_config_models import (
-    DEFAULT_SEARXNG_INSTANCE_SEEDS,
-    DEFAULT_SEARXNG_INSTANCE_URL,
-)
 from relay_teams.gateway.acp_stdio import AcpGatewayServer, _AcpRequestContext
 from relay_teams.interfaces.cli.gateway_cli import _build_acp_stdio_runtime
 from pydantic import JsonValue
@@ -722,224 +718,6 @@ def test_browser_settings_save_role_and_agent_configs(
     expect(page.locator("#settings-modal")).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
 
 
-def test_browser_web_settings_ui_matches_declared_defaults(
-    browser_page: Page,
-    integration_env: IntegrationEnvironment,
-    api_client: httpx.Client,
-) -> None:
-    page = browser_page
-    web_exa_api_key = f"browser-web-strict-{uuid4().hex[:8]}"
-
-    language_response = api_client.put(
-        "/api/system/configs/ui-language",
-        json={"language": "zh-CN"},
-    )
-    language_response.raise_for_status()
-
-    web_response = api_client.put(
-        "/api/system/configs/web",
-        json={
-            "provider": "exa",
-            "exa_api_key": web_exa_api_key,
-            "fallback_provider": None,
-            "searxng_instance_url": DEFAULT_SEARXNG_INSTANCE_URL,
-        },
-    )
-    web_response.raise_for_status()
-
-    _open_app(page, integration_env)
-    page.wait_for_function(
-        "expectedLang => document.documentElement.lang === expectedLang",
-        arg="zh-CN",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    _open_web_settings_panel(page, integration_env)
-
-    expect(page.locator('label[for="web-provider"]')).to_have_text(
-        "提供商",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator('label[for="web-api-key"]')).to_have_text(
-        "Exa API Key",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator('label[for="web-fallback-provider"]')).to_have_text(
-        "回退提供商",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-provider-site-badge")).to_have_text(
-        "Exa",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-provider-site-url")).to_have_text(
-        "https://exa.ai",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".web-provider-inline-label")).to_have_text(
-        "提供商网站：",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".web-provider-link-note")).to_have_text(
-        "官方文档与账户概览",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-
-    assert _select_option_pairs(page, "#web-provider") == [("exa", "Exa")]
-    assert _select_option_pairs(page, "#web-fallback-provider") == [
-        ("searxng", "SearXNG"),
-        ("disabled", "Disabled"),
-    ]
-
-    expect(page.locator("#web-provider")).to_have_value("exa", timeout=_WAIT_TIMEOUT_MS)
-    expect(page.locator("#web-fallback-provider")).to_have_value(
-        "searxng",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-provider-site-link")).to_have_attribute(
-        "href",
-        re.compile(r"^https://exa\.ai/?$"),
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-provider-site-link")).to_have_attribute(
-        "title",
-        re.compile(r"^https://exa\.ai/?$"),
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-provider-site-link")).to_have_attribute(
-        "aria-label",
-        re.compile(r"^https://exa\.ai/?$"),
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-instance-url-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-builtins-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_be_enabled(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_have_value(
-        DEFAULT_SEARXNG_INSTANCE_URL,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_have_attribute(
-        "placeholder",
-        "默认值：https://search.mdosch.de/",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator('label[for="web-searxng-instance-url"]')).to_have_text(
-        "SearXNG 实例 URL",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".web-searxng-builtins-label")).to_have_text(
-        "内置实例",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_be_enabled(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    _assert_builtin_searxng_instances(page)
-
-    page.locator("#web-fallback-provider").select_option("disabled")
-    expect(page.locator("#web-searxng-instance-url-field")).to_be_hidden(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-builtins-field")).to_be_hidden(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_be_disabled(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-
-    page.locator("#web-fallback-provider").select_option("searxng")
-    expect(page.locator("#web-searxng-instance-url-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    expect(page.locator("#web-searxng-builtins-field")).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-
-    with page.expect_request(
-        lambda request: (
-            request.method == "PUT"
-            and request.url
-            == f"{integration_env.api_base_url}/api/system/configs/ui-language"
-        )
-    ) as language_request_info:
-        page.locator("#language-toggle-btn").evaluate("(button) => button.click()")
-    language_payload = json.loads(language_request_info.value.post_data or "{}")
-    assert language_payload == {"language": "en-US"}
-    page.wait_for_function(
-        "expectedLang => document.documentElement.lang === expectedLang",
-        arg="en-US",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-
-    expect(page.locator('label[for="web-provider"]')).to_have_text(
-        "Provider",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator('label[for="web-fallback-provider"]')).to_have_text(
-        "Fallback Provider",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator('label[for="web-searxng-instance-url"]')).to_have_text(
-        "SearXNG Instance URL",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".web-searxng-builtins-label")).to_have_text(
-        "Built-in Instances",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".web-provider-inline-label")).to_have_text(
-        "Provider website:",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".web-provider-link-note")).to_have_text(
-        "Official docs and account overview",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#web-searxng-instance-url")).to_have_attribute(
-        "placeholder",
-        "Default: https://search.mdosch.de/",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    assert _select_option_pairs(page, "#web-provider") == [("exa", "Exa")]
-    assert _select_option_pairs(page, "#web-fallback-provider") == [
-        ("searxng", "SearXNG"),
-        ("disabled", "Disabled"),
-    ]
-    _assert_builtin_searxng_instances(page)
-
-    with page.expect_request(
-        lambda request: (
-            request.method == "PUT"
-            and request.url
-            == f"{integration_env.api_base_url}/api/system/configs/ui-language"
-        )
-    ) as reset_language_request_info:
-        page.locator("#language-toggle-btn").evaluate("(button) => button.click()")
-    reset_language_payload = json.loads(
-        reset_language_request_info.value.post_data or "{}"
-    )
-    assert reset_language_payload == {"language": "zh-CN"}
-    page.wait_for_function(
-        "expectedLang => document.documentElement.lang === expectedLang",
-        arg="zh-CN",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator('label[for="web-provider"]')).to_have_text(
-        "提供商",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".web-searxng-builtins-label")).to_have_text(
-        "内置实例",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    _assert_builtin_searxng_instances(page)
-
-
 def test_browser_workspace_and_automation_project_views(
     browser_page: Page,
     integration_env: IntegrationEnvironment,
@@ -1363,12 +1141,6 @@ def _is_web_config_put_response(
     )
 
 
-def _assert_builtin_searxng_instances(page: Page) -> None:
-    assert _locator_texts(
-        page.locator("#web-searxng-builtins-list .trigger-readonly-value")
-    ) == list(DEFAULT_SEARXNG_INSTANCE_SEEDS)
-
-
 def _create_session_via_sidebar(page: Page) -> str:
     existing_session_ids = set(_session_ids(page))
     expect(
@@ -1537,27 +1309,6 @@ def _session_ids(page: Page) -> list[str]:
         str(session_id).strip()
         for session_id in raw_session_ids
         if str(session_id).strip()
-    ]
-
-
-def _locator_texts(locator) -> list[str]:
-    raw_texts = locator.evaluate_all(
-        """elements => elements.map(
-            element => (element.textContent || '').trim()
-        )"""
-    )
-    return [str(text).strip() for text in raw_texts if str(text).strip()]
-
-
-def _select_option_pairs(page: Page, selector: str) -> list[tuple[str, str]]:
-    raw_options = page.locator(f"{selector} option").evaluate_all(
-        """options => options.map(
-            option => [option.value, (option.textContent || '').trim()]
-        )"""
-    )
-    return [
-        (str(value).strip(), str(text).strip())
-        for value, text in cast(list[list[str]], raw_options)
     ]
 
 

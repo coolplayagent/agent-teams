@@ -24,13 +24,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 
 import {
+  fetchUiLanguageSettings,
   getHealth,
   getSession,
   listSidebarSessions,
   listWorkspaces,
   markSessionTerminalRunViewed,
+  saveUiLanguageSettings,
 } from "../../api/client";
-import type { SessionSidebarRecord } from "../../api/contracts";
+import type {
+  SessionSidebarRecord,
+  UiLanguage,
+  UiLanguageSettings,
+} from "../../api/contracts";
 import { AutomationView } from "../automation/AutomationView";
 import { BoardTodosView } from "../boards/BoardTodosView";
 import { ConnectorsView } from "../connectors/ConnectorsView";
@@ -57,6 +63,7 @@ import {
   sidebarWidthMin,
   useUiStore,
 } from "../../runtime/uiStore";
+import type { Language } from "../../runtime/uiStore";
 import { useTranslations } from "../../i18n";
 
 const { Header, Sider, Content } = Layout;
@@ -64,6 +71,7 @@ const healthyBackendStatuses = new Set(["alive", "ok", "ready"]);
 const sidebarOverlayMediaQuery = "(max-width: 760px)";
 const shellViewHistoryKey = "agentTeamsShellView";
 const shellViewStorageKey = "agentTeams.shellView";
+const uiLanguageSettingsQueryKey = ["ui-language-settings"] as const;
 
 type ShellPrimaryView =
   | "automation"
@@ -135,6 +143,11 @@ export function AppShell() {
     queryFn: getHealth,
     refetchInterval: 8000,
   });
+  const uiLanguageQuery = useQuery({
+    queryKey: uiLanguageSettingsQueryKey,
+    queryFn: fetchUiLanguageSettings,
+    staleTime: 60000,
+  });
   const sidebarSessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
     queryFn: () => listSidebarSessions(false),
@@ -186,6 +199,44 @@ export function AppShell() {
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
   );
+
+  useEffect(() => {
+    const savedLanguage = uiLanguageQuery.data?.language;
+    if (savedLanguage === undefined) {
+      return;
+    }
+    const nextLanguage = languageFromApi(savedLanguage);
+    if (nextLanguage !== language) {
+      setLanguage(nextLanguage);
+    }
+  }, [language, setLanguage, uiLanguageQuery.data?.language]);
+
+  const handleLanguageToggle = useCallback(() => {
+    const previousLanguage = language;
+    const nextLanguage: Language = language === "zh-CN" ? "en" : "zh-CN";
+    const savedLanguage = languageToApi(nextLanguage);
+    const previousSettings = queryClient.getQueryData<UiLanguageSettings>(
+      uiLanguageSettingsQueryKey,
+    );
+    queryClient.setQueryData<UiLanguageSettings>(uiLanguageSettingsQueryKey, {
+      language: savedLanguage,
+    });
+    setLanguage(nextLanguage);
+    void saveUiLanguageSettings({ language: savedLanguage })
+      .then((settings) => {
+        queryClient.setQueryData(uiLanguageSettingsQueryKey, settings);
+      })
+      .catch((error) => {
+        queryClient.setQueryData<UiLanguageSettings>(
+          uiLanguageSettingsQueryKey,
+          previousSettings ?? { language: languageToApi(previousLanguage) },
+        );
+        setLanguage(previousLanguage);
+        void message.error(
+          error instanceof Error ? error.message : t("settingsSaveFailed"),
+        );
+      });
+  }, [language, message, queryClient, setLanguage, t]);
 
   useEffect(() => {
     if (selectedSessionId !== null) {
@@ -411,7 +462,7 @@ export function AppShell() {
         </div>
         <Space size={8} className="at-topbar-right">
           <Button
-            onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}
+            onClick={handleLanguageToggle}
             size="small"
           >
             {language === "zh-CN"
@@ -611,6 +662,14 @@ function markSidebarTerminalRunViewed(
       ? { ...session, has_unread_terminal_run: false }
       : session
   ));
+}
+
+function languageFromApi(language: UiLanguage): Language {
+  return language === "zh-CN" ? "zh-CN" : "en";
+}
+
+function languageToApi(language: Language): UiLanguage {
+  return language === "zh-CN" ? "zh-CN" : "en-US";
 }
 
 function readInitialShellView(): ShellPrimaryView {

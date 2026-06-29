@@ -45,6 +45,7 @@ import {
   getRuntimeToolDownload,
   getRuntimeSkillDetail,
   deleteSession,
+  fetchUiLanguageSettings,
   getWorkspaceDiffFile,
   getWorkspaceDiffs,
   getWorkspaceFileContent,
@@ -98,6 +99,7 @@ import {
   saveProxyConfig,
   saveRoleConfig,
   saveSshProfile,
+  saveUiLanguageSettings,
   saveWebConfig,
   searchClawHubSkillMarket,
   searchMemories,
@@ -3195,5 +3197,31 @@ describe("api client", () => {
         method: "PUT",
       }),
     );
+  });
+
+  it("reads and saves UI language settings through the config endpoint", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ language: "zh-CN" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ language: "en-US" }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchUiLanguageSettings()).resolves.toEqual({
+      language: "zh-CN",
+    });
+    await expect(
+      saveUiLanguageSettings({ language: "en-US" }),
+    ).resolves.toEqual({ language: "en-US" });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/system/configs/ui-language");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/system/configs/ui-language");
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({ language: "en-US" }),
+      method: "PUT",
+    });
   });
 });

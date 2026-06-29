@@ -2096,6 +2096,12 @@ export interface GeneralConfig {
   shell_safety_policy_enabled: boolean;
 }
 
+export type UiLanguage = "en-US" | "zh-CN";
+
+export interface UiLanguageSettings {
+  language: UiLanguage;
+}
+
 export type EnvironmentVariableScope = "app" | "system";
 export type EnvironmentVariableValueKind = "expandable" | "string";
 

@@ -131,6 +131,7 @@ import type {
   PluginScopeRequest,
   PluginUpdateRequest,
   ToolApprovalAction,
+  UiLanguageSettings,
   UserQuestionAnswerSubmission,
   WorkspacePage,
   WorkspaceRecord,
@@ -1553,6 +1554,19 @@ export function answerUserQuestion(
 
 export function getGeneralConfig(): Promise<GeneralConfig> {
   return requestJson<GeneralConfig>("/system/configs/general");
+}
+
+export function fetchUiLanguageSettings(): Promise<UiLanguageSettings> {
+  return requestJson<UiLanguageSettings>("/system/configs/ui-language");
+}
+
+export function saveUiLanguageSettings(
+  settings: UiLanguageSettings,
+): Promise<UiLanguageSettings> {
+  return requestJson<UiLanguageSettings>("/system/configs/ui-language", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
 }
 
 export function getPluginsRuntime(): Promise<PluginsRuntimePayload> {

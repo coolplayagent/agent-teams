@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Live Retry Round Projection TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining Python UI harness list, and the V1 `test_retry_status_ui.py` behavior before editing, then chose this slice because live retry projection is part of the high-risk streaming/replay parity path.
+- Fixed V2 `MessageTimeline` round composition so live `llm_retry_*` and `llm_fallback_*` runtime events are merged into the matching round's `retry_events`, reusing the existing round marker and rail summary renderer instead of adding a parallel visual path.
+- Preserved terminal semantics for live retry state: completed runs clear temporary retry summaries, while terminal retry/fallback failure events can still surface their final failed state.
+- Added V2 component coverage for live retry events appearing in both the round marker and round rail, then disappearing once the run completes.
+- Removed the replaced V1 `frontend/dist/js/app/retryStatus.js` Python UI harness file: `tests/integration_tests/frontend/test_retry_status_ui.py`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle includes the live retry round projection fix.
+- Kept this slice focused on live retry stream/replay semantics and UI-test migration. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, or final visual audit status changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "live retry|round pending actions"` passed with the new live retry case and adjacent persisted retry/round metadata coverage.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-9dooR7n1.js`).
+- `rg --files tests/integration_tests/frontend | rg "test_retry_status_ui\\.py|retry_status"` returned no matches after deleting the legacy Python UI harness.
+- `rg -n "projects live retry events|test_retry_status_updates_single_round_card|Retry scheduled: attempt 2/6|runtimeRetryEventsForRound" frontend/app/src/test/MessageTimeline.test.tsx tests/integration_tests/frontend frontend/app/src/features/timeline/MessageTimeline.tsx -S` returned the new TS coverage and production helper, with no old Python test name.
+
+### Reviewer
+- Main-agent V2 live retry projection implementation, component coverage, old Python UI test removal, static bundle rebuild, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, final V1/V2 visual audit sign-off, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Overlay Final Python Harness Removal
 
 ### Scope

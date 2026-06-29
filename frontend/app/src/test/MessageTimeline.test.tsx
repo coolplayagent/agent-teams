@@ -672,6 +672,84 @@ describe("MessageTimeline", () => {
     expect(container.querySelector(".at-round-rail-dot")).not.toBeNull();
   });
 
+  it("projects live retry events into round summaries and clears them after completion", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Retrying model call",
+        message_id: "assistant-retry",
+        role_id: "MainAgent",
+        trace_id: "run-output",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-output",
+          run_status: "running",
+          run_user_message: "Retry streaming answer",
+        },
+      ],
+      next_cursor: null,
+    });
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        kind: "llm_retry_scheduled",
+        payload: {
+          attempt_number: 2,
+          error_message: "busy",
+          retry_in_ms: 1000,
+          total_attempts: 6,
+        },
+        text: "busy",
+      }),
+    ], "open");
+
+    const { container } = renderTimeline();
+
+    await waitFor(() =>
+      expect(screen.getAllByText("Retry scheduled: attempt 2/6 · in 1s · busy"))
+        .toHaveLength(2),
+    );
+    expect(screen.getByRole("button", { name: "Go to round 1: Retry streaming answer" }))
+      .toHaveClass("is-warning");
+
+    act(() => {
+      setRuntimeEntries([
+        runtimeGenericEntry({
+          eventId: 1,
+          id: "run-output:1:0",
+          kind: "llm_retry_scheduled",
+          payload: {
+            attempt_number: 2,
+            error_message: "busy",
+            retry_in_ms: 1000,
+            total_attempts: 6,
+          },
+          text: "busy",
+        }),
+        runtimeGenericEntry({
+          eventId: 2,
+          id: "run-output:2:1",
+          kind: "run_completed",
+          payload: { status: "completed" },
+          text: "run completed",
+        }),
+      ], "closed");
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Retry scheduled: attempt 2/6 · in 1s · busy"))
+        .not.toBeInTheDocument(),
+    );
+    const marker = container.querySelector(".at-round-marker");
+    expect(marker).not.toBeNull();
+    expect(marker).toHaveTextContent("completed");
+  });
+
   it("collapses round history before a clear marker and expands it on demand", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

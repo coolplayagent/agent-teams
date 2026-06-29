@@ -1239,22 +1239,184 @@ function roundsWithRuntimeRunState(
 ): SessionRound[] {
   let changed = false;
   const nextRounds = rounds.map((round) => {
+    let nextRound = round;
     const runState = runStates[round.run_id.trim()];
     const runtimeStatus = runtimeRoundStatusLabel(runState);
-    if (runtimeStatus === null) {
-      return round;
+    if (
+      runtimeStatus !== null &&
+      ((nextRound.run_status ?? null) !== runtimeStatus ||
+        (nextRound.run_phase ?? null) !== null)
+    ) {
+      changed = true;
+      nextRound = {
+        ...nextRound,
+        run_phase: null,
+        run_status: runtimeStatus,
+      };
     }
-    if ((round.run_status ?? null) === runtimeStatus && (round.run_phase ?? null) === null) {
-      return round;
+    const runtimeRetryEvents = runtimeRetryEventsForRound(runState);
+    if (runtimeRetryEvents.length > 0) {
+      changed = true;
+      nextRound = {
+        ...nextRound,
+        retry_events: mergeRoundRetryEvents(
+          nextRound.retry_events,
+          runtimeRetryEvents,
+        ),
+      };
     }
-    changed = true;
-    return {
-      ...round,
-      run_phase: null,
-      run_status: runtimeStatus,
-    };
+    return nextRound;
   });
   return changed ? nextRounds : rounds;
+}
+
+function runtimeRetryEventsForRound(
+  runState: RuntimeRunState | undefined,
+): JsonValue[] {
+  if (runState === undefined) {
+    return [];
+  }
+  const events = runState.entries.flatMap((entry) => {
+    const retryEvent = runtimeRetryEvent(entry);
+    return retryEvent === null ? [] : [retryEvent];
+  });
+  if (events.length === 0) {
+    return [];
+  }
+  const terminalKind =
+    runState.terminalEventType ?? latestTerminalEntryKind(runState.entries);
+  if (terminalKind === "run_completed") {
+    return [];
+  }
+  if (terminalKind !== null) {
+    return events.filter(runtimeRetryEventIsTerminal);
+  }
+  return events;
+}
+
+function runtimeRetryEvent(entry: TimelineEntry): Record<string, JsonValue> | null {
+  if (!runtimeEntryIsRetryEvent(entry.kind)) {
+    return null;
+  }
+  const payload = jsonObject(entry.payload) ?? {};
+  const occurredAt = objectString(payload, "occurred_at") || entry.occurredAt.trim();
+  const nextEvent: Record<string, JsonValue> = {
+    ...payload,
+    event_id: entry.eventId,
+    kind: runtimeRetryKind(entry.kind, payload),
+    phase: runtimeRetryPhase(entry.kind, payload),
+  };
+  if (occurredAt.length > 0) {
+    nextEvent.occurred_at = occurredAt;
+  }
+  const roleId = objectString(payload, "role_id") || entry.roleId.trim();
+  if (roleId.length > 0) {
+    nextEvent.role_id = roleId;
+  }
+  const instanceId =
+    objectString(payload, "instance_id") || (entry.instanceId ?? "").trim();
+  if (instanceId.length > 0) {
+    nextEvent.instance_id = instanceId;
+  }
+  return nextEvent;
+}
+
+function runtimeEntryIsRetryEvent(kind: RunEventType | "message"): boolean {
+  return (
+    kind === "llm_retry_scheduled" ||
+    kind === "llm_retry_exhausted" ||
+    kind === "llm_fallback_activated" ||
+    kind === "llm_fallback_exhausted"
+  );
+}
+
+function runtimeRetryKind(
+  kind: RunEventType | "message",
+  payload: Record<string, JsonValue>,
+): string {
+  if (kind === "llm_fallback_activated" || kind === "llm_fallback_exhausted") {
+    return "fallback";
+  }
+  return objectString(payload, "kind") || "retry";
+}
+
+function runtimeRetryPhase(
+  kind: RunEventType | "message",
+  payload: Record<string, JsonValue>,
+): string {
+  const phase = objectString(payload, "phase");
+  if (phase.length > 0) {
+    return phase;
+  }
+  if (kind === "llm_retry_exhausted" || kind === "llm_fallback_exhausted") {
+    return "failed";
+  }
+  if (kind === "llm_fallback_activated") {
+    return "fallback";
+  }
+  return "scheduled";
+}
+
+function runtimeRetryEventIsTerminal(event: JsonValue): boolean {
+  const object = jsonObject(event);
+  if (object === null) {
+    return false;
+  }
+  const phase = objectString(object, "phase").toLowerCase();
+  return (
+    phase === "failed" ||
+    phase === "exhausted" ||
+    phase === "succeeded" ||
+    objectString(object, "kind").toLowerCase() === "fallback"
+  );
+}
+
+function mergeRoundRetryEvents(
+  existingEvents: JsonValue[] | undefined,
+  runtimeEvents: JsonValue[],
+): JsonValue[] {
+  const merged = new Map<string, JsonValue>();
+  for (const event of existingEvents ?? []) {
+    merged.set(roundRetryEventKey(event, `persisted:${merged.size}`), inactiveRetryEvent(event));
+  }
+  runtimeEvents.forEach((event, index) => {
+    const nextEvent = index === runtimeEvents.length - 1
+      ? activeRetryEvent(event)
+      : inactiveRetryEvent(event);
+    merged.set(roundRetryEventKey(event, `runtime:${index}`), nextEvent);
+  });
+  return Array.from(merged.values());
+}
+
+function activeRetryEvent(event: JsonValue): JsonValue {
+  const object = jsonObject(event);
+  return object === null ? event : { ...object, is_active: true };
+}
+
+function inactiveRetryEvent(event: JsonValue): JsonValue {
+  const object = jsonObject(event);
+  return object === null ? event : { ...object, is_active: false };
+}
+
+function roundRetryEventKey(event: JsonValue, fallback: string): string {
+  const object = jsonObject(event);
+  if (object === null) {
+    return fallback;
+  }
+  const eventId = object["event_id"];
+  if (typeof eventId === "number" && Number.isFinite(eventId)) {
+    return `event:${eventId}`;
+  }
+  const eventIdText = objectString(object, "event_id") || objectString(object, "eventId");
+  if (eventIdText.length > 0) {
+    return `event:${eventIdText}`;
+  }
+  return [
+    objectString(object, "kind"),
+    objectString(object, "phase"),
+    String(objectNumber(object, "attempt_number")),
+    objectString(object, "occurred_at"),
+  ].join("|") || fallback;
 }
 
 function runtimeRoundStatusLabel(

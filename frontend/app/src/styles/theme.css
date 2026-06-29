@@ -5936,6 +5936,39 @@ body {
   margin-bottom: 12px;
 }
 
+.at-role-prompt-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.at-role-prompt-editor .ant-segmented {
+  justify-self: start;
+}
+
+.at-role-prompt-textarea.is-hidden {
+  display: none;
+}
+
+.at-role-prompt-preview {
+  min-height: 180px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 11px 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface-muted);
+  color: var(--at-text);
+}
+
+.at-role-prompt-preview pre {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .at-agent-runtime-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -259,6 +259,7 @@ test("creates and deletes Agent Runtime configs from the System secondary settin
 }) => {
   const appServer = await serveFrontendDist();
   const state = settingsActionState();
+  const rolePrompt = "# Browser Role Prompt\nUse the browser-created runtime.";
   try {
     await installShellState(page);
     const unhandledApiRoutes: string[] = [];
@@ -324,6 +325,72 @@ test("creates and deletes Agent Runtime configs from the System secondary settin
       .toBeVisible();
     await expect(settings.getByLabel("Agent ID")).toHaveValue("browser-agent-ts");
 
+    await sections.getByRole("button", { name: "Roles" }).click();
+    await expect(settings.getByRole("heading", { name: "Roles" })).toBeVisible();
+    await settings.getByRole("button", { name: "New role" }).click();
+    await settings.getByLabel("Role ID").fill("runtime-bound-role");
+    await settings.getByLabel("Role name").fill("Runtime Bound Role");
+    await settings
+      .getByLabel("Description")
+      .fill("Uses the browser-created runtime.");
+    await settings
+      .locator(".ant-form-item", { hasText: "Bound agent" })
+      .locator(".ant-select-selector")
+      .click();
+    const boundAgentDropdown = page.locator(
+      ".ant-select-dropdown:not(.ant-select-dropdown-hidden)",
+    );
+    const browserAgentOption = boundAgentDropdown.locator(
+      ".ant-select-item-option-content",
+      { hasText: "browser-agent-ts" },
+    );
+    await expect(browserAgentOption).toBeVisible();
+    await browserAgentOption.click();
+    await settings
+      .getByLabel("System prompt")
+      .fill(rolePrompt);
+    await settings
+      .locator(".at-role-prompt-editor")
+      .getByText("Preview", { exact: true })
+      .click();
+    await expect(settings.getByRole("region", { name: "Preview" }))
+      .toContainText("Browser Role Prompt");
+    await settings.getByRole("button", { name: "Validate" }).click();
+    await expect
+      .poll(() => state.roleValidatePayloads.at(-1)?.bound_agent_id)
+      .toBe("browser-agent-ts");
+    expect(state.roleValidatePayloads.at(-1)).toMatchObject({
+      role_id: "runtime-bound-role",
+      system_prompt: rolePrompt,
+    });
+
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect
+      .poll(() => state.roleSavePayloads.at(-1)?.bound_agent_id)
+      .toBe("browser-agent-ts");
+    expect(state.roleSavePayloads.at(-1)).toMatchObject({
+      bound_agent_id: "browser-agent-ts",
+      role_id: "runtime-bound-role",
+      system_prompt: rolePrompt,
+    });
+    await expect(page.getByText("Settings saved.")).toBeVisible();
+
+    await settings.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("button", { name: "OK", exact: true }).click();
+    await expect.poll(() => state.roleDeleteRequests).toContain(
+      "runtime-bound-role",
+    );
+    await expect(settings.getByText("Runtime Bound Role")).toHaveCount(0);
+
+    await sections.getByRole("button", { name: "System" }).click();
+    await openSystemSettingsPage(settings, "Agent Runtime");
+    const browserRuntimeRow = settings.locator(".at-settings-list-button").filter({
+      hasText: "Browser TS Agent",
+    });
+    await expect(browserRuntimeRow).toBeVisible();
+    await browserRuntimeRow.click();
+    await expect(settings.getByRole("heading", { name: "Edit runtime" }))
+      .toBeVisible();
     await settings
       .locator(".at-agent-runtime-detail")
       .getByRole("button", { name: "Delete" })
@@ -340,6 +407,13 @@ test("creates and deletes Agent Runtime configs from the System secondary settin
     await expect(settings.getByRole("heading", { name: "Agent Runtime" }))
       .toBeVisible();
     await expect(settings.getByText("Browser TS Agent")).toHaveCount(0);
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0, {
+      timeout: 8000,
+    });
+    await expect(
+      page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)"),
+    ).toHaveCount(0);
+    await expect(page.locator(".ant-popover")).toHaveCount(0);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,

@@ -4,6 +4,8 @@ import {
   Form,
   Input,
   Popconfirm,
+  Segmented,
+  Select,
   Switch,
   Typography,
 } from "antd";
@@ -21,6 +23,7 @@ import {
   getOrchestrationConfig,
   getRoleConfig,
   getRoleConfigOptions,
+  getAgentRuntimes,
   listRoleConfigs,
   probeModelConnection,
   refreshModelCatalog,
@@ -32,6 +35,7 @@ import {
 } from "../../api/client";
 import type {
   GeneralConfig,
+  AgentRuntimeSummary,
   ModalityCapabilities,
   ModelCatalogModel,
   ModelCatalogProvider,
@@ -443,6 +447,10 @@ function SettingsRoles({
     queryKey: ["settings", "roles", "configs"],
     queryFn: listRoleConfigs,
   });
+  const agentRuntimesQuery = useQuery({
+    queryKey: ["settings", "agent-runtimes"],
+    queryFn: getAgentRuntimes,
+  });
   const selectedRoleQuery = useQuery({
     queryKey: ["settings", "roles", "configs", selectedRoleId],
     queryFn: () => getRoleConfig(selectedRoleId ?? ""),
@@ -512,6 +520,10 @@ function SettingsRoles({
     () => (roleConfigsQuery.data ?? []).map((role) => roleConfigListItem(role)),
     [roleConfigsQuery.data],
   );
+  const creatingRoleDocument = useMemo(
+    () => newRoleConfigDraft(),
+    [creatingRole],
+  );
   const selectedRoleSummary =
     selectedRoleId !== null
       ? roleConfigsQuery.data?.find((role) => role.role_id === selectedRoleId)
@@ -537,13 +549,15 @@ function SettingsRoles({
         <RoleConfigDetail
           creating
           deleting={false}
-          document={newRoleConfigDraft()}
+          document={creatingRoleDocument}
           error={null}
           loading={false}
           onBack={() => setCreatingRole(false)}
           onDelete={() => undefined}
           onSave={(document) => saveMutation.mutate(document)}
           onValidate={(document) => validateMutation.mutate(document)}
+          agentRuntimes={agentRuntimesQuery.data ?? []}
+          agentRuntimesLoading={agentRuntimesQuery.isLoading}
           roleId="new-role"
           saving={saveMutation.isPending}
           summary={undefined}
@@ -559,6 +573,8 @@ function SettingsRoles({
           onDelete={(roleId) => deleteMutation.mutate(roleId)}
           onSave={(document) => saveMutation.mutate(document)}
           onValidate={(document) => validateMutation.mutate(document)}
+          agentRuntimes={agentRuntimesQuery.data ?? []}
+          agentRuntimesLoading={agentRuntimesQuery.isLoading}
           roleId={selectedRoleId}
           saving={saveMutation.isPending}
           summary={selectedRoleSummary}
@@ -598,6 +614,8 @@ function RoleConfigDetail({
   onDelete,
   onSave,
   onValidate,
+  agentRuntimes,
+  agentRuntimesLoading,
   roleId,
   saving,
   summary,
@@ -612,6 +630,8 @@ function RoleConfigDetail({
   onDelete: (roleId: string) => void;
   onSave: (document: RoleConfigDocument) => void;
   onValidate: (document: RoleConfigDocument) => void;
+  agentRuntimes: AgentRuntimeSummary[];
+  agentRuntimesLoading: boolean;
   roleId: string;
   saving: boolean;
   summary: RoleConfigSummary | undefined;
@@ -620,10 +640,19 @@ function RoleConfigDetail({
   const t = useTranslations();
   const [form] = Form.useForm<RoleConfigForm>();
   const formId = `at-role-config-form-${roleId}`;
+  const [systemPromptView, setSystemPromptView] =
+    useState<"edit" | "preview">("edit");
+  const [systemPromptPreview, setSystemPromptPreview] = useState("");
+  const boundAgentOptions = useMemo(
+    () => agentRuntimeSelectOptions(agentRuntimes, document?.bound_agent_id),
+    [agentRuntimes, document?.bound_agent_id],
+  );
 
   useEffect(() => {
     if (document !== undefined) {
       form.setFieldsValue(roleConfigFormValues(document));
+      setSystemPromptPreview(document.system_prompt ?? "");
+      setSystemPromptView("edit");
     }
   }, [document, form]);
 
@@ -691,6 +720,11 @@ function RoleConfigDetail({
             onFinish={(values) => {
               onSave(updateRoleConfigDocument(document, values));
             }}
+            onValuesChange={(changedValues: Partial<RoleConfigForm>) => {
+              if (typeof changedValues.system_prompt === "string") {
+                setSystemPromptPreview(changedValues.system_prompt);
+              }
+            }}
           >
             <Form.Item
               label={t("settingsRoleId")}
@@ -712,13 +746,60 @@ function RoleConfigDetail({
               <Input autoComplete="off" />
             </Form.Item>
             <Form.Item label={t("settingsRoleBoundAgent")} name="bound_agent_id">
-              <Input autoComplete="off" />
+              <Select
+                allowClear
+                loading={agentRuntimesLoading}
+                optionFilterProp="label"
+                options={boundAgentOptions}
+                showSearch
+              />
             </Form.Item>
             <Form.Item label={t("settingsRoleMode")} name="mode">
               <Input autoComplete="off" />
             </Form.Item>
-            <Form.Item label={t("settingsRoleSystemPrompt")} name="system_prompt">
-              <Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} />
+            <Form.Item label={t("settingsRoleSystemPrompt")}>
+              <div className="at-role-prompt-editor">
+                <Segmented
+                  aria-label={t("settingsRolePromptView")}
+                  onChange={(value) =>
+                    setSystemPromptView(value as "edit" | "preview")
+                  }
+                  options={[
+                    { label: t("settingsRolePromptEdit"), value: "edit" },
+                    { label: t("settingsRolePromptPreview"), value: "preview" },
+                  ]}
+                  value={systemPromptView}
+                />
+                <div
+                  className={
+                    systemPromptView === "edit"
+                      ? "at-role-prompt-textarea"
+                      : "at-role-prompt-textarea is-hidden"
+                  }
+                >
+                  <Form.Item name="system_prompt" noStyle>
+                    <Input.TextArea
+                      aria-label={t("settingsRoleSystemPrompt")}
+                      autoSize={{ minRows: 8, maxRows: 18 }}
+                    />
+                  </Form.Item>
+                </div>
+                {systemPromptView === "preview" ? (
+                  <div
+                    aria-label={t("settingsRolePromptPreview")}
+                    className="at-role-prompt-preview"
+                    role="region"
+                  >
+                    {systemPromptPreview.trim() ? (
+                      <pre>{systemPromptPreview}</pre>
+                    ) : (
+                      <Typography.Text type="secondary">
+                        {t("settingsRolePromptPreviewEmpty")}
+                      </Typography.Text>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </Form.Item>
           </Form>
           <div className="at-settings-list at-role-config-properties">
@@ -1886,6 +1967,37 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function roleName(role: RoleOption | null | undefined): string {
   return role?.name?.trim() || role?.role_id || "-";
+}
+
+function agentRuntimeSelectOptions(
+  runtimes: AgentRuntimeSummary[],
+  currentAgentId: string | null | undefined,
+): Array<{ label: string; value: string }> {
+  const options = runtimes
+    .filter((runtime) => runtime.agent_id.trim())
+    .map((runtime) => ({
+      label: agentRuntimeOptionLabel(runtime),
+      value: runtime.agent_id,
+    }));
+  const current = currentAgentId?.trim() ?? "";
+  if (current && options.every((option) => option.value !== current)) {
+    return [
+      ...options,
+      {
+        label: current,
+        value: current,
+      },
+    ];
+  }
+  return options;
+}
+
+function agentRuntimeOptionLabel(runtime: AgentRuntimeSummary): string {
+  const name = runtime.name?.trim();
+  if (name && name !== runtime.agent_id) {
+    return `${name} - ${runtime.agent_id}`;
+  }
+  return runtime.agent_id;
 }
 
 function roleConfigListItem(role: RoleConfigSummary): SettingsListItem {

@@ -2,6 +2,31 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Agent Runtime Role Binding TS Browser Closure
+
+### Scope
+- Re-checked the active frontend rewrite goal and the old `test_browser_settings_save_role_and_agent_configs` Python browser scenario before deciding whether it could be removed. This slice closes the remaining Role half of the earlier Agent Runtime migration instead of widening Settings navigation or adding first-level pages.
+- Restored V1-equivalent Role editor behavior in V2: the Bound agent field now uses the saved Agent Runtime list as selectable options, newly-created Agent Runtime configs are available when creating a Role, and existing dirty `bound_agent_id` values remain editable even if the runtime list no longer contains them.
+- Restored the Role system prompt edit/preview switch so prompt preview remains available from the Role detail page without flattening the Settings secondary-page structure.
+- Fixed a real V2 form bug found during browser verification: creating a Role used a fresh draft object on every render, so Validate could clear the user's unsaved form values before Save. The new draft is stable for the create session, and the system prompt field stays registered while the preview view is open.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` so the System -> Agent Runtime flow creates an ACP runtime, switches to Roles, creates a Role bound to that runtime, verifies prompt preview, asserts validate/save payloads for `bound_agent_id` and `system_prompt`, deletes the Role, returns to the System -> Agent Runtime secondary page, and deletes the runtime.
+- Removed the replaced `test_browser_settings_save_role_and_agent_configs` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py`. Remaining legacy Python browser scenarios: 5, with 2 still skipped.
+- Rebuilt `frontend/dist/app` so dist-served browser tests exercise the restored Role binding and prompt preview behavior.
+
+### Verification
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run lint` passed for frontend and desktop TypeScript projects.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts -g "creates and deletes Agent Runtime"` passed for the focused migrated flow.
+- `npm run test -- SettingsDrawer.test.tsx -t "validates, deletes, and creates role configs|creates and deletes agent runtimes"` passed with 2 focused Vitest tests. The full `SettingsDrawer.test.tsx` file was stopped after it produced only repeated jsdom `getComputedStyle(... pseudo-elements)` notices for about two minutes without a result; the narrower tests cover this slice directly.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 13 TS browser tests.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `git diff --check` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-agent-runtime-create-delete.png`; it shows the Settings drawer still using the V1-aligned root section list, Agent Runtime still nested under System as a secondary page, the created runtime removed after cleanup, no success-toast stack covering the final screenshot, and the main shell still fixed behind the drawer.
+
+### Reviewer
+- Main-agent source fix, TS browser migration, targeted unit coverage, frontend build/typecheck, Python syntax/lint, screenshot inspection, and remaining Python browser scan completed for this slice. No Settings subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Agent Runtime Settings TS Browser Batch
 
 ### Scope

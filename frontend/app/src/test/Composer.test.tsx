@@ -262,6 +262,39 @@ describe("Composer", () => {
     });
   });
 
+  it("refreshes sidebar sessions when a new run starts", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    const controller = runStreamController();
+    const queryClient = createComposerQueryClient();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    renderComposerWithClient(queryClient, controller);
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Start the session" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+    );
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
+  });
+
   it("explains why sending is disabled before input is available", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
@@ -1812,14 +1845,17 @@ describe("Composer", () => {
       status: "ok",
     });
     const controller = runStreamController("run-1");
-
-    renderComposer(controller);
+    const queryClient = renderComposer(controller);
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
     await waitFor(() => expect(stopRunMock).toHaveBeenCalledWith("run-1"));
     expect(controller.clearRunStream).toHaveBeenCalledWith({
       suppressRunIds: ["run-1"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
     });
   });
 

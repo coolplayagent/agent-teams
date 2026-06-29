@@ -455,7 +455,8 @@ describe("SessionsSidebar", () => {
     ]);
     deleteSessionMock.mockResolvedValue({ status: "ok" });
 
-    renderSidebar();
+    const queryClient = renderSidebar();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     expect(await screen.findByText("Alpha")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Delete session" }));
@@ -470,6 +471,12 @@ describe("SessionsSidebar", () => {
         force: true,
       }),
     );
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-a"],
+    });
     expect(useUiStore.getState().selectedSessionId).toBeNull();
   });
 
@@ -993,6 +1000,7 @@ function renderSidebar(props?: {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 function appearsBefore(left: HTMLElement, right: HTMLElement): boolean {

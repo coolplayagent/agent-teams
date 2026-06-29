@@ -89,7 +89,7 @@ describe("useRunStreamController", () => {
     expect(recoveryRefreshCallCount(invalidateSpy)).toBe(refreshCountAfterClose);
   });
 
-  it("refreshes session token usage when a run stream closes", async () => {
+  it("refreshes sidebar and session token usage when a run stream closes", async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -120,6 +120,9 @@ describe("useRunStreamController", () => {
         queryKey: ["sessions", "session-1", "token-usage"],
       }),
     );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
   });
 
   it("suppresses stale recovery targets after terminal stream closure", () => {
@@ -585,6 +588,9 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
     });
 
     act(() => {

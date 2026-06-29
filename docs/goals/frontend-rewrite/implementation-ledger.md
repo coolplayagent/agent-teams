@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session Sidebar Store TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Sessions And Projects checklist, existing V2 `SessionsSidebar`/`Composer`/`useRunStreamController` coverage, and the old `test_session_sidebar_store_ui.py` V1 store harness before editing.
+- Migrated the V1 sidebar store intent to V2 TypeScript evidence: starting a run refreshes the sidebar session query, stopping a run refreshes the sidebar query while suppressing stale recovery targets, terminal stream closure refreshes sidebar/messages/token/recovery data, locally terminal transport interruptions do not reconnect and still refresh the sidebar, deleted sessions clear selection and invalidate sidebar/detail caches, and terminal/unread/background indicators render from real sidebar session records.
+- Kept production code unchanged because V2 intentionally uses React Query session caches and API refetches instead of the old `frontend/dist/js/components/sessionSidebarStore.js` optimistic store.
+- Removed `tests/integration_tests/frontend/test_session_sidebar_store_ui.py` after its remaining V2-relevant behavior was covered by focused TypeScript tests and existing sidebar rendering coverage.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx -t "sidebar|stops an active run"` passed with the new Composer cache-refresh coverage and adjacent sidebar/topology cases.
+- `npm run test -- src/test/RunStreamController.test.tsx -t "sidebar|token usage|locally terminal"` passed with the stream-close and local-terminal refresh coverage.
+- `npm run test -- src/test/SessionsSidebar.test.tsx -t "session deletion|terminal run indicators|background work"` passed with the sidebar delete and status-rendering coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+
+### Reviewer
+- Main-agent V2 sidebar cache-refresh coverage and old Python UI harness removal completed for this slice. No full Sessions And Projects subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Recovery Background Task TS Migration
 
 ### Scope

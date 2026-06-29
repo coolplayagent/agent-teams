@@ -16,6 +16,10 @@ import {
 const SCREENSHOT_FOLDER = "frontend-v2-ts-rounds";
 const ROUND_RUN_ID = "run-v2-export";
 const TODO_RUN_ID = "run-v2-todo";
+const PAGED_ARCHIVE_RUN_ID = "run-v2-paged-archive";
+const PAGED_MIDDLE_RUN_ID = "run-v2-paged-middle";
+const PAGED_LATEST_RUN_ID = "run-v2-paged-latest";
+const PAGED_CURSOR_RUN_ID = "run-v2-paged-cursor";
 
 test("opens round rail retry and todo detail", async ({ page }) => {
   const appServer = await serveFrontendDist();
@@ -135,6 +139,86 @@ test("keeps todo details scoped to the round rail", async ({ page }) => {
   }
 });
 
+test("collects paged round rail history and navigates older rounds", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const requestedUrls: string[] = [];
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handlePagedRoundsApi(context, requestedUrls),
+      sessionTitle: "TS paged rounds",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    await expect
+      .poll(() => requestedUrls.includes(`/sessions/${SESSION_ID}/rounds?limit=100`))
+      .toBe(true);
+    await expect
+      .poll(() =>
+        requestedUrls.includes(
+          `/sessions/${SESSION_ID}/rounds?limit=100&cursor_run_id=${PAGED_CURSOR_RUN_ID}`,
+        ),
+      )
+      .toBe(true);
+
+    const roundRail = page.getByRole("navigation", { name: "Rounds" });
+    await expect(roundRail).toBeVisible();
+    await expect(roundRail.getByRole("button")).toHaveCount(3);
+
+    const archiveButton = page.getByRole("button", {
+      name: "Go to round 1: Paged archive branch",
+    });
+    const middleButton = page.getByRole("button", {
+      name: "Go to round 2: Paged middle branch",
+    });
+    const latestButton = page.getByRole("button", {
+      name: "Go to round 3: Paged latest branch",
+    });
+    await expect(archiveButton).toBeVisible();
+    await expect(middleButton).toBeVisible();
+    await expect(latestButton).toBeVisible();
+
+    const timeline = page.locator(".at-timeline");
+    const initialScrollTop = await timeline.evaluate((element) => element.scrollTop);
+    expect(initialScrollTop).toBeGreaterThan(0);
+
+    await archiveButton.click();
+    await expect(archiveButton).toHaveAttribute("aria-current", "step");
+    await expect
+      .poll(() => timeline.evaluate((element) => element.scrollTop))
+      .toBeLessThan(initialScrollTop);
+    await expect(
+      page.locator(".at-message").filter({ hasText: "Paged archive output" }),
+    ).toBeVisible();
+
+    await archiveButton.hover();
+    const detail = roundRail.locator(".at-round-rail-detail.is-open");
+    await expect(detail).toBeVisible();
+    await expect(detail.getByText("Todo", { exact: true })).toBeVisible();
+    await expect(detail.getByText("Audit old replay boundary")).toBeVisible();
+    await expect(detail.getByText("Replay archived stream")).toBeVisible();
+    await expect(detail.getByText("1 pending approvals")).toBeVisible();
+    await expect(
+      page.locator(".at-message").filter({ hasText: "Audit old replay boundary" }),
+    ).toHaveCount(0);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "paged round history should keep scrolling inside the V2 timeline shell",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-round-paged-history.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleRoundsApi(
   context: MockApiRouteContext,
   requestedUrls: string[],
@@ -150,6 +234,37 @@ async function handleRoundsApi(
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
     await context.fulfillJson([roundRailMessage()]);
+    return true;
+  }
+  return false;
+}
+
+async function handlePagedRoundsApi(
+  context: MockApiRouteContext,
+  requestedUrls: string[],
+): Promise<boolean> {
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/rounds`) {
+    requestedUrls.push(`${context.path}${context.url.search}`);
+    const cursorRunId = context.url.searchParams.get("cursor_run_id");
+    if (cursorRunId === PAGED_CURSOR_RUN_ID) {
+      await context.fulfillJson({
+        has_more: false,
+        items: [pagedArchiveRound()],
+        next_cursor: null,
+      });
+      return true;
+    }
+    if (cursorRunId === null) {
+      await context.fulfillJson({
+        has_more: true,
+        items: [pagedLatestRound(), pagedMiddleRound()],
+        next_cursor: PAGED_CURSOR_RUN_ID,
+      });
+      return true;
+    }
+  }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
+    await context.fulfillJson(pagedRoundMessages());
     return true;
   }
   return false;
@@ -207,6 +322,58 @@ function todoRailMessage(): Record<string, unknown> {
   };
 }
 
+function pagedRoundMessages(): Record<string, unknown>[] {
+  return [
+    pagedRoundMessage({
+      content: "Paged archive output",
+      createdAt: "2026-06-25T07:00:02Z",
+      messageId: "message-paged-archive-output",
+      runId: PAGED_ARCHIVE_RUN_ID,
+    }),
+    ...Array.from({ length: 18 }, (_, index) =>
+      pagedRoundMessage({
+        content: `Paged middle branch filler ${index + 1}`,
+        createdAt: `2026-06-25T07:${String(index + 10).padStart(2, "0")}:00Z`,
+        messageId: `message-paged-middle-${index + 1}`,
+        runId: PAGED_MIDDLE_RUN_ID,
+      }),
+    ),
+    pagedRoundMessage({
+      content: "Paged latest output",
+      createdAt: "2026-06-25T08:00:02Z",
+      messageId: "message-paged-latest-output",
+      runId: PAGED_LATEST_RUN_ID,
+    }),
+  ];
+}
+
+function pagedRoundMessage({
+  content,
+  createdAt,
+  messageId,
+  runId,
+}: {
+  content: string;
+  createdAt: string;
+  messageId: string;
+  runId: string;
+}): Record<string, unknown> {
+  return {
+    created_at: createdAt,
+    message: {
+      parts: [
+        {
+          content,
+          part_kind: "text",
+        },
+      ],
+    },
+    message_id: messageId,
+    role_id: "MainAgent",
+    run_id: runId,
+  };
+}
+
 async function expectDarkComposerPrompt(page: Page): Promise<void> {
   await expect
     .poll(() =>
@@ -215,6 +382,107 @@ async function expectDarkComposerPrompt(page: Page): Promise<void> {
         .evaluate((element) => window.getComputedStyle(element).backgroundColor),
     )
     .not.toBe("rgb(255, 255, 255)");
+}
+
+function pagedArchiveRound(): Record<string, unknown> {
+  return {
+    coordinator_messages: [
+      {
+        created_at: "2026-06-25T07:00:02Z",
+        message: {
+          parts: [
+            {
+              content: "Paged archive output",
+              part_kind: "text",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+      },
+    ],
+    created_at: "2026-06-25T07:00:01Z",
+    has_final_output: true,
+    intent: "Paged archive branch",
+    intent_parts: [{ kind: "text", text: "Paged archive branch" }],
+    pending_tool_approval_count: 1,
+    run_id: PAGED_ARCHIVE_RUN_ID,
+    run_phase: "completed",
+    run_status: "completed",
+    run_user_message: "Paged archive branch",
+    todo: {
+      items: [
+        {
+          content: "Audit old replay boundary",
+          status: "completed",
+        },
+        {
+          content: "Replay archived stream",
+          status: "pending",
+        },
+      ],
+      run_id: PAGED_ARCHIVE_RUN_ID,
+      session_id: SESSION_ID,
+      updated_at: "2026-06-25T07:00:03Z",
+      version: 7,
+    },
+    verification_status: "verified",
+  };
+}
+
+function pagedMiddleRound(): Record<string, unknown> {
+  return {
+    coordinator_messages: [
+      {
+        created_at: "2026-06-25T07:10:00Z",
+        message: {
+          parts: [
+            {
+              content: "Paged middle branch filler 1",
+              part_kind: "text",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+      },
+    ],
+    created_at: "2026-06-25T07:10:00Z",
+    has_final_output: true,
+    intent: "Paged middle branch",
+    intent_parts: [{ kind: "text", text: "Paged middle branch" }],
+    run_id: PAGED_MIDDLE_RUN_ID,
+    run_phase: "completed",
+    run_status: "completed",
+    run_user_message: "Paged middle branch",
+    verification_status: "verified",
+  };
+}
+
+function pagedLatestRound(): Record<string, unknown> {
+  return {
+    coordinator_messages: [
+      {
+        created_at: "2026-06-25T08:00:02Z",
+        message: {
+          parts: [
+            {
+              content: "Paged latest output",
+              part_kind: "text",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+      },
+    ],
+    created_at: "2026-06-25T08:00:01Z",
+    has_final_output: true,
+    intent: "Paged latest branch",
+    intent_parts: [{ kind: "text", text: "Paged latest branch" }],
+    run_id: PAGED_LATEST_RUN_ID,
+    run_phase: "completed",
+    run_status: "completed",
+    run_user_message: "Paged latest branch",
+    verification_status: "verified",
+  };
 }
 
 function todoRailRound(): Record<string, unknown> {

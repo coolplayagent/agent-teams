@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Environment Variables And Session Topology TS Browser Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining legacy Python browser surface, and existing Settings/Composer TS coverage before editing. This slice targets the old `test_browser_environment_variables_and_session_topology` workflow at dist/browser level without changing the Settings navigation structure.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` with deterministic TS browser coverage for the V2 Settings Environment variables secondary page: app/system variable visibility, system group expansion, app variable creation through the modal, PUT payload shape, delete confirmation, DELETE path, and list removal.
+- Extended the same TS browser workflow through Composer session topology controls: normal -> orchestration mode switch, default orchestration preset PATCH payload, Shipping preset selection PATCH payload, normal mode reset PATCH payload, fixed-shell no-document-scroll behavior, and composer control overlap detection.
+- Added browser mock state for environment-variable catalog changes and session detail/topology updates so the UI and request assertions share the same current-state model.
+- Kept the V1-style secondary-page logic intact: Environment variables remains a Settings section, orchestration config remains a Settings section, and topology switching stays in the composer controls instead of being promoted to a new first-level page.
+- Kept the old `test_browser_environment_variables_and_session_topology` Python scenario in place for now because the current TS coverage migrates its core V2-equivalent flows but the remaining legacy browser file still needs final scenario-by-scenario removal accounting. Remaining frontend rewrite work still includes migrating or deleting the remaining 6 legacy Python browser scenarios, deeper stream replay and interrupted-stream recovery coverage, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `npm run build` passed before the dist-served browser run; the final source-only TS browser change did not alter `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 12 TS browser tests after one unrelated transient timeout in the existing remote-workspace test was rerun successfully.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-environment-topology-workflow.png`; it shows the fixed V2 shell with sidebar navigation unchanged, Settings closed after the environment-variable work, the composer back in normal mode, and the control row kept within the composer frame without overlap.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip" tests/integration_tests/browser/test_browser_smoke.py` still reports 6 legacy Python browser scenarios; no Python scenario was removed in this partial migration slice.
+
+### Reviewer
+- Main-agent TS browser migration, frontend lint/typecheck/build, TS browser workflow, screenshot inspection, and remaining Python scenario accounting completed for this slice. No Settings subsystem sign-off, Composer/topology subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Automation Project Create/Run/Delete TS Browser Batch
 
 ### Scope

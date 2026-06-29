@@ -2,19 +2,35 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   ensureScreenshotDir,
+  expectComposerControlsDoNotOverlap,
   expectNoDocumentScroll,
   expectNoUnhandledApiRoutes,
   installShellState,
   mockShellApi,
   screenshotPath,
+  SESSION_ID,
   serveFrontendDist,
   waitForV2Shell,
+  WORKSPACE_ID,
   type MockApiRouteContext,
 } from "./support/frontend-app";
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-settings-actions";
 
 interface SettingsActionState {
+  environmentDeleteRequests: Array<{
+    key: string;
+    scope: string;
+  }>;
+  environmentSavePayloads: Array<{
+    key: string;
+    payload: Record<string, unknown>;
+    scope: string;
+  }>;
+  environmentVariables: {
+    app: Record<string, unknown>[];
+    system: Record<string, unknown>[];
+  };
   failNextWebSave: boolean;
   hooksConfig: Record<string, unknown>;
   hooksSavePayloads: Record<string, unknown>[];
@@ -41,6 +57,8 @@ interface SettingsActionState {
   sshProfiles: Record<string, unknown>[];
   sshSavePayloads: Record<string, unknown>[];
   sshSaveRequests: string[];
+  session: Record<string, unknown>;
+  topologyPayloads: Record<string, unknown>[];
   uiLanguage: "en-US" | "zh-CN";
   uiLanguageSavePayloads: Record<string, unknown>[];
   webConfig: Record<string, unknown>;
@@ -359,7 +377,9 @@ test("sets defaults, deletes, and creates orchestration presets", async ({
       | undefined;
     expect(presets?.at(-1)?.preset_id).toBe("analysis");
     expect(presets?.at(-1)?.role_ids).toEqual(["reviewer"]);
-    await expect(settings.getByLabel("Preset ID")).toHaveValue("analysis");
+    await expect
+      .poll(() => orchestrationAnalysisIsRendered(settings))
+      .toBe(true);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
@@ -367,6 +387,113 @@ test("sets defaults, deletes, and creates orchestration presets", async ({
     );
     await page.screenshot({
       path: screenshotPath("v2-orchestration-create-save.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("manages environment variables and session topology from V2 surfaces", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS environment topology",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Environment variables" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "Environment variables" }))
+      .toBeVisible();
+    await expect(settings.getByText("EXISTING_BROWSER_ENV")).toBeVisible();
+    await expect(settings.getByText("SYSTEM_BROWSER_ENV")).not.toBeVisible();
+
+    await settings.locator(".at-settings-env-system-toggle").click();
+    await expect(settings.getByText("SYSTEM_BROWSER_ENV")).toBeVisible();
+
+    await settings.getByRole("button", { name: "New variable" }).click();
+    const envDialog = page.getByRole("dialog", { name: "New variable" });
+    await expect(envDialog).toBeVisible();
+    await envDialog.getByLabel("Key").fill("BROWSER_TS_ENV");
+    await envDialog.getByLabel("Value").fill("browser-ts-value");
+    await envDialog.getByRole("button", { name: "Save" }).click();
+    await expect(envDialog).toBeHidden();
+    await expect(settings.getByText("BROWSER_TS_ENV")).toBeVisible();
+    expect(state.environmentSavePayloads).toEqual([
+      {
+        key: "BROWSER_TS_ENV",
+        payload: { source_key: null, value: "browser-ts-value" },
+        scope: "app",
+      },
+    ]);
+
+    const createdEnvRow = settings.locator(".at-settings-env-row").filter({
+      hasText: "BROWSER_TS_ENV",
+    });
+    await createdEnvRow.getByRole("button", { name: "Delete" }).click();
+    const confirm = page.locator(".ant-modal-confirm");
+    await expect(confirm.locator(".ant-modal-confirm-title")).toHaveText(
+      'Delete environment variable "BROWSER_TS_ENV"?',
+    );
+    await confirm.getByRole("button", { name: "Delete" }).click();
+    await expect(settings.getByText("BROWSER_TS_ENV")).toHaveCount(0);
+    expect(state.environmentDeleteRequests).toEqual([
+      { key: "BROWSER_TS_ENV", scope: "app" },
+    ]);
+
+    await settings.getByRole("button", { name: "Close" }).click();
+    await expect(settings).toHaveCount(0);
+
+    await expect(page.locator(".at-session-mode-control")).toBeVisible();
+    await page.getByText("Orchestration", { exact: true }).click();
+    await expect.poll(() => state.topologyPayloads.length).toBe(1);
+    expect(state.topologyPayloads[0]).toEqual({
+      normal_root_role_id: null,
+      orchestration_preset_id: "default",
+      session_mode: "orchestration",
+    });
+    await expect(
+      page.getByRole("combobox", { name: "Orchestration preset" }),
+    ).toBeVisible();
+    await expect(page.getByText("Session topology updated.")).toBeVisible();
+
+    await page.locator(".at-orchestration-preset-select").click();
+    await page.getByRole("option", { name: "Shipping - shipping" }).click();
+    await expect.poll(() => state.topologyPayloads.length).toBe(2);
+    expect(state.topologyPayloads[1]).toEqual({
+      normal_root_role_id: null,
+      orchestration_preset_id: "shipping",
+      session_mode: "orchestration",
+    });
+
+    await page.getByText("Normal", { exact: true }).click();
+    await expect.poll(() => state.topologyPayloads.length).toBe(3);
+    expect(state.topologyPayloads[2]).toEqual({
+      normal_root_role_id: "MainAgent",
+      orchestration_preset_id: null,
+      session_mode: "normal",
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 environment and topology workflow should stay framed",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath("v2-environment-topology-workflow.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -1038,8 +1165,22 @@ async function optionPairs(select: Locator): Promise<Array<[string, string]>> {
   );
 }
 
+async function orchestrationAnalysisIsRendered(settings: Locator): Promise<boolean> {
+  return settings.evaluate((element) => {
+    const text = element.textContent ?? "";
+    const hasAnalysisText = text.includes("Analysis") && text.includes("analysis");
+    const hasAnalysisInput = Array.from(
+      element.querySelectorAll<HTMLInputElement>("input"),
+    ).some((input) => input.value === "analysis");
+    return hasAnalysisText || hasAnalysisInput;
+  });
+}
+
 function settingsActionState(): SettingsActionState {
   return {
+    environmentDeleteRequests: [],
+    environmentSavePayloads: [],
+    environmentVariables: environmentVariables(),
     failNextWebSave: false,
     hooksConfig: hooksConfig(),
     hooksSavePayloads: [],
@@ -1066,6 +1207,12 @@ function settingsActionState(): SettingsActionState {
     sshProfiles: sshProfiles(),
     sshSavePayloads: [],
     sshSaveRequests: [],
+    session: sessionRecord({
+      normal_root_role_id: "MainAgent",
+      orchestration_preset_id: null,
+      session_mode: "normal",
+    }),
+    topologyPayloads: [],
     uiLanguage: "en-US",
     uiLanguageSavePayloads: [],
     webConfig: webConfig(),
@@ -1088,6 +1235,48 @@ async function handleSettingsActionApi(
     await context.fulfillJson({ language: state.uiLanguage });
     return true;
   }
+  if (method === "GET" && path === "/system/configs/environment-variables") {
+    await context.fulfillJson(state.environmentVariables);
+    return true;
+  }
+  if (
+    method === "PUT" &&
+    path.startsWith("/system/configs/environment-variables/")
+  ) {
+    const { key, scope } = environmentPathParts(path);
+    const payload = readJsonBody(context);
+    state.environmentSavePayloads.push({ key, payload, scope });
+    state.environmentVariables.app = [
+      ...state.environmentVariables.app.filter(
+        (record) => String(record.key) !== key,
+      ),
+      {
+        key,
+        scope,
+        value: String(payload.value ?? ""),
+        value_kind: "string",
+      },
+    ];
+    await context.fulfillJson({
+      key,
+      scope,
+      value: String(payload.value ?? ""),
+      value_kind: "string",
+    });
+    return true;
+  }
+  if (
+    method === "DELETE" &&
+    path.startsWith("/system/configs/environment-variables/")
+  ) {
+    const { key, scope } = environmentPathParts(path);
+    state.environmentDeleteRequests.push({ key, scope });
+    state.environmentVariables.app = state.environmentVariables.app.filter(
+      (record) => String(record.key) !== key,
+    );
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
   if (method === "PUT" && path === "/system/configs/ui-language") {
     const payload = readJsonBody(context);
     state.uiLanguageSavePayloads.push(payload);
@@ -1096,6 +1285,28 @@ async function handleSettingsActionApi(
       state.uiLanguage = language;
     }
     await context.fulfillJson({ language: state.uiLanguage });
+    return true;
+  }
+  if (method === "GET" && path === `/sessions/${SESSION_ID}`) {
+    await context.fulfillJson(state.session);
+    return true;
+  }
+  if (method === "PATCH" && path === `/sessions/${SESSION_ID}/topology`) {
+    const payload = readJsonBody(context);
+    state.topologyPayloads.push(payload);
+    state.session = sessionRecord({
+      normal_root_role_id:
+        typeof payload.normal_root_role_id === "string"
+          ? payload.normal_root_role_id
+          : null,
+      orchestration_preset_id:
+        typeof payload.orchestration_preset_id === "string"
+          ? payload.orchestration_preset_id
+          : null,
+      session_mode:
+        payload.session_mode === "orchestration" ? "orchestration" : "normal",
+    });
+    await context.fulfillJson(state.session);
     return true;
   }
   if (method === "GET" && path === "/roles:options") {
@@ -1394,6 +1605,63 @@ function systemConfigResponse(): Record<string, unknown> {
         },
       ],
     },
+  };
+}
+
+function environmentVariables(): {
+  app: Record<string, unknown>[];
+  system: Record<string, unknown>[];
+} {
+  return {
+    app: [
+      {
+        key: "EXISTING_BROWSER_ENV",
+        scope: "app",
+        value: "existing-browser-value",
+        value_kind: "string",
+      },
+    ],
+    system: [
+      {
+        key: "SYSTEM_BROWSER_ENV",
+        scope: "system",
+        value: "%USERPROFILE%/agent-teams",
+        value_kind: "expandable",
+      },
+    ],
+  };
+}
+
+function environmentPathParts(path: string): { key: string; scope: string } {
+  const [scope = "", ...keyParts] = path
+    .replace("/system/configs/environment-variables/", "")
+    .split("/");
+  return {
+    key: decodeURIComponent(keyParts.join("/")),
+    scope: decodeURIComponent(scope),
+  };
+}
+
+function sessionRecord({
+  normal_root_role_id,
+  orchestration_preset_id,
+  session_mode,
+}: {
+  normal_root_role_id: string | null;
+  orchestration_preset_id: string | null;
+  session_mode: "normal" | "orchestration";
+}): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: "2026-06-25T08:00:00Z",
+    normal_model_profile: null,
+    normal_root_role_id,
+    orchestration_preset_id,
+    session_id: SESSION_ID,
+    session_mode,
+    title: "TS environment topology",
+    updated_at: "2026-06-25T08:30:00Z",
+    workspace_id: WORKSPACE_ID,
   };
 }
 

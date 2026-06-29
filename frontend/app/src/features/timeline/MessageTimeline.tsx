@@ -1370,6 +1370,13 @@ function openRuntimeEntriesWithIdleCursor(
   const visibleEntries = entries.filter(
     (entry) => !runtimeSilentOpenLifecycleEntry(entry),
   );
+  const latestVisibleEntry = visibleEntries.at(-1);
+  if (
+    latestVisibleEntry !== undefined &&
+    runtimeEntryRestoresIdleCursor(latestVisibleEntry)
+  ) {
+    return [...visibleEntries, runtimeIdleCursorEntry(latestVisibleEntry)];
+  }
   if (visibleEntries.some(runtimeEntryProducesRenderableRow)) {
     return visibleEntries;
   }
@@ -1385,6 +1392,14 @@ function runtimeSilentOpenLifecycleEntry(entry: TimelineEntry): boolean {
 
 function runtimeEntryProducesRenderableRow(entry: TimelineEntry): boolean {
   return runtimeEntryParts(entry).length > 0;
+}
+
+function runtimeEntryRestoresIdleCursor(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "thinking_finished" ||
+    entry.kind === "tool_result" ||
+    entry.kind === "tool_input_validation_failed"
+  );
 }
 
 function openRuntimeTextCoveredByHydration(

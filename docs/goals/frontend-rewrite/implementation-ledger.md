@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Idle Cursor After Segment TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining legacy `test_stream_session_overlay_ui.py` cases, and V2 `MessageTimeline` runtime thinking/tool tail behavior before editing.
+- Restored the V1 idle cursor continuation semantics in the V2 runtime path: an open run whose latest visible event is `thinking_finished`, `tool_result`, or `tool_input_validation_failed` now appends an empty streaming cursor row so users can still see the stream is alive between output segments.
+- Updated V2 component coverage so result-first tool replay and no-prior-call tool results both retain an idle cursor while the run remains open.
+- Added V2 component coverage proving a completed thinking block becomes non-live/non-open but is followed by an idle streaming cursor until terminal closure.
+- Removed three replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness tests: `test_overlay_snapshot_preserves_idle_cursor_state`, `test_finalize_thinking_restores_idle_streaming_cursor_until_finalize`, and `test_tool_result_restores_idle_streaming_cursor_until_next_segment`.
+- Kept this slice focused on stream inter-segment idle cursor semantics. No sidebar entries, Settings sections, secondary-page routing, or visible shell layout changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "idle streaming cursor|thinking finishes|completed runtime tool results|runtime tool results without a prior tool call|closes live thinking|terminal run events"` passed with the new thinking-finished idle cursor case and adjacent idle/tool/terminal coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_overlay_snapshot_preserves_idle_cursor_state|test_finalize_thinking_restores_idle_streaming_cursor_until_finalize|test_tool_result_restores_idle_streaming_cursor_until_next_segment|stream_idle_cursor_snapshot|stream_idle_cursor_after_thinking|stream_idle_cursor_after_tool|thinking finishes" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned only the new TS case after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 idle cursor implementation, component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Tool Result Overlay TS Migration
 
 ### Scope

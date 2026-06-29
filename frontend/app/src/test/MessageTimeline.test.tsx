@@ -1562,7 +1562,8 @@ describe("MessageTimeline", () => {
     expect(resultDetails).toHaveTextContent(/done/);
     fireEvent.click(resultTitle);
     expect(resultDetails).toBeVisible();
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
   });
 
   it("renders runtime tool results without a prior tool call", async () => {
@@ -1597,7 +1598,8 @@ describe("MessageTimeline", () => {
     expect(resultDetails).toHaveTextContent(/boom/);
     fireEvent.click(resultTitle);
     expect(resultDetails).toBeVisible();
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
   });
 
   it("merges out-of-order parallel runtime tool calls into completed results", async () => {
@@ -2907,6 +2909,47 @@ describe("MessageTimeline", () => {
     expect(thinkingBlock).toHaveAttribute("data-streaming", "true");
     expect(thinkingBlock).toHaveAttribute("open");
     expect(screen.getByText("live thought")).toBeVisible();
+  });
+
+  it("restores an idle streaming cursor after thinking finishes in an open run", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        run_id: "run-thinking-idle",
+        trace_id: "run-thinking-idle",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "working" }),
+        run_id: "run-thinking-idle",
+        trace_id: "run-thinking-idle",
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "thinking_finished",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        run_id: "run-thinking-idle",
+        trace_id: "run-thinking-idle",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-thinking-idle",
+    });
+
+    await screen.findByText("Thinking");
+    const thinkingBlock = container.querySelector(".at-message-thinking");
+    expect(thinkingBlock).toHaveAttribute("data-streaming", "false");
+    expect(thinkingBlock).not.toHaveAttribute("open");
+    expect(thinkingBlock).toHaveTextContent("working");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
   it("closes live thinking blocks on terminal run events", async () => {

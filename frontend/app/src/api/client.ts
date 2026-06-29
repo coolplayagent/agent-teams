@@ -198,6 +198,31 @@ export function updateWorkspace(
   );
 }
 
+export interface DeleteWorkspaceOptions {
+  removeDirectory?: boolean;
+}
+
+export function deleteWorkspace(
+  workspaceId: string,
+  options: DeleteWorkspaceOptions = {},
+): Promise<{ status: string }> {
+  const params = new URLSearchParams();
+  if (options.removeDirectory === true) {
+    params.set("remove_directory", "true");
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return requestJson<{ status: string }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}${query}`,
+    {
+      method: "DELETE",
+      body:
+        options.removeDirectory === true
+          ? JSON.stringify({ force: true })
+          : undefined,
+    },
+  );
+}
+
 export function getWorkspaceTree(
   workspaceId: string,
   path = ".",

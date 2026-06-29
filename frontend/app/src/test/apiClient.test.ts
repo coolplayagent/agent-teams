@@ -19,6 +19,7 @@ import {
   deleteWeChatGatewayAccount,
   deleteEnvironmentVariable,
   deleteSshProfile,
+  deleteWorkspace,
   disableFeishuGatewayAccount,
   disableWeChatGatewayAccount,
   enableFeishuGatewayAccount,
@@ -216,6 +217,41 @@ describe("api client", () => {
       expect.objectContaining({
         body: undefined,
         method: "POST",
+      }),
+    );
+  });
+
+  it("deletes workspaces with optional directory removal", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteWorkspace("workspace one")).resolves.toEqual({
+      status: "ok",
+    });
+    await expect(
+      deleteWorkspace("workspace one", { removeDirectory: true }),
+    ).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/workspaces/workspace%20one",
+      expect.objectContaining({
+        body: undefined,
+        method: "DELETE",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/workspaces/workspace%20one?remove_directory=true",
+      expect.objectContaining({
+        body: JSON.stringify({ force: true }),
+        method: "DELETE",
       }),
     );
   });

@@ -15,15 +15,27 @@ import {
 } from "./support/frontend-app";
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-project-view";
+const EXTRA_WORKSPACE_ID = "workspace-v2-remove";
+
+interface ProjectViewApiState {
+  deletedWorkspaceIds: string[];
+  deleteWorkspaceRequests: Array<{
+    payload: Record<string, unknown> | null;
+    query: string;
+    workspaceId: string;
+  }>;
+}
 
 test("opens reloads and closes the workspace project view", async ({ page }) => {
   const appServer = await serveFrontendDist();
+  const state = projectViewApiState();
   const requestedUrls: string[] = [];
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
-      handleRequest: (context) => handleProjectViewApi(context, requestedUrls),
+      handleRequest: (context) =>
+        handleProjectViewApi(context, requestedUrls, state),
       sessionTitle: "TS project view",
     });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
@@ -49,6 +61,15 @@ test("opens reloads and closes the workspace project view", async ({ page }) => 
 
     await projectView.getByRole("tab", { name: "Files" }).click();
     await expect(projectView.getByText("README.md")).toBeVisible();
+    await projectView.getByRole("button", { name: "Toggle directory frontend" })
+      .click();
+    await expect(
+      projectView.getByRole("button", { name: "Open file frontend/guide.md" }),
+    ).toBeVisible();
+    await projectView.getByRole("button", { name: "Open file frontend/guide.md" })
+      .click();
+    await expect(projectView.getByText("# Frontend Guide")).toBeVisible();
+    await expect(projectView.getByText("Nested tree content.")).toBeVisible();
     await projectView.getByRole("button", { name: "Open file README.md" }).click();
     await expect(projectView.getByText("# Agent Teams Project")).toBeVisible();
     await expect(projectView.getByText("Browser-backed project view content."))
@@ -69,7 +90,9 @@ test("opens reloads and closes the workspace project view", async ({ page }) => 
       `/workspaces/${WORKSPACE_ID}/snapshot`,
       `/workspaces/${WORKSPACE_ID}/diffs?mount=default`,
       `/workspaces/${WORKSPACE_ID}/tree?path=.&mount=default`,
+      `/workspaces/${WORKSPACE_ID}/tree?path=frontend&mount=default`,
       `/workspaces/${WORKSPACE_ID}/diff?path=frontend%2Fapp%2Fsrc%2FApp.tsx&mount=default`,
+      `/workspaces/${WORKSPACE_ID}/file?path=frontend%2Fguide.md&mount=default`,
       `/workspaces/${WORKSPACE_ID}/file?path=README.md&mount=default`,
     ]) {
       expect(requestedUrls).toContain(requestedPath);
@@ -88,6 +111,36 @@ test("opens reloads and closes the workspace project view", async ({ page }) => 
     await projectView.getByRole("button", { name: "Back to chat" }).click();
     await expect(page.locator(".at-chat-view")).toBeVisible();
     await expect(page.locator("section.at-project-view")).toHaveCount(0);
+
+    await expect(page.getByText("Scratch Workspace")).toBeVisible();
+    await page
+      .getByRole("button", { name: "Remove workspace Scratch Workspace" })
+      .click();
+    const removeWorkspaceDialog = page.getByRole("dialog", {
+      name: "Remove workspace",
+    });
+    await expect(removeWorkspaceDialog).toBeVisible();
+    await expect(
+      removeWorkspaceDialog.getByText("Remove Scratch Workspace?"),
+    ).toBeVisible();
+    await expect(
+      removeWorkspaceDialog.getByLabel("Also remove the workspace directory"),
+    ).not.toBeChecked();
+    await removeWorkspaceDialog.getByRole("button", { name: "Delete" }).click();
+    await expect(page.getByText("Scratch Workspace")).toHaveCount(0);
+    expect(state.deleteWorkspaceRequests).toEqual([
+      {
+        payload: null,
+        query: "",
+        workspaceId: EXTRA_WORKSPACE_ID,
+      },
+    ]);
+    expect(requestedUrls).toContain(`/workspaces/${EXTRA_WORKSPACE_ID}`);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "workspace removal should keep the fixed V2 shell",
+    );
   } finally {
     await appServer.close();
   }
@@ -96,14 +149,29 @@ test("opens reloads and closes the workspace project view", async ({ page }) => 
 async function handleProjectViewApi(
   context: MockApiRouteContext,
   requestedUrls: string[],
+  state: ProjectViewApiState,
 ): Promise<boolean> {
+  const requestKey = `${context.path}${context.url.search}`;
+  if (context.method === "DELETE") {
+    if (context.path === `/workspaces/${EXTRA_WORKSPACE_ID}`) {
+      requestedUrls.push(requestKey);
+      state.deletedWorkspaceIds.push(EXTRA_WORKSPACE_ID);
+      state.deleteWorkspaceRequests.push({
+        payload: readRecordPayload(context.route.request().postData()),
+        query: context.url.search,
+        workspaceId: EXTRA_WORKSPACE_ID,
+      });
+      await context.fulfillJson({ status: "ok" });
+      return true;
+    }
+    return false;
+  }
   if (context.method !== "GET") {
     return false;
   }
-  const requestKey = `${context.path}${context.url.search}`;
   if (context.path === "/workspaces") {
     requestedUrls.push(requestKey);
-    await context.fulfillJson([projectWorkspace()]);
+    await context.fulfillJson(projectWorkspaces(state));
     return true;
   }
   if (context.path === `/workspaces/${WORKSPACE_ID}/snapshot`) {
@@ -128,10 +196,27 @@ async function handleProjectViewApi(
   }
   if (context.path === `/workspaces/${WORKSPACE_ID}/file`) {
     requestedUrls.push(requestKey);
-    await context.fulfillJson(projectFileContent());
+    await context.fulfillJson(
+      projectFileContent(context.url.searchParams.get("path")),
+    );
     return true;
   }
   return false;
+}
+
+function projectViewApiState(): ProjectViewApiState {
+  return {
+    deletedWorkspaceIds: [],
+    deleteWorkspaceRequests: [],
+  };
+}
+
+function projectWorkspaces(state: ProjectViewApiState): Record<string, unknown>[] {
+  const workspaces = [projectWorkspace(), scratchWorkspace()];
+  return workspaces.filter(
+    (workspace) =>
+      !state.deletedWorkspaceIds.includes(String(workspace.workspace_id)),
+  );
 }
 
 function projectWorkspace(): Record<string, unknown> {
@@ -156,6 +241,30 @@ function projectWorkspace(): Record<string, unknown> {
     root_path: "C:/work/agent-teams",
     updated_at: "2026-06-25T08:30:00Z",
     workspace_id: WORKSPACE_ID,
+  };
+}
+
+function scratchWorkspace(): Record<string, unknown> {
+  return {
+    created_at: "2026-06-25T07:00:00Z",
+    default_mount_name: "default",
+    display_name: "Scratch Workspace",
+    mounts: [
+      {
+        mount_name: "default",
+        provider: "local",
+        provider_config: {
+          root_path: "C:/work/scratch",
+        },
+        readable_paths: ["."],
+        working_directory: ".",
+        writable_paths: ["."],
+      },
+    ],
+    name: "scratch-workspace",
+    root_path: "C:/work/scratch",
+    updated_at: "2026-06-25T07:30:00Z",
+    workspace_id: EXTRA_WORKSPACE_ID,
   };
 }
 
@@ -222,10 +331,9 @@ function projectTree(path: string | null): Record<string, unknown> {
     return {
       children: [
         {
-          has_children: false,
-          kind: "directory",
-          name: "app",
-          path: "frontend/app",
+          kind: "file",
+          name: "guide.md",
+          path: "frontend/guide.md",
         },
       ],
       directory_path: "frontend",
@@ -253,7 +361,19 @@ function projectTree(path: string | null): Record<string, unknown> {
   };
 }
 
-function projectFileContent(): Record<string, unknown> {
+function projectFileContent(path: string | null): Record<string, unknown> {
+  if (path === "frontend/guide.md") {
+    return {
+      content: "# Frontend Guide\n\nNested tree content.",
+      encoding: "utf-8",
+      is_binary: false,
+      mount_name: "default",
+      path: "frontend/guide.md",
+      size_bytes: 38,
+      truncated: false,
+      workspace_id: WORKSPACE_ID,
+    };
+  }
   return {
     content: "# Agent Teams Project\n\nBrowser-backed project view content.",
     encoding: "utf-8",
@@ -264,6 +384,17 @@ function projectFileContent(): Record<string, unknown> {
     truncated: false,
     workspace_id: WORKSPACE_ID,
   };
+}
+
+function readRecordPayload(value: string | null): Record<string, unknown> | null {
+  if (value === null || !value.trim()) {
+    return null;
+  }
+  const parsed = JSON.parse(value) as unknown;
+  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return null;
 }
 
 function countRequestedPath(requestedUrls: string[], requestedPath: string): number {

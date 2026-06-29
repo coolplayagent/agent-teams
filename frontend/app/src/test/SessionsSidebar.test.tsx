@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createSession,
+  deleteWorkspace,
   deleteSession,
   listSidebarSessions,
   listSessionSubagents,
@@ -29,6 +30,7 @@ import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   createSession: vi.fn(),
+  deleteWorkspace: vi.fn(),
   deleteSession: vi.fn(),
   listSidebarSessions: vi.fn(),
   listSessionSubagents: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock("../api/client", () => ({
 }));
 
 const createSessionMock = vi.mocked(createSession);
+const deleteWorkspaceMock = vi.mocked(deleteWorkspace);
 const deleteSessionMock = vi.mocked(deleteSession);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
@@ -468,6 +471,53 @@ describe("SessionsSidebar", () => {
       }),
     );
     expect(useUiStore.getState().selectedSessionId).toBeNull();
+  });
+
+  it("confirms workspace removal without deleting the local directory by default", async () => {
+    useUiStore.setState({
+      selectedWorkspaceId: "workspace-1",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/extra-project",
+        display_name: "Extra Project",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    deleteWorkspaceMock.mockResolvedValue({ status: "ok" });
+
+    renderSidebar();
+
+    expect(await screen.findByText("Extra Project")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove workspace Extra Project" }),
+    );
+
+    expect(deleteWorkspaceMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Remove workspace")).toBeInTheDocument();
+    expect(await screen.findByText(/Remove Extra Project/)).toBeInTheDocument();
+    expect(await screen.findByLabelText("Also remove the workspace directory"))
+      .not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(deleteWorkspaceMock).toHaveBeenCalledWith("workspace-2", {
+        removeDirectory: false,
+      }),
+    );
   });
 
   it("localizes the persistent sidebar frame in Chinese", async () => {

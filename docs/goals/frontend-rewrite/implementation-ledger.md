@@ -4957,3 +4957,31 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Composer subsystem sign-off, Sessions subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Workspace Project Actions Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, remaining `test_browser_smoke.py` browser-test surface, existing project-view TS coverage, and existing automation module-action TS coverage before editing. This slice targets Sessions And Projects / Workspace project actions while continuing the Python UI-browser migration, not just the latest visible message screenshot.
+- Added a V2 `deleteWorkspace` frontend API client for `DELETE /api/workspaces/{workspace_id}` with optional `remove_directory=true` and the required forced delete body when local directory removal is selected.
+- Restored the V1-equivalent workspace removal action in the V2 sidebar as a workspace-row secondary action, with a confirmation modal and an explicit "also remove the workspace directory" checkbox. This keeps the sidebar's primary navigation set unchanged and does not flatten project actions into the first-level shell.
+- Extended `frontend/app/browser-tests/v2-project-view.spec.ts` to cover a nested workspace file-tree expansion, opening a file returned from the child tree request, project view reload, fixed-shell no-document-scroll behavior, workspace removal from the sidebar, and the resulting `/workspaces/{workspace_id}` DELETE request.
+- Reused the existing `frontend/app/browser-tests/v2-module-actions.spec.ts` automation coverage for the old automation half of the replaced Python scenario: toggle, create, run, and delete all still go through real V2 endpoints.
+- Removed the replaced `test_browser_workspace_and_automation_project_views` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py`.
+- Kept this as targeted Sessions And Projects / Workspace actions / Automation browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 3 legacy `test_browser_smoke.py` browser scenarios, deeper stream replay and interrupted-stream recovery review, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test -- SessionsSidebar.test.tsx -t "workspace removal"` passed.
+- `npm run test -- apiClient.test.ts -t "deletes workspaces"` passed.
+- `npm run build` passed, including frontend and desktop typecheck plus Vite dist rebuild.
+- `npm run test:browser -- browser-tests/v2-project-view.spec.ts` passed.
+- `npm run test:browser -- browser-tests/v2-module-actions.spec.ts -g "automation"` passed with 2 TS browser tests.
+- `npm run lint` passed.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `git diff --check` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip|test_browser_workspace_and_automation_project_views" tests\integration_tests\browser\test_browser_smoke.py` reports 3 remaining legacy Python browser scenarios and no replaced workspace/automation scenario.
+- Inspected `.tmp/frontend-v2-ts-project-view/v2-project-view-files.png`; it shows the V2 project secondary page, right-side file tree expanded to `frontend/guide.md`, the README preview selected, and both workspace rows contained inside the fixed sidebar.
+- Live in-app browser layout verification on `http://127.0.0.1:8000/app/` measured `documentScrollHeight === documentClientHeight === 720`, `bodyScrollHeight === bodyClientHeight === 720`, `windowScrollY === 0`, `.at-session-list` owning its own scroll (`277 / 1046`), and `.at-timeline` owning its own scroll (`500 / 4466`).
+
+### Reviewer
+- Main-agent source fix, TS unit tests, TS browser, frontend lint/typecheck/build, Python syntax/lint, screenshot inspection, live browser layout metrics, remaining Python browser scan, and cleanup completed for this slice. No Sessions And Projects subsystem sign-off, Automation subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

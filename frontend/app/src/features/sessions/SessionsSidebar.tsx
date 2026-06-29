@@ -1,6 +1,7 @@
 import {
   App,
   Button,
+  Checkbox,
   Dropdown,
   Empty,
   Input,
@@ -26,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createSession,
+  deleteWorkspace,
   deleteSession,
   listSidebarSessions,
   listSessionSubagents,
@@ -100,6 +102,11 @@ interface RenameSessionPayload {
   title: string;
 }
 
+interface DeleteWorkspacePayload {
+  removeDirectory: boolean;
+  workspaceId: string;
+}
+
 export function SessionsSidebar({
   activeSubagent = null,
   backendStatus,
@@ -133,6 +140,10 @@ export function SessionsSidebar({
   const [renameTarget, setRenameTarget] = useState<SessionSidebarRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<SessionSidebarRecord | null>(null);
+  const [deleteWorkspaceTarget, setDeleteWorkspaceTarget] =
+    useState<WorkspaceRecord | null>(null);
+  const [deleteWorkspaceRemoveDirectory, setDeleteWorkspaceRemoveDirectory] =
+    useState(false);
   const searchInputRef = useRef<InputRef>(null);
   const focusSearchOnExpandRef = useRef(false);
 
@@ -148,6 +159,13 @@ export function SessionsSidebar({
   const workspaceOptions = useMemo(
     () => workspacesQuery.data ?? [],
     [workspacesQuery.data],
+  );
+  const workspaceById = useMemo(
+    () =>
+      new Map(
+        workspaceOptions.map((workspace) => [workspace.workspace_id, workspace]),
+      ),
+    [workspaceOptions],
   );
   const loadedWorkspaceIds = useMemo(
     () => new Set((workspacesQuery.data ?? []).map((item) => item.workspace_id)),
@@ -261,6 +279,33 @@ export function SessionsSidebar({
     onError: (error) => {
       void message.error(
         error instanceof Error ? error.message : t("sidebarDeleteFailed"),
+      );
+    },
+  });
+  const deleteWorkspaceMutation = useMutation({
+    mutationFn: ({ removeDirectory, workspaceId }: DeleteWorkspacePayload) =>
+      deleteWorkspace(workspaceId, { removeDirectory }),
+    onSuccess: (_result, payload) => {
+      const remainingWorkspaces = workspaceOptions.filter(
+        (workspace) => workspace.workspace_id !== payload.workspaceId,
+      );
+      resetDeleteWorkspace();
+      queryClient.setQueryData<WorkspaceRecord[]>(["workspaces"], (current) =>
+        (current ?? []).filter(
+          (workspace) => workspace.workspace_id !== payload.workspaceId,
+        ),
+      );
+      if (selectedWorkspaceId === payload.workspaceId) {
+        setSelectedWorkspaceId(remainingWorkspaces[0]?.workspace_id ?? null);
+        setSelectedSessionId(null);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void message.success(t("sidebarDeleteWorkspaceSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarDeleteWorkspaceFailed"),
       );
     },
   });
@@ -417,6 +462,7 @@ export function SessionsSidebar({
       ) : null}
       <div className="at-session-list">
         {sessionGroups.map((group) => {
+          const workspaceRecord = workspaceById.get(group.id);
           const groupExpanded = isFiltering || workspaceExpanded[group.id] !== false;
           const visibleSessions = visibleSessionsForGroup(
             group,
@@ -496,6 +542,27 @@ export function SessionsSidebar({
                       type="text"
                     />
                   </Tooltip>
+                  {workspaceRecord !== undefined ? (
+                    <Tooltip
+                      title={t("sidebarDeleteWorkspaceFor", { label: group.label })}
+                    >
+                      <Button
+                        aria-label={t("sidebarDeleteWorkspaceFor", {
+                          label: group.label,
+                        })}
+                        danger
+                        disabled={!group.id.trim()}
+                        icon={<Trash2 size={14} />}
+                        loading={
+                          deleteWorkspaceMutation.isPending &&
+                          deleteWorkspaceTarget?.workspace_id === group.id
+                        }
+                        onClick={() => openDeleteWorkspace(workspaceRecord)}
+                        size="small"
+                        type="text"
+                      />
+                    </Tooltip>
+                  ) : null}
                 </div>
               </div>
               {groupExpanded && group.sessions.length === 0 ? (
@@ -669,6 +736,41 @@ export function SessionsSidebar({
           })}
         </Typography.Paragraph>
       </Modal>
+      <Modal
+        cancelText={t("sidebarDeleteCancel")}
+        destroyOnHidden
+        okButtonProps={{
+          danger: true,
+          loading: deleteWorkspaceMutation.isPending,
+        }}
+        okText={t("sidebarDeleteConfirm")}
+        onCancel={closeDeleteWorkspace}
+        onOk={submitDeleteWorkspace}
+        open={deleteWorkspaceTarget !== null}
+        title={t("sidebarDeleteWorkspaceTitle")}
+      >
+        <Typography.Paragraph className="at-session-modal-copy">
+          {t("sidebarDeleteWorkspaceMessage", {
+            label:
+              deleteWorkspaceTarget === null
+                ? ""
+                : workspaceLabel(deleteWorkspaceTarget),
+          })}
+        </Typography.Paragraph>
+        <Checkbox
+          aria-label={t("sidebarDeleteWorkspaceRemoveDirectory")}
+          checked={deleteWorkspaceRemoveDirectory}
+          disabled={deleteWorkspaceMutation.isPending}
+          onChange={(event) =>
+            setDeleteWorkspaceRemoveDirectory(event.target.checked)
+          }
+        >
+          {t("sidebarDeleteWorkspaceRemoveDirectory")}
+        </Checkbox>
+        <Typography.Paragraph className="at-session-modal-copy">
+          {t("sidebarDeleteWorkspaceRemoveDirectoryHelp")}
+        </Typography.Paragraph>
+      </Modal>
     </div>
   );
 
@@ -743,6 +845,33 @@ export function SessionsSidebar({
       return;
     }
     deleteSessionMutation.mutate(deleteTarget.session_id);
+  }
+
+  function openDeleteWorkspace(workspace: WorkspaceRecord) {
+    setDeleteWorkspaceTarget(workspace);
+    setDeleteWorkspaceRemoveDirectory(false);
+  }
+
+  function closeDeleteWorkspace() {
+    if (deleteWorkspaceMutation.isPending) {
+      return;
+    }
+    resetDeleteWorkspace();
+  }
+
+  function resetDeleteWorkspace() {
+    setDeleteWorkspaceTarget(null);
+    setDeleteWorkspaceRemoveDirectory(false);
+  }
+
+  function submitDeleteWorkspace() {
+    if (deleteWorkspaceTarget === null || deleteWorkspaceMutation.isPending) {
+      return;
+    }
+    deleteWorkspaceMutation.mutate({
+      removeDirectory: deleteWorkspaceRemoveDirectory,
+      workspaceId: deleteWorkspaceTarget.workspace_id,
+    });
   }
 
   function invalidateSessionCaches(sessionId: string) {

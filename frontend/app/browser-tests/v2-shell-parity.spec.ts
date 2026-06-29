@@ -261,6 +261,125 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
   }
 });
 
+test("manages sessions and reloads MCP config through V2 shell actions", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = shellManagementState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleShellManagementApi(context, state),
+      sessionTitle: "TS shell management",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    await page
+      .getByRole("button", { name: "New session", exact: true })
+      .click();
+    await expect
+      .poll(() => state.sessionCreatePayloads)
+      .toEqual([{ workspace_id: WORKSPACE_ID }]);
+    const createdSessionButton = page.getByRole("button", {
+      name: "TS managed session",
+    });
+    await expect(createdSessionButton).toBeVisible();
+    const createdSessionItem = page.locator(".at-session-item").filter({
+      has: createdSessionButton,
+    });
+    await expect(createdSessionItem).toHaveClass(/is-selected/);
+
+    await createdSessionItem.hover();
+    await createdSessionItem
+      .getByRole("button", { name: "Rename session" })
+      .click();
+    const renameDialog = page.getByRole("dialog", { name: "Rename session" });
+    await expect(renameDialog).toBeVisible();
+    await renameDialog.getByLabel("Session name").fill("TS renamed session");
+    await renameDialog.getByRole("button", { name: "Save" }).click();
+    await expect
+      .poll(() => state.sessionRenamePayloads)
+      .toEqual([
+        {
+          payload: { title: "TS renamed session" },
+          sessionId: "session-v2-managed",
+        },
+      ]);
+    await expect(renameDialog).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "TS renamed session" }),
+    ).toBeVisible();
+    await expect(page.getByText("Session renamed.")).toBeVisible();
+
+    await page
+      .locator(".at-topbar")
+      .getByRole("button", { name: "Settings" })
+      .click();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await expectSettingsDialogSettled(settings);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "System" })
+      .click();
+    await openSystemPage(settings, settings.locator(".at-settings-list-button"), "MCP");
+    await expect(settings.getByText("stdio-shell")).toBeVisible();
+    await settings.getByRole("button", { name: "Reload config" }).click();
+    await expect.poll(() => state.mcpReloadCount).toBe(1);
+    await expect(page.getByText("MCP config reloaded.")).toBeVisible();
+    await settings.getByRole("button", { name: "Close" }).click();
+    await expect(settings).toHaveCount(0);
+
+    const renamedSessionButton = page.getByRole("button", {
+      name: "TS renamed session",
+    });
+    const renamedSessionItem = page.locator(".at-session-item").filter({
+      has: renamedSessionButton,
+    });
+    await renamedSessionItem.hover();
+    await renamedSessionItem
+      .getByRole("button", { name: "Delete session" })
+      .click();
+    const deleteDialog = page.getByRole("dialog", { name: "Delete session" });
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByRole("button", { name: "Delete" }).click();
+    await expect
+      .poll(() => state.sessionDeleteRequests)
+      .toEqual([
+        {
+          payload: { cascade: true, force: true },
+          sessionId: "session-v2-managed",
+        },
+      ]);
+    await expect(
+      page.getByRole("button", { name: "TS renamed session" }),
+    ).toHaveCount(0);
+    await expect(deleteDialog).toHaveCount(0);
+    await expect(page.getByText("Session deleted.")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "TS shell management" }),
+    ).toBeVisible();
+
+    expect(state.requestedPaths).toContain("/mcp/servers");
+    expect(state.requestedPaths).toContain("/mcp/servers/stdio-shell/tools");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "session management and MCP reload should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-shell-session-management-mcp.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("marks unread terminal runs viewed and keeps them viewed after reload", async ({
   page,
 }) => {
@@ -425,6 +544,32 @@ async function handleParityApi(
 interface TerminalViewedState {
   terminalViewRequests: string[];
   unread: boolean;
+}
+
+interface ShellManagementState {
+  deletedSessions: ShellManagementSession[];
+  mcpReloadCount: number;
+  requestedPaths: string[];
+  selectedSessionId: string;
+  sessionCreatePayloads: Record<string, unknown>[];
+  sessionDeleteRequests: Array<{
+    payload: Record<string, unknown>;
+    sessionId: string;
+  }>;
+  sessionRenamePayloads: Array<{
+    payload: Record<string, unknown>;
+    sessionId: string;
+  }>;
+  sessions: ShellManagementSession[];
+}
+
+interface ShellManagementSession {
+  created_at: string;
+  message_count: number;
+  session_id: string;
+  title: string;
+  updated_at: string;
+  workspace_id: string;
 }
 
 interface SidebarLazyLoadState {
@@ -665,6 +810,186 @@ async function handleTerminalViewedApi(
     }
   }
   return false;
+}
+
+function shellManagementState(): ShellManagementState {
+  return {
+    deletedSessions: [],
+    mcpReloadCount: 0,
+    requestedPaths: [],
+    selectedSessionId: SESSION_ID,
+    sessionCreatePayloads: [],
+    sessionDeleteRequests: [],
+    sessionRenamePayloads: [],
+    sessions: [
+      {
+        created_at: "2026-06-25T08:00:00Z",
+        message_count: 2,
+        session_id: SESSION_ID,
+        title: "TS shell management",
+        updated_at: "2026-06-25T08:30:00Z",
+        workspace_id: WORKSPACE_ID,
+      },
+    ],
+  };
+}
+
+async function handleShellManagementApi(
+  context: MockApiRouteContext,
+  state: ShellManagementState,
+): Promise<boolean> {
+  state.requestedPaths.push(context.path);
+  if (context.method === "POST") {
+    if (context.path === "/sessions") {
+      const payload = readRecordPayload(context.route.request().postData());
+      state.sessionCreatePayloads.push(payload);
+      const session: ShellManagementSession = {
+        created_at: "2026-06-25T08:35:00Z",
+        message_count: 0,
+        session_id: "session-v2-managed",
+        title: "TS managed session",
+        updated_at: "2026-06-25T08:35:00Z",
+        workspace_id: WORKSPACE_ID,
+      };
+      state.selectedSessionId = session.session_id;
+      state.sessions = [
+        session,
+        ...state.sessions.filter((item) => item.session_id !== session.session_id),
+      ];
+      await context.fulfillJson(shellManagementSessionDetail(session));
+      return true;
+    }
+    if (context.path === "/system/configs/mcp:reload") {
+      state.mcpReloadCount += 1;
+      await context.fulfillJson({ status: "ok" });
+      return true;
+    }
+    return false;
+  }
+  if (context.method === "PATCH") {
+    const sessionId = sessionIdFromPath(context.path);
+    if (sessionId === null) {
+      return false;
+    }
+    const payload = readRecordPayload(context.route.request().postData());
+    state.sessionRenamePayloads.push({ payload, sessionId });
+    const title = typeof payload.title === "string" ? payload.title : null;
+    state.sessions = state.sessions.map((session) =>
+      session.session_id === sessionId && title !== null
+        ? { ...session, title, updated_at: "2026-06-25T08:36:00Z" }
+        : session,
+    );
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (context.method === "DELETE") {
+    const sessionId = sessionIdFromPath(context.path);
+    if (sessionId === null) {
+      return false;
+    }
+    const payload = readRecordPayload(context.route.request().postData());
+    state.sessionDeleteRequests.push({ payload, sessionId });
+    const deletedSession = state.sessions.find(
+      (session) => session.session_id === sessionId,
+    );
+    if (deletedSession !== undefined) {
+      state.deletedSessions = [deletedSession, ...state.deletedSessions];
+    }
+    state.sessions = state.sessions.filter((session) => session.session_id !== sessionId);
+    if (state.selectedSessionId === sessionId) {
+      state.selectedSessionId = state.sessions[0]?.session_id ?? "";
+    }
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (context.method !== "GET") {
+    return false;
+  }
+  if (context.path === "/sessions/sidebar") {
+    await context.fulfillJson(state.sessions);
+    return true;
+  }
+  if (context.path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: state.sessions,
+      next_cursor: null,
+    });
+    return true;
+  }
+  const sessionMatch = context.path.match(/^\/sessions\/([^/]+)(?:\/([^/]+))?$/);
+  if (sessionMatch !== null) {
+    const sessionId = decodeURIComponent(sessionMatch[1] ?? "");
+    const leaf = sessionMatch[2];
+    const session =
+      state.sessions.find((item) => item.session_id === sessionId)
+      ?? state.deletedSessions.find((item) => item.session_id === sessionId);
+    if (session === undefined) {
+      return false;
+    }
+    if (leaf === undefined) {
+      await context.fulfillJson(shellManagementSessionDetail(session));
+      return true;
+    }
+    if (leaf === "messages" || leaf === "subagents" || leaf === "agents" || leaf === "tasks") {
+      await context.fulfillJson([]);
+      return true;
+    }
+    if (leaf === "rounds") {
+      await context.fulfillJson({ has_more: false, items: [], next_cursor: null });
+      return true;
+    }
+    if (leaf === "recovery") {
+      await context.fulfillJson(emptyRecoverySnapshot());
+      return true;
+    }
+    if (leaf === "token-usage") {
+      await context.fulfillJson({ by_role: {}, input_tokens: 0, output_tokens: 0 });
+      return true;
+    }
+  }
+  const response = parityResponse(context.path);
+  if (response === undefined) {
+    return false;
+  }
+  await context.fulfillJson(response);
+  return true;
+}
+
+function sessionIdFromPath(path: string): string | null {
+  const match = path.match(/^\/sessions\/([^/]+)$/);
+  if (match === null) {
+    return null;
+  }
+  return decodeURIComponent(match[1] ?? "");
+}
+
+function shellManagementSessionDetail(
+  session: ShellManagementSession,
+): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: session.created_at,
+    normal_model_profile: null,
+    normal_root_role_id: "MainAgent",
+    orchestration_preset_id: null,
+    session_id: session.session_id,
+    session_mode: "normal",
+    title: session.title,
+    updated_at: session.updated_at,
+    workspace_id: session.workspace_id,
+  };
+}
+
+function readRecordPayload(body: string | null): Record<string, unknown> {
+  if (body === null || body.trim() === "") {
+    return {};
+  }
+  const parsed: unknown = JSON.parse(body);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Expected browser test request body to be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function terminalViewedSidebarRecords(

@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Shell Session Management And MCP Reload TS Browser Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current parity checklist, existing V2 shell/settings TS browser coverage, and the remaining legacy Python browser scenarios before editing. This slice targets a missing browser-level V2 shell management proof instead of chasing only the latest screenshot feedback.
+- Extended `frontend/app/browser-tests/v2-shell-parity.spec.ts` with deterministic TS browser coverage for creating a session from the sidebar, selecting the created session, renaming it through the real `PATCH /api/sessions/{id}` metadata endpoint, deleting it through `DELETE /api/sessions/{id}` with the cascade/force payload, and falling back to the remaining session.
+- Extended the same TS browser flow through Settings -> System -> MCP as a secondary settings page and verified the real `POST /api/system/configs/mcp:reload` action. The V1-aligned sidebar item set and Settings section grouping remain covered by the adjacent shell parity tests rather than duplicated here.
+- Added stateful browser mocks for session create/rename/delete and MCP reload, including tombstone handling for in-flight session queries after deletion so the test models the UI's normal async query tail.
+- Kept the old `test_browser_shell_settings_and_session_management` Python scenario in place for now because this slice migrates its shell/session/MCP core while remaining Feishu connector creation and some broad observability smoke coverage still need final scenario-by-scenario accounting. Remaining frontend rewrite work still includes migrating or deleting the remaining 6 legacy Python browser scenarios, deeper stream replay and interrupted-stream recovery coverage, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts` passed with 5 TS browser tests after tightening the new flow to wait for the delete confirmation dialog to disappear before screenshot capture.
+- Inspected `.tmp/frontend-v2-ts-shell/v2-shell-session-management-mcp.png`; it shows the fixed V2 shell with V1-aligned primary sidebar entries, the surviving session selected after deletion, Settings closed after the MCP reload action, no document-level scroll, and the composer controls contained within the bottom composer frame.
+- `git diff --check` passed for the current source changes.
+
+### Reviewer
+- Main-agent TS browser migration, shell/session/MCP workflow verification, screenshot inspection, and remaining Python scenario accounting completed for this slice. No shell subsystem sign-off, Settings subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Environment Variables And Session Topology TS Browser Batch
 
 ### Scope

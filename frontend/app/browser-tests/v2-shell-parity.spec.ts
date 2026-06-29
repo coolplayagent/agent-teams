@@ -9,12 +9,16 @@ import {
   mockShellApi,
   screenshotPath,
   serveFrontendDist,
+  SESSION_ID,
   waitForV2Shell,
   WORKSPACE_ID,
   type MockApiRouteContext,
 } from "./support/frontend-app";
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-shell";
+const LAZY_WORKSPACE_COUNT = 4;
+const LAZY_SESSIONS_PER_WORKSPACE = 12;
+const LAZY_SELECTED_SESSION_TITLE = "TS lazy session 0-0";
 const UNREAD_TERMINAL_SESSION_ID = "session-v2-terminal-unread";
 
 test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
@@ -320,6 +324,69 @@ test("marks unread terminal runs viewed and keeps them viewed after reload", asy
   }
 });
 
+test("keeps subagent session lists lazy on large initial sidebar load", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const workspaces = lazyLoadWorkspaces();
+  const sessions = lazyLoadSessions(workspaces);
+  const state: SidebarLazyLoadState = {
+    recoveryRequestPaths: [],
+    sessionIndexRequestPaths: [],
+    subagentRequestPaths: [],
+  };
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) =>
+        handleSidebarLazyLoadApi(context, state, workspaces, sessions),
+      sessionTitle: LAZY_SELECTED_SESSION_TITLE,
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const selectedButton = page.getByRole("button", {
+      name: LAZY_SELECTED_SESSION_TITLE,
+    });
+    await expect(selectedButton).toBeVisible();
+    const selectedItem = page.locator(".at-session-item").filter({
+      has: selectedButton,
+    });
+    await expect(selectedItem).toHaveClass(/is-selected/);
+    await expect(
+      selectedItem.getByRole("button", { name: "Toggle subagent sessions" }),
+    ).toBeVisible();
+    await expect(page.locator(".at-session-subagent-list")).toHaveCount(0);
+
+    await page.waitForTimeout(800);
+    const initialSessionIndexRequestCount =
+      state.sessionIndexRequestPaths.length;
+    const initialRecoveryRequestCount = state.recoveryRequestPaths.length;
+    await page.waitForTimeout(3200);
+
+    expect(state.subagentRequestPaths).toEqual([]);
+    expect(state.sessionIndexRequestPaths).toHaveLength(
+      initialSessionIndexRequestCount,
+    );
+    expect(state.recoveryRequestPaths).toHaveLength(initialRecoveryRequestCount);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "large lazy sidebar load should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-sidebar-lazy-subagents.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openSystemPage(
   settings: Locator,
   systemPages: Locator,
@@ -358,6 +425,177 @@ async function handleParityApi(
 interface TerminalViewedState {
   terminalViewRequests: string[];
   unread: boolean;
+}
+
+interface SidebarLazyLoadState {
+  recoveryRequestPaths: string[];
+  sessionIndexRequestPaths: string[];
+  subagentRequestPaths: string[];
+}
+
+interface LazyLoadWorkspace {
+  display_name: string;
+  last_session_id: string;
+  path: string;
+  updated_at: string;
+  workspace_id: string;
+}
+
+interface LazyLoadSession {
+  active_run_status: null;
+  created_at: string;
+  message_count: number;
+  session_id: string;
+  subagent_count: number;
+  title: string;
+  updated_at: string;
+  workspace_id: string;
+}
+
+async function handleSidebarLazyLoadApi(
+  context: MockApiRouteContext,
+  state: SidebarLazyLoadState,
+  workspaces: LazyLoadWorkspace[],
+  sessions: LazyLoadSession[],
+): Promise<boolean> {
+  if (context.method !== "GET") {
+    return false;
+  }
+  if (context.path === "/workspaces") {
+    await context.fulfillJson(workspaces);
+    return true;
+  }
+  if (context.path === "/sessions/sidebar") {
+    state.sessionIndexRequestPaths.push(`${context.path}${context.url.search}`);
+    await context.fulfillJson(sessions);
+    return true;
+  }
+
+  const workspaceSessionsMatch = context.path.match(
+    /^\/workspaces\/([^/]+)\/sessions\/sidebar$/,
+  );
+  if (workspaceSessionsMatch !== null) {
+    const workspaceId = workspaceSessionsMatch[1] ?? "";
+    state.sessionIndexRequestPaths.push(`${context.path}${context.url.search}`);
+    await context.fulfillJson({
+      has_more: false,
+      items: sessions.filter((session) => session.workspace_id === workspaceId),
+      next_cursor: null,
+    });
+    return true;
+  }
+
+  const sessionMatch = context.path.match(/^\/sessions\/([^/]+)(?:\/([^/]+))?$/);
+  if (sessionMatch === null) {
+    return false;
+  }
+  const sessionId = sessionMatch[1] ?? "";
+  const leaf = sessionMatch[2];
+  const session = sessions.find((item) => item.session_id === sessionId);
+  if (session === undefined) {
+    return false;
+  }
+  if (leaf === undefined) {
+    await context.fulfillJson(lazyLoadSessionDetail(session));
+    return true;
+  }
+  if (leaf === "messages") {
+    await context.fulfillJson([]);
+    return true;
+  }
+  if (leaf === "rounds") {
+    await context.fulfillJson({ has_more: false, items: [], next_cursor: null });
+    return true;
+  }
+  if (leaf === "recovery") {
+    state.recoveryRequestPaths.push(`${context.path}${context.url.search}`);
+    await context.fulfillJson(emptyRecoverySnapshot());
+    return true;
+  }
+  if (leaf === "token-usage") {
+    await context.fulfillJson({ by_role: {}, input_tokens: 0, output_tokens: 0 });
+    return true;
+  }
+  if (leaf === "subagents") {
+    state.subagentRequestPaths.push(`${context.path}${context.url.search}`);
+    await context.fulfillJson([]);
+    return true;
+  }
+  if (leaf === "agents" || leaf === "tasks") {
+    await context.fulfillJson([]);
+    return true;
+  }
+  return false;
+}
+
+function lazyLoadWorkspaces(): LazyLoadWorkspace[] {
+  return Array.from({ length: LAZY_WORKSPACE_COUNT }, (_, workspaceIndex) => ({
+    display_name: workspaceIndex === 0 ? "agent-teams" : `lazy-${workspaceIndex}`,
+    last_session_id: lazySessionId(workspaceIndex, 0),
+    path:
+      workspaceIndex === 0
+        ? "C:/Users/yex/Documents/workspace/agent-teams"
+        : `C:/Users/yex/Documents/workspace/lazy-${workspaceIndex}`,
+    updated_at: "2026-06-25T08:00:00Z",
+    workspace_id:
+      workspaceIndex === 0 ? WORKSPACE_ID : `workspace-v2-lazy-${workspaceIndex}`,
+  }));
+}
+
+function lazyLoadSessions(workspaces: LazyLoadWorkspace[]): LazyLoadSession[] {
+  const sessions: LazyLoadSession[] = [];
+  for (const [workspaceIndex, workspace] of workspaces.entries()) {
+    for (
+      let sessionIndex = 0;
+      sessionIndex < LAZY_SESSIONS_PER_WORKSPACE;
+      sessionIndex += 1
+    ) {
+      sessions.push({
+        active_run_status: null,
+        created_at: "2026-06-25T08:00:00Z",
+        message_count: sessionIndex + 1,
+        session_id: lazySessionId(workspaceIndex, sessionIndex),
+        subagent_count: 2,
+        title: `TS lazy session ${workspaceIndex}-${sessionIndex}`,
+        updated_at: `2026-06-25T08:${String(sessionIndex).padStart(2, "0")}:00Z`,
+        workspace_id: workspace.workspace_id,
+      });
+    }
+  }
+  return sessions;
+}
+
+function lazySessionId(workspaceIndex: number, sessionIndex: number): string {
+  if (workspaceIndex === 0 && sessionIndex === 0) {
+    return SESSION_ID;
+  }
+  return `session-v2-lazy-${workspaceIndex}-${sessionIndex}`;
+}
+
+function lazyLoadSessionDetail(session: LazyLoadSession): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: session.created_at,
+    normal_model_profile: null,
+    normal_root_role_id: "MainAgent",
+    orchestration_preset_id: null,
+    session_id: session.session_id,
+    session_mode: "normal",
+    title: session.title,
+    updated_at: session.updated_at,
+    workspace_id: session.workspace_id,
+  };
+}
+
+function emptyRecoverySnapshot(): Record<string, unknown> {
+  return {
+    active_run: null,
+    background_tasks: [],
+    paused_subagents: [],
+    pending_tool_approvals: [],
+    pending_user_questions: [],
+    recoverable_stopped_run: null,
+  };
 }
 
 async function handleTerminalViewedApi(

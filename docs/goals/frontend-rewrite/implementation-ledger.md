@@ -4767,3 +4767,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Subagents subsystem sign-off, Sessions subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Sidebar Subagent Lazy Load Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, current worktree, the remaining `test_browser_smoke.py` surface, the existing shell/subagent TS browser coverage, and the current live V2 browser frame before editing. This slice targets Sessions/Subagents request-budget parity and the Python UI-browser migration instead of continuing only the latest visible UI note.
+- Extended `frontend/app/browser-tests/v2-shell-parity.spec.ts` with deterministic TS browser coverage for large initial sidebar loads: four workspaces with twelve sessions each, every session exposing a subagent count, selected session visible, all subagent lists collapsed, zero `/sessions/{id}/subagents` requests during initial idle, stable session index requests, stable recovery requests, fixed-shell no-document-scroll verification, and screenshot evidence.
+- Removed the replaced `test_browser_sidebar_lazy_loads_subagent_sessions_on_initial_open` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py`.
+- Kept this as targeted Sessions/Subagents browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 9 legacy scenarios in `test_browser_smoke.py`, deeper stream replay and interrupted-stream recovery browser scenarios, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts` passed with 4 TS browser tests.
+- `npx tsc --noEmit --pretty false --project tsconfig.json` passed.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip|test_browser_sidebar_lazy_loads_subagent_sessions_on_initial_open" tests\integration_tests\browser\test_browser_smoke.py` reports 9 remaining legacy Python browser scenarios and no replaced lazy-load scenario.
+- Inspected `.tmp/frontend-v2-ts-shell/v2-sidebar-lazy-subagents.png`; it shows the large collapsed session list inside the fixed sidebar with no subagent child list rendered.
+- In-app browser verification on `http://127.0.0.1:8000/app/` showed `documentScrollHeight === documentClientHeight === 720`, `bodyScrollHeight === bodyClientHeight === 720`, `windowScrollY === 0`, `.at-session-list` owning its own scroll (`277 / 1046`), and `.at-timeline` owning its own scroll (`500 / 4466`).
+- Inspected `.tmp/frontend-v2-live-check/current-v2-framework.png`; the live Settings > Web page preserved the V1 root setting sections and kept the main shell fixed while content scrolled within its own pane.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, live browser layout metrics, remaining Python browser scan, and cleanup completed for this slice. No Sessions subsystem sign-off, Subagents subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

@@ -17,6 +17,7 @@ import {
   getSession,
   listSidebarSessions,
   listWorkspaces,
+  markSessionTerminalRunViewed,
   saveUiLanguageSettings,
 } from "../api/client";
 import type { SessionSidebarRecord } from "../api/contracts";
@@ -30,6 +31,7 @@ vi.mock("../api/client", () => ({
   getSession: vi.fn(),
   listSidebarSessions: vi.fn(),
   listWorkspaces: vi.fn(),
+  markSessionTerminalRunViewed: vi.fn(),
   saveUiLanguageSettings: vi.fn(),
 }));
 
@@ -213,6 +215,7 @@ const getSessionMock = vi.mocked(getSession);
 const fetchUiLanguageSettingsMock = vi.mocked(fetchUiLanguageSettings);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
+const markSessionTerminalRunViewedMock = vi.mocked(markSessionTerminalRunViewed);
 const saveUiLanguageSettingsMock = vi.mocked(saveUiLanguageSettings);
 
 beforeEach(() => {
@@ -239,6 +242,7 @@ beforeEach(() => {
       display_name: "Agent Teams",
     },
   ]);
+  markSessionTerminalRunViewedMock.mockResolvedValue({ status: "ok" });
   saveUiLanguageSettingsMock.mockImplementation(async (settings) => settings);
   useUiStore.setState({
     language: "en",
@@ -387,6 +391,45 @@ describe("AppShell", () => {
     );
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
     await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-first"));
+  });
+
+  it("marks selected terminal runs viewed from sidebar records without masking newer runs", async () => {
+    const firstTerminalSession: SessionSidebarRecord = {
+      has_unread_terminal_run: true,
+      latest_terminal_run_id: "run-1",
+      latest_terminal_run_status: "completed",
+      latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+      session_id: "session-1",
+      title: "Session 1",
+      workspace_id: "workspace-1",
+    };
+    listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
+    const queryClient = renderShell();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() =>
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledWith("session-1"),
+    );
+
+    queryClient.setQueryData<SessionSidebarRecord[]>(["sessions", "sidebar"], [
+      {
+        ...firstTerminalSession,
+        has_unread_terminal_run: true,
+        latest_terminal_run_id: "run-2",
+        latest_terminal_run_updated_at: "2026-06-23T10:01:00Z",
+      },
+    ]);
+
+    await waitFor(() =>
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(2),
+    );
+    expect(markSessionTerminalRunViewedMock).toHaveBeenLastCalledWith("session-1");
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
   });
 
   it("keeps the V1 primary sidebar item order", async () => {
@@ -773,6 +816,7 @@ function renderShell() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 function renderWithStrictModeBoundary(children: ReactNode) {

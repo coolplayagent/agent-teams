@@ -133,42 +133,6 @@ console.log(JSON.stringify({
     assert payload["sidebarViewedTerminalRuns"] == ["session-a"]
 
 
-def test_select_session_marks_terminal_view_after_hydration(
-    tmp_path: Path,
-) -> None:
-    payload = _run_session_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.CustomEvent = class CustomEvent {
-    constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail || {};
-    }
-};
-
-const { selectSession } = await import("./session.mjs");
-const selection = selectSession("session-a");
-await Promise.resolve();
-const viewedBeforeHydration = [...globalThis.__viewedTerminalRuns];
-globalThis.__hydrateResolvers[0].resolve();
-await selection;
-await Promise.resolve();
-
-console.log(JSON.stringify({
-    viewedBeforeHydration,
-    viewedAfterHydration: globalThis.__viewedTerminalRuns,
-    sidebarViewedTerminalRuns: globalThis.__sidebarViewedTerminalRuns,
-    ensureSubagentCalls: globalThis.__ensureSubagentCalls,
-}));
-""".strip(),
-    )
-
-    assert payload["viewedBeforeHydration"] == []
-    assert payload["viewedAfterHydration"] == ["session-a"]
-    assert payload["sidebarViewedTerminalRuns"] == ["session-a"]
-    assert payload["ensureSubagentCalls"] == []
-
-
 def test_select_session_marks_terminal_view_when_leaving_subagent_view(
     tmp_path: Path,
 ) -> None:
@@ -246,50 +210,6 @@ console.log(JSON.stringify({
     assert payload["viewedTerminalRuns"] == []
     assert payload["sidebarViewedTerminalRuns"] == []
     assert payload["selectedEvents"] == []
-
-
-def test_select_session_marks_terminal_view_from_record_without_sidebar_dom(
-    tmp_path: Path,
-) -> None:
-    payload = _run_session_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.CustomEvent = class CustomEvent {
-    constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail || {};
-    }
-};
-
-globalThis.__sessionRecords = new Map([
-    ["session-c", {
-        session_id: "session-c",
-        has_unread_terminal_run: true,
-        latest_terminal_run_status: "completed",
-    }],
-]);
-
-const { selectSession } = await import("./session.mjs");
-const selection = selectSession("session-c");
-await Promise.resolve();
-const viewedBeforeHydration = [...globalThis.__viewedTerminalRuns];
-globalThis.__hydrateResolvers[0].resolve();
-await selection;
-await Promise.resolve();
-
-console.log(JSON.stringify({
-    viewedBeforeHydration,
-    viewedAfterHydration: globalThis.__viewedTerminalRuns,
-    sidebarViewedTerminalRuns: globalThis.__sidebarViewedTerminalRuns,
-    appliedRecords: globalThis.__appliedRecords.map(record => record.session_id),
-}));
-""".strip(),
-    )
-
-    assert payload["viewedBeforeHydration"] == []
-    assert payload["viewedAfterHydration"] == ["session-c"]
-    assert payload["sidebarViewedTerminalRuns"] == ["session-c"]
-    assert payload["appliedRecords"] == ["session-c"]
 
 
 def test_select_session_refreshes_subagents_only_for_expanded_parent(

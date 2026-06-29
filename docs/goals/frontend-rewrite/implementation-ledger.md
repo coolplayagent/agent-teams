@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session Selection Terminal Mark TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Sessions And Projects / Run Recovery checklist items, current V2 `AppShell` selected-session behavior, and the old `test_session_selection_ui.py` terminal-view selection assertions before editing.
+- Migrated the V1 terminal-view marking intent to V2 TypeScript evidence: the selected sidebar session record triggers the real `markSessionTerminalRunViewed` API without relying on sidebar DOM rows, terminal mark completion invalidates sidebar/detail caches, and a newer terminal run for the same selected session is marked again instead of being masked by the previous viewed key.
+- Removed the two migrated terminal-view selection functions from `tests/integration_tests/frontend/test_session_selection_ui.py`; the remaining fast-switch, subagent cancellation, loading-frame, retry/deferred terminal mark, and foreground stream preparation assertions stay in place for later V2 migration slices.
+- Kept production code unchanged because V2 already implements selected-session terminal marking in `AppShell` through React Query cache updates and the real terminal-view endpoint.
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx -t "terminal runs viewed|first available session"` passed with the new selected-terminal mark coverage and adjacent session selection coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_session_selection_ui.py` passed after deleting the two migrated Python UI assertions.
+
+### Reviewer
+- Main-agent V2 selected-session terminal-view coverage and partial old Python UI harness reduction completed for this slice. No full Sessions And Projects subsystem PASS, Run Recovery subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Session Sidebar Store TS Migration
 
 ### Scope

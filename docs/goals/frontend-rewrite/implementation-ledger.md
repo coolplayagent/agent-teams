@@ -4746,3 +4746,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent source fix, targeted TS unit test, TS browser, frontend lint/typecheck/build, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Subagent Session Race Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, current worktree, remaining `test_browser_smoke.py` browser-test surface, and existing TS subagent/session-switch coverage before editing. This slice targets Sessions And Projects plus Subagents race behavior rather than continuing Settings-only work.
+- Extended `frontend/app/browser-tests/v2-subagent-session.spec.ts` with a deterministic TS browser scenario for a slow parent-session hydration race: the app starts on a control session, expands the parent session's subagent list, delays parent detail/message/round hydration, opens the child subagent session while the parent requests are still blocked, then verifies late parent hydration does not replace the subagent view.
+- Verified the same scenario can return to the main parent session, switch back to the control session, and reopen the child subagent from the still-expanded sidebar list without losing the parent/child selection relationship.
+- Removed the replaced `test_browser_subagent_view_survives_complex_switching_races` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py` and cleaned the now-unused `Route` import.
+- Kept this as targeted Subagents / Sessions browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 10 legacy scenarios in `test_browser_smoke.py`, deeper stream replay and interrupted-stream recovery review, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts` passed with 2 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip" tests/integration_tests/browser/test_browser_smoke.py` reports 10 remaining legacy Python browser scenarios.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-race.png`; it shows the parent session expanded, the Race review child selected, and the main panel still on the read-only subagent session after the race.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Subagents subsystem sign-off, Sessions subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

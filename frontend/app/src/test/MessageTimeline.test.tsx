@@ -2103,6 +2103,54 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
   });
 
+  it("renders late tool results after terminal stream finalization", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "cat report.txt" },
+          tool_call_id: "call-finalized",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: { ok: true, output: "late finalized result" },
+          tool_call_id: "call-finalized",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-output",
+    });
+
+    expect(await screen.findByText("Tool call: shell")).toBeVisible();
+    expect(screen.getByText("Run completed: status completed")).toBeVisible();
+    const resultTitle = screen.getByText("Tool result: shell");
+    expect(resultTitle).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual([
+      "cat report.txt",
+      "late finalized result",
+    ]);
+    const resultDetails = toolPreElement(screenElement(resultTitle));
+    expect(resultDetails).not.toBeVisible();
+    expect(resultDetails).toHaveTextContent(/late finalized result/);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
   it("keeps hydrated text and idle continuation after a reconnected tool result", async () => {
     useRuntimeStore.setState({
       runtimeState: {

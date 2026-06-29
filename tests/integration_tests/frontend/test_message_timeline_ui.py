@@ -122,59 +122,6 @@ console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
     assert parts[0]["id"] != parts[2]["id"]
 
 
-def test_message_timeline_keeps_injection_at_live_event_position() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    runner = """
-import {
-  applyRunEventToTimeline,
-} from './frontend/dist/js/components/messageTimeline/actions.js';
-import {
-  clearTimelineState,
-  getRunTimelineSnapshot,
-} from './frontend/dist/js/components/messageTimeline/store.js';
-
-clearTimelineState();
-
-applyRunEventToTimeline(
-  'tool_call',
-  { tool_name: 'web_search', tool_call_id: 'call-1', args: { query: 'google' } },
-  { run_id: 'run-1', event_id: 'evt-1' },
-);
-applyRunEventToTimeline(
-  'injection_applied',
-  {
-    injection_id: 'inj-1',
-    content: '不要搜索谷歌，搜索 OpenAI',
-    source: 'user',
-    status: 'applied',
-  },
-  { run_id: 'run-1', event_id: 'evt-2' },
-);
-applyRunEventToTimeline(
-  'text_delta',
-  { text: '收到，改搜 OpenAI。' },
-  { run_id: 'run-1', event_id: 'evt-3' },
-);
-
-console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
-""".strip()
-
-    completed = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        timeout=10,
-    )
-
-    parts = json.loads(completed.stdout)
-    assert [part["kind"] for part in parts] == ["tool", "injection", "text"]
-    assert parts[1]["injection_id"] == "inj-1"
-    assert parts[1]["content"] == "不要搜索谷歌，搜索 OpenAI"
-
-
 def test_message_timeline_removes_superseded_pending_tool_before_injection() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     runner = """

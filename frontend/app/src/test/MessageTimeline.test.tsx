@@ -1447,6 +1447,47 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
   });
 
+  it("keeps runtime injection rows at their live event position between tool and text", async () => {
+    setRuntimeEntries([
+      runtimeToolCallEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+      }),
+      runtimeGenericEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        kind: "injection_applied",
+        payload: {
+          content: "Use OpenAI instead",
+          injection_id: "inj-1",
+          source: "user",
+          status: "applied",
+        },
+        text: "injection applied",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "Switching the search target to OpenAI.",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
+    expect(
+      screen.getByText("Injection applied: Use OpenAI instead · source user"),
+    ).toBeVisible();
+    expect(screen.getByText("Switching the search target to OpenAI.")).toBeVisible();
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts[0]).toContain("Tool call: execute_command");
+    expect(rowTexts[1]).toContain("Injection applied: Use OpenAI instead");
+    expect(rowTexts[2]).toContain("Switching the search target to OpenAI.");
+  });
+
   it("splits runtime text segments around approval and thinking events", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({

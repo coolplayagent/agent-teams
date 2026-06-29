@@ -173,6 +173,59 @@ describe("ChatWorkspace", () => {
       animationFrame.restore();
     }
   });
+
+  it("shows a loading frame for same-session content activation without clearing streams", async () => {
+    const animationFrame = captureAnimationFrames();
+    const runStreamController = createRunStreamController();
+
+    try {
+      const { rerender } = render(
+        <ChatWorkspace
+          contentLoadingKey={0}
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-1"
+          workspaceId="workspace-1"
+        />,
+      );
+
+      rerender(
+        <ChatWorkspace
+          contentLoadingKey={1}
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-1"
+          workspaceId="workspace-1"
+        />,
+      );
+
+      const chatView = htmlElement(
+        screen.getByTestId("timeline").closest(".at-chat-view"),
+        "chat view",
+      );
+      expect(runStreamController.clearRunStream).not.toHaveBeenCalled();
+      expect(chatView).toHaveClass("is-session-switching");
+      expect(chatView).toHaveAttribute("aria-busy", "true");
+      expect(screen.getByRole("status")).toHaveTextContent("Loading session...");
+      expect(renderedSessionIds()).toEqual({
+        composer: "session-1",
+        recovery: "session-1",
+        timeline: "session-1",
+        tokenUsage: "session-1",
+      });
+
+      await act(async () => {
+        animationFrame.flushNext();
+        animationFrame.flushNext();
+      });
+
+      await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+      expect(chatView).not.toHaveClass("is-session-switching");
+      expect(chatView).not.toHaveAttribute("aria-busy");
+    } finally {
+      animationFrame.restore();
+    }
+  });
 });
 
 function createRunStreamController(): RunStreamController {

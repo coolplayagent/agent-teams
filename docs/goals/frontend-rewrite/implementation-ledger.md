@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Active Subagent Main Loading TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, V1 parity standard, remaining `test_session_selection_ui.py` assertions, and the V2 secondary-surface return path before editing.
+- Fixed a V2 parity gap: returning from an active subagent secondary view to the same main chat session now shows the bounded main-session loading frame instead of instantly exposing the timeline with no transition.
+- Added an explicit `contentLoadingKey` handoff from `AppShell` to `ChatWorkspace` so same-session content activation can request a loading frame without clearing the live run stream or pretending the session id changed.
+- Kept the trigger scoped to primary chat returns from another shell surface or active subagent view; normal same-session sidebar selection in the already-mounted chat surface does not get a spurious loading frame.
+- Migrated the old active-subagent-to-main loading Python UI assertion into focused TypeScript coverage and removed that assertion from `tests/integration_tests/frontend/test_session_selection_ui.py`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle contains the same-session content activation loading behavior (`/app/assets/index-DJc5aSiS.js`).
+
+### Verification
+- `npm run test -- src/test/ChatWorkspace.test.tsx` passed with coverage that content activation shows a loading frame without clearing the run stream and keeps all session-scoped child surfaces on the same session.
+- `npm run test -- src/test/AppShell.test.tsx -t "clears the active subagent view"` passed with coverage for sidebar return from an active subagent view into the main chat loading frame.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_session_selection_ui.py` passed after deleting the migrated Python assertion.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the V2 static app bundle.
+
+### Reviewer
+- Main-agent V2 same-session active-subagent return loading implementation, targeted TS/Python verification, lint, dist rebuild, and old Python UI harness reduction completed for this slice. `test_session_selection_ui.py` still has 3 unmigrated V1 edge-case assertions; no full Sessions And Projects subsystem PASS, Message Timeline subsystem PASS, stream/replay PASS, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Terminal View Mark Retry TS Migration
 
 ### Scope

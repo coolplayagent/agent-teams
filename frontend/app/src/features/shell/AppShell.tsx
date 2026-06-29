@@ -101,6 +101,7 @@ export function AppShell() {
   const [specLineageTaskId, setSpecLineageTaskId] = useState<string | null>(
     initialSpecLineageTaskId,
   );
+  const [chatContentLoadingKey, setChatContentLoadingKey] = useState(0);
   const [activeSubagent, setActiveSubagent] =
     useState<ActiveSubagentSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -139,11 +140,15 @@ export function AppShell() {
       nextView: ShellPrimaryView,
       historyMode: ShellHistoryMode = "push",
     ) => {
+      const leavingSubagentView = activeSubagent !== null;
       setSettingsOpen(false);
       setActiveSubagent(null);
+      if (nextView === "chat" && (activeView !== "chat" || leavingSubagentView)) {
+        setChatContentLoadingKey((currentKey) => currentKey + 1);
+      }
       navigateShellView(nextView, historyMode);
     },
-    [navigateShellView],
+    [activeSubagent, activeView, navigateShellView],
   );
 
   const healthQuery = useQuery({
@@ -653,6 +658,7 @@ export function AppShell() {
             />
           ) : (
             <ChatWorkspace
+              contentLoadingKey={chatContentLoadingKey}
               primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
               runStreamController={runStreamController}
               sessionId={selectedSessionId}

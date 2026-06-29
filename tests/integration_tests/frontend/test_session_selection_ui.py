@@ -176,60 +176,6 @@ console.log(JSON.stringify({
     assert payload["selectedEvents"] == []
 
 
-def test_select_session_from_active_subagent_shows_main_loading_placeholder(
-    tmp_path: Path,
-) -> None:
-    payload = _run_session_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.CustomEvent = class CustomEvent {
-    constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail || {};
-    }
-};
-
-const { state } = await import("./mockState.mjs");
-const { els } = await import("./mockDom.mjs");
-state.currentSessionId = "session-a";
-state.activeSubagentSession = {
-    sessionId: "session-a",
-    instanceId: "inst-sub-1",
-};
-state.isGenerating = true;
-
-const { selectSession } = await import("./session.mjs");
-const selection = selectSession("session-a");
-await Promise.resolve();
-const immediate = {
-    fetchCalls: [...globalThis.__fetchCalls],
-    clearActiveSubagentSessionCalls: globalThis.__clearActiveSubagentSessionCalls,
-    centeredLoadingCreated: els.chatContainer.children
-        .some(child => child.className === "session-switch-loading"),
-    inlineLoadingVisible: els.chatMessages.innerHTML.includes("subagent-main-session-loading"),
-};
-globalThis.__hydrateResolvers[0].resolve();
-await selection;
-await Promise.resolve();
-
-console.log(JSON.stringify({
-    immediate,
-    selectedEvents: globalThis.__documentDispatches
-        .filter(event => event.type === "agent-teams-session-selected")
-        .map(event => event.detail.sessionId),
-}));
-""".strip(),
-    )
-
-    assert payload["immediate"] == {
-        "fetchCalls": ["session-a"],
-        "clearActiveSubagentSessionCalls": 1,
-        "centeredLoadingCreated": True,
-        "inlineLoadingVisible": False,
-    }
-    assert payload["selectedEvents"] == ["session-a"]
-
-
 def _run_session_script(tmp_path: Path, runner_source: str) -> dict[str, object]:
     repo_root = Path(__file__).resolve().parents[3]
     source_path = repo_root / "frontend" / "dist" / "js" / "app" / "session.js"

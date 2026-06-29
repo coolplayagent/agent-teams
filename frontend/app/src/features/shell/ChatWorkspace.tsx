@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Composer } from "../composer/Composer";
 import { RecoveryBar } from "../recovery/RecoveryBar";
@@ -8,6 +8,7 @@ import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { SessionTokenUsage } from "./SessionTokenUsage";
 
 interface ChatWorkspaceProps {
+  contentLoadingKey?: number;
   primaryRoleId: string | null;
   runStreamController: RunStreamController;
   sessionId: string | null;
@@ -15,15 +16,29 @@ interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({
+  contentLoadingKey,
   primaryRoleId,
   runStreamController,
   sessionId,
   workspaceId,
 }: ChatWorkspaceProps) {
   const t = useTranslations();
+  const previousContentLoadingKeyRef = useRef<number | undefined>(undefined);
   const previousSessionIdRef = useRef(sessionId);
   const switchFrameRef = useRef<SessionSwitchFrame | null>(null);
   const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);
+
+  const startSessionLoadingFrame = useCallback((nextSessionId: string) => {
+    cancelSessionSwitchFrame(switchFrameRef.current);
+    switchFrameRef.current = null;
+    setSwitchingSessionId(nextSessionId);
+    switchFrameRef.current = scheduleSessionSwitchFrame(() => {
+      switchFrameRef.current = null;
+      setSwitchingSessionId((currentSessionId) =>
+        currentSessionId === nextSessionId ? null : currentSessionId,
+      );
+    });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -37,22 +52,31 @@ export function ChatWorkspace({
     }
     previousSessionIdRef.current = sessionId;
     runStreamController.clearRunStream();
-    cancelSessionSwitchFrame(switchFrameRef.current);
-    switchFrameRef.current = null;
 
     if (sessionId === null) {
+      cancelSessionSwitchFrame(switchFrameRef.current);
+      switchFrameRef.current = null;
       setSwitchingSessionId(null);
       return;
     }
 
-    setSwitchingSessionId(sessionId);
-    switchFrameRef.current = scheduleSessionSwitchFrame(() => {
-      switchFrameRef.current = null;
-      setSwitchingSessionId((currentSessionId) =>
-        currentSessionId === sessionId ? null : currentSessionId,
-      );
-    });
-  }, [runStreamController, sessionId]);
+    startSessionLoadingFrame(sessionId);
+  }, [runStreamController, sessionId, startSessionLoadingFrame]);
+
+  useLayoutEffect(() => {
+    const previousContentLoadingKey = previousContentLoadingKeyRef.current;
+    previousContentLoadingKeyRef.current = contentLoadingKey;
+    if (contentLoadingKey === undefined) {
+      return;
+    }
+    const loadingRequested =
+      previousContentLoadingKey === undefined
+        ? contentLoadingKey > 0
+        : previousContentLoadingKey !== contentLoadingKey;
+    if (loadingRequested && sessionId !== null) {
+      startSessionLoadingFrame(sessionId);
+    }
+  }, [contentLoadingKey, sessionId, startSessionLoadingFrame]);
 
   const switching = sessionId !== null && switchingSessionId === sessionId;
 

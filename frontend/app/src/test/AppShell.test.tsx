@@ -994,6 +994,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(screen.getByText("Loading session...")).toBeVisible();
     expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
     expect(useUiStore.getState().selectedSessionId).toBe("session-1");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");

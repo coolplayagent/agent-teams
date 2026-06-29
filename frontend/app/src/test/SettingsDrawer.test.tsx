@@ -1007,6 +1007,12 @@ beforeEach(() => {
         value: "http://hidden-proxy.example:8080",
         value_kind: "string",
       },
+      {
+        key: "SSL_VERIFY",
+        scope: "app",
+        value: "false",
+        value_kind: "string",
+      },
     ],
     system: [
       {
@@ -2592,8 +2598,19 @@ describe("SettingsDrawer", () => {
 
     expect(await screen.findByText("OPENAI_API_KEY")).toBeVisible();
     expect(screen.getByText("saved-openai-key")).toBeVisible();
+    expect(screen.getByText("App")).toBeVisible();
+    expect(screen.getAllByText("System").length).toBeGreaterThan(1);
     expect(screen.queryByText("http://hidden-proxy.example:8080")).toBeNull();
+    expect(screen.queryByText("SSL_VERIFY")).toBeNull();
+    expect(screen.queryByText("PATH")).toBeNull();
     expect(getEnvironmentVariablesMock).toHaveBeenCalledTimes(1);
+
+    const systemToggle = screen.getByRole("button", { name: "System1" });
+    expect(systemToggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(systemToggle);
+    expect(await screen.findByText("PATH")).toBeVisible();
+    expect(screen.getByText("C:/Windows/System32")).toBeVisible();
+    expect(systemToggle).toHaveAttribute("aria-expanded", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "New variable" }));
     const keyInput = await screen.findByLabelText("Key");
@@ -2613,6 +2630,44 @@ describe("SettingsDrawer", () => {
           source_key: null,
           value: "saved-anthropic-key",
         },
+      ),
+    );
+
+    await waitFor(() => expect(screen.queryByLabelText("Value")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Key")).toHaveValue("OPENAI_API_KEY"),
+    );
+    expect(screen.getByLabelText("Value")).toHaveValue("saved-openai-key");
+    fireEvent.change(screen.getByLabelText("Value"), {
+      target: { value: "edited-openai-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveEnvironmentVariableMock).toHaveBeenCalledWith(
+        "app",
+        "OPENAI_API_KEY",
+        {
+          source_key: "OPENAI_API_KEY",
+          value: "edited-openai-key",
+        },
+      ),
+    );
+
+    await waitFor(() => expect(screen.queryByLabelText("Value")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('Delete environment variable "OPENAI_API_KEY"?').length,
+      ).toBeGreaterThan(0),
+    );
+    fireEvent.click(lastDeleteButton());
+
+    await waitFor(() =>
+      expect(deleteEnvironmentVariableMock).toHaveBeenCalledWith(
+        "app",
+        "OPENAI_API_KEY",
       ),
     );
   }, 20000);

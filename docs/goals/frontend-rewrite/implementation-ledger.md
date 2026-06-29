@@ -2,6 +2,29 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Environment Variables UI Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, Settings parity requirements, and remaining Python UI harness inventory before editing.
+- Migrated the V1 environment-variable panel intent from `tests/integration_tests/frontend/test_environment_variables_ui.py` into V2 `SettingsDrawer.test.tsx` behavior coverage:
+  - the Environment variables secondary settings page renders app variables before a collapsed System group;
+  - hidden app proxy/SSL environment keys stay filtered out of the app list;
+  - expanding System reveals real system environment records without adding edit/delete actions;
+  - creating and editing app variables call the real environment config client with app scope and the correct `source_key`;
+  - deleting an app variable preserves the destructive confirmation flow and calls the real delete client with app scope.
+- Deleted `tests/integration_tests/frontend/test_environment_variables_ui.py`; the migrated behavior now lives in TypeScript coverage against the V2 Settings shell instead of the old generated `frontend/dist/js/components/settings/environmentVariables.js` harness.
+- Kept production code and `frontend/dist/app` unchanged in this slice because the V2 Environment settings section already matched the migrated semantics.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "manages app environment variables"` passed with the expanded Environment variables behavior coverage.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend` passed after deleting the old Python UI harness.
+- `rg -n "test_environment_variables_ui|environment_variables_panel_renders|environment_variables_add_row|environment_variables_edit_replaces" tests frontend\app\src\test docs\goals\frontend-rewrite\implementation-ledger.md` returned no active code/test references.
+- `npm run test -- src/test/SettingsDrawer.test.tsx` was attempted, but the full SettingsDrawer file did not complete in a reasonable slice window in the current environment and was stopped; no full Settings subsystem PASS is claimed from this slice.
+
+### Reviewer
+- Main-agent V2 Environment variables settings coverage and old Python UI harness retirement completed for this slice. This does not claim full Settings subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Session Selection UI Harness Retirement
 
 ### Scope

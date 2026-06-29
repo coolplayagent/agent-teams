@@ -5238,3 +5238,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted browser gate execution and screenshot inspection completed for this evidence slice. No Application Shell subsystem PASS, Settings subsystem PASS, Sessions/Projects subsystem PASS, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Desktop Smoke And Reviewer Evidence Sweep
+
+### Scope
+- Re-checked the active frontend rewrite goal, Desktop completion checklist, and latest reviewer result before editing this ledger. This slice records the Electron desktop smoke gate and the independent read-only reviewer result for the latest export/stream evidence.
+- Ran the targeted Desktop browser smoke gate covering Electron renderer loading, isolated preload API shape, renderer Node isolation, backend status bridge, startup failure view, diagnostics copy, retry startup, external link routing through the preload/main boundary, invalid external-link rejection, managed backend process start, managed backend health/app requests, auto-quit, and backend shutdown after app lifecycle exit.
+- Received read-only reviewer `019f1277-8156-7fa2-a80e-9a4f5c3202fc` verdict PASS for the latest message export round-selection slice and stream/replay/recovery evidence slice. The reviewer reported no blockers and noted only residual risks: export tests prove selection/filtering and HTML structure but do not positively include the tool/status-heavy round in the selected HTML assertion, historical `retry-prompt` validation parts are better covered in timeline rendering than export output, and the stream evidence should remain targeted evidence rather than subsystem completion.
+- Kept this as release evidence toward Desktop and Reviewer gates only. No code changes were needed in this slice.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-desktop-smoke.spec.ts` passed with 4 tests.
+- Inspected `.tmp/frontend-v2-desktop/v2-electron-renderer.png`; it shows the Electron renderer loaded into the fixed Agent Teams shell with the desktop smoke session, backend connected state, isolated desktop API assertions, and no empty renderer.
+- Inspected `.tmp/frontend-v2-desktop/v2-electron-startup-failed.png`; it shows a clear backend startup failure screen with diagnostics copy and retry startup controls.
+- Reviewer `019f1277-8156-7fa2-a80e-9a4f5c3202fc` returned PASS with no P0/P1/P2 findings for the export/stream slices under review.
+
+### Reviewer
+- Main-agent desktop smoke execution, screenshot inspection, and independent reviewer PASS recording completed for this evidence slice. No Desktop subsystem PASS, full Reviewer Gate completion, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

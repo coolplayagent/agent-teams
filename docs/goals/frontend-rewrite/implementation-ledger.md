@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Injection Replay TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, and existing V2 `MessageTimeline` injection coverage before editing.
+- Added V2 component coverage for the live injection boundary `text_delta -> injection_applied -> duplicate replayed injection -> text_delta`, proving injection rows split adjacent runtime text in order and replayed duplicate events do not render duplicate injection markers.
+- Removed two V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness tests: `test_live_injection_marker_splits_current_stream_segment` and `test_live_injection_marker_is_idempotent_for_replayed_event`.
+- Kept this slice focused on message stream rendering and replay evidence. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, production runtime code, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "runtime injection rows|replay-deduped injection"` passed with the existing injection position test and the new replay-dedupe text-splitting test.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_live_injection_marker_splits_current_stream_segment|test_live_injection_marker_is_idempotent_for_replayed_event|live_injection_segment_split|live_injection_marker_replay" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Tool Result Segment TS Migration
 
 ### Scope

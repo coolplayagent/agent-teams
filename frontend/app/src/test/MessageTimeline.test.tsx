@@ -2042,6 +2042,47 @@ describe("MessageTimeline", () => {
     expect(rowTexts[2]).toContain("Switching the search target to OpenAI.");
   });
 
+  it("splits runtime text around replay-deduped injection rows", async () => {
+    const injectionEvent = relayRunEvent({
+      event_id: 2,
+      event_type: "injection_applied",
+      payload_json: JSON.stringify({
+        content: "Refine the answer",
+        injection_id: "inj-replay",
+        source: "user",
+        status: "applied",
+      }),
+    });
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "draft answer" }),
+      }),
+      injectionEvent,
+      injectionEvent,
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "refined answer" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("draft answer")).toBeVisible();
+    expect(screen.getByText("refined answer")).toBeVisible();
+    expect(screen.getAllByText("Injection applied: Refine the answer · source user"))
+      .toHaveLength(1);
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts[0]).toContain("draft answer");
+    expect(rowTexts[1]).toContain("Injection applied: Refine the answer");
+    expect(rowTexts[2]).toContain("refined answer");
+  });
+
   it("removes superseded pending runtime tool calls before rendering the injected replacement", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({

@@ -64,6 +64,7 @@ test("creates a run from the V2 composer and renders live stream output", async 
       shell_safety_policy_enabled: true,
       yolo: true,
     });
+    expect(runCreateRequests[0]).not.toHaveProperty("intent");
     await waitForEventSourceUrl(
       page,
       /\/api\/ag-ui\/runs\/run-ts-stream\/events\?after_event_id=0$/,

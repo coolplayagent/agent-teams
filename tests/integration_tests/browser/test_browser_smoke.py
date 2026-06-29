@@ -78,47 +78,6 @@ def browser_page() -> Iterator[Page]:
 
 
 @pytest.mark.skip(reason="Flaky on CI - timing issues with browser automation")
-def test_browser_run_flow_uses_canonical_input_payload(
-    browser_page: Page,
-    integration_env: IntegrationEnvironment,
-) -> None:
-    page = browser_page
-    _open_app(page, integration_env)
-
-    session_id = _create_session_via_sidebar(page)
-    prompt = "请用一句话确认当前系统可正常响应。"
-
-    expect(page.locator("#prompt-input")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    with page.expect_request(
-        lambda request: (
-            request.method == "POST"
-            and request.url == f"{integration_env.api_base_url}/api/runs"
-        )
-    ) as run_request_info:
-        page.locator("#prompt-input").fill(prompt)
-        page.locator("#send-btn").click()
-
-    payload = json.loads(run_request_info.value.post_data or "{}")
-    assert payload["session_id"] == session_id
-    assert payload["input"] == [{"kind": "text", "text": prompt}]
-    assert "intent" not in payload
-
-    round_section = page.locator(".session-round-section").first
-    expect(round_section).to_contain_text(prompt, timeout=90_000)
-    expect(round_section).to_contain_text(
-        f"[fake-llm] {prompt}",
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator(".session-item.active")).to_have_attribute(
-        "data-session-id",
-        session_id,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#send-btn")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    expect(page.locator("#stop-btn")).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
-
-
-@pytest.mark.skip(reason="Flaky on CI - timing issues with browser automation")
 def test_browser_webfetch_approval_reuses_host_scoped_ticket(
     browser_page: Page,
     integration_env: IntegrationEnvironment,

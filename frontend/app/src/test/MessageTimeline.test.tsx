@@ -986,6 +986,122 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
   });
 
+  it("starts reconnected text after idle and tool boundaries in fresh segments", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-rebind-text"],
+        runs: {
+          "run-rebind-text": {
+            runId: "run-rebind-text",
+            status: "open",
+            lastEventId: 6,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-rebind-text:1:0",
+                sessionId: "session-1",
+                runId: "run-rebind-text",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "hello",
+                payload: { text: "hello" },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-rebind-text:2:1",
+                sessionId: "session-1",
+                runId: "run-rebind-text",
+                roleId: "MainAgent",
+                kind: "thinking_started",
+                text: "thinking started",
+                payload: { part_index: 0 },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-rebind-text:3:2",
+                sessionId: "session-1",
+                runId: "run-rebind-text",
+                roleId: "MainAgent",
+                kind: "thinking_finished",
+                text: "thinking finished",
+                payload: { part_index: 0 },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+              {
+                id: "run-rebind-text:4:3",
+                sessionId: "session-1",
+                runId: "run-rebind-text",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: " world",
+                payload: { text: " world" },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:03Z",
+              },
+              {
+                id: "run-rebind-text:5:4",
+                sessionId: "session-1",
+                runId: "run-rebind-text",
+                roleId: "MainAgent",
+                kind: "tool_call",
+                text: "shell",
+                payload: {
+                  args: { command: "pwd" },
+                  tool_call_id: "call-rebind-text",
+                  tool_name: "shell",
+                },
+                eventId: 5,
+                occurredAt: "2026-06-23T00:00:04Z",
+              },
+              {
+                id: "run-rebind-text:6:5",
+                sessionId: "session-1",
+                runId: "run-rebind-text",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: " after",
+                payload: { text: " after" },
+                eventId: 6,
+                occurredAt: "2026-06-23T00:00:05Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        run_id: "run-rebind-text",
+        content: "hello",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-rebind-text",
+    });
+
+    expect(await screen.findByText("hello")).toBeVisible();
+    expect(screen.queryAllByText("hello")).toHaveLength(1);
+    expect(screen.getByText("world")).toBeVisible();
+    expect(screen.getByText("Tool call: shell")).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual(["pwd"]);
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).not.toBeNull();
+    expect(streamingText).toHaveTextContent("after");
+    expect(streamingText).not.toHaveTextContent("hello");
+    expect(streamingText).not.toHaveTextContent("world");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(4);
+  });
+
   it("keeps post-checkpoint runtime deltas when hydration only covers earlier output", async () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -1600,6 +1716,95 @@ describe("MessageTimeline", () => {
     expect(resultDetails).toBeVisible();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
+  });
+
+  it("keeps hydrated text and idle continuation after a reconnected tool result", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-rebind-tool"],
+        runs: {
+          "run-rebind-tool": {
+            runId: "run-rebind-tool",
+            status: "open",
+            lastEventId: 3,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-rebind-tool:1:0",
+                sessionId: "session-1",
+                runId: "run-rebind-tool",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "hello",
+                payload: { text: "hello" },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-rebind-tool:2:1",
+                sessionId: "session-1",
+                runId: "run-rebind-tool",
+                roleId: "MainAgent",
+                kind: "tool_call",
+                text: "shell",
+                payload: {
+                  args: { command: "echo hi" },
+                  tool_call_id: "call-rebind",
+                  tool_name: "shell",
+                },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-rebind-tool:3:2",
+                sessionId: "session-1",
+                runId: "run-rebind-tool",
+                roleId: "MainAgent",
+                kind: "tool_result",
+                text: "shell",
+                payload: {
+                  result: { ok: true, data: "done" },
+                  tool_call_id: "call-rebind",
+                  tool_name: "shell",
+                },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        run_id: "run-rebind-tool",
+        content: "hello",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-rebind-tool",
+    });
+
+    expect(await screen.findByText("hello")).toBeVisible();
+    expect(screen.queryAllByText("hello")).toHaveLength(1);
+    expect(screen.getByText("Tool call: shell")).toBeVisible();
+    const resultTitle = screen.getByText("Tool result: shell");
+    expect(resultTitle).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual(["echo hi", "done"]);
+    const resultDetails = toolPreElement(screenElement(resultTitle));
+    expect(resultDetails).toHaveTextContent(/done/);
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).not.toBeNull();
+    expect(streamingText).not.toHaveTextContent("hello");
+    expect(streamingText).not.toHaveTextContent("done");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(4);
   });
 
   it("merges out-of-order parallel runtime tool calls into completed results", async () => {

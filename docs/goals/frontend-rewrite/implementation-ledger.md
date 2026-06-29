@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Rebind Continuation TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining legacy `test_stream_session_overlay_ui.py` cases before editing, then chose the stream rebind/continuation gap because it directly advances the high-risk streaming and replay parity requirements.
+- Added V2 `MessageTimeline` component coverage for a reconnected open run where hydrated text is already persisted, a tool result arrives after rebind, and the UI must keep the persisted text once while preserving an idle streaming cursor for the still-open run.
+- Added V2 `MessageTimeline` component coverage proving reconnected text after thinking-idle and tool boundaries starts in fresh text segments instead of absorbing a stale idle cursor or previous hydrated text.
+- Removed two replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness tests: `test_rebind_then_tool_result_keeps_existing_text_and_appends_idle_placeholder` and `test_idle_cursor_rebind_resets_live_buffer_before_next_text_delta`.
+- Kept this slice focused on stream rebind semantics and UI-test migration. No production UI code, sidebar entries, Settings sections, secondary-page routing, visible shell layout, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "reconnected|completed runtime tool results|runtime tool results without a prior tool call|repeated live text"` passed with the two new reconnected stream cases and adjacent tool/hydration coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "^def test_|rebind_then_tool_result|idle_cursor_rebind|reconnected" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` confirmed the old rebind Python harnesses were removed and only three legacy stream overlay tests remain.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Idle Cursor After Segment TS Migration
 
 ### Scope

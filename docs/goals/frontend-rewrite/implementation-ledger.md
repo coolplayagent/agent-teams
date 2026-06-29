@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Resume Lifecycle TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, quality gates, architecture target, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, and existing runtime reducer coverage before editing.
+- Mapped the V1 `test_stream_overlay_terminal_event_releases_event_id_dedupe` harness risk to V2's AG-UI/runtime cursor model: backend evidence uses monotonically increasing per-run event ids, so V2 should not accept a same-or-lower event id after terminal, but must reopen a terminal run when a later `run_resumed` lifecycle event advances the stream cursor.
+- Added V2 reducer coverage proving stale replay below the terminal cursor remains ignored, a later `run_resumed` clears the terminal state and reopens the run, and subsequent text from the resumed lifecycle remains visible in order.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness test `test_stream_overlay_terminal_event_releases_event_id_dedupe`.
+- Kept this slice focused on runtime replay/resume semantics. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, production runtime code, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/runtimeReducers.test.ts -t "reopens a completed run only|deduplicates replayed events|reopens a paused run"` passed with the new resume-after-terminal reducer test and adjacent dedupe/resume checks.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_stream_overlay_terminal_event_releases_event_id_dedupe|stream_overlay_terminal_replay" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/runtimeReducers.test.ts` returned no matches after removal.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 reducer coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Terminal Cache TS Migration
 
 ### Scope

@@ -258,61 +258,6 @@ export function syncLastAnswerCopyButton() {
     )
 
 
-def test_stream_overlay_terminal_event_releases_event_id_dedupe(
-    tmp_path: Path,
-) -> None:
-    source = Path("frontend/dist/js/components/messageRenderer/stream.js").read_text(
-        encoding="utf-8"
-    )
-    temp_dir = tmp_path / "stream_overlay_terminal_replay"
-    temp_dir.mkdir()
-    _write_stream_overlay_test_modules(temp_dir, source)
-
-    runner = """
-import {
-  applyStreamOverlayEvent,
-  getRunStreamOverlaySnapshot,
-} from "./stream.js";
-
-const options = {
-  runId: "run-primary",
-  instanceId: "primary",
-  roleId: "main-role",
-  label: "Main Agent",
-};
-applyStreamOverlayEvent("text_delta", { text: "first lifecycle" }, {
-  ...options,
-  eventId: "evt-repeat",
-});
-applyStreamOverlayEvent("run_completed", {}, { ...options, eventId: "evt-terminal" });
-applyStreamOverlayEvent("text_delta", { text: "second lifecycle" }, {
-  ...options,
-  eventId: "evt-repeat",
-});
-
-const overlay = getRunStreamOverlaySnapshot("run-primary").coordinator;
-console.log(JSON.stringify({
-  text: overlay.parts.filter(part => part.kind === "text").map(part => part.content).join("\\n"),
-  textStreaming: overlay.textStreaming,
-}));
-""".strip()
-
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=temp_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        timeout=3,
-    )
-
-    payload = json.loads(result.stdout)
-    assert "first lifecycle" in payload["text"]
-    assert "second lifecycle" in payload["text"]
-    assert payload["textStreaming"] is True
-
-
 def test_stream_overlay_snapshot_ignores_hydrated_timeline_store_after_dom_state_clears(
     tmp_path: Path,
 ) -> None:

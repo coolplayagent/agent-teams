@@ -142,6 +142,55 @@ describe("runtime reducers", () => {
     ]);
   });
 
+  it("reopens a completed run only from a later resume lifecycle event", () => {
+    const completed = [
+      runEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "first lifecycle" }),
+      }),
+      runEvent({ event_id: 2, event_type: "run_completed" }),
+    ].reduce(reduceRunEvent, initialRuntimeState);
+    const staleReplay = reduceRunEvent(
+      completed,
+      runEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "stale replay" }),
+      }),
+    );
+    const resumed = reduceRunEvent(
+      staleReplay,
+      runEvent({
+        event_id: 3,
+        event_type: "run_resumed",
+        payload_json: JSON.stringify({ reason: "resume" }),
+      }),
+    );
+    const continued = reduceRunEvent(
+      resumed,
+      runEvent({
+        event_id: 4,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "second lifecycle" }),
+      }),
+    );
+
+    expect(staleReplay).toBe(completed);
+    expect(resumed.runs["run-1"]).toMatchObject({
+      status: "open",
+      terminalEventType: null,
+      lastEventId: 3,
+    });
+    expect(continued.activeRunIds).toEqual(["run-1"]);
+    expect(continued.runs["run-1"].entries.map((entry) => entry.text)).toEqual([
+      "first lifecycle",
+      "run completed",
+      "resume",
+      "second lifecycle",
+    ]);
+  });
+
   it("reopens a paused run when replay reaches a resume event", () => {
     const paused = reduceRunEvent(
       initialRuntimeState,

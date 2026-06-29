@@ -422,6 +422,36 @@ describe("Composer", () => {
     );
   });
 
+  it("restores the composer when leading slash command resolution fails", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    resolveCommandPromptMock.mockRejectedValue(new Error("registry down"));
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, {
+      target: { value: "/opsx:propose" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(resolveCommandPromptMock).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled(),
+    );
+    expect(prompt).toHaveValue("/opsx:propose");
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute(
+      "title",
+      "Send",
+    );
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
   it("does not parse inline slash prose as a command or skill action", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

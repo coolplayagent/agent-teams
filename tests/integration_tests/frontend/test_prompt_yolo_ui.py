@@ -2305,51 +2305,6 @@ console.log(JSON.stringify({
     assert "src/relay_teams/main.py" in rendered_cached_relay_text
 
 
-def test_handle_send_restores_composer_when_command_resolution_aborts(
-    tmp_path: Path,
-) -> None:
-    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
-    runner = """
-import { handleSend } from "./prompt.js";
-import { els } from "./mockDom.mjs";
-import { state } from "./mockState.mjs";
-
-globalThis.__streamCalls = [];
-globalThis.__logs = [];
-globalThis.__notifications = [];
-els.promptInput.value = "/opsx:propose";
-
-await handleSend();
-
-console.log(JSON.stringify({
-    isGenerating: state.isGenerating,
-    sendDisabled: els.sendBtn.disabled,
-    inputDisabled: els.promptInput.disabled,
-    streamCalls: globalThis.__streamCalls,
-    statusHidden: els.promptInputStatus.hidden,
-    statusText: els.promptInputStatus.textContent,
-}));
-""".strip()
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=temp_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-    )
-
-    payload = json.loads(result.stdout)
-    assert payload["isGenerating"] is False
-    assert payload["sendDisabled"] is False
-    assert payload["inputDisabled"] is False
-    assert payload["streamCalls"] == []
-    assert payload["statusHidden"] is False
-    assert (
-        payload["statusText"] == "Cannot resolve command without an active workspace."
-    )
-
-
 def test_handle_send_emits_title_preview_only_after_run_created(
     tmp_path: Path,
 ) -> None:

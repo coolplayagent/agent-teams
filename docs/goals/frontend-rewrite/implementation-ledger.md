@@ -7054,3 +7054,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, existing TS coverage verification, targeted Composer test execution, and partial legacy harness removal completed for this leading role mention slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Slash Command Abort Composer Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, and V2 Composer slash command submission flow before editing.
+- Added V2 Composer coverage for an async slash command resolver failure: the draft stays in the prompt, the Send button becomes enabled again with its normal title, and no AG-UI `createRun` call is made.
+- Removed the corresponding V1 Python UI harness scenario from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`. The file now has 10 remaining legacy UI scenarios.
+- This slice is test coverage and harness cleanup only; no production UI, Settings, sidebar inventory, backend, or dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 71 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 10.
+- `rg -n "test_handle_send_restores_composer_when_command_resolution_aborts|restores the composer when leading slash command resolution fails" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused TS coverage migration, targeted Composer verification, and partial legacy harness removal completed for this slash command abort slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

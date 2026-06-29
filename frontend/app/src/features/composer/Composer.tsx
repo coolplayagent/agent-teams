@@ -610,122 +610,147 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         ) : null}
         <div className="at-composer-controls">
           <Space className="at-composer-control-set" size={6} wrap>
-            <Segmented<SessionMode>
-              aria-label={t("composerSessionMode")}
-              className="at-session-mode-control"
-              disabled={!canChangeTopology}
-              onChange={(mode) => {
-                if (mode !== selectedSessionMode) {
-                  updateSessionTopologyMode(mode);
-                }
-              }}
-              options={sessionModeOptions(t).map((option) => ({
-                ...option,
-                disabled:
-                  option.value === "orchestration" &&
-                  orchestrationPresetOptions.length === 0,
-              }))}
-              size="small"
-              value={selectedSessionMode}
-            />
-            {selectedSessionMode === "normal" ? (
-              <Select
-                aria-label={t("composerRootRole")}
-                className="at-normal-root-role-select"
-                disabled={
-                  !canChangeTopology ||
-                  normalRootRoleOptions.length === 0
-                }
-                loading={roleOptionsQuery.isLoading || updateTopologyMutation.isPending}
-                onChange={(roleId) => {
-                  const nextRoleId = normalizeProfileName(roleId);
-                  if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
-                    updateSessionTopologyMode("normal", {
-                      normalRootRoleId: nextRoleId,
-                    });
+            <div className="at-composer-field at-composer-mode-field">
+              <Typography.Text className="at-composer-field-label">
+                {t("composerMode")}
+              </Typography.Text>
+              <Segmented<SessionMode>
+                aria-label={t("composerSessionMode")}
+                className="at-session-mode-control"
+                disabled={!canChangeTopology}
+                onChange={(mode) => {
+                  if (mode !== selectedSessionMode) {
+                    updateSessionTopologyMode(mode);
                   }
                 }}
+                options={sessionModeOptions(t).map((option) => ({
+                  ...option,
+                  disabled:
+                    option.value === "orchestration" &&
+                    orchestrationPresetOptions.length === 0,
+                }))}
+                size="small"
+                value={selectedSessionMode}
+              />
+            </div>
+            <div className="at-composer-field at-composer-role-field">
+              <Typography.Text className="at-composer-field-label">
+                {t("composerRole")}
+              </Typography.Text>
+              {selectedSessionMode === "normal" ? (
+                <Select
+                  aria-label={t("composerRootRole")}
+                  className="at-normal-root-role-select"
+                  disabled={
+                    !canChangeTopology ||
+                    normalRootRoleOptions.length === 0
+                  }
+                  loading={
+                    roleOptionsQuery.isLoading ||
+                    updateTopologyMutation.isPending
+                  }
+                  onChange={(roleId) => {
+                    const nextRoleId = normalizeProfileName(roleId);
+                    if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
+                      updateSessionTopologyMode("normal", {
+                        normalRootRoleId: nextRoleId,
+                      });
+                    }
+                  }}
+                  optionFilterProp="label"
+                  options={normalRootRoleOptions}
+                  placeholder={t("composerRootRole")}
+                  popupMatchSelectWidth={false}
+                  showSearch
+                  size="small"
+                  value={selectedNormalRootRoleId || undefined}
+                />
+              ) : null}
+              {selectedSessionMode === "orchestration" ? (
+                <Select
+                  aria-label={t("composerOrchestrationPreset")}
+                  className="at-orchestration-preset-select"
+                  disabled={
+                    !canChangeTopology ||
+                    orchestrationPresetOptions.length === 0
+                  }
+                  loading={
+                    orchestrationQuery.isLoading || updateTopologyMutation.isPending
+                  }
+                  onChange={(presetId) => {
+                    const nextPresetId = normalizeProfileName(presetId);
+                    if (
+                      nextPresetId &&
+                      nextPresetId !== selectedOrchestrationPresetId
+                    ) {
+                      updateSessionTopologyMode("orchestration", {
+                        orchestrationPresetId: nextPresetId,
+                      });
+                    }
+                  }}
+                  optionFilterProp="label"
+                  options={orchestrationPresetOptions}
+                  placeholder={t("composerPreset")}
+                  popupMatchSelectWidth={false}
+                  showSearch
+                  size="small"
+                  value={selectedOrchestrationPresetId || undefined}
+                />
+              ) : null}
+            </div>
+            <div className="at-composer-field at-composer-target-field">
+              <Typography.Text className="at-composer-field-label">
+                {t("composerTarget")}
+              </Typography.Text>
+              <Select
+                allowClear
+                aria-label={t("composerTargetRole")}
+                className="at-role-select"
+                disabled={busy || activeRunId !== null}
+                loading={roleOptionsQuery.isLoading}
+                onChange={(value) => setTargetRoleId(value ?? null)}
                 optionFilterProp="label"
-                options={normalRootRoleOptions}
-                placeholder={t("composerRootRole")}
-                popupMatchSelectWidth={false}
+                options={roleOptions}
+                placeholder={t("composerTargetRole")}
                 showSearch
                 size="small"
-                value={selectedNormalRootRoleId || undefined}
+                value={targetRoleId ?? undefined}
               />
-            ) : null}
-            {selectedSessionMode === "orchestration" ? (
+            </div>
+            <div className="at-composer-field at-composer-model-field">
+              <Typography.Text className="at-composer-field-label">
+                {t("composerModel")}
+              </Typography.Text>
               <Select
-                aria-label={t("composerOrchestrationPreset")}
-                className="at-orchestration-preset-select"
+                allowClear
+                aria-label={t("composerModelProfile")}
+                className="at-model-profile-select"
                 disabled={
-                  !canChangeTopology ||
-                  orchestrationPresetOptions.length === 0
+                  busy || activeRunId !== null || !canChangeModelProfile
                 }
                 loading={
-                  orchestrationQuery.isLoading || updateTopologyMutation.isPending
+                  sessionQuery.isLoading ||
+                  modelProfilesQuery.isLoading ||
+                  updateModelProfileMutation.isPending
                 }
-                onChange={(presetId) => {
-                  const nextPresetId = normalizeProfileName(presetId);
+                onChange={(value) => {
+                  const nextProfile = normalizeProfileName(value);
                   if (
-                    nextPresetId &&
-                    nextPresetId !== selectedOrchestrationPresetId
+                    selectedModelProfile !== null &&
+                    nextProfile !== selectedModelProfile
                   ) {
-                    updateSessionTopologyMode("orchestration", {
-                      orchestrationPresetId: nextPresetId,
-                    });
+                    updateModelProfileMutation.mutate(nextProfile);
                   }
                 }}
                 optionFilterProp="label"
-                options={orchestrationPresetOptions}
-                placeholder={t("composerPreset")}
+                options={modelProfileOptions}
+                placeholder={t("composerModel")}
                 popupMatchSelectWidth={false}
                 showSearch
                 size="small"
-                value={selectedOrchestrationPresetId || undefined}
+                value={selectedModelProfile ?? undefined}
               />
-            ) : null}
-            <Select
-              allowClear
-              aria-label={t("composerTargetRole")}
-              className="at-role-select"
-              disabled={busy || activeRunId !== null}
-              loading={roleOptionsQuery.isLoading}
-              onChange={(value) => setTargetRoleId(value ?? null)}
-              optionFilterProp="label"
-              options={roleOptions}
-              placeholder={t("composerTargetRole")}
-              showSearch
-              size="small"
-              value={targetRoleId ?? undefined}
-            />
-            <Select
-              allowClear
-              aria-label={t("composerModelProfile")}
-              className="at-model-profile-select"
-              disabled={busy || activeRunId !== null || !canChangeModelProfile}
-              loading={
-                sessionQuery.isLoading ||
-                modelProfilesQuery.isLoading ||
-                updateModelProfileMutation.isPending
-              }
-              onChange={(value) => {
-                const nextProfile = normalizeProfileName(value);
-                if (
-                  selectedModelProfile !== null &&
-                  nextProfile !== selectedModelProfile
-                ) {
-                  updateModelProfileMutation.mutate(nextProfile);
-                }
-              }}
-              optionFilterProp="label"
-              options={modelProfileOptions}
-              placeholder={t("composerModel")}
-              popupMatchSelectWidth={false}
-              showSearch
-              size="small"
-              value={selectedModelProfile ?? undefined}
-            />
+            </div>
             <Space className="at-thinking-control" size={6}>
               <Typography.Text className="at-control-label" id="at-thinking-label">
                 {t("composerThinking")}

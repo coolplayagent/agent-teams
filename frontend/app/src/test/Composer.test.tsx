@@ -170,6 +170,10 @@ describe("Composer", () => {
       "你希望这些代理帮你做什么？",
     );
     expect(screen.getByText("普通模式")).toBeVisible();
+    expect(screen.getByText("模式")).toBeVisible();
+    expect(screen.getByText("角色")).toBeVisible();
+    expect(screen.getByText("目标")).toBeVisible();
+    expect(screen.getAllByText("模型")[0]).toBeVisible();
     expect(screen.getByRole("combobox", { name: "根角色" })).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "编排预设" })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "目标角色" })).toBeVisible();

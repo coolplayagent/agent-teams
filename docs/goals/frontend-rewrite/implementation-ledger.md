@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 V1 Composer Control Row Alignment
+
+### Scope
+- Re-checked the active frontend rewrite goal, V1/V2 same-viewport evidence, and current V2 composer implementation before editing. This slice targets a framework-level parity gap in the persistent bottom composer rather than only the previously annotated message cards.
+- Updated the V2 composer control row to use V1-like field grouping: mode, role, target, and model controls now have visible compact labels instead of appearing as a cramped sequence of unlabeled selects.
+- Kept existing composer capabilities intact: normal/orchestration topology switching, root role or orchestration preset, target role, model profile, thinking, Shell safety, YOLO, voice input, stop, queue, interrupt, and send actions remain available.
+- Replaced the narrow fixed select widths with bounded responsive widths and updated the narrow-viewport layout so controls wrap deliberately instead of visually colliding.
+- No sidebar entries, Settings sections, Settings secondary-page behavior, or primary route structure changed in this slice.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx src/test/ShellLayoutCss.test.ts -t "localizes the persistent composer frame|desktop composer controls"` passed with focused composer structure and CSS layout coverage.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts -g "keeps V1 primary sidebar entries"` passed with the existing browser parity flow, including the composer non-overlap helper.
+- In-app browser reload of `http://127.0.0.1:8000/app/` confirmed composer field labels `["模式","角色","目标","模型"]`, no composer control overlaps, no document-level scroll, and captured the composer evidence screenshot at `.tmp/frontend-layout-audit/v2-composer-after-clip.png`.
+
+### Reviewer
+- Main-agent source alignment, focused component/CSS coverage, static app rebuild, browser parity coverage, and in-app browser screenshot verification completed for this slice. No full Composer subsystem PASS, stream/replay/interrupted recovery sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 V1 Sidebar Primary Navigation Alignment
 
 ### Scope

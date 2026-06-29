@@ -118,15 +118,21 @@ describe("shell layout CSS", () => {
       /\.at-composer-inner\s*{[\s\S]*?width:\s*100%;[\s\S]*?margin:\s*0;/,
     );
     expect(themeCss).toMatch(
-      /\.at-composer-controls\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;[\s\S]*?min-width:\s*0;/,
+      /\.at-composer-controls\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;[\s\S]*?column-gap:\s*14px;[\s\S]*?row-gap:\s*8px;[\s\S]*?min-width:\s*0;/,
     );
     expect(themeCss).toMatch(
-      /\.at-composer-control-set\s*{[\s\S]*?display:\s*flex !important;[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?min-width:\s*0;/,
+      /\.at-composer-control-set\s*{[\s\S]*?column-gap:\s*10px !important;[\s\S]*?display:\s*flex !important;[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?min-width:\s*0;[\s\S]*?row-gap:\s*8px !important;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-composer-field\s*{[\s\S]*?display:\s*inline-flex;[\s\S]*?align-items:\s*center;[\s\S]*?gap:\s*6px;[\s\S]*?min-width:\s*0;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-composer-field-label\s*{[\s\S]*?color:\s*var\(--at-text-muted\);[\s\S]*?font-size:\s*12px;[\s\S]*?white-space:\s*nowrap;/,
     );
     expect(themeCss).toMatch(
       /\.at-composer-controls > \.ant-space:last-child\s*{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?justify-content:\s*flex-end;/,
     );
-    expect(themeCss).toMatch(/\.at-session-mode-control\s*{[\s\S]*?width:\s*204px;/);
+    expect(themeCss).toMatch(/\.at-session-mode-control\s*{[\s\S]*?width:\s*178px;/);
     expect(themeCss).toMatch(
       /\.at-session-mode-control \.ant-segmented-item\s*{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
@@ -134,10 +140,20 @@ describe("shell layout CSS", () => {
       /\.at-session-mode-control \.ant-segmented-item-label\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
     );
     expect(themeCss).toMatch(
-      /\.at-normal-root-role-select,\s*\.at-orchestration-preset-select\s*{[\s\S]*?width:\s*116px;/,
+      /\.at-normal-root-role-select,\s*\.at-orchestration-preset-select\s*{[\s\S]*?width:\s*clamp\(150px, 14vw, 210px\);/,
     );
-    expect(themeCss).toMatch(/\.at-role-select\s*{[\s\S]*?width:\s*116px;/);
-    expect(themeCss).toMatch(/\.at-model-profile-select\s*{[\s\S]*?width:\s*128px;/);
+    expect(themeCss).toMatch(
+      /\.at-role-select\s*{[\s\S]*?width:\s*clamp\(132px, 12vw, 180px\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-model-profile-select\s*{[\s\S]*?width:\s*clamp\(142px, 13vw, 190px\);/,
+    );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.at-composer-controls\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.at-composer-control-set > \.ant-space-item:first-child\s*{[\s\S]*?grid-column:\s*1 \/ -1;/,
+    );
   });
 
   it("keeps the appearance diff preview semantically green for additions", () => {

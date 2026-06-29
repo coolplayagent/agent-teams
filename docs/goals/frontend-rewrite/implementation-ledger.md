@@ -4640,3 +4640,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck/build, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, Application Shell sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Remote Workspace SSH Profile Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, existing Settings TS coverage, and the remaining `test_browser_smoke.py` browser-test surface before editing. This slice keeps the work on the global migration target instead of only reacting to the latest UI note.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` with deterministic TS browser coverage for creating Remote workspace SSH profiles from Settings: the secondary Settings page opens, the new-profile editor exposes the expected SSH fields, the save request sends the wrapped config payload, the saved profile appears in the profile list, the profile detail can be opened, and the shell remains fixed without document scroll.
+- Removed the replaced `test_browser_remote_workspace_settings_group_ssh_fields` Python browser scenario from `tests/integration_tests/browser/test_browser_smoke.py`, along with the now-unused layout assertion helpers and `Locator` import.
+- Kept this as targeted Remote workspace / Settings browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 15 legacy scenarios in `test_browser_smoke.py`, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 10 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip" tests/integration_tests/browser/test_browser_smoke.py` reports 15 remaining legacy Python browser scenarios.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, Remote workspace subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

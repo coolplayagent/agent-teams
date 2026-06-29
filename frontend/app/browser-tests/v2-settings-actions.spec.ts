@@ -39,6 +39,8 @@ interface SettingsActionState {
   roleValidatePayloads: Record<string, unknown>[];
   sshDeleteRequests: string[];
   sshProfiles: Record<string, unknown>[];
+  sshSavePayloads: Record<string, unknown>[];
+  sshSaveRequests: string[];
   webConfig: Record<string, unknown>;
   webSavePayloads: Record<string, unknown>[];
 }
@@ -666,6 +668,114 @@ test("saves Web settings and shows save errors", async ({ page }) => {
   }
 });
 
+test("creates remote workspace SSH profiles from settings", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS remote workspace create",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Remote workspace" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "Remote workspace" }))
+      .toBeVisible();
+    await settings.getByRole("button", { name: "New SSH profile" }).click();
+    const editor = page.getByRole("dialog", { name: "New SSH profile" });
+    await expect(editor).toBeVisible();
+
+    for (const label of [
+      "Profile ID",
+      "Host",
+      "Username",
+      "Port",
+      "Connect timeout (s)",
+      "Remote shell",
+      "Password",
+      "Private key name",
+      "Private key",
+    ]) {
+      await expect(editor.getByLabel(label, { exact: true })).toBeVisible();
+    }
+
+    await editor.getByLabel("Profile ID", { exact: true }).fill("staging");
+    await editor.getByLabel("Host", { exact: true }).fill("staging.example.com");
+    await editor.getByLabel("Username", { exact: true }).fill("deploy");
+    await editor.getByLabel("Port", { exact: true }).fill("2222");
+    await editor.getByLabel("Connect timeout (s)", { exact: true }).fill("20");
+    await editor.getByLabel("Remote shell", { exact: true }).fill("/bin/zsh");
+    await editor.getByLabel("Password", { exact: true }).fill("secret-password");
+    await editor.getByLabel("Private key name", { exact: true }).fill("id_staging");
+    await editor
+      .getByLabel("Private key", { exact: true })
+      .fill("-----BEGIN OPENSSH PRIVATE KEY-----\nstaging\n-----END OPENSSH PRIVATE KEY-----");
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response
+            .url()
+            .endsWith("/api/system/configs/workspace/ssh-profiles/staging") &&
+          response.status() === 200,
+      ),
+      editor.getByRole("button", { name: "Save" }).click(),
+    ]);
+
+    expect(state.sshSaveRequests).toEqual(["staging"]);
+    expect(state.sshSavePayloads).toEqual([
+      {
+        connect_timeout_seconds: 20,
+        host: "staging.example.com",
+        password: "secret-password",
+        port: 2222,
+        private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\nstaging\n-----END OPENSSH PRIVATE KEY-----",
+        private_key_name: "id_staging",
+        remote_shell: "/bin/zsh",
+        username: "deploy",
+      },
+    ]);
+    await expect(editor).toHaveCount(0);
+    await expect(page.getByText("Saved SSH profile staging.")).toBeVisible();
+    await expect(
+      settings.getByRole("button", {
+        name: "staging staging.example.com · deploy · 2222 Password · Private key",
+      }),
+    ).toBeVisible();
+    await settings
+      .getByRole("button", {
+        name: "staging staging.example.com · deploy · 2222 Password · Private key",
+      })
+      .click();
+    await expect(settings.getByRole("heading", { name: "staging" })).toBeVisible();
+    await expect(settings.getByText("staging.example.com · deploy · 2222").first())
+      .toBeVisible();
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 remote workspace SSH create should stay framed",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-remote-workspace-create.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("requires confirmation before deleting remote workspace SSH profiles", async ({
   page,
 }) => {
@@ -785,6 +895,8 @@ function settingsActionState(): SettingsActionState {
     roleValidatePayloads: [],
     sshDeleteRequests: [],
     sshProfiles: sshProfiles(),
+    sshSavePayloads: [],
+    sshSaveRequests: [],
     webConfig: webConfig(),
     webSavePayloads: [],
   };
@@ -983,6 +1095,44 @@ async function handleSettingsActionApi(
   }
   if (method === "GET" && path === "/system/configs/workspace/ssh-profiles") {
     await context.fulfillJson(state.sshProfiles);
+    return true;
+  }
+  if (
+    method === "PUT" &&
+    path.startsWith("/system/configs/workspace/ssh-profiles/")
+  ) {
+    const profileId = decodeURIComponent(
+      path.replace("/system/configs/workspace/ssh-profiles/", ""),
+    );
+    const payload = readJsonBody(context);
+    const config = payload.config;
+    if (config === null || typeof config !== "object" || Array.isArray(config)) {
+      throw new Error("Expected SSH profile config request body.");
+    }
+    const configRecord = config as Record<string, unknown>;
+    state.sshSaveRequests.push(profileId);
+    state.sshSavePayloads.push(configRecord);
+    const profile = {
+      connect_timeout_seconds: configRecord.connect_timeout_seconds,
+      created_at: "2026-06-25T08:10:00Z",
+      has_password:
+        typeof configRecord.password === "string" && configRecord.password !== "",
+      has_private_key:
+        typeof configRecord.private_key === "string" &&
+        configRecord.private_key !== "",
+      host: configRecord.host,
+      port: configRecord.port,
+      private_key_name: configRecord.private_key_name,
+      remote_shell: configRecord.remote_shell,
+      ssh_profile_id: profileId,
+      updated_at: "2026-06-25T08:10:00Z",
+      username: configRecord.username,
+    };
+    state.sshProfiles = [
+      ...state.sshProfiles.filter((entry) => entry.ssh_profile_id !== profileId),
+      profile,
+    ];
+    await context.fulfillJson(profile);
     return true;
   }
   if (

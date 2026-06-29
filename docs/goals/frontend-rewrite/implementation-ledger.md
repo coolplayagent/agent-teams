@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Recovery Stream Source Assertion Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the AG-UI Runtime Stream / Run Recovery / Subagents parity areas, and the current `/app/` layout metrics before editing.
+- Confirmed the served V2 shell is currently a fixed-height workspace in the in-app browser (`documentElement.scrollHeight == clientHeight == 720`) with scrolling isolated to the session list and timeline; screenshot capture timed out in the browser tool, so no visual sign-off is claimed from this slice.
+- Migrated four V1 `frontend/dist/js/core/stream.js` source-shape assertions from `tests/integration_tests/frontend/test_subagent_streams_ui.py` into V2 behavior coverage:
+  - `streamClient.test.ts` now treats `run_paused` as a first-class terminal SSE event alongside failed/stopped terminal events;
+  - `RecoveryBar.test.tsx` now proves idle recovery snapshots and terminal active runs do not auto-start stream controllers;
+  - existing `RecoveryBar.test.tsx` coverage continues to prove active background subagent recovery starts a multiplex parent/subagent stream, and recoverable stopped parent runs do not auto-stream same-run background work.
+- Deleted the four migrated top-of-file V1 source assertions from `test_subagent_streams_ui.py`, reducing that file from 11 remaining UI harness tests to 7.
+- Kept production code and `frontend/dist/app` unchanged in this slice because the current V2 recovery/streaming behavior already satisfied the migrated semantics once asserted.
+
+### Verification
+- `npm run test -- src/test/streamClient.test.ts -t "terminal event"` passed with 6 terminal-event stream tests.
+- `npm run test -- src/test/RecoveryBar.test.tsx -t "idle recovery|terminal active|active background subagent|stopped parent"` passed with 4 focused RecoveryBar tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_streams_ui.py` passed after deleting the migrated Python assertions.
+- `rg -n "def test_" tests\integration_tests\frontend\test_subagent_streams_ui.py` shows 7 remaining old Python UI harness tests in that file.
+
+### Reviewer
+- Main-agent V2 recovery/stream source-assertion migration and partial old Python UI harness reduction completed for this slice. This does not claim full AG-UI Runtime Stream PASS, Run Recovery PASS, Subagents subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Paused Run Foreground Stream TS Migration
 
 ### Scope

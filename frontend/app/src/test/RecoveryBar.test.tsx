@@ -468,6 +468,46 @@ describe("RecoveryBar", () => {
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
 
+  it("does not auto-start streams for an idle recovery snapshot", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: null,
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-start streams for terminal active runs", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "completed",
+          phase: "completed",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+      }),
+    );
+    const controller = runStreamController();
+
+    renderRecoveryBar(controller);
+
+    await screen.findByText("Run run-1 is completed");
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
   it("starts foreground recovery streams for the newly selected session", async () => {
     getRecoverySnapshotMock.mockImplementation(async (sessionId: string) =>
       sessionId === "session-b"

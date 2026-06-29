@@ -370,6 +370,7 @@ describe("openRunStream", () => {
 
   it.each([
     ["run.failed", "run_failed"],
+    ["run.paused", "run_paused"],
     ["run.stopped", "run_stopped"],
   ])("closes when %s terminal event arrives", (eventName, eventType) => {
     const stream = openTestStream();

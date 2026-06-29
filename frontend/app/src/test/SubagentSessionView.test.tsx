@@ -1,6 +1,7 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -109,6 +110,52 @@ describe("SubagentSessionView", () => {
     expect(closedController.startRunStream).not.toHaveBeenCalled();
   });
 
+  it("keeps existing subagent history visible while the terminal refresh is pending", async () => {
+    const initialController = createRunStreamController({
+      activeRunIds: ["subagent_run_1"],
+      trackedRunIds: ["subagent_run_1"],
+    });
+    const closedController = createRunStreamController();
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([
+        {
+          content: "Existing subagent answer",
+          message_id: "subagent-message-existing",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ])
+      .mockReturnValueOnce(refreshedMessages.promise);
+    const { rerenderWithController } = renderSubagentSessionView({
+      controller: initialController,
+    });
+
+    expect(await screen.findByText("Existing subagent answer")).toBeVisible();
+
+    rerenderWithController(closedController);
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Existing subagent answer")).toBeVisible();
+    expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: "Final subagent answer",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+    expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
+    expect(closedController.startRunStream).not.toHaveBeenCalled();
+  });
+
   it("does not stream terminal subagent sessions", async () => {
     const controller = createRunStreamController();
     listAgentMessagesMock.mockResolvedValue([
@@ -178,6 +225,24 @@ function renderSubagentSessionView({
     rerenderWithController: (nextController: RunStreamController) => {
       result.rerender(view(nextController));
     },
+  };
+}
+
+function deferredAgentMessages(): {
+  promise: ReturnType<typeof listAgentMessages>;
+  resolve: (messages: Awaited<ReturnType<typeof listAgentMessages>>) => void;
+} {
+  let resolveMessages: (
+    messages: Awaited<ReturnType<typeof listAgentMessages>>,
+  ) => void = () => {};
+  const promise = new Promise<Awaited<ReturnType<typeof listAgentMessages>>>(
+    (resolve) => {
+      resolveMessages = resolve;
+    },
+  );
+  return {
+    promise,
+    resolve: resolveMessages,
   };
 }
 

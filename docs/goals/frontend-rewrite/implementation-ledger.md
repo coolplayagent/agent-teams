@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Agent Panel History UI Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, the Message Timeline / Subagents / Run Recovery checklist areas, and the old V1 agent-panel history harness before editing.
+- Migrated the remaining V2-relevant pending-refresh intent from `tests/integration_tests/frontend/test_agent_panel_history_task_prompt_ui.py` into `SubagentSessionView.test.tsx`: when a tracked subagent run closes, existing hydrated subagent history stays visible while the terminal history refetch is still pending, then updates to the persisted final answer when the refetch resolves.
+- Verified the other old harness semantics against existing V2 `MessageTimeline.test.tsx` coverage instead of duplicating assertions: hydrated runtime text binding, live tool/approval rows after hydration, separate live subagent overlay rows, stale completed tool-result protection, late tool results after terminal finalization, and finalized subagent cursor cleanup.
+- Deleted `tests/integration_tests/frontend/test_agent_panel_history_task_prompt_ui.py`; these checks now live in TypeScript coverage against the V2 React shell/timeline surfaces rather than copied V1 `frontend/dist/js/components/agentPanel/history.js` modules.
+- Kept production code and `frontend/dist/app` unchanged in this slice because the added V2 regression test confirmed the current React Query invalidation path already preserves old subagent history while a terminal refetch is in flight.
+
+### Verification
+- `npm run test -- src/test/SubagentSessionView.test.tsx` passed with 5 tests, including the new pending terminal-refresh preservation case.
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "runtime text is already hydrated|hydrated text in an open stream|live subagent overlay|stale tool calls|late tool results|subagent stream is finalized"` passed with 6 focused Message Timeline stream/replay tests.
+
+### Reviewer
+- Main-agent V2 subagent history refresh coverage, existing Message Timeline edge coverage check, and old Python UI harness retirement completed for this slice. This does not claim full Message Timeline subsystem PASS, Subagents subsystem PASS, Run Recovery subsystem PASS, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Environment Variables UI Harness Retirement
 
 ### Scope

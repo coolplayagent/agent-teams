@@ -44,6 +44,7 @@ vi.mock("../runtime/streamClient", () => ({
 }));
 
 const listSessionRoundsMock = vi.mocked(listSessionRounds);
+type SessionRoundPage = Awaited<ReturnType<typeof listSessionRounds>>;
 
 afterEach(() => {
   cleanup();
@@ -306,6 +307,111 @@ describe("useRunStreamController", () => {
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(3);
 
     expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+  });
+
+  it("cancels terminal round history refresh when another session stream starts", async () => {
+    const terminalHistory = createDeferred<SessionRoundPage>();
+    listSessionRoundsMock.mockReturnValueOnce(terminalHistory.promise);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const firstStreamOptions = streamMocks.latestOptions as RunStreamOptions;
+    const closedState = runtimeStateWithClosedToolCalls(["call-1", "call-2"]);
+    act(() => {
+      firstStreamOptions.onState(closedState);
+      firstStreamOptions.onClosed?.(closedState);
+    });
+    await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Start other session stream" }));
+    terminalHistory.resolve({
+      has_more: false,
+      items: [roundWithToolCalls("run-1", ["call-1", "call-2"])],
+      next_cursor: null,
+    });
+    await act(async () => {
+      await terminalHistory.promise;
+      await Promise.resolve();
+    });
+
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(2);
+    const secondStreamOptions = streamMocks.latestOptions as RunStreamOptions;
+    expect(secondStreamOptions.runId).toBe("run-2");
+  });
+
+  it("caps incomplete terminal round history follow-ups without refreshing rounds", async () => {
+    vi.useFakeTimers();
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [roundWithToolCalls("run-1", ["call-1"])],
+      next_cursor: null,
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    const closedState = runtimeStateWithClosedToolCalls(["call-1", "call-2"]);
+    act(() => {
+      options.onState(closedState);
+      options.onClosed?.(closedState);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+
+    for (let attempt = 1; attempt < 24; attempt += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(900);
+      });
+    }
+
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(24);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(24);
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
   });
@@ -1338,6 +1444,18 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
       >
         Start stream
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          controller.startRunStream({
+            afterEventId,
+            runId: "run-2",
+            sessionId: "session-2",
+          })
+        }
+      >
+        Start other session stream
+      </button>
       <button type="button" onClick={() => controller.clearRunStream()}>
         Clear stream
       </button>
@@ -1539,6 +1657,24 @@ function roundWithToolCalls(runId: string, toolCallIds: string[]): SessionRound 
     created_at: "2026-06-30T00:00:00Z",
     run_id: runId,
     run_status: "completed",
+  };
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  reject: (reason?: unknown) => void;
+  resolve: (value: T) => void;
+} {
+  let rejectDeferred: (reason?: unknown) => void = () => undefined;
+  let resolveDeferred: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveDeferred = resolve;
+    rejectDeferred = reject;
+  });
+  return {
+    promise,
+    reject: rejectDeferred,
+    resolve: resolveDeferred,
   };
 }
 

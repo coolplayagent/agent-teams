@@ -7326,3 +7326,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 terminal round settle implementation, focused TS coverage, dist rebuild, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Terminal Round Settle Guard Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining `test_round_retry_timeline_ui.py` harness inventory, and the current V2 terminal round settle implementation before editing.
+- Added V2 `RunStreamController.test.tsx` coverage proving an in-flight terminal round history settle is canceled by a newer stream generation when another session stream starts, so a late old-session persisted round cannot invalidate the old round rail into the current workspace.
+- Added V2 coverage proving incomplete terminal round history follow-ups stop at the 24-attempt cap and do not publish an incomplete rounds refresh when expected streamed tool calls never appear in persisted history.
+- Removed the migrated V1 source-copy harnesses `test_terminal_round_refresh_does_not_merge_after_session_switch` and `test_terminal_round_refresh_caps_incomplete_history_followups` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. The old file now has 6 remaining Python UI harness scenarios.
+- This slice tightens terminal stream finalization and replay safety. It does not claim complete stream/replay recovery PASS, subagent terminal settle parity, the remaining timeline/draft/background harness migrations, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/RunStreamController.test.tsx -t "terminal round history|cancels terminal round|caps incomplete"` passed with 4 tests.
+- `npm run test -- src/test/RunStreamController.test.tsx` passed with 30 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `rg -n "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 6 remaining Python UI harness scenarios.
+- `rg -n "test_terminal_round_refresh_does_not_merge_after_session_switch|test_terminal_round_refresh_caps_incomplete_history_followups|cancels terminal round history|caps incomplete terminal round" tests/integration_tests/frontend/test_round_retry_timeline_ui.py frontend/app/src/test/RunStreamController.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 session-switch and incomplete-history cap coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

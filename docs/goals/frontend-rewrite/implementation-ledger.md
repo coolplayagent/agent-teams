@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Stream Identity TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and product parity checklist, then selected a Message Timeline / AG-UI Runtime Stream gap instead of continuing only on the latest visual feedback.
+- Migrated the V1 `test_stream_rebind_prefers_identity_before_label` intent to V2 `MessageTimeline` component coverage: two live `text_delta` streams with the same role label but different `instance_id` values stay as separate runtime rows, while later deltas for the same instance continue the original row.
+- Kept the production runtime behavior unchanged because V2 already groups text and thinking rows by `runId` plus `instanceId` before falling back to `roleId`.
+- Removed the replaced V1 Python static source harness from `tests/integration_tests/frontend/test_streaming_tool_ui.py`.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "same-role runtime streams|scopes and deduplicates runtime stream rows"` passed with the new identity coverage and adjacent run scoping coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_streaming_tool_ui.py` passed after deleting the migrated Python function.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `rg -n 'test_stream_rebind_prefers_identity_before_label|keeps same-role runtime streams separate by instance identity|labelFallbacks|wrapperMatchesStreamKey' tests/integration_tests/frontend/test_streaming_tool_ui.py frontend/app/src/test/MessageTimeline.test.tsx frontend/app/src/features/timeline/MessageTimeline.tsx` returned only the new TS coverage name.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test function removal, and focused regression verification completed for this slice. No full Streaming Tool subsystem PASS, Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Tool Input Preview Alias Parity
 
 ### Scope

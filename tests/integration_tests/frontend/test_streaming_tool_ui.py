@@ -224,27 +224,6 @@ def test_processed_transcript_grouping_is_shared_and_not_history_scoped() -> Non
     assert ".tool-group-final-divider" in tools_css
 
 
-def test_stream_rebind_prefers_identity_before_label() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    stream_script = repo_root.joinpath(
-        "frontend",
-        "dist",
-        "js",
-        "components",
-        "messageRenderer",
-        "stream.js",
-    ).read_text(encoding="utf-8")
-
-    assert "const labelFallbacks = [];" in stream_script
-    assert "if (!isReusableStreamMessageWrapper(wrapper)) continue;" in stream_script
-    assert "if (wrapperMatchesStreamKey(wrapper, streamKey, roleId))" in stream_script
-    assert "return wrapper;" in stream_script
-    assert "labelFallbacks.push(wrapper);" in stream_script
-    assert "return labelFallbacks[0] || null;" in stream_script
-    assert "function isReusableStreamMessageWrapper(wrapper)" in stream_script
-    assert "return role !== 'user';" in stream_script
-
-
 def test_main_agent_tool_event_routes_to_coordinator_before_role_options_load(
     tmp_path: Path,
 ) -> None:

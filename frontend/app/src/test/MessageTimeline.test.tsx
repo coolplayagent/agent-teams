@@ -1863,6 +1863,67 @@ describe("MessageTimeline", () => {
     ).toHaveLength(1);
   });
 
+  it("keeps same-role runtime streams separate by instance identity", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        instance_id: "writer-instance-a",
+        role_id: "writer",
+        run_id: "run-output",
+        trace_id: "run-output",
+        payload_json: JSON.stringify({ text: "first instance output" }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        instance_id: "writer-instance-b",
+        role_id: "writer",
+        run_id: "run-output",
+        trace_id: "run-output",
+        payload_json: JSON.stringify({ text: "second instance output" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        instance_id: "writer-instance-a",
+        role_id: "writer",
+        run_id: "run-output",
+        trace_id: "run-output",
+        payload_json: JSON.stringify({ text: " still first" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-output",
+    });
+
+    expect(
+      await screen.findByText("first instance output still first"),
+    ).toBeVisible();
+    expect(screen.getByText("second instance output")).toBeVisible();
+
+    const rowTexts = Array.from(
+      container.querySelectorAll("article.at-message"),
+    ).map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(2);
+    expect(
+      rowTexts.some(
+        (text) =>
+          text.includes("first instance output still first") &&
+          !text.includes("second instance output"),
+      ),
+    ).toBe(true);
+    expect(
+      rowTexts.some(
+        (text) =>
+          text.includes("second instance output") &&
+          !text.includes("first instance output"),
+      ),
+    ).toBe(true);
+  });
+
   it("renders external primary runtime text on the selected run stream", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({

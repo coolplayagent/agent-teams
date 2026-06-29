@@ -6892,3 +6892,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent implementation, targeted TS verification, dist rebuild, lint, and Python UI harness deletion completed for this Subagents migration slice. No Subagents subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Run Events Runtime Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining Python UI harness inventory, and the old V1 `test_run_events_ui.py` assertions before editing. This slice targets the stream/replay runtime path the user called out, while keeping V2's sidebar/settings and secondary-page structure unchanged.
+- Migrated the highest-risk V1 event-router semantics into V2 TS coverage: subagent stream events now have explicit reducer assertions showing they stay in their own run state without overwriting the parent run, and token/generation events retain subagent instance and role metadata.
+- Expanded runtime reducer replay coverage for human-intervention, approval, background-task, monitor, fallback, token, hook, thinking, tool, checkpoint, guardrail, and unknown future event kinds so V2 does not silently drop non-text events during stream replay.
+- Deleted the old Python `test_run_events_ui.py` harness, which exercised removed V1 `frontend/dist` event-router globals rather than the V2 reducer/stream/timeline architecture.
+
+### Verification
+- `npm run test -- src/test/runtimeReducers.test.ts src/test/streamClient.test.ts src/test/RunStreamController.test.tsx src/test/MessageTimeline.test.tsx` passed with 186 tests covering reducer replay state, stream client replay cursors, reconnect/resume controller behavior, and timeline rendering.
+- `Test-Path tests\integration_tests\frontend\test_run_events_ui.py` returned `False`.
+- `rg -n "test_run_events_ui|keeps subagent stream events isolated|llm_fallback_exhausted|background_task_stopped|user_question_requested|tool_approval_resolved" frontend\app\src\test tests docs\goals\frontend-rewrite\implementation-ledger.md` returns only the new V2 TS coverage, existing backend/timeline coverage, and this ledger entry.
+
+### Reviewer
+- Main-agent coverage review, targeted TS migration, broad stream/runtime verification, and Python UI harness deletion completed for this Run Events migration slice. No Runtime Stream subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

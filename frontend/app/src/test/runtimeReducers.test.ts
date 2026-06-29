@@ -274,6 +274,85 @@ describe("runtime reducers", () => {
     });
   });
 
+  it("keeps subagent stream events isolated from parent run state", () => {
+    const state = [
+      runEvent({
+        event_id: 1,
+        event_type: "run_started",
+        run_id: "run-parent",
+        trace_id: "run-parent",
+      }),
+      runEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        run_id: "subagent_run_deadbeef",
+        trace_id: "subagent_run_deadbeef",
+        instance_id: "inst-sub",
+        role_id: "worker",
+        payload_json: JSON.stringify({ delta: "child chunk" }),
+      }),
+      runEvent({
+        event_id: 3,
+        event_type: "token_usage",
+        run_id: "subagent_run_deadbeef",
+        trace_id: "subagent_run_deadbeef",
+        instance_id: "inst-sub",
+        role_id: "worker",
+        payload_json: JSON.stringify({ total_tokens: 42 }),
+      }),
+      runEvent({
+        event_id: 4,
+        event_type: "generation_progress",
+        run_id: "subagent_run_deadbeef",
+        trace_id: "subagent_run_deadbeef",
+        instance_id: "inst-sub",
+        role_id: "worker",
+        payload_json: JSON.stringify({ phase: "downloading" }),
+      }),
+    ].reduce(reduceRunEvent, initialRuntimeState);
+
+    expect(state.activeRunIds).toEqual(["run-parent", "subagent_run_deadbeef"]);
+    expect(state.runs["run-parent"]).toMatchObject({
+      runId: "run-parent",
+      lastEventId: 1,
+      status: "open",
+    });
+    expect(state.runs["run-parent"].entries.map((entry) => entry.kind)).toEqual([
+      "run_started",
+    ]);
+    expect(
+      state.runs["subagent_run_deadbeef"].entries.map((entry) => ({
+        kind: entry.kind,
+        runId: entry.runId,
+        instanceId: entry.instanceId,
+        roleId: entry.roleId,
+        text: entry.text,
+      })),
+    ).toEqual([
+      {
+        kind: "text_delta",
+        runId: "subagent_run_deadbeef",
+        instanceId: "inst-sub",
+        roleId: "worker",
+        text: "child chunk",
+      },
+      {
+        kind: "token_usage",
+        runId: "subagent_run_deadbeef",
+        instanceId: "inst-sub",
+        roleId: "worker",
+        text: "token usage",
+      },
+      {
+        kind: "generation_progress",
+        runId: "subagent_run_deadbeef",
+        instanceId: "inst-sub",
+        roleId: "worker",
+        text: "downloading",
+      },
+    ]);
+  });
+
   it("reduces AG-UI envelopes without reparsing payload JSON", () => {
     const state = reduceRunEvent(initialRuntimeState, agUiEvent());
 
@@ -289,20 +368,50 @@ describe("runtime reducers", () => {
       "model_step_started",
       "model_step_finished",
       "generation_progress",
+      "thinking_started",
+      "thinking_delta",
+      "thinking_finished",
+      "tool_call",
       "tool_call_batch_sealed",
+      "tool_input_validation_failed",
+      "tool_result",
+      "spec_checkpoint_applied",
+      "spec_checkpoint_evaluated",
       "injection_enqueued",
       "injection_applied",
+      "tool_approval_requested",
+      "tool_approval_resolved",
+      "user_question_requested",
+      "user_question_answered",
       "notification_requested",
+      "todo_updated",
+      "background_task_started",
+      "background_task_updated",
+      "background_task_completed",
+      "background_task_stopped",
+      "monitor_created",
+      "monitor_triggered",
+      "monitor_stopped",
       "subagent_session_status_changed",
       "subagent_stopped",
       "subagent_resumed",
       "awaiting_manual_action",
       "llm_retry_scheduled",
+      "llm_retry_exhausted",
       "llm_fallback_activated",
+      "llm_fallback_exhausted",
       "state_snapshot",
       "state_delta",
       "runtime_guardrail_alert",
+      "runtime_guardrail_report",
+      "token_usage",
+      "hook_matched",
       "hook_started",
+      "hook_completed",
+      "hook_failed",
+      "hook_conflict",
+      "hook_decision_applied",
+      "hook_deferred",
       "unknown_future_event",
     ] as const;
 

@@ -24,6 +24,9 @@ const PROMPT = "Real SSE stale recovery probe";
 const FIRST_CHUNK = "Real SSE chunk before malformed frame.";
 const MAIN_MULTIPLEX_CHUNK = "real SSE main multiplex chunk";
 const SUBAGENT_MULTIPLEX_CHUNK = "real SSE subagent multiplex chunk";
+const MAIN_MULTIPLEX_RESUMED_CHUNK = "real SSE main multiplex resumed chunk";
+const SUBAGENT_MULTIPLEX_RESUMED_CHUNK =
+  "real SSE subagent multiplex resumed chunk";
 const DUPLICATE_REPLAY_CHUNK = "real SSE after duplicate replay";
 const FAILURE_MESSAGE = "real SSE provider failed before completion";
 const QUEUED_INJECTION = "real SSE queued follow-up";
@@ -221,6 +224,14 @@ test("streams real SSE recovered background subagent output through multiplexed 
   });
 });
 
+test("reconnects real SSE multiplexed background streams from per-run cursors", async ({
+  page,
+}) => {
+  await runRealSseBackgroundSubagentReconnectScenario(page, {
+    screenshotName: "v2-real-sse-background-subagent-multiplex-reconnect.png",
+  });
+});
+
 test("streams only the real SSE background subagent for a recoverable parent", async ({
   page,
 }) => {
@@ -267,6 +278,10 @@ interface RealSseRuntimeCursorReconnectOptions {
 
 interface RealSseBackgroundSubagentOptions {
   mode: "background-subagent-multiplex" | "background-subagent-only";
+  screenshotName: string;
+}
+
+interface RealSseBackgroundSubagentReconnectOptions {
   screenshotName: string;
 }
 
@@ -1038,6 +1053,82 @@ async function runRealSseBackgroundSubagentScenario(
   }
 }
 
+async function runRealSseBackgroundSubagentReconnectScenario(
+  page: Page,
+  options: RealSseBackgroundSubagentReconnectOptions,
+): Promise<void> {
+  const state = createRealSseState({
+    backgroundSubagentRecovery: true,
+    lastEventId: 5,
+    runCreated: true,
+  });
+  const unhandledApiRoutes: string[] = [];
+  const appServer = await serveFrontendDist({
+    handleRequest: (request, response) =>
+      handleRuntimeCursorHttpApi(request, response, state, unhandledApiRoutes),
+  });
+  try {
+    await installShellState(page);
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    await expect.poll(() => state.multiplexRequests.at(0)).toEqual({
+      lastEventId: null,
+      runOffsets: {
+        [RUN_ID]: "5",
+        [SUBAGENT_RUN_ID]: "0",
+      },
+    });
+    await expectTimelineTextVisible(page, MAIN_MULTIPLEX_CHUNK);
+    await expectTimelineTextVisible(page, SUBAGENT_MULTIPLEX_CHUNK);
+
+    await expect.poll(() => state.multiplexRequests.some(
+      (request) =>
+        request.lastEventId === "2" &&
+        request.runOffsets[RUN_ID] === "5" &&
+        request.runOffsets[SUBAGENT_RUN_ID] === "0",
+    )).toBe(true);
+    await expect.poll(() => state.multiplexRequests.some(
+      (request) =>
+        request.lastEventId === null &&
+        request.runOffsets[RUN_ID] === "6" &&
+        request.runOffsets[SUBAGENT_RUN_ID] === "2",
+    )).toBe(true);
+
+    await expectTimelineTextVisible(page, MAIN_MULTIPLEX_RESUMED_CHUNK);
+    await expectTimelineTextVisible(page, SUBAGENT_MULTIPLEX_RESUMED_CHUNK);
+    await expect(
+      page.locator(".at-message").filter({ hasText: MAIN_MULTIPLEX_CHUNK }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".at-message").filter({ hasText: SUBAGENT_MULTIPLEX_CHUNK }),
+    ).toHaveCount(1);
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { name: /^(Send|发送)$/ })).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Queue" })).toBeHidden();
+    await expect(
+      page.getByRole("button", { exact: true, name: "Interrupt" }),
+    ).toBeHidden();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "real SSE multiplex interruption should reconnect each run from its latest cursor inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
 async function handleRealSseApi(
   context: MockApiRouteContext,
   state: RealSseState,
@@ -1260,6 +1351,10 @@ async function handleRuntimeCursorHttpApi(
     handleRuntimeCursorSse(request, response, state, url);
     return true;
   }
+  if (method === "GET" && path === "/ag-ui/runs/events") {
+    handleBackgroundSubagentReconnectSse(request, response, state, url);
+    return true;
+  }
   if (method !== "GET") {
     sendJson(response, { status: "ok" });
     return true;
@@ -1401,6 +1496,116 @@ async function handleRuntimeCursorHttpApi(
   unhandledApiRoutes.push(`${method} ${path}${url.search}`);
   sendJson(response, { detail: `Unhandled real SSE HTTP route: ${path}` }, 404);
   return true;
+}
+
+function handleBackgroundSubagentReconnectSse(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: RealSseState,
+  url: URL,
+): void {
+  const lastEventIdHeader = request.headers["last-event-id"];
+  const lastEventId = Array.isArray(lastEventIdHeader)
+    ? lastEventIdHeader[0] ?? null
+    : lastEventIdHeader ?? null;
+  const runOffsets = runOffsetsFromSearchParams(url.searchParams);
+  state.multiplexRequests.push({
+    lastEventId,
+    runOffsets,
+  });
+  state.requestSequence.push("multiplex-stream");
+  response.writeHead(200, {
+    "Cache-Control": "no-cache",
+    "Content-Type": "text/event-stream",
+    "X-Accel-Buffering": "no",
+  });
+
+  if (
+    runOffsets[RUN_ID] === "6" &&
+    runOffsets[SUBAGENT_RUN_ID] === "2"
+  ) {
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 7,
+        payload: { text: ` ${MAIN_MULTIPLEX_RESUMED_CHUNK}` },
+        relayEventType: "text_delta",
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 7,
+    }));
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 3,
+        payload: { text: ` ${SUBAGENT_MULTIPLEX_RESUMED_CHUNK}` },
+        relayEventType: "text_delta",
+        roleId: "reviewer",
+        runId: SUBAGENT_RUN_ID,
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 3,
+    }));
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 8,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 8,
+    }));
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 4,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        roleId: "reviewer",
+        runId: SUBAGENT_RUN_ID,
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 4,
+    }));
+    state.completed = true;
+    state.backgroundSubagentRecovery = false;
+    state.lastEventId = 8;
+    response.end();
+    return;
+  }
+
+  if (lastEventId !== null) {
+    response.write("retry: 60000\n\n");
+    response.end();
+    return;
+  }
+
+  state.lastEventId = 6;
+  response.write("retry: 100\n\n");
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 6,
+      payload: { text: MAIN_MULTIPLEX_CHUNK },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: 6,
+  }));
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 2,
+      payload: { text: SUBAGENT_MULTIPLEX_CHUNK },
+      relayEventType: "text_delta",
+      roleId: "reviewer",
+      runId: SUBAGENT_RUN_ID,
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: 2,
+  }));
+  response.end();
 }
 
 function handleRuntimeCursorSse(

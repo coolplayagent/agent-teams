@@ -259,8 +259,31 @@ test("creates, runs, and deletes an automation project through real endpoints", 
     await dialog.getByLabel("Project ID").fill(CREATED_AUTOMATION_PROJECT_ID);
     await dialog
       .getByLabel("Prompt")
-      .fill("Create a browser covered V2 automation project.");
+      .fill("Send the Xiaoluban automation summary.");
+    await dialog.getByRole("textbox", { exact: true, name: "Time" }).fill("10:15");
     await dialog.getByLabel("Timezone").fill("Asia/Shanghai");
+    await dialog
+      .locator(".ant-form-item", { hasText: "Delivery target" })
+      .locator(".ant-select-selector")
+      .click();
+    await dialog.locator("#deliveryTargetId").fill("Xiaoluban");
+    await page.keyboard.press("Enter");
+    await expect(
+      dialog.locator(".ant-form-item", { hasText: "Delivery target" }),
+    ).toContainText("Xiaoluban / Xiaoluban");
+    await expect(
+      dialog.getByRole("checkbox", { name: "Completed" }),
+    ).toBeChecked();
+    await dialog.getByRole("checkbox", { name: "Completed" }).focus();
+    await expect(
+      page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)"),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-automation-create-xiaoluban-dialog.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
     await dialog.getByRole("button", { name: "Create" }).click();
     await expect(dialog).toBeHidden();
 
@@ -270,14 +293,25 @@ test("creates, runs, and deletes an automation project through real endpoints", 
     ).toBeVisible();
     expect(state.automationCreatePayloads).toHaveLength(1);
     expect(state.automationCreatePayloads[0]).toMatchObject({
-      cron_expression: "0 9 * * 1-5",
+      cron_expression: "15 10 * * 1-5",
+      delivery_binding: {
+        account_id: "xlb-self",
+        derived_uid: "uidself",
+        display_name: "Xiaoluban",
+        provider: "xiaoluban",
+        source_label: "发送给自己（uidself）",
+      },
+      delivery_events: ["completed"],
       display_name: "Browser Automation TS",
       name: CREATED_AUTOMATION_PROJECT_ID,
-      prompt: "Create a browser covered V2 automation project.",
+      prompt: "Send the Xiaoluban automation summary.",
       schedule_mode: "cron",
       timezone: "Asia/Shanghai",
       workspace_id: WORKSPACE_ID,
     });
+    await expect(
+      automationDetail.getByText("Xiaoluban / Xiaoluban"),
+    ).toBeVisible();
     await expectNoDocumentScroll(
       page,
       "v2 automation creation should keep the shell frame fixed",
@@ -463,6 +497,9 @@ function moduleActionResponse(
   if (path === "/automation/projects") {
     return automationProjects(state);
   }
+  if (path === "/automation/delivery-bindings") {
+    return automationDeliveryBindings();
+  }
   if (path === "/automation/projects/aut-daily") {
     return automationProject(state);
   }
@@ -594,8 +631,8 @@ function createdAutomationProject(
     automation_project_id: CREATED_AUTOMATION_PROJECT_ID,
     created_at: "2026-06-25T08:40:00Z",
     cron_expression: stringField(payload, "cron_expression") || null,
-    delivery_binding: null,
-    delivery_events: ["completed"],
+    delivery_binding: payload.delivery_binding ?? null,
+    delivery_events: arrayField(payload, "delivery_events", ["completed"]),
     display_name: displayName,
     interval_every: null,
     interval_unit: null,
@@ -679,6 +716,28 @@ function readRecordPayload(rawPayload: string | null): Record<string, unknown> {
 function stringField(payload: Record<string, unknown>, key: string): string {
   const value = payload[key];
   return typeof value === "string" ? value : "";
+}
+
+function arrayField(
+  payload: Record<string, unknown>,
+  key: string,
+  fallback: string[],
+): unknown[] {
+  const value = payload[key];
+  return Array.isArray(value) ? value : fallback;
+}
+
+function automationDeliveryBindings(): Record<string, unknown>[] {
+  return [
+    {
+      account_id: "xlb-self",
+      derived_uid: "uidself",
+      display_name: "Xiaoluban",
+      provider: "xiaoluban",
+      source_label: "发送给自己（uidself）",
+      updated_at: "2026-06-25T08:00:00Z",
+    },
+  ];
 }
 
 function connectorsResponse(): Record<string, unknown> {

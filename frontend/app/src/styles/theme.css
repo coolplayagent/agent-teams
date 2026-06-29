@@ -1356,6 +1356,11 @@ body {
   padding-top: 4px;
 }
 
+.at-automation-create-modal .ant-modal-body {
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+}
+
 .at-automation-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

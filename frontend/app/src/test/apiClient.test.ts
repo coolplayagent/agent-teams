@@ -38,6 +38,7 @@ import {
   getGitHubConfig,
   getGitHubWebhookTunnelStatus,
   getHooksConfig,
+  listAutomationDeliveryBindings,
   listFeishuGatewayAccounts,
   listWeChatGatewayAccounts,
   getMemory,
@@ -830,6 +831,29 @@ describe("api client", () => {
         body: JSON.stringify({}),
         method: "POST",
       }),
+    );
+  });
+
+  it("uses the automation delivery binding endpoint", async () => {
+    const bindingPayload = [
+      {
+        account_id: "xlb-1",
+        derived_uid: "uidself",
+        display_name: "Xiaoluban",
+        provider: "xiaoluban",
+        source_label: "发送给自己（uidself）",
+        updated_at: "2026-06-24T00:00:00Z",
+      },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(bindingPayload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listAutomationDeliveryBindings()).resolves.toEqual(bindingPayload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/automation/delivery-bindings",
+      expect.objectContaining({ headers: expect.any(Headers) }),
     );
   });
 

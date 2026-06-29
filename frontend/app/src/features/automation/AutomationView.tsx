@@ -1,6 +1,7 @@
 import {
   App,
   Button,
+  Checkbox,
   Empty,
   Form,
   Input,
@@ -30,12 +31,16 @@ import {
   disableAutomationProject,
   enableAutomationProject,
   getAutomationProject,
+  listAutomationDeliveryBindings,
   listAutomationProjects,
   listAutomationProjectSessions,
   listWorkspaces,
   runAutomationProject,
 } from "../../api/client";
 import type {
+  AutomationDeliveryBinding,
+  AutomationDeliveryBindingCandidate,
+  AutomationDeliveryEvent,
   AutomationProjectCreateRequest,
   AutomationProjectRecord,
   AutomationProjectSessionRecord,
@@ -48,9 +53,12 @@ interface AutomationViewProps {
 }
 
 type AutomationSchedulePreset = "custom" | "daily" | "weekdays";
+const DISABLED_DELIVERY_TARGET = "none";
 
 interface AutomationEditorValues {
   cronExpression: string;
+  deliveryEvents: AutomationDeliveryEvent[];
+  deliveryTargetId: string;
   displayName: string;
   name: string;
   prompt: string;
@@ -77,8 +85,16 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
     queryKey: ["workspaces"],
     queryFn: listWorkspaces,
   });
+  const deliveryBindingsQuery = useQuery({
+    queryKey: ["automation", "delivery-bindings"],
+    queryFn: listAutomationDeliveryBindings,
+  });
 
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
+  const deliveryBindingCandidates = useMemo(
+    () => deliveryBindingsQuery.data ?? [],
+    [deliveryBindingsQuery.data],
+  );
   const filteredProjects = useMemo(
     () => filterAutomationProjects(projects, filter),
     [filter, projects],
@@ -202,7 +218,9 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
   });
   const createMutation = useMutation({
     mutationFn: (values: AutomationEditorValues) =>
-      createAutomationProject(automationCreateRequest(values)),
+      createAutomationProject(
+        automationCreateRequest(values, deliveryBindingCandidates),
+      ),
     onSuccess: (project) => {
       void message.success(t("automationCreated"));
       closeCreate();
@@ -271,6 +289,8 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
         <AutomationCreateModal
           form={createForm}
           loading={createMutation.isPending}
+          deliveryBindingCandidates={deliveryBindingCandidates}
+          deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
           onCancel={closeCreate}
           onSubmit={(values) => createMutation.mutate(values)}
           open={createOpen}
@@ -301,6 +321,8 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
         <AutomationCreateModal
           form={createForm}
           loading={createMutation.isPending}
+          deliveryBindingCandidates={deliveryBindingCandidates}
+          deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
           onCancel={closeCreate}
           onSubmit={(values) => createMutation.mutate(values)}
           open={createOpen}
@@ -397,6 +419,8 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
       <AutomationCreateModal
         form={createForm}
         loading={createMutation.isPending}
+        deliveryBindingCandidates={deliveryBindingCandidates}
+        deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
         onCancel={closeCreate}
         onSubmit={(values) => createMutation.mutate(values)}
         open={createOpen}
@@ -653,6 +677,8 @@ function AutomationProjectDetail({
 }
 
 function AutomationCreateModal({
+  deliveryBindingCandidates,
+  deliveryBindingsLoading,
   form,
   loading,
   onCancel,
@@ -661,6 +687,8 @@ function AutomationCreateModal({
   t,
   workspaces,
 }: {
+  deliveryBindingCandidates: AutomationDeliveryBindingCandidate[];
+  deliveryBindingsLoading: boolean;
   form: FormInstance<AutomationEditorValues>;
   loading: boolean;
   onCancel: () => void;
@@ -676,6 +704,14 @@ function AutomationCreateModal({
     form.setFieldValue("workspaceId", workspaces[0]?.workspace_id ?? "");
   }, [form, open, workspaces]);
 
+  const deliveryOptions = [
+    { label: t("automationDeliveryDisabled"), value: DISABLED_DELIVERY_TARGET },
+    ...deliveryBindingCandidates.map((candidate) => ({
+      label: deliveryCandidateLabel(candidate),
+      value: deliveryCandidateValue(candidate),
+    })),
+  ];
+
   return (
     <Modal
       afterOpenChange={(visible) => {
@@ -684,11 +720,13 @@ function AutomationCreateModal({
         }
       }}
       cancelText={t("sidebarRenameCancel")}
+      className="at-automation-create-modal"
       confirmLoading={loading}
       okText={t("automationCreate")}
       onCancel={onCancel}
       onOk={() => form.submit()}
       open={open}
+      style={{ top: 32 }}
       title={t("automationNew")}
       width={620}
     >
@@ -829,6 +867,32 @@ function AutomationCreateModal({
         >
           <Input autoComplete="off" />
         </Form.Item>
+        <div className="at-automation-form-grid">
+          <Form.Item
+            label={t("automationDeliveryTarget")}
+            name="deliveryTargetId"
+          >
+            <Select
+              loading={deliveryBindingsLoading}
+              notFoundContent={t("automationDeliveryNoTargets")}
+              optionFilterProp="label"
+              options={deliveryOptions}
+              showSearch
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("automationDeliveryEvents")}
+            name="deliveryEvents"
+          >
+            <Checkbox.Group
+              options={[
+                { label: t("automationDeliveryStarted"), value: "started" },
+                { label: t("automationDeliveryCompleted"), value: "completed" },
+                { label: t("automationDeliveryFailed"), value: "failed" },
+              ]}
+            />
+          </Form.Item>
+        </div>
       </Form>
     </Modal>
   );
@@ -849,9 +913,11 @@ function PropertyRow({
     <div className="at-automation-property-row">
       <span>{label}</span>
       {code ? (
-        <code>{value}</code>
+        <code title={value}>{value}</code>
       ) : (
-        <strong className={warning ? "is-warning" : undefined}>{value}</strong>
+        <strong className={warning ? "is-warning" : undefined} title={value}>
+          {value}
+        </strong>
       )}
     </div>
   );
@@ -860,6 +926,8 @@ function PropertyRow({
 function defaultAutomationEditorValues(workspaceId: string): AutomationEditorValues {
   return {
     cronExpression: "0 9 * * 1-5",
+    deliveryEvents: ["completed"],
+    deliveryTargetId: DISABLED_DELIVERY_TARGET,
     displayName: "",
     name: "",
     prompt: "",
@@ -872,12 +940,19 @@ function defaultAutomationEditorValues(workspaceId: string): AutomationEditorVal
 
 function automationCreateRequest(
   values: AutomationEditorValues,
+  deliveryBindingCandidates: AutomationDeliveryBindingCandidate[],
 ): AutomationProjectCreateRequest {
   const displayName = values.displayName.trim();
+  const deliveryBinding = deliveryBindingFromEditor(
+    values.deliveryTargetId,
+    deliveryBindingCandidates,
+  );
   return {
     cron_expression: cronExpressionFromEditor(values),
-    delivery_binding: null,
-    delivery_events: ["completed"],
+    delivery_binding: deliveryBinding,
+    delivery_events: deliveryBinding
+      ? deliveryEventsFromEditor(values.deliveryEvents)
+      : ["completed"],
     display_name: displayName,
     enabled: true,
     name: values.name.trim() || automationNameFromDisplayName(displayName),
@@ -893,6 +968,63 @@ function automationCreateRequest(
     timezone: values.timezone.trim() || "UTC",
     workspace_id: values.workspaceId.trim(),
   };
+}
+
+function deliveryEventsFromEditor(
+  deliveryEvents: AutomationDeliveryEvent[],
+): AutomationDeliveryEvent[] {
+  return deliveryEvents.length === 0 ? ["completed"] : deliveryEvents;
+}
+
+function deliveryBindingFromEditor(
+  deliveryTargetId: string,
+  deliveryBindingCandidates: AutomationDeliveryBindingCandidate[],
+): AutomationDeliveryBinding | null {
+  if (deliveryTargetId === DISABLED_DELIVERY_TARGET) {
+    return null;
+  }
+  const candidate = deliveryBindingCandidates.find(
+    (entry) => deliveryCandidateValue(entry) === deliveryTargetId,
+  );
+  if (candidate === undefined) {
+    return null;
+  }
+  if (candidate.provider === "feishu") {
+    return {
+      provider: "feishu",
+      chat_id: candidate.chat_id,
+      chat_type: candidate.chat_type,
+      session_id: candidate.session_id,
+      source_label: candidate.source_label,
+      tenant_key: candidate.tenant_key,
+      trigger_id: candidate.trigger_id,
+    };
+  }
+  return {
+    provider: "xiaoluban",
+    account_id: candidate.account_id,
+    derived_uid: candidate.derived_uid,
+    display_name: candidate.display_name,
+    source_label: candidate.source_label,
+  };
+}
+
+function deliveryCandidateValue(
+  candidate: AutomationDeliveryBindingCandidate,
+): string {
+  if (candidate.provider === "feishu") {
+    return `feishu::${candidate.trigger_id}::${candidate.session_id}`;
+  }
+  return `xiaoluban::${candidate.account_id}`;
+}
+
+function deliveryCandidateLabel(
+  candidate: AutomationDeliveryBindingCandidate,
+): string {
+  if (candidate.provider === "feishu") {
+    return `Feishu / ${candidate.source_label}`;
+  }
+  return `Xiaoluban / ${candidate.display_name}`;
 }
 
 function cronExpressionFromEditor(values: AutomationEditorValues): string {
@@ -1076,6 +1208,7 @@ function formatDateTime(value: string): string {
 
 async function refreshAutomation(queryClient: QueryClient): Promise<void> {
   await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["automation", "delivery-bindings"] }),
     queryClient.invalidateQueries({ queryKey: ["automation", "projects"] }),
     queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
   ]);

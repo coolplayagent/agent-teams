@@ -878,6 +878,32 @@ export type AutomationDeliveryBinding =
   | AutomationFeishuBinding
   | AutomationXiaolubanBinding;
 
+export interface AutomationFeishuBindingCandidate {
+  provider: "feishu";
+  trigger_id: string;
+  trigger_name: string;
+  tenant_key: string;
+  chat_id: string;
+  chat_type: string;
+  source_label: string;
+  session_id: string;
+  session_title: string;
+  updated_at: string;
+}
+
+export interface AutomationXiaolubanBindingCandidate {
+  provider: "xiaoluban";
+  account_id: string;
+  display_name: string;
+  derived_uid: string;
+  source_label: string;
+  updated_at: string;
+}
+
+export type AutomationDeliveryBindingCandidate =
+  | AutomationFeishuBindingCandidate
+  | AutomationXiaolubanBindingCandidate;
+
 export interface AutomationProjectRecord {
   active_run_status?: string | null;
   automation_project_id: string;

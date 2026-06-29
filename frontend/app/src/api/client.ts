@@ -1,6 +1,7 @@
 import type {
   GeneralConfig,
   AgUiActionResponse,
+  AutomationDeliveryBindingCandidate,
   AutomationProjectRecord,
   AutomationProjectCreateRequest,
   AutomationProjectSessionRecord,
@@ -475,6 +476,14 @@ export function restoreBoardTodo(todoId: string): Promise<BoardTodoItem> {
 
 export function listAutomationProjects(): Promise<AutomationProjectRecord[]> {
   return requestJson<AutomationProjectRecord[]>("/automation/projects");
+}
+
+export function listAutomationDeliveryBindings(): Promise<
+  AutomationDeliveryBindingCandidate[]
+> {
+  return requestJson<AutomationDeliveryBindingCandidate[]>(
+    "/automation/delivery-bindings",
+  );
 }
 
 export function createAutomationProject(

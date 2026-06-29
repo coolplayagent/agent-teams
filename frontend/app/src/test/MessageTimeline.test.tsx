@@ -40,6 +40,7 @@ afterEach(() => {
   cleanup();
   useRuntimeStore.getState().resetRuntimeState();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("MessageTimeline", () => {
@@ -64,6 +65,43 @@ describe("MessageTimeline", () => {
     expect(
       container.querySelector(".at-timeline")?.closest(".at-timeline-frame"),
     ).not.toBeNull();
+  });
+
+  it("ignores legacy hydrated overlay snapshots when runtime state is empty", async () => {
+    const legacySnapshot = vi.fn(() => ({
+      byInstance: {},
+      coordinator: {
+        idleCursor: false,
+        parts: [
+          { content: "plan", kind: "thinking", part_index: 0, streaming: true },
+          {
+            args: { command: "date" },
+            kind: "tool",
+            status: "pending",
+            tool_call_id: "call-1",
+            tool_name: "shell",
+          },
+        ],
+        scope: {
+          instanceId: "primary",
+          roleId: "Main Agent",
+          runId: "run-1",
+          streamKey: "primary",
+        },
+        textStreaming: false,
+      },
+    }));
+    vi.stubGlobal("__relayTeamsMessageTimelineGetRunSnapshot", legacySnapshot);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(legacySnapshot).not.toHaveBeenCalled();
+    expect(screen.queryByText("plan")).not.toBeInTheDocument();
+    expect(screen.queryByText("shell")).not.toBeInTheDocument();
+    expect(container.querySelector(".at-message-thinking")).toBeNull();
+    expect(container.querySelector(".at-message-tool")).toBeNull();
   });
 
   it("does not render entry type fallbacks for empty persisted messages", async () => {

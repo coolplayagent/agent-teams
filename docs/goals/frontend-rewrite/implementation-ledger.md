@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Overlay Fallback TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, the V1 hydrated timeline fallback harness, and current V2 `MessageTimeline` hydration/runtime merge behavior before editing.
+- Mapped the V1 `test_stream_overlay_snapshot_ignores_hydrated_timeline_store_after_dom_state_clears` harness risk to V2's typed runtime store boundary: V2 must not resurrect live thinking/tool overlay rows from the old global `__relayTeamsMessageTimelineGetRunSnapshot` fallback when runtime state is empty.
+- Added V2 component coverage proving a leftover legacy global snapshot containing live thinking and pending tool data is not called and does not render any thinking/tool rows when the V2 runtime store has no events.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness test `test_stream_overlay_snapshot_ignores_hydrated_timeline_store_after_dom_state_clears`.
+- Kept this slice focused on runtime/hydration boundary evidence. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, production runtime code, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "legacy hydrated overlay snapshots"` passed with the new V2 component test.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_stream_overlay_snapshot_ignores_hydrated_timeline_store_after_dom_state_clears|stream_timeline_overlay_no_fallback" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Resume Lifecycle TS Migration
 
 ### Scope

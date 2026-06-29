@@ -332,7 +332,7 @@ export async function mockShellApi(
   unhandledApiRoutes: string[],
   options: MockShellApiOptions = {},
 ): Promise<void> {
-  const sessionTitle = options.sessionTitle ?? "V2 shell route switch";
+  const sessionTitle = options.sessionTitle ?? "Agent Teams route switch";
   await page.route(apiRoutePattern(appBaseUrl), async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api/, "");

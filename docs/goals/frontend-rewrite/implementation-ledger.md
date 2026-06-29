@@ -5058,3 +5058,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent Electron smoke execution, screenshot inspection, and Playwright artifact cleanup completed for this slice. No Desktop subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Route Switch Naming Guard
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, recent browser evidence, and temporary V2/new-interface naming surface before editing. This slice targets release naming cleanup while preserving the V1 return path as an explicit migration control.
+- Changed the default mocked browser-test session title from `V2 shell route switch` to `Agent Teams route switch`, so route-switch screenshots and visible shell text no longer leak implementation-era naming.
+- Added route-switch browser coverage that asserts the new shell visible text does not expose `V2`, `v2`, `新版`, or `旧版`, while the `V1` return link remains visible.
+- Kept this as targeted naming cleanup evidence only. Remaining frontend rewrite work still includes final V1/V2 visual audit, stream/replay edge-case sign-off, parity checklist completion, subsystem reviewer sign-offs, release promotion decisions, and final full-check execution before completion can be claimed.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-route-switch.spec.ts` passed.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-route-switch/ts-v2-after-new-ui-switch.png`; it shows the fixed shell after switching to the new interface, with sidebar, workspace list, main work area, and bottom composer contained in one viewport. No temporary V2/new/old naming is visible in the new shell outside the intentional `V1` return link.
+- No `frontend/dist` rebuild was needed because this slice changed only browser-test code and this ledger.
+
+### Reviewer
+- Main-agent route-switch browser coverage, frontend typecheck, screenshot inspection, and naming-surface cleanup completed for this slice. No final naming cleanup sign-off, visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

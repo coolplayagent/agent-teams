@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   ensureScreenshotDir,
@@ -40,6 +40,7 @@ test("switches from V1 to the V2 shell and back", async ({ page }) => {
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expect(page.locator(".at-shell")).toBeVisible();
     await expect(page.getByRole("link", { name: "V1" })).toBeVisible();
+    await expectNewUiTextHasNoTemporaryNaming(page);
     await expectNoDocumentScroll(page, "v2 shell should stay fixed-height");
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
@@ -60,3 +61,8 @@ test("switches from V1 to the V2 shell and back", async ({ page }) => {
     await appServer.close();
   }
 });
+
+async function expectNewUiTextHasNoTemporaryNaming(page: Page): Promise<void> {
+  const visibleText = await page.locator(".at-shell").innerText();
+  expect(visibleText).not.toMatch(/\b[Vv]2\b|新版|旧版/);
+}

@@ -736,6 +736,7 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("Parent session")).toBeVisible();
     expect(screen.queryByText("Explorer review")).not.toBeInTheDocument();
+    expect(listSessionSubagentsMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", {
       name: "Toggle subagent sessions",
@@ -754,6 +755,74 @@ describe("SessionsSidebar", () => {
       roleId: "explorer",
       runId: "subagent_run_1",
       sessionId: "session-parent",
+    }));
+  });
+
+  it("selects a cross-workspace parent before opening its subagent session", async () => {
+    const onSubagentSelected = vi.fn();
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "workspace-1",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/research",
+        display_name: "Research",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-b",
+        subagent_count: 1,
+        title: "Beta",
+        updated_at: "2026-06-23T11:00:00Z",
+        workspace_id: "workspace-2",
+      },
+    ]);
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T11:02:00Z",
+        instance_id: "subagent-instance-2",
+        role_id: "explorer",
+        run_id: "subagent_run_2",
+        run_status: "running",
+        session_id: "session-b",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Explore B",
+        updated_at: "2026-06-23T11:03:00Z",
+      },
+    ]);
+
+    renderSidebar({ onSubagentSelected });
+
+    expect(await screen.findByText("Beta")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Toggle subagent sessions",
+    }));
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Open subagent session Explore B",
+    }));
+
+    expect(useUiStore.getState().selectedSessionId).toBe("session-b");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
+    expect(onSubagentSelected).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "subagent-instance-2",
+      roleId: "explorer",
+      runId: "subagent_run_2",
+      sessionId: "session-b",
     }));
   });
 

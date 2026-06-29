@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Cross-Session Subagent Selection TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Sessions And Projects / Subagents checklist items, remaining `test_session_selection_ui.py` assertions, and existing V2 `SessionsSidebar` / `AppShell` behavior before editing.
+- Migrated the V1 expanded-subagent and cross-session subagent selection intent to V2 TypeScript evidence: subagent lists are fetched only after the parent row is expanded, selecting a subagent from another workspace updates the parent session and workspace selection first, and the shell keeps the subagent secondary workspace surface active instead of hydrating the main chat timeline.
+- Removed only the two migrated Python assertions from `tests/integration_tests/frontend/test_session_selection_ui.py`; stale same-session selection, terminal mark retry/defer/cancel, and active-subagent-to-main loading remain pending.
+- Kept production code and `frontend/dist/app` unchanged because the V2 sidebar and shell already implement this boundary through `SessionsSidebar.selectSubagent`, `useUiStore`, and the `SubagentSessionView` shell route.
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx -t "cross-session subagent|subagent surface"` passed with coverage for the subagent secondary surface and pending session-detail resolution not restoring the main timeline.
+- `npm run test -- src/test/SessionsSidebar.test.tsx -t "subagent sessions|cross-workspace parent"` passed with coverage for expansion-gated subagent loading and cross-workspace parent selection before opening a subagent.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_session_selection_ui.py` passed after deleting the migrated Python assertions.
+
+### Reviewer
+- Main-agent V2 sidebar/shell subagent boundary coverage and partial old Python UI harness reduction completed for this slice. No full Sessions And Projects subsystem PASS, Subagents subsystem PASS, AG-UI Runtime Stream PASS, browser sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Session Switch Loading Frame TS Migration
 
 ### Scope

@@ -129,6 +129,26 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
           })
         }
       />
+      <span
+        data-testid="open-subagent-session-b"
+        onClick={() =>
+          onSubagentSelected?.({
+            createdAt: "2026-06-23T11:02:00Z",
+            instanceId: "subagent-instance-2",
+            interactive: false,
+            lastEventId: 64,
+            roleId: "explorer",
+            runId: "subagent-run-2",
+            runPhase: "running",
+            runStatus: "running",
+            sessionId: "session-2",
+            status: "running",
+            subagentKind: "normal",
+            title: "Subagent Research",
+            updatedAt: "2026-06-23T11:03:00Z",
+          })
+        }
+      />
       {backendStatus !== undefined ? (
         <div
           aria-busy={backendStatus.tone === "checking" ? "true" : "false"}
@@ -814,6 +834,79 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
     expect(screen.getByText("Subagent Explorer")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+  });
+
+  it("keeps a cross-session subagent selection out of the main chat hydration path", async () => {
+    let resolveSession: ((session: SessionRecord) => void) | undefined;
+    getSessionMock.mockImplementation(
+      (sessionId: string) =>
+        new Promise<SessionRecord>((resolve) => {
+          resolveSession = resolve;
+          if (sessionId !== "session-2") {
+            resolve({
+              normal_root_role_id: "MainAgent",
+              session_id: sessionId,
+              workspace_id: "workspace-1",
+            });
+          }
+        }),
+    );
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-1",
+        workspace_id: "workspace-1",
+        title: "Session 1",
+      },
+      {
+        session_id: "session-2",
+        workspace_id: "workspace-2",
+        title: "Session 2",
+      },
+    ]);
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/research",
+        display_name: "Research",
+      },
+    ]);
+    useUiStore.setState({
+      selectedSessionId: "session-2",
+      selectedWorkspaceId: "workspace-2",
+    });
+
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-session-b"));
+
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+    expect(screen.getByText("Subagent Research")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-2"));
+
+    if (resolveSession === undefined) {
+      throw new Error("Session detail query did not start.");
+    }
+    const resolvePendingSession = resolveSession;
+    await act(async () => {
+      resolvePendingSession({
+        normal_root_role_id: "Reviewer",
+        session_id: "session-2",
+        workspace_id: "workspace-2",
+      });
+    });
+
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+    expect(screen.getByText("Subagent Research")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(useUiStore.getState().selectedSessionId).toBe("session-2");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
   });
 
   it("clears the active subagent view when the sidebar returns to chat", async () => {

@@ -12,8 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listSessionMessages, listSessionRounds } from "../api/client";
 import { MessageTimeline } from "../features/timeline/MessageTimeline";
-import type { StreamStatus } from "../runtime/events";
-import type { TimelineEntry } from "../runtime/reducers";
+import type { RelayRunEvent, StreamStatus } from "../runtime/events";
+import {
+  initialRuntimeState,
+  reduceRunEvent,
+  type TimelineEntry,
+} from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 
 vi.mock("../api/client", () => ({
@@ -1554,6 +1558,54 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("output delta")).not.toBeInTheDocument();
   });
 
+  it("renders distinct cursorless runtime media outputs from reconnect streams", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: null,
+        event_type: "output_delta",
+        occurred_at: undefined,
+        payload_json: JSON.stringify({
+          output: [
+            {
+              kind: "media_ref",
+              mime_type: "image/png",
+              modality: "image",
+              name: "first.png",
+              url: "https://example.test/first.png",
+            },
+          ],
+        }),
+      }),
+      relayRunEvent({
+        event_id: null,
+        event_type: "output_delta",
+        occurred_at: undefined,
+        payload_json: JSON.stringify({
+          output: [
+            {
+              kind: "media_ref",
+              mime_type: "image/png",
+              modality: "image",
+              name: "second.png",
+              url: "https://example.test/second.png",
+            },
+          ],
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    const firstImage = await screen.findByRole("img", { name: "first.png" });
+    const secondImage = await screen.findByRole("img", { name: "second.png" });
+    expect(firstImage).toHaveAttribute("src", "https://example.test/first.png");
+    expect(secondImage).toHaveAttribute("src", "https://example.test/second.png");
+    expect(screen.getByText("first.png")).toBeVisible();
+    expect(screen.getByText("second.png")).toBeVisible();
+    expect(screen.queryByText("output delta")).not.toBeInTheDocument();
+  });
+
   it("falls back to runtime text when output_delta has no renderable output parts", async () => {
     setRuntimeEntries([
       runtimeOutputDeltaEntry({
@@ -2940,6 +2992,26 @@ function setRuntimeEntries(
       },
     },
   });
+}
+
+function setRuntimeStateFromEvents(events: RelayRunEvent[]): void {
+  useRuntimeStore.setState({
+    runtimeState: events.reduce(reduceRunEvent, initialRuntimeState),
+  });
+}
+
+function relayRunEvent(overrides: Partial<RelayRunEvent>): RelayRunEvent {
+  return {
+    event_id: 1,
+    event_type: "text_delta",
+    occurred_at: "2026-06-23T00:00:00Z",
+    payload_json: "{}",
+    role_id: "MainAgent",
+    run_id: "run-output",
+    session_id: "session-1",
+    trace_id: "run-output",
+    ...overrides,
+  };
 }
 
 function runtimeTextDeltaEntry({

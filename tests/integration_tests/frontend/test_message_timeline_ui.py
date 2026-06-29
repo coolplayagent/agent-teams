@@ -247,51 +247,6 @@ console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
     assert parts[1]["id"].endswith("::thinking::4")
 
 
-def test_message_timeline_gives_media_parts_without_event_ids_unique_ids() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    runner = """
-import {
-  applyRunEventToTimeline,
-} from './frontend/dist/js/components/messageTimeline/actions.js';
-import {
-  clearTimelineState,
-  getRunTimelineSnapshot,
-} from './frontend/dist/js/components/messageTimeline/store.js';
-
-clearTimelineState();
-
-applyRunEventToTimeline(
-  'output_delta',
-  { output: [{ kind: 'media_ref', url: '/first.png' }] },
-  { run_id: 'run-1' },
-);
-applyRunEventToTimeline(
-  'output_delta',
-  { output: [{ kind: 'media_ref', url: '/second.png' }] },
-  { run_id: 'run-1' },
-);
-
-console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
-""".strip()
-
-    completed = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        timeout=10,
-    )
-
-    parts = json.loads(completed.stdout)
-    assert [part["kind"] for part in parts] == ["media_ref", "media_ref"]
-    assert [part["url"] for part in parts] == ["/first.png", "/second.png"]
-    assert parts[0]["id"].endswith("::media_ref::media-0")
-    assert parts[1]["id"].endswith("::media_ref::media-1")
-    assert parts[0]["id"] != parts[1]["id"]
-
-
 def test_message_timeline_keeps_completed_tool_status_when_call_arrives_late() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     runner = """

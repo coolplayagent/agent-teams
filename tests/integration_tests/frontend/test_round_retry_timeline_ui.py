@@ -77,44 +77,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_load_session_rounds_falls_back_when_timeline_page_fails(
-    tmp_path: Path,
-) -> None:
-    payload = _run_round_timeline_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.__initialRoundsPage = {
-    items: [
-        { run_id: 'run-2', created_at: '2026-04-25T11:02:00', intent: 'Latest' },
-        { run_id: 'run-1', created_at: '2026-04-25T11:01:00', intent: 'Older' },
-    ],
-    has_more: true,
-    next_cursor: 'run-1',
-};
-globalThis.__timelineRoundsPageError = new Error('timeline unavailable');
-
-const { loadSessionRounds } = await import('./timeline.mjs');
-const { roundsState } = await import('./mockRoundsState.mjs');
-
-await loadSessionRounds('session-1', { render: false });
-
-console.log(JSON.stringify({
-    currentRunIds: roundsState.currentRounds.map(round => round.run_id),
-    timelineRunIds: roundsState.timelineRounds.map(round => round.run_id),
-    navigatorRunIds: globalThis.__navigatorRounds.map(round => round.run_id),
-    loggedCodes: globalThis.__loggedErrors.map(entry => entry.code),
-}));
-""".strip(),
-    )
-
-    assert payload == {
-        "currentRunIds": ["run-1", "run-2"],
-        "timelineRunIds": ["run-1", "run-2"],
-        "navigatorRunIds": ["run-1", "run-2"],
-        "loggedCodes": ["frontend.rounds.timeline_load_failed"],
-    }
-
-
 def test_load_session_rounds_does_not_overwrite_new_session_draft(
     tmp_path: Path,
 ) -> None:

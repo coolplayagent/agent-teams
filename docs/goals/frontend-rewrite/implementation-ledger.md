@@ -7278,3 +7278,27 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 slow hydration coverage, targeted verification, and partial legacy harness removal completed for this timeline hydration slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Bootstrap Shell And Round Rail Failure Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the product parity checklist, remaining timeline/subagent Python UI harness inventory, and the live `/app/` browser state before editing.
+- Used the in-app browser to inspect the actual V2 shell. The page-level scroll was already locked to one viewport, and the sidebar session list had its own scroll container, but the initial bootstrap loader/shell remained visible at `opacity: 1` with a very high z-index after the React app rendered.
+- Fixed the V2 React entrypoint so it calls `markBootstrapReady()` after scheduling the app render. Rebuilt `frontend/dist/app` so the served `/app/` bundle receives the fix.
+- Added `AppBootstrapEntry.test.tsx` coverage proving the entrypoint marks `body[data-bootstrap-state]` ready after scheduling the root render.
+- Added V2 `MessageTimeline.test.tsx` coverage proving hydrated messages remain visible when round rail hydration fails, while the empty state and broken `Rounds` navigation stay hidden.
+- Removed the migrated V1 source-copy harness `test_load_session_rounds_falls_back_when_timeline_page_fails` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. The old file now has 10 remaining Python UI harness scenarios.
+- This slice closes one real browser-observed shell defect and one round rail failure migration. It does not claim full visual parity, Settings/sidebar inventory PASS, full stream/replay recovery PASS, terminal expected-tool-call polling parity, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/AppBootstrapEntry.test.tsx src/test/AppBootstrapHtml.test.ts` passed with 4 tests.
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "round rail hydration fails|slow round rail"` passed.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 117 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `npm run build` passed and rebuilt `frontend/dist/app`.
+- Browser reload of `http://127.0.0.1:8000/app/` showed `body[data-bootstrap-state="ready"]`, `.initial-app-loader` and `.initial-app-shell` at `visibility: hidden` and `opacity: 0`, `body` scroll height fixed to the viewport, and `.at-session-list` as its own `overflow-y: auto` scroll container.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 10.
+
+### Reviewer
+- Main-agent goal/checklist scan, actual browser layout inspection, V2 bootstrap shell fix, focused TS coverage, dist rebuild, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

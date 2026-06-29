@@ -768,6 +768,31 @@ describe("MessageTimeline", () => {
       .toBeVisible();
   });
 
+  it("keeps hydrated messages visible when round rail hydration fails", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Recovered answer",
+        message_id: "assistant-recovered",
+        role_id: "MainAgent",
+        trace_id: "run-recovered",
+      },
+    ]);
+    listSessionRoundsMock.mockRejectedValueOnce(new Error("round rail unavailable"));
+
+    renderTimeline();
+
+    expect(await screen.findByText("Recovered answer")).toBeVisible();
+    await waitFor(() =>
+      expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
+        cursorRunId: null,
+        limit: 100,
+      }),
+    );
+    expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Rounds" }))
+      .not.toBeInTheDocument();
+  });
+
   it("does not duplicate round messages that are already in session history", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

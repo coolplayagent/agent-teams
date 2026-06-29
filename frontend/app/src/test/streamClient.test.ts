@@ -201,6 +201,31 @@ describe("openRunStream", () => {
     });
   });
 
+  it("deduplicates native reconnect events that only carry SSE Last-Event-ID", () => {
+    const stream = openTestStream();
+    const event = JSON.stringify(
+      agUiEvent({
+        event_id: null,
+        payload: { text: "replayed from native cursor" },
+      }),
+    );
+
+    stream.source.dispatchMessage("message.text.delta", event, "44");
+    stream.source.dispatchMessage("message.text.delta", event, "44");
+
+    expect(stream.activities).toHaveLength(2);
+    expect(stream.states).toHaveLength(1);
+    expect(stream.states[0].runs["run-1"]).toMatchObject({
+      lastEventId: 44,
+      status: "open",
+    });
+    expect(stream.states[0].runs["run-1"].entries).toHaveLength(1);
+    expect(stream.states[0].runs["run-1"].entries[0]).toMatchObject({
+      eventId: 44,
+      text: "replayed from native cursor",
+    });
+  });
+
   it("keeps payload event ids ahead of SSE Last-Event-ID values", () => {
     const stream = openTestStream();
 

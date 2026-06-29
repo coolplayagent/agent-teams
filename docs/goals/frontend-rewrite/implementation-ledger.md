@@ -7346,3 +7346,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 session-switch and incomplete-history cap coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Retry And Stale Round Hydration Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, and the remaining `test_round_retry_timeline_ui.py` harness inventory before editing.
+- Added V2 `MessageTimeline.test.tsx` coverage for persisted active retrying rounds: the round marker and rail detail now prove `phase: retrying` / `is_active: true` appears as stable warning metadata with attempt, delay, and error details.
+- Added V2 coverage for a stale round hydration race: the assistant message renders before delayed round hydration, then a late `running` persisted round is still overlaid by the terminal runtime state and displayed as `completed`.
+- Removed the migrated V1 source-copy harnesses `test_retry_timeline_renders_stable_retry_item_with_spinner` and `test_terminal_overlay_survives_stale_background_full_page` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. The old file now has 4 remaining Python UI harness scenarios.
+- This slice tightens Rounds/Retry and terminal hydration parity. It does not claim complete Message Timeline PASS, browser stream/replay sign-off, the remaining forced-fetch/new-session/background-summary/live-round migrations, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "active retrying|stale round hydration resolves later"` passed with 2 tests.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 119 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 4 remaining Python UI harness scenarios.
+- `rg -n "test_retry_timeline_renders_stable_retry_item_with_spinner|test_terminal_overlay_survives_stale_background_full_page|active retrying|stale round hydration resolves later" tests/integration_tests/frontend/test_round_retry_timeline_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 active retrying and stale terminal hydration coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

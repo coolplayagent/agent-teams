@@ -936,6 +936,78 @@ describe("MessageTimeline", () => {
     expect(marker).not.toHaveTextContent("streaming");
   });
 
+  it("keeps terminal runtime status when stale round hydration resolves later", async () => {
+    const staleRounds = deferredSessionRounds();
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Final answer after background hydration.",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-output",
+      },
+    ]);
+    listSessionRoundsMock.mockReturnValue(staleRounds.promise);
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-output": {
+            entries: [
+              runtimeGenericEntry({
+                eventId: 2,
+                id: "run-output:2:0",
+                kind: "run_completed",
+                payload: { status: "completed" },
+                text: "run completed",
+              }),
+            ],
+            lastEventId: 2,
+            runId: "run-output",
+            seenEventKeys: ["run-output:2"],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Final answer after background hydration."))
+      .toBeVisible();
+    expect(container.querySelector(".at-round-marker")).toBeNull();
+    await waitFor(() =>
+      expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
+        cursorRunId: null,
+        limit: 100,
+      }),
+    );
+
+    await act(async () => {
+      staleRounds.resolve({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:33Z",
+            run_id: "run-output",
+            run_phase: "running",
+            run_status: "running",
+            run_user_message: "Recovered stream task",
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    const marker = await waitFor(() => {
+      const currentMarker = container.querySelector(".at-round-marker");
+      expect(currentMarker).not.toBeNull();
+      return currentMarker as HTMLElement;
+    });
+    expect(marker).toHaveTextContent("completed");
+    expect(marker).not.toHaveTextContent("running");
+  });
+
   it("surfaces round pending actions, retry details, and diagnostics", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -1006,6 +1078,50 @@ describe("MessageTimeline", () => {
     expect(detail).toHaveTextContent("Capture approval result");
     expect(detail).toHaveTextContent("Pending");
     expect(container.querySelector(".at-round-rail-dot")).not.toBeNull();
+  });
+
+  it("renders active retrying rounds with stable warning metadata", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Retry attempt is in progress.",
+        message_id: "assistant-retry-active",
+        role_id: "MainAgent",
+        trace_id: "retry-run-1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          retry_events: [
+            {
+              attempt_number: 2,
+              error_code: "rate_limit",
+              is_active: true,
+              kind: "retry",
+              phase: "retrying",
+              retry_in_ms: 1000,
+              total_attempts: 6,
+            },
+          ],
+          run_id: "retry-run-1",
+          run_status: "running",
+          run_user_message: "Retry active provider call",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Retry attempt is in progress.")).toBeVisible();
+    expect(screen.getAllByText("Retrying: attempt 2/6 · in 1s · rate_limit"))
+      .toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: "Go to round 1: Retry active provider call" }),
+    ).toHaveClass("is-warning");
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent("running");
   });
 
   it("hides raw verification diagnostics in round markers until diagnostics are visible", async () => {

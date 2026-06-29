@@ -6,40 +6,6 @@ from pathlib import Path
 import subprocess
 
 
-def test_retry_timeline_renders_stable_retry_item_with_spinner(
-    tmp_path: Path,
-) -> None:
-    payload = _run_round_timeline_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const { renderRetryEventMarkup } = await import('./timeline.mjs');
-
-const html = renderRetryEventMarkup(
-    {
-        event_id: 'retry-run-1-2',
-        kind: 'retry',
-        phase: 'retrying',
-        is_active: true,
-        attempt_number: 2,
-        total_attempts: 6,
-        retry_in_ms: 1000,
-        error_code: 'rate_limit',
-    },
-    Date.now(),
-);
-
-console.log(JSON.stringify({ html }));
-""".strip(),
-    )
-
-    html = str(payload["html"])
-    assert 'data-retry-event-id="retry-run-1-2"' in html
-    assert "round-retry-item-active" in html
-    assert "round-retry-item-retrying" in html
-    assert "round-retry-spinner" in html
-    assert "Attempt 2/6 in progress" in html
-
-
 def test_load_session_rounds_serializes_forced_initial_and_timeline_fetches(
     tmp_path: Path,
 ) -> None:
@@ -216,88 +182,6 @@ console.log(JSON.stringify({
             ],
             "hasCoordinatorMessages": True,
         },
-    }
-
-
-def test_terminal_overlay_survives_stale_background_full_page(
-    tmp_path: Path,
-) -> None:
-    payload = _run_round_timeline_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.document = {
-    getElementById: () => null,
-    querySelector: () => null,
-};
-globalThis.__summaryRoundsPage = {
-    items: [
-        {
-            run_id: 'run-1',
-            created_at: '2026-04-25T11:01:00',
-            intent: 'Summary shell',
-            run_status: 'running',
-            run_phase: 'running',
-            has_user_messages: true,
-        },
-    ],
-    has_more: false,
-    next_cursor: null,
-};
-globalThis.__initialRoundsPagePromise = new Promise(resolve => {
-    globalThis.__resolveFullRoundsPage = resolve;
-});
-globalThis.__timelineRoundsPage = globalThis.__summaryRoundsPage;
-
-const {
-    loadSessionRounds,
-    overlayRoundRecoveryState,
-} = await import('./timeline.mjs');
-const { roundsState } = await import('./mockRoundsState.mjs');
-
-await loadSessionRounds('session-1', {
-    render: false,
-    timelineLoadMode: 'background',
-});
-overlayRoundRecoveryState('run-1', {
-    run_status: 'completed',
-    run_phase: 'terminal',
-    is_recoverable: false,
-    pending_tool_approval_count: 0,
-    pending_tool_approvals: [],
-});
-
-globalThis.__resolveFullRoundsPage({
-    items: [
-        {
-            run_id: 'run-1',
-            created_at: '2026-04-25T11:01:00',
-            intent: 'Summary shell',
-            run_status: 'running',
-            run_phase: 'running',
-            coordinator_messages: [{ role: 'assistant', content: 'full detail' }],
-            has_user_messages: true,
-        },
-    ],
-    has_more: false,
-    next_cursor: null,
-});
-await Promise.resolve();
-await Promise.resolve();
-
-console.log(JSON.stringify({
-    currentStatus: roundsState.currentRounds[0].run_status,
-    currentPhase: roundsState.currentRounds[0].run_phase,
-    timelineStatus: roundsState.timelineRounds[0].run_status,
-    reconciledRuns: globalThis.__reconciledTerminalRuns,
-}));
-""".strip(),
-    )
-
-    assert payload == {
-        "currentStatus": "completed",
-        "currentPhase": "terminal",
-        "timelineStatus": "completed",
-        "reconciledRuns": ["run-1", "run-1", "run-1"],
     }
 
 

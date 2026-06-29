@@ -59,6 +59,46 @@ test("opens observability from the top bar and renders spec lineage", async ({
     ).toBeVisible();
     await expect(observability.getByText("Session tools")).toBeVisible();
 
+    await observability.getByText("Global", { exact: true }).click();
+    const gatewaySignals = observability.locator(
+      '[data-observability-section="gateway-signals"]',
+    );
+    await expect(gatewaySignals.getByText("Gateway Signals")).toBeVisible();
+    await expect(
+      gatewaySignals
+        .locator('[data-observability-metric="gateway_calls"]')
+        .filter({ hasText: "Gateway Calls" })
+        .filter({ hasText: "3" }),
+    ).toBeVisible();
+    await expect(
+      gatewaySignals
+        .locator(
+          '[data-observability-metric="gateway_prompt_avg_first_update_ms"]',
+        )
+        .filter({ hasText: "Prompt First Update ms" })
+        .filter({ hasText: "180" }),
+    ).toBeVisible();
+    await expect(
+      observability.locator('[data-observability-section="gateway-breakdowns"]'),
+    ).toContainText("Gateway Breakdown");
+    await expect(
+      observability.locator('[data-observability-section="gateway-breakdowns"]'),
+    ).toContainText("session_prompt");
+    await expect(
+      observability.locator('[data-observability-section="gateway-breakdowns"]'),
+    ).toContainText("Gateway Latency");
+    await expect(
+      observability.locator('[data-observability-chart="gateway-breakdown-calls"]'),
+    ).toContainText("Gateway Calls");
+    await expect(
+      observability.locator('[data-observability-chart="gateway-breakdown-duration"]'),
+    ).toContainText("Gateway Latency");
+    await expect(
+      observability.locator(
+        '[data-observability-chart="gateway-breakdown-cold-starts"]',
+      ),
+    ).toContainText("Gateway Cold Starts");
+
     const specLineage = observability.locator(".at-spec-lineage");
     await expect(
       specLineage.getByRole("heading", { name: "Spec lineage" }),
@@ -90,6 +130,11 @@ test("opens observability from the top bar and renders spec lineage", async ({
     await page.mouse.move(320, 120);
     await page.screenshot({
       path: screenshotPath("v2-observability-session.png", SCREENSHOT_FOLDER),
+    });
+    await gatewaySignals.scrollIntoViewIfNeeded();
+    await page.mouse.move(320, 340);
+    await page.screenshot({
+      path: screenshotPath("v2-observability-gateway.png", SCREENSHOT_FOLDER),
     });
     await specLineage.scrollIntoViewIfNeeded();
     await page.mouse.move(320, 340);
@@ -188,6 +233,9 @@ function observabilityOverviewResponse(
     kpis: {
       input_tokens: 112000,
       output_tokens: 790,
+      gateway_calls: 3,
+      gateway_cold_start_calls: 1,
+      gateway_prompt_avg_first_update_ms: 180,
       steps: 12,
       tool_avg_duration_ms: 88,
       tool_calls: 7,
@@ -222,6 +270,18 @@ function observabilityBreakdownsResponse(
         calls: 7,
         name: "Agent loop",
         success_rate: 0.9,
+      },
+    ],
+    gateway_rows: [
+      {
+        avg_duration_ms: 93,
+        calls: 3,
+        cold_start_calls: 1,
+        failures: 0,
+        gateway_operation: "session_prompt",
+        gateway_phase: "request",
+        gateway_transport: "stdio",
+        success_rate: 1,
       },
     ],
     updated_at: "2026-06-25T08:30:00Z",

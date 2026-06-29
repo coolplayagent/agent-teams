@@ -181,6 +181,9 @@ export function useRunStreamController(): RunStreamController {
     void queryClient.invalidateQueries({
       queryKey: ["sessions", sessionId, "messages"],
     });
+    void queryClient.invalidateQueries({
+      queryKey: ["sessions", sessionId, "rounds"],
+    });
     void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     refreshRecoverySnapshot(sessionId);
     void queryClient.invalidateQueries({

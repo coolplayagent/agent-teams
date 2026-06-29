@@ -130,7 +130,7 @@ describe("useRunStreamController", () => {
     });
   });
 
-  it("refreshes sidebar and session token usage when a run stream closes", async () => {
+  it("refreshes timeline, sidebar, and session token usage when a run stream closes", async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -161,6 +161,12 @@ describe("useRunStreamController", () => {
         queryKey: ["sessions", "session-1", "token-usage"],
       }),
     );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
@@ -221,6 +227,9 @@ describe("useRunStreamController", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "recovery"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "token-usage"],
@@ -538,6 +547,9 @@ describe("useRunStreamController", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "recovery"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "token-usage"],

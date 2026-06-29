@@ -40,54 +40,6 @@ console.log(JSON.stringify({ html }));
     assert "Attempt 2/6 in progress" in html
 
 
-def test_load_session_rounds_uses_full_timeline_page_for_navigator(
-    tmp_path: Path,
-) -> None:
-    payload = _run_round_timeline_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.__initialRoundsPage = {
-    items: [
-        { run_id: 'run-5', created_at: '2026-04-25T11:05:00', intent: 'Latest' },
-        { run_id: 'run-4', created_at: '2026-04-25T11:04:00', intent: 'Previous' },
-    ],
-    has_more: true,
-    next_cursor: 'run-4',
-};
-globalThis.__timelineRoundsPage = {
-    items: [
-        { run_id: 'run-5', created_at: '2026-04-25T11:05:00', intent: 'Latest' },
-        { run_id: 'run-4', created_at: '2026-04-25T11:04:00', intent: 'Previous' },
-        { run_id: 'run-3', created_at: '2026-04-25T11:03:00', intent: 'Older' },
-        { run_id: 'run-2', created_at: '2026-04-25T11:02:00', intent: 'Older still' },
-        { run_id: 'run-1', created_at: '2026-04-25T11:01:00', intent: 'Oldest' },
-    ],
-    has_more: false,
-    next_cursor: null,
-};
-
-const { loadSessionRounds } = await import('./timeline.mjs');
-const { roundsState } = await import('./mockRoundsState.mjs');
-
-await loadSessionRounds('session-1', { render: false });
-
-console.log(JSON.stringify({
-    currentRunIds: roundsState.currentRounds.map(round => round.run_id),
-    timelineRunIds: roundsState.timelineRounds.map(round => round.run_id),
-    navigatorRunIds: globalThis.__navigatorRounds.map(round => round.run_id),
-    pagingHasMore: roundsState.paging.hasMore,
-}));
-""".strip(),
-    )
-
-    assert payload == {
-        "currentRunIds": ["run-4", "run-5"],
-        "timelineRunIds": ["run-1", "run-2", "run-3", "run-4", "run-5"],
-        "navigatorRunIds": ["run-1", "run-2", "run-3", "run-4", "run-5"],
-        "pagingHasMore": True,
-    }
-
-
 def test_load_session_rounds_serializes_forced_initial_and_timeline_fetches(
     tmp_path: Path,
 ) -> None:

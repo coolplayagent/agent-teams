@@ -7218,3 +7218,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, focused V2 runtime-event coverage, targeted verification, and partial legacy harness removal completed for this fallback retry timeline slice. No full Message Timeline PASS, AG-UI Runtime Stream PASS, stream/replay recovery PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Terminal Close Round Refresh Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Message Timeline / Run Recovery / AG-UI Runtime Stream checklist requirements, remaining old timeline Python UI harnesses, and current V2 stream-controller cache invalidation before editing.
+- Fixed V2 `useRunStreamController` terminal close handling so it invalidates `["sessions", sessionId, "rounds"]` together with messages, sidebar, recovery, and token usage. This keeps the round rail/detail transcript, tool counts, retry metadata, and terminal persisted state from remaining stale after a run stream closes.
+- Strengthened `RunStreamController.test.tsx` coverage for foreground, paused, and background terminal closes to assert the rounds query is refreshed.
+- Removed the migrated V1 source-copy harness `test_load_session_rounds_uses_full_timeline_page_for_navigator` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. The V2 equivalent is covered by `MessageTimeline.test.tsx::collects paged round rail history before sorting and rendering`; the old file now has 13 remaining Python UI harness scenarios.
+- This slice improves terminal timeline refresh and removes one old V1 harness. It does not claim complete terminal-settle parity, expected-tool-call follow-up polling parity, full Message Timeline PASS, stream/replay recovery PASS, Settings/sidebar inventory PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/RunStreamController.test.tsx -t "refreshes timeline|background stream state"` passed.
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "collects paged round rail history"` passed.
+- `npm run test -- src/test/RunStreamController.test.tsx` passed with 26 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 13.
+- `rg -n 'test_load_session_rounds_uses_full_timeline_page_for_navigator|collects paged round rail history|refreshes timeline, sidebar, and session token usage' tests/integration_tests/frontend/test_round_retry_timeline_ui.py frontend/app/src/test/MessageTimeline.test.tsx frontend/app/src/test/RunStreamController.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function name.
+- `rg -n '"rounds"' frontend/app/src/runtime/useRunStreamController.ts frontend/app/src/test/RunStreamController.test.tsx` shows the production invalidation plus the three focused TS assertions.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 terminal-close cache refresh implementation, targeted verification, and partial legacy harness removal completed for this terminal round refresh slice. No subsystem PASS or final V2 completion is claimed.

@@ -400,6 +400,8 @@ test("tests and saves an existing model profile", async ({ page }) => {
 
     const profileIdInput = settings.getByLabel("Profile ID");
     await expect(profileIdInput).toHaveValue("vision");
+    const providerInput = settings.getByLabel("Provider");
+    await expect(providerInput).toHaveValue("openai");
     await expect(settings.getByLabel("Base URL")).toHaveValue(
       "https://vision.example/v1",
     );
@@ -419,6 +421,10 @@ test("tests and saves an existing model profile", async ({ page }) => {
     ]);
     await expect(settings.getByText("Connection ok in 51ms.")).toBeVisible();
 
+    await providerInput.fill("openai_compatible");
+    await expect(settings.getByLabel("Base URL")).toHaveValue(
+      "https://vision.example/v1",
+    );
     await profileIdInput.fill("vision-browser");
     await settings.getByLabel("Model").fill("gpt-5.1-vision");
     await settings.getByLabel("Base URL").fill("https://vision.changed.example/v1");
@@ -457,7 +463,7 @@ test("tests and saves an existing model profile", async ({ page }) => {
       is_default: false,
       max_tokens: 4096,
       model: "gpt-5.1-vision",
-      provider: "openai",
+      provider: "openai_compatible",
       source_name: "vision",
       ssl_verify: true,
       temperature: 0.7,

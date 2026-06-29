@@ -415,37 +415,6 @@ def test_browser_shell_settings_and_session_management(
     assert _wait_for_session_ids_snapshot(page) == baseline_session_ids
 
 
-def test_browser_model_profile_custom_provider_keeps_manual_base_url(
-    browser_page: Page,
-    integration_env: IntegrationEnvironment,
-) -> None:
-    page = browser_page
-    _open_app(page, integration_env)
-
-    page.locator("#settings-btn").click()
-    expect(page.locator("#settings-modal")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    page.locator('.settings-tab[data-tab="model"]').click()
-    expect(page.locator("#model-panel")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    expect(page.locator(".edit-profile-btn").first).to_be_visible(
-        timeout=_WAIT_TIMEOUT_MS
-    )
-    page.locator(".edit-profile-btn").first.click()
-    expect(page.locator("#profile-editor")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    expect(page.locator("#profile-base-url")).to_have_value(
-        integration_env.fake_llm_v1_base_url,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(page.locator("#profile-provider")).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
-    expect(page.locator('#profile-provider option[value="bigmodel"]')).to_have_count(0)
-
-    page.locator("#profile-provider-custom-btn").click()
-
-    expect(page.locator("#profile-base-url")).to_have_value(
-        integration_env.fake_llm_v1_base_url,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-
-
 @pytest.mark.skip(reason="Flaky on CI - timing issues with browser automation")
 def test_browser_environment_variables_and_session_topology(
     browser_page: Page,

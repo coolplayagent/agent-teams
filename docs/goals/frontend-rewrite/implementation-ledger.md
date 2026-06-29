@@ -7126,3 +7126,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, V2 workspace creation coverage verification, targeted sidebar test execution, and partial legacy harness removal completed for this workspace creation flow slice. No sidebar subsystem PASS, new-session model-profile inheritance PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 New Session Model Profile Inheritance Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, V2 `SessionCreateRequest`, and current `SessionsSidebar` create-session flow before editing.
+- Fixed the V2 sidebar create-session path to carry the selected session's cached `normal_model_profile` into the `createSession` request when a non-empty saved profile exists. This preserves the V1 new-session draft behavior without reintroducing the V1 draft dropdown surface.
+- Added V2 `SessionsSidebar.test.tsx` coverage proving a selected session with cached `normal_model_profile: "precise"` creates the next session with `normal_model_profile: "precise"` and the same workspace. Existing sidebar tests still cover the no-profile path by expecting only `workspace_id`.
+- Stabilized the existing cross-workspace subagent sidebar test by waiting for the subagent query and label before clicking the subagent row.
+- Removed the migrated V1 Python UI harness scenario for new-session draft creation including the selected normal model profile. The legacy Python UI harness now has 3 remaining scenarios: prompt mention/resource autocomplete, title preview event timing, and pasted-image footer hint.
+
+### Verification
+- `npm run test -- src/test/SessionsSidebar.test.tsx` passed with 27 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 3.
+- `rg -n "test_new_session_draft_creation_includes_selected_normal_model_profile|carries the selected normal model profile into new sessions|normal_model_profile" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/SessionsSidebar.test.tsx frontend/app/src/features/sessions/SessionsSidebar.tsx` returns the new V2 TS coverage and implementation; no migrated V1 Python function name remains.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused V2 implementation, targeted sidebar verification, and partial legacy harness removal completed for this new-session model-profile inheritance slice. No full sidebar subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, release cleanup sign-off, or V2 frontend completion is claimed.

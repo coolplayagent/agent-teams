@@ -338,6 +338,52 @@ describe("SessionsSidebar", () => {
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
   });
 
+  it("carries the selected normal model profile into new sessions", async () => {
+    useUiStore.setState({
+      selectedSessionId: "session-current",
+      selectedWorkspaceId: "workspace-1",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-current",
+        title: "Current session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    createSessionMock.mockResolvedValue({
+      session_id: "session-new",
+      workspace_id: "workspace-1",
+      normal_model_profile: "precise",
+    });
+
+    const queryClient = renderSidebar();
+    queryClient.setQueryData(["sessions", "detail", "session-current"], {
+      session_id: "session-current",
+      workspace_id: "workspace-1",
+      normal_model_profile: "precise",
+    });
+
+    await screen.findByText("Agent Teams");
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+
+    await waitFor(() =>
+      expect(createSessionMock).toHaveBeenCalledWith({
+        normal_model_profile: "precise",
+        workspace_id: "workspace-1",
+      }),
+    );
+    expect(useUiStore.getState().selectedSessionId).toBe("session-new");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+  });
+
   it("adds a picked project through the V1 workspace toolbar action", async () => {
     const initialWorkspace = {
       workspace_id: "workspace-1",
@@ -1002,7 +1048,11 @@ describe("SessionsSidebar", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "Toggle subagent sessions",
     }));
-    fireEvent.click(await screen.findByRole("button", {
+    await waitFor(() =>
+      expect(listSessionSubagentsMock).toHaveBeenCalledWith("session-b", false),
+    );
+    expect(await screen.findByText("Explore B")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
       name: "Open subagent session Explore B",
     }));
 

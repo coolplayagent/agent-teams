@@ -11,7 +11,12 @@ import {
   Typography,
 } from "antd";
 import type { InputRef, MenuProps } from "antd";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import {
   ArrowDownUp,
   ChevronDown,
@@ -36,6 +41,8 @@ import {
   updateSession,
 } from "../../api/client";
 import type {
+  SessionCreateRequest,
+  SessionRecord,
   SessionSidebarRecord,
   SessionSubagentRecord,
   WorkspaceRecord,
@@ -105,6 +112,42 @@ interface RenameSessionPayload {
 interface DeleteWorkspacePayload {
   removeDirectory: boolean;
   workspaceId: string;
+}
+
+function sessionDetailQueryKey(sessionId: string) {
+  return ["sessions", "detail", sessionId] as const;
+}
+
+function normalModelProfileForNewSession(
+  queryClient: QueryClient,
+  selectedSessionId: string | null,
+): string | null {
+  if (selectedSessionId === null) {
+    return null;
+  }
+  const selectedSession = queryClient.getQueryData<SessionRecord>(
+    sessionDetailQueryKey(selectedSessionId),
+  );
+  const normalModelProfile = selectedSession?.normal_model_profile?.trim() ?? "";
+  return normalModelProfile.length > 0 ? normalModelProfile : null;
+}
+
+function sessionCreateRequest(
+  queryClient: QueryClient,
+  selectedSessionId: string | null,
+  workspaceId: string,
+): SessionCreateRequest {
+  const normalModelProfile = normalModelProfileForNewSession(
+    queryClient,
+    selectedSessionId,
+  );
+  if (normalModelProfile === null) {
+    return { workspace_id: workspaceId };
+  }
+  return {
+    normal_model_profile: normalModelProfile,
+    workspace_id: workspaceId,
+  };
 }
 
 export function SessionsSidebar({
@@ -217,7 +260,10 @@ export function SessionsSidebar({
   }, [searchExpanded]);
 
   const createSessionMutation = useMutation({
-    mutationFn: (workspaceId: string) => createSession({ workspace_id: workspaceId }),
+    mutationFn: (workspaceId: string) =>
+      createSession(
+        sessionCreateRequest(queryClient, selectedSessionId, workspaceId),
+      ),
     onSuccess: (session) => {
       setSelectedWorkspaceId(session.workspace_id);
       setSelectedSessionId(session.session_id);

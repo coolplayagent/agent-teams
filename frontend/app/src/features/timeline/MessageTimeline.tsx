@@ -3917,9 +3917,15 @@ function toolCallPreview(body: string): string {
       objectRawString(parsed, "command") ||
       objectRawString(parsed, "cmd") ||
       objectRawString(parsed, "path") ||
+      objectRawString(parsed, "file_path") ||
+      objectRawString(parsed, "filepath") ||
+      objectRawString(parsed, "target_path") ||
       objectRawString(parsed, "query") ||
+      objectRawString(parsed, "q") ||
+      objectRawString(parsed, "search_query") ||
       objectRawString(parsed, "pattern") ||
       objectRawString(parsed, "url") ||
+      objectRawString(parsed, "uri") ||
       firstNonEmptyLine(jsonValueText(parsed))
     );
   }

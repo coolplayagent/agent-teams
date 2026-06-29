@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Tool Input Preview Alias Parity
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining frontend Python UI harnesses, and the streaming/tool V1 harness before editing.
+- Migrated the V1 `test_tool_blocks_extract_effective_inputs_instead_of_footer_status` intent to V2 `MessageTimeline` component coverage: runtime tool-call previews now prefer effective input fields for shell commands, file paths, search queries, and URLs instead of incidental status/footer fields.
+- Fixed V2 `toolCallPreview()` to recognize V1-compatible aliases: `file_path`, `filepath`, `target_path`, `q`, `search_query`, and `uri`.
+- Removed the replaced V1 Python UI harness function from `tests/integration_tests/frontend/test_streaming_tool_ui.py`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle includes the preview alias fix.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "effective tool inputs|normalizes string tool args|renders tool calls, results"` passed with the new alias coverage and adjacent tool rendering coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_streaming_tool_ui.py` passed after deleting the migrated Python function.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-CwFO4o2F.js`).
+- `rg -n 'test_tool_blocks_extract_effective_inputs_instead_of_footer_status|effective tool inputs|tool-detail-footer|tool-result-status' tests/integration_tests/frontend/test_streaming_tool_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned only the new TS coverage name.
+
+### Reviewer
+- Main-agent V2 production fix, component coverage, old Python UI test function removal, static bundle rebuild, and focused regression verification completed for this slice. No full Streaming Tool subsystem PASS, Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Same-Name Tool Call TS Migration
 
 ### Scope

@@ -561,55 +561,6 @@ console.log(JSON.stringify({
     assert payload["discoveryCalls"] == 0
 
 
-def test_tool_blocks_extract_effective_inputs_instead_of_footer_status() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    tool_blocks_script = (
-        repo_root
-        / "frontend"
-        / "dist"
-        / "js"
-        / "components"
-        / "messageRenderer"
-        / "helpers"
-        / "toolBlocks.js"
-    ).read_text(encoding="utf-8")
-    tool_args_script = (
-        repo_root
-        / "frontend"
-        / "dist"
-        / "js"
-        / "components"
-        / "messageRenderer"
-        / "helpers"
-        / "toolArgs.js"
-    ).read_text(encoding="utf-8")
-    tools_css = (
-        repo_root / "frontend" / "dist" / "css" / "components" / "tools.css"
-    ).read_text(encoding="utf-8")
-
-    assert "import { normalizeToolArgs } from './toolArgs.js';" in tool_blocks_script
-    assert "fields: ['command', 'cmd']" in tool_blocks_script
-    assert (
-        "fields: ['path', 'file_path', 'filepath', 'target_path']" in tool_blocks_script
-    )
-    assert "fields: ['query', 'q', 'search_query']" in tool_blocks_script
-    assert "fields: ['url', 'uri']" in tool_blocks_script
-    assert "export function normalizeToolArgs(args) {" in tool_args_script
-    assert "return { __items: args };" in tool_args_script
-    assert "return { __raw: raw };" in tool_args_script
-    assert (
-        'return `<div class="tool-input-value"><code>${escapeHtml(info.detailText)}</code></div>`;'
-        in tool_blocks_script
-    )
-    assert (
-        'return `<div class="tool-input-value"><code>${escapeHtml(info.detailText)}</code>${lineRangeHtml}</div>`;'
-        in tool_blocks_script
-    )
-    assert ".tool-input-value {" in tools_css
-    assert ".tool-detail-footer {" not in tools_css
-    assert ".tool-result-status {" not in tools_css
-
-
 def test_tool_blocks_parse_tagged_read_payloads_and_cap_large_diffs() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     tool_blocks_script = (

@@ -1748,6 +1748,61 @@ describe("MessageTimeline", () => {
     )).toBe(true);
   });
 
+  it("summarizes effective tool inputs for command, file, search, and URL fields", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "npm run lint", exit_code: 0, status: "running" },
+          tool_call_id: "call-command",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { filepath: "src/runtime/events.ts", status: "completed" },
+          tool_call_id: "call-filepath",
+          tool_name: "read",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { q: "stream replay recovery", total_results: 5 },
+          tool_call_id: "call-query",
+          tool_name: "search",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { uri: "https://example.test/docs", status: "queued" },
+          tool_call_id: "call-url",
+          tool_name: "fetch",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findAllByText(/Tool call:/)).toHaveLength(4);
+    expect(toolPreviewTexts(container)).toEqual([
+      "npm run lint",
+      "src/runtime/events.ts",
+      "stream replay recovery",
+      "https://example.test/docs",
+    ]);
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
+    expect(screen.queryByText("queued")).not.toBeInTheDocument();
+  });
+
   it("scopes and deduplicates runtime stream rows by run", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({

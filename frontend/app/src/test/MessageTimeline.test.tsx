@@ -2138,6 +2138,12 @@ describe("MessageTimeline", () => {
     expect(previews).toContain("ls");
     expect(previews).toContain("done");
     expect(screen.queryByText("pwd")).not.toBeInTheDocument();
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts[0]).toContain("Injection applied: Use ls instead");
+    expect(rowTexts[1]).toContain("Tool call: shell");
+    expect(rowTexts[2]).toContain("Tool result: shell");
   });
 
   it("splits runtime text segments around approval and thinking events", async () => {

@@ -5075,3 +5075,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent route-switch browser coverage, frontend typecheck, screenshot inspection, and naming-surface cleanup completed for this slice. No final naming cleanup sign-off, visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Shell And Settings Parity Gate Repair
+
+### Scope
+- Re-checked the active frontend rewrite goal, live in-app browser shell, Settings drawer, message timeline, and existing shell parity browser coverage before editing. This slice targets the V1 sidebar/settings parity gate instead of adding new visible navigation.
+- Live browser inspection on `http://127.0.0.1:8000/app/` confirmed the fixed shell has no document-level scroll, the sidebar owns its own scroll, the timeline owns its own scroll, the current visible message timeline no longer exposes raw `user/message/assistant` role labels, and Settings keeps the V1-aligned primary and secondary entry structure.
+- Re-ran the existing shell/settings parity browser gate. It caught a real gap: opening Automation in the parity flow now requests `/automation/delivery-bindings`, but the parity mock did not handle that real data surface.
+- Added the missing Automation delivery-binding response to `v2-shell-parity.spec.ts`, matching the existing module-action browser mock shape. The unhandled-route assertion remains strict.
+- Kept this as test-harness parity gate repair and live visual evidence only. Remaining frontend rewrite work still includes stream/replay edge-case sign-off, final V1/V2 visual audit, subsystem reviewer sign-offs, release promotion decisions, and final full-check execution before completion can be claimed.
+
+### Verification
+- Initial `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts -g "keeps V1 primary sidebar entries|keeps V1 settings sections"` failed on unhandled `GET /automation/delivery-bindings`, which is the gap fixed in this slice.
+- Re-run `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts -g "keeps V1 primary sidebar entries|keeps V1 settings sections"` passed with 2 tests.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-shell/v2-sidebar-module-parity.png`; it shows the V1-aligned sidebar entries and Settings drawer without document-level page growth.
+- Inspected `.tmp/frontend-v2-ts-shell/v2-settings-system-parity.png`; it shows Settings preserving System secondary-page navigation instead of flattening MCP/Plugins/Commands/Hooks/Agent Runtime/GitHub/Triggers into the primary Settings nav.
+- No `frontend/dist` rebuild was needed because this slice changed only browser-test code and this ledger.
+
+### Reviewer
+- Main-agent live UI inspection, targeted shell/settings browser gate repair, frontend typecheck, screenshot inspection, and strict unhandled-route verification completed for this slice. No Settings subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

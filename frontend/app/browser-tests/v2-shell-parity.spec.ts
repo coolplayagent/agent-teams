@@ -1059,6 +1059,9 @@ function parityResponse(path: string): unknown | undefined {
   if (path === "/automation/projects") {
     return [automationProject()];
   }
+  if (path === "/automation/delivery-bindings") {
+    return automationDeliveryBindings();
+  }
   if (path === "/automation/projects/aut-daily") {
     return automationProject();
   }
@@ -1197,6 +1200,19 @@ function automationProject(): Record<string, unknown> {
     updated_at: "2026-06-25T08:20:00Z",
     workspace_id: WORKSPACE_ID,
   };
+}
+
+function automationDeliveryBindings(): Record<string, unknown>[] {
+  return [
+    {
+      account_id: "xlb-self",
+      derived_uid: "uidself",
+      display_name: "Xiaoluban",
+      provider: "xiaoluban",
+      source_label: "发送给自己（uidself）",
+      updated_at: "2026-06-25T08:00:00Z",
+    },
+  ];
 }
 
 function connectorsResponse(): Record<string, unknown> {

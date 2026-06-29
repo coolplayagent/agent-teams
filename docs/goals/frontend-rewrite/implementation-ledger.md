@@ -6873,3 +6873,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent implementation, targeted TS verification, dist rebuild, lint, and Python UI harness deletion completed for this Message Timeline migration slice. No Message Timeline subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Subagent Rail Sidebar Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, and remaining Python UI harness inventory before editing. This slice migrates `test_subagent_rail_ui.py` away from V1 `frontend/dist` static/module tests into V2 TS coverage.
+- Kept the V2 subagent workflow as a sidebar-nested entry plus secondary workspace surface instead of restoring the removed V1 right rail DOM or flattening subagent content into the primary chat surface.
+- Added V2 sidebar normalization protection so reserved root-role records such as `Coordinator` and `MainAgent`, plus non-`subagent_run_` normal-mode records, are filtered from expanded subagent session lists before they can be opened as child sessions.
+- Rebuilt `frontend/dist/app` so the served V2 shell includes the subagent sidebar normalization fix.
+
+### Verification
+- `npm run test -- src/test/SessionsSidebar.test.tsx src/test/AppShell.test.tsx src/test/apiClient.test.ts` passed with 90 tests covering nested subagent entrypoints, secondary subagent surface behavior without old right-rail DOM, subagent endpoint force refresh, and reserved-role filtering.
+- `npm run lint` passed.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+- `Test-Path tests\integration_tests\frontend\test_subagent_rail_ui.py` returned `False`.
+- `rg -n "test_subagent_rail_ui" tests frontend/app/src docs/goals/frontend-rewrite/implementation-ledger.md` returns only this ledger entry.
+- `rg -n "Coordinator root record|Main agent root record|isReservedRootRoleId|right-rail" frontend/app/src docs/goals/frontend-rewrite/implementation-ledger.md` returns the new V2 TS coverage, the production reserved-role predicate, the existing AppShell no-right-rail assertion, and this ledger entry.
+
+### Reviewer
+- Main-agent implementation, targeted TS verification, dist rebuild, lint, and Python UI harness deletion completed for this Subagents migration slice. No Subagents subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

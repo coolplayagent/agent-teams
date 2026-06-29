@@ -812,6 +812,87 @@ describe("SessionsSidebar", () => {
     }));
   });
 
+  it("filters reserved root roles from expanded subagent sessions", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-parent",
+        subagent_count: 4,
+        title: "Parent session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:01:00Z",
+        instance_id: "coordinator-instance",
+        role_id: "Coordinator",
+        run_id: "subagent_run_coordinator",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Coordinator root record",
+        updated_at: "2026-06-23T10:04:00Z",
+      },
+      {
+        created_at: "2026-06-23T10:01:00Z",
+        instance_id: "main-agent-instance",
+        role_id: "MainAgent",
+        run_id: "subagent_run_main_agent",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Main agent root record",
+        updated_at: "2026-06-23T10:03:00Z",
+      },
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "legacy-run-instance",
+        role_id: "writer",
+        run_id: "run_parent_only",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Legacy parent run record",
+        updated_at: "2026-06-23T10:02:00Z",
+      },
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "writer-instance",
+        role_id: "writer",
+        run_id: "subagent_run_writer",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Writer child task",
+        updated_at: "2026-06-23T10:05:00Z",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Parent session")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Toggle subagent sessions",
+    }));
+
+    expect(await screen.findByText("Writer child task")).toBeVisible();
+    expect(screen.queryByText("Coordinator root record")).not.toBeInTheDocument();
+    expect(screen.queryByText("Main agent root record")).not.toBeInTheDocument();
+    expect(screen.queryByText("Legacy parent run record")).not.toBeInTheDocument();
+  });
+
   it("reconciles expanded subagent rows after sidebar subagent cache refresh", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

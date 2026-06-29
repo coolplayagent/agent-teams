@@ -1060,6 +1060,9 @@ function normalizeSessionSubagent(
   if (!sessionId || !instanceId || !roleId || !runId) {
     return null;
   }
+  if (isReservedRootRoleId(roleId)) {
+    return null;
+  }
   if (subagentKind === "normal" && !runId.startsWith("subagent_run_")) {
     return null;
   }
@@ -1109,6 +1112,11 @@ function normalizeSubagentStatus(
     return "running";
   }
   return safeStatus || "idle";
+}
+
+function isReservedRootRoleId(roleId: string): boolean {
+  const normalizedRoleId = roleId.trim().toLowerCase();
+  return normalizedRoleId === "coordinator" || normalizedRoleId === "mainagent";
 }
 
 function subagentSessionLabel(subagent: ActiveSubagentSession): string {

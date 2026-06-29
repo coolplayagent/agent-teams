@@ -1374,7 +1374,7 @@ describe("SettingsDrawer", () => {
       "General",
       "Speech",
       "Notifications",
-      "Models",
+      "Model",
       "Roles",
       "Orchestration",
       "Web",
@@ -1390,7 +1390,7 @@ describe("SettingsDrawer", () => {
     expect(within(sections).queryByRole("button", { name: "Hooks" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "Agent Runtime" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "GitHub" })).toBeNull();
-    expect(within(sections).queryByRole("button", { name: "Triggers" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "Gateway" })).toBeNull();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
     expect(getModelProfilesMock).toHaveBeenCalledTimes(1);
@@ -1406,7 +1406,7 @@ describe("SettingsDrawer", () => {
     expect(screen.getByText("Run completed")).toBeVisible();
     expect(getNotificationConfigMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
     await waitFor(() => expect(screen.getAllByText("default").length).toBeGreaterThan(0));
     expect(screen.getByText("gpt-5-mini · in: image, text / out: text")).toBeVisible();
     const defaultProfileRow = screen
@@ -1588,7 +1588,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
     const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
     expect(visionRow).not.toBeNull();
     fireEvent.click(within(visionRow as HTMLElement).getByRole("button", { name: /vision/ }));
@@ -2002,10 +2002,10 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    expect(within(sections).queryByRole("button", { name: "Triggers" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "Gateway" })).toBeNull();
 
     fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    const triggersRow = (await screen.findByText("Triggers")).closest("button");
+    const triggersRow = (await screen.findByText("Gateway")).closest("button");
     expect(triggersRow).not.toBeNull();
     fireEvent.click(triggersRow as HTMLElement);
 
@@ -2210,7 +2210,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
 
     const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
     expect(visionRow).not.toBeNull();
@@ -2250,7 +2250,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
 
     const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
     expect(visionRow).not.toBeNull();
@@ -2350,7 +2350,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
 
     const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
     expect(visionRow).not.toBeNull();
@@ -2398,7 +2398,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
     expect(await screen.findByText("vision")).toBeVisible();
     expect(getModelCatalogMock).not.toHaveBeenCalled();
 

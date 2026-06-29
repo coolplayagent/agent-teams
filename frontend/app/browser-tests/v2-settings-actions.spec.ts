@@ -694,10 +694,10 @@ test("tests and saves an existing model profile", async ({ page }) => {
     const settings = await openSettingsDialog(page);
     await settings
       .getByRole("navigation", { name: "Settings sections" })
-      .getByRole("button", { name: "Models" })
+      .getByRole("button", { name: "Model" })
       .click();
 
-    await expect(settings.getByRole("heading", { name: "Models" })).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Model" })).toBeVisible();
     const visionRow = settings.locator(".at-model-profile-row").filter({
       hasText: "vision",
     });
@@ -806,10 +806,10 @@ test("creates a model profile from the catalog", async ({ page }) => {
     const settings = await openSettingsDialog(page);
     await settings
       .getByRole("navigation", { name: "Settings sections" })
-      .getByRole("button", { name: "Models" })
+      .getByRole("button", { name: "Model" })
       .click();
 
-    await expect(settings.getByRole("heading", { name: "Models" })).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Model" })).toBeVisible();
     expect(state.requestedPaths).not.toContain("/system/configs/model/catalog");
 
     await Promise.all([

@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Settings Navigation Label Parity
+
+### Scope
+- Re-checked the active frontend rewrite goal, the Settings parity checklist, and the remaining V1 settings-shell harness before editing.
+- Migrated the V1 settings tab order / label drift assertion from `tests/integration_tests/frontend/test_settings_shell_ui.py` into V2 `SettingsNavigationParity.test.ts`.
+- Strengthened the V2 contract so it now checks both primary settings section keys and their English labels, and verifies that MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, and Gateway remain behind the System secondary-page launcher instead of leaking into the primary settings navigation.
+- Fixed two visible V2 label drifts against the V1 settings surface: the primary settings label is now `Model` instead of `Models`, and the System secondary page label is now `Gateway` instead of `Triggers` while preserving the same page structure and real trigger gateway account implementation underneath.
+- Updated the affected SettingsDrawer and browser parity/action tests, and rebuilt `frontend/dist/app` so the served `/app/` bundle contains the V1-aligned labels.
+
+### Verification
+- `npm run test -- src/test/SettingsNavigationParity.test.ts` passed.
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "real settings center|links migrated settings labels|manages trigger gateway accounts|sets default and deletes model profiles|edits and tests an existing model profile|creates a model profile from the catalog"` passed with 6 targeted SettingsDrawer tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_settings_shell_ui.py` passed after deleting the migrated Python assertion.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts -g "settings sections"` passed against the rebuilt bundle.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent V2 Settings navigation label parity, secondary-page grouping evidence, targeted unit/browser verification, lint, dist rebuild, and partial old Python UI harness reduction completed for this slice. This does not claim full Settings subsystem PASS, all settings-form PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Agent Panel History UI Harness Retirement
 
 ### Scope

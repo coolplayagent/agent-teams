@@ -506,55 +506,6 @@ def test_general_notifications_preserve_hidden_channels_without_forcing_toast() 
     assert "getLoadedNotificationConfig()" in settings
 
 
-def test_settings_tab_order_and_labels_are_simplified() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    source_text = (
-        repo_root / "frontend" / "dist" / "js" / "components" / "settings" / "index.js"
-    ).read_text(encoding="utf-8")
-
-    tabs_start = source_text.index('<div class="settings-tabs"')
-    tabs_end = source_text.index("</div>\n            </aside>", tabs_start)
-    tabs_html = source_text[tabs_start:tabs_end]
-
-    assert tabs_html.index('data-tab="appearance"') < tabs_html.index(
-        'data-tab="general"'
-    )
-    assert tabs_html.index('data-tab="general"') < tabs_html.index('data-tab="model"')
-    assert tabs_html.index('data-tab="model"') < tabs_html.index('data-tab="mcp"')
-    assert tabs_html.index('data-tab="mcp"') < tabs_html.index('data-tab="plugins"')
-    assert tabs_html.index('data-tab="plugins"') < tabs_html.index(
-        'data-tab="commands"'
-    )
-    assert tabs_html.index('data-tab="commands"') < tabs_html.index('data-tab="hooks"')
-    assert tabs_html.index('data-tab="hooks"') < tabs_html.index('data-tab="agents"')
-    assert tabs_html.index('data-tab="agents"') < tabs_html.index('data-tab="roles"')
-    assert tabs_html.index('data-tab="roles"') < tabs_html.index(
-        'data-tab="orchestration"'
-    )
-    assert tabs_html.index('data-tab="orchestration"') < tabs_html.index(
-        'data-tab="web"'
-    )
-    assert tabs_html.index('data-tab="web"') < tabs_html.index('data-tab="proxy"')
-    assert tabs_html.index('data-tab="proxy"') < tabs_html.index('data-tab="workspace"')
-    assert tabs_html.index('data-tab="workspace"') < tabs_html.index(
-        'data-tab="environment"'
-    )
-    assert ">Model</span>" in tabs_html
-    assert ">MCP</span>" in tabs_html
-    assert ">Plugins</span>" in tabs_html
-    assert ">Commands</span>" in tabs_html
-    assert ">Hooks</span>" in tabs_html
-    assert ">Agent Runtime</span>" in tabs_html
-    assert ">Web</span>" in tabs_html
-    assert ">Remote Workspace</span>" in tabs_html
-    assert ">Environment</span>" in tabs_html
-    assert ">GitHub</span>" not in tabs_html
-    assert ">Skills</span>" not in tabs_html
-    assert ">Gateway</span>" not in tabs_html
-    assert ">Model Profiles</span>" not in tabs_html
-    assert ">MCP Config</span>" not in tabs_html
-
-
 def test_settings_content_stack_does_not_draw_duplicate_top_divider() -> None:
     components_css = load_components_css()
     start = components_css.index(".settings-content-stack {")

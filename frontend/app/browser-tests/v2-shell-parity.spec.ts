@@ -162,7 +162,7 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
         "General",
         "Speech",
         "Notifications",
-        "Models",
+        "Model",
         "Roles",
         "Orchestration",
         "Web",
@@ -180,7 +180,7 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
       "Hooks",
       "Agent Runtime",
       "GitHub",
-      "Triggers",
+      "Gateway",
     ]) {
       await expect(sections.getByRole("button", { name: secondaryLabel }))
         .toHaveCount(0);
@@ -199,7 +199,7 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
       "Hooks",
       "Agent Runtime",
       "GitHub",
-      "Triggers",
+      "Gateway",
     ]) {
       await expect(systemPages.filter({ hasText: secondaryLabel })).toBeVisible();
     }
@@ -235,7 +235,7 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
     await expect(settings.getByText("Webhook base URL")).toBeVisible();
     await settings.getByRole("button", { name: "Back", exact: true }).click();
 
-    await openSystemPage(settings, systemPages, "Triggers");
+    await openSystemPage(settings, systemPages, "Gateway");
     await expect(settings.getByText("Feishu Main")).toBeVisible();
     await expect(settings.getByText("WeChat Main")).toBeVisible();
 

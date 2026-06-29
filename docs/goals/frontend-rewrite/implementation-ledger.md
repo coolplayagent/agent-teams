@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Injection Overlay TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Composer/Run Controls and Message Timeline checklist items, current V2 `MessageTimeline` runtime injection coverage, and the remaining legacy stream overlay Python tests before editing.
+- Removed two V1 `frontend/dist/js/components/messageRenderer/stream.js` overlay harness tests from `tests/integration_tests/frontend/test_stream_session_overlay_ui.py`: injection placement between a tool call and following text, and superseding an unexecuted pending tool call when an injection is applied.
+- Mapped the behavior to existing V2 component coverage in `frontend/app/src/test/MessageTimeline.test.tsx`: `keeps runtime injection rows at their live event position between tool and text` and `removes superseded pending runtime tool calls before rendering the injected replacement`.
+- Kept this slice focused on evidence migration only. No sidebar entries, Settings pages, visible layout, stream transport behavior, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "runtime injection rows|superseded pending runtime tool calls"` passed with 2 focused V2 component tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_stream_overlay_keeps_injection_between_tool_and_next_text|test_stream_overlay_discards_unexecuted_tool_when_inject_supersedes_batch|stream_overlay_injection|stream_overlay_inject_supersedes_tool" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent old Python UI test removal, V2 evidence mapping, focused component verification, edited-file ruff check, old-test search, and diff check completed for this slice. No full Message Timeline subsystem PASS, Composer/Run Controls PASS, AG-UI Runtime Stream PASS, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Replay Dedupe TS Migration
 
 ### Scope

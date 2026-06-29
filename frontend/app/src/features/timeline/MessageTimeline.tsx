@@ -12,6 +12,7 @@ import {
   type JsonValue,
   type SessionRound,
   type SessionRoundMessage,
+  type SessionRoundMessagePart,
   type SessionRoundsPage,
   type TimelineMessage,
 } from "../../api/contracts";
@@ -94,14 +95,18 @@ export function MessageTimeline({
     () => createMessageRoundLookup(displayRounds),
     [displayRounds],
   );
+  const persistedMessages = useMemo(
+    () => mergeTimelineMessages(messages, displayRounds),
+    [displayRounds, messages],
+  );
   const persistedRows = useMemo(
     () =>
-      messages
+      persistedMessages
         .map((messageItem, index) =>
           messageToRow(messageItem, index, messageRoundLookup, fallbackRunId),
         )
         .filter(timelineRowHasRenderableContent),
-    [fallbackRunId, messageRoundLookup, messages],
+    [fallbackRunId, messageRoundLookup, persistedMessages],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(persistedRows),
@@ -1564,6 +1569,151 @@ function roundMessages(round: SessionRound): SessionRoundMessage[] {
   ];
 }
 
+function mergeTimelineMessages(
+  messages: TimelineMessage[],
+  rounds: SessionRound[],
+): TimelineMessage[] {
+  const merged = messages.map((message, index) => ({ index, message }));
+  const seen = new Set(messages.map(timelineMessageDedupeKey));
+  let nextIndex = messages.length;
+  for (const round of rounds) {
+    for (const roundMessage of roundMessages(round)) {
+      const message = roundMessageToTimelineMessage(roundMessage, round.run_id);
+      const key = timelineMessageDedupeKey(message);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push({ index: nextIndex, message });
+      nextIndex += 1;
+    }
+  }
+  return merged
+    .sort((left, right) => compareTimelineMessageItems(left, right))
+    .map((item) => item.message);
+}
+
+function compareTimelineMessageItems(
+  left: { index: number; message: TimelineMessage },
+  right: { index: number; message: TimelineMessage },
+): number {
+  const leftTimestamp = timestampMs(left.message.created_at);
+  const rightTimestamp = timestampMs(right.message.created_at);
+  if (leftTimestamp !== null && rightTimestamp !== null) {
+    const diff = leftTimestamp - rightTimestamp;
+    return diff === 0 ? left.index - right.index : diff;
+  }
+  return left.index - right.index;
+}
+
+function roundMessageToTimelineMessage(
+  message: SessionRoundMessage,
+  runId: string,
+): TimelineMessage {
+  const contentParts = message.content_parts ?? [];
+  const bodyParts = roundMessageParts(message.message?.parts ?? []);
+  const bodyContent = jsonValueText(message.message?.content ?? null);
+  return {
+    content: message.content,
+    created_at: message.created_at,
+    entry_type: message.entry_type,
+    injection_id: message.injection_id,
+    injection_status: message.injection_status,
+    instance_id: message.instance_id,
+    message: {
+      ...(bodyContent.trim().length > 0 ? { content: bodyContent } : {}),
+      ...(bodyParts.length > 0 ? { parts: bodyParts } : {}),
+    },
+    message_id: message.message_id,
+    parts: contentParts.length > 0 ? contentParts : undefined,
+    role: message.role,
+    role_id: message.role_id,
+    run_id: runId,
+    source: message.source,
+    status: message.status,
+  };
+}
+
+function roundMessageParts(parts: SessionRoundMessagePart[]): ContentPart[] {
+  return parts.flatMap((part) => {
+    const contentPart = roundMessagePart(part);
+    return contentPart === null ? [] : [contentPart];
+  });
+}
+
+function roundMessagePart(part: SessionRoundMessagePart): ContentPart | null {
+  const kind = part.part_kind ?? part.kind ?? "";
+  const text = roundMessagePartText(part);
+  if (kind === "text" && text.length > 0) {
+    return { part_kind: "text", content: text };
+  }
+  if (kind === "user-prompt") {
+    return { part_kind: "user-prompt", content: text };
+  }
+  if (kind === "thinking") {
+    return {
+      part_kind: "thinking",
+      content: text,
+    };
+  }
+  if (kind === "media_ref") {
+    return {
+      part_kind: "media_ref",
+      media_type: part.mime_type,
+      name: part.name,
+      url: part.url,
+    };
+  }
+  if (kind === "tool-call") {
+    return {
+      part_kind: "tool-call",
+      args: part.args,
+      tool_call_id: part.tool_call_id,
+      tool_name: part.tool_name,
+    };
+  }
+  if (kind === "tool-return") {
+    return {
+      part_kind: "tool-return",
+      content: part.content,
+      is_error: part.is_error,
+      outcome: part.outcome,
+      tool_call_id: part.tool_call_id,
+      tool_name: part.tool_name,
+    };
+  }
+  if (kind === "retry-prompt") {
+    return {
+      part_kind: "retry-prompt",
+      content: part.content,
+      tool_call_id: part.tool_call_id,
+      tool_name: part.tool_name,
+    };
+  }
+  return null;
+}
+
+function roundMessagePartText(part: SessionRoundMessagePart): string {
+  if (typeof part.text === "string") {
+    return part.text;
+  }
+  return jsonValueText(part.content ?? null);
+}
+
+function timelineMessageDedupeKey(message: TimelineMessage): string {
+  const messageId = message.message_id?.trim() ?? "";
+  if (messageId.length > 0) {
+    return `id:${messageId}`;
+  }
+  return [
+    "fingerprint",
+    message.created_at ?? "",
+    message.entry_type ?? "",
+    message.role_id ?? message.role ?? "",
+    timelineMessagePrimaryText(message),
+  ].join(":");
+}
+
 function messageRunId(
   message: TimelineMessage,
   roundLookup: MessageRoundLookup,
@@ -2577,6 +2727,10 @@ function MessageMediaPreview({
 }
 
 function messageParts(message: TimelineMessage): TimelineRenderPart[] {
+  const injection = persistedInjectionPart(message);
+  if (injection !== null) {
+    return [injection];
+  }
   if (typeof message.content === "string" && message.content.trim()) {
     return [timelineTextPart(timelineDisplayText(message.content))];
   }
@@ -2588,6 +2742,58 @@ function messageParts(message: TimelineMessage): TimelineRenderPart[] {
     return [timelineTextPart(timelineDisplayText(message.message.content))];
   }
   return [];
+}
+
+function persistedInjectionPart(message: TimelineMessage): TimelineTextPart | null {
+  if ((message.entry_type ?? "").trim().toLowerCase() !== "injection") {
+    return null;
+  }
+  const payload = persistedInjectionPayload(message);
+  const summary = runtimeInjectionSummary(payload);
+  if (summary.length === 0) {
+    return null;
+  }
+  const status = (message.injection_status ?? message.status ?? "applied")
+    .trim()
+    .toLowerCase();
+  const label = status.includes("queue") ? "Injection queued" : "Injection applied";
+  return timelineTextPart(`${label}: ${summary}`);
+}
+
+function persistedInjectionPayload(message: TimelineMessage): Record<string, JsonValue> {
+  const payload: Record<string, JsonValue> = {};
+  const content = timelineMessagePrimaryText(message);
+  if (content.length > 0) {
+    payload.content = content;
+  }
+  const source = message.source?.trim() ?? "";
+  if (source.length > 0) {
+    payload.source = source;
+  }
+  const injectionId = message.injection_id?.trim() ?? "";
+  if (injectionId.length > 0) {
+    payload.injection_id = injectionId;
+  }
+  return payload;
+}
+
+function timelineMessagePrimaryText(message: TimelineMessage): string {
+  if (typeof message.content === "string" && message.content.trim().length > 0) {
+    return message.content.trim();
+  }
+  for (const part of messageContentParts(message)) {
+    const text = contentPartText(part);
+    if (text !== null && text.trim().length > 0) {
+      return text.trim();
+    }
+  }
+  if (
+    typeof message.message?.content === "string" &&
+    message.message.content.trim().length > 0
+  ) {
+    return message.message.content.trim();
+  }
+  return "";
 }
 
 function messageContentParts(message: TimelineMessage): ContentPart[] {

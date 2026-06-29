@@ -879,6 +879,56 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("renders live subagent overlay as a separate row beside persisted history", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        role_id: "Writer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: "live thought",
+        }),
+        role_id: "Writer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [{ part_kind: "text", content: "persisted" }],
+        },
+        message_id: "subagent-persisted",
+        role_id: "Writer",
+        run_id: "subagent_run_1",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "subagent_run_1",
+    });
+
+    expect(await screen.findByText("persisted")).toBeVisible();
+    expect(screen.getByText("live thought")).toBeVisible();
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(2);
+    expect(rowTexts[0]).toContain("persisted");
+    expect(rowTexts[1]).toContain("Thinking");
+    expect(rowTexts[1]).toContain("live thought");
+    const thinkingBlock = container.querySelector(".at-message-thinking");
+    expect(thinkingBlock).toHaveAttribute("data-streaming", "true");
+    expect(thinkingBlock).toHaveAttribute("open");
+  });
+
   it("renders an idle streaming cursor for an open run before output arrives", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -1979,6 +2029,139 @@ describe("MessageTimeline", () => {
     expect(readDetails).toHaveTextContent(/Retryable: false/);
   });
 
+  it("renders round-only injections inside tool-heavy persisted history", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-04-29T10:00:00Z",
+        message: {
+          parts: [
+            {
+              args: { command: "ls missing" },
+              part_kind: "tool-call",
+              tool_call_id: "call-1",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "tool-call-1",
+        role_id: "MainAgent",
+        run_id: "run-1",
+      },
+      {
+        created_at: "2026-04-29T10:00:01Z",
+        message: {
+          parts: [
+            {
+              content: "Shell command failed",
+              is_error: true,
+              part_kind: "tool-return",
+              tool_call_id: "call-1",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "tool-return-1",
+        role: "user",
+        run_id: "run-1",
+      },
+      {
+        content: "Now let me read more files.",
+        created_at: "2026-04-29T10:00:02Z",
+        message_id: "assistant-more",
+        role_id: "MainAgent",
+        run_id: "run-1",
+      },
+      {
+        created_at: "2026-04-29T10:00:02.500Z",
+        message: {
+          parts: [
+            {
+              args: { path: "plugin_cli.py" },
+              part_kind: "tool-call",
+              tool_call_id: "call-2",
+              tool_name: "read_file",
+            },
+          ],
+        },
+        message_id: "tool-call-2",
+        role_id: "MainAgent",
+        run_id: "run-1",
+      },
+      {
+        created_at: "2026-04-29T10:00:02.750Z",
+        message: {
+          parts: [
+            {
+              content: "file content",
+              part_kind: "tool-return",
+              tool_call_id: "call-2",
+              tool_name: "read_file",
+            },
+          ],
+        },
+        message_id: "tool-return-2",
+        role: "user",
+        run_id: "run-1",
+      },
+      {
+        content: "done",
+        created_at: "2026-04-29T10:00:03Z",
+        message_id: "assistant-done",
+        role_id: "MainAgent",
+        run_id: "run-1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-04-29T09:59:59Z",
+          injection_messages: [
+            {
+              content: "change direction",
+              created_at: "2026-04-29T10:00:01.500Z",
+              entry_type: "injection",
+              injection_id: "inj-1",
+              injection_status: "applied",
+              message: {
+                parts: [{ part_kind: "text", content: "change direction" }],
+              },
+              source: "user",
+            },
+          ],
+          run_id: "run-1",
+          run_status: "completed",
+          run_user_message: "Tool-heavy task",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Injection applied: change direction · source user"))
+      .toBeVisible();
+    expect(screen.getByText("Tool error: shell")).toBeVisible();
+    expect(screen.getByText("Tool call: read_file")).toBeVisible();
+    expect(screen.getByText("Tool result: read_file")).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual([
+      "ls missing",
+      "Shell command failed",
+      "plugin_cli.py",
+      "file content",
+    ]);
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(7);
+    expect(rowTexts[0]).toContain("Tool call: shell");
+    expect(rowTexts[1]).toContain("Tool error: shell");
+    expect(rowTexts[2]).toContain("Injection applied: change direction");
+    expect(rowTexts[3]).toContain("Now let me read more files.");
+    expect(rowTexts[4]).toContain("Tool call: read_file");
+    expect(rowTexts[5]).toContain("Tool result: read_file");
+    expect(rowTexts[6]).toContain("done");
+  });
+
   it("renders runtime tool approval requests and resolved decisions", async () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -2182,6 +2365,32 @@ describe("MessageTimeline", () => {
     expect(textRow).not.toBeNull();
     expect(textRow).not.toHaveClass("is-streaming");
     expect(textRow?.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(textRow?.querySelector(".streaming-cursor")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
+  });
+
+  it("keeps real text tail when a closed stream finalizes after an idle boundary", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "hello",
+      }),
+      runtimeToolResultEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("hello")).toBeVisible();
+    expect(screen.getByText("Tool result: execute_command")).toBeVisible();
+    const textRow = screen.getByText("hello").closest("article.at-message");
+    expect(textRow).not.toBeNull();
+    expect(textRow).not.toHaveClass("is-streaming");
     expect(textRow?.querySelector(".streaming-cursor")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(2);

@@ -1780,6 +1780,10 @@ export interface TimelineMessage {
   run_id?: string;
   trace_id?: string;
   entry_type?: string;
+  injection_id?: string;
+  injection_status?: string;
+  source?: string;
+  status?: string;
 }
 
 export interface SessionRoundMessagePart {

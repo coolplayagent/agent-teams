@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Overlay Final Python Harness Removal
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining `test_stream_session_overlay_ui.py` cases, Message Timeline parity checklist items, and current V2 message/round projection before editing.
+- Fixed V2 `MessageTimeline` persisted history projection so round-only messages from `coordinator_messages` and `injection_messages` are merged into the timeline, deduped against `/sessions/{id}/messages`, sorted by timestamp, and rendered with the same tool/thinking/media/text part pipeline.
+- Added persisted injection rendering using the same `Injection applied`/`Injection queued` summary language as runtime injection events, so injected guidance that exists only in round data is visible in dense history.
+- Added V2 component coverage for the last three legacy stream overlay semantics: live subagent overlay renders as a separate row beside persisted history, round-only injection remains ordered inside failed-tool history, and closed stream finalization keeps real text while removing the cursor.
+- Removed the final V1 `frontend/dist/js/components/messageRenderer/history.js` / `stream.js` Python UI harness file: `tests/integration_tests/frontend/test_stream_session_overlay_ui.py`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle includes the round-only history projection fix.
+- Kept this slice focused on Message Timeline history/stream semantics and UI-test migration. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, or final visual audit status changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "separate row|round-only injections|real text tail|failed persisted tool returns|runtime injection rows"` passed with the three new TS migration cases and adjacent tool/injection coverage.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-BjItoa6Z.js`).
+- `rg --files tests/integration_tests/frontend | rg "test_stream_session_overlay_ui\\.py|stream_session_overlay"` returned no matches after deleting the legacy Python UI harness.
+- `rg -n "test_history_overlay_can_render_as_separate_live_message|test_historical_injection_and_failed_tool_collapse_into_processed_group|test_finalize_stream_keeps_real_text_tail_when_overlay_idle_cursor_drifts|round-only injections|real text tail|separate row" frontend/app/src/test/MessageTimeline.test.tsx tests/integration_tests/frontend` returned only the new TS coverage names.
+
+### Reviewer
+- Main-agent V2 production fix, component coverage, final old Python harness removal, static bundle rebuild, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, final V1/V2 visual audit sign-off, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Rebind Continuation TS Migration
 
 ### Scope

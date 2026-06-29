@@ -65,9 +65,12 @@ import {
 } from "../../runtime/uiStore";
 import type { Language } from "../../runtime/uiStore";
 import { useTranslations } from "../../i18n";
+import { ApiError } from "../../api/http";
 
 const { Header, Sider, Content } = Layout;
 const healthyBackendStatuses = new Set(["alive", "ok", "ready"]);
+const terminalViewMarkMaxAttempts = 3;
+const terminalViewMarkRetryDelayMs = 120;
 const sidebarOverlayMediaQuery = "(max-width: 760px)";
 const shellViewHistoryKey = "agentTeamsShellView";
 const shellViewStorageKey = "agentTeams.shellView";
@@ -102,6 +105,7 @@ export function AppShell() {
     useState<ActiveSubagentSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const terminalViewMarksRef = useRef(new Set<string>());
+  const terminalViewRetryTimersRef = useRef(new Set<number>());
   const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
@@ -280,22 +284,74 @@ export function AppShell() {
       ["sessions", "sidebar"],
       (current) => markSidebarTerminalRunViewed(current, sessionId),
     );
-    void markSessionTerminalRunViewed(sessionId)
-      .then(() => {
-        void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-        void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
-        void queryClient.invalidateQueries({
-          queryKey: ["sessions", "detail", sessionId],
-        });
-      })
-      .catch(() => {
-        void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-        void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
-        void queryClient.invalidateQueries({
-          queryKey: ["sessions", "detail", sessionId],
-        });
+
+    const invalidateSessionTerminalView = () => {
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", "detail", sessionId],
       });
+    };
+    const releaseTerminalViewMark = () => {
+      terminalViewMarksRef.current.delete(terminalMarkKey);
+    };
+    const scheduleRetry = (nextAttempt: number) => {
+      const timerId = window.setTimeout(() => {
+        terminalViewRetryTimersRef.current.delete(timerId);
+        markTerminalView(nextAttempt);
+      }, terminalViewMarkRetryDelayMs);
+      terminalViewRetryTimersRef.current.add(timerId);
+    };
+    const markTerminalView = (attempt: number) => {
+      void markSessionTerminalRunViewed(sessionId)
+        .then((result) => {
+          if (result.status === "deferred") {
+            if (attempt < terminalViewMarkMaxAttempts) {
+              scheduleRetry(attempt + 1);
+              return;
+            }
+            releaseTerminalViewMark();
+            invalidateSessionTerminalView();
+            return;
+          }
+          invalidateSessionTerminalView();
+        })
+        .catch((error: unknown) => {
+          if (
+            isRetryableTerminalViewMarkError(error) &&
+            attempt < terminalViewMarkMaxAttempts
+          ) {
+            scheduleRetry(attempt + 1);
+            return;
+          }
+          releaseTerminalViewMark();
+          invalidateSessionTerminalView();
+        });
+    };
+
+    markTerminalView(1);
   }, [queryClient, selectedSession]);
+
+  useEffect(() => {
+    return () => {
+      for (const timerId of terminalViewRetryTimersRef.current) {
+        window.clearTimeout(timerId);
+      }
+      terminalViewRetryTimersRef.current.clear();
+    };
+  }, []);
+
+  function isRetryableTerminalViewMarkError(error: unknown): boolean {
+    if (!(error instanceof ApiError)) {
+      return false;
+    }
+    return (
+      error.status === 429 ||
+      error.status === 502 ||
+      error.status === 503 ||
+      error.status === 504
+    );
+  }
 
   const topbarWorkspaceId =
     selectedWorkspaceId ??

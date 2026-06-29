@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Terminal View Mark Retry TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Sessions And Projects / Run Recovery checklist items, remaining `test_session_selection_ui.py` terminal-view assertions, and current V2 `AppShell` terminal-view mark behavior before editing.
+- Fixed a V2 parity gap: selected unread terminal runs now retry `markSessionTerminalRunViewed` when the backend returns `{ status: "deferred" }` or a transient API error (`429`, `502`, `503`, `504`) instead of treating the optimistic unread clear as final after one attempt.
+- Kept the retry bounded to terminal-view marking only, with cache invalidation after success or final failure and key release on final failure so a later sidebar refresh can retry the same terminal run.
+- Migrated the old deferred and overloaded terminal-view Python UI assertions into `AppShell.test.tsx` and removed those two assertions from `tests/integration_tests/frontend/test_session_selection_ui.py`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle contains the retry behavior (`/app/assets/index-BaYHMKrU.js`).
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx -t "terminal view marks"` passed after covering deferred and overloaded retry behavior.
+- `npm run test -- src/test/AppShell.test.tsx` passed all AppShell tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_session_selection_ui.py` passed after deleting the migrated Python assertions.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent V2 terminal-view retry implementation, targeted TS/Python verification, dist rebuild, and old Python UI harness reduction completed for this slice. No full Sessions And Projects subsystem PASS, Run Recovery subsystem PASS, browser sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Cross-Session Subagent Selection TS Migration
 
 ### Scope

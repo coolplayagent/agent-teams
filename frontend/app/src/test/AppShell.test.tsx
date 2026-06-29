@@ -22,6 +22,7 @@ import {
   saveUiLanguageSettings,
 } from "../api/client";
 import type { SessionRecord, SessionSidebarRecord } from "../api/contracts";
+import { ApiError } from "../api/http";
 import { AppShell } from "../features/shell/AppShell";
 import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
 import { sidebarWidthDefault, useUiStore } from "../runtime/uiStore";
@@ -445,6 +446,80 @@ describe("AppShell", () => {
       expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(2),
     );
     expect(markSessionTerminalRunViewedMock).toHaveBeenLastCalledWith("session-1");
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
+  });
+
+  it("retries deferred terminal view marks before invalidating session data", async () => {
+    const firstTerminalSession: SessionSidebarRecord = {
+      has_unread_terminal_run: true,
+      latest_terminal_run_id: "run-deferred",
+      latest_terminal_run_status: "completed",
+      latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+      session_id: "session-1",
+      title: "Session 1",
+      workspace_id: "workspace-1",
+    };
+    listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
+    markSessionTerminalRunViewedMock
+      .mockResolvedValueOnce({ status: "deferred" })
+      .mockResolvedValueOnce({ status: "ok" });
+    const queryClient = renderShell();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() =>
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(2),
+    );
+
+    expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
+      1,
+      "session-1",
+    );
+    expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
+      2,
+      "session-1",
+    );
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
+  });
+
+  it("retries overloaded terminal view marks without logging a visible failure", async () => {
+    const firstTerminalSession: SessionSidebarRecord = {
+      has_unread_terminal_run: true,
+      latest_terminal_run_id: "run-overloaded",
+      latest_terminal_run_status: "completed",
+      latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+      session_id: "session-1",
+      title: "Session 1",
+      workspace_id: "workspace-1",
+    };
+    listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
+    markSessionTerminalRunViewedMock
+      .mockRejectedValueOnce(new ApiError("Backend overloaded", 503, null))
+      .mockResolvedValueOnce({ status: "ok" });
+    const queryClient = renderShell();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() =>
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(2),
+    );
+
+    expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
+      1,
+      "session-1",
+    );
+    expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
+      2,
+      "session-1",
+    );
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });

@@ -97,42 +97,6 @@ console.log(JSON.stringify({
     ]
 
 
-def test_select_session_retries_deferred_terminal_view_mark(
-    tmp_path: Path,
-) -> None:
-    payload = _run_session_script(
-        tmp_path=tmp_path,
-        runner_source="""
-import { selectSession } from "./session.mjs";
-
-globalThis.CustomEvent = class CustomEvent {
-    constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail || {};
-    }
-};
-globalThis.__terminalViewResponses = [
-    { status: "deferred" },
-    { status: "ok" },
-];
-
-const selection = selectSession("session-a");
-await Promise.resolve();
-globalThis.__hydrateResolvers[0].resolve();
-await selection;
-await new Promise(resolve => setTimeout(resolve, 300));
-
-console.log(JSON.stringify({
-    viewedTerminalRuns: globalThis.__viewedTerminalRuns,
-    sidebarViewedTerminalRuns: globalThis.__sidebarViewedTerminalRuns,
-}));
-""".strip(),
-    )
-
-    assert payload["viewedTerminalRuns"] == ["session-a", "session-a"]
-    assert payload["sidebarViewedTerminalRuns"] == ["session-a"]
-
-
 def test_select_session_marks_terminal_view_when_leaving_subagent_view(
     tmp_path: Path,
 ) -> None:
@@ -264,48 +228,6 @@ console.log(JSON.stringify({
         "inlineLoadingVisible": False,
     }
     assert payload["selectedEvents"] == ["session-a"]
-
-
-def test_select_session_retries_overloaded_terminal_view_mark(
-    tmp_path: Path,
-) -> None:
-    payload = _run_session_script(
-        tmp_path=tmp_path,
-        runner_source="""
-import { selectSession } from "./session.mjs";
-
-globalThis.CustomEvent = class CustomEvent {
-    constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail || {};
-    }
-};
-globalThis.__terminalViewResponses = [
-    { errorStatus: 503 },
-    { status: "ok" },
-];
-
-const selection = selectSession("session-a");
-await Promise.resolve();
-globalThis.__hydrateResolvers[0].resolve();
-await selection;
-await new Promise(resolve => setTimeout(resolve, 300));
-
-console.log(JSON.stringify({
-    logs: globalThis.__logs,
-    viewedTerminalRuns: globalThis.__viewedTerminalRuns,
-    sidebarViewedTerminalRuns: globalThis.__sidebarViewedTerminalRuns,
-}));
-""".strip(),
-    )
-
-    logs = payload["logs"]
-    assert isinstance(logs, list)
-    assert not any("terminal_view_mark_failed" in str(log) for log in logs)
-    assert payload["viewedTerminalRuns"] == ["session-a", "session-a"]
-    assert payload["sidebarViewedTerminalRuns"] == ["session-a"]
-
-
 
 
 def _run_session_script(tmp_path: Path, runner_source: str) -> dict[str, object]:

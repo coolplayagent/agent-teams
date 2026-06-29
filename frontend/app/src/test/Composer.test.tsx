@@ -152,6 +152,49 @@ afterEach(() => {
 });
 
 describe("Composer", () => {
+  it("renders persistent run controls and scoped normal mode fields", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    expect(await screen.findByLabelText("Prompt")).toHaveAttribute(
+      "placeholder",
+      "What would you like the agents to do?",
+    );
+    expect(screen.getByText("Mode")).toBeVisible();
+    expect(screen.getByText("Role")).toBeVisible();
+    expect(screen.getByText("Target")).toBeVisible();
+    expect(screen.getAllByText("Model")[0]).toBeVisible();
+    expect(selectRoot("Root role")).toBeVisible();
+    expect(
+      screen.queryByRole("combobox", { name: "Orchestration preset" }),
+    ).not.toBeInTheDocument();
+    expect(selectRoot("Target role")).toBeVisible();
+    expect(selectRoot("Model profile")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Shell safety policy" }))
+      .toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "YOLO" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Thinking" })).toBeVisible();
+    expect(
+      screen.queryByRole("combobox", { name: "Thinking effort" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("switch", { name: "Thinking" }));
+
+    expect(selectRoot("Thinking effort")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute(
+      "title",
+      "Enter a prompt or attach a file before sending.",
+    );
+  });
+
   it("localizes the persistent composer frame in Chinese", async () => {
     useUiStore.setState({ language: "zh-CN" });
     getRoleConfigOptionsMock.mockResolvedValue({

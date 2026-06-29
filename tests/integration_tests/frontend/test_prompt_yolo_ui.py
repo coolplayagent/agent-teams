@@ -17,45 +17,6 @@ def _write_prompt_tokens_test_module(tmp_path: Path) -> None:
     (utils_dir / "promptTokens.js").write_text(source, encoding="utf-8")
 
 
-def test_chat_input_renders_yolo_and_thinking_controls() -> None:
-    html = Path("frontend/dist/index.html").read_text(encoding="utf-8")
-    orchestration_css = Path(
-        "frontend/dist/css/components/orchestration.css"
-    ).read_text(encoding="utf-8")
-    new_session_composer_css = Path(
-        "frontend/dist/css/components/new-session-draft-composer.css"
-    ).read_text(encoding="utf-8")
-
-    assert 'id="yolo-toggle"' in html
-    assert 'id="thinking-mode-toggle"' in html
-    assert 'id="thinking-effort-field"' in html
-    assert re.search(r'id="thinking-effort-field"[\s\S]*?\bhidden\b', html)
-    assert 'id="thinking-effort-select"' in html
-    assert 'id="prompt-mention-menu"' in html
-    assert 'id="normal-route-controls"' in html
-    assert 'id="normal-role-menu-button"' in html
-    assert 'id="normal-model-menu-button"' in html
-    assert 'data-i18n-title="composer.session_mode_title"' not in html
-    assert ".composer-preset-field[hidden]," in orchestration_css
-    assert ".composer-mode-inline[hidden]" in orchestration_css
-    assert (
-        '#input-container.is-new-session-draft-composer .composer-mode-toggle[for="yolo-toggle"]'
-        in new_session_composer_css
-    )
-    assert "margin-left: auto;" in new_session_composer_css
-    assert "#input-container.is-new-session-draft-composer .composer-usage-strip" in (
-        new_session_composer_css
-    )
-    assert "display: none;" in new_session_composer_css
-
-
-def test_bootstrap_does_not_initialize_shell_safety_policy_toggle() -> None:
-    bootstrap = Path("frontend/dist/js/app/bootstrap.js").read_text(encoding="utf-8")
-
-    assert "initializeShellSafetyPolicyToggle," not in bootstrap
-    assert "initializeShellSafetyPolicyToggle();" not in bootstrap
-
-
 def test_new_session_workspace_selector_uses_composer_menu_style() -> None:
     source = Path("frontend/dist/js/components/newSessionDraft.js").read_text(
         encoding="utf-8"
@@ -68,18 +29,6 @@ def test_new_session_workspace_selector_uses_composer_menu_style() -> None:
     assert "scrollbar-width: thin;" in css
     assert ".new-session-workspace-options::-webkit-scrollbar-thumb" in css
     assert "box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);" in css
-
-
-def test_composer_disabled_tooltips_use_custom_reason_attribute() -> None:
-    source = Path("frontend/dist/js/app/prompt.js").read_text(encoding="utf-8")
-    css = Path("frontend/dist/css/components/interface.css").read_text(encoding="utf-8")
-
-    assert "bindComposerDisabledReasonTooltip();" in source
-    assert "elementFromPoint(event.clientX, event.clientY)" in source
-    assert "data-disabled-reason" in source
-    assert "composer-disabled-tooltip" in css
-    assert "#input-container .composer-segmented" in css
-    assert "overflow: visible;" in css
 
 
 def test_new_session_workspace_selector_closes_on_outside_click() -> None:

@@ -6998,3 +6998,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer inline slash slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Composer Static Control Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, quality gates, remaining V1 `test_prompt_yolo_ui.py` harness inventory, and current V2 Composer/Sessions coverage before editing.
+- Added V2 Composer coverage for the persistent normal-mode control surface: prompt placeholder, Mode/Role/Target/Model labels, normal-only root role select, absence of orchestration preset in normal mode, target/model selects, Shell safety policy, YOLO, Thinking toggle, Thinking effort appearance after enabling, and disabled Send reason title.
+- Removed three migrated V1 source/static harness tests from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`: chat input control existence, bootstrap shell-safety initialization absence, and custom disabled tooltip source assertions. The file now has 17 remaining legacy UI scenarios.
+- Left the V1 new-session workspace selector source assertions in place because they need a separate V1/V2 interaction mapping instead of being treated as covered by this Composer control slice.
+- This slice is test coverage and harness cleanup only; no production UI, Settings, sidebar inventory, backend, or dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 68 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 17.
+- `rg -n "test_chat_input_renders_yolo|test_bootstrap_does_not_initialize|test_composer_disabled_tooltips|persistent run controls" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer static/control slice. No Composer subsystem PASS, Settings/sidebar PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

@@ -2379,7 +2379,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
   if (!callId && !objectString(payload, "tool_name") && result === null) {
     return null;
   }
-  const error = objectBoolean(payload, "error") || jsonObjectHasFailedOk(result);
+  const error = objectBoolean(payload, "error") || toolResultIndicatesError(result);
   return {
     action: "",
     body: toolReturnBody(result, error),
@@ -2754,6 +2754,7 @@ function toolErrorSummary(value: unknown): string {
       appendUniqueLine(lines, `Retryable: ${retryable}`);
     }
   }
+  appendUniqueLine(lines, toolDataSummary(object.data));
   if (lines.length === 0 && object.ok === false) {
     return "ok: false";
   }
@@ -2885,7 +2886,7 @@ function toolReturnIsError(
   if ("outcome" in part && toolOutcomeIsError(part.outcome)) {
     return true;
   }
-  return jsonObjectHasFailedOk(content);
+  return toolResultIndicatesError(content);
 }
 
 function toolOutcomeIsError(outcome: unknown): boolean {
@@ -2896,11 +2897,29 @@ function toolOutcomeIsError(outcome: unknown): boolean {
   return normalized === "failed" || normalized === "denied";
 }
 
-function jsonObjectHasFailedOk(value: unknown): boolean {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+function toolResultIndicatesError(value: unknown): boolean {
+  const object = unknownJsonObject(value);
+  if (object === null) {
     return false;
   }
-  return "ok" in value && value.ok === false;
+  if ("ok" in object && object.ok === false) {
+    return true;
+  }
+  if (
+    toolOutcomeIsError(object.status) ||
+    toolOutcomeIsError(object.outcome)
+  ) {
+    return true;
+  }
+  if (numericJsonValueIsNonZero(object.exit_code)) {
+    return true;
+  }
+  const data = unknownJsonObject(object.data);
+  return data !== null && toolResultIndicatesError(data);
+}
+
+function numericJsonValueIsNonZero(value: JsonValue | undefined): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value !== 0;
 }
 
 function jsonObject(value: JsonValue): Record<string, JsonValue> | null {

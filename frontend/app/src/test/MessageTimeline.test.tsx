@@ -2168,7 +2168,7 @@ describe("MessageTimeline", () => {
           "run-tools": {
             runId: "run-tools",
             status: "closed",
-            lastEventId: 3,
+            lastEventId: 4,
             seenEventKeys: [],
             terminalEventType: null,
             entries: [
@@ -2219,6 +2219,28 @@ describe("MessageTimeline", () => {
                 eventId: 3,
                 occurredAt: "2026-06-23T00:00:02Z",
               },
+              {
+                id: "run-tools:4:3",
+                sessionId: "session-1",
+                runId: "run-tools",
+                roleId: "MainAgent",
+                kind: "tool_result",
+                text: "shell",
+                payload: {
+                  result: {
+                    data: {
+                      exit_code: 2,
+                      output_excerpt: "missing",
+                      status: "failed",
+                    },
+                    ok: true,
+                  },
+                  tool_call_id: "tool-live-3",
+                  tool_name: "shell",
+                },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:03Z",
+              },
             ],
           },
         },
@@ -2231,12 +2253,15 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
     expect(screen.getByText("Tool error: execute_command")).toBeVisible();
     expect(screen.getByText("Tool validation: execute_command")).toBeVisible();
+    expect(screen.getByText("Tool error: shell")).toBeVisible();
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool call: execute_command"))))
       .toContain("npm test");
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool error: execute_command"))))
       .toContain("command failed");
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool validation: execute_command"))))
       .toContain("Input validation failed before tool execution.");
+    expect(toolPreviewTexts(screenElement(screen.getByText("Tool error: shell"))))
+      .toContain("missing");
     expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
     expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
     expect(screen.queryByText(/"error": "command failed"/)).not.toBeInTheDocument();

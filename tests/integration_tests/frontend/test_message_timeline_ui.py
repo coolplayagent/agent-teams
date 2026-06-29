@@ -234,64 +234,6 @@ console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
     assert parts[0]["args"] == {"command": "echo b"}
 
 
-def test_message_timeline_marks_reported_failed_tool_result_as_error() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    runner = """
-import {
-  applyRunEventToTimeline,
-} from './frontend/dist/js/components/messageTimeline/actions.js';
-import {
-  clearTimelineState,
-  getRunTimelineSnapshot,
-} from './frontend/dist/js/components/messageTimeline/store.js';
-
-clearTimelineState();
-
-applyRunEventToTimeline(
-  'tool_call',
-  {
-    tool_name: 'shell',
-    tool_call_id: 'call-failed',
-    args: { command: 'ls missing' },
-  },
-  { run_id: 'run-1', event_id: 1 },
-);
-applyRunEventToTimeline(
-  'tool_result',
-  {
-    tool_name: 'shell',
-    tool_call_id: 'call-failed',
-    result: {
-      ok: true,
-      data: {
-        status: 'failed',
-        exit_code: 2,
-        output_excerpt: 'missing',
-      },
-    },
-  },
-  { run_id: 'run-1', event_id: 2 },
-);
-
-console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
-""".strip()
-
-    completed = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        timeout=10,
-    )
-
-    parts = json.loads(completed.stdout)
-    assert len(parts) == 1
-    assert parts[0]["tool_call_id"] == "call-failed"
-    assert parts[0]["status"] == "error"
-
-
 def test_message_timeline_normalizes_string_tool_args_for_live_and_hydrated_parts() -> (
     None
 ):

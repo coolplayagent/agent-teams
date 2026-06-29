@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Current Session Indicator TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Application Shell checklist, current V2 shell implementation, and the legacy `test_session_debug_badge_ui.py` before editing. This slice targets the current-session indicator requirement without restoring the V1-only bottom debug badge shape.
+- Confirmed V2 exposes the current session identity through `CurrentSessionIndicator`: the visible topbar stays focused on the workspace title, while the selected session title/status or selected session id remains available through the identity label and screen-reader text.
+- Removed `tests/integration_tests/frontend/test_session_debug_badge_ui.py`, which only exercised the V1 `frontend/dist/js/components/sessionDebugBadge.js` module and V1 CSS.
+- No sidebar entries, Settings sections, first-level pages, or visible shell layout changed in this slice.
+
+### Verification
+- `npm run test -- src/test/CurrentSessionIndicator.test.tsx src/test/AppShell.test.tsx -t "session identity|current session identity"` passed with focused V2 shell tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+- `rg --files tests\integration_tests\frontend | rg "test_session_debug_badge_ui\.py$"` returned no matches after removal.
+
+### Reviewer
+- Main-agent old Python V1 badge-test removal, V2 current-session identity evidence mapping, focused TS verification, frontend lint/typecheck, and diff check completed for this slice. No Application Shell subsystem PASS, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Message Renderer Facade Test TS Evidence Migration
 
 ### Scope

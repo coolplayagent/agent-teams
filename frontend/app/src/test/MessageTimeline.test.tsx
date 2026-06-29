@@ -1267,6 +1267,30 @@ describe("MessageTimeline", () => {
     ).toHaveLength(1);
   });
 
+  it("renders external primary runtime text on the selected run stream", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        instance_id: "external-instance",
+        role_id: "external-role",
+        run_id: "run-acp",
+        trace_id: "run-acp",
+        payload_json: JSON.stringify({ text: "streamed from external ACP" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-acp",
+    });
+
+    expect(await screen.findByText("streamed from external ACP")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector("article.at-message"))
+      .toHaveAttribute("data-run-id", "run-acp");
+  });
+
   it("keeps completed runtime tool results when stale tool calls arrive later", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({

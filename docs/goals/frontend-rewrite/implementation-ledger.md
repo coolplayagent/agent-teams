@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Stream Identity TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, and existing V2 `MessageTimeline` stream/tool coverage before editing.
+- Mapped the V1 string tool-args normalization harness case to existing V2 coverage in `MessageTimeline.test.tsx`: persisted and runtime tool calls normalize JSON object strings, array strings, and raw strings into the expected previews and details.
+- Added V2 component coverage proving an external primary runtime stream with a distinct `instance_id` and `role_id` still renders as the selected run's live output row, preserving run scoping without a V1 `byInstance` overlay split.
+- Removed two V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness tests: `test_stream_overlay_normalizes_string_tool_args_and_keeps_stream_key` and `test_stream_overlay_uses_run_primary_role_for_primary_key`.
+- Kept this slice focused on stream identity and rendering evidence. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, runtime source behavior, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "normalizes string tool args|external primary runtime text"` passed with the existing string-args coverage and the new external primary stream coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_stream_overlay_normalizes_string_tool_args_and_keeps_stream_key|test_stream_overlay_uses_run_primary_role_for_primary_key|stream_overlay_string_args" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Parallel Tool Ordering TS Migration
 
 ### Scope

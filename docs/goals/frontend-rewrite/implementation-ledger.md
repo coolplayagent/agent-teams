@@ -5201,3 +5201,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent implementation, dist rebuild, targeted browser coverage, screenshot inspection, and frontend typecheck completed for this export slice. No Message Timeline subsystem sign-off, Resource/Assistive subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Stream Replay Recovery Browser Evidence Sweep
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, quality gates, current stream/replay browser specs, `streamClient.ts`, and `useRunStreamController.ts` before deciding whether to edit. Existing TS browser coverage already targets the highest-risk AG-UI runtime paths, so this slice focuses on verified release evidence rather than changing working runtime code.
+- Ran the targeted stream/replay/recovery browser gate covering create-run streams, refresh recovery, hydrated-cursor replay, manual reconnect exhaustion, SSE `Last-Event-ID` fallback, real SSE malformed/server errors, failed/stopped terminal events, stop/inject controls, approval/question resume paths, standalone resume, duplicate replay suppression, runtime-cursor reconnect, rich replay event rendering, multiplexed background subagent recovery, multiplex reconnect from per-run cursors, and terminal background subagent target cleanup.
+- Kept this as evidence toward the Message Timeline, Run Recovery, AG-UI Runtime Stream, Subagents, and Browser Checks gates. No code changes were needed in this slice.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-stream-refresh.spec.ts browser-tests/v2-stream-reconnect.spec.ts browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 22 tests.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png`; it shows hydrated tool-heavy replay continuing from the cursor with tool call/result/error/validation blocks and resumed output inside the fixed shell.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-last-event-id-reconnect.png`; it shows the SSE `Last-Event-ID` fallback reconnect path deduping the boundary chunk and completing the run.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-rich-replay.png`; it shows rich real SSE replay content including thinking, tool call/result, token usage, model-step metadata, and the composer contained in one viewport.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-refresh-recovery.png`; it shows a real SSE refresh recovery continuing with resumed output without document-level page growth.
+- `git status` after the test run showed only the known untracked goal/reference files before this ledger update.
+
+### Reviewer
+- Main-agent targeted stream/replay/recovery browser gate execution and screenshot inspection completed for this evidence slice. No Runtime subsystem reviewer PASS, Message Timeline subsystem PASS, Run Recovery subsystem PASS, Browser Checks completion, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

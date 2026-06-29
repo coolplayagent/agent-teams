@@ -7036,3 +7036,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer image/profile slice. No Composer subsystem PASS, prompt attachment subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Leading Role Mention Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, and current V2 Composer leading role mention coverage before editing.
+- Removed the V1 Python UI harness scenario for leading role mention submission because V2 `Composer.test.tsx` already proves ASCII and fullwidth leading role mentions strip the mention text and set `target_role_id` on AG-UI run creation.
+- Kept the broader V1 prompt mention autocomplete/menu scenario in place because it also covers command, skill, resource, cache invalidation, stale command fetch, and case-sensitive resource lookup behavior that needs separate V2 mapping.
+- This slice is test harness cleanup only; no production UI, Settings, sidebar inventory, backend, or dist behavior changed. The file now has 11 remaining legacy UI scenarios.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 70 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 11.
+- `rg -n "test_handle_send_strips_leading_role_mention|uses a leading role mention as the run target|supports fullwidth leading role mention" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the V2 TS coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent V1 harness mapping, existing TS coverage verification, targeted Composer test execution, and partial legacy harness removal completed for this leading role mention slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

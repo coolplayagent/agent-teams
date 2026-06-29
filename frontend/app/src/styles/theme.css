@@ -304,6 +304,20 @@ body {
   height: 36px;
 }
 
+.at-sidebar-new-session.ant-btn.ant-btn-primary {
+  border-color: var(--at-border);
+  background: var(--at-surface-muted);
+  box-shadow: none;
+  color: var(--at-text);
+}
+
+.at-sidebar-new-session.ant-btn.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover,
+.at-sidebar-new-session.ant-btn.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):focus-visible {
+  border-color: var(--at-border-strong);
+  background: color-mix(in srgb, var(--at-surface-muted) 82%, var(--at-border));
+  color: var(--at-text);
+}
+
 .at-sidebar-nav {
   display: grid;
   gap: 1px;
@@ -625,8 +639,13 @@ body {
 }
 
 .at-session-item.is-selected {
-  border-color: transparent;
-  background: var(--at-surface-muted);
+  border-color: color-mix(in srgb, var(--at-border-strong) 55%, transparent);
+  background: color-mix(in srgb, var(--at-surface-muted) 78%, var(--at-border));
+}
+
+.at-session-item.is-selected:hover,
+.at-session-item.is-selected:focus-within {
+  background: color-mix(in srgb, var(--at-surface-muted) 72%, var(--at-border-strong));
 }
 
 .at-session-select {

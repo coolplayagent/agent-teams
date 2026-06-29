@@ -146,6 +146,8 @@ export function SessionsSidebar({
     useState(false);
   const searchInputRef = useRef<InputRef>(null);
   const focusSearchOnExpandRef = useRef(false);
+  const selectedSessionItemRef = useRef<HTMLDivElement | null>(null);
+  const scrolledSelectedSessionIdRef = useRef<string | null>(null);
 
   const sessionsQuery = useQuery({
     queryKey: ["sessions", "sidebar"],
@@ -360,6 +362,25 @@ export function SessionsSidebar({
       label: t("sidebarSortProjectCreated"),
     },
   ];
+
+  useEffect(() => {
+    if (selectedSessionId === null) {
+      scrolledSelectedSessionIdRef.current = null;
+      return;
+    }
+    const selectedSessionItem = selectedSessionItemRef.current;
+    if (selectedSessionItem === null) {
+      return;
+    }
+    if (typeof selectedSessionItem.scrollIntoView !== "function") {
+      return;
+    }
+    if (scrolledSelectedSessionIdRef.current === selectedSessionId) {
+      return;
+    }
+    scrolledSelectedSessionIdRef.current = selectedSessionId;
+    selectedSessionItem.scrollIntoView({ block: "nearest" });
+  }, [selectedSessionId, totalVisibleSessions]);
 
   return (
     <div className="at-sidebar-inner">
@@ -580,6 +601,7 @@ export function SessionsSidebar({
                       <div className="at-session-stack" key={session.session_id}>
                         <div
                           className={sessionItemClassName(selected, indicatorType)}
+                          ref={selected ? selectedSessionItemRef : undefined}
                         >
                           <div className="at-session-copy">
                             <button

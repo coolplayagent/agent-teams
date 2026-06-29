@@ -53,6 +53,21 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps sidebar creation and selected session chrome neutral like V1", () => {
+    expect(themeCss).toMatch(
+      /\.at-sidebar-new-session\.ant-btn\.ant-btn-primary\s*{[\s\S]*?border-color:\s*var\(--at-border\);[\s\S]*?background:\s*var\(--at-surface-muted\);[\s\S]*?box-shadow:\s*none;[\s\S]*?color:\s*var\(--at-text\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-sidebar-new-session\.ant-btn\.ant-btn-primary:not\(:disabled\):not\(\.ant-btn-disabled\):hover,[\s\S]*?\.at-sidebar-new-session\.ant-btn\.ant-btn-primary:not\(:disabled\):not\(\.ant-btn-disabled\):focus-visible\s*{[\s\S]*?background:\s*color-mix\(in srgb, var\(--at-surface-muted\) 82%, var\(--at-border\)\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-session-item\.is-selected\s*{[\s\S]*?border-color:\s*color-mix\(in srgb, var\(--at-border-strong\) 55%, transparent\);[\s\S]*?background:\s*color-mix\(in srgb, var\(--at-surface-muted\) 78%, var\(--at-border\)\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-session-item\.is-selected:hover,[\s\S]*?\.at-session-item\.is-selected:focus-within\s*{[\s\S]*?background:\s*color-mix\(in srgb, var\(--at-surface-muted\) 72%, var\(--at-border-strong\)\);/,
+    );
+  });
+
   it("keeps settings navigation and content scrolling independently", () => {
     expect(themeCss).toMatch(
       /\.at-settings-drawer \.ant-drawer-body\s*{[\s\S]*?overflow:\s*hidden;/,

@@ -201,6 +201,59 @@ describe("SessionsSidebar", () => {
     expect(selectedSession).toHaveClass("is-selected");
   });
 
+  it("scrolls the selected session into the visible sidebar list", async () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn(
+      (_options?: boolean | ScrollIntoViewOptions) => undefined,
+    );
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      useUiStore.setState({
+        selectedSessionId: "session-c",
+        selectedWorkspaceId: "workspace-1",
+      });
+      listWorkspacesMock.mockResolvedValue([
+        {
+          workspace_id: "workspace-1",
+          root_path: "C:/work/agent-teams",
+          display_name: "Agent Teams",
+        },
+      ]);
+      listSidebarSessionsMock.mockResolvedValue([
+        {
+          session_id: "session-a",
+          title: "Alpha",
+          updated_at: "2026-06-23T10:00:00Z",
+          workspace_id: "workspace-1",
+        },
+        {
+          session_id: "session-b",
+          title: "Beta",
+          updated_at: "2026-06-23T10:01:00Z",
+          workspace_id: "workspace-1",
+        },
+        {
+          session_id: "session-c",
+          title: "Gamma",
+          updated_at: "2026-06-23T10:02:00Z",
+          workspace_id: "workspace-1",
+        },
+      ]);
+
+      renderSidebar();
+
+      const selectedSession = (await screen.findByText("Gamma")).closest(
+        ".at-session-item",
+      );
+      expect(selectedSession).toHaveClass("is-selected");
+      await waitFor(() =>
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }),
+      );
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
   it("labels the generic default workspace by its root folder like V1", async () => {
     useUiStore.setState({
       selectedSessionId: "session-a",

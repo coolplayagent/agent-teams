@@ -2,6 +2,29 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Screenshot-Driven Sidebar Framework Parity
+
+### Scope
+- Re-checked the active frontend rewrite goal and captured stable V1/V2 framework evidence before editing instead of judging from source alone.
+- Captured V1 settled screenshot at `C:/Users/yex/AppData/Local/Temp/agent-teams-ui-qa/v1-framework-settled.png` and V2 before/after screenshots at `C:/Users/yex/AppData/Local/Temp/agent-teams-ui-qa/v2-framework-settled.png` and `C:/Users/yex/AppData/Local/Temp/agent-teams-ui-qa/v2-framework-final-sidebar.png` with a 1280x720 Chrome viewport against the local `127.0.0.1:8000` app.
+- Confirmed the V2 shell remains one fixed page (`documentScrollHeight == documentClientHeight == 720`, `bodyScrollHeight == bodyClientHeight == 720`) and the sidebar/workspace frame aligns with V1 at `280px` sidebar width plus the `6px` resize gutter.
+- Fixed a V2 sidebar framework gap: the selected session now scrolls into the sidebar's visible list when it first renders or when the selected session changes, matching V1's visible-current-session behavior instead of leaving the current session below the fold.
+- Toned down the V2 sidebar `New session` button from a primary green slab to neutral sidebar chrome, and strengthened the selected session row using existing surface/border tokens so the selected row reads like V1 without changing the sidebar item set.
+- Left the larger message replay/content mismatch observed in the screenshots as pending stream/replay work; this slice only claims the sidebar/framework parity fix.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle contains the sidebar scroll and neutral chrome changes (`/app/assets/index-CshUfHZp.js`, `/app/assets/index-w6MLB_2i.css`).
+
+### Verification
+- `npm run test -- src/test/SessionsSidebar.test.tsx -t "scrolls the selected session"` passed with coverage for selected-session `scrollIntoView({ block: "nearest" })`.
+- `npm run test -- src/test/SessionsSidebar.test.tsx -t "selects a cross-workspace parent"` passed after checking the adjacent subagent selection path.
+- `npm run test -- src/test/SessionsSidebar.test.tsx` passed all 24 sidebar tests on rerun; one previous full-file run had a transient async miss in the existing cross-workspace subagent test, while the targeted rerun and second full rerun passed.
+- `npm run test -- src/test/ShellLayoutCss.test.ts` passed all 11 CSS layout/parity assertions, including the new neutral sidebar chrome check.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- Post-build Chrome screenshot/metrics confirmed the selected V2 session row is visible at `y=501` inside the sidebar list, `New session` uses neutral `rgb(40, 43, 37)` background, and document/body scrolling remains fixed at `720/720`.
+
+### Reviewer
+- Main-agent screenshot-driven V1/V2 framework inspection, V2 sidebar selected-session visibility fix, neutral sidebar chrome CSS, targeted/full TS verification, lint, dist rebuild, and post-build screenshot verification completed for this slice. No full Sessions And Projects subsystem PASS, Message Timeline subsystem PASS, stream/replay PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Active Subagent Main Loading TS Migration
 
 ### Scope

@@ -2442,17 +2442,30 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("todo updated")).not.toBeInTheDocument();
   });
 
-  it("renders markdown, GFM tables, links, and highlighted code blocks", async () => {
+  it("strips frontmatter and renders markdown tables, links, and code blocks", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         content: [
-          "## Plan",
+          "---",
+          "name: skill-creator",
+          "description: Create skills.",
+          "---",
+          "# Release Notes",
+          "",
+          "- Added offline markdown rendering",
+          "- Removed CDN hard dependency",
+          "",
+          "> Works without external scripts.",
           "",
           "| Step | State |",
           "| --- | --- |",
           "| Timeline | Done |",
           "",
-          "[Docs](https://example.test/docs)",
+          "Open the [docs](/docs).",
+          "",
+          "```python",
+          "print(\"ok\")",
+          "```",
           "",
           "```ts",
           "const answer = \"yes\";",
@@ -2466,14 +2479,21 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(
-      await screen.findByRole("heading", { level: 2, name: "Plan" }),
+      await screen.findByRole("heading", { level: 1, name: "Release Notes" }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+    expect(screen.queryByText("name: skill-creator")).not.toBeInTheDocument();
+    expect(screen.queryByText("description: Create skills.")).not.toBeInTheDocument();
+    expect(screen.getByText("Added offline markdown rendering")).toBeVisible();
+    expect(screen.getByText("Works without external scripts.")).toBeVisible();
+    expect(screen.getByRole("link", { name: "docs" })).toHaveAttribute(
       "href",
-      "https://example.test/docs",
+      "/docs",
     );
     expect(screen.getByRole("cell", { name: "Timeline" })).toBeVisible();
     expect(screen.getByRole("cell", { name: "Done" })).toBeVisible();
+    const pythonBlock = container.querySelector("pre code.language-python");
+    expect(pythonBlock).not.toBeNull();
+    expect(pythonBlock).toHaveTextContent("print(\"ok\")");
     const codeBlock = container.querySelector("pre code.language-ts");
     expect(codeBlock).not.toBeNull();
     expect(codeBlock).toHaveTextContent("const answer = \"yes\";");

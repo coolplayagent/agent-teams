@@ -25,6 +25,7 @@ const markdownComponents: Components = {
 };
 
 export function MarkdownMessage({ text }: MarkdownMessageProps) {
+  const markdownText = stripMarkdownFrontmatter(text);
   return (
     <div className="at-message-markdown">
       <ReactMarkdown
@@ -32,10 +33,18 @@ export function MarkdownMessage({ text }: MarkdownMessageProps) {
         rehypePlugins={[rehypeCodeHighlight]}
         remarkPlugins={[remarkGfm]}
       >
-        {text}
+        {markdownText}
       </ReactMarkdown>
     </div>
   );
+}
+
+export function stripMarkdownFrontmatter(text: string): string {
+  const frontmatterMatch = text.match(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (frontmatterMatch === null) {
+    return text;
+  }
+  return text.slice(frontmatterMatch[0].length);
 }
 
 function codeLanguage(className: string | undefined): string | undefined {

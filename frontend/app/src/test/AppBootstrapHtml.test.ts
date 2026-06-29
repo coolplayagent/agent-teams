@@ -18,6 +18,12 @@ describe("app bootstrap shell", () => {
     expect(appHtml).toContain('<div id="root"></div>');
   });
 
+  it("does not depend on external markdown or font CDNs", () => {
+    expect(appHtml).not.toContain("fonts.googleapis.com");
+    expect(appHtml).not.toContain("cdn.jsdelivr.net/npm/marked");
+    expect(appHtml).not.toContain("cdnjs.cloudflare.com/ajax/libs/highlight.js");
+  });
+
   it("marks the bootstrap shell ready after the app mounts", () => {
     document.body.dataset.bootstrapState = "loading";
 

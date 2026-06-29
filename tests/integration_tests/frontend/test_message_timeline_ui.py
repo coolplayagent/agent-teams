@@ -122,66 +122,6 @@ console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
     assert parts[0]["id"] != parts[2]["id"]
 
 
-def test_message_timeline_removes_superseded_pending_tool_before_injection() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    runner = """
-import {
-  applyRunEventToTimeline,
-} from './frontend/dist/js/components/messageTimeline/actions.js';
-import {
-  clearTimelineState,
-  getRunTimelineSnapshot,
-} from './frontend/dist/js/components/messageTimeline/store.js';
-
-clearTimelineState();
-
-applyRunEventToTimeline(
-  'tool_call',
-  { tool_name: 'shell', tool_call_id: 'call-old', args: { command: 'pwd' } },
-  { run_id: 'run-1', event_id: 'evt-1' },
-);
-applyRunEventToTimeline(
-  'injection_applied',
-  {
-    injection_id: 'inj-1',
-    content: '改成 ls',
-    source: 'user',
-    status: 'applied',
-    supersedes_pending_tool_calls: true,
-  },
-  { run_id: 'run-1', event_id: 'evt-2' },
-);
-applyRunEventToTimeline(
-  'tool_call',
-  { tool_name: 'shell', tool_call_id: 'call-new', args: { command: 'ls' } },
-  { run_id: 'run-1', event_id: 'evt-3' },
-);
-applyRunEventToTimeline(
-  'tool_result',
-  { tool_name: 'shell', tool_call_id: 'call-new', result: { ok: true } },
-  { run_id: 'run-1', event_id: 'evt-4' },
-);
-
-console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
-""".strip()
-
-    completed = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        timeout=10,
-    )
-
-    parts = json.loads(completed.stdout)
-    assert [part["kind"] for part in parts] == ["injection", "tool"]
-    assert parts[0]["content"] == "改成 ls"
-    assert parts[1]["tool_call_id"] == "call-new"
-    assert parts[1]["status"] == "completed"
-
-
 def test_message_timeline_keeps_completed_tool_status_when_call_arrives_late() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     runner = """

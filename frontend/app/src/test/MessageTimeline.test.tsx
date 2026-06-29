@@ -1492,6 +1492,63 @@ describe("MessageTimeline", () => {
     expect(rowTexts[2]).toContain("Switching the search target to OpenAI.");
   });
 
+  it("removes superseded pending runtime tool calls before rendering the injected replacement", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "pwd" },
+          tool_call_id: "call-old",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "injection_applied",
+        payload_json: JSON.stringify({
+          content: "Use ls instead",
+          injection_id: "inj-1",
+          source: "user",
+          status: "applied",
+          supersedes_pending_tool_calls: true,
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "ls" },
+          tool_call_id: "call-new",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: { ok: true, output: "done" },
+          tool_call_id: "call-new",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(
+      await screen.findByText("Injection applied: Use ls instead · source user"),
+    ).toBeVisible();
+    expect(screen.getAllByText("Tool call: shell")).toHaveLength(1);
+    expect(screen.getByText("Tool result: shell")).toBeVisible();
+    const previews = toolPreviewTexts(container);
+    expect(previews).not.toContain("pwd");
+    expect(previews).toContain("ls");
+    expect(previews).toContain("done");
+    expect(screen.queryByText("pwd")).not.toBeInTheDocument();
+  });
+
   it("splits runtime text segments around approval and thinking events", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({

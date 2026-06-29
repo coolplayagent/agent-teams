@@ -700,6 +700,7 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
   const activeText = new Map<string, RuntimeTextAccumulator>();
+  const resolvedToolCallIds = new Set<string>();
   let textSegmentSequence = 0;
   const nextTextSegmentSequence = () => {
     const sequence = textSegmentSequence;
@@ -707,6 +708,7 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
     return sequence;
   };
   for (const entry of entries) {
+    rememberResolvedRuntimeToolCall(entry, resolvedToolCallIds);
     if (entry.kind === "text_delta") {
       if (
         applyRuntimeTextDeltaEvent(
@@ -748,9 +750,80 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
       closeActiveThinkingForRun(entry.runId, activeThinking);
     }
     closeRuntimeTextSegment(entry, activeText);
+    if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
+      removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
+    }
     rows.push(runtimeEntryToRow(entry));
   }
   return rows;
+}
+
+function rememberResolvedRuntimeToolCall(
+  entry: TimelineEntry,
+  resolvedToolCallIds: Set<string>,
+): void {
+  if (
+    entry.kind !== "tool_result" &&
+    entry.kind !== "tool_input_validation_failed"
+  ) {
+    return;
+  }
+  const callId = runtimeEntryToolCallId(entry);
+  if (callId.length > 0) {
+    resolvedToolCallIds.add(runtimeToolCallKey(entry.runId, callId));
+  }
+}
+
+function runtimeInjectionSupersedesPendingToolCalls(entry: TimelineEntry): boolean {
+  if (entry.kind !== "injection_applied") {
+    return false;
+  }
+  const payload = jsonObject(entry.payload);
+  return payload?.supersedes_pending_tool_calls === true;
+}
+
+function removeSupersededPendingToolRows(
+  rows: TimelineRow[],
+  entry: TimelineEntry,
+  resolvedToolCallIds: Set<string>,
+): void {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (
+      row === undefined ||
+      row.runId !== entry.runId ||
+      !timelineRowIsPendingToolCall(row, resolvedToolCallIds)
+    ) {
+      continue;
+    }
+    rows.splice(index, 1);
+  }
+}
+
+function timelineRowIsPendingToolCall(
+  row: TimelineRow,
+  resolvedToolCallIds: Set<string>,
+): boolean {
+  const tool = row.parts.find(
+    (part): part is TimelineToolPart =>
+      part.kind === "tool" && part.phase === "call",
+  );
+  if (tool === undefined || row.runId === null) {
+    return false;
+  }
+  return (
+    tool.callId.length === 0 ||
+    !resolvedToolCallIds.has(runtimeToolCallKey(row.runId, tool.callId))
+  );
+}
+
+function runtimeEntryToolCallId(entry: TimelineEntry): string {
+  const payload = jsonObject(entry.payload);
+  return payload === null ? "" : objectString(payload, "tool_call_id");
+}
+
+function runtimeToolCallKey(runId: string, callId: string): string {
+  return `${runId}:${callId}`;
 }
 
 function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {

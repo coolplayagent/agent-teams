@@ -152,6 +152,8 @@ function terminalStatusForEvent(eventType: RunEventType | null): string | null {
       return "completed";
     case "run_failed":
       return "failed";
+    case "run_paused":
+      return "paused";
     case "run_stopped":
       return "stopped";
     default:
@@ -194,6 +196,7 @@ function isTerminalRunStatus(status: string | undefined): boolean {
     case "canceled":
     case "completed":
     case "failed":
+    case "paused":
     case "stopped":
       return true;
     default:
@@ -209,7 +212,12 @@ function subagentBadgeClassName(subagent: ActiveSubagentSession): string {
   if (status === "failed" || status === "error") {
     return "at-subagent-session-badge is-failed";
   }
-  if (status === "stopped" || status === "cancelled" || status === "canceled") {
+  if (
+    status === "paused" ||
+    status === "stopped" ||
+    status === "cancelled" ||
+    status === "canceled"
+  ) {
     return "at-subagent-session-badge is-stopped";
   }
   return "at-subagent-session-badge";

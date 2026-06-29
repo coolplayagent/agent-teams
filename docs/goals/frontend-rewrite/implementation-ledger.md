@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Paused Subagent Terminal State Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the Run Recovery / AG-UI Runtime Stream / Subagents parity checklist before editing, with this slice focused on paused and stopped subagent terminal state handling.
+- Fixed a V2 subagent session gap: `SubagentSessionView` now maps runtime `run_paused` to a visible `paused` status, treats backend `paused` subagent run status as terminal for stream-start decisions, and uses the existing stopped/subdued badge styling for paused terminal state.
+- Strengthened `SubagentSessionView.test.tsx` so paused and stopped subagent sessions do not start a new run stream, and runtime completed/paused/stopped terminal events all override stale running badges without reopening streams.
+- Strengthened the Composer stop-run regression so stopping an active run clears the cached recovery active run before invalidating sidebar/recovery data and suppressing stale stream targets.
+- Deleted the old V1 `requestStopCurrentRun` Python harness from `tests/integration_tests/frontend/test_subagent_streams_ui.py`; that file now has 6 remaining old Python UI harness tests.
+- Kept `frontend/dist/app` unchanged in this slice because the production change is in the V2 React source and no served-bundle verification is claimed here.
+
+### Verification
+- `npm run test -- src/test/SubagentSessionView.test.tsx` passed with 8 subagent session tests.
+- `npm run test -- src/test/Composer.test.tsx -t "stops an active run"` passed the focused Composer stop-run regression.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_streams_ui.py` passed after deleting the old Python harness.
+- `rg -n "def test_" tests\integration_tests\frontend\test_subagent_streams_ui.py` shows 6 remaining old Python UI harness tests in that file.
+
+### Reviewer
+- Main-agent V2 paused/stopped subagent terminal state fix, focused regression coverage, and one old Python UI harness retirement completed for this slice. This does not claim full Subagents subsystem PASS, AG-UI Runtime Stream PASS, Run Recovery PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Recovery Stream Source Assertion Migration
 
 ### Scope

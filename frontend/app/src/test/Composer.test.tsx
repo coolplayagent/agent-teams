@@ -24,7 +24,7 @@ import {
   fetchSpeechConfig,
 } from "../api/speech";
 import { Composer } from "../features/composer/Composer";
-import type { SessionRecord } from "../api/contracts";
+import type { RecoverySnapshot, SessionRecord } from "../api/contracts";
 import { useUiStore } from "../runtime/uiStore";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
@@ -1847,6 +1847,22 @@ describe("Composer", () => {
     const controller = runStreamController("run-1");
     const queryClient = renderComposer(controller);
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const recoveryQueryKey = ["sessions", "session-1", "recovery"];
+    queryClient.setQueryData<RecoverySnapshot>(recoveryQueryKey, {
+      active_run: {
+        run_id: "run-1",
+        session_id: "session-1",
+        status: "running",
+        phase: "running",
+        last_event_id: 41,
+        should_show_recover: false,
+      },
+      background_tasks: [],
+      paused_subagent: null,
+      pending_tool_approvals: [],
+      pending_user_questions: [],
+      round_snapshot: null,
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
@@ -1856,6 +1872,11 @@ describe("Composer", () => {
     });
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
+    });
+    expect(queryClient.getQueryData<RecoverySnapshot>(recoveryQueryKey)?.active_run)
+      .toBeNull();
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: recoveryQueryKey,
     });
   });
 

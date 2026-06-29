@@ -5135,3 +5135,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Read-only reviewer `019f1250-3460-7d00-a68c-a4d96491ace7` returned FAIL. Blocking findings: Observability trends are not rendered in the TS panel, Spec lineage is embedded but lacks the V1 task-addressable/back/reload entry path, and message export downloads work but do not preserve the V1 multi-round selection and export structure. These findings are not resolved by this cleanup commit.
+
+## 2026-06-29 Observability Trends Restore
+
+### Scope
+- Re-checked the reviewer FAIL findings, V1 Observability implementation, TS API contract, current TS Observability panel, styles, and browser coverage before editing. This slice addresses the first blocking reviewer finding: V1-equivalent Observability trends were missing from the TS panel even though `/observability/overview` still exposes `trends`.
+- Added `ObservabilityTrends.tsx` as a focused component so the main Observability panel does not absorb another large view concern. It parses trend buckets from the existing contract and renders Steps, Input tokens, Output tokens, and Tool calls as compact data-driven trend cards inside the existing Observability surface.
+- Added loading, empty, and error trend states using existing Ant Design primitives and current shell colors, without adding a new chart dependency or changing sidebar/settings information architecture.
+- Added English and Chinese strings for the new trend labels and states, plus local CSS for the trend cards and bars.
+- Rebuilt `frontend/dist/app` from the source changes so the served app and browser evidence match the implementation.
+- This resolves only the Observability trends gap from reviewer `019f1250-3460-7d00-a68c-a4d96491ace7`. The reviewer findings for task-addressable Spec lineage and V1-style multi-round export remain open.
+
+### Verification
+- `npm run build` passed, including frontend typecheck, desktop typecheck, desktop build, and Vite dist rebuild.
+- `npm run lint` passed after the component split.
+- `npm run test:browser -- browser-tests/v2-observability.spec.ts` passed with 2 tests covering populated trends, session/global scope switching, empty trend buckets, trend error state, Spec lineage, and fixed-shell behavior.
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts -g "keeps V1 primary sidebar entries"` passed.
+- `git diff --check` passed.
+- Inspected `.tmp/frontend-v2-ts-observability/v2-observability-trends.png`; it shows populated trend cards in the fixed shell without document-level page growth.
+- Inspected `.tmp/frontend-v2-ts-observability/v2-observability-trends-empty.png`; it shows the empty trend state inside the Observability view.
+- Inspected `.tmp/frontend-v2-ts-observability/v2-observability-trends-error.png`; it shows the metrics and trend error states inside the same fixed shell.
+
+### Reviewer
+- Main-agent implementation, build, targeted browser coverage, screenshot inspection, and diff check completed for this P1 slice. No Observability subsystem sign-off, Spec lineage sign-off, Export sign-off, final release cleanup sign-off, or V2 frontend completion is claimed.

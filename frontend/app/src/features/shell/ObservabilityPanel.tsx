@@ -10,6 +10,7 @@ import {
 import type { JsonValue } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { SpecLineagePanel } from "./SpecLineagePanel";
+import { ObservabilityTrends } from "./ObservabilityTrends";
 
 interface ObservabilityPanelProps {
   sessionId: string | null;
@@ -72,6 +73,12 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
           {stat(t("observabilityAvgToolMs"), kpis.tool_avg_duration_ms)}
         </Space>
       )}
+      <ObservabilityTrends
+        isError={overviewQuery.isError}
+        isLoading={overviewQuery.isLoading}
+        t={t}
+        trendValues={overviewQuery.data?.trends}
+      />
       <Table
         className="at-breakdown-table"
         columns={[

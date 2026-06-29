@@ -1739,6 +1739,83 @@ body {
   margin: 0 !important;
 }
 
+.at-observability-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.at-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.at-trend-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+}
+
+.at-trend-card-header,
+.at-trend-card-footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.at-trend-card-header span,
+.at-trend-card-footer span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-trend-card-header span {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-trend-card-header strong {
+  color: var(--at-text);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.at-trend-bars {
+  display: flex;
+  align-items: end;
+  gap: 5px;
+  height: 72px;
+  padding-top: 8px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-trend-bar {
+  flex: 1 1 0;
+  min-width: 4px;
+  max-width: 28px;
+  min-height: 2px;
+  border: 1px solid color-mix(in srgb, var(--at-primary) 56%, var(--at-border));
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--at-primary) 72%, var(--at-surface));
+}
+
+.at-trend-card-footer {
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
 .at-spec-lineage {
   display: grid;
   gap: 12px;

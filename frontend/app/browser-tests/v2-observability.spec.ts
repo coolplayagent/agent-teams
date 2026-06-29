@@ -50,6 +50,17 @@ test("opens observability from the top bar and renders spec lineage", async ({
       }),
     ).toBeVisible();
     await expect(observability.getByText("Agent loop")).toBeVisible();
+    const trends = observability.locator(
+      '[data-observability-section="trends"]',
+    );
+    await expect(trends.getByRole("heading", { name: "Trends" })).toBeVisible();
+    await expect(trends).toContainText("4 buckets");
+    await expect(
+      trends.locator('[data-observability-trend="input_tokens"]'),
+    ).toContainText("Input tokens");
+    await expect(
+      trends.locator('[data-observability-trend="tool_calls"]'),
+    ).toContainText("Tool calls");
 
     await observability.getByText("Session", { exact: true }).click();
     await expect(
@@ -58,6 +69,7 @@ test("opens observability from the top bar and renders spec lineage", async ({
       }),
     ).toBeVisible();
     await expect(observability.getByText("Session tools")).toBeVisible();
+    await expect(trends).toContainText("2 buckets");
 
     await observability.getByText("Global", { exact: true }).click();
     const gatewaySignals = observability.locator(
@@ -131,6 +143,11 @@ test("opens observability from the top bar and renders spec lineage", async ({
     await page.screenshot({
       path: screenshotPath("v2-observability-session.png", SCREENSHOT_FOLDER),
     });
+    await trends.scrollIntoViewIfNeeded();
+    await page.mouse.move(320, 260);
+    await page.screenshot({
+      path: screenshotPath("v2-observability-trends.png", SCREENSHOT_FOLDER),
+    });
     await gatewaySignals.scrollIntoViewIfNeeded();
     await page.mouse.move(320, 340);
     await page.screenshot({
@@ -141,6 +158,90 @@ test("opens observability from the top bar and renders spec lineage", async ({
     await page.screenshot({
       path: screenshotPath("v2-observability-spec-lineage.png", SCREENSHOT_FOLDER),
     });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("renders observability trend empty and error states", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  let failSessionOverview = false;
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        if (context.method !== "GET") {
+          return false;
+        }
+        if (context.path === "/observability/overview") {
+          const scope = context.url.searchParams.get("scope") ?? "global";
+          if (scope === "session" && failSessionOverview) {
+            await context.fulfillJson({ detail: "metrics unavailable" }, 500);
+            return true;
+          }
+          await context.fulfillJson({
+            kpis: {
+              steps: scope === "session" ? 2 : 1,
+            },
+            scope,
+            scope_id: context.url.searchParams.get("scope_id") ?? undefined,
+            trends: [],
+            updated_at: "2026-06-25T08:45:00Z",
+          });
+          return true;
+        }
+        if (context.path === "/observability/breakdowns") {
+          await context.fulfillJson({
+            rows: [],
+            updated_at: "2026-06-25T08:45:00Z",
+          });
+          return true;
+        }
+        return false;
+      },
+      sessionTitle: "TS observability states",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("banner")
+      .getByRole("button", { name: "Observability" })
+      .click();
+
+    const observability = page.locator(".at-surface-view").filter({
+      hasText: "Observability",
+    });
+    const trends = observability.locator(
+      '[data-observability-section="trends"]',
+    );
+    await expect(trends.getByRole("heading", { name: "Trends" })).toBeVisible();
+    await expect(trends).toContainText("No trend buckets in this window");
+    await trends.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-observability-trends-empty.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    failSessionOverview = true;
+    await observability.getByText("Session", { exact: true }).click();
+    await expect(observability).toContainText("Could not load observability metrics");
+    await expect(trends).toContainText("Could not load observability trends");
+    await expectNoDocumentScroll(
+      page,
+      "observability trend states should stay inside the fixed shell",
+    );
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-observability-trends-error.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     await appServer.close();
   }
@@ -226,6 +327,22 @@ function observabilityOverviewResponse(
       },
       scope: "session",
       scope_id: searchParams.get("scope_id") ?? "",
+      trends: [
+        {
+          bucket_start: "2026-06-25T07:00:00Z",
+          input_tokens: 640,
+          output_tokens: 128,
+          steps: 1,
+          tool_calls: 1,
+        },
+        {
+          bucket_start: "2026-06-25T08:00:00Z",
+          input_tokens: 1408,
+          output_tokens: 384,
+          steps: 2,
+          tool_calls: 1,
+        },
+      ],
       updated_at: "2026-06-25T08:31:00Z",
     };
   }
@@ -242,6 +359,36 @@ function observabilityOverviewResponse(
       tool_success_rate: 0.9,
     },
     scope: "global",
+    trends: [
+      {
+        bucket_start: "2026-06-25T05:00:00Z",
+        input_tokens: 21000,
+        output_tokens: 110,
+        steps: 1,
+        tool_calls: 1,
+      },
+      {
+        bucket_start: "2026-06-25T06:00:00Z",
+        input_tokens: 28000,
+        output_tokens: 170,
+        steps: 2,
+        tool_calls: 1,
+      },
+      {
+        bucket_start: "2026-06-25T07:00:00Z",
+        input_tokens: 32000,
+        output_tokens: 250,
+        steps: 4,
+        tool_calls: 2,
+      },
+      {
+        bucket_start: "2026-06-25T08:00:00Z",
+        input_tokens: 31000,
+        output_tokens: 260,
+        steps: 5,
+        tool_calls: 3,
+      },
+    ],
     updated_at: "2026-06-25T08:30:00Z",
   };
 }

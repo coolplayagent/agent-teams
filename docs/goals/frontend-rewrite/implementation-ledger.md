@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Same-Name Tool Call TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining frontend Python UI harnesses, and the streaming/tool V1 harness before editing.
+- Migrated the V1 `test_pending_tool_block_name_fallback_does_not_merge_parallel_calls` behavior to V2 `MessageTimeline` component coverage: two live `tool_call` events with the same `tool_name` and no `tool_call_id` now render as two separate tool blocks with separate previews.
+- Kept the production runtime behavior unchanged because V2 already merges completed tool calls only by `tool_call_id`, not by tool name fallback.
+- Removed the replaced V1 Python UI harness function from `tests/integration_tests/frontend/test_streaming_tool_ui.py` while leaving the still-unmigrated streaming/tool harness cases in place.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "same-name runtime tool calls|out-of-order parallel runtime tool calls"` passed with the new no-call-id same-name case and the adjacent call-id merge case.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_streaming_tool_ui.py` passed after deleting the migrated Python function.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `rg -n 'test_pending_tool_block_name_fallback_does_not_merge_parallel_calls|same-name runtime tool calls|resolvePendingToolBlock\(pending, "shell", null\)' tests/integration_tests/frontend/test_streaming_tool_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned only the new TS coverage name.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test function removal, and focused regression verification completed for this slice. No full Streaming Tool subsystem PASS, Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Tool Return Media Preview Parity
 
 ### Scope

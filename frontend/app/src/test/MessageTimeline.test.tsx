@@ -2119,6 +2119,38 @@ describe("MessageTimeline", () => {
     );
   });
 
+  it("keeps same-name runtime tool calls separate when call ids are missing", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "pwd" },
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "ls" },
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findAllByText("Tool call: shell")).toHaveLength(2);
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(2);
+    expect(toolPreviewTexts(container)).toEqual(["pwd", "ls"]);
+    const toolDetails = toolPreElements(container);
+    expect(toolDetails).toHaveLength(2);
+    expect(toolDetails[0]).toHaveTextContent(/pwd/);
+    expect(toolDetails[1]).toHaveTextContent(/ls/);
+  });
+
   it("unwraps successful tool return envelopes to the useful output", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

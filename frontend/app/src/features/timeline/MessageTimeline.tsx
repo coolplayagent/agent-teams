@@ -25,6 +25,7 @@ import { RoundRail } from "./RoundRail";
 import { roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
+const LONG_STREAM_TEXT_THRESHOLD = 12000;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 
@@ -315,6 +316,7 @@ type TimelineRenderPart =
 
 interface TimelineTextPart {
   kind: "text";
+  streaming: boolean;
   text: string;
 }
 
@@ -1195,10 +1197,7 @@ function createRuntimeTextAccumulator(
   text: string,
   sequence: number,
 ): RuntimeTextAccumulator {
-  const part: TimelineTextPart = {
-    kind: "text",
-    text,
-  };
+  const part = timelineTextPart(text, true);
   return {
     part,
     row: {
@@ -1219,7 +1218,20 @@ function closeRuntimeTextSegment(
   entry: TimelineEntry,
   activeText: Map<string, RuntimeTextAccumulator>,
 ): void {
-  activeText.delete(runtimeTextGroupKey(entry));
+  const groupKey = runtimeTextGroupKey(entry);
+  const existing = activeText.get(groupKey);
+  if (existing !== undefined) {
+    existing.part.streaming = false;
+  }
+  activeText.delete(groupKey);
+}
+
+function timelineTextPart(text: string, streaming = false): TimelineTextPart {
+  return {
+    kind: "text",
+    streaming,
+    text,
+  };
 }
 
 function runtimeTextGroupKey(entry: TimelineEntry): string {
@@ -1249,10 +1261,10 @@ function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
   }
   const structuredText = runtimeStructuredEventText(entry);
   if (structuredText !== null) {
-    return [{ kind: "text", text: structuredText }];
+    return [timelineTextPart(structuredText)];
   }
   const fallbackText = runtimeFallbackText(entry);
-  return fallbackText.trim().length > 0 ? [{ kind: "text", text: fallbackText }] : [];
+  return fallbackText.trim().length > 0 ? [timelineTextPart(fallbackText)] : [];
 }
 
 function runtimeMessageRenderParts(entry: TimelineEntry): TimelineRenderPart[] | null {
@@ -1275,7 +1287,7 @@ function runtimeMessageRenderParts(entry: TimelineEntry): TimelineRenderPart[] |
   if (text.trim().length === 0 || runtimeMessageTextIsProtocolPlaceholder(payload, text)) {
     return [];
   }
-  return [{ kind: "text", text: timelineDisplayText(text) }];
+  return [timelineTextPart(timelineDisplayText(text))];
 }
 
 function runtimeNestedMessageText(payload: Record<string, JsonValue>): string {
@@ -1816,7 +1828,7 @@ function outputDeltaTextPart(
   part: Record<string, JsonValue>,
 ): TimelineTextPart | null {
   const text = objectRawString(part, "text") || objectRawString(part, "content");
-  return text ? { kind: "text", text } : null;
+  return text ? timelineTextPart(text) : null;
 }
 
 function outputDeltaMediaPart(
@@ -1842,7 +1854,7 @@ function MessageRowContent({
       {parts.map((part, index) => {
         if (part.kind === "text") {
           return (
-            <MarkdownMessage key={`text:${index}`} text={part.text} />
+            <MessageText key={`text:${index}`} part={part} />
           );
         }
         if (part.kind === "tool") {
@@ -1861,6 +1873,17 @@ function MessageRowContent({
       })}
     </div>
   );
+}
+
+function MessageText({ part }: { part: TimelineTextPart }) {
+  if (part.streaming && part.text.length >= LONG_STREAM_TEXT_THRESHOLD) {
+    return (
+      <pre className="at-message-plain-stream" data-render-mode="plain-stream">
+        {part.text}
+      </pre>
+    );
+  }
+  return <MarkdownMessage text={part.text} />;
 }
 
 function MessageRowActions({
@@ -1988,14 +2011,14 @@ function MessageMediaPreview({
 
 function messageParts(message: TimelineMessage): TimelineRenderPart[] {
   if (typeof message.content === "string" && message.content.trim()) {
-    return [{ kind: "text", text: timelineDisplayText(message.content) }];
+    return [timelineTextPart(timelineDisplayText(message.content))];
   }
   const parts = messageContentParts(message).flatMap(contentPartToRenderParts);
   if (parts.length > 0) {
     return parts;
   }
   if (typeof message.message?.content === "string" && message.message.content.trim()) {
-    return [{ kind: "text", text: timelineDisplayText(message.message.content) }];
+    return [timelineTextPart(timelineDisplayText(message.message.content))];
   }
   return [];
 }
@@ -2007,7 +2030,7 @@ function messageContentParts(message: TimelineMessage): ContentPart[] {
 function contentPartToRenderParts(part: ContentPart): TimelineRenderPart[] {
   const text = contentPartDisplayText(part);
   if (text !== null && text.trim().length > 0) {
-    return [{ kind: "text", text }];
+    return [timelineTextPart(text)];
   }
   const media = contentPartMedia(part);
   if (media !== null) {

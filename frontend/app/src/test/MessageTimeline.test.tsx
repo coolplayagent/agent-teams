@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listSessionMessages, listSessionRounds } from "../api/client";
 import { MessageTimeline } from "../features/timeline/MessageTimeline";
+import type { StreamStatus } from "../runtime/events";
 import type { TimelineEntry } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 
@@ -1174,6 +1175,66 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
     expect(screen.queryByText("Hel")).not.toBeInTheDocument();
     expect(screen.queryByText("lo")).not.toBeInTheDocument();
+  });
+
+  it("renders long open runtime text streams as one plain text block", async () => {
+    const prefix = "x".repeat(10000);
+    const suffix = "y".repeat(3000);
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: prefix,
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        text: suffix,
+      }),
+    ], "open");
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() =>
+      expect(container.querySelector(".at-message-plain-stream")).not.toBeNull(),
+    );
+    const plainStream = container.querySelector<HTMLElement>(".at-message-plain-stream");
+    expect(plainStream).toHaveAttribute("data-render-mode", "plain-stream");
+    expect(plainStream?.textContent).toHaveLength(13000);
+    expect(plainStream?.textContent).toBe(`${prefix}${suffix}`);
+    expect(container.querySelector(".at-message-markdown")).toBeNull();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("finalizes long runtime text streams back through markdown rendering", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: `# Final stream\n\n${"x".repeat(13000)}`,
+      }),
+      {
+        eventId: 2,
+        id: "run-output:2:1",
+        kind: "run_completed",
+        occurredAt: "2026-06-23T00:00:02Z",
+        payload: { status: "completed" },
+        roleId: "MainAgent",
+        runId: "run-output",
+        sessionId: "session-1",
+        text: "run.completed",
+      },
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Final stream" }),
+    ).toBeVisible();
+    expect(container.querySelector(".at-message-plain-stream")).toBeNull();
+    expect(container.querySelector(".at-message-markdown")).not.toBeNull();
   });
 
   it("does not merge text deltas from distinct runtime instances", async () => {
@@ -2729,7 +2790,10 @@ function deferredSessionRounds(): {
   };
 }
 
-function setRuntimeEntries(entries: TimelineEntry[]): void {
+function setRuntimeEntries(
+  entries: TimelineEntry[],
+  status: StreamStatus = "closed",
+): void {
   const runId = entries[0]?.runId ?? "run-output";
   const lastEventId = entries.reduce(
     (latest, entry) => Math.max(latest, entry.eventId),
@@ -2737,11 +2801,11 @@ function setRuntimeEntries(entries: TimelineEntry[]): void {
   );
   useRuntimeStore.setState({
     runtimeState: {
-      activeRunIds: [],
+      activeRunIds: status === "open" ? [runId] : [],
       runs: {
         [runId]: {
           runId,
-          status: "closed",
+          status,
           lastEventId,
           seenEventKeys: [],
           terminalEventType: null,

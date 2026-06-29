@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Backend Status SDK TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining V1 `test_backend_status_sdk.py` harness before editing.
+- Migrated the V1 initializing/online backend-status hint intent to V2 shell behavior: while health is initializing, the sidebar backend status shows the checking label with `aria-busy="true"`; once health resolves online, it shows the connected label with `aria-busy="false"`.
+- Kept production code unchanged because V2 already derives sidebar backend status from the health query and the real sidebar renders the busy accessibility state.
+- Removed `tests/integration_tests/frontend/test_backend_status_sdk.py` after its user-visible behavior was covered by `AppShell.test.tsx`.
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx` passed all 20 AppShell tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python SDK harness file.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+
+### Reviewer
+- Main-agent V2 shell coverage, old Python SDK harness removal, and focused regression verification completed for this slice. No full backend-status subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Connector Cards TS Migration
 
 ### Scope

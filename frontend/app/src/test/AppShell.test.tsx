@@ -98,7 +98,11 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
         Open workspace view
       </button>
       {backendStatus !== undefined ? (
-        <div data-tone={backendStatus.tone} role="status">
+        <div
+          aria-busy={backendStatus.tone === "checking" ? "true" : "false"}
+          data-tone={backendStatus.tone}
+          role="status"
+        >
           {backendStatus.label}
         </div>
       ) : null}
@@ -442,6 +446,42 @@ describe("AppShell", () => {
     expect(within(sidebar).getByRole("status")).toHaveAttribute(
       "data-tone",
       "online",
+    );
+    expect(within(sidebar).getByRole("status")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  });
+
+  it("keeps the sidebar backend status busy only while health initializes", async () => {
+    let resolveHealth: (value: { status: string }) => void = () => undefined;
+    getHealthMock.mockReturnValue(
+      new Promise<{ status: string }>((resolve) => {
+        resolveHealth = resolve;
+      }),
+    );
+
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    const status = within(sidebar).getByRole("status");
+    expect(status).toHaveTextContent("Checking backend");
+    expect(status).toHaveAttribute("data-tone", "checking");
+    expect(status).toHaveAttribute("aria-busy", "true");
+
+    resolveHealth({ status: "ok" });
+    await waitFor(() =>
+      expect(within(sidebar).getByRole("status")).toHaveTextContent(
+        "Backend connected",
+      ),
+    );
+    expect(within(sidebar).getByRole("status")).toHaveAttribute(
+      "data-tone",
+      "online",
+    );
+    expect(within(sidebar).getByRole("status")).toHaveAttribute(
+      "aria-busy",
+      "false",
     );
   });
 

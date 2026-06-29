@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 V1 Sidebar Primary Navigation Alignment
+
+### Scope
+- Re-checked the active frontend rewrite goal, V1/V2 same-viewport screenshots, the Application Shell checklist, and current V2 shell implementation before editing. This slice targets a visible framework-level parity gap rather than only message-row details.
+- Captured same-viewport V1 and V2 evidence under `.tmp/frontend-layout-audit/`: both versions keep the document fixed to one viewport, but V2 had extra primary sidebar entries (`Chat`, `Observability`, `Settings`) and a non-V1 order.
+- Updated V2 primary sidebar navigation to match V1's entry set and order: Search, Skills, Automation, Connectors, Board, Memory. Chat remains the default workspace surface, while Observability and Settings remain reachable from the top bar instead of duplicated in the sidebar.
+- Updated component and browser parity coverage so the incorrect sidebar item set is no longer described as V1-aligned.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle reflects the navigation fix.
+- Kept Settings section and secondary-page structure unchanged; no Settings tabs, sidebar workspace actions, or module pages were added or removed.
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx -t "primary sidebar|primary sidebar navigation|shell navigation labels|top bar shortcuts|topbar actions"` passed with 6 focused AppShell tests.
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts -g "keeps V1 primary sidebar entries"` passed with the updated TS browser parity flow.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- In-app browser reload of `http://127.0.0.1:8000/app/` confirmed sidebar labels `["搜索","技能","自动化","连接器","看板","记忆"]`, no Chat/Observability/Settings primary sidebar entries, and no document-level scroll.
+
+### Reviewer
+- Main-agent V1/V2 screenshot comparison, source fix, focused component/browser coverage, static app rebuild, and in-app browser screenshot verification completed for this slice. No full Application Shell subsystem PASS, composer/message/round visual parity sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Round Paging TS Migration
 
 ### Scope

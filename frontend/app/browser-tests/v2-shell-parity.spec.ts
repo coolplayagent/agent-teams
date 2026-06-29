@@ -41,46 +41,47 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     await expect
       .poll(() => page.locator(".at-sidebar-nav-label").allInnerTexts())
       .toEqual([
-        "Chat",
-        "Automation",
-        "Skills",
-        "Board",
         "Search",
+        "Skills",
+        "Automation",
         "Connectors",
+        "Board",
         "Memory",
-        "Observability",
-        "Settings",
       ]);
 
     const primaryNav = page.getByRole("navigation", {
       name: "Primary navigation",
     });
-    await primaryNav.getByRole("button", { name: "Chat" }).click();
     await expect(page.locator(".at-chat-view")).toBeVisible();
     await expect(page.locator(".at-composer")).toBeVisible();
+    await expect(primaryNav.getByRole("button", { name: "Chat" })).toHaveCount(0);
+    await expect(primaryNav.getByRole("button", { name: "Observability" }))
+      .toHaveCount(0);
+    await expect(primaryNav.getByRole("button", { name: "Settings" }))
+      .toHaveCount(0);
 
-    await primaryNav.getByRole("button", { name: "Automation" }).click();
-    await expect(page.getByRole("button", { name: "Daily triage" })).toBeVisible();
-    await expect(page.getByText("Keep the shell parity ledger current."))
-      .toBeVisible();
+    await primaryNav.getByRole("button", { name: "Search" }).click();
+    await expect(page.getByTestId("session-search-view")).toBeVisible();
 
     await primaryNav.getByRole("button", { name: "Skills" }).click();
     await expect(page.getByTestId("skills-view")).toBeVisible();
     await expect(page.getByRole("button", { name: "Open skill Writer" }))
       .toBeVisible();
 
-    await primaryNav.getByRole("button", { name: "Board" }).click();
-    await expect(page.getByTestId("board-todo-todo-v2-shell")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Keep module pages reachable" }))
+    await primaryNav.getByRole("button", { name: "Automation" }).click();
+    await expect(page.getByRole("button", { name: "Daily triage" })).toBeVisible();
+    await expect(page.getByText("Keep the shell parity ledger current."))
       .toBeVisible();
-
-    await primaryNav.getByRole("button", { name: "Search" }).click();
-    await expect(page.getByTestId("session-search-view")).toBeVisible();
 
     await primaryNav.getByRole("button", { name: "Connectors" }).click();
     await expect(page.getByTestId("connectors-view")).toBeVisible();
     await expect(page.getByTestId("connector-card-github")).toBeVisible();
     await expect(page.getByTestId("runtime-tool-card-rg")).toBeVisible();
+
+    await primaryNav.getByRole("button", { name: "Board" }).click();
+    await expect(page.getByTestId("board-todo-todo-v2-shell")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Keep module pages reachable" }))
+      .toBeVisible();
 
     await primaryNav.getByRole("button", { name: "Memory" }).click();
     await expect(page.getByTestId("memory-view")).toBeVisible();
@@ -88,12 +89,14 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     await expect(page.getByRole("heading", { name: "Shell module parity" }))
       .toBeVisible();
 
-    await primaryNav.getByRole("button", { name: "Observability" }).click();
+    await page.locator(".at-topbar").getByRole("button", { name: "Observability" })
+      .click();
     await expect(page.getByRole("heading", { name: "Observability" }))
       .toBeVisible();
     await expect(page.getByText("Metrics for the last 24 hours")).toBeVisible();
 
-    await primaryNav.getByRole("button", { name: "Settings" }).click();
+    await page.locator(".at-topbar").getByRole("button", { name: "Settings" })
+      .click();
     const settings = page.getByRole("dialog", { name: "Settings" });
     await expect(settings).toBeVisible();
     await expectSettingsDialogSettled(settings);

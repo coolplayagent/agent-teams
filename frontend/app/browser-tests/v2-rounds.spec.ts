@@ -15,6 +15,7 @@ import {
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-rounds";
 const ROUND_RUN_ID = "run-v2-export";
+const TODO_RUN_ID = "run-v2-todo";
 
 test("opens round rail retry and todo detail", async ({ page }) => {
   const appServer = await serveFrontendDist();
@@ -50,7 +51,7 @@ test("opens round rail retry and todo detail", async ({ page }) => {
     await expect(
       detail.getByText("Diagnostic: Waiting for user confirmation"),
     ).toBeVisible();
-    await expect(detail.getByText("Todo")).toBeVisible();
+    await expect(detail.getByText("Todo", { exact: true })).toBeVisible();
     await expect(detail.getByText("2 items")).toBeVisible();
     await expect(detail.getByText("Confirm deploy window")).toBeVisible();
     await expect(detail.getByText("Capture approval result")).toBeVisible();
@@ -64,6 +65,70 @@ test("opens round rail retry and todo detail", async ({ page }) => {
     );
     await page.screenshot({
       path: screenshotPath("v2-round-rail-detail.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("keeps todo details scoped to the round rail", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: handleTodoRailApi,
+      sessionTitle: "TS round todos",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const roundRail = page.getByRole("navigation", { name: "Rounds" });
+    await expect(roundRail).toBeVisible();
+    const roundButton = page.getByRole("button", {
+      name: "Go to round 1: Maintain run todo state",
+    });
+    await expect(roundButton).toBeVisible();
+    await expect(roundButton).toHaveAttribute("aria-current", "step");
+    await expect(roundRail.locator(".at-round-rail-dot")).toHaveCount(1);
+    await expect(
+      roundRail.locator(".idx, .round-nav-resizer, .round-nav-dot"),
+    ).toHaveCount(0);
+
+    const message = page.locator(".at-message").filter({
+      hasText: "Todo persistence finished",
+    });
+    await expect(message).toBeVisible();
+    await expect(message).not.toContainText("Inspect issue 399 requirements");
+    await expect(message).not.toContainText("Implement run todo persistence");
+    await expect(page.locator(".round-todo-card")).toHaveCount(0);
+    await expect(page.locator(".session-round-section .round-nav-todo"))
+      .toHaveCount(0);
+
+    await roundButton.hover();
+    const detail = page.getByLabel("Round detail");
+    await expect(detail).toBeVisible();
+    await expect(detail.getByText("Todo", { exact: true })).toBeVisible();
+    await expect(detail.getByText("3 items")).toBeVisible();
+    await expect(detail.getByText("Inspect issue 399 requirements")).toBeVisible();
+    await expect(detail.getByText("Implement run todo persistence")).toBeVisible();
+    await expect(detail.getByText("Verify browser rendering")).toBeVisible();
+    await expect(
+      detail
+        .locator("li")
+        .filter({ hasText: "Inspect issue 399 requirements" })
+        .locator("span"),
+    ).toHaveAttribute("title", "Inspect issue 399 requirements");
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "round todo detail should stay inside the fixed V2 shell",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-round-todo-detail.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -90,6 +155,24 @@ async function handleRoundsApi(
   return false;
 }
 
+async function handleTodoRailApi(
+  context: MockApiRouteContext,
+): Promise<boolean> {
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/rounds`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: [todoRailRound()],
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
+    await context.fulfillJson([todoRailMessage()]);
+    return true;
+  }
+  return false;
+}
+
 function roundRailMessage(): Record<string, unknown> {
   return {
     created_at: "2026-06-25T08:00:02Z",
@@ -107,6 +190,23 @@ function roundRailMessage(): Record<string, unknown> {
   };
 }
 
+function todoRailMessage(): Record<string, unknown> {
+  return {
+    created_at: "2026-06-25T08:15:02Z",
+    message: {
+      parts: [
+        {
+          content: "Todo persistence finished",
+          part_kind: "text",
+        },
+      ],
+    },
+    message_id: "message-round-todo-output",
+    role_id: "MainAgent",
+    run_id: TODO_RUN_ID,
+  };
+}
+
 async function expectDarkComposerPrompt(page: Page): Promise<void> {
   await expect
     .poll(() =>
@@ -115,6 +215,54 @@ async function expectDarkComposerPrompt(page: Page): Promise<void> {
         .evaluate((element) => window.getComputedStyle(element).backgroundColor),
     )
     .not.toBe("rgb(255, 255, 255)");
+}
+
+function todoRailRound(): Record<string, unknown> {
+  return {
+    coordinator_messages: [
+      {
+        created_at: "2026-06-25T08:15:02Z",
+        message: {
+          parts: [
+            {
+              content: "Todo persistence finished",
+              part_kind: "text",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+      },
+    ],
+    created_at: "2026-06-25T08:15:01Z",
+    has_final_output: true,
+    intent: "Maintain run todo state",
+    intent_parts: [{ kind: "text", text: "Maintain run todo state" }],
+    run_id: TODO_RUN_ID,
+    run_phase: "completed",
+    run_status: "completed",
+    run_user_message: "Maintain run todo state",
+    todo: {
+      items: [
+        {
+          content: "Inspect issue 399 requirements",
+          status: "completed",
+        },
+        {
+          content: "Implement run todo persistence",
+          status: "in_progress",
+        },
+        {
+          content: "Verify browser rendering",
+          status: "pending",
+        },
+      ],
+      run_id: TODO_RUN_ID,
+      session_id: SESSION_ID,
+      updated_at: "2026-06-25T08:15:03Z",
+      version: 2,
+    },
+    verification_status: "verified",
+  };
 }
 
 function roundRailRound(): Record<string, unknown> {

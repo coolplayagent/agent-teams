@@ -4597,3 +4597,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck/build, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Run Recovery subsystem sign-off, browser-suite migration sign-off, Application Shell sign-off, Settings sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Round Todo Detail Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, current worktree, and the remaining `test_browser_smoke.py` browser-test surface before editing. This slice targets Rounds, Todos, History, And Retry parity while continuing the Python UI browser migration.
+- Extended `frontend/app/browser-tests/v2-rounds.spec.ts` with deterministic TS browser coverage for active round rail todo detail behavior: the round remains the active step, the rail renders a single dot without legacy index/resizer artifacts, todo details open from the rail, and todo item text/title metadata stays scoped to the round detail instead of being flattened into message cards.
+- Removed the replaced `test_browser_round_timeline_renders_todo_detail` Python browser scenario from `tests/integration_tests/browser/test_browser_smoke.py`.
+- Kept this as targeted Rounds/Todos browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 17 legacy scenarios in `test_browser_smoke.py`, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-rounds.spec.ts` passed with 2 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "test_browser_round_timeline_renders_todo_detail|todo-validation|sync_playwright|playwright\.sync_api" tests/integration_tests/browser frontend/app/browser-tests -g "*.py" -g "*.ts"` confirms the migrated todo scenario is gone and only `test_browser_smoke.py` remains as the legacy Python Playwright UI file.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip" tests/integration_tests/browser/test_browser_smoke.py` reports 17 remaining legacy Python browser scenarios.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Rounds/Todos subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

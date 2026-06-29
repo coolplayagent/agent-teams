@@ -125,6 +125,67 @@ describe("useRunStreamController", () => {
     });
   });
 
+  it("releases foreground stream state when a run pauses", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1");
+
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    act(() => {
+      options.onState(runtimeStateWithPausedRun(12));
+    });
+
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1");
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]).toMatchObject({
+      lastEventId: 12,
+      status: "closed",
+      terminalEventType: "run_paused",
+    });
+
+    act(() => {
+      options.onClosed?.(runtimeStateWithPausedRun(12));
+    });
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["sessions", "session-1", "messages"],
+      }),
+    );
+    expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
+    expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(streamMocks.handles[0]?.close).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "recovery"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "token-usage"],
+    });
+  });
+
   it("suppresses stale recovery targets after terminal stream closure", () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -1032,6 +1093,22 @@ function runtimeStateWithClosedRun(lastEventId: number): RuntimeState {
         seenEventKeys: [`run-1:${lastEventId}`],
         status: "closed",
         terminalEventType: "run_completed",
+      },
+    },
+  };
+}
+
+function runtimeStateWithPausedRun(lastEventId: number): RuntimeState {
+  return {
+    activeRunIds: [],
+    runs: {
+      "run-1": {
+        entries: [],
+        lastEventId,
+        runId: "run-1",
+        seenEventKeys: [`run-1:${lastEventId}`],
+        status: "closed",
+        terminalEventType: "run_paused",
       },
     },
   };

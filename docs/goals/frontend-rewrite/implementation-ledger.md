@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Paused Run Foreground Stream TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the AG-UI Runtime Stream / Subagents parity checklist before editing, with this slice focused on paused-run stream lifecycle rather than broader visual details.
+- Migrated the V2-relevant assertion from `tests/integration_tests/frontend/test_subagent_streams_ui.py::test_active_multiplex_stream_releases_ui_on_run_paused` into `RunStreamController.test.tsx`.
+- Added V2 coverage proving a `run_paused` terminal runtime state releases foreground active stream state, preserves the tracked run until stream closure, stores `terminalEventType: "run_paused"`, then suppresses stale recovery targets, closes the stream handle, and refreshes messages, recovery, sidebar, and token usage on closure.
+- Deleted the old V1 `frontend/dist/js/core/stream.js` paused-run Python harness so this lifecycle is now asserted against the React runtime controller layer.
+- Kept production code and `frontend/dist/app` unchanged in this slice because the current V2 controller already satisfies the migrated paused-run lifecycle semantics.
+
+### Verification
+- `npm run test -- src/test/RunStreamController.test.tsx` passed with 22 controller tests, including the new paused-run lifecycle case.
+- `npm run test -- src/test/runtimeReducers.test.ts -t paused` passed the adjacent reducer replay/resume check.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_streams_ui.py` passed after deleting the old Python harness.
+- `npm run lint` passed after aligning the new test with the real `RunStreamOptions.onClosed(state)` callback shape.
+- `rg -n "active_multiplex_stream_releases_ui_on_run_paused|runner_paused_terminal|run-paused" tests frontend\app\src\test docs\goals\frontend-rewrite\implementation-ledger.md` confirms the retired harness name now appears only as ledger history, while unrelated backend paused-run tests remain intact.
+
+### Reviewer
+- Main-agent paused-run foreground stream migration and old Python UI harness reduction completed for this slice. This does not claim full AG-UI Runtime Stream PASS, replay/continuation PASS, Subagents subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Settings Navigation Label Parity
 
 ### Scope

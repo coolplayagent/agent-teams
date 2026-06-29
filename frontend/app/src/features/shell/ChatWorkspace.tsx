@@ -10,12 +10,14 @@ interface ChatWorkspaceProps {
   primaryRoleId: string | null;
   runStreamController: RunStreamController;
   sessionId: string | null;
+  workspaceId?: string | null;
 }
 
 export function ChatWorkspace({
   primaryRoleId,
   runStreamController,
   sessionId,
+  workspaceId,
 }: ChatWorkspaceProps) {
   const previousSessionIdRef = useRef(sessionId);
 
@@ -33,7 +35,7 @@ export function ChatWorkspace({
         runStreamController={runStreamController}
         sessionId={sessionId}
       />
-      <MessageTimeline sessionId={sessionId} />
+      <MessageTimeline sessionId={sessionId} workspaceId={workspaceId ?? null} />
       <SessionTokenUsage
         primaryRoleId={primaryRoleId}
         sessionId={sessionId}

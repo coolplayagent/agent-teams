@@ -21,6 +21,10 @@ import {
 import { useRuntimeStore } from "../runtime/runtimeStore";
 
 vi.mock("../api/client", () => ({
+  buildWorkspaceImagePreviewUrl: vi.fn((workspaceId: string, path: string) => {
+    const params = new URLSearchParams({ path });
+    return `/api/workspaces/${encodeURIComponent(workspaceId)}/preview-file?${params.toString()}`;
+  }),
   listSessionMessages: vi.fn(),
   listSessionRounds: vi.fn(),
 }));
@@ -1411,6 +1415,41 @@ describe("MessageTimeline", () => {
     const image = await screen.findByRole("img", { name: "chart.png" });
     expect(image).toHaveAttribute("src", "https://example.test/chart.png");
     expect(screen.getByText("chart.png")).toBeVisible();
+  });
+
+  it("renders workspace image previews mentioned in persisted text", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "已生成 `ai_briefing.png`（17.7KB）。",
+        message_id: "assistant-workspace-image",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline("session-1", { workspaceId: "workspace-1" });
+
+    expect(await screen.findAllByText(/ai_briefing\.png/)).toHaveLength(2);
+    const image = await screen.findByRole("img", { name: "ai_briefing.png" });
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/workspaces/workspace-1/preview-file?path=ai_briefing.png",
+    );
+  });
+
+  it("does not render workspace image previews without workspace context", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "已生成 `ai_briefing.png`（17.7KB）。",
+        message_id: "assistant-workspace-image",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findAllByText(/ai_briefing\.png/)).toHaveLength(1);
+    expect(screen.queryByRole("img", { name: "ai_briefing.png" }))
+      .not.toBeInTheDocument();
   });
 
   it("renders non-image media references as resource links", async () => {
@@ -4601,6 +4640,7 @@ describe("MessageTimeline", () => {
 
 interface RenderTimelineOptions {
   runtimeRunId?: string | null;
+  workspaceId?: string | null;
 }
 
 function renderTimeline(
@@ -4622,6 +4662,7 @@ function renderTimeline(
           <MessageTimeline
             sessionId={sessionId}
             runtimeRunId={options.runtimeRunId ?? null}
+            workspaceId={options.workspaceId ?? null}
           />
         </AntApp>
       </ConfigProvider>

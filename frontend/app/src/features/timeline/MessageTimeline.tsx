@@ -5,7 +5,11 @@ import { Copy, Wrench } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 
-import { listSessionMessages, listSessionRounds } from "../../api/client";
+import {
+  buildWorkspaceImagePreviewUrl,
+  listSessionMessages,
+  listSessionRounds,
+} from "../../api/client";
 import {
   contentPartText,
   type ContentPart,
@@ -29,6 +33,11 @@ const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
+const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
+const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
+const IMAGE_BARE_PATH_PATTERN =
+  /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
+const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
 
 interface MessageTimelineProps {
   emptyDescription?: string;
@@ -39,6 +48,7 @@ interface MessageTimelineProps {
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
   sessionId: string | null;
+  workspaceId?: string | null;
 }
 
 export function MessageTimeline({
@@ -50,6 +60,7 @@ export function MessageTimeline({
   roundsEnabled = true,
   runtimeRunId = null,
   sessionId,
+  workspaceId = null,
 }: MessageTimelineProps) {
   const { message } = App.useApp();
   const t = useTranslations();
@@ -103,10 +114,16 @@ export function MessageTimeline({
     () =>
       persistedMessages
         .map((messageItem, index) =>
-          messageToRow(messageItem, index, messageRoundLookup, fallbackRunId),
+          messageToRow(
+            messageItem,
+            index,
+            messageRoundLookup,
+            fallbackRunId,
+            workspaceId,
+          ),
         )
         .filter(timelineRowHasRenderableContent),
-    [fallbackRunId, messageRoundLookup, persistedMessages],
+    [fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(persistedRows),
@@ -731,9 +748,10 @@ function messageToRow(
   index: number,
   roundLookup: MessageRoundLookup,
   fallbackRunId: string | null,
+  workspaceId: string | null,
 ): TimelineRow {
   const role = message.role_id ?? message.role ?? "agent";
-  const parts = messageParts(message);
+  const parts = messageParts(message, workspaceId);
   const text = rowCopyText(parts);
   return {
     key: `message:${message.message_id ?? index}`,
@@ -2139,7 +2157,7 @@ function runtimeMessageRenderParts(entry: TimelineEntry): TimelineRenderPart[] |
   }
   const payloadParts = runtimeMessageContentParts(payload);
   if (payloadParts.length > 0) {
-    return payloadParts.flatMap(contentPartToRenderParts);
+    return payloadParts.flatMap((part) => contentPartToRenderParts(part, null));
   }
   const text =
     objectRawString(payload, "text") ||
@@ -2149,7 +2167,7 @@ function runtimeMessageRenderParts(entry: TimelineEntry): TimelineRenderPart[] |
   if (text.trim().length === 0 || runtimeMessageTextIsProtocolPlaceholder(payload, text)) {
     return [];
   }
-  return [timelineTextPart(timelineDisplayText(text))];
+  return textRenderParts(timelineDisplayText(text), null);
 }
 
 function runtimeNestedMessageText(payload: Record<string, JsonValue>): string {
@@ -2888,20 +2906,25 @@ function MessageMediaPreview({
   );
 }
 
-function messageParts(message: TimelineMessage): TimelineRenderPart[] {
+function messageParts(
+  message: TimelineMessage,
+  workspaceId: string | null,
+): TimelineRenderPart[] {
   const injection = persistedInjectionPart(message);
   if (injection !== null) {
     return [injection];
   }
   if (typeof message.content === "string" && message.content.trim()) {
-    return [timelineTextPart(timelineDisplayText(message.content))];
+    return textRenderParts(timelineDisplayText(message.content), workspaceId);
   }
-  const parts = messageContentParts(message).flatMap(contentPartToRenderParts);
+  const parts = messageContentParts(message).flatMap((part) =>
+    contentPartToRenderParts(part, workspaceId),
+  );
   if (parts.length > 0) {
     return parts;
   }
   if (typeof message.message?.content === "string" && message.message.content.trim()) {
-    return [timelineTextPart(timelineDisplayText(message.message.content))];
+    return textRenderParts(timelineDisplayText(message.message.content), workspaceId);
   }
   return [];
 }
@@ -2962,10 +2985,94 @@ function messageContentParts(message: TimelineMessage): ContentPart[] {
   return message.parts ?? message.message?.parts ?? [];
 }
 
-function contentPartToRenderParts(part: ContentPart): TimelineRenderPart[] {
+function textRenderParts(
+  text: string,
+  workspaceId: string | null,
+): TimelineRenderPart[] {
+  return [
+    timelineTextPart(text),
+    ...workspaceImagePreviewParts(text, workspaceId),
+  ];
+}
+
+function workspaceImagePreviewParts(
+  text: string,
+  workspaceId: string | null,
+): TimelineMediaPart[] {
+  const safeWorkspaceId = workspaceId?.trim() ?? "";
+  if (!safeWorkspaceId) {
+    return [];
+  }
+  const seenPaths = new Set<string>();
+  return [
+    ...extractWorkspaceImagePathCandidates(text, IMAGE_CODE_SPAN_PATTERN),
+    ...extractWorkspaceImagePathCandidates(text, IMAGE_BARE_PATH_PATTERN),
+  ].flatMap((path) => {
+    if (seenPaths.has(path)) {
+      return [];
+    }
+    seenPaths.add(path);
+    const url = buildWorkspaceImagePreviewUrl(safeWorkspaceId, path);
+    const media = mediaPartFromFields({
+      mimeType: imageMimeTypeFromPath(path),
+      modality: "image",
+      name: imageNameFromPath(path),
+      url,
+    });
+    return media === null ? [] : [media];
+  });
+}
+
+function extractWorkspaceImagePathCandidates(
+  text: string,
+  pattern: RegExp,
+): string[] {
+  return Array.from(text.matchAll(pattern))
+    .map((match) => normalizeWorkspaceImagePath(match[1]))
+    .filter((path) => path.length > 0);
+}
+
+function normalizeWorkspaceImagePath(value: string | undefined): string {
+  const candidate = (value ?? "")
+    .trim()
+    .replace(TRAILING_PATH_PUNCTUATION_PATTERN, "")
+    .replaceAll("\\", "/");
+  return candidate && IMAGE_PATH_PATTERN.test(candidate) ? candidate : "";
+}
+
+function imageNameFromPath(path: string): string {
+  const normalized = path.replaceAll("\\", "/");
+  return normalized.split("/").filter(Boolean).at(-1) ?? normalized;
+}
+
+function imageMimeTypeFromPath(path: string): string {
+  const extension = imageNameFromPath(path).split(".").at(-1)?.toLowerCase() ?? "";
+  switch (extension) {
+    case "avif":
+      return "image/avif";
+    case "bmp":
+      return "image/bmp";
+    case "gif":
+      return "image/gif";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    default:
+      return "image/*";
+  }
+}
+
+function contentPartToRenderParts(
+  part: ContentPart,
+  workspaceId: string | null,
+): TimelineRenderPart[] {
   const text = contentPartDisplayText(part);
   if (text !== null && text.trim().length > 0) {
-    return [timelineTextPart(text)];
+    return textRenderParts(text, workspaceId);
   }
   const media = contentPartMedia(part);
   if (media !== null) {

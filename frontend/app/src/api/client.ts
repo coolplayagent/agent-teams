@@ -161,7 +161,7 @@ import type {
   XiaolubanGatewayImForwardingCommandResponse,
   XiaolubanGatewayTokenRevealResponse,
 } from "./contracts";
-import { requestJson } from "./http";
+import { apiUrl, requestJson } from "./http";
 
 export function getHealth(): Promise<ServerHealthPayload> {
   return requestJson<ServerHealthPayload>("/system/health");
@@ -301,6 +301,21 @@ export function getWorkspaceFileContent(
   }
   return requestJson<WorkspaceFileContent>(
     `/workspaces/${encodeURIComponent(workspaceId)}/file?${params.toString()}`,
+  );
+}
+
+export function buildWorkspaceImagePreviewUrl(
+  workspaceId: string | null | undefined,
+  path: string | null | undefined,
+): string {
+  const safeWorkspaceId = workspaceId?.trim() ?? "";
+  const safePath = path?.trim() ?? "";
+  if (!safeWorkspaceId || !safePath) {
+    return "";
+  }
+  const params = new URLSearchParams({ path: safePath });
+  return apiUrl(
+    `/workspaces/${encodeURIComponent(safeWorkspaceId)}/preview-file?${params.toString()}`,
   );
 }
 

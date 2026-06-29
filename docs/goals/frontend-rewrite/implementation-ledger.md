@@ -2,6 +2,28 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Workspace Text Image Preview Parity
+
+### Scope
+- Re-checked the active frontend rewrite goal, captured the current V2 `/app/` frame, and compared V1/V2 DOM layout metrics before editing. Both V1 and V2 are fixed to the viewport with 280px sidebar and 52px top bar, so this slice did not make a speculative shell-width change.
+- Identified a concrete V1 rich-content parity gap from `test_message_rich_content_ui.py`: V1 appends an image preview when persisted text mentions a workspace image path such as `` `ai_briefing.png` ``.
+- Added V2 `buildWorkspaceImagePreviewUrl()` support for `/api/workspaces/{workspace_id}/preview-file?path=...`.
+- Passed the selected session workspace id from `AppShell` through `ChatWorkspace` into `MessageTimeline`.
+- Updated `MessageTimeline` text rendering so persisted top-level text, nested message content, and structured text parts append previewable image media for workspace image paths while leaving runtime messages without workspace context unchanged.
+- Added V2 component coverage proving workspace image paths in persisted text render as Ant Image previews, and that the same text does not request a preview when no workspace id is available.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle includes the workspace text image preview fix.
+- Kept this slice focused on Message Timeline / resource preview parity. No sidebar entries, Settings sections, secondary-page routing, message stream state, or V1 Python harness files were removed in this slice.
+
+### Verification
+- Captured current V2 screenshot/metrics at `.tmp/frontend-goal-audit/current-visible.png`; document/root scroll height matched viewport height and composer stayed in the fixed app frame.
+- Compared V1 DOM metrics from `http://127.0.0.1:8000/`; V1 also used a fixed viewport shell with 280px sidebar and 52px top bar, so no shell-width edit was made.
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "workspace image previews|image media references"` passed with four focused media preview cases.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-BRq1fhQ9.js`).
+
+### Reviewer
+- Main-agent V2 rich-content parity implementation, component coverage, actual V1/V2 frame inspection, static bundle rebuild, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, Resource/Assistive Features PASS, Browser Checks completion, final V1/V2 visual audit sign-off, Electron sign-off, release cleanup sign-off, Python UI harness removal, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Live Retry Round Projection TS Migration
 
 ### Scope

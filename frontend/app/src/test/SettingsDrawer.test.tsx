@@ -1997,6 +1997,69 @@ describe("SettingsDrawer", () => {
     });
   }, 45000);
 
+  it("keeps orchestration draft cancellation out of the persisted preset list", async () => {
+    await openOrchestrationSettings();
+
+    expect(await screen.findByText("2 roles · Main plus reviewer")).toBeVisible();
+    expect(screen.getByText("Shipping")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "New orchestration" }));
+    expect(await screen.findByDisplayValue("orchestration_3")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("Shipping")).toBeVisible();
+    expect(screen.queryByDisplayValue("orchestration_3")).toBeNull();
+    expect(screen.queryByText("New Orchestration")).toBeNull();
+    expect(saveOrchestrationConfigMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps orchestration presets visible when role option loading fails", async () => {
+    getRoleConfigOptionsMock.mockRejectedValueOnce(new Error("System roles unavailable."));
+    await openOrchestrationSettings();
+
+    expect(await screen.findByText("2 roles · Main plus reviewer")).toBeVisible();
+    expect(screen.getByText("Shipping")).toBeVisible();
+    expect(screen.queryByLabelText("Preset ID")).toBeNull();
+    expect(saveOrchestrationConfigMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves orchestration graph templates when saving an existing preset", async () => {
+    const defaultPreset = orchestrationConfigFixture().presets?.[0];
+    if (!defaultPreset) {
+      throw new Error("Missing default orchestration preset fixture.");
+    }
+
+    await openOrchestrationSettings();
+
+    const defaultRow = (await screen.findByText("2 roles · Main plus reviewer")).closest(
+      ".at-settings-list-row",
+    );
+    expect(defaultRow).not.toBeNull();
+    fireEvent.click(within(defaultRow as HTMLElement).getByRole("button", { name: /Default/ }));
+
+    expect(await screen.findByLabelText("Preset ID")).toBeVisible();
+    expect(screen.queryByRole("checkbox", { name: /default/i })).toBeNull();
+    const graphInput = screen.getByLabelText("Graph JSON");
+    expect(graphInput).toHaveValue(JSON.stringify(defaultPreset.graph, null, 2));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(1));
+    const savedConfig = saveOrchestrationConfigMock.mock.calls[0]?.[0];
+    if (!savedConfig?.presets) {
+      throw new Error("Expected orchestration settings save payload.");
+    }
+    const savedPreset = savedConfig.presets.find((preset) => preset.preset_id === "default");
+    expect(savedPreset).toMatchObject({
+      graph: defaultPreset.graph,
+      policy: {
+        auto_plan_long_tasks: true,
+        max_orchestration_cycles: 8,
+        max_parallel_delegated_tasks: 4,
+        planner_role_id: "planner",
+      },
+    });
+  });
+
   it("creates and deletes agent runtimes from the System secondary page", async () => {
     renderDrawer();
 
@@ -3261,6 +3324,15 @@ async function openProxySettings() {
   });
   fireEvent.click(within(sections).getByRole("button", { name: "Proxy" }));
   await screen.findByLabelText("HTTP Proxy");
+}
+
+async function openOrchestrationSettings() {
+  renderDrawer();
+  const sections = await screen.findByRole("navigation", {
+    name: "Settings sections",
+  });
+  fireEvent.click(within(sections).getByRole("button", { name: "Orchestration" }));
+  await screen.findByText("Default preset");
 }
 
 function installDesktopApi(version: string) {

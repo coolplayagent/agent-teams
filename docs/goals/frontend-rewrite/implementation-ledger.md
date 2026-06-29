@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Orchestration Settings TS Migration
+
+### Scope
+- Continued the settings secondary-page parity migration after Proxy by selecting `tests/integration_tests/frontend/test_orchestration_settings_ui.py` as the next bounded old Python UI harness to retire.
+- Migrated V1 Orchestration settings behavior into `SettingsDrawer.test.tsx`: draft cancellation does not pollute the preset list, preset rows remain visible when role option loading fails, existing graph templates and policies are preserved on save, and the detail editor does not render a default checkbox.
+- Reused and strengthened the existing V2 coverage for setting the default preset, deleting with confirmation, and creating a new preset without changing the V1 sidebar/settings item inventory or flattening Settings secondary pages.
+- Deleted `tests/integration_tests/frontend/test_orchestration_settings_ui.py`; 25 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "orchestration|Orchestration"` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `Test-Path tests\integration_tests\frontend\test_orchestration_settings_ui.py` returned `False`, confirming the old Python UI harness file has been removed.
+
+### Reviewer
+- Main-agent Orchestration settings harness migration completed for this slice. This does not claim full Settings PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broad settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 Proxy Settings TS Migration
 
 ### Scope

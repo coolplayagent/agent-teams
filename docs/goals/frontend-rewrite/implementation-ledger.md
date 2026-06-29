@@ -4721,3 +4721,28 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Web Settings Fallback Roundtrip V2 Parity And Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, Settings parity requirements, current worktree, existing Settings TS browser coverage, and the remaining `test_browser_smoke.py` browser-test surface before editing. This slice keeps the work on V1 parity and Python UI-browser migration, not just the latest visible UI note.
+- Fixed a V1/V2 behavior gap in the V2 Web settings form: when the fallback provider is set to Disabled, the SearXNG instance URL and built-in instance list are removed from the visible settings page instead of lingering as disabled controls.
+- Preserved the existing SearXNG URL while fallback is disabled, so saving Disabled still sends the retained URL and switching back to SearXNG restores the previous value.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` so the existing Web settings flow verifies the Disabled roundtrip, hidden SearXNG controls, preserved save payload, restored URL, built-in instance visibility, save-error handling, and fixed-shell no-document-scroll behavior.
+- Removed the replaced `test_browser_web_settings_complex_fallback_roundtrip` Python browser scenario from `tests/integration_tests/browser/test_browser_smoke.py`.
+- Rebuilt `frontend/dist` from the V2 source change so dist-served browser tests exercise the updated Web settings behavior.
+- Kept this as targeted Settings / Web browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 11 legacy scenarios in `test_browser_smoke.py`, deeper stream replay and interrupted-stream recovery review, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test -- SettingsDrawer.test.tsx -t "web settings"` passed with the targeted Web settings unit test.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 10 TS browser tests.
+- In-app browser check on `http://127.0.0.1:8000/app/` verified the real Settings > Web page: switching fallback to Disabled removed both the SearXNG URL control and built-in instance list from the DOM, kept document/body scroll height at the viewport height, and switching back to SearXNG restored the previous URL and built-in instance list.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip" tests/integration_tests/browser/test_browser_smoke.py` reports 11 remaining legacy Python browser scenarios.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent source fix, targeted TS unit test, TS browser, frontend lint/typecheck/build, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

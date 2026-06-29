@@ -47,9 +47,6 @@ export function WebSettingsSection() {
     });
   }, [form, webQuery.data]);
 
-  const fallbackProvider = Form.useWatch("fallback_provider", form) as
-    | WebFallbackProvider
-    | undefined;
   const seeds = webQuery.data?.searxng_instance_seeds ?? [];
   const hasSavedApiKey = Boolean(webQuery.data?.exa_api_key?.trim());
   let saveError: string | null = null;
@@ -62,11 +59,16 @@ export function WebSettingsSection() {
   function submit(values: WebFormValues) {
     const typedApiKey = values.exa_api_key.trim();
     const savedApiKey = webQuery.data?.exa_api_key?.trim() ?? "";
+    const searxngInstanceUrl = (
+      values.searxng_instance_url ??
+      form.getFieldValue("searxng_instance_url") ??
+      ""
+    ).trim();
     saveMutation.mutate({
       provider: "exa",
       exa_api_key: typedApiKey || savedApiKey || null,
       fallback_provider: values.fallback_provider,
-      searxng_instance_url: values.searxng_instance_url.trim() || null,
+      searxng_instance_url: searxngInstanceUrl || null,
     });
   }
 
@@ -112,41 +114,67 @@ export function WebSettingsSection() {
                 </select>
               </Form.Item>
               <Form.Item
-                label={t("settingsWebSearxngUrl")}
-                name="searxng_instance_url"
-                rules={[
-                  {
-                    validator: (_, value: string | undefined) => {
-                      if (fallbackProvider === "disabled" || !value?.trim()) {
-                        return Promise.resolve();
-                      }
-                      try {
-                        const parsed = new URL(value.trim());
-                        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-                          return Promise.reject(
-                            new Error(t("settingsWebUrlValidation")),
-                          );
-                        }
-                      } catch {
-                        return Promise.reject(
-                          new Error(t("settingsWebUrlValidation")),
-                        );
-                      }
-                      return Promise.resolve();
-                    },
-                  },
-                ]}
+                noStyle
+                shouldUpdate={(previous: WebFormValues, current: WebFormValues) =>
+                  previous.fallback_provider !== current.fallback_provider
+                }
               >
-                <Input disabled={fallbackProvider === "disabled"} />
+                {({ getFieldValue }) => {
+                  const currentFallback = getFieldValue(
+                    "fallback_provider",
+                  ) as WebFallbackProvider | undefined;
+                  if (currentFallback === "disabled") {
+                    return null;
+                  }
+                  return (
+                    <>
+                      <Form.Item
+                        label={t("settingsWebSearxngUrl")}
+                        name="searxng_instance_url"
+                        preserve
+                        rules={[
+                          {
+                            validator: (_, value: string | undefined) => {
+                              if (!value?.trim()) {
+                                return Promise.resolve();
+                              }
+                              try {
+                                const parsed = new URL(value.trim());
+                                if (
+                                  parsed.protocol !== "http:" &&
+                                  parsed.protocol !== "https:"
+                                ) {
+                                  return Promise.reject(
+                                    new Error(t("settingsWebUrlValidation")),
+                                  );
+                                }
+                              } catch {
+                                return Promise.reject(
+                                  new Error(t("settingsWebUrlValidation")),
+                                );
+                              }
+                              return Promise.resolve();
+                            },
+                          },
+                        ]}
+                      >
+                        <Input />
+                      </Form.Item>
+                      {seeds.length > 0 ? (
+                        <div
+                          aria-label={t("settingsWebBuiltinInstances")}
+                          className="at-settings-seed-list"
+                        >
+                          <Typography.Text>{t("settingsWebBuiltinInstances")}</Typography.Text>
+                          {seeds.map((seed) => (
+                            <code key={seed}>{seed}</code>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  );
+                }}
               </Form.Item>
-              {seeds.length > 0 ? (
-                <div className="at-settings-seed-list" aria-label={t("settingsWebBuiltinInstances")}>
-                  <Typography.Text>{t("settingsWebBuiltinInstances")}</Typography.Text>
-                  {seeds.map((seed) => (
-                    <code key={seed}>{seed}</code>
-                  ))}
-                </div>
-              ) : null}
             </div>
             <a
               className="at-settings-provider-link"

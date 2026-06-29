@@ -640,6 +640,29 @@ test("saves Web settings and shows save errors", async ({ page }) => {
     });
     await expect(page.getByText("Web settings saved.")).toBeVisible();
 
+    const fallbackProvider = settings.getByLabel("Fallback provider");
+    await fallbackProvider.selectOption("disabled");
+    await expect(searxngUrl).toHaveCount(0);
+    await expect(settings.getByText("https://searx.space")).toHaveCount(0);
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/web") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+    expect(state.webSavePayloads.at(-1)).toEqual({
+      exa_api_key: "saved-exa-key",
+      fallback_provider: "disabled",
+      provider: "exa",
+      searxng_instance_url: "https://search.changed.example/",
+    });
+    await fallbackProvider.selectOption("searxng");
+    await expect(searxngUrl).toHaveValue("https://search.changed.example/");
+    await expect(settings.getByText("https://searx.space")).toBeVisible();
+
     state.failNextWebSave = true;
     await searxngUrl.fill("https://search.failed.example/");
     await Promise.all([

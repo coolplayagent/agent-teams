@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session Foreground Recovery TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Sessions And Projects / Run Recovery / AG-UI Runtime Stream checklist items, current V2 `RecoveryBar` auto-stream behavior, and the old `test_select_session_prepares_foreground_streams_after_state_switch` V1 harness before editing.
+- Migrated the foreground stream preparation intent to V2 TypeScript evidence: after the recovery surface moves from one selected session to another, the new session recovery snapshot is fetched and its active run starts as a foreground stream with the new session id and latest event cursor.
+- Removed only the migrated Python assertion from `tests/integration_tests/frontend/test_session_selection_ui.py`; the remaining stale-selection, terminal retry/defer, cross-session subagent, active-subagent loading, and loading-frame assertions remain pending for later migration.
+- Kept production code unchanged because V2 already prepares foreground recovery streams from the session-scoped `RecoveryBar` snapshot after `ChatWorkspace` moves to the new session.
+
+### Verification
+- `npm run test -- src/test/RecoveryBar.test.tsx -t "newly selected session|live active run stream|multiplex stream"` passed with the new selected-session foreground recovery coverage and adjacent active/multiplex recovery cases.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_session_selection_ui.py` passed after deleting the migrated Python UI assertion.
+
+### Reviewer
+- Main-agent V2 foreground recovery stream coverage and partial old Python UI harness reduction completed for this slice. No full Sessions And Projects subsystem PASS, Run Recovery subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Session Selection Subagent Boundary TS Migration
 
 ### Scope

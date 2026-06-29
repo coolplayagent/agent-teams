@@ -468,6 +468,51 @@ describe("RecoveryBar", () => {
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
 
+  it("starts foreground recovery streams for the newly selected session", async () => {
+    getRecoverySnapshotMock.mockImplementation(async (sessionId: string) =>
+      sessionId === "session-b"
+        ? recoverySnapshot({
+            active_run: {
+              run_id: "run-b",
+              session_id: "session-b",
+              status: "running",
+              phase: "running",
+              last_event_id: 88,
+              should_show_recover: false,
+            },
+          })
+        : recoverySnapshot({ active_run: null }),
+    );
+    const controller = runStreamController();
+    const view = render(
+      <TestProviders>
+        <RecoveryBar runStreamController={controller} sessionId="session-a" />
+      </TestProviders>,
+    );
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-a"),
+    );
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+
+    view.rerender(
+      <TestProviders>
+        <RecoveryBar runStreamController={controller} sessionId="session-b" />
+      </TestProviders>,
+    );
+
+    await screen.findByText("Run run-b is running");
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: 88,
+        foreground: true,
+        runId: "run-b",
+        sessionId: "session-b",
+      }),
+    );
+    expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
   it("keeps a standalone stopped recoverable run on explicit resume", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

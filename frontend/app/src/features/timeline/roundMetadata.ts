@@ -208,6 +208,9 @@ function roundTone({
   retry: RoundRetrySummary | null;
   round: SessionRound;
 }): RoundTone | null {
+  if (roundVerificationStatus(round) === "failed") {
+    return "warning";
+  }
   if (
     retry?.phase === "failed" ||
     retry?.phase === "fallbackFailed" ||
@@ -222,10 +225,17 @@ function roundTone({
 }
 
 function roundStatusLabel(round: SessionRound): string | null {
+  if (roundVerificationStatus(round) === "failed") {
+    return "verification failed";
+  }
   const rawStatus = normalizedText(round.run_status)
     || normalizedText(round.run_phase)
     || normalizedText(round.verification_status);
   return rawStatus || null;
+}
+
+function roundVerificationStatus(round: SessionRound): string {
+  return normalizedText(round.verification_status).toLowerCase();
 }
 
 function roundDurationLabel(round: SessionRound): string | null {

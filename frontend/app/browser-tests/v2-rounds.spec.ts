@@ -20,6 +20,7 @@ const PAGED_ARCHIVE_RUN_ID = "run-v2-paged-archive";
 const PAGED_MIDDLE_RUN_ID = "run-v2-paged-middle";
 const PAGED_LATEST_RUN_ID = "run-v2-paged-latest";
 const PAGED_CURSOR_RUN_ID = "run-v2-paged-cursor";
+const VERIFICATION_RUN_ID = "run-v2-verification-warning";
 
 test("opens round rail retry and todo detail", async ({ page }) => {
   const appServer = await serveFrontendDist();
@@ -219,6 +220,46 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
   }
 });
 
+test("keeps verification failed rounds in the warning lane", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: handleVerificationRoundApi,
+      sessionTitle: "TS round verification",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const roundButton = page.getByRole("button", {
+      name: "Go to round 1: Verify deploy guardrail",
+    });
+    await expect(roundButton).toBeVisible();
+    await expect(roundButton).toHaveClass(/is-warning/);
+    await expect(roundButton).not.toHaveClass(/is-error/);
+
+    await roundButton.hover();
+    const detail = page.getByLabel("Round detail");
+    await expect(detail).toBeVisible();
+    await expect(detail.getByText("verification failed")).toBeVisible();
+    await expect(page.getByText("Verification warning output")).toBeVisible();
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "verification warning round should stay inside the fixed V2 shell",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-round-verification-warning.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleRoundsApi(
   context: MockApiRouteContext,
   requestedUrls: string[],
@@ -265,6 +306,24 @@ async function handlePagedRoundsApi(
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
     await context.fulfillJson(pagedRoundMessages());
+    return true;
+  }
+  return false;
+}
+
+async function handleVerificationRoundApi(
+  context: MockApiRouteContext,
+): Promise<boolean> {
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/rounds`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: [verificationWarningRound()],
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
+    await context.fulfillJson([verificationWarningMessage()]);
     return true;
   }
   return false;
@@ -319,6 +378,23 @@ function todoRailMessage(): Record<string, unknown> {
     message_id: "message-round-todo-output",
     role_id: "MainAgent",
     run_id: TODO_RUN_ID,
+  };
+}
+
+function verificationWarningMessage(): Record<string, unknown> {
+  return {
+    created_at: "2026-06-25T08:25:02Z",
+    message: {
+      parts: [
+        {
+          content: "Verification warning output",
+          part_kind: "text",
+        },
+      ],
+    },
+    message_id: "message-round-verification-warning-output",
+    role_id: "MainAgent",
+    run_id: VERIFICATION_RUN_ID,
   };
 }
 
@@ -482,6 +558,34 @@ function pagedLatestRound(): Record<string, unknown> {
     run_status: "completed",
     run_user_message: "Paged latest branch",
     verification_status: "verified",
+  };
+}
+
+function verificationWarningRound(): Record<string, unknown> {
+  return {
+    coordinator_messages: [
+      {
+        created_at: "2026-06-25T08:25:02Z",
+        message: {
+          parts: [
+            {
+              content: "Verification warning output",
+              part_kind: "text",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+      },
+    ],
+    created_at: "2026-06-25T08:25:01Z",
+    has_final_output: true,
+    intent: "Verify deploy guardrail",
+    intent_parts: [{ kind: "text", text: "Verify deploy guardrail" }],
+    run_id: VERIFICATION_RUN_ID,
+    run_phase: "terminal",
+    run_status: "failed",
+    run_user_message: "Verify deploy guardrail",
+    verification_status: "failed",
   };
 }
 

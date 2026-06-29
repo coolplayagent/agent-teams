@@ -7259,3 +7259,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 stale hydration race coverage, targeted verification, and partial legacy harness removal completed for this session-switch timeline slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Slow Round Rail Hydration Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Message Timeline / Run Recovery / AG-UI Runtime Stream checklist requirements, remaining old timeline Python UI harnesses, and current V2 `MessageTimeline` messages/rounds query separation before editing.
+- Added V2 `MessageTimeline.test.tsx` coverage proving persisted messages render while round rail hydration is still pending, then the round rail appears after the slower rounds payload resolves.
+- Removed the migrated V1 source-copy harness `test_load_session_rounds_renders_page_before_slow_timeline_payload` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. The old file now has 11 remaining Python UI harness scenarios.
+- This slice proves the V2 main message stream is not blocked by slow round rail hydration. It does not claim terminal-settle follow-up polling parity, expected-tool-call history parity, Playwright replay sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "slow round rail"` passed.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 116 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 11.
+- `rg -n "test_load_session_rounds_renders_page_before_slow_timeline_payload|renders messages before slow round rail" tests/integration_tests/frontend/test_round_retry_timeline_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 slow hydration coverage, targeted verification, and partial legacy harness removal completed for this timeline hydration slice. No subsystem PASS or final V2 completion is claimed.

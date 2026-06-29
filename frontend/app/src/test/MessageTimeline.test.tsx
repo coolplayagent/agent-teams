@@ -708,6 +708,66 @@ describe("MessageTimeline", () => {
     })).not.toBeInTheDocument();
   });
 
+  it("renders messages before slow round rail hydration finishes", async () => {
+    const slowRounds = deferredSessionRounds();
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Older answer",
+        message_id: "assistant-older",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+      },
+      {
+        content: "Latest answer",
+        message_id: "assistant-latest",
+        role_id: "MainAgent",
+        trace_id: "run-2",
+      },
+    ]);
+    listSessionRoundsMock.mockReturnValue(slowRounds.promise);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Latest answer")).toBeVisible();
+    expect(screen.getByText("Older answer")).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "Rounds" }))
+      .not.toBeInTheDocument();
+
+    await act(async () => {
+      slowRounds.resolve({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:41:00Z",
+            run_id: "run-1",
+            run_status: "completed",
+            run_user_message: "Older task",
+          },
+          {
+            created_at: "2026-06-23T12:42:00Z",
+            run_id: "run-2",
+            run_status: "completed",
+            run_user_message: "Latest task",
+          },
+          {
+            created_at: "2026-06-23T12:43:00Z",
+            run_id: "run-3",
+            run_status: "completed",
+            run_user_message: "Newest task",
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    expect(await screen.findByRole("navigation", { name: "Rounds" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Go to round 1: Older task" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Go to round 3: Newest task" }))
+      .toBeVisible();
+  });
+
   it("does not duplicate round messages that are already in session history", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

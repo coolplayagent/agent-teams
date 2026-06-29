@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session Selection Subagent Boundary TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Sessions And Projects / Subagents checklist items, current V2 `AppShell` secondary-surface behavior, and the old `test_select_subagent_cancels_pending_main_session_hydration` V1 harness before editing.
+- Migrated the pending-main-hydration cancellation intent to V2 TypeScript evidence: when main session detail is still resolving, opening a subagent session keeps the subagent secondary workspace surface active, and the later main session detail resolution does not resurrect the main chat timeline.
+- Removed only the migrated Python assertion from `tests/integration_tests/frontend/test_session_selection_ui.py`; the remaining session selection, cross-session subagent, loading-frame, retry/deferred terminal mark, and foreground stream preparation assertions remain pending for later migration.
+- Kept production code unchanged because V2 already models subagent sessions as a shell secondary surface independent of the main session detail query.
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx -t "subagent surface|right drawer entrypoints|sidebar returns to chat"` passed with the new pending-detail subagent boundary coverage and adjacent shell-subagent cases.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_session_selection_ui.py` passed after deleting the migrated Python UI assertion.
+
+### Reviewer
+- Main-agent V2 shell/subagent boundary coverage and partial old Python UI harness reduction completed for this slice. No full Sessions And Projects subsystem PASS, Subagents subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Session Selection Terminal Mark TS Migration
 
 ### Scope

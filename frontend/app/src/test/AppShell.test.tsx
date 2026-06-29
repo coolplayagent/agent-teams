@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
   within,
+  act,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -20,7 +21,7 @@ import {
   markSessionTerminalRunViewed,
   saveUiLanguageSettings,
 } from "../api/client";
-import type { SessionSidebarRecord } from "../api/contracts";
+import type { SessionRecord, SessionSidebarRecord } from "../api/contracts";
 import { AppShell } from "../features/shell/AppShell";
 import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
 import { sidebarWidthDefault, useUiStore } from "../runtime/uiStore";
@@ -782,6 +783,37 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("session-search-view")).toBeVisible();
     expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
     expect(screen.queryByText("Subagent Explorer")).not.toBeInTheDocument();
+  });
+
+  it("keeps the subagent surface active when pending main session detail resolves", async () => {
+    let resolveSession: ((session: SessionRecord) => void) | undefined;
+    getSessionMock.mockReturnValue(
+      new Promise<SessionRecord>((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-session"));
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+
+    if (resolveSession === undefined) {
+      throw new Error("Session detail query did not start.");
+    }
+    const resolvePendingSession = resolveSession;
+    await act(async () => {
+      resolvePendingSession({
+        normal_root_role_id: "MainAgent",
+        session_id: "session-1",
+        workspace_id: "workspace-1",
+      });
+    });
+
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+    expect(screen.getByText("Subagent Explorer")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
   });
 
   it("clears the active subagent view when the sidebar returns to chat", async () => {

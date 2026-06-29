@@ -244,55 +244,6 @@ console.log(JSON.stringify({
     ]
 
 
-def test_select_subagent_cancels_pending_main_session_hydration(
-    tmp_path: Path,
-) -> None:
-    payload = _run_session_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.CustomEvent = class CustomEvent {
-    constructor(type, options = {}) {
-        this.type = type;
-        this.detail = options.detail || {};
-    }
-};
-
-const { selectSession, selectSubagentSession } = await import("./session.mjs");
-const selection = selectSession("session-a");
-await Promise.resolve();
-await selectSubagentSession("session-a", {
-    instanceId: "inst-sub-1",
-    roleId: "explorer",
-    runId: "subagent_run_1",
-    title: "Explore",
-    status: "running",
-});
-const selectedBeforeHydration = globalThis.__documentDispatches
-    .filter(event => event.type === "agent-teams-session-selected")
-    .map(event => event.detail.sessionId);
-globalThis.__hydrateResolvers[0].resolve();
-await selection;
-await Promise.resolve();
-
-console.log(JSON.stringify({
-    openSubagentSessionCalls: globalThis.__openSubagentSessionCalls,
-    selectedBeforeHydration,
-    selectedEvents: globalThis.__documentDispatches
-        .filter(event => event.type === "agent-teams-session-selected")
-        .map(event => event.detail.sessionId),
-    subagentSelectedEvents: globalThis.__documentDispatches
-        .filter(event => event.type === "agent-teams-subagent-session-selected")
-        .map(event => event.detail.instanceId),
-}));
-""".strip(),
-    )
-
-    assert payload["openSubagentSessionCalls"] == 1
-    assert payload["selectedBeforeHydration"] == []
-    assert payload["selectedEvents"] == []
-    assert payload["subagentSelectedEvents"] == ["inst-sub-1"]
-
-
 def test_select_subagent_from_other_session_skips_main_hydration(
     tmp_path: Path,
 ) -> None:

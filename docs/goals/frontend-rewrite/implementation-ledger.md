@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime External Media Overlay TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, quality gates, remaining legacy `test_stream_session_overlay_ui.py` cases, and current live `/app/` shell before editing.
+- Captured `.tmp/frontend-v2-live-audit/current-app-before-next-stream-slice.png` and measured the live shell: `body` and `#root` remained fixed to the viewport, sidebar width was `280px`, and no document-level scroll regression was present. This kept the slice aligned with the global frame goal before touching stream coverage.
+- Added V2 `MessageTimeline` component coverage proving an external primary runtime stream can render a `media_ref` image output on the selected run, preserving the old stream-overlay media behavior through the typed AG-UI runtime path.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/history.js` Python harness test `test_history_overlay_renders_media_refs_from_stream_overlay`.
+- Kept this slice focused on stream identity/media replay evidence. No sidebar entries, Settings sections, secondary-page routing, production UI code, visible shell layout, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "external primary runtime media|external primary runtime text|runtime output_delta media_ref|distinct cursorless runtime media"` passed with the new external primary media case and adjacent stream/media coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_history_overlay_renders_media_refs_from_stream_overlay|history_overlay_media_ref|external primary runtime media" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned only the new TS case after removal.
+
+### Reviewer
+- Main-agent live shell inspection, V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Repeated Tail Hydration TS Migration
 
 ### Scope

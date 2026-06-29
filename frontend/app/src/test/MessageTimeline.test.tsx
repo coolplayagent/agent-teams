@@ -1456,6 +1456,43 @@ describe("MessageTimeline", () => {
       .toHaveAttribute("data-run-id", "run-acp");
   });
 
+  it("renders external primary runtime media references on the selected run stream", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "output_delta",
+        instance_id: "external-instance",
+        role_id: "external-role",
+        run_id: "run-acp",
+        trace_id: "run-acp",
+        payload_json: JSON.stringify({
+          output: [
+            {
+              kind: "media_ref",
+              mime_type: "image/png",
+              modality: "image",
+              name: "external-image.png",
+              url: "data:image/png;base64,AAA",
+            },
+          ],
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-acp",
+    });
+
+    const image = await screen.findByRole("img", { name: "external-image.png" });
+    expect(image).toHaveAttribute("src", "data:image/png;base64,AAA");
+    expect(screen.getByText("external-image.png")).toBeVisible();
+    expect(screen.queryByText("output delta")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector("article.at-message"))
+      .toHaveAttribute("data-run-id", "run-acp");
+  });
+
   it("keeps completed runtime tool results when stale tool calls arrive later", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({

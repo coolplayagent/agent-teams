@@ -1915,6 +1915,51 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
   });
 
+  it("splits runtime text segments around tool result events", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "before tool lifecycle",
+      }),
+      runtimeToolCallEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 3,
+        id: "run-output:3:2",
+        text: "during tool lifecycle",
+      }),
+      runtimeToolResultEntry({
+        eventId: 4,
+        id: "run-output:4:3",
+      }),
+      runtimeTextDeltaEntry({
+        eventId: 5,
+        id: "run-output:5:4",
+        text: "after tool lifecycle",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("before tool lifecycle")).toBeVisible();
+    expect(screen.getByText("during tool lifecycle")).toBeVisible();
+    expect(screen.getByText("after tool lifecycle")).toBeVisible();
+    expect(screen.getByText("Tool call: execute_command")).toBeVisible();
+    expect(screen.getByText("Tool result: execute_command")).toBeVisible();
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(5);
+    expect(rowTexts[0]).toContain("before tool lifecycle");
+    expect(rowTexts[1]).toContain("Tool call: execute_command");
+    expect(rowTexts[2]).toContain("during tool lifecycle");
+    expect(rowTexts[3]).toContain("Tool result: execute_command");
+    expect(rowTexts[4]).toContain("after tool lifecycle");
+  });
+
   it("keeps cursorless runtime text segments unique around tool events", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -3792,6 +3837,33 @@ function runtimeToolCallEntry({
     text: "execute_command",
     payload: {
       args: { cmd: "npm test" },
+      tool_call_id: "tool-live-1",
+      tool_name: "execute_command",
+    },
+    eventId,
+    occurredAt: "2026-06-23T00:00:00Z",
+  };
+}
+
+function runtimeToolResultEntry({
+  id,
+  instanceId = "",
+  eventId,
+}: {
+  id: string;
+  instanceId?: string;
+  eventId: number;
+}): TimelineEntry {
+  return {
+    id,
+    instanceId,
+    sessionId: "session-1",
+    runId: "run-output",
+    roleId: "MainAgent",
+    kind: "tool_result",
+    text: "execute_command",
+    payload: {
+      result: { ok: true, data: "done" },
       tool_call_id: "tool-live-1",
       tool_name: "execute_command",
     },

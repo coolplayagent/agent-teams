@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Tool Result Segment TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, and existing V2 `MessageTimeline` text/tool segment coverage before editing.
+- Added V2 component coverage for the live tool lifecycle boundary `text_delta -> tool_call -> text_delta -> tool_result -> text_delta`, proving both tool calls and tool results split adjacent runtime text into distinct timeline rows in order.
+- Added a focused runtime tool-result test helper in `MessageTimeline.test.tsx` so the test uses the same typed timeline entry shape as nearby runtime text and tool-call segment coverage.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness test `test_live_tool_result_closes_text_segment_before_next_delta`.
+- Kept this slice focused on message stream rendering evidence. No sidebar entries, Settings sections, secondary-page routing, visible shell layout, production runtime code, or static dist bundle changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "splits runtime text segments around tool"` passed with the existing tool-call segment test and the new tool-result lifecycle segment test.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_live_tool_result_closes_text_segment_before_next_delta|live_tool_text_segments" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Stream Identity TS Migration
 
 ### Scope

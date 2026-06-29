@@ -7090,3 +7090,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused TS assertion hardening, targeted Composer verification, and partial legacy harness removal completed for this topology/thinking controls slice. No Composer subsystem PASS, streaming/replay PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Composer Model Profile Save Boundary Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, and V2 Composer model-profile/image attachment coverage before editing.
+- Added V2 Composer coverage for the normal model-profile save boundary: a text-only selected profile blocks a pasted image, switching to an image-capable profile disables the prompt/model selector/send button while the save is pending, no AG-UI run is created during that pending state, and the same image can only be sent after the saved session detail reflects the image-capable profile.
+- Removed three migrated V1 Python UI harness scenarios from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`: stale model-profile save response handling, image validation after pending profile save, and waiting for the latest pending profile save before sending. The file now has 6 remaining legacy UI scenarios.
+- Kept prompt mention autocomplete/resource insertion, title preview event timing, pasted-image footer hint, new-session workspace selector, and new-session draft model-profile creation scenarios because they still need separate V2 mapping or design confirmation.
+- This slice is test coverage and harness cleanup only; no production UI, Settings, sidebar inventory, backend, desktop, or dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 72 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 6.
+- `rg -n "test_prompt_model_profile_ignores_stale_save_response|test_handle_send_validates_image_after_pending_model_profile_save|test_handle_send_waits_for_latest_pending_model_profile_save|waits for model profile saves before validating" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused TS coverage migration, targeted Composer verification, and partial legacy harness removal completed for this model-profile save boundary slice. No Composer subsystem PASS, streaming/replay PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

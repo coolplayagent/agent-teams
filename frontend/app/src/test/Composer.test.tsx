@@ -1662,6 +1662,97 @@ describe("Composer", () => {
     expect(createRunMock).not.toHaveBeenCalled();
   });
 
+  it("waits for model profile saves before validating and sending image prompts", async () => {
+    const profileUpdate = deferred<SessionRecord>();
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: "Writer",
+      normal_model_profile: "textOnly",
+      orchestration_preset_id: null,
+      can_switch_mode: true,
+    });
+    getModelProfilesMock.mockResolvedValue({
+      textOnly: {
+        input_modalities: [],
+        model: "text-only-model",
+      },
+      vision: {
+        input_modalities: ["image"],
+        model: "vision-profile-model",
+      },
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    updateSessionNormalModelProfileMock.mockReturnValue(profileUpdate.promise);
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    pasteImage("profile-after-save.png");
+    expect(
+      await screen.findByText("text-only-model does not support image input."),
+    ).toBeVisible();
+    fireEvent.mouseDown(
+      screen.getByRole("combobox", { name: "Model profile" }),
+    );
+    fireEvent.click(await screen.findByText("vision - vision-profile-model"));
+
+    await waitFor(() =>
+      expect(updateSessionNormalModelProfileMock).toHaveBeenCalledWith(
+        "session-1",
+        "vision",
+      ),
+    );
+    expect(selectRoot("Model profile")).toHaveClass("ant-select-disabled");
+    expect(screen.getByLabelText("Prompt")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(createRunMock).not.toHaveBeenCalled();
+
+    const updatedSession: SessionRecord = {
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "normal",
+      normal_root_role_id: "Writer",
+      normal_model_profile: "vision",
+      orchestration_preset_id: null,
+      can_switch_mode: true,
+    };
+    getSessionMock.mockResolvedValue(updatedSession);
+    await act(async () => {
+      profileUpdate.resolve(updatedSession);
+      await profileUpdate.promise;
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("text-only-model does not support image input."),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0].input[0]).toMatchObject({
+      kind: "inline_media",
+      name: "profile-after-save.png",
+    });
+  });
+
   it("blocks image attachments when image support is unknown for the selected role", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [

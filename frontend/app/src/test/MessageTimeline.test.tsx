@@ -1068,6 +1068,38 @@ describe("MessageTimeline", () => {
     ).toHaveLength(1);
   });
 
+  it("keeps completed runtime tool results when stale tool calls arrive later", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: { ok: true, output: "done" },
+          tool_call_id: "call-b",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "echo b" },
+          tool_call_id: "call-b",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Tool result: shell")).toBeVisible();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    expect(screen.queryByText("echo b")).not.toBeInTheDocument();
+    expect(toolPreviewTexts(container)).toEqual(["done"]);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
   it("unwraps successful tool return envelopes to the useful output", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

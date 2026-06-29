@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Agent Runtime Settings TS Browser Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining `test_browser_settings_save_role_and_agent_configs` Python scenario before editing. Existing TS coverage already exercises role validation/save/delete, so this slice targets the missing dist/browser Agent Runtime form flow.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` with deterministic TS browser coverage for Settings -> System -> Agent Runtime as a secondary settings page, creating a stdio ACP runtime, asserting the real `PUT /api/system/configs/agent-runtimes/{agent_id}` payload, transitioning to the saved detail view, deleting the runtime through the confirmation popover, asserting `DELETE /api/system/configs/agent-runtimes/{agent_id}`, and confirming the runtime is removed from the list.
+- Added stateful browser mock support for Agent Runtime list/detail/save/delete responses so list rows, detail forms, and request assertions share the same state model.
+- Preserved V1-aligned navigation boundaries: Agent Runtime remains under System rather than becoming a first-level Settings tab, and no sidebar or Settings section entries were added or removed.
+- Kept the old `test_browser_settings_save_role_and_agent_configs` Python scenario in place for now because this slice covers its Agent Runtime half while final removal still needs scenario accounting across the already-covered Role flow and any residual legacy-only assertions. Remaining frontend rewrite work still includes migrating or deleting the remaining 6 legacy Python browser scenarios, deeper stream replay and interrupted-stream recovery coverage, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts -g "creates and deletes Agent Runtime"` passed for the new focused flow.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 13 TS browser tests after tightening the New runtime click to the Agent Runtime toolbar.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-agent-runtime-create-delete.png`; it shows the fixed V2 shell, Settings drawer open on the System secondary page, Agent Runtime selected, the created runtime removed after delete, and no document-level scroll.
+
+### Reviewer
+- Main-agent TS browser migration, Settings/Agent Runtime workflow verification, screenshot inspection, and remaining Python scenario accounting completed for this slice. No Settings subsystem sign-off, browser-suite migration sign-off, stream/replay sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Shell Session Management And MCP Reload TS Browser Batch
 
 ### Scope

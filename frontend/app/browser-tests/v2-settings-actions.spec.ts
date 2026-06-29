@@ -18,6 +18,10 @@ import {
 const SCREENSHOT_FOLDER = "frontend-v2-ts-settings-actions";
 
 interface SettingsActionState {
+  agentRuntimeConfigs: Record<string, Record<string, unknown>>;
+  agentRuntimeDeleteRequests: string[];
+  agentRuntimeSavePayloads: Record<string, unknown>[];
+  agentRuntimeSaveRequests: string[];
   environmentDeleteRequests: Array<{
     key: string;
     scope: string;
@@ -244,6 +248,105 @@ test("validates and saves Hooks from the System secondary settings page", async 
     await expectNoDocumentScroll(page, "v2 hooks settings should stay framed");
     await page.screenshot({
       path: screenshotPath("v2-hooks-editor-save.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("creates and deletes Agent Runtime configs from the System secondary settings page", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS agent runtime settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const sections = settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    await expect(sections.getByRole("button", { name: "Agent Runtime" }))
+      .toHaveCount(0);
+
+    await openSystemSettingsPage(settings, "Agent Runtime");
+    await expect(settings.getByRole("heading", { name: "Agent Runtime" }))
+      .toBeVisible();
+    await expect(settings.getByText("Codex ACP")).toBeVisible();
+    const newRuntimeButton = settings
+      .locator(".at-agent-runtime-toolbar")
+      .getByRole("button", { name: "New runtime" });
+    await expect(newRuntimeButton).toBeVisible();
+    await newRuntimeButton.evaluate((button) => (button as HTMLElement).click());
+
+    await expect(settings.getByRole("heading", { name: "New runtime" }))
+      .toBeVisible();
+    await settings.getByLabel("Agent ID").fill("browser-agent-ts");
+    await settings.getByLabel("Name").fill("Browser TS Agent");
+    await settings
+      .getByLabel("Description")
+      .fill("Browser TS agent runtime.");
+    await settings.getByLabel("Command").fill("python");
+    await settings.getByLabel("Arguments").fill("-m\nrelay_teams");
+    await settings.getByRole("button", { name: "Save" }).click();
+
+    await expect.poll(() => state.agentRuntimeSaveRequests)
+      .toEqual(["browser-agent-ts"]);
+    expect(state.agentRuntimeSavePayloads).toEqual([
+      {
+        agent_id: "browser-agent-ts",
+        description: "Browser TS agent runtime.",
+        name: "Browser TS Agent",
+        native_config_enabled: false,
+        native_config_provider: "",
+        protocol: "acp",
+        skill_bridge_enabled: false,
+        skill_bridge_mode: "inline",
+        skill_bridge_skills: [],
+        transport: {
+          args: ["-m", "relay_teams"],
+          command: "python",
+          env: [],
+          transport: "stdio",
+        },
+      },
+    ]);
+    await expect(page.getByText("Agent runtime saved.")).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Edit runtime" }))
+      .toBeVisible();
+    await expect(settings.getByLabel("Agent ID")).toHaveValue("browser-agent-ts");
+
+    await settings
+      .locator(".at-agent-runtime-detail")
+      .getByRole("button", { name: "Delete" })
+      .click();
+    const confirm = page.locator(".ant-popconfirm");
+    await expect(confirm).toContainText(
+      'Delete agent runtime "browser-agent-ts"?',
+    );
+    await confirm.getByRole("button", { name: "Delete" }).click();
+
+    await expect.poll(() => state.agentRuntimeDeleteRequests)
+      .toEqual(["browser-agent-ts"]);
+    await expect(page.getByText("Agent runtime deleted.")).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Agent Runtime" }))
+      .toBeVisible();
+    await expect(settings.getByText("Browser TS Agent")).toHaveCount(0);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 agent runtime settings should stay framed",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-agent-runtime-create-delete.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -1178,6 +1281,10 @@ async function orchestrationAnalysisIsRendered(settings: Locator): Promise<boole
 
 function settingsActionState(): SettingsActionState {
   return {
+    agentRuntimeConfigs: agentRuntimeConfigs(),
+    agentRuntimeDeleteRequests: [],
+    agentRuntimeSavePayloads: [],
+    agentRuntimeSaveRequests: [],
     environmentDeleteRequests: [],
     environmentSavePayloads: [],
     environmentVariables: environmentVariables(),
@@ -1466,6 +1573,49 @@ async function handleSettingsActionApi(
     await context.fulfillJson(hooksRuntimeResponse());
     return true;
   }
+  if (method === "GET" && path === "/system/configs/agent-runtimes") {
+    await context.fulfillJson(agentRuntimeSummaries(state));
+    return true;
+  }
+  if (
+    method === "GET" &&
+    path.startsWith("/system/configs/agent-runtimes/")
+  ) {
+    const agentId = decodeURIComponent(
+      path.replace("/system/configs/agent-runtimes/", ""),
+    );
+    await context.fulfillJson(
+      state.agentRuntimeConfigs[agentId] ?? {},
+      agentId in state.agentRuntimeConfigs ? 200 : 404,
+    );
+    return true;
+  }
+  if (
+    method === "PUT" &&
+    path.startsWith("/system/configs/agent-runtimes/")
+  ) {
+    const agentId = decodeURIComponent(
+      path.replace("/system/configs/agent-runtimes/", ""),
+    );
+    const payload = readJsonBody(context);
+    state.agentRuntimeSaveRequests.push(agentId);
+    state.agentRuntimeSavePayloads.push(payload);
+    state.agentRuntimeConfigs[agentId] = payload;
+    await context.fulfillJson(payload);
+    return true;
+  }
+  if (
+    method === "DELETE" &&
+    path.startsWith("/system/configs/agent-runtimes/")
+  ) {
+    const agentId = decodeURIComponent(
+      path.replace("/system/configs/agent-runtimes/", ""),
+    );
+    state.agentRuntimeDeleteRequests.push(agentId);
+    delete state.agentRuntimeConfigs[agentId];
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
   if (method === "GET" && path === "/system/configs/web") {
     await context.fulfillJson(state.webConfig);
     return true;
@@ -1729,6 +1879,51 @@ function roleConfigSummaries(state: SettingsActionState): Record<string, unknown
     source: role.source,
     version: role.version,
   }));
+}
+
+function agentRuntimeConfigs(): Record<string, Record<string, unknown>> {
+  return {
+    "codex-acp": {
+      agent_id: "codex-acp",
+      description: "Default coding agent runtime.",
+      name: "Codex ACP",
+      native_config_enabled: false,
+      native_config_provider: "",
+      protocol: "acp",
+      skill_bridge_enabled: false,
+      skill_bridge_mode: "inline",
+      skill_bridge_skills: [],
+      transport: {
+        args: ["--model", "gpt-5-codex"],
+        command: "codex",
+        env: [],
+        transport: "stdio",
+      },
+    },
+  };
+}
+
+function agentRuntimeSummaries(
+  state: SettingsActionState,
+): Record<string, unknown>[] {
+  return Object.values(state.agentRuntimeConfigs).map((runtime) => {
+    const transport = runtime.transport;
+    const transportRecord =
+      transport !== null && typeof transport === "object" && !Array.isArray(transport)
+        ? transport as Record<string, unknown>
+        : null;
+    const transportType =
+      typeof transportRecord?.transport === "string"
+        ? transportRecord.transport
+        : null;
+    return {
+      agent_id: runtime.agent_id,
+      description: runtime.description,
+      name: runtime.name,
+      protocol: runtime.protocol,
+      transport: transportType,
+    };
+  });
 }
 
 function modelProfiles(): Record<string, Record<string, unknown>> {

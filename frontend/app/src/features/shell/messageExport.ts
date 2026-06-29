@@ -71,8 +71,7 @@ export function buildMessagesHtml(
   sessionId: string,
   rounds: SessionRound[],
 ): string {
-  const blocks = roundExportBlocks(rounds);
-  const rows = blocks.map(blockHtml).join("");
+  const rows = rounds.map(roundHtml).join("");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -84,7 +83,16 @@ export function buildMessagesHtml(
     main { max-width: 960px; margin: 0 auto; }
     h1 { margin: 0 0 8px; font-size: 22px; line-height: 1.3; }
     .meta { margin: 0 0 24px; color: #62665f; font-size: 12px; }
-    .message { padding: 14px 0; border-top: 1px solid #d8d8d0; }
+    .message-export-turn { padding: 18px 0 8px; border-top: 1px solid #d8d8d0; }
+    .message-export-turn-header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+    .message-export-turn-title { margin: 0; font-size: 15px; }
+    .message-export-turn-meta { color: #62665f; font-size: 12px; text-align: right; }
+    .message-export-user,
+    .message-export-agent,
+    .message-export-status { padding: 10px 0 10px 14px; border-left: 2px solid #d8d8d0; }
+    .message-export-user { border-left-color: #2f6f5e; }
+    .message-export-agent { border-left-color: #8a8d85; }
+    .message-export-status { border-left-color: #c2c2b8; }
     .role { color: #62665f; font-size: 12px; margin-bottom: 6px; }
     pre { margin: 0; white-space: pre-wrap; font: inherit; line-height: 1.5; }
   </style>
@@ -178,6 +186,85 @@ function roundExportBlocks(rounds: SessionRound[]): ExportBlock[] {
   return blocks;
 }
 
+function roundHtml(round: SessionRound, index: number): string {
+  const promptText = promptPartsText(round.intent_parts) ?? normalizedText(round.intent);
+  const prompt = promptText
+    ? exportMessageHtml("message-export-user", `Round ${index + 1} prompt`, promptText)
+    : "";
+  const messages = roundTimelineMessages(round)
+    .map((message) =>
+      exportMessageHtml(messageExportClass(message), messageLabel(message), roundMessageText(message)),
+    )
+    .join("");
+  const statuses = roundStatusBlocks(round, index)
+    .map((block) => exportMessageHtml("message-export-status", block.label, block.text))
+    .join("");
+  return `
+    <section class="message-export-turn" data-run-id="${escapeHtml(round.run_id)}">
+      <header class="message-export-turn-header">
+        <h2 class="message-export-turn-title">Round ${index + 1}</h2>
+        <div class="message-export-turn-meta">${escapeHtml(roundMetaText(round))}</div>
+      </header>
+      ${prompt}
+      ${messages}
+      ${statuses}
+    </section>`;
+}
+
+function roundStatusBlocks(round: SessionRound, index: number): ExportBlock[] {
+  const blocks: ExportBlock[] = [];
+  if (round.pending_tool_approval_count !== undefined && round.pending_tool_approval_count > 0) {
+    blocks.push({
+      label: `Round ${index + 1} pending approvals`,
+      text: `${round.pending_tool_approval_count} pending tool approval(s).`,
+    });
+  }
+  if (round.pending_user_question_count !== undefined && round.pending_user_question_count > 0) {
+    blocks.push({
+      label: `Round ${index + 1} pending user questions`,
+      text: `${round.pending_user_question_count} pending user question(s).`,
+    });
+  }
+  blocks.push(...roundRetryEventBlocks(round, index));
+  if (normalizedText(round.run_diagnostic_message)) {
+    blocks.push({
+      label: `Round ${index + 1} diagnostic`,
+      text: normalizedText(round.run_diagnostic_message),
+    });
+  }
+  return blocks;
+}
+
+function exportMessageHtml(className: string, label: string, text: string): string {
+  return `
+      <article class="${className}">
+        <div class="role">${escapeHtml(label)}</div>
+        <pre>${escapeHtml(text)}</pre>
+      </article>`;
+}
+
+function messageExportClass(message: SessionRoundMessage): string {
+  const role = normalizedText(message.role).toLowerCase();
+  const entryType = normalizedText(message.entry_type).toLowerCase();
+  if (role === "user" || entryType === "injection") {
+    return "message-export-user";
+  }
+  return "message-export-agent";
+}
+
+function roundMetaText(round: SessionRound): string {
+  const status = [round.run_status, round.run_phase]
+    .map((value) => normalizedText(value))
+    .filter(Boolean)
+    .join(" / ");
+  return [
+    round.run_id ? `Run: ${round.run_id}` : "",
+    round.created_at ? `Created: ${round.created_at}` : "",
+    status ? `Status: ${status}` : "",
+    round.has_final_output === true ? "Final output: yes" : "",
+  ].filter(Boolean).join(" · ");
+}
+
 function roundRetryEventBlocks(round: SessionRound, roundIndex: number): ExportBlock[] {
   return (round.retry_events ?? []).flatMap((event, eventIndex) => {
     const text = roundRetryEventText(event);
@@ -244,14 +331,6 @@ function roundSummaryBlock(round: SessionRound, index: number): ExportBlock {
     label: `Round ${index + 1}`,
     text: lines.join("\n"),
   };
-}
-
-function blockHtml(block: ExportBlock): string {
-  return `
-    <article class="message">
-      <div class="role">${escapeHtml(block.label)}</div>
-      <pre>${escapeHtml(block.text)}</pre>
-    </article>`;
 }
 
 function roundTimelineMessages(round: SessionRound): SessionRoundMessage[] {

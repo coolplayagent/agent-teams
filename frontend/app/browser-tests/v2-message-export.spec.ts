@@ -2,14 +2,18 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  ensureScreenshotDir,
   expectNoUnhandledApiRoutes,
   installShellState,
   mockShellApi,
+  screenshotPath,
   serveFrontendDist,
   SESSION_ID,
   waitForV2Shell,
   type MockApiRouteContext,
 } from "./support/frontend-app";
+
+const SCREENSHOT_FOLDER = "frontend-v2-ts-message-export";
 
 test("downloads message exports as HTML and PNG from the V2 top bar", async ({
   page,
@@ -26,6 +30,7 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
         }),
       sessionTitle: "TS message export",
     });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
 
     await page.goto(`${appServer.url}/app/`);
     await waitForV2Shell(page);
@@ -36,8 +41,28 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     const roundsRequestCountBeforeExport = roundsRequestCount;
 
     await page.getByRole("button", { name: "Export messages" }).click();
-    const htmlDownloadPromise = page.waitForEvent("download");
     await page.getByRole("menuitem", { name: "HTML" }).click();
+    const htmlDialog = page.getByRole("dialog", { name: "Select rounds" });
+    const htmlDialogContent = page
+      .locator(".ant-modal-content")
+      .filter({ hasText: "Select rounds" });
+    await expect(htmlDialog).toBeVisible();
+    await expect(htmlDialogContent).toBeVisible();
+    await expect(page.locator(".ant-dropdown").filter({ hasText: "HTML" })).toBeHidden();
+    await expect(htmlDialog).toContainText("2 of 2 selected");
+    await expect(htmlDialog).toContainText("First user prompt");
+    await expect(htmlDialog).toContainText("Second user prompt");
+    await htmlDialogContent.screenshot({
+      path: screenshotPath("v2-message-export-round-selection.png", SCREENSHOT_FOLDER),
+    });
+    await htmlDialog
+      .locator(".at-message-export-selection-row")
+      .filter({ hasText: "First user prompt" })
+      .getByRole("checkbox")
+      .uncheck();
+    await expect(htmlDialog).toContainText("1 of 2 selected");
+    const htmlDownloadPromise = page.waitForEvent("download");
+    await htmlDialog.getByRole("button", { name: "Export selected" }).click();
     const htmlDownload = await htmlDownloadPromise;
     expect(htmlDownload.suggestedFilename()).toBe(`${SESSION_ID}-messages.html`);
     const htmlPath = testInfo.outputPath(htmlDownload.suggestedFilename());
@@ -48,38 +73,32 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     expect(htmlSummary.title).toBe(`${SESSION_ID} transcript`);
     expect(htmlSummary.heading).toBe(SESSION_ID);
     expect(htmlSummary.hasSidebarTime).toBe(false);
-    expect(htmlSummary.hasLegacyShareClasses).toBe(false);
-    expect(htmlSummary.messageCount).toBe(10);
+    expect(htmlSummary.hasLegacyShareClasses).toBe(true);
+    expect(htmlSummary.turnCount).toBe(1);
+    expect(htmlSummary.messageCount).toBe(2);
     expect(htmlSummary.labels).toEqual([
       "Round 1",
       "Round 1 prompt",
       "MainAgent",
-      "Round 1 pending approvals",
-      "Round 1 pending user questions",
-      "Round 1 retry 1",
-      "Round 1 diagnostic",
-      "Round 2",
-      "Round 2 prompt",
-      "MainAgent",
     ]);
     expect(htmlSummary.texts).toEqual(
       expect.arrayContaining([
-        "First user prompt",
         "Second user prompt",
         "Second agent answer.",
-        "2 pending tool approval(s).",
-        "1 pending user question(s).",
-        "Waiting for user confirmation",
       ]),
     );
-    expect(htmlSummary.bodyText).toContain("First agent answer.");
-    expect(htmlSummary.bodyText).toContain("Tool call: read_file");
-    expect(htmlSummary.bodyText).toContain("src/a.py");
-    expect(htmlSummary.bodyText).toContain("rate limited");
+    expect(htmlSummary.bodyText).not.toContain("First user prompt");
+    expect(htmlSummary.bodyText).not.toContain("First agent answer.");
+    expect(htmlSummary.bodyText).not.toContain("Tool call: read_file");
+    expect(htmlSummary.bodyText).not.toContain("rate limited");
 
     await page.getByRole("button", { name: "Export messages" }).click();
-    const pngDownloadPromise = page.waitForEvent("download");
     await page.getByRole("menuitem", { name: "PNG" }).click();
+    const pngDialog = page.getByRole("dialog", { name: "Select rounds" });
+    await expect(pngDialog).toBeVisible();
+    await expect(pngDialog).toContainText("2 of 2 selected");
+    const pngDownloadPromise = page.waitForEvent("download");
+    await pngDialog.getByRole("button", { name: "Export selected" }).click();
     const pngDownload = await pngDownloadPromise;
     expect(pngDownload.suggestedFilename()).toBe(`${SESSION_ID}-messages.png`);
     const pngPath = testInfo.outputPath(pngDownload.suggestedFilename());
@@ -127,6 +146,7 @@ interface ExportHtmlSummary {
   messageCount: number;
   texts: string[];
   title: string;
+  turnCount: number;
 }
 
 interface PngDecodeResult {
@@ -151,14 +171,22 @@ async function summarizeExportHtml(
       ),
       hasSidebarTime: source.includes("1时"),
       heading: doc.querySelector("h1")?.textContent?.trim() ?? "",
-      labels: Array.from(doc.querySelectorAll("article.message .role")).map(
-        (item) => item.textContent?.trim() ?? "",
-      ),
-      messageCount: doc.querySelectorAll("article.message").length,
-      texts: Array.from(doc.querySelectorAll("article.message pre")).map(
+      labels: [
+        ...Array.from(doc.querySelectorAll(".message-export-turn-title")).map(
+          (item) => item.textContent?.trim() ?? "",
+        ),
+        ...Array.from(doc.querySelectorAll(".message-export-user .role, .message-export-agent .role, .message-export-status .role")).map(
+          (item) => item.textContent?.trim() ?? "",
+        ),
+      ],
+      messageCount: doc.querySelectorAll(
+        ".message-export-user, .message-export-agent, .message-export-status",
+      ).length,
+      texts: Array.from(doc.querySelectorAll(".message-export-user pre, .message-export-agent pre, .message-export-status pre")).map(
         (item) => item.textContent?.trim() ?? "",
       ),
       title: doc.title,
+      turnCount: doc.querySelectorAll(".message-export-turn").length,
     };
   }, html);
 }

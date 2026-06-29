@@ -1,10 +1,11 @@
-import { Button, Dropdown, Tooltip } from "antd";
+import { Button, Checkbox, Dropdown, Modal, Space, Tooltip, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { Download } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { listSessionRounds } from "../../api/client";
-import type { SessionRound } from "../../api/contracts";
+import { contentPartText, type SessionRound } from "../../api/contracts";
 import {
   exportSessionMessages,
   type MessageExportFormat,
@@ -22,6 +23,15 @@ interface MessageExportMenuProps {
   sessionId: string | null;
 }
 
+type RoundSelector = (
+  rounds: SessionRound[],
+  format: MessageExportFormat,
+) => Promise<SessionRound[] | null>;
+
+interface MessageExporterOptions extends MessageExportMenuProps {
+  selectRounds?: RoundSelector;
+}
+
 export interface MessageExporter {
   exporting: MessageExportFormat | null;
   exportMessages(format: MessageExportFormat): Promise<void>;
@@ -29,8 +39,9 @@ export interface MessageExporter {
 
 export function useMessageExporter({
   messenger,
+  selectRounds,
   sessionId,
-}: MessageExportMenuProps): MessageExporter {
+}: MessageExporterOptions): MessageExporter {
   const [exporting, setExporting] = useState<MessageExportFormat | null>(null);
   const t = useTranslations();
 
@@ -43,9 +54,13 @@ export function useMessageExporter({
     setExporting(format);
     try {
       const rounds = await collectCompleteSessionRounds(sessionId);
+      const selectedRounds = await resolveExportRounds(rounds, format, selectRounds);
+      if (selectedRounds === null) {
+        return;
+      }
       const fileCount = await exportSessionMessages({
         format,
-        rounds,
+        rounds: selectedRounds,
         sessionId,
       });
       void messenger.success(
@@ -76,7 +91,12 @@ export function MessageExportMenu({
   sessionId,
 }: MessageExportMenuProps) {
   const t = useTranslations();
-  const exporter = useMessageExporter({ messenger, sessionId });
+  const roundSelection = useRoundSelectionDialog();
+  const exporter = useMessageExporter({
+    messenger,
+    selectRounds: roundSelection.selectRounds,
+    sessionId,
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const exportMenuItems: MenuProps["items"] = [
     {
@@ -90,12 +110,14 @@ export function MessageExportMenu({
   ];
 
   return (
+    <>
     <Dropdown
       onOpenChange={setMenuOpen}
       open={menuOpen}
       menu={{
         items: exportMenuItems,
         onClick: ({ key }) => {
+          setMenuOpen(false);
           void exporter.exportMessages(key === "png" ? "png" : "html");
         },
       }}
@@ -111,7 +133,135 @@ export function MessageExportMenu({
         />
       </Tooltip>
     </Dropdown>
+    {roundSelection.modal}
+    </>
   );
+}
+
+interface RoundSelectionState {
+  format: MessageExportFormat;
+  rounds: SessionRound[];
+  selectedKeys: string[];
+}
+
+function useRoundSelectionDialog(): {
+  modal: ReactNode;
+  selectRounds: RoundSelector;
+} {
+  const t = useTranslations();
+  const resolverRef = useRef<((rounds: SessionRound[] | null) => void) | null>(null);
+  const [state, setState] = useState<RoundSelectionState | null>(null);
+  const selectRounds = useCallback<RoundSelector>(async (rounds, format) => {
+    if (rounds.length <= 1) {
+      return rounds;
+    }
+    return await new Promise<SessionRound[] | null>((resolve) => {
+      resolverRef.current = resolve;
+      setState({
+        format,
+        rounds,
+        selectedKeys: rounds.map((round, index) => roundKey(round, index)),
+      });
+    });
+  }, []);
+  const resolve = (rounds: SessionRound[] | null) => {
+    resolverRef.current?.(rounds);
+    resolverRef.current = null;
+    setState(null);
+  };
+  const setSelectedKeys = (selectedKeys: string[]) => {
+    setState((current) => current === null ? null : { ...current, selectedKeys });
+  };
+  const selectedRounds = state?.rounds.filter((round, index) =>
+    state.selectedKeys.includes(roundKey(round, index)),
+  ) ?? [];
+  const modal = (
+    <Modal
+      cancelText={t("sidebarDeleteCancel")}
+      okButtonProps={{ disabled: selectedRounds.length === 0 }}
+      okText={t("exportRoundSelectionConfirm")}
+      onCancel={() => resolve(null)}
+      onOk={() => resolve(selectedRounds)}
+      open={state !== null}
+      title={t("exportRoundSelectionTitle")}
+      width={560}
+    >
+      {state === null ? null : (
+        <div className="at-message-export-selection">
+          <Typography.Text type="secondary">
+            {t("exportRoundSelectionDescription", {
+              format: exportFormatLabel(state.format, t),
+            })}
+          </Typography.Text>
+          <div className="at-message-export-selection-tools">
+            <Typography.Text type="secondary">
+              {t("exportRoundSelectionCount", {
+                count: state.selectedKeys.length,
+                total: state.rounds.length,
+              })}
+            </Typography.Text>
+            <Space size={8}>
+              <Button
+                onClick={() =>
+                  setSelectedKeys(state.rounds.map((round, index) => roundKey(round, index)))
+                }
+                size="small"
+                type="text"
+              >
+                {t("exportRoundSelectionAll")}
+              </Button>
+              <Button
+                onClick={() => setSelectedKeys([])}
+                size="small"
+                type="text"
+              >
+                {t("exportRoundSelectionClear")}
+              </Button>
+            </Space>
+          </div>
+          <div className="at-message-export-selection-list">
+            {state.rounds.map((round, index) => {
+              const key = roundKey(round, index);
+              return (
+                <label className="at-message-export-selection-row" key={key}>
+                  <Checkbox
+                    checked={state.selectedKeys.includes(key)}
+                    onChange={(event) => {
+                      const nextSelected = event.target.checked
+                        ? [...state.selectedKeys, key]
+                        : state.selectedKeys.filter((value) => value !== key);
+                      setSelectedKeys(Array.from(new Set(nextSelected)));
+                    }}
+                  />
+                  <span className="at-message-export-selection-copy">
+                    <strong>
+                      {t("exportRoundSelectionRound", { index: index + 1 })}
+                    </strong>
+                    <span>{roundPreview(round)}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+  return {
+    modal,
+    selectRounds,
+  };
+}
+
+async function resolveExportRounds(
+  rounds: SessionRound[],
+  format: MessageExportFormat,
+  selectRounds: RoundSelector | undefined,
+): Promise<SessionRound[] | null> {
+  if (selectRounds === undefined) {
+    return rounds;
+  }
+  return await selectRounds(rounds, format);
 }
 
 async function collectCompleteSessionRounds(sessionId: string): Promise<SessionRound[]> {
@@ -148,6 +298,41 @@ function sortRoundsAscending(rounds: SessionRound[]): SessionRound[] {
   return [...rounds].sort((left, right) =>
     sortableTimestamp(left.created_at) - sortableTimestamp(right.created_at),
   );
+}
+
+function roundKey(round: SessionRound, index: number): string {
+  const runId = round.run_id.trim();
+  return runId || round.created_at || round.intent || `round:${index}`;
+}
+
+function roundPreview(round: SessionRound): string {
+  const intentParts = (round.intent_parts ?? [])
+    .map((part) => contentPartText(part))
+    .filter((value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
+    )
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (intentParts) {
+    return intentParts;
+  }
+  const intent = round.intent?.trim() ?? "";
+  if (intent) {
+    return intent;
+  }
+  const createdAt = round.created_at?.trim() ?? "";
+  if (createdAt) {
+    return new Date(createdAt).toLocaleString();
+  }
+  return "No prompt";
+}
+
+function exportFormatLabel(
+  format: MessageExportFormat,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  return t(format === "png" ? "exportAsPng" : "exportAsHtml");
 }
 
 function sortableTimestamp(value: string | undefined): number {

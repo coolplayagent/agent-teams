@@ -5180,3 +5180,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent implementation, build, targeted browser coverage, screenshot inspection, and shell parity check completed for this P1 slice. No Spec lineage subsystem sign-off, Export sign-off, final release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Message Export Round Selection Restore
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, quality gates, reviewer FAIL findings, current export implementation, and browser evidence before editing. This slice addresses the remaining reviewer finding from `019f1250-3460-7d00-a68c-a4d96491ace7`: message export needed V1-style multi-round selection and a structured export shape instead of a flat all-round download.
+- Added a round-selection modal before multi-round HTML and PNG exports. All rounds are selected by default, users can clear or select all, the export action is disabled when nothing is selected, and cancel exits without downloading.
+- Changed HTML transcript generation to group content by exported round using `message-export-turn`, `message-export-user`, `message-export-agent`, and `message-export-status` classes. Selected rounds only are included in the generated transcript.
+- Kept the PNG export path on the existing block renderer while feeding it the selected round set, so PNG behavior now follows the same selection decision without introducing a separate visual rewrite.
+- Added English and Chinese copy plus scoped modal/list styling. This does not add or remove sidebar entries or Settings sections.
+- Rebuilt `frontend/dist/app` from the source changes so the served app and browser evidence match the implementation.
+- This resolves only the V1-style multi-round export workflow gap from the reviewer finding. Message timeline streaming/replay/recovery, full resource/assistive sign-off, release cleanup, and final V2 completion remain open.
+
+### Verification
+- `npm run build` passed, including frontend typecheck, desktop typecheck, desktop build, and Vite dist rebuild.
+- `npm run lint` passed.
+- `npm run test:browser -- browser-tests/v2-message-export.spec.ts` passed with 1 test covering HTML and PNG export selection, selected-round filtering, V1-like HTML export structure, PNG byte validity, browser PNG decode, and strict unhandled-route coverage.
+- Tightened the browser test so screenshot evidence waits for the actual Ant Modal content and verifies the format dropdown is closed before capture.
+- Inspected `.tmp/frontend-v2-ts-message-export/v2-message-export-round-selection.png`; it shows the round-selection modal with both rounds selected, select-all/clear controls, and the export action in the fixed shell theme.
+
+### Reviewer
+- Main-agent implementation, dist rebuild, targeted browser coverage, screenshot inspection, and frontend typecheck completed for this export slice. No Message Timeline subsystem sign-off, Resource/Assistive subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

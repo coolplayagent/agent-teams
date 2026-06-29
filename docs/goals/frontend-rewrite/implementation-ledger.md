@@ -7181,3 +7181,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 behavior mapping, V2 React Query implementation, focused TS coverage, targeted type/test verification, and partial legacy harness removal completed for this title preview slice. No full Composer subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Prompt Mention Autocomplete Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the final remaining `test_prompt_yolo_ui.py` scenario, and existing V2 Composer mention coverage before editing.
+- Added V2 Composer coverage for the remaining prompt mention behavior: keyboard role mention selection, fullwidth mention dismissal, directory resource mention continuation, cached resource fallback for later matching queries, and case-preserving workspace resource lookup.
+- Fixed a V2 resource mention parity gap by reusing cached workspace path search results only when the current resource query has no results, then deduplicating cached paths before rendering suggestions. This preserves case-sensitive backend queries while restoring V1's useful cached-path fallback behavior for repeated prompt mentions.
+- Deleted `tests/integration_tests/frontend/test_prompt_yolo_ui.py`; the old source-copy prompt/composer Python UI harness for this file is now fully migrated to V2 TS coverage.
+- This slice is a focused Composer behavior parity fix plus harness cleanup; no visual layout, sidebar/settings item inventory, backend contract, desktop shell, stream/replay transport, or built dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 76 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed before deletion.
+- `Test-Path tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned `False`, confirming the migrated old Python harness file is gone.
+- `rg -n "test_prompt_role_mentions_offer|supports keyboard role mention selection|continues directory resource mentions|keeps workspace resource mention lookup case-sensitive|promptResourceResponseForMentions" tests/integration_tests/frontend frontend/app/src/test/Composer.test.tsx frontend/app/src/features/composer/Composer.tsx` returns only the new V2 TS coverage and implementation, with no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent V1 harness decomposition, V2 behavior implementation, focused TS coverage, targeted type/test verification, and final `test_prompt_yolo_ui.py` removal completed for this prompt mention slice. No full Composer subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, broader frontend Python UI test migration PASS, release cleanup sign-off, or V2 frontend completion is claimed.

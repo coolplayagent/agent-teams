@@ -49,6 +49,7 @@ import type {
   SessionRecord,
   SessionSidebarRecord,
   ThinkingEffort,
+  WorkspaceSearchResponse,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations, type Translate } from "../../i18n";
@@ -180,6 +181,55 @@ function sessionWithTitlePreview(
   };
 }
 
+function promptResourceResponseForMentions({
+  currentResponse,
+  query,
+  queryClient,
+  workspaceId,
+}: {
+  currentResponse: WorkspaceSearchResponse | undefined;
+  query: string;
+  queryClient: QueryClient;
+  workspaceId: string | null;
+}): WorkspaceSearchResponse | undefined {
+  if (currentResponse !== undefined && currentResponse.results.length > 0) {
+    return currentResponse;
+  }
+  const safeWorkspaceId = workspaceId?.trim() ?? "";
+  const safeQuery = query.trim();
+  if (!safeWorkspaceId || !safeQuery) {
+    return currentResponse;
+  }
+  const cachedResults = queryClient
+    .getQueriesData<WorkspaceSearchResponse>({
+      queryKey: ["workspaces", safeWorkspaceId, "prompt-resources"],
+    })
+    .flatMap(([, response]) => response?.results ?? []);
+  const dedupedResults = dedupeWorkspaceSearchResults(cachedResults);
+  if (dedupedResults.length === 0) {
+    return currentResponse;
+  }
+  return {
+    query: safeQuery,
+    results: dedupedResults,
+    workspace_id: safeWorkspaceId,
+  };
+}
+
+function dedupeWorkspaceSearchResults(
+  results: WorkspaceSearchResponse["results"],
+): WorkspaceSearchResponse["results"] {
+  const seen = new Set<string>();
+  return results.filter((result) => {
+    const key = `${result.kind}:${result.path.trim()}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -284,6 +334,21 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       promptResourceContext.query.length > 0,
     staleTime: 30000,
   });
+  const resourceResponseForMentions = useMemo(
+    () =>
+      promptResourceResponseForMentions({
+        currentResponse: resourceSearchQuery.data,
+        query: promptResourceContext?.query ?? "",
+        queryClient,
+        workspaceId: sessionWorkspaceId,
+      }),
+    [
+      promptResourceContext?.query,
+      queryClient,
+      resourceSearchQuery.data,
+      sessionWorkspaceId,
+    ],
+  );
   const roleOptions = useMemo(
     () =>
       (roleOptionsQuery.data?.normal_mode_roles ?? []).map((role) => ({
@@ -361,12 +426,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         ? []
         : findPromptResourceMentionOptions({
             query: promptResourceContext.query,
-            resourceResponse: resourceSearchQuery.data,
+            resourceResponse: resourceResponseForMentions,
             roleOptions: roleOptionsQuery.data,
           }),
     [
       promptResourceContext,
-      resourceSearchQuery.data,
+      resourceResponseForMentions,
       roleOptionsQuery.data,
     ],
   );

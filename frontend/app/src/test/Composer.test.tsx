@@ -231,6 +231,51 @@ describe("Composer", () => {
     expect(screen.getByRole("button", { name: "发送" })).toBeVisible();
   });
 
+  it("supports keyboard role mention selection and fullwidth dismissal", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      coordinator_role_id: "Coordinator",
+      main_agent_role_id: "MainAgent",
+      normal_mode_roles: [
+        {
+          role_id: "writer",
+          name: "Writer",
+          description: "Draft final responses",
+        },
+        {
+          role_id: "reviewer",
+          name: "Reviewer",
+          description: "Check correctness and risk",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "@" } });
+
+    expect(await screen.findByText("@Main Agent")).toBeVisible();
+    expect(screen.getByText("Draft final responses")).toBeVisible();
+
+    fireEvent.keyDown(prompt, { key: "ArrowDown" });
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /@Main Agent/ }))
+        .toHaveAttribute("aria-selected", "true"),
+    );
+    fireEvent.keyDown(prompt, { key: "Tab" });
+
+    await waitFor(() => expect(prompt).toHaveValue("@Main Agent "));
+
+    fireEvent.change(prompt, { target: { value: "＠Ma" } });
+    expect(await screen.findByText("@Main Agent")).toBeVisible();
+    fireEvent.keyDown(prompt, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Prompt suggestions")).toBeNull(),
+    );
+    expect(prompt).toHaveValue("＠Ma");
+  });
+
   it("keeps composer topology controls scoped to the active session mode", async () => {
     getSessionMock.mockResolvedValue({
       session_id: "session-1",
@@ -1216,6 +1261,131 @@ describe("Composer", () => {
 
     expect(prompt).toHaveValue("@frontend/app/src/");
     expect(createRunMock).not.toHaveBeenCalled();
+  });
+
+  it("continues directory resource mentions and reuses cached path results", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    searchWorkspacePathsMock.mockImplementation(async (_workspaceId, query) => {
+      if (query === "src") {
+        return {
+          query,
+          results: [
+            {
+              kind: "directory",
+              name: "src",
+              path: "src",
+            },
+            {
+              kind: "file",
+              name: "main.py",
+              path: "src/relay_teams/main.py",
+            },
+          ],
+          workspace_id: "workspace-1",
+        };
+      }
+      if (query === "src/") {
+        return {
+          query,
+          results: [
+            {
+              kind: "file",
+              name: "main.py",
+              path: "src/relay_teams/main.py",
+            },
+          ],
+          workspace_id: "workspace-1",
+        };
+      }
+      return {
+        query,
+        results: [],
+        workspace_id: "workspace-1",
+      };
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "@src" } });
+    const directoryOption = await screen.findByRole("option", { name: /@src/ });
+    fireEvent.mouseDown(directoryOption);
+
+    expect(prompt).toHaveValue("@src/");
+    await waitFor(() =>
+      expect(searchWorkspacePathsMock).toHaveBeenCalledWith(
+        "workspace-1",
+        "src/",
+        80,
+      ),
+    );
+    expect(await screen.findByText("@main.py")).toBeVisible();
+
+    fireEvent.change(prompt, { target: { value: "@relay" } });
+
+    await waitFor(() =>
+      expect(searchWorkspacePathsMock).toHaveBeenCalledWith(
+        "workspace-1",
+        "relay",
+        80,
+      ),
+    );
+    expect(await screen.findByText("@main.py")).toBeVisible();
+    expect(screen.getByText("src/relay_teams/main.py")).toBeVisible();
+  });
+
+  it("keeps workspace resource mention lookup case-sensitive", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    searchWorkspacePathsMock.mockImplementation(async (_workspaceId, query) => {
+      if (query === "Src/Relay_Teams/Media/") {
+        return {
+          query,
+          results: [
+            {
+              kind: "file",
+              name: "models.py",
+              path: "Src/Relay_Teams/Media/models.py",
+            },
+          ],
+          workspace_id: "workspace-1",
+        };
+      }
+      return {
+        query,
+        results: [],
+        workspace_id: "workspace-1",
+      };
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "@src/relay_teams/media/" } });
+
+    await waitFor(() =>
+      expect(searchWorkspacePathsMock).toHaveBeenCalledWith(
+        "workspace-1",
+        "src/relay_teams/media/",
+        80,
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Prompt suggestions")).toBeNull(),
+    );
+
+    fireEvent.change(prompt, { target: { value: "@Src/Relay_Teams/Media/" } });
+
+    expect(await screen.findByText("@models.py")).toBeVisible();
+    expect(screen.getByText("Src/Relay_Teams/Media/models.py")).toBeVisible();
+    expect(searchWorkspacePathsMock).toHaveBeenCalledWith(
+      "workspace-1",
+      "Src/Relay_Teams/Media/",
+      80,
+    );
   });
 
   it("uses a leading role mention as the run target and strips it from prompt text", async () => {

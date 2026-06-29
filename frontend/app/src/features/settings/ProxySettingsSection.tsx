@@ -1,6 +1,6 @@
 import { Alert, App, Button, Form, Input, InputNumber, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getProxyConfig,
@@ -41,6 +41,7 @@ export function ProxySettingsSection() {
   const [form] = Form.useForm<ProxyFormValues>();
   const [savedPassword, setSavedPassword] = useState<string | null>(null);
   const [passwordDirty, setPasswordDirty] = useState(false);
+  const passwordFocusedRef = useRef(false);
   const [probeResult, setProbeResult] =
     useState<WebConnectivityProbeResult | null>(null);
 
@@ -77,6 +78,7 @@ export function ProxySettingsSection() {
     }
     setSavedPassword(normalizeOptionalString(proxyQuery.data.proxy_password));
     setPasswordDirty(false);
+    passwordFocusedRef.current = false;
     setProbeResult(null);
     form.setFieldsValue({
       all_proxy: proxyQuery.data.all_proxy ?? "",
@@ -94,6 +96,11 @@ export function ProxySettingsSection() {
 
   function submit(values: ProxyFormValues) {
     saveMutation.mutate(buildProxyConfig(values, savedPassword, passwordDirty));
+  }
+
+  function clearPassword() {
+    form.setFieldValue("proxy_password", "");
+    setPasswordDirty(true);
   }
 
   async function testConnectivity() {
@@ -164,7 +171,17 @@ export function ProxySettingsSection() {
               <Form.Item label={t("settingsProxyPassword")} name="proxy_password">
                 <Input.Password
                   autoComplete="new-password"
-                  onChange={() => setPasswordDirty(true)}
+                  onBlur={() => {
+                    passwordFocusedRef.current = false;
+                  }}
+                  onChange={() => {
+                    if (passwordFocusedRef.current) {
+                      setPasswordDirty(true);
+                    }
+                  }}
+                  onFocus={() => {
+                    passwordFocusedRef.current = true;
+                  }}
                   placeholder={
                     savedPassword && !passwordDirty
                       ? MASKED_PASSWORD_PLACEHOLDER
@@ -176,6 +193,9 @@ export function ProxySettingsSection() {
                 <Typography.Text className="at-settings-help">
                   {t("settingsProxyPasswordPreserved")}
                 </Typography.Text>
+              ) : null}
+              {savedPassword ? (
+                <Button onClick={clearPassword}>{t("settingsProxyClearPassword")}</Button>
               ) : null}
               <Form.Item label={t("settingsProxySslVerify")} name="ssl_verify">
                 <select

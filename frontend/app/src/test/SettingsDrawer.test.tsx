@@ -3065,14 +3065,9 @@ describe("SettingsDrawer", () => {
   }, 25000);
 
   it("saves and probes proxy settings while preserving the saved password", async () => {
-    renderDrawer();
+    await openProxySettings();
 
-    const sections = await screen.findByRole("navigation", {
-      name: "Settings sections",
-    });
-    fireEvent.click(within(sections).getByRole("button", { name: "Proxy" }));
-
-    const httpProxy = await screen.findByLabelText("HTTP Proxy");
+    const httpProxy = screen.getByLabelText("HTTP Proxy");
     fireEvent.change(httpProxy, {
       target: { value: "http://edited.example:8080" },
     });
@@ -3080,6 +3075,7 @@ describe("SettingsDrawer", () => {
       "placeholder",
       "************",
     );
+    expect(screen.getByLabelText("Default SSL verification")).toHaveValue("false");
     fireEvent.change(screen.getByLabelText("Target URL"), {
       target: { value: "https://example.com" },
     });
@@ -3117,6 +3113,109 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(reloadProxyConfigMock).toHaveBeenCalledTimes(1));
   }, 10000);
 
+  it("defaults missing Proxy SSL verification to skip verification", async () => {
+    getProxyConfigMock.mockResolvedValueOnce({
+      all_proxy: null,
+      http_proxy: null,
+      https_proxy: null,
+      no_proxy: null,
+      proxy_password: null,
+      proxy_username: null,
+      ssl_verify: null,
+    });
+    await openProxySettings();
+
+    expect(screen.getByLabelText("Default SSL verification")).toHaveValue("false");
+  });
+
+  it("ignores Proxy password autofill events until the password field is focused", async () => {
+    await openProxySettings();
+
+    const password = screen.getByLabelText("Password") as HTMLInputElement;
+    fireEvent.change(password, { target: { value: "browser_password" } });
+    fireEvent.change(screen.getByLabelText("Target URL"), {
+      target: { value: "https://example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test URL" }));
+
+    await waitFor(() =>
+      expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        proxy_override: expect.objectContaining({
+          proxy_password: "saved-secret",
+        }),
+        timeout_ms: 5000,
+        url: "https://example.com",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveProxyConfigMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          proxy_password: "saved-secret",
+        }),
+      ),
+    );
+  });
+
+  it("replaces and clears saved Proxy passwords explicitly", async () => {
+    await openProxySettings();
+
+    const password = screen.getByLabelText("Password") as HTMLInputElement;
+    fireEvent.focus(password);
+    fireEvent.change(password, { target: { value: "replacement-secret" } });
+    fireEvent.change(screen.getByLabelText("Target URL"), {
+      target: { value: "https://example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test URL" }));
+
+    await waitFor(() =>
+      expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        proxy_override: expect.objectContaining({
+          proxy_password: "replacement-secret",
+        }),
+        timeout_ms: 5000,
+        url: "https://example.com",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveProxyConfigMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          proxy_password: "replacement-secret",
+        }),
+      ),
+    );
+
+    probeWebConnectivityMock.mockClear();
+    saveProxyConfigMock.mockClear();
+    reloadProxyConfigMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Clear password" }));
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "placeholder",
+      "Optional proxy password",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Test URL" }));
+    await waitFor(() =>
+      expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        proxy_override: expect.objectContaining({
+          proxy_password: null,
+        }),
+        timeout_ms: 5000,
+        url: "https://example.com",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveProxyConfigMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          proxy_password: null,
+        }),
+      ),
+    );
+    await waitFor(() => expect(reloadProxyConfigMock).toHaveBeenCalledTimes(1));
+  });
+
 });
 
 function renderDrawer() {
@@ -3153,6 +3252,15 @@ async function openWebSettings() {
   });
   fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
   await screen.findByLabelText("Exa API key");
+}
+
+async function openProxySettings() {
+  renderDrawer();
+  const sections = await screen.findByRole("navigation", {
+    name: "Settings sections",
+  });
+  fireEvent.click(within(sections).getByRole("button", { name: "Proxy" }));
+  await screen.findByLabelText("HTTP Proxy");
 }
 
 function installDesktopApi(version: string) {

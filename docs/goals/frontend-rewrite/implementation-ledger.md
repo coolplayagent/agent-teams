@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Proxy Settings TS Migration
+
+### Scope
+- Continued the settings secondary-page parity migration after Web/ClawHub by selecting `tests/integration_tests/frontend/test_proxy_settings_ui.py` as the next bounded old Python UI harness to remove.
+- Migrated V1 Proxy settings behavior into `SettingsDrawer.test.tsx`: saved values load into the real V2 Settings page, saved proxy passwords are preserved for probe/save, autofill-style change events do not dirty the password field until focus, focused edits replace the saved password, explicit clear sends `null`, SSL verify defaults to skip verification, and successful probe output remains visible.
+- Fixed `ProxySettingsSection` so password changes only mark the saved secret dirty after the password input has focus, preventing saved credentials from being overwritten by unfocused autofill events.
+- Added an explicit Proxy clear-password action to match the V1 saved-secret clearing workflow without changing the settings navigation or flattening secondary pages.
+- Deleted `tests/integration_tests/frontend/test_proxy_settings_ui.py`; 26 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "Proxy|proxy"` passed.
+
+### Reviewer
+- Main-agent Proxy settings harness migration completed for this slice. This does not claim full Settings PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broad settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 Web Settings TS Migration
 
 ### Scope

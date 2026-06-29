@@ -1773,6 +1773,36 @@ describe("Composer", () => {
     expect(createRunMock).not.toHaveBeenCalled();
   });
 
+  it("clears queued runtime injection text and refreshes recovery state", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    injectRunMessageMock.mockResolvedValue({
+      status: "ok",
+      run_id: "run-1",
+    });
+    const queryClient = renderComposer(runStreamController("run-1"));
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const prompt = screen.getByLabelText("Prompt");
+
+    fireEvent.change(prompt, {
+      target: { value: "Continue after the failing tool" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+
+    await waitFor(() =>
+      expect(injectRunMessageMock).toHaveBeenCalledWith("run-1", {
+        content: "Continue after the failing tool",
+        mode: "queued",
+      }),
+    );
+    await waitFor(() => expect(prompt).toHaveValue(""));
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "recovery"],
+    });
+    expect(createRunMock).not.toHaveBeenCalled();
+  });
+
   it("stops an active run and suppresses the stale recovery target", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

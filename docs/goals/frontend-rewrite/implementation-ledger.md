@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Runtime Injection TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Composer/Run Controls checklist, existing V2 Composer/MessageTimeline/browser coverage, and the old `test_runtime_inject_ui.py` harness before editing.
+- Migrated the remaining V1 runtime-injection intent to V2 TypeScript evidence: Queue and Interrupt operate through the active AG-UI run injection API instead of creating a new run; successful queued injection clears the draft and refreshes recovery state; runtime injection rows render through live/replay timeline events; persisted round injection messages render inside tool-heavy history.
+- Kept production code unchanged because V2 already routes active-run injection through `injectRunMessage`, renders `injection_enqueued`/`injection_applied` runtime events in `MessageTimeline`, and has browser coverage for active real-SSE injection.
+- Removed `tests/integration_tests/frontend/test_runtime_inject_ui.py` after its remaining V2-relevant behavior was covered by focused TypeScript tests and existing browser/runtime evidence.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx -t "runtime injection|queues an injection|queued runtime injection|interrupts an active run|text-only"` passed with 6 focused Composer tests.
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "injection|coordination events"` passed with 4 focused MessageTimeline tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+
+### Reviewer
+- Main-agent V2 runtime-injection coverage and old Python UI harness removal completed for this slice. No full Composer subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Agent Panel Shell Boundary TS Migration
 
 ### Scope

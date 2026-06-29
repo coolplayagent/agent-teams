@@ -4985,3 +4985,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent source fix, TS unit tests, TS browser, frontend lint/typecheck/build, Python syntax/lint, screenshot inspection, live browser layout metrics, remaining Python browser scan, and cleanup completed for this slice. No Sessions And Projects subsystem sign-off, Automation subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Environment Topology Browser Harness TS Migration Cleanup
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, remaining `test_browser_smoke.py` browser-test surface, and existing `v2-settings-actions.spec.ts` coverage before editing. This slice targets Settings / Composer topology migration evidence instead of continuing the previous workspace-action area.
+- Confirmed `frontend/app/browser-tests/v2-settings-actions.spec.ts` already covers the replaced V1/Python behavior: app environment variable create/delete through real endpoints, session switch to orchestration with the default preset, orchestration preset selection, reset to normal mode, request payload verification, fixed-shell no-document-scroll verification, and screenshot evidence.
+- Removed the skipped `test_browser_environment_variables_and_session_topology` Python Playwright scenario from `tests/integration_tests/browser/test_browser_smoke.py`.
+- Kept this as targeted Settings / Session Topology browser-suite migration cleanup only. Remaining frontend rewrite work still includes migrating the remaining 2 active and 1 skipped `test_browser_smoke.py` browser scenarios, deeper stream replay and interrupted-stream recovery review, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts -g "environment variables and session topology"` passed.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `git diff --check` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip|test_browser_environment_variables_and_session_topology" tests\integration_tests\browser\test_browser_smoke.py` reports 2 active plus 1 skipped legacy Python browser scenarios and no replaced environment/topology scenario.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-environment-topology-workflow.png`; it shows the V2 fixed shell after the environment/topology browser flow, with sidebar and composer contained in one viewport.
+
+### Reviewer
+- Main-agent TS browser, Python syntax/lint, diff check, screenshot inspection, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, Composer topology subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Streaming Tool Cursor TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining frontend Python UI tests, and current V2 MessageTimeline coverage before editing. This slice targets a small stream UI regression from the legacy V1 `test_streaming_tool_cursor_ui.py` file.
+- Added V2 TS component coverage proving that when a `tool_call` follows a live `text_delta` while the run remains open, the previous text segment is closed, no longer renders as streaming, and no `.streaming-cursor` remains attached to that text row.
+- Removed the replaced `tests/unit_tests/frontend/test_streaming_tool_cursor_ui.py` Python source-string test.
+- No runtime or visual source changed in this slice, so no dist rebuild or screenshot is claimed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 74 focused Vitest tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+- `rg --files tests/unit_tests/frontend | rg "test_streaming_tool_cursor_ui\\.py$"` returned no matches after removal.
+
+### Reviewer
+- Main-agent TS component migration, focused timeline test, frontend lint/typecheck, diff check, and old Python file removal completed for this slice. No Message Timeline subsystem PASS, Runtime Stream subsystem PASS, full Python UI test migration, final visual audit sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Round Prompt Marker TS Closure
 
 ### Scope

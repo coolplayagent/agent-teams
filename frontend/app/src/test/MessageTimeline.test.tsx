@@ -1430,6 +1430,35 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("clears the runtime text streaming cursor when a tool call arrives", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Streaming before the tool",
+      }),
+      runtimeToolCallEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+      }),
+    ], "open");
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Streaming before the tool")).toBeVisible();
+    expect(screen.getByText("Tool call: execute_command")).toBeVisible();
+    const textRow = screen
+      .getByText("Streaming before the tool")
+      .closest("article.at-message");
+    expect(textRow).not.toBeNull();
+    expect(textRow).not.toHaveClass("is-streaming");
+    expect(textRow?.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(textRow?.querySelector(".streaming-cursor")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
+  });
+
   it("renders long open runtime text streams as one plain text block", async () => {
     const prefix = "x".repeat(10000);
     const suffix = "y".repeat(3000);

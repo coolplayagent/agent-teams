@@ -38,7 +38,9 @@ vi.mock("../api/client", () => ({
 }));
 
 vi.mock("../features/composer/Composer", () => ({
-  Composer: () => <div data-testid="composer" />,
+  Composer: ({ sessionId }: { sessionId: string | null }) => (
+    <div data-session-id={sessionId ?? ""} data-testid="composer" />
+  ),
 }));
 
 vi.mock("../features/automation/AutomationView", () => ({
@@ -62,7 +64,9 @@ vi.mock("../features/skills/SkillsView", () => ({
 }));
 
 vi.mock("../features/recovery/RecoveryBar", () => ({
-  RecoveryBar: () => <div data-testid="recovery" />,
+  RecoveryBar: ({ sessionId }: { sessionId: string | null }) => (
+    <div data-session-id={sessionId ?? ""} data-testid="recovery" />
+  ),
 }));
 
 vi.mock("../features/sessions/SessionsSidebar", () => ({
@@ -193,7 +197,19 @@ vi.mock("../features/shell/ObservabilityPanel", () => ({
 }));
 
 vi.mock("../features/shell/SessionTokenUsage", () => ({
-  SessionTokenUsage: () => <div data-testid="token-usage" />,
+  SessionTokenUsage: ({
+    primaryRoleId,
+    sessionId,
+  }: {
+    primaryRoleId: string | null;
+    sessionId: string | null;
+  }) => (
+    <div
+      data-primary-role-id={primaryRoleId ?? ""}
+      data-session-id={sessionId ?? ""}
+      data-testid="token-usage"
+    />
+  ),
 }));
 
 vi.mock("../features/sessions/SubagentSessionView", () => ({
@@ -219,7 +235,19 @@ vi.mock("../features/shell/SettingsDrawer", () => ({
 }));
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
-  MessageTimeline: () => <div data-testid="timeline" />,
+  MessageTimeline: ({
+    sessionId,
+    workspaceId,
+  }: {
+    sessionId: string | null;
+    workspaceId?: string | null;
+  }) => (
+    <div
+      data-session-id={sessionId ?? ""}
+      data-testid="timeline"
+      data-workspace-id={workspaceId ?? ""}
+    />
+  ),
 }));
 
 vi.mock("../features/workspaces/WorkspaceProjectView", () => ({
@@ -415,6 +443,119 @@ describe("AppShell", () => {
     await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-first"));
   });
 
+  it("ignores stale session detail after rapid selection changes", async () => {
+    const sessionResolvers = new Map<string, (session: SessionRecord) => void>();
+    getSessionMock.mockImplementation(
+      (sessionId: string) =>
+        new Promise<SessionRecord>((resolve) => {
+          sessionResolvers.set(sessionId, resolve);
+        }),
+    );
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        workspace_id: "workspace-a",
+        title: "Session A",
+      },
+      {
+        session_id: "session-b",
+        workspace_id: "workspace-b",
+        title: "Session B",
+      },
+    ]);
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-a",
+        root_path: "C:/work/a",
+        display_name: "Workspace A",
+      },
+      {
+        workspace_id: "workspace-b",
+        root_path: "C:/work/b",
+        display_name: "Workspace B",
+      },
+    ]);
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "workspace-a",
+    });
+
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toHaveAttribute(
+      "data-session-id",
+      "session-a",
+    );
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-a"));
+
+    await act(async () => {
+      useUiStore.getState().setSelectedWorkspaceId("workspace-b");
+      useUiStore.getState().setSelectedSessionId("session-b");
+    });
+    expect(await screen.findByTestId("timeline")).toHaveAttribute(
+      "data-session-id",
+      "session-b",
+    );
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-b"));
+
+    await act(async () => {
+      useUiStore.getState().setSelectedWorkspaceId("workspace-a");
+      useUiStore.getState().setSelectedSessionId("session-a");
+    });
+    expect(await screen.findByTestId("timeline")).toHaveAttribute(
+      "data-session-id",
+      "session-a",
+    );
+
+    const resolveSessionB = sessionResolvers.get("session-b");
+    if (resolveSessionB === undefined) {
+      throw new Error("Session B detail query did not start.");
+    }
+    await act(async () => {
+      resolveSessionB({
+        normal_root_role_id: "Reviewer",
+        session_id: "session-b",
+        workspace_id: "workspace-b",
+      });
+    });
+
+    expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-session-id",
+      "session-a",
+    );
+    expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-workspace-id",
+      "workspace-a",
+    );
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-session-id",
+      "session-a",
+    );
+    expect(screen.getByTestId("token-usage")).not.toHaveAttribute(
+      "data-primary-role-id",
+      "Reviewer",
+    );
+
+    const resolveSessionA = sessionResolvers.get("session-a");
+    if (resolveSessionA === undefined) {
+      throw new Error("Session A detail query did not start.");
+    }
+    await act(async () => {
+      resolveSessionA({
+        normal_root_role_id: "MainAgent",
+        session_id: "session-a",
+        workspace_id: "workspace-a",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("token-usage")).toHaveAttribute(
+        "data-primary-role-id",
+        "MainAgent",
+      ),
+    );
+  });
+
   it("marks selected terminal runs viewed from sidebar records without masking newer runs", async () => {
     const firstTerminalSession: SessionSidebarRecord = {
       has_unread_terminal_run: true,
@@ -452,6 +593,107 @@ describe("AppShell", () => {
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "detail", "session-1"],
     });
+  });
+
+  it("marks the selected terminal run when returning from a subagent view", async () => {
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        has_unread_terminal_run: true,
+        latest_terminal_run_id: "run-subagent-return",
+        latest_terminal_run_status: "completed",
+        latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+        session_id: "session-1",
+        title: "Session 1",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-session"));
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledWith("session-1"),
+    );
+  });
+
+  it("does not mark a terminal run for a stale selected session after sidebar hydration", async () => {
+    let resolveSidebarSessions:
+      | ((sessions: SessionSidebarRecord[]) => void)
+      | undefined;
+    listSidebarSessionsMock.mockReturnValue(
+      new Promise<SessionSidebarRecord[]>((resolve) => {
+        resolveSidebarSessions = resolve;
+      }),
+    );
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-a",
+        root_path: "C:/work/a",
+        display_name: "Workspace A",
+      },
+      {
+        workspace_id: "workspace-b",
+        root_path: "C:/work/b",
+        display_name: "Workspace B",
+      },
+    ]);
+    getSessionMock.mockImplementation((sessionId: string) =>
+      Promise.resolve({
+        normal_root_role_id: sessionId === "session-b" ? "Reviewer" : "MainAgent",
+        session_id: sessionId,
+        workspace_id: sessionId === "session-b" ? "workspace-b" : "workspace-a",
+      }),
+    );
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "workspace-a",
+    });
+
+    renderShell();
+
+    await act(async () => {
+      useUiStore.getState().setSelectedWorkspaceId("workspace-b");
+      useUiStore.getState().setSelectedSessionId("session-b");
+    });
+
+    if (resolveSidebarSessions === undefined) {
+      throw new Error("Sidebar session query did not start.");
+    }
+    const resolvePendingSidebarSessions = resolveSidebarSessions;
+    await act(async () => {
+      resolvePendingSidebarSessions([
+        {
+          has_unread_terminal_run: true,
+          latest_terminal_run_id: "run-stale",
+          latest_terminal_run_status: "completed",
+          latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+          session_id: "session-a",
+          title: "Session A",
+          workspace_id: "workspace-a",
+        },
+        {
+          session_id: "session-b",
+          title: "Session B",
+          workspace_id: "workspace-b",
+        },
+      ]);
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("timeline")).toHaveAttribute(
+        "data-session-id",
+        "session-b",
+      ),
+    );
+    expect(markSessionTerminalRunViewedMock).not.toHaveBeenCalledWith("session-a");
+    expect(markSessionTerminalRunViewedMock).not.toHaveBeenCalled();
   });
 
   it("retries deferred terminal view marks before invalidating session data", async () => {

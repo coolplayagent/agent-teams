@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session Selection UI Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, the V1 session-selection harness, and the V2 `AppShell` session selection / terminal-view semantics before editing.
+- Migrated the final three `tests/integration_tests/frontend/test_session_selection_ui.py` assertions into TypeScript `AppShell.test.tsx` coverage:
+  - rapid selection changes no longer let stale session detail for an older selection overwrite the current session, workspace, composer, or token-usage role context;
+  - returning from an active subagent secondary view to the main chat still marks the selected session's unread terminal run through the real terminal-view API path;
+  - delayed sidebar hydration for an old selected session cannot mark that old session's terminal run after the selected session has moved elsewhere.
+- Enhanced the `AppShell` child-component test doubles to expose received `sessionId`, `workspaceId`, and `primaryRoleId`, so stale session detail regressions are asserted against the rendered V2 surface rather than a private implementation detail.
+- Deleted `tests/integration_tests/frontend/test_session_selection_ui.py`; its remaining V2-relevant session-selection behavior is now covered by TypeScript tests.
+- Kept production code and `frontend/dist/app` unchanged in this slice because the V2 React Query keyed data flow and selected-sidebar-record terminal marking already satisfy the migrated semantics.
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx -t "stale session detail|returning from a subagent view|stale selected session"` passed the three migrated edge cases.
+- `npm run test -- src/test/AppShell.test.tsx` passed all 30 AppShell tests after enhancing the test doubles.
+- `uv run --extra dev ruff check tests\integration_tests\frontend` passed after deleting the old Python UI harness.
+- `rg -n "test_session_selection_ui|select_session_ignores|terminal_view_mark_does_not" tests frontend\app\src\test docs\goals\frontend-rewrite\implementation-ledger.md` now finds only historical ledger references to the retired Python harness.
+
+### Reviewer
+- Main-agent V2 session-selection edge coverage and old Python UI harness retirement completed for this slice. This does not claim full stream/replay parity, Message Timeline subsystem PASS, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Screenshot-Driven Sidebar Framework Parity
 
 ### Scope

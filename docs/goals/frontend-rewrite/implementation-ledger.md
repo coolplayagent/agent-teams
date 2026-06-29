@@ -5095,3 +5095,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent live UI inspection, targeted shell/settings browser gate repair, frontend typecheck, screenshot inspection, and strict unhandled-route verification completed for this slice. No Settings subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Release Browser Gate Evidence Sweep
+
+### Scope
+- Re-checked the active frontend rewrite goal, quality gates, current worktree, and existing TS browser coverage before running validation. This slice targets release-level browser evidence for Observability / Spec lineage, message export, Appearance, and narrow layout rather than changing product code.
+- Ran the existing TS browser gates for opening Observability, rendering Spec lineage, downloading message exports, applying a dark Appearance preset, and keeping the workspace fixed under the narrow sidebar overlay.
+- Kept this as evidence-gathering toward the Browser Checks and Visual Gate only. Remaining frontend rewrite work still includes stream/replay edge-case sign-off, final V1/V2 visual audit, subsystem reviewer sign-offs, release promotion decisions, and final full-check execution before completion can be claimed.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-observability.spec.ts browser-tests/v2-message-export.spec.ts browser-tests/v2-appearance-layout.spec.ts` passed with 4 tests.
+- The Observability test verifies global/session scope switching, gateway metrics and breakdowns, Spec lineage task loading, spec artifact diff retrieval, checkpoint evaluation rendering, strict unhandled-route coverage, and fixed-shell no-document-scroll behavior.
+- The message export test verifies HTML and PNG download actions from the top bar, suggested filenames, exported transcript structure, pending approval/question/retry/diagnostic content, valid PNG bytes, browser PNG decoding, and per-export rounds reloads.
+- The Appearance / narrow-layout tests verify dark theme preset persistence, themed Settings framing, internal Settings scrolling without document scroll, 390px narrow sidebar overlay behavior, hidden resize handle on narrow viewports, and fixed workspace dimensions behind the overlay.
+- Inspected `.tmp/frontend-v2-ts-observability/v2-observability-spec-lineage.png`; it shows the Observability surface with gateway breakdowns, task selection, spec lineage versions, checkpoint table, and diff block inside the fixed V2 shell.
+- Inspected `.tmp/frontend-v2-ts-appearance/v2-narrow-sidebar-overlay.png`; it shows the narrow viewport sidebar overlay covering the fixed workspace without introducing document-level horizontal or vertical scroll.
+- Inspected `.tmp/frontend-v2-ts-appearance/v2-appearance-dark-rose-pine.png`; it shows the Appearance settings first screen with the three theme cards, diff preview, preset selector, and theme table framed inside the Settings drawer.
+- No `frontend/dist` rebuild was needed because this slice changed only this ledger.
+
+### Reviewer
+- Main-agent targeted browser gate execution and screenshot inspection completed for this slice. No Observability subsystem sign-off, Export subsystem sign-off, Appearance subsystem sign-off, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

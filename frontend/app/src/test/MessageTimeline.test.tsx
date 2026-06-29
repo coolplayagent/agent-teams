@@ -375,6 +375,90 @@ describe("MessageTimeline", () => {
     expect(followUpRound).not.toHaveAttribute("aria-current");
   });
 
+  it("collects paged round rail history before sorting and rendering", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Archived answer",
+        message_id: "assistant-archive",
+        role_id: "MainAgent",
+        trace_id: "run-archive",
+      },
+      {
+        content: "Middle answer",
+        message_id: "assistant-middle",
+        role_id: "MainAgent",
+        trace_id: "run-middle",
+      },
+      {
+        content: "Latest answer",
+        message_id: "assistant-latest",
+        role_id: "MainAgent",
+        trace_id: "run-latest",
+      },
+    ]);
+    listSessionRoundsMock
+      .mockResolvedValueOnce({
+        has_more: true,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:00Z",
+            run_id: "run-middle",
+            run_status: "completed",
+            run_user_message: "Middle stale task",
+          },
+          {
+            created_at: "2026-06-23T12:43:00Z",
+            run_id: "run-latest",
+            run_status: "completed",
+            run_user_message: "Latest task",
+          },
+        ],
+        next_cursor: "run-middle",
+      })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:41:00Z",
+            run_id: "run-archive",
+            run_status: "completed",
+            run_user_message: "Archive task",
+          },
+          {
+            created_at: "2026-06-23T12:42:00Z",
+            run_id: "run-middle",
+            run_status: "completed",
+            run_user_message: "Middle updated task",
+          },
+        ],
+        next_cursor: null,
+      });
+
+    const { container } = renderTimeline();
+
+    const roundRail = await screen.findByRole("navigation", { name: "Rounds" });
+    await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(2));
+    expect(listSessionRoundsMock).toHaveBeenNthCalledWith(1, "session-1", {
+      cursorRunId: null,
+      limit: 100,
+    });
+    expect(listSessionRoundsMock).toHaveBeenNthCalledWith(2, "session-1", {
+      cursorRunId: "run-middle",
+      limit: 100,
+    });
+    expect(Array.from(roundRail.querySelectorAll("button")).map((button) =>
+      button.getAttribute("aria-label"),
+    )).toEqual([
+      "Go to round 1: Archive task",
+      "Go to round 2: Middle updated task",
+      "Go to round 3: Latest task",
+    ]);
+    expect(screen.queryByRole("button", {
+      name: "Go to round 2: Middle stale task",
+    })).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".at-round-marker")).toHaveLength(3);
+  });
+
   it("keeps long round prompts collapsed with raw text available in the marker", async () => {
     const prompt = [
       "Create a migration plan for the frontend rewrite.",

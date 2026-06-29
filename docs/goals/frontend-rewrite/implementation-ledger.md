@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Round Paging TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the Rounds/Todos/History/Retry parity checklist, current V2 `MessageTimeline` round rail implementation, and the legacy `test_round_paging_ui.py` before editing. This slice targets paging behavior evidence without changing sidebar entries, Settings navigation, secondary-page opening logic, or visible UI structure.
+- Added V2 component coverage proving the round rail collects paged history with the expected cursor requests, dedupes repeated `run_id` records, keeps the updated round payload, and renders the final round list in chronological order.
+- Removed `tests/integration_tests/frontend/test_round_paging_ui.py`, which exercised the old V1 `frontend/dist/js/components/rounds/paging.js` incremental state helper instead of the V2 full-page collection model.
+- Kept this as targeted Rounds paging evidence only. Remaining frontend rewrite work still includes deeper stream replay/interrupted recovery verification, final V1/V2 visual audit, Electron/release gates, complete parity checklist review, and reviewer sign-off.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "paged round rail"` passed with the new V2 round paging component test.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+- `rg --files tests\integration_tests\frontend | rg "test_round_paging_ui\.py$"` returned no matches after removal.
+
+### Reviewer
+- Main-agent V1 Python round paging test removal, V2 MessageTimeline paging evidence, focused TS verification, frontend lint/typecheck, and diff check completed for this slice. No full Rounds/Todos/History/Retry subsystem PASS, stream/replay browser sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Subagent Session History TS Migration
 
 ### Scope

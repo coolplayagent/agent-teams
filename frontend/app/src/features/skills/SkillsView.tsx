@@ -1036,9 +1036,12 @@ function probeNoticeFromResult(
   t: Translate,
 ): ProbeNotice {
   if (result.ok) {
+    const messageKey = result.diagnostics.installed_during_probe
+      ? "skillsClawHubProbeSuccessAfterInstall"
+      : "skillsClawHubProbeSuccess";
     return {
       kind: "success",
-      message: t("skillsClawHubProbeSuccess", {
+      message: t(messageKey, {
         latency: formatCount(result.latency_ms),
         version: result.clawhub_version || "clawhub",
       }),

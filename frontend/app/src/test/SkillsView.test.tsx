@@ -288,6 +288,53 @@ describe("SkillsView", () => {
     );
   });
 
+  it("preserves saved ClawHub settings drawer tokens and reports auto-install probes", async () => {
+    probeClawHubConnectivityMock.mockResolvedValueOnce({
+      checked_at: "2026-06-24T00:00:00Z",
+      clawhub_path: "C:/bin/clawhub.exe",
+      clawhub_version: "clawhub 0.9.0",
+      diagnostics: {
+        binary_available: true,
+        endpoint_fallback_used: false,
+        installation_attempted: true,
+        installed_during_probe: true,
+        token_configured: true,
+      },
+      latency_ms: 4200,
+      ok: true,
+      retryable: false,
+    });
+    renderSkills();
+
+    expect(await screen.findByText("Writer")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "ClawHub settings" }));
+    const tokenInput = await screen.findByPlaceholderText("************");
+    expect(tokenInput).toHaveAttribute("autocomplete", "new-password");
+    expect(
+      screen.getByRole("link", { name: /https:\/\/clawhub\.ai\/settings/ }),
+    ).toHaveAttribute("target", "_blank");
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() =>
+      expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
+        token: "saved-token",
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "Connected with clawhub 0.9.0 in 4,200 ms. Installed automatically.",
+      ),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
+        token: "saved-token",
+      }),
+    );
+  });
+
   it("opens installed skill detail with manifest content", async () => {
     renderSkills();
 

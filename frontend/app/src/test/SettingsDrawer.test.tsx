@@ -1582,6 +1582,93 @@ describe("SettingsDrawer", () => {
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
   }, 70000);
 
+  it("keeps saved ClawHub tokens intact for unchanged probe and save actions", async () => {
+    await openClawHubSettings();
+
+    const tokenInput = screen.getByLabelText("Token") as HTMLInputElement;
+    expect(tokenInput).toHaveAttribute("autocomplete", "new-password");
+    expect(tokenInput).toHaveAttribute("placeholder", "************");
+    expect(
+      screen.getByRole("link", { name: /https:\/\/clawhub\.ai\/settings/ }),
+    ).toHaveAttribute("rel", "noreferrer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() =>
+      expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
+        token: "saved-clawhub-token",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
+        token: "saved-clawhub-token",
+      }),
+    );
+  });
+
+  it("ignores ClawHub browser autofill until the token field is edited", async () => {
+    await openClawHubSettings();
+
+    const tokenInput = screen.getByLabelText("Token") as HTMLInputElement;
+    tokenInput.value = "browser_password";
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() =>
+      expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
+        token: "saved-clawhub-token",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
+        token: "saved-clawhub-token",
+      }),
+    );
+  });
+
+  it("clears saved ClawHub tokens and reports auto-install probe results", async () => {
+    probeClawHubConnectivityMock.mockResolvedValueOnce({
+      checked_at: "2026-06-24T00:00:00Z",
+      clawhub_version: "clawhub 0.9.0",
+      diagnostics: {
+        binary_available: true,
+        endpoint_fallback_used: false,
+        installation_attempted: true,
+        installed_during_probe: true,
+        token_configured: true,
+      },
+      latency_ms: 4200,
+      ok: true,
+      retryable: false,
+    });
+    await openClawHubSettings();
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(
+      await screen.findByText(
+        "Connected with clawhub 0.9.0 in 4,200 ms. Installed automatically.",
+      ),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear token" }));
+    expect(screen.getByText("Not saved")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(
+      await screen.findByText("Enter a ClawHub token before testing."),
+    ).toBeVisible();
+    expect(probeClawHubConnectivityMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
+        token: null,
+      }),
+    );
+  });
+
   it("links migrated settings labels to real controls across secondary pages", async () => {
     renderDrawer();
 
@@ -2975,6 +3062,15 @@ function renderDrawer() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+async function openClawHubSettings() {
+  renderDrawer();
+  const sections = await screen.findByRole("navigation", {
+    name: "Settings sections",
+  });
+  fireEvent.click(within(sections).getByRole("button", { name: "ClawHub" }));
+  await screen.findByText("Credentials");
 }
 
 function installDesktopApi(version: string) {

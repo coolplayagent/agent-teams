@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 ClawHub Settings TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and remaining old frontend Python UI harnesses before editing, then selected the bounded ClawHub settings slice because it overlaps the Settings secondary-page parity target without changing the V1 sidebar/settings item inventory.
+- Migrated the V1 ClawHub token behavior from `tests/integration_tests/frontend/test_clawhub_settings_ui.py` into V2 React coverage across `SettingsDrawer.test.tsx` and `SkillsView.test.tsx`.
+- Added Settings coverage for unchanged saved-token probe/save, browser-autofill-style DOM value changes that must not dirty the token field, clearing a saved token to send `null`, blocking probe without an effective token, the account link, and `autocomplete="new-password"`.
+- Added Skills drawer coverage for saved-token reuse, the ClawHub settings link, and the same masked-token input contract.
+- Restored the V1 probe-result parity where a successful probe that auto-installed the ClawHub CLI reports that fact in both Settings and Skills ClawHub notices.
+- Deleted `tests/integration_tests/frontend/test_clawhub_settings_ui.py`; 28 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "ClawHub"` passed.
+- `npm run test -- src/test/SkillsView.test.tsx -t "ClawHub settings|ClawHub settings drawer"` passed.
+
+### Reviewer
+- Main-agent ClawHub settings harness migration completed for this slice. This does not claim full Settings PASS, Skills/ClawHub subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broad settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 Final Subagent Stream Harness TS Migration
 
 ### Scope

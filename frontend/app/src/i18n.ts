@@ -612,6 +612,8 @@ const messages = {
     settingsClawHubProbeFailed: "ClawHub connection test failed.",
     settingsClawHubProbeReason: "ClawHub test failed: {reason}",
     settingsClawHubProbeSuccess: "Connected with {version} in {latency} ms.",
+    settingsClawHubProbeSuccessAfterInstall:
+      "Connected with {version} in {latency} ms. Installed automatically.",
     settingsClawHubRegistry: "Registry",
     settingsClawHubSaveFailed: "Could not save ClawHub settings.",
     settingsClawHubSaved: "ClawHub settings saved.",
@@ -1312,6 +1314,8 @@ const messages = {
     skillsClawHubProbeFailed: "ClawHub connection test failed.",
     skillsClawHubProbeReason: "ClawHub test failed: {reason}",
     skillsClawHubProbeSuccess: "Connected with {version} in {latency} ms.",
+    skillsClawHubProbeSuccessAfterInstall:
+      "Connected with {version} in {latency} ms. Installed automatically.",
     skillsClawHubSaveFailed: "Could not save ClawHub settings.",
     skillsClawHubSaved: "ClawHub settings saved.",
     skillsClawHubSettings: "ClawHub settings",
@@ -2072,6 +2076,8 @@ const messages = {
     settingsClawHubProbeFailed: "ClawHub 连接测试失败。",
     settingsClawHubProbeReason: "ClawHub 测试失败：{reason}",
     settingsClawHubProbeSuccess: "已通过 {version} 连接，耗时 {latency} ms。",
+    settingsClawHubProbeSuccessAfterInstall:
+      "已通过 {version} 连接，耗时 {latency} ms。已自动安装。",
     settingsClawHubRegistry: "仓库",
     settingsClawHubSaveFailed: "无法保存 ClawHub 设置。",
     settingsClawHubSaved: "ClawHub 设置已保存。",
@@ -2772,6 +2778,8 @@ const messages = {
     skillsClawHubProbeFailed: "ClawHub 连接测试失败。",
     skillsClawHubProbeReason: "ClawHub 测试失败：{reason}",
     skillsClawHubProbeSuccess: "已通过 {version} 连接，耗时 {latency} ms。",
+    skillsClawHubProbeSuccessAfterInstall:
+      "已通过 {version} 连接，耗时 {latency} ms。已自动安装。",
     skillsClawHubSaveFailed: "无法保存 ClawHub 设置。",
     skillsClawHubSaved: "ClawHub 设置已保存。",
     skillsClawHubSettings: "ClawHub 设置",

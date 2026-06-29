@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatWorkspace } from "../features/shell/ChatWorkspace";
@@ -118,6 +118,61 @@ describe("ChatWorkspace", () => {
       tokenUsage: "session-2",
     });
   });
+
+  it("keeps a loading frame visible while a fast session switch settles", async () => {
+    const animationFrame = captureAnimationFrames();
+    const runStreamController = createRunStreamController();
+
+    try {
+      const { rerender } = render(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-1"
+          workspaceId="workspace-1"
+        />,
+      );
+
+      rerender(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-2"
+          workspaceId="workspace-2"
+        />,
+      );
+
+      const chatView = htmlElement(
+        screen.getByTestId("timeline").closest(".at-chat-view"),
+        "chat view",
+      );
+      expect(chatView).toHaveClass("is-session-switching");
+      expect(chatView).toHaveAttribute("aria-busy", "true");
+      expect(screen.getByRole("status")).toHaveTextContent("Loading session...");
+      expect(renderedSessionIds()).toEqual({
+        composer: "session-2",
+        recovery: "session-2",
+        timeline: "session-2",
+        tokenUsage: "session-2",
+      });
+
+      await act(async () => {
+        animationFrame.flushNext();
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Loading session...");
+      expect(chatView).toHaveClass("is-session-switching");
+
+      await act(async () => {
+        animationFrame.flushNext();
+      });
+
+      await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+      expect(chatView).not.toHaveClass("is-session-switching");
+      expect(chatView).not.toHaveAttribute("aria-busy");
+    } finally {
+      animationFrame.restore();
+    }
+  });
 });
 
 function createRunStreamController(): RunStreamController {
@@ -147,4 +202,48 @@ function textForTestId(testId: string): string {
     throw new Error(`Missing test element: ${testId}`);
   }
   return element.textContent ?? "";
+}
+
+interface CapturedAnimationFrames {
+  readonly flushNext: () => void;
+  readonly restore: () => void;
+}
+
+function captureAnimationFrames(): CapturedAnimationFrames {
+  const originalRequestAnimationFrame = window.requestAnimationFrame;
+  const originalCancelAnimationFrame = window.cancelAnimationFrame;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let frameId = 0;
+
+  window.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+    frameId += 1;
+    callbacks.set(frameId, callback);
+    return frameId;
+  });
+  window.cancelAnimationFrame = vi.fn((id: number) => {
+    callbacks.delete(id);
+  });
+
+  return {
+    flushNext: () => {
+      const next = callbacks.entries().next();
+      if (next.done === true) {
+        throw new Error("No animation frame is pending.");
+      }
+      const [id, callback] = next.value;
+      callbacks.delete(id);
+      callback(16);
+    },
+    restore: () => {
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      window.cancelAnimationFrame = originalCancelAnimationFrame;
+    },
+  };
+}
+
+function htmlElement(element: Element | null, label: string): HTMLElement {
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Missing ${label}.`);
+  }
+  return element;
 }

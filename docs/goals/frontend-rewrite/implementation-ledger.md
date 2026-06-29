@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session Switch Loading Frame TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Product Parity Checklist, Quality Gates, current V2 shell layout, and the remaining `test_session_selection_ui.py` loading-frame assertions before editing.
+- Added a V2 `ChatWorkspace` session-switch loading frame: when the selected session changes, the active run stream is cleared, all session-scoped child surfaces receive the new session id immediately, and the timeline row stays covered by a nonblocking loading state for one animation frame.
+- Kept the loading frame bounded to the timeline grid row so it does not affect the sidebar, settings navigation, token strip, composer, or the fixed one-page workspace shell.
+- Removed the two old Python assertions that checked V1 `frontend/dist/js/session.js` and `interface.css` strings for nonblocking content-switch loading; the migrated behavior now has React component and shared CSS coverage.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle contains the session-switch loading frame.
+
+### Verification
+- `npm run test -- src/test/ChatWorkspace.test.tsx` passed with coverage for stream clearing, all session-scoped surfaces moving to the new session, and a visible fast-switch loading frame.
+- `npm run test -- src/test/ShellLayoutCss.test.ts -t "session switch loading|chat shell"` passed with CSS checks for the fixed chat shell and timeline-bounded loading row.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_session_selection_ui.py` passed after deleting the migrated Python assertions.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `npm run lint` passed.
+- Browser live layout inspection after reloading `http://127.0.0.1:8000/app/` with `/app/assets/index-B4Pmfwm0.js` reported `bodyScrollHeight == bodyClientHeight == 871`, `documentScrollHeight == documentClientHeight == 871`, `body` and `#root` overflow hidden, sidebar width `280px`, chat/workspace height `819px`, timeline frame height `597px`, and composer contained at `y=681`.
+- Browser screenshot capture was attempted twice through the in-app browser and both attempts timed out inside `Page.captureScreenshot`; no screenshot sign-off is claimed for this slice.
+
+### Reviewer
+- Main-agent V2 session-switch loading implementation, targeted TS/CSS/Python verification, dist rebuild, lint, and live browser layout inspection completed for this slice. No full Sessions And Projects subsystem PASS, Message Timeline subsystem PASS, stream/replay PASS, reviewer sign-off, screenshot sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Session Foreground Recovery TS Migration
 
 ### Scope

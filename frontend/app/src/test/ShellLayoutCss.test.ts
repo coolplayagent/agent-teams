@@ -98,6 +98,16 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps fast session switch loading inside the timeline row", () => {
+    expect(themeCss).toMatch(
+      /\.at-chat-view\s*{[\s\S]*?position:\s*relative;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-session-switch-loading\s*{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2;[\s\S]*?z-index:\s*5;[\s\S]*?min-height:\s*0;[\s\S]*?pointer-events:\s*none;/,
+    );
+    expect(themeCss).toMatch(/@keyframes at-session-switch-spin/);
+  });
+
   it("keeps the desktop round rail overlaid instead of reserving a chat column", () => {
     expect(themeCss).toMatch(
       /\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,

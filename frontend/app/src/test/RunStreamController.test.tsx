@@ -89,6 +89,47 @@ describe("useRunStreamController", () => {
     expect(recoveryRefreshCallCount(invalidateSpy)).toBe(refreshCountAfterClose);
   });
 
+  it("polls sidebar subagent discovery while a stream stays active", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "subagents"],
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "subagents"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+  });
+
   it("refreshes sidebar and session token usage when a run stream closes", async () => {
     const queryClient = new QueryClient({
       defaultOptions: {

@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Active Run Subagent Discovery Refresh
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining stream/subagent harnesses after two committed stream-edge slices, then selected the parent-run subagent discovery gap because it affects whether newly spawned normal-mode subagents become visible while a run is still streaming.
+- Migrated the V2-relevant behavior from `tests/integration_tests/frontend/test_subagent_streams_ui.py::test_active_parent_run_polls_normal_subagent_discovery_until_children_visible` into `RunStreamController.test.tsx`.
+- Fixed `useRunStreamController` so the existing active-stream continuity tick continues refreshing recovery and now also invalidates the current session's subagent query plus the sidebar query. This lets the React sidebar discover new child subagent entries while the parent run remains active.
+- Kept the V2 cadence on the existing 10s continuity refresh instead of recreating the V1 8s `frontend/dist/js/core/stream.js` timer.
+- Deleted the old V1 parent-run subagent discovery Python harness; `test_subagent_streams_ui.py` now has 3 remaining old Python UI harness tests.
+- Kept `frontend/dist/app` unchanged in this slice because the production change is in the V2 React runtime source and no served-bundle or visual sign-off is claimed here.
+
+### Verification
+- `npm run test -- src/test/RunStreamController.test.tsx -t "polls sidebar subagent discovery|refreshes recovery|refreshes sidebar and session token usage"` passed with 4 focused controller tests.
+- `npm run test -- src/test/RunStreamController.test.tsx` passed with all 24 controller tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_streams_ui.py` passed after deleting the old Python harness.
+- `npm run lint` passed.
+- `rg -n "def test_" tests\integration_tests\frontend\test_subagent_streams_ui.py` shows 3 remaining old Python UI harness tests in that file.
+
+### Reviewer
+- Main-agent active-run subagent discovery refresh, focused/full controller verification, and old Python UI harness reduction completed for this slice. This does not claim full AG-UI Runtime Stream PASS, Subagents subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Stale Stream Callback TS Migration
 
 ### Scope

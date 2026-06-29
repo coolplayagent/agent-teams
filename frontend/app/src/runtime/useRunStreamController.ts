@@ -91,6 +91,13 @@ export function useRunStreamController(): RunStreamController {
     });
   };
 
+  const refreshSubagentDiscovery = (sessionId: string) => {
+    void queryClient.invalidateQueries({
+      queryKey: ["sessions", sessionId, "subagents"],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+  };
+
   const stopContinuityRefresh = () => {
     if (continuityRefreshTimerRef.current !== null) {
       window.clearInterval(continuityRefreshTimerRef.current);
@@ -110,6 +117,7 @@ export function useRunStreamController(): RunStreamController {
     refreshRecoverySnapshot(sessionId);
     continuityRefreshTimerRef.current = window.setInterval(() => {
       refreshRecoverySnapshot(sessionId);
+      refreshSubagentDiscovery(sessionId);
     }, RECOVERY_CONTINUITY_REFRESH_MS);
   };
 

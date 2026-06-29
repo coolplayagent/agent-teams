@@ -4451,6 +4451,30 @@ body {
   line-height: var(--at-message-line-height);
 }
 
+.at-message-streaming-text {
+  max-width: 100%;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: color-mix(in srgb, var(--at-primary) 72%, var(--at-text) 28%);
+  animation: at-streaming-cursor-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes at-streaming-cursor-pulse {
+  from {
+    opacity: 0.28;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 .at-message-media {
   display: inline-grid;
   justify-items: start;

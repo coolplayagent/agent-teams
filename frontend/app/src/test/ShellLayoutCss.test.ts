@@ -56,6 +56,16 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps streaming message affordances declared in shared CSS", () => {
+    expect(themeCss).toMatch(/@keyframes at-streaming-cursor-pulse/);
+    expect(themeCss).toMatch(
+      /\.streaming-cursor\s*{[\s\S]*?width:\s*2px;[\s\S]*?animation:\s*at-streaming-cursor-pulse 0\.9s ease-in-out infinite alternate;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-plain-stream\s*{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*pre-wrap;/,
+    );
+  });
+
   it("keeps the desktop round rail overlaid instead of reserving a chat column", () => {
     expect(themeCss).toMatch(
       /\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,

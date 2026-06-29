@@ -1177,6 +1177,28 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("lo")).not.toBeInTheDocument();
   });
 
+  it("shows a terminal cursor and disables copy while runtime text is streaming", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Streaming answer",
+      }),
+    ], "open");
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Streaming answer")).toBeVisible();
+    const messageRow = container.querySelector("article.at-message");
+    expect(messageRow).toHaveClass("is-streaming");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    const copyButton = await screen.findByRole("button", {
+      name: "Copy last answer",
+    });
+    expect(copyButton).toBeDisabled();
+  });
+
   it("renders long open runtime text streams as one plain text block", async () => {
     const prefix = "x".repeat(10000);
     const suffix = "y".repeat(3000);
@@ -1203,6 +1225,7 @@ describe("MessageTimeline", () => {
     expect(plainStream).toHaveAttribute("data-render-mode", "plain-stream");
     expect(plainStream?.textContent).toHaveLength(13000);
     expect(plainStream?.textContent).toBe(`${prefix}${suffix}`);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
     expect(container.querySelector(".at-message-markdown")).toBeNull();
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
@@ -1235,6 +1258,7 @@ describe("MessageTimeline", () => {
     ).toBeVisible();
     expect(container.querySelector(".at-message-plain-stream")).toBeNull();
     expect(container.querySelector(".at-message-markdown")).not.toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
   });
 
   it("does not merge text deltas from distinct runtime instances", async () => {
@@ -2643,6 +2667,64 @@ describe("MessageTimeline", () => {
         expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(previousMaxScrollTop),
       );
       expect(timeline.scrollTop).toBe(80);
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
+  it("preserves the current view when stream updates after opening tool details", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 320,
+      rowHeight: 120,
+    });
+    try {
+      const toolCall = runtimeToolCallEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+      });
+      setRuntimeEntries([toolCall], "open");
+      listSessionMessagesMock.mockResolvedValue(
+        Array.from({ length: 6 }, (_, index) => ({
+          content: `Persisted message ${index + 1}`,
+          message_id: `assistant-${index + 1}`,
+          role_id: "MainAgent",
+        })),
+      );
+
+      const { container } = renderTimeline();
+
+      expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
+      const timeline = timelineElement(container);
+      await waitFor(() =>
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(0),
+      );
+      timeline.scrollTop = timelineMaxScrollTop(timeline);
+      fireEvent.scroll(timeline);
+      const previousScrollTop = timeline.scrollTop;
+      const toolSummary = container.querySelector<HTMLElement>(
+        ".at-message-tool-summary",
+      );
+      expect(toolSummary).not.toBeNull();
+      fireEvent.pointerDown(toolSummary as HTMLElement);
+      fireEvent.click(toolSummary as HTMLElement);
+
+      act(() => {
+        setRuntimeEntries([
+          toolCall,
+          runtimeTextDeltaEntry({
+            eventId: 2,
+            id: "run-output:2:1",
+            text: "Stream output while inspecting details",
+          }),
+        ], "open");
+      });
+
+      expect(await screen.findByText("Stream output while inspecting details"))
+        .toBeVisible();
+      await waitFor(() =>
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(previousScrollTop),
+      );
+      expect(timeline.scrollTop).toBe(previousScrollTop);
     } finally {
       restoreMeasurements();
     }

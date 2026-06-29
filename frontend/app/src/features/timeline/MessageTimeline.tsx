@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Copy, Wrench } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { PointerEvent, ReactNode } from "react";
 
 import { listSessionMessages, listSessionRounds } from "../../api/client";
 import {
@@ -176,6 +176,19 @@ export function MessageTimeline({
       syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
     }
   }, []);
+  const handleTimelinePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    if (target.closest(".at-message-thinking-summary, .at-message-tool-summary") === null) {
+      return;
+    }
+    const container = parentRef.current;
+    if (container !== null) {
+      scrollSnapshotRef.current = captureTimelineScrollSnapshot(container, true);
+    }
+  }, []);
   const handleRoundSelect = useCallback((runId: string) => {
     pendingRoundRunIdRef.current = runId;
     setActiveRunId(runId);
@@ -250,7 +263,12 @@ export function MessageTimeline({
 
   return (
     <div className={hasRoundRail ? "at-timeline-frame has-round-rail" : "at-timeline-frame"}>
-      <div className="at-timeline" onScroll={handleTimelineScroll} ref={parentRef}>
+      <div
+        className="at-timeline"
+        onPointerDown={handleTimelinePointerDown}
+        onScroll={handleTimelineScroll}
+        ref={parentRef}
+      >
         <div
           className="at-timeline-virtual"
           style={{ height: `${timelineHeight}px` }}
@@ -390,9 +408,10 @@ interface RoundBoundary {
 
 function captureTimelineScrollSnapshot(
   container: HTMLElement,
+  forceAnchor = false,
 ): TimelineScrollSnapshot {
   const scrollTop = scrollMetric(container.scrollTop);
-  const shouldFollow = isTimelineNearBottom(container);
+  const shouldFollow = !forceAnchor && isTimelineNearBottom(container);
   return {
     anchor: shouldFollow ? null : captureTimelineScrollAnchor(container, scrollTop),
     scrollTop,
@@ -573,6 +592,7 @@ function timelineRowElement(
   const toolOnly = timelineRowIsToolOnly(row);
   const showRoleLabel = shouldShowRoleLabel(row);
   const showActions = row.copyable && row.key === lastAnswerKey;
+  const streaming = timelineRowHasStreamingContent(row);
   return (
     <article
       className={[
@@ -581,6 +601,7 @@ function timelineRowElement(
         row.source === "runtime" ? "is-runtime" : "",
         toolOnly ? "is-tool-only" : "",
         showRoleLabel ? "has-role-label" : "",
+        streaming ? "is-streaming" : "",
       ].filter(Boolean).join(" ")}
       data-index={index}
       data-row-key={row.key}
@@ -1880,10 +1901,23 @@ function MessageText({ part }: { part: TimelineTextPart }) {
     return (
       <pre className="at-message-plain-stream" data-render-mode="plain-stream">
         {part.text}
+        <StreamingCursor />
       </pre>
     );
   }
+  if (part.streaming) {
+    return (
+      <div className="at-message-streaming-text" data-streaming="true">
+        <MarkdownMessage text={part.text} />
+        <StreamingCursor />
+      </div>
+    );
+  }
   return <MarkdownMessage text={part.text} />;
+}
+
+function StreamingCursor() {
+  return <span aria-hidden="true" className="streaming-cursor" />;
 }
 
 function MessageRowActions({
@@ -2475,6 +2509,13 @@ function timelineRowHasRenderableContent(row: TimelineRow): boolean {
     row.parts.length > 0 ||
     row.text.trim().length > 0
   );
+}
+
+function timelineRowHasStreamingContent(row: TimelineRow): boolean {
+  return row.parts.some((part) => (
+    (part.kind === "text" || part.kind === "thinking") &&
+    part.streaming
+  ));
 }
 
 function shouldShowRoleLabel(row: TimelineRow): boolean {

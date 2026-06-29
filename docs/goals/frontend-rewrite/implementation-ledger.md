@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Idle Cursor TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining legacy `test_stream_session_overlay_ui.py` cases, and V2 `MessageTimeline` runtime projection before editing.
+- Restored the V1 idle-gap streaming behavior in the V2 runtime path: an open run with only a silent lifecycle event now renders an empty streaming cursor row instead of appearing as an empty timeline or a protocol fallback message.
+- Tightened run lifecycle summaries so an empty run lifecycle payload no longer renders as `Run started: {}`. Lifecycle rows still render when they carry real status, output, error, reason, or root-task details.
+- Added V2 component coverage proving an open `run_started` stream shows a live cursor, hides the empty-state copy, keeps the row scoped to the selected run, and does not expose `Run started`/`run started` protocol text.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/history.js` Python harness test `test_history_overlay_renders_live_cursor_placeholder_for_idle_gap`.
+- Kept this slice focused on stream start/idle rendering semantics. No sidebar entries, Settings sections, secondary-page routing, or visible shell layout changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "idle streaming cursor|open runtime text is already hydrated|repeated live text|closes live thinking|Run completed"` passed with the new idle-cursor case and adjacent hydration/finalization coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_history_overlay_renders_live_cursor_placeholder_for_idle_gap|history_overlay_idle_gap|idle streaming cursor" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned only the new TS case after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 runtime idle-cursor implementation, component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime External Media Overlay TS Migration
 
 ### Scope

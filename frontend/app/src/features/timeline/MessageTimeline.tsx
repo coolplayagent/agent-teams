@@ -1312,7 +1312,7 @@ function runtimeEntriesAfterHydration(
   );
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
   if (hydratedText === undefined) {
-    return scopedEntries;
+    return openRuntimeEntriesWithIdleCursor(runState, scopedEntries);
   }
   if (runState.status === "closed") {
     return scopedEntries.filter((entry) =>
@@ -1329,7 +1329,34 @@ function runtimeEntriesAfterHydration(
     hydratedEntries.push(entry);
     suppressCoveredText = false;
   }
-  return hydratedEntries;
+  return openRuntimeEntriesWithIdleCursor(runState, hydratedEntries);
+}
+
+function openRuntimeEntriesWithIdleCursor(
+  runState: RuntimeRunState,
+  entries: TimelineEntry[],
+): TimelineEntry[] {
+  if (runState.status === "closed" || entries.length === 0) {
+    return entries;
+  }
+  const visibleEntries = entries.filter(
+    (entry) => !runtimeSilentOpenLifecycleEntry(entry),
+  );
+  if (visibleEntries.some(runtimeEntryProducesRenderableRow)) {
+    return visibleEntries;
+  }
+  return [...visibleEntries, runtimeIdleCursorEntry(entries[0])];
+}
+
+function runtimeSilentOpenLifecycleEntry(entry: TimelineEntry): boolean {
+  if (entry.kind !== "run_started" && entry.kind !== "run_resumed") {
+    return false;
+  }
+  return runtimeStructuredEventText(entry) === null;
+}
+
+function runtimeEntryProducesRenderableRow(entry: TimelineEntry): boolean {
+  return runtimeEntryParts(entry).length > 0;
 }
 
 function openRuntimeTextCoveredByHydration(
@@ -1351,6 +1378,20 @@ function runtimeHydrationCursorEntry(entry: TimelineEntry): TimelineEntry {
     payload: {
       covered_event_kind: entry.kind,
       hydration_cursor_placeholder: true,
+      text: "",
+    },
+    text: "",
+  };
+}
+
+function runtimeIdleCursorEntry(entry: TimelineEntry): TimelineEntry {
+  return {
+    ...entry,
+    id: `${entry.id}:idle-cursor`,
+    kind: "text_delta",
+    payload: {
+      idle_cursor_placeholder: true,
+      source_event_kind: entry.kind,
       text: "",
     },
     text: "",
@@ -1635,7 +1676,10 @@ function appendRuntimeTextSegment(
 
 function runtimeTextDeltaIsCursorPlaceholder(entry: TimelineEntry): boolean {
   const payload = jsonObject(entry.payload);
-  return payload?.hydration_cursor_placeholder === true;
+  return (
+    payload?.hydration_cursor_placeholder === true ||
+    payload?.idle_cursor_placeholder === true
+  );
 }
 
 function createRuntimeTextAccumulator(
@@ -2228,11 +2272,15 @@ function runtimeRunLifecycleSummary(payload: Record<string, JsonValue>): string 
     || objectString(payload, "reason");
   const rootTaskId = objectString(payload, "root_task_id")
     || objectString(payload, "root_task");
+  const hasPrimarySummary =
+    status.length > 0 || output.length > 0 || rootTaskId.length > 0;
   return [
     status.length > 0 ? `status ${status}` : "",
     output.length > 0 ? truncatePreview(output) : "",
     rootTaskId.length > 0 ? `root task ${rootTaskId}` : "",
-    status.length === 0 && output.length === 0 ? runtimePayloadSummary(payload) : "",
+    hasPrimarySummary || Object.keys(payload).length === 0
+      ? ""
+      : runtimePayloadSummary(payload),
   ].filter(Boolean).join(" · ");
 }
 

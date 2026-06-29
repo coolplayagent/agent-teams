@@ -879,6 +879,40 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("renders an idle streaming cursor for an open run before output arrives", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_started",
+        payload_json: "{}",
+        run_id: "run-idle",
+        trace_id: "run-idle",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-idle",
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector(".at-message-streaming-text")).not.toBeNull(),
+    );
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).toHaveAttribute("data-streaming", "true");
+    expect(streamingText).not.toHaveTextContent("Run started");
+    expect(streamingText).not.toHaveTextContent("run started");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector("article.at-message"))
+      .toHaveAttribute("data-run-id", "run-idle");
+    expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Run started")).not.toBeInTheDocument();
+    expect(screen.queryByText("run started")).not.toBeInTheDocument();
+  });
+
   it("keeps repeated live text after a tool even when earlier text is hydrated", async () => {
     useRuntimeStore.setState({
       runtimeState: {

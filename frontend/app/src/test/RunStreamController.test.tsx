@@ -384,6 +384,55 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("background-run-1");
   });
 
+  it("ignores stale callbacks after a newer stream target replaces the active stream", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const staleOptions = streamMocks.latestOptions as RunStreamOptions;
+
+    fireEvent.click(screen.getByRole("button", { name: "Start background stream" }));
+    expect(streamMocks.handles[0]?.close).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("background-run-1");
+
+    act(() => {
+      staleOptions.onState(runtimeStateWithRuns([
+        { lastEventId: 17, runId: "run-1" },
+      ]));
+      staleOptions.onClosed?.(runtimeStateWithClosedRun(18));
+      staleOptions.onError("run unavailable", "server");
+    });
+
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]).toBeUndefined();
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("background-run-1");
+    expect(screen.getByTestId("suppressed-run-ids")).toBeEmptyDOMElement();
+    expect(streamMocks.handles[1]?.close).not.toHaveBeenCalled();
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+  });
+
   it("removes completed runs from the active controller targets during multiplexed streams", () => {
     const queryClient = new QueryClient({
       defaultOptions: {

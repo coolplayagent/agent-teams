@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Stale Stream Callback TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal after the pending-run commit and chose the next slice from the remaining stream/replay recovery gaps instead of continuing to tune only the latest visual note.
+- Migrated the V2-relevant navigation/stream replacement edge from `tests/integration_tests/frontend/test_subagent_streams_ui.py::test_foreground_navigation_caps_streams_and_cancels_stale_background_attach` into `RunStreamController.test.tsx`.
+- Added controller coverage proving callbacks from an already replaced stream generation cannot restore stale foreground run state, write stale runtime state, suppress current targets, close the newer background stream, or trigger terminal message/sidebar invalidations.
+- Deleted the old V1 `frontend/dist/js/core/stream.js` harness for foreground navigation stream budgeting and stale background attach cancellation; the global background-stream fan-out details are not carried forward because V2 attaches through the selected-session recovery/controller path.
+- Kept production code and `frontend/dist/app` unchanged in this slice because the existing V2 controller generation guard already satisfied the migrated stale-callback semantics once asserted.
+- `test_subagent_streams_ui.py` now has 4 remaining old Python UI harness tests.
+
+### Verification
+- `npm run test -- src/test/RunStreamController.test.tsx -t "ignores stale callbacks|tracks background-only streams|cancels pending reconnects"` passed with 3 focused controller tests.
+- `npm run test -- src/test/RunStreamController.test.tsx` passed with all 23 controller tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_streams_ui.py` passed after deleting the old Python harness.
+- `npm run lint` passed.
+- `rg -n "def test_" tests\integration_tests\frontend\test_subagent_streams_ui.py` shows 4 remaining old Python UI harness tests in that file.
+
+### Reviewer
+- Main-agent stale stream callback migration and old Python UI harness reduction completed for this slice. This does not claim full AG-UI Runtime Stream PASS, replay/continuation PASS, Subagents subsystem PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
 ## 2026-06-30 Pending Run Session Switch Migration
 
 ### Scope

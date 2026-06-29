@@ -488,42 +488,6 @@ def test_browser_model_profile_custom_provider_keeps_manual_base_url(
     )
 
 
-def test_browser_settings_modal_stays_open_on_outside_click(
-    browser_page: Page,
-    integration_env: IntegrationEnvironment,
-) -> None:
-    page = browser_page
-    _open_app(page, integration_env)
-
-    page.locator("#settings-btn").click()
-    settings_modal = page.locator("#settings-modal")
-    settings_content = page.locator(".settings-modal-content")
-    expect(settings_modal).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-    content_box = settings_content.bounding_box()
-    modal_box = settings_modal.bounding_box()
-    assert content_box is not None
-    assert modal_box is not None
-
-    start_x = content_box["x"] + content_box["width"] / 2
-    start_y = content_box["y"] + content_box["height"] / 2
-    end_x = modal_box["x"] + 8
-    end_y = modal_box["y"] + 8
-
-    page.mouse.move(start_x, start_y)
-    page.mouse.down()
-    page.mouse.move(end_x, end_y)
-    page.mouse.up()
-
-    expect(settings_modal).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-    page.mouse.click(end_x, end_y)
-    expect(settings_modal).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-
-    page.locator("#settings-close").click()
-    expect(settings_modal).to_be_hidden(timeout=_WAIT_TIMEOUT_MS)
-
-
 def test_browser_remote_workspace_settings_group_ssh_fields(
     browser_page: Page,
     integration_env: IntegrationEnvironment,

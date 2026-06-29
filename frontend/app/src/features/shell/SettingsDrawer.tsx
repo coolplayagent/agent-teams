@@ -15,6 +15,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
     <Drawer
       className="at-settings-drawer"
       destroyOnClose
+      maskClosable={false}
       onClose={onClose}
       open={open}
       styles={{ body: { padding: 0 } }}

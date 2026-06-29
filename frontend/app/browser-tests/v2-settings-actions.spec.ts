@@ -43,6 +43,61 @@ interface SettingsActionState {
   webSavePayloads: Record<string, unknown>[];
 }
 
+test("keeps Settings open after outside drag and mask click", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS settings mask behavior",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const settingsBox = await settings.boundingBox();
+    const mask = page.locator(".ant-drawer-mask");
+    const maskBox = await mask.boundingBox();
+    expect(settingsBox).not.toBeNull();
+    expect(maskBox).not.toBeNull();
+    if (settingsBox === null || maskBox === null) {
+      throw new Error("Expected Settings drawer and mask bounds.");
+    }
+
+    const startX = settingsBox.x + settingsBox.width / 2;
+    const startY = settingsBox.y + settingsBox.height / 2;
+    const maskX = Math.max(maskBox.x + 8, settingsBox.x - 24);
+    const maskY = maskBox.y + 24;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(maskX, maskY);
+    await page.mouse.up();
+    await expect(settings).toBeVisible();
+
+    await page.mouse.click(maskX, maskY);
+    await expect(settings).toBeVisible();
+
+    await expectNoDocumentScroll(
+      page,
+      "v2 settings outside click should stay inside the fixed shell",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-settings-mask-click.png", SCREENSHOT_FOLDER),
+    });
+    await settings.getByRole("button", { name: "Close" }).click();
+    await expect(settings).toHaveCount(0);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("manages Plugins from the System secondary settings page", async ({
   page,
 }) => {

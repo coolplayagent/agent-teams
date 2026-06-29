@@ -4617,3 +4617,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Rounds/Todos subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Settings Mask Behavior Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree, existing Settings TS coverage, and the remaining `test_browser_smoke.py` browser-test surface before editing. This slice targets V1 Settings shell behavior while continuing the Python UI browser migration.
+- Fixed a V1/V2 behavior gap by making the V2 Settings drawer non-mask-closable. Dragging from inside Settings to the mask and clicking outside now keeps Settings open; the explicit close button remains the close path.
+- Extended `frontend/app/browser-tests/v2-settings-actions.spec.ts` with deterministic TS browser coverage for the outside-drag and mask-click behavior, plus fixed-shell no-document-scroll verification.
+- Removed the replaced `test_browser_settings_modal_stays_open_on_outside_click` Python browser scenario from `tests/integration_tests/browser/test_browser_smoke.py`.
+- Rebuilt `frontend/dist` from the V2 source change so dist-served browser tests exercise the updated Settings drawer behavior.
+- Kept this as targeted Settings/Application Shell browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 16 legacy scenarios in `test_browser_smoke.py`, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-settings-actions.spec.ts` passed with 9 TS browser tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "test_browser_settings_modal_stays_open_on_outside_click|settings mask behavior|maskClosable|sync_playwright|playwright\.sync_api" tests/integration_tests/browser frontend/app/browser-tests frontend/app/src/features/shell/SettingsDrawer.tsx -g "*.py" -g "*.ts" -g "*.tsx"` confirms the migrated outside-click scenario is gone from Python, the V2 drawer fix is present, and only `test_browser_smoke.py` remains as the legacy Python Playwright UI file.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip" tests/integration_tests/browser/test_browser_smoke.py` reports 16 remaining legacy Python browser scenarios.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck/build, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Settings subsystem sign-off, Application Shell sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

@@ -1653,6 +1653,60 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("missing-url.png")).not.toBeInTheDocument();
   });
 
+  it("keeps repeated runtime thinking cycles with the same part index separate", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "first thought" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "thinking_finished",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 5,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "second thought" }),
+      }),
+      relayRunEvent({
+        event_id: 6,
+        event_type: "thinking_finished",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    const thinkingLabels = await screen.findAllByText("Thinking");
+    expect(thinkingLabels).toHaveLength(2);
+    for (const label of thinkingLabels) {
+      expect(label).toBeVisible();
+    }
+    const thinkingBlocks = container.querySelectorAll(".at-message-thinking");
+    expect(thinkingBlocks).toHaveLength(2);
+    expect(thinkingBlocks[0]).toHaveAttribute("data-part-index", "0");
+    expect(thinkingBlocks[0]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[0]).toHaveTextContent("first thought");
+    expect(thinkingBlocks[0]).not.toHaveTextContent("second thought");
+    expect(thinkingBlocks[1]).toHaveAttribute("data-part-index", "0");
+    expect(thinkingBlocks[1]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[1]).toHaveTextContent("second thought");
+    expect(thinkingBlocks[1]).not.toHaveTextContent("first thought");
+  });
+
   it("accumulates runtime thinking events into one collapsible markdown block", async () => {
     useRuntimeStore.setState({
       runtimeState: {

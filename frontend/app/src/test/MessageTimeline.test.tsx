@@ -1048,6 +1048,72 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("keeps live tool and approval rows after hydrated text in an open stream", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "run-live-overlay",
+        trace_id: "run-live-overlay",
+        payload_json: JSON.stringify({ text: "already persisted" }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "run-live-overlay",
+        trace_id: "run-live-overlay",
+        payload_json: JSON.stringify({
+          args: { command: "date", status: "pending" },
+          tool_call_id: "call-live-tool",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_approval_requested",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "run-live-overlay",
+        trace_id: "run-live-overlay",
+        payload_json: JSON.stringify({
+          acp_options: [
+            { name: "Approve", optionId: "approve_exact" },
+            { name: "Deny", optionId: "deny" },
+          ],
+          args_preview: "npm test",
+          tool_call_id: "approval-live-tool",
+          tool_name: "execute_command",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "already persisted",
+        message_id: "assistant-run-live-overlay",
+        role_id: "MainAgent",
+        run_id: "run-live-overlay",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-live-overlay",
+    });
+
+    expect(await screen.findByText("already persisted")).toBeVisible();
+    expect(screen.queryAllByText("already persisted")).toHaveLength(1);
+    expect(screen.getByText("Tool call: shell")).toBeVisible();
+    expect(screen.getByText("Approval requested: execute_command")).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual([
+      "date",
+      "Args: npm test",
+    ]);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
   it("renders live subagent overlay as a separate row beside persisted history", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -1982,6 +2048,42 @@ describe("MessageTimeline", () => {
     expect(toolRow).toHaveAttribute("data-run-id", "subagent_run_live");
     expect(toolRow).toHaveAttribute("data-role-id", "Writer");
     expect(toolRow).toHaveAttribute("data-instance-id", "inst-subagent");
+  });
+
+  it("renders MainAgent tool calls before role metadata hydration", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+        payload_json: JSON.stringify({
+          args: { description: "Explore skills implementation" },
+          tool_call_id: "call-skills",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-main-tool",
+    });
+
+    const toolTitle = await screen.findByText("Tool call: spawn_subagent");
+    expect(toolTitle).toBeVisible();
+    expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
+    expect(toolPreviewTexts(container)).toEqual([
+      "Explore skills implementation",
+    ]);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+
+    const toolRow = messageArticle(toolTitle);
+    expect(toolRow).toHaveAttribute("data-run-id", "run-main-tool");
+    expect(toolRow).toHaveAttribute("data-role-id", "MainAgent");
+    expect(toolRow).toHaveAttribute("data-instance-id", "main-instance");
   });
 
   it("keeps same-role runtime streams separate by instance identity", async () => {

@@ -4014,6 +4014,7 @@ function toolCallPreview(body: string): string {
     return (
       objectRawString(parsed, "command") ||
       objectRawString(parsed, "cmd") ||
+      objectRawString(parsed, "description") ||
       objectRawString(parsed, "path") ||
       objectRawString(parsed, "file_path") ||
       objectRawString(parsed, "filepath") ||

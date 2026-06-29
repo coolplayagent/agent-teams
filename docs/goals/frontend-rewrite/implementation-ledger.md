@@ -2,6 +2,28 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Remaining Streaming Tool UI TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Message Timeline / AG-UI Runtime Stream checklist items, and the two remaining V1 `test_streaming_tool_ui.py` harnesses before editing.
+- Migrated the V1 `test_live_streaming_tool_overlay_skips_processed_group_summary` intent to V2 behavior: hydrated text for an open stream appears only once, while later live tool and approval rows for that same run remain visible instead of being collapsed with already-processed output.
+- Migrated the V1 `test_main_agent_tool_event_routes_to_coordinator_before_role_options_load` intent to V2 behavior: a `MainAgent` `spawn_subagent` tool call renders in the selected main runtime stream with run, role, and instance metadata even without separate role metadata hydration.
+- Improved runtime tool-call preview selection so object args with a `description` field render that useful description instead of the opening `{` from the JSON details body.
+- Removed `tests/integration_tests/frontend/test_streaming_tool_ui.py` after its remaining UI behavior coverage moved to V2 TypeScript component tests.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "live tool and approval rows|MainAgent tool calls before role metadata hydration|keeps only a live cursor|visible subagent runtime tool calls"` passed with the new migration coverage and adjacent hydration/subagent cases.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed all 109 Message Timeline tests after the production preview change.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-a7iOuACV.js`, `index-Bng0LR7m.css`).
+- `rg -n 'test_live_streaming_tool_overlay_skips_processed_group_summary|test_main_agent_tool_event_routes_to_coordinator_before_role_options_load|test_streaming_tool_ui|keeps live tool and approval rows|renders MainAgent tool calls before role metadata hydration' frontend/app/src/test/MessageTimeline.test.tsx tests/integration_tests/frontend docs/goals/frontend-rewrite/implementation-ledger.md` confirmed the old harness names remain only as ledger history while the new V2 tests are present.
+- `Select-String -Path 'frontend\app\src\features\timeline\MessageTimeline.tsx' -SimpleMatch 'objectRawString(parsed, "description")'` confirmed the production preview fallback is present.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 production preview improvement, component coverage, old Python UI harness file removal, and focused regression verification completed for this slice. No full Streaming Tool subsystem PASS, Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Visible Subagent Tool Stream TS Migration
 
 ### Scope

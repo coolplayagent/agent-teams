@@ -1,6 +1,6 @@
 import { Alert, App, Button, Form, Input, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { getWebConfig, saveWebConfig } from "../../api/client";
 import type { WebConfig, WebFallbackProvider } from "../../api/contracts";
@@ -18,6 +18,7 @@ export function WebSettingsSection() {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [form] = Form.useForm<WebFormValues>();
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
   const webQuery = useQuery({
     queryKey: ["settings", "web"],
     queryFn: getWebConfig,
@@ -45,10 +46,12 @@ export function WebSettingsSection() {
         webQuery.data.searxng_instance_seeds?.[0] ??
         "",
     });
+    setApiKeyDirty(false);
   }, [form, webQuery.data]);
 
   const seeds = webQuery.data?.searxng_instance_seeds ?? [];
   const hasSavedApiKey = Boolean(webQuery.data?.exa_api_key?.trim());
+  const preservingSavedApiKey = hasSavedApiKey && !apiKeyDirty;
   let saveError: string | null = null;
   if (saveMutation.error instanceof Error) {
     saveError = saveMutation.error.message;
@@ -59,6 +62,7 @@ export function WebSettingsSection() {
   function submit(values: WebFormValues) {
     const typedApiKey = values.exa_api_key.trim();
     const savedApiKey = webQuery.data?.exa_api_key?.trim() ?? "";
+    const effectiveApiKey = apiKeyDirty ? typedApiKey || null : savedApiKey || null;
     const searxngInstanceUrl = (
       values.searxng_instance_url ??
       form.getFieldValue("searxng_instance_url") ??
@@ -66,10 +70,15 @@ export function WebSettingsSection() {
     ).trim();
     saveMutation.mutate({
       provider: "exa",
-      exa_api_key: typedApiKey || savedApiKey || null,
+      exa_api_key: effectiveApiKey,
       fallback_provider: values.fallback_provider,
       searxng_instance_url: searxngInstanceUrl || null,
     });
+  }
+
+  function clearApiKey() {
+    form.setFieldValue("exa_api_key", "");
+    setApiKeyDirty(true);
   }
 
   return (
@@ -92,19 +101,23 @@ export function WebSettingsSection() {
               </Form.Item>
               <Form.Item label={t("settingsWebExaApiKey")} name="exa_api_key">
                 <Input.Password
-                  autoComplete="off"
+                  autoComplete="new-password"
+                  onChange={() => setApiKeyDirty(true)}
                   placeholder={
-                    hasSavedApiKey
+                    preservingSavedApiKey
                       ? "************"
                       : t("settingsWebApiKeyPlaceholder")
                   }
                 />
               </Form.Item>
               <Typography.Text className="at-settings-help">
-                {hasSavedApiKey
+                {preservingSavedApiKey
                   ? t("settingsWebApiKeyPreserved")
                   : t("settingsWebApiKeyOptional")}
               </Typography.Text>
+              {hasSavedApiKey ? (
+                <Button onClick={clearApiKey}>{t("settingsWebClearApiKey")}</Button>
+              ) : null}
             </div>
             <div className="at-settings-form-card">
               <Form.Item label={t("settingsWebFallbackProvider")} name="fallback_provider">

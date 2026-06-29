@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Web Settings TS Migration
+
+### Scope
+- Continued from the submitted ClawHub settings migration by selecting the next bounded Settings parity slice instead of tuning only the most recent visual symptom.
+- Migrated the V1 Web settings secret-handling behavior from `tests/integration_tests/frontend/test_web_settings_ui.py` into V2 React coverage in `SettingsDrawer.test.tsx`.
+- Added V2 Web settings coverage for saved Exa key preservation, browser-autofill-style DOM value changes that must not dirty the key, explicit replacement, explicit clearing to `null`, Exa provider website linking, masked saved-key placeholder, `autocomplete="new-password"`, and SearXNG fallback field visibility behind the fallback selector.
+- Fixed `WebSettingsSection` to track Exa API key dirtiness separately from the saved key, so unchanged fields preserve saved secrets while the new explicit clear action sends `null`.
+- Deleted `tests/integration_tests/frontend/test_web_settings_ui.py`; 27 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "Web settings|web settings"` passed.
+
+### Reviewer
+- Main-agent Web settings harness migration completed for this slice. This does not claim full Settings PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broad settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 ClawHub Settings TS Migration
 
 ### Scope

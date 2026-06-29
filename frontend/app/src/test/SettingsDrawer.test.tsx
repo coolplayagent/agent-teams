@@ -2901,14 +2901,16 @@ describe("SettingsDrawer", () => {
   });
 
   it("saves web settings while preserving the saved Exa key when the key field is blank", async () => {
-    renderDrawer();
+    await openWebSettings();
 
-    const sections = await screen.findByRole("navigation", {
-      name: "Settings sections",
-    });
-    fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
+    const apiKey = screen.getByLabelText("Exa API key");
+    expect(apiKey).toHaveAttribute("autocomplete", "new-password");
+    expect(apiKey).toHaveAttribute("placeholder", "************");
+    expect(
+      screen.getByRole("link", { name: /https:\/\/exa\.ai/ }),
+    ).toHaveAttribute("rel", "noreferrer");
 
-    const searxngUrl = await screen.findByLabelText("SearXNG instance URL");
+    const searxngUrl = screen.getByLabelText("SearXNG instance URL");
     fireEvent.change(searxngUrl, {
       target: { value: "https://search.changed.example/" },
     });
@@ -2921,6 +2923,77 @@ describe("SettingsDrawer", () => {
         provider: "exa",
         searxng_instance_url: "https://search.changed.example/",
       }),
+    );
+  });
+
+  it("ignores Web settings API key autofill until the field is edited", async () => {
+    await openWebSettings();
+
+    const apiKey = screen.getByLabelText("Exa API key") as HTMLInputElement;
+    apiKey.value = "browser_password";
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveWebConfigMock).toHaveBeenCalledWith({
+        exa_api_key: "saved-exa-key",
+        fallback_provider: "searxng",
+        provider: "exa",
+        searxng_instance_url: "https://search.example/",
+      }),
+    );
+  });
+
+  it("replaces and clears saved Web settings API keys explicitly", async () => {
+    await openWebSettings();
+
+    const apiKey = screen.getByLabelText("Exa API key");
+    fireEvent.change(apiKey, { target: { value: "replacement-exa-key" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveWebConfigMock).toHaveBeenCalledWith({
+        exa_api_key: "replacement-exa-key",
+        fallback_provider: "searxng",
+        provider: "exa",
+        searxng_instance_url: "https://search.example/",
+      }),
+    );
+
+    saveWebConfigMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Clear API key" }));
+    expect(
+      screen.getByText(
+        "The API key is optional and raises provider rate limits when configured.",
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveWebConfigMock).toHaveBeenCalledWith({
+        exa_api_key: null,
+        fallback_provider: "searxng",
+        provider: "exa",
+        searxng_instance_url: "https://search.example/",
+      }),
+    );
+  });
+
+  it("keeps Web settings SearXNG fields behind the fallback selector", async () => {
+    await openWebSettings();
+
+    const fallbackProvider = screen.getByLabelText("Fallback provider");
+    expect(screen.getByLabelText("SearXNG instance URL")).toHaveValue(
+      "https://search.example/",
+    );
+    expect(screen.getByLabelText("Built-in instances")).toHaveTextContent(
+      "https://search.example/",
+    );
+
+    fireEvent.change(fallbackProvider, { target: { value: "disabled" } });
+    expect(screen.queryByLabelText("SearXNG instance URL")).toBeNull();
+    expect(screen.queryByLabelText("Built-in instances")).toBeNull();
+
+    fireEvent.change(fallbackProvider, { target: { value: "searxng" } });
+    expect(screen.getByLabelText("SearXNG instance URL")).toHaveValue(
+      "https://search.example/",
     );
   });
 
@@ -3071,6 +3144,15 @@ async function openClawHubSettings() {
   });
   fireEvent.click(within(sections).getByRole("button", { name: "ClawHub" }));
   await screen.findByText("Credentials");
+}
+
+async function openWebSettings() {
+  renderDrawer();
+  const sections = await screen.findByRole("navigation", {
+    name: "Settings sections",
+  });
+  fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
+  await screen.findByLabelText("Exa API key");
 }
 
 function installDesktopApi(version: string) {

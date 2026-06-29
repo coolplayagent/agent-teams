@@ -2892,65 +2892,6 @@ console.log(JSON.stringify({
     ]
 
 
-def test_handle_send_does_not_parse_inline_slash_prose_as_action(
-    tmp_path: Path,
-) -> None:
-    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
-    runner = """
-import {
-    handleSend,
-    refreshRoleConfigOptions,
-} from "./prompt.js";
-import { els } from "./mockDom.mjs";
-import { state } from "./mockState.mjs";
-
-globalThis.__streamCalls = [];
-globalThis.__logs = [];
-globalThis.__notifications = [];
-globalThis.__skillsResponse = [
-    {
-        ref: "builtin:time",
-        name: "time",
-        description: "Get the current time.",
-        source: "builtin",
-    },
-];
-globalThis.__resolveCommandResponse = {
-    matched: true,
-    expanded_prompt: "This should not be used.",
-};
-state.currentWorkspaceId = "workspace-1";
-els.promptInput.value = "Please explain /time complexity";
-
-await refreshRoleConfigOptions({ refreshControls: false });
-await handleSend();
-
-console.log(JSON.stringify({
-    resolveCalls: globalThis.__resolveCommandCalls || [],
-    streamCalls: globalThis.__streamCalls,
-}));
-""".strip()
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=temp_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-    )
-
-    payload = json.loads(result.stdout)
-    assert payload["resolveCalls"] == []
-    assert len(payload["streamCalls"]) == 1
-    assert payload["streamCalls"][0]["options"]["inputParts"] == [
-        {
-            "kind": "text",
-            "text": "Please explain /time complexity",
-        }
-    ]
-    assert payload["streamCalls"][0]["options"]["skills"] == []
-
-
 def test_handle_send_sends_pasted_image_as_inline_media_for_multimodal_role(
     tmp_path: Path,
 ) -> None:

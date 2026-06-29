@@ -6981,3 +6981,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer slash fallback slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Inline Slash Prose Composer Migration
+
+### Scope
+- Continued Composer/run-controls migration by moving the inline slash prose scenario from the V1 `test_prompt_yolo_ui.py` harness to V2 TS coverage.
+- Added V2 Composer coverage proving a slash token inside ordinary prose such as `Please explain /time complexity` does not call command resolution and does not submit a skill, even when a matching skill exists.
+- Removed the corresponding Python UI harness scenario from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`. The file now has 20 remaining legacy UI scenarios.
+- This slice is test coverage and harness cleanup only; no production UI, Settings, sidebar, backend, or dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 67 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `rg -n "test_handle_send_does_not_parse_inline_slash|does not parse inline slash prose" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer inline slash slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

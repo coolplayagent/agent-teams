@@ -379,6 +379,50 @@ describe("Composer", () => {
     );
   });
 
+  it("does not parse inline slash prose as a command or skill action", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Get the current time.",
+          name: "time",
+          ref: "builtin:time",
+          source: "builtin",
+        },
+      ],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: true,
+      raw_text: "/time complexity",
+      expanded_prompt: "This should not be used.",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Please explain /time complexity" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(resolveCommandPromptMock).not.toHaveBeenCalled();
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [
+          {
+            kind: "text",
+            text: "Please explain /time complexity",
+          },
+        ],
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).not.toHaveProperty("skills");
+  });
+
   it("shows slash command suggestions from the command catalog", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

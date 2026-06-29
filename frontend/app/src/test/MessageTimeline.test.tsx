@@ -825,6 +825,60 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("final chunk only")).not.toBeInTheDocument();
   });
 
+  it("keeps only a live cursor when open runtime text is already hydrated", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1"],
+        runs: {
+          "run-1": {
+            runId: "run-1",
+            status: "open",
+            lastEventId: 4,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-1:4:0",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "already persisted",
+                payload: { text: "already persisted" },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        run_id: "run-1",
+        content: "already persisted",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("already persisted")).toBeVisible();
+    expect(screen.queryAllByText("already persisted")).toHaveLength(1);
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).not.toBeNull();
+    expect(streamingText).toHaveAttribute("data-streaming", "true");
+    expect(streamingText).not.toHaveTextContent("already persisted");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    const copyButton = await screen.findByRole("button", {
+      name: "Copy last answer",
+    });
+    expect(copyButton).toBeDisabled();
+  });
+
   it("keeps post-checkpoint runtime deltas when hydration only covers earlier output", async () => {
     useRuntimeStore.setState({
       runtimeState: {

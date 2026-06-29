@@ -111,15 +111,17 @@ export function MessageTimeline({
     () =>
       Object.values(runtimeState.runs)
         .flatMap((runState) =>
-          runState.entries.filter(
-            (entry) =>
-                runtimeEntryMatchesScope(entry, sessionId, runtimeRunId) &&
-                shouldKeepRuntimeEntryAfterHydration(
-                  runState,
-                  entry,
-                  hydratedOutputTextByRunId,
-                ),
-          ),
+          runState.entries.flatMap((entry) => {
+            if (!runtimeEntryMatchesScope(entry, sessionId, runtimeRunId)) {
+              return [];
+            }
+            const hydratedEntry = runtimeEntryAfterHydration(
+              runState,
+              entry,
+              hydratedOutputTextByRunId,
+            );
+            return hydratedEntry === null ? [] : [hydratedEntry];
+          }),
         ),
     [hydratedOutputTextByRunId, runtimeRunId, runtimeState.runs, sessionId],
   );
@@ -1303,19 +1305,48 @@ function timelineOutputTextByRunId(rows: TimelineRow[]): Map<string, string> {
   return textByRunId;
 }
 
-function shouldKeepRuntimeEntryAfterHydration(
+function runtimeEntryAfterHydration(
   runState: RuntimeRunState,
   entry: TimelineEntry,
   hydratedOutputTextByRunId: Map<string, string>,
-): boolean {
-  if (runState.status !== "closed") {
-    return true;
-  }
+): TimelineEntry | null {
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
   if (hydratedText === undefined) {
-    return true;
+    return entry;
   }
-  return !runtimeEntryIsCoveredByHydratedOutput(entry, runState, hydratedText);
+  if (runState.status !== "closed") {
+    return openRuntimeTextCoveredByHydration(entry, hydratedText)
+      ? runtimeHydrationCursorEntry(entry)
+      : entry;
+  }
+  return runtimeEntryIsCoveredByHydratedOutput(entry, runState, hydratedText)
+    ? null
+    : entry;
+}
+
+function openRuntimeTextCoveredByHydration(
+  entry: TimelineEntry,
+  hydratedText: string,
+): boolean {
+  if (entry.kind !== "text_delta" && entry.kind !== "output_delta") {
+    return false;
+  }
+  const entryTexts = runtimeHydrationComparisonTexts(entry);
+  return entryTexts.some((entryText) => hydratedText.includes(entryText));
+}
+
+function runtimeHydrationCursorEntry(entry: TimelineEntry): TimelineEntry {
+  return {
+    ...entry,
+    id: `${entry.id}:hydration-cursor`,
+    kind: "text_delta",
+    payload: {
+      covered_event_kind: entry.kind,
+      hydration_cursor_placeholder: true,
+      text: "",
+    },
+    text: "",
+  };
 }
 
 function runtimeEntryMatchesScope(
@@ -1507,6 +1538,7 @@ function applyRuntimeTextDeltaEvent(
     rows,
     activeText,
     nextTextSegmentSequence,
+    runtimeTextDeltaIsCursorPlaceholder(entry),
   );
 }
 
@@ -1567,8 +1599,9 @@ function appendRuntimeTextSegment(
   rows: TimelineRow[],
   activeText: Map<string, RuntimeTextAccumulator>,
   nextTextSegmentSequence: () => number,
+  allowEmpty = false,
 ): boolean {
-  if (!text) {
+  if (!text && !allowEmpty) {
     return false;
   }
   const groupKey = runtimeTextGroupKey(entry);
@@ -1586,6 +1619,11 @@ function appendRuntimeTextSegment(
   activeText.set(groupKey, accumulator);
   rows.push(accumulator.row);
   return true;
+}
+
+function runtimeTextDeltaIsCursorPlaceholder(entry: TimelineEntry): boolean {
+  const payload = jsonObject(entry.payload);
+  return payload?.hydration_cursor_placeholder === true;
 }
 
 function createRuntimeTextAccumulator(

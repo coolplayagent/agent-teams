@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Hydrated Cursor TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current implementation ledger, remaining legacy `test_stream_session_overlay_ui.py` cases, and the V1 history overlay live cursor harness before editing.
+- Fixed V2 `MessageTimeline` hydration/runtime merging for an active stream whose current runtime text is already covered by persisted assistant output: the duplicated text is no longer rendered a second time, but the active stream still contributes an empty streaming cursor row so refresh/replay continuation remains visible.
+- Added V2 component coverage proving an open runtime text delta matching persisted output renders the persisted answer exactly once, keeps one streaming cursor, and keeps answer copy disabled while the stream is still open.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/history.js` Python harness test `test_history_overlay_renders_live_cursor_placeholder_for_stream_tail`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle reflects the hydration cursor fix.
+- Kept this slice focused on stream hydration/replay rendering semantics. No sidebar entries, Settings sections, secondary-page routing, or visible shell layout changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "open runtime text is already hydrated|stale runtime delta|post-checkpoint runtime"` passed with the new hydrated live-cursor case and adjacent hydration regression coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n 'test_history_overlay_renders_live_cursor_placeholder_for_stream_tail|temp_dir = tmp_path / "history_overlay"' tests/integration_tests/frontend/test_stream_session_overlay_ui.py` returned no matches after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, runtime hydration merge fix, static app rebuild, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Overlay Fallback TS Migration
 
 ### Scope

@@ -2265,6 +2265,72 @@ describe("SettingsDrawer", () => {
     expect(screen.getByLabelText("Profile ID")).toHaveValue("vision-renamed");
   }, 25000);
 
+  it("edits model profile API key and image capability through accessible form controls", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      default: {
+        is_default: true,
+        model: "gpt-5-mini",
+        provider: "openai",
+      },
+      vision: {
+        base_url: "https://models.example/v1",
+        capabilities: {
+          input: { image: false, text: true },
+          output: { text: true },
+        },
+        has_api_key: true,
+        input_modalities: ["text"],
+        model: "gpt-5-vision",
+        provider: "openai_compatible",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+
+    const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
+    expect(visionRow).not.toBeNull();
+    fireEvent.click(within(visionRow as HTMLElement).getByRole("button", { name: /vision/ }));
+
+    expect(await screen.findByLabelText("Profile ID")).toHaveValue("vision");
+    expect(screen.getByLabelText("Provider")).toHaveValue("openai_compatible");
+    expect(screen.getByLabelText("Model")).toHaveValue("gpt-5-vision");
+    expect(screen.getByLabelText("Base URL")).toHaveValue("https://models.example/v1");
+    expect(screen.getByLabelText("Temperature")).toBeVisible();
+    expect(screen.getByLabelText("Top P")).toBeVisible();
+    expect(screen.getByLabelText("Context window")).toBeVisible();
+    expect(screen.getByLabelText("Max tokens")).toBeVisible();
+    expect(screen.getByLabelText("Timeout seconds")).toBeVisible();
+    expect(screen.getByLabelText("API Key")).toHaveAttribute(
+      "placeholder",
+      "Leave blank to keep the saved API key.",
+    );
+    expect(screen.getByLabelText("Image Input")).toHaveValue("unsupported");
+
+    fireEvent.change(screen.getByLabelText("API Key"), {
+      target: { value: "replacement-secret-key" },
+    });
+    fireEvent.change(screen.getByLabelText("Image Input"), {
+      target: { value: "supported" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "vision",
+      expect.objectContaining({
+        api_key: "replacement-secret-key",
+        capabilities: {
+          input: { image: true, text: true },
+          output: { text: true },
+        },
+      }),
+    );
+  }, 25000);
+
   it("creates a model profile from the catalog without changing settings navigation", async () => {
     renderDrawer();
 

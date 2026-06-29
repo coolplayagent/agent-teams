@@ -37,6 +37,7 @@ import type {
   GeneralConfig,
   AgentRuntimeSummary,
   ModalityCapabilities,
+  ModelCapabilities,
   ModelCatalogModel,
   ModelCatalogProvider,
   ModelCatalogResult,
@@ -1169,11 +1170,13 @@ function SettingsModels({
 }
 
 interface ModelProfileFormValues {
+  api_key?: string;
   base_url?: string;
   connect_timeout_seconds?: string;
   context_window?: string;
   fallback_policy_id?: string;
   fallback_priority?: string;
+  image_capability?: ImageCapabilityMode;
   is_default?: boolean;
   max_tokens?: string;
   model?: string;
@@ -1183,6 +1186,8 @@ interface ModelProfileFormValues {
   temperature?: string;
   top_p?: string;
 }
+
+type ImageCapabilityMode = "follow" | "supported" | "unsupported";
 
 interface ModelProbeState {
   result?: ModelConnectivityProbeResult;
@@ -1287,6 +1292,7 @@ function ModelProfileDetail({
       context_window: model.context_window !== undefined && model.context_window !== null
         ? String(model.context_window)
         : "",
+      image_capability: imageCapabilityMode(nextPatch.capabilities),
       max_tokens: model.output_limit !== undefined && model.output_limit !== null
         ? String(model.output_limit)
         : "",
@@ -1409,6 +1415,23 @@ function ModelProfileDetail({
           </Form.Item>
           <Form.Item label={t("settingsModelTimeoutSeconds")} name="connect_timeout_seconds">
             <Input inputMode="decimal" type="number" />
+          </Form.Item>
+          <Form.Item label={t("settingsModelApiKey")} name="api_key">
+            <Input.Password
+              autoComplete="new-password"
+              placeholder={
+                modelProfileHasApiKey(profile)
+                  ? t("settingsModelApiKeyPreserved")
+                  : t("settingsModelApiKeyPlaceholder")
+              }
+            />
+          </Form.Item>
+          <Form.Item label={t("settingsModelImageCapability")} name="image_capability">
+            <select className="at-settings-native-select">
+              <option value="follow">{t("settingsModelImageCapabilityFollow")}</option>
+              <option value="supported">{t("settingsModelImageCapabilitySupported")}</option>
+              <option value="unsupported">{t("settingsModelImageCapabilityUnsupported")}</option>
+            </select>
           </Form.Item>
           <Form.Item label={t("settingsModelFallbackPolicy")} name="fallback_policy_id">
             <Input />
@@ -1629,6 +1652,17 @@ function buildModelProfileSaveRequest(
   };
   if (values !== undefined) {
     request.max_tokens = positiveIntegerOrNullFromText(values.max_tokens);
+    const apiKey = textValue(values.api_key);
+    if (apiKey.length > 0) {
+      request.api_key = apiKey;
+    }
+    const imageCapabilities = modelCapabilitiesForImageMode(
+      profile.capabilities,
+      values.image_capability,
+    );
+    if (imageCapabilities !== undefined) {
+      request.capabilities = imageCapabilities;
+    }
     const sslVerify = optionalBooleanFromText(values.ssl_verify);
     if (sslVerify !== null) {
       request.ssl_verify = sslVerify;
@@ -1651,7 +1685,7 @@ function buildModelProfileSaveRequest(
   if (options.sourceName !== undefined) {
     request.source_name = options.sourceName;
   }
-  if (profile.api_key !== undefined) {
+  if (values === undefined && profile.api_key !== undefined) {
     request.api_key = profile.api_key;
   }
   if (profile.headers !== undefined) {
@@ -1663,7 +1697,7 @@ function buildModelProfileSaveRequest(
   if (profile.codeagent_auth !== undefined) {
     request.codeagent_auth = profile.codeagent_auth;
   }
-  if (profile.capabilities !== undefined) {
+  if (values === undefined && profile.capabilities !== undefined) {
     request.capabilities = profile.capabilities;
   }
   if (profile.speech_realtime !== undefined) {
@@ -1691,12 +1725,86 @@ function modelProfileToFormValues(
         ? String(profile.max_tokens)
         : "",
     model: profile.model ?? "",
+    api_key: "",
+    image_capability: imageCapabilityMode(profile.capabilities),
     profile_id: profileId,
     provider: profile.provider ?? "openai_compatible",
     ssl_verify: serializeOptionalBoolean(profile.ssl_verify),
     temperature: String(finiteNumber(profile.temperature, 0.7)),
     top_p: String(finiteNumber(profile.top_p, 1)),
   };
+}
+
+function modelProfileHasApiKey(profile: ModelProfileRecord): boolean {
+  return profile.has_api_key === true || textValue(profile.api_key ?? undefined).length > 0;
+}
+
+function imageCapabilityMode(
+  capabilities: ModelCapabilities | undefined,
+): ImageCapabilityMode {
+  const imageCapability = capabilities?.input?.image;
+  if (imageCapability === true) {
+    return "supported";
+  }
+  if (imageCapability === false) {
+    return "unsupported";
+  }
+  return "follow";
+}
+
+function modelCapabilitiesForImageMode(
+  capabilities: ModelCapabilities | undefined,
+  mode: ImageCapabilityMode | undefined,
+): ModelCapabilities | undefined {
+  if (mode === undefined) {
+    return capabilities;
+  }
+  const input = { ...(capabilities?.input ?? {}) };
+  if (mode === "follow") {
+    delete input.image;
+  } else {
+    input.image = mode === "supported";
+  }
+  return compactModelCapabilities({
+    ...capabilities,
+    input,
+  });
+}
+
+function compactModelCapabilities(
+  capabilities: ModelCapabilities,
+): ModelCapabilities | undefined {
+  const input = compactModalityCapabilities(capabilities.input);
+  const output = compactModalityCapabilities(capabilities.output);
+  if (input === undefined && output === undefined) {
+    return undefined;
+  }
+  return {
+    ...(input === undefined ? {} : { input }),
+    ...(output === undefined ? {} : { output }),
+  };
+}
+
+function compactModalityCapabilities(
+  capabilities: ModalityCapabilities | undefined,
+): ModalityCapabilities | undefined {
+  if (capabilities === undefined) {
+    return undefined;
+  }
+  const next: ModalityCapabilities = {};
+  if (capabilities.audio !== undefined) {
+    next.audio = capabilities.audio;
+  }
+  if (capabilities.image !== undefined) {
+    next.image = capabilities.image;
+  }
+  if (capabilities.text !== undefined) {
+    next.text = capabilities.text;
+  }
+  if (capabilities.video !== undefined) {
+    next.video = capabilities.video;
+  }
+  return Object.keys(next).length === 0 ? undefined : next;
 }
 
 function modelProfileRecordFromSaveRequest(
@@ -1724,6 +1832,12 @@ function modelProfileRecordFromSaveRequest(
     ssl_verify: request.ssl_verify,
     temperature: request.temperature,
     top_p: request.top_p,
+    api_key: request.api_key ?? profile.api_key,
+    has_api_key:
+      textValue(request.api_key ?? undefined).length > 0
+        ? true
+        : profile.has_api_key,
+    capabilities: request.capabilities ?? profile.capabilities,
   };
 }
 

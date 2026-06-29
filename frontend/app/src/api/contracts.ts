@@ -1367,6 +1367,7 @@ export interface ModelProfileRecord {
   catalog_model_name?: string | null;
   ssl_verify?: boolean | null;
   api_key?: string | null;
+  has_api_key?: boolean;
   headers?: JsonValue[] | null;
   maas_auth?: JsonValue | null;
   codeagent_auth?: JsonValue | null;

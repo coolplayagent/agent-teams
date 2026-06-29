@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Model Profile API Key And Image Capability V2 Parity
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining legacy settings accessibility coverage before editing. This slice targets checklist item 9 for the Model Profiles settings surface.
+- Restored V1-equivalent model profile controls in V2 for provider API key entry and image-input capability override. The API key field stays blank for saved secrets and only sends `api_key` when the user enters a replacement value.
+- Added an Image Input native select with Follow detection, Supports image input, and Text only modes. Saving writes the explicit image capability into `capabilities.input.image` while preserving unrelated capability bits.
+- Added the missing `has_api_key` field to the V2 frontend contract so the settings UI can show saved-key preservation without exposing the secret.
+- Added focused `SettingsDrawer.test.tsx` coverage proving the model profile form labels are accessible, saved API keys show the preservation placeholder, image capability is editable, and the save payload includes the replacement key plus updated capabilities.
+- Kept `tests/unit_tests/frontend/test_settings_accessibility_ui.py` for now because it also covers role memory and other legacy assertions that are not fully migrated in this slice.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "edits model profile API key"` passed with 1 focused Vitest test.
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "model profile"` passed with 4 model-profile Vitest tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 settings implementation, focused TS component coverage, frontend lint/typecheck, and diff check completed for this slice. No Settings subsystem PASS, full settings accessibility migration, browser visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Round History Clear TS Migration
 
 ### Scope

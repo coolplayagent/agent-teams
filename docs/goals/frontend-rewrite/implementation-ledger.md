@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Xiaoluban Gateway API Contract TS Migration
+
+### Scope
+- Re-checked the frontend rewrite goal, product parity checklist, remaining Python frontend tests, V2 API client coverage, and backend gateway router before editing. This slice targets checklist item 10 by replacing a legacy dist API facade export assertion with real V2 typed API client contracts.
+- Added V2 TypeScript contracts and API helpers for Xiaoluban gateway account list/prepare/create/reveal-token/update/delete, enable/disable, IM config update, and IM forwarding-command fetch endpoints.
+- Added the missing V2 `deleteSessionSubagent` API helper for the real `DELETE /api/sessions/{session_id}/subagents/{instance_id}` backend endpoint.
+- Extended `apiClient.test.ts` to verify the new helpers call the real backend paths, HTTP methods, and request payloads through fetch mocks.
+- Removed the replaced `tests/unit_tests/frontend/test_core_api_facade_exports.py` Python source-string test.
+- No sidebar entries, Settings sections, first-level pages, or user-facing UI were added in this slice.
+
+### Verification
+- `npm run test -- src/test/apiClient.test.ts -t "subagent sessions|Xiaoluban|model catalog"` passed with 2 focused Vitest tests.
+- `npm run test -- src/test/apiClient.test.ts` passed with 34 Vitest tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+- `rg --files tests\unit_tests\frontend | rg "test_core_api_facade_exports\.py$"` returned no matches after removal.
+
+### Reviewer
+- Main-agent V2 API contract implementation, focused TS API coverage, and old Python facade-test removal completed for this slice. No Gateway UI parity, Connector subsystem PASS, Settings subsystem PASS, browser visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Settings Accessibility TS Migration
 
 ### Scope

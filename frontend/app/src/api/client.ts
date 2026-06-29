@@ -154,6 +154,12 @@ import type {
   WeChatLoginStartResponse,
   WeChatLoginWaitRequest,
   WeChatLoginWaitResponse,
+  XiaolubanGatewayAccountCreateInput,
+  XiaolubanGatewayAccountRecord,
+  XiaolubanGatewayAccountUpdateInput,
+  XiaolubanGatewayImConfigUpdateInput,
+  XiaolubanGatewayImForwardingCommandResponse,
+  XiaolubanGatewayTokenRevealResponse,
 } from "./contracts";
 import { requestJson } from "./http";
 
@@ -1099,6 +1105,108 @@ export function reloadFeishuGateway(): Promise<{ status: string }> {
   });
 }
 
+export function listXiaolubanGatewayAccounts(): Promise<
+  XiaolubanGatewayAccountRecord[]
+> {
+  return requestJson<XiaolubanGatewayAccountRecord[]>(
+    "/gateway/xiaoluban/accounts",
+  );
+}
+
+export function prepareXiaolubanGatewayAccount(): Promise<
+  XiaolubanGatewayImForwardingCommandResponse
+> {
+  return requestJson<XiaolubanGatewayImForwardingCommandResponse>(
+    "/gateway/xiaoluban/accounts:prepare",
+    { method: "POST" },
+  );
+}
+
+export function createXiaolubanGatewayAccount(
+  request: XiaolubanGatewayAccountCreateInput,
+): Promise<XiaolubanGatewayAccountRecord> {
+  return requestJson<XiaolubanGatewayAccountRecord>(
+    "/gateway/xiaoluban/accounts",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function revealXiaolubanGatewayAccountToken(
+  accountId: string,
+): Promise<XiaolubanGatewayTokenRevealResponse> {
+  return requestJson<XiaolubanGatewayTokenRevealResponse>(
+    `/gateway/xiaoluban/accounts/${encodeURIComponent(accountId.trim())}:reveal-token`,
+    { method: "POST" },
+  );
+}
+
+export function updateXiaolubanGatewayAccount(
+  accountId: string,
+  request: XiaolubanGatewayAccountUpdateInput,
+): Promise<XiaolubanGatewayAccountRecord> {
+  return requestJson<XiaolubanGatewayAccountRecord>(
+    `/gateway/xiaoluban/accounts/${encodeURIComponent(accountId.trim())}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function updateXiaolubanGatewayImConfig(
+  accountId: string,
+  request: XiaolubanGatewayImConfigUpdateInput,
+): Promise<XiaolubanGatewayAccountRecord> {
+  return requestJson<XiaolubanGatewayAccountRecord>(
+    `/gateway/xiaoluban/accounts/${encodeURIComponent(accountId.trim())}/im`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function fetchXiaolubanGatewayImForwardingCommand(
+  accountId: string,
+): Promise<XiaolubanGatewayImForwardingCommandResponse> {
+  return requestJson<XiaolubanGatewayImForwardingCommandResponse>(
+    `/gateway/xiaoluban/accounts/${encodeURIComponent(accountId.trim())}/im:forwarding-command`,
+  );
+}
+
+export function enableXiaolubanGatewayAccount(
+  accountId: string,
+): Promise<XiaolubanGatewayAccountRecord> {
+  return requestJson<XiaolubanGatewayAccountRecord>(
+    `/gateway/xiaoluban/accounts/${encodeURIComponent(accountId.trim())}:enable`,
+    { method: "POST" },
+  );
+}
+
+export function disableXiaolubanGatewayAccount(
+  accountId: string,
+): Promise<XiaolubanGatewayAccountRecord> {
+  return requestJson<XiaolubanGatewayAccountRecord>(
+    `/gateway/xiaoluban/accounts/${encodeURIComponent(accountId.trim())}:disable`,
+    { method: "POST" },
+  );
+}
+
+export function deleteXiaolubanGatewayAccount(
+  accountId: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/gateway/xiaoluban/accounts/${encodeURIComponent(accountId.trim())}`,
+    {
+      method: "DELETE",
+      body: JSON.stringify({ force: true }),
+    },
+  );
+}
+
 export function listWeChatGatewayAccounts(): Promise<WeChatGatewayAccountRecord[]> {
   return requestJson<WeChatGatewayAccountRecord[]>("/gateway/wechat/accounts");
 }
@@ -1337,6 +1445,18 @@ export function listSessionSubagents(
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   return requestJson<SessionSubagentRecord[]>(
     `/sessions/${encodeURIComponent(sessionId)}/subagents${suffix}`,
+  );
+}
+
+export function deleteSessionSubagent(
+  sessionId: string,
+  instanceId: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(
+      instanceId,
+    )}`,
+    { method: "DELETE" },
   );
 }
 

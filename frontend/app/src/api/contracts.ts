@@ -2319,6 +2319,72 @@ export interface FeishuGatewayAccountUpdateInput {
   target_config?: FeishuTriggerTargetConfig | null;
 }
 
+export type XiaolubanGatewayAccountStatus = "disabled" | "enabled";
+
+export interface XiaolubanGatewaySecretStatus {
+  token_configured: boolean;
+}
+
+export interface XiaolubanGatewayImConfig {
+  workspace_id?: string | null;
+}
+
+export interface XiaolubanGatewayAccountRecord {
+  account_id: string;
+  base_url: string;
+  created_at: string;
+  derived_uid: string;
+  display_name: string;
+  im_config: XiaolubanGatewayImConfig;
+  notification_receiver?: string | null;
+  notification_receivers: string[];
+  notification_workspace_ids: string[];
+  notify_self: boolean;
+  secret_status: XiaolubanGatewaySecretStatus;
+  status: XiaolubanGatewayAccountStatus;
+  updated_at: string;
+}
+
+export interface XiaolubanGatewayAccountCreateInput {
+  account_id?: string | null;
+  base_url?: string;
+  display_name: string;
+  enabled?: boolean;
+  im_config?: XiaolubanGatewayImConfig;
+  notification_receiver?: string | null;
+  notification_receivers?: string[];
+  notification_workspace_ids?: string[];
+  notify_self?: boolean;
+  token: string;
+}
+
+export interface XiaolubanGatewayAccountUpdateInput {
+  base_url?: string | null;
+  display_name?: string | null;
+  enabled?: boolean | null;
+  im_config?: XiaolubanGatewayImConfig | null;
+  notification_receiver?: string | null;
+  notification_receivers?: string[] | null;
+  notification_workspace_ids?: string[] | null;
+  notify_self?: boolean | null;
+  token?: string | null;
+}
+
+export interface XiaolubanGatewayImConfigUpdateInput {
+  workspace_id?: string | null;
+}
+
+export interface XiaolubanGatewayImForwardingCommandResponse {
+  account_id: string;
+  forwarding_command: string;
+  forwarding_url: string;
+  listener_running: boolean;
+}
+
+export interface XiaolubanGatewayTokenRevealResponse {
+  token?: string | null;
+}
+
 export type WeChatGatewayAccountStatus = "disabled" | "enabled";
 
 export interface WeChatGatewayAccountRecord {

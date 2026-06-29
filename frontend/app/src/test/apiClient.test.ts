@@ -13,19 +13,24 @@ import {
   deleteModelProfile,
   deletePlugin,
   deleteRoleConfig,
+  deleteSessionSubagent,
   disableAutomationProject,
   disablePlugin,
   deleteFeishuGatewayAccount,
   deleteWeChatGatewayAccount,
+  deleteXiaolubanGatewayAccount,
   deleteEnvironmentVariable,
   deleteSshProfile,
   deleteWorkspace,
   disableFeishuGatewayAccount,
   disableWeChatGatewayAccount,
+  disableXiaolubanGatewayAccount,
   enableFeishuGatewayAccount,
   enableWeChatGatewayAccount,
+  enableXiaolubanGatewayAccount,
   enableAutomationProject,
   enablePlugin,
+  fetchXiaolubanGatewayImForwardingCommand,
   getAgentRuntime,
   getAgentRuntimeRegistry,
   getAgentRuntimes,
@@ -48,6 +53,7 @@ import {
   getTaskSpecArtifactDiff,
   getRuntimeToolDownload,
   getRuntimeSkillDetail,
+  createXiaolubanGatewayAccount,
   deleteSession,
   fetchUiLanguageSettings,
   getWorkspaceDiffFile,
@@ -67,6 +73,7 @@ import {
   listMemories,
   listSshProfiles,
   listSessionSubagents,
+  listXiaolubanGatewayAccounts,
   listSessionRounds,
   listRunTasks,
   listSpecCheckpointEvaluations,
@@ -81,8 +88,10 @@ import {
   probeGitHubWebhookConnectivity,
   probeWebConnectivity,
   previewRequestChangesBoardTodo,
+  prepareXiaolubanGatewayAccount,
   revealSshProfilePassword,
   revealGitHubToken,
+  revealXiaolubanGatewayAccountToken,
   refreshAgentRuntimeRegistry,
   refreshModelCatalog,
   reloadModelConfig,
@@ -130,6 +139,8 @@ import {
   updateBoardTodoSource,
   updateFeishuGatewayAccount,
   updateWeChatGatewayAccount,
+  updateXiaolubanGatewayAccount,
+  updateXiaolubanGatewayImConfig,
   updatePlugin,
   updateWorkspace,
   validateHooksConfig,
@@ -325,6 +336,9 @@ describe("api client", () => {
           ]),
           { status: 200 },
         ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
       );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -343,6 +357,9 @@ describe("api client", () => {
         role: "assistant",
       },
     ]);
+    await expect(
+      deleteSessionSubagent("session-1", "subagent-instance-1"),
+    ).resolves.toEqual({ status: "ok" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -356,6 +373,13 @@ describe("api client", () => {
       "/api/sessions/session-1/agents/subagent-instance-1/messages",
       expect.objectContaining({
         headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/sessions/session-1/subagents/subagent-instance-1",
+      expect.objectContaining({
+        method: "DELETE",
       }),
     );
   });
@@ -2743,6 +2767,169 @@ describe("api client", () => {
       7,
       "/api/gateway/feishu/reload",
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("manages Xiaoluban gateway accounts and IM forwarding endpoints", async () => {
+    const accountPayload = {
+      account_id: "xlb-main",
+      base_url: "http://xiaoluban.example/",
+      created_at: "2026-06-29T00:00:00Z",
+      derived_uid: "uid-main",
+      display_name: "Xiaoluban Main",
+      im_config: { workspace_id: "workspace-main" },
+      notification_receiver: "group-a",
+      notification_receivers: ["group-a", "group-b"],
+      notification_workspace_ids: ["workspace-main"],
+      notify_self: true,
+      secret_status: { token_configured: true },
+      status: "enabled",
+      updated_at: "2026-06-29T00:00:00Z",
+    };
+    const preparePayload = {
+      account_id: "xlb-main",
+      forwarding_command: "http://127.0.0.1:8765/xlb-main g",
+      forwarding_url: "http://127.0.0.1:8765/xlb-main",
+      listener_running: true,
+    };
+    const createPayload = {
+      account_id: "xlb-main",
+      base_url: "http://xiaoluban.example/",
+      display_name: "Xiaoluban Main",
+      enabled: true,
+      im_config: { workspace_id: "workspace-main" },
+      notification_receivers: ["group-a", "group-b"],
+      notification_workspace_ids: ["workspace-main"],
+      token: "personal-token",
+    };
+    const updatePayload = {
+      display_name: "Xiaoluban Main",
+      notification_receivers: ["group-a"],
+      token: "replacement-token",
+    };
+    const imPayload = { workspace_id: "workspace-im" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([accountPayload]), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(preparePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(accountPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "revealed-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(accountPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(accountPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(preparePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(accountPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(accountPayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listXiaolubanGatewayAccounts()).resolves.toEqual([accountPayload]);
+    await expect(prepareXiaolubanGatewayAccount()).resolves.toEqual(preparePayload);
+    await expect(createXiaolubanGatewayAccount(createPayload)).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(
+      revealXiaolubanGatewayAccountToken("xlb-main"),
+    ).resolves.toEqual({ token: "revealed-token" });
+    await expect(
+      updateXiaolubanGatewayAccount("xlb-main", updatePayload),
+    ).resolves.toEqual(accountPayload);
+    await expect(
+      updateXiaolubanGatewayImConfig("xlb-main", imPayload),
+    ).resolves.toEqual(accountPayload);
+    await expect(
+      fetchXiaolubanGatewayImForwardingCommand("xlb-main"),
+    ).resolves.toEqual(preparePayload);
+    await expect(enableXiaolubanGatewayAccount("xlb-main")).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(disableXiaolubanGatewayAccount("xlb-main")).resolves.toEqual(
+      accountPayload,
+    );
+    await expect(deleteXiaolubanGatewayAccount("xlb-main")).resolves.toEqual({
+      status: "ok",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/gateway/xiaoluban/accounts",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/gateway/xiaoluban/accounts:prepare",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/gateway/xiaoluban/accounts",
+      expect.objectContaining({
+        body: JSON.stringify(createPayload),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/gateway/xiaoluban/accounts/xlb-main:reveal-token",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/gateway/xiaoluban/accounts/xlb-main",
+      expect.objectContaining({
+        body: JSON.stringify(updatePayload),
+        method: "PATCH",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/gateway/xiaoluban/accounts/xlb-main/im",
+      expect.objectContaining({
+        body: JSON.stringify(imPayload),
+        method: "PATCH",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/gateway/xiaoluban/accounts/xlb-main/im:forwarding-command",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      "/api/gateway/xiaoluban/accounts/xlb-main:enable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      "/api/gateway/xiaoluban/accounts/xlb-main:disable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      10,
+      "/api/gateway/xiaoluban/accounts/xlb-main",
+      expect.objectContaining({
+        body: JSON.stringify({ force: true }),
+        method: "DELETE",
+      }),
     );
   });
 

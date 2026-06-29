@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Tagged Read And Bounded Tool Output TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 frontend UI harnesses, and the Message Timeline / AG-UI Runtime Stream checklist before editing.
+- Migrated the V1 `test_tool_blocks_parse_tagged_read_payloads_and_cap_large_diffs` intent from implementation-string assertions to V2 behavior: read tool returns with `<path>`, `<type>`, and `<content>` tags now render useful metadata/content without exposing raw tags, and very large tool outputs are bounded with a visible truncation notice.
+- Added bounded tool return bodies for persisted and runtime tool results using a 200-line / 12000-character preview cap.
+- Removed the replaced V1 Python static source harness from `tests/integration_tests/frontend/test_streaming_tool_ui.py`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle includes tagged read parsing and bounded tool output rendering.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "tagged read|successful tool return envelopes|failed persisted tool returns"` passed with the new tagged read and bounded output coverage plus adjacent tool-return cases.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_streaming_tool_ui.py` passed after deleting the migrated Python function.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-CfkRO9hD.js`, `index-Bng0LR7m.css`).
+- `rg -n 'test_tool_blocks_parse_tagged_read_payloads_and_cap_large_diffs|parses tagged read payloads|TOOL_RESULT_MAX_LINES|Preview truncated|parseReadPayload|MAX_WRITE_PREVIEW|tool-diff-no' tests/integration_tests/frontend/test_streaming_tool_ui.py frontend/app/src/test/MessageTimeline.test.tsx frontend/app/src/features/timeline/MessageTimeline.tsx docs/goals/frontend-rewrite/implementation-ledger.md` returned only the V2 production constants/truncation behavior, expanded TS coverage, and ledger notes.
+
+### Reviewer
+- Main-agent V2 production bounded-output parsing, component coverage, old Python UI test function removal, static bundle rebuild, and focused regression verification completed for this slice. No full Streaming Tool subsystem PASS, Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Tool Row Metadata TS Migration
 
 ### Scope

@@ -33,6 +33,8 @@ const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
+const TOOL_RESULT_MAX_LINES = 200;
+const TOOL_RESULT_MAX_CHARS = 12000;
 const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
 const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
@@ -3191,15 +3193,16 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   if (kind === "tool-return") {
     const content = "content" in part ? part.content ?? null : null;
     const error = toolReturnIsError(part, content);
+    const toolName = "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool";
     return {
       action: "",
-      body: toolReturnBody(content, error),
+      body: toolReturnBody(content, error, toolName),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error,
       kind: "tool",
       mediaParts: toolReturnMediaParts(content),
       phase: "result",
-      toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
+      toolName,
     };
   }
   if (kind === "retry-prompt") {
@@ -3424,7 +3427,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
   const error = objectBoolean(payload, "error") || toolResultIndicatesError(result);
   return {
     action: "",
-    body: toolReturnBody(result, error),
+    body: toolReturnBody(result, error, toolName),
     callId,
     error,
     kind: "tool",
@@ -3797,13 +3800,13 @@ function approvalDeniedLabel(action: string): string {
   return "Approval denied";
 }
 
-function toolReturnBody(value: unknown, error: boolean): string {
+function toolReturnBody(value: unknown, error: boolean, toolName = ""): string {
   if (error) {
     const summary = toolErrorSummary(value);
-    return summary || jsonValueText(value);
+    return boundedToolBody(summary || jsonValueText(value));
   }
-  const summary = toolSuccessSummary(value);
-  return summary || jsonValueText(value);
+  const summary = toolSuccessSummary(value, toolName);
+  return boundedToolBody(summary || jsonValueText(value));
 }
 
 function toolErrorSummary(value: unknown): string {
@@ -3849,7 +3852,13 @@ function toolErrorSummary(value: unknown): string {
   return lines.join("\n");
 }
 
-function toolSuccessSummary(value: unknown): string {
+function toolSuccessSummary(value: unknown, toolName = ""): string {
+  if (toolName === "read") {
+    const readSummary = readToolPayloadSummary(value);
+    if (readSummary.length > 0) {
+      return readSummary;
+    }
+  }
   if (typeof value === "string") {
     return value.trim();
   }
@@ -3862,6 +3871,89 @@ function toolSuccessSummary(value: unknown): string {
     return dataSummary || jsonValueText(object.data);
   }
   return toolDataSummary(value);
+}
+
+function readToolPayloadSummary(value: unknown): string {
+  for (const candidate of readToolPayloadCandidates(value)) {
+    const parsed = parseTaggedReadPayload(candidate);
+    if (parsed.length > 0) {
+      return parsed;
+    }
+    const trimmed = candidate.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
+function readToolPayloadCandidates(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(readToolPayloadCandidates);
+  }
+  const object = unknownJsonObject(value);
+  if (object === null) {
+    return [];
+  }
+  const candidates: string[] = [];
+  for (const key of ["content", "data", "output", "result", "text"] as const) {
+    const child = object[key];
+    if (child !== undefined) {
+      candidates.push(...readToolPayloadCandidates(child));
+    }
+  }
+  return candidates;
+}
+
+function parseTaggedReadPayload(text: string): string {
+  const content = extractTaggedSection(text, "content");
+  if (content.length === 0) {
+    return "";
+  }
+  const metadata = [
+    taggedMetadataLine(text, "path", "Path"),
+    taggedMetadataLine(text, "type", "Type"),
+  ].filter((line) => line.length > 0);
+  return [...metadata, "", content].join("\n").trim();
+}
+
+function taggedMetadataLine(text: string, tagName: string, label: string): string {
+  const value = extractTaggedSection(text, tagName);
+  return value.length > 0 ? `${label}: ${value}` : "";
+}
+
+function extractTaggedSection(text: string, tagName: string): string {
+  const match = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i").exec(text);
+  return match?.[1]?.trim() ?? "";
+}
+
+function boundedToolBody(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+  const lines = trimmed.split(/\r?\n/);
+  const lineLimited = lines.length > TOOL_RESULT_MAX_LINES;
+  const visibleLines = lineLimited ? lines.slice(0, TOOL_RESULT_MAX_LINES) : lines;
+  let body = visibleLines.join("\n").trimEnd();
+  const charLimited = body.length > TOOL_RESULT_MAX_CHARS;
+  if (charLimited) {
+    body = body.slice(0, TOOL_RESULT_MAX_CHARS).trimEnd();
+  }
+  if (!lineLimited && !charLimited) {
+    return body;
+  }
+  const limits: string[] = [];
+  if (lineLimited) {
+    limits.push(`first ${TOOL_RESULT_MAX_LINES} of ${lines.length} lines`);
+  }
+  if (charLimited) {
+    limits.push(`first ${TOOL_RESULT_MAX_CHARS} characters`);
+  }
+  return `${body}\n\nPreview truncated. Showing ${limits.join(" and ")}.`;
 }
 
 function toolDataSummary(value: unknown): string {

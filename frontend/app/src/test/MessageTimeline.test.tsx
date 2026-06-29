@@ -2376,6 +2376,71 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/duration_ms/)).not.toBeInTheDocument();
   });
 
+  it("parses tagged read payloads and bounds large tool output previews", async () => {
+    const longDiff = Array.from({ length: 240 }, (_value, index) =>
+      `+ generated diff line ${index}`,
+    ).join("\n");
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: [
+                "<path>src/main.py</path>",
+                "<type>text</type>",
+                "<content>",
+                "def main():",
+                "    return 'ok'",
+                "</content>",
+              ].join("\n"),
+              part_kind: "tool-return",
+              tool_call_id: "tool-read-tagged",
+              tool_name: "read",
+            },
+            {
+              content: {
+                data: { output: longDiff },
+                ok: true,
+              },
+              part_kind: "tool-return",
+              tool_call_id: "tool-write-large",
+              tool_name: "write",
+            },
+          ],
+        },
+        message_id: "assistant-tagged-tools",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    const readTitle = await screen.findByText("Tool result: read");
+    const writeTitle = screen.getByText("Tool result: write");
+    expect(toolPreviewTexts(container)).toEqual([
+      "Path: src/main.py",
+      "+ generated diff line 0",
+    ]);
+
+    fireEvent.click(readTitle);
+    const readDetails = toolPreElement(screenElement(readTitle));
+    expect(readDetails).toBeVisible();
+    expect(readDetails).toHaveTextContent(/Path: src\/main\.py/);
+    expect(readDetails).toHaveTextContent(/Type: text/);
+    expect(readDetails).toHaveTextContent(/def main\(\):/);
+    expect(readDetails).not.toHaveTextContent(/<content>/);
+
+    fireEvent.click(writeTitle);
+    const writeDetails = toolPreElement(screenElement(writeTitle));
+    expect(writeDetails).toBeVisible();
+    expect(writeDetails).toHaveTextContent(/\+ generated diff line 0/);
+    expect(writeDetails).toHaveTextContent(/\+ generated diff line 199/);
+    expect(writeDetails).not.toHaveTextContent(/\+ generated diff line 220/);
+    expect(writeDetails).toHaveTextContent(
+      /Preview truncated\. Showing first 200 of 240 lines\./,
+    );
+  });
+
   it("marks failed persisted tool returns as tool errors", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

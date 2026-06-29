@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Agent Panel Shell Boundary TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current remaining Python UI harness inventory, and the old `test_agent_panel_index_ui.py` assertions before editing.
+- Migrated the V1 Agent Panel index intent to V2 shell coverage: subagent sessions now open as a secondary workspace surface instead of a right drawer/right rail, primary sidebar navigation clears the active subagent surface, and returning to chat from the sidebar clears only the active subagent view while preserving the selected session/workspace state.
+- Kept production code unchanged because V2 already models subagent drill-in as a `SubagentSessionView` workspace route and the V1 right drawer entrypoints are not part of the React shell.
+- Removed `tests/integration_tests/frontend/test_agent_panel_index_ui.py` after its remaining V2-relevant shell boundary behavior was covered in `AppShell.test.tsx`.
+
+### Verification
+- `npm run test -- src/test/AppShell.test.tsx` passed all 22 AppShell tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 shell boundary coverage and old Python UI harness removal completed for this slice. No full Application Shell subsystem PASS, Subagents subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 I18n TS Migration
 
 ### Scope

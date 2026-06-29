@@ -21,6 +21,7 @@ import {
 } from "../api/client";
 import type { SessionSidebarRecord } from "../api/contracts";
 import { AppShell } from "../features/shell/AppShell";
+import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
 import { sidebarWidthDefault, useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
@@ -65,6 +66,8 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
     backendStatus,
     navigationItems = [],
     onOpenWorkspaceView,
+    onSessionSelected,
+    onSubagentSelected,
   }: {
     backendStatus?: {
       label: string;
@@ -78,6 +81,8 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
       shortcut?: string;
     }>;
     onOpenWorkspaceView?: () => void;
+    onSessionSelected?: () => void;
+    onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
   }) => (
     <div data-testid="sessions-sidebar">
       {navigationItems.map((item) => (
@@ -97,6 +102,30 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
       <button onClick={onOpenWorkspaceView} type="button">
         Open workspace view
       </button>
+      <span
+        data-testid="select-session-from-sidebar"
+        onClick={onSessionSelected}
+      />
+      <span
+        data-testid="open-subagent-session"
+        onClick={() =>
+          onSubagentSelected?.({
+            createdAt: "2026-06-23T10:02:00Z",
+            instanceId: "subagent-instance-1",
+            interactive: false,
+            lastEventId: 41,
+            roleId: "explorer",
+            runId: "subagent-run-1",
+            runPhase: "running",
+            runStatus: "running",
+            sessionId: "session-1",
+            status: "running",
+            subagentKind: "normal",
+            title: "Subagent Explorer",
+            updatedAt: "2026-06-23T10:03:00Z",
+          })
+        }
+      />
       {backendStatus !== undefined ? (
         <div
           aria-busy={backendStatus.tone === "checking" ? "true" : "false"}
@@ -141,6 +170,23 @@ vi.mock("../features/shell/ObservabilityPanel", () => ({
 
 vi.mock("../features/shell/SessionTokenUsage", () => ({
   SessionTokenUsage: () => <div data-testid="token-usage" />,
+}));
+
+vi.mock("../features/sessions/SubagentSessionView", () => ({
+  SubagentSessionView: ({
+    onBack,
+    subagent,
+  }: {
+    onBack: () => void;
+    subagent: ActiveSubagentSession;
+  }) => (
+    <div data-testid="subagent-session-view">
+      <span>{subagent.title}</span>
+      <button onClick={onBack} type="button">
+        Back to chat
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("../features/shell/SettingsDrawer", () => ({
@@ -671,6 +717,43 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("timeline")).toBeVisible();
     expect(screen.queryByTestId("workspace-project-view")).not.toBeInTheDocument();
     expect(window.localStorage.getItem("agentTeams.shellView")).toBe("chat");
+  });
+
+  it("opens subagent sessions as a secondary workspace surface without right drawer entrypoints", async () => {
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("open-subagent-session"));
+
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+    expect(screen.getByText("Subagent Explorer")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(document.querySelector("#agent-drawer")).toBeNull();
+    expect(document.querySelector("#right-rail")).toBeNull();
+    expect(document.querySelector(".agent-panel")).toBeNull();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByTestId("session-search-view")).toBeVisible();
+    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(screen.queryByText("Subagent Explorer")).not.toBeInTheDocument();
+  });
+
+  it("clears the active subagent view when the sidebar returns to chat", async () => {
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-session"));
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(useUiStore.getState().selectedSessionId).toBe("session-1");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
   });
 });
 

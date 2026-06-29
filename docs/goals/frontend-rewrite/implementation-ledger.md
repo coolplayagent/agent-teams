@@ -7144,3 +7144,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused V2 implementation, targeted sidebar verification, and partial legacy harness removal completed for this new-session model-profile inheritance slice. No full sidebar subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Composer Pasted Image Attachment Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, and V2 Composer pasted-image attachment coverage before editing.
+- Strengthened V2 Composer coverage for the pasted-image user state that replaces the old V1 footer-hint DOM behavior: the prompt attachment region is absent before paste, appears after an image paste, and disappears again when the pasted image is removed.
+- Removed the migrated V1 Python UI harness scenario for `promptInputHint` hiding when an image attachment is present. V2 does not carry that legacy footer-hint DOM node forward; the user-facing equivalent is the `Prompt attachments` region rendered by `PromptAttachments`.
+- The legacy Python UI harness now has 2 remaining scenarios: prompt mention/resource autocomplete and title preview event timing. The title preview scenario remains intentionally unresolved because the corresponding V1 `agent-teams-session-title-previewed` event is not yet mapped to a confirmed V2 behavior.
+- This slice is test coverage and harness cleanup only; no production UI, Settings/sidebar inventory, backend, desktop, stream/replay runtime, or built dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 72 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 2.
+- `rg -n "test_pasted_image_hides_prompt_footer_hint|Prompt attachments|submits pasted image attachments|removes pasted image attachments" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the V2 TS attachment coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused V2 assertion hardening, targeted Composer verification, and partial legacy harness removal completed for this pasted-image attachment slice. No full Composer subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, release cleanup sign-off, or V2 frontend completion is claimed.

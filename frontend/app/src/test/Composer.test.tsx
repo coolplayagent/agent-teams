@@ -1431,8 +1431,10 @@ describe("Composer", () => {
     fireEvent.change(await screen.findByLabelText("Prompt"), {
       target: { value: "Describe this image" },
     });
+    expect(screen.queryByLabelText("Prompt attachments")).toBeNull();
     const imageFile = pasteImage("chart.png");
 
+    expect(await screen.findByLabelText("Prompt attachments")).toBeVisible();
     expect(await screen.findByText("chart.png")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -1535,10 +1537,12 @@ describe("Composer", () => {
 
     pasteImage("removable.png");
 
+    expect(await screen.findByLabelText("Prompt attachments")).toBeVisible();
     expect(await screen.findByText("removable.png")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Remove removable.png" }));
 
     await waitFor(() => expect(screen.queryByText("removable.png")).toBeNull());
+    expect(screen.queryByLabelText("Prompt attachments")).toBeNull();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 

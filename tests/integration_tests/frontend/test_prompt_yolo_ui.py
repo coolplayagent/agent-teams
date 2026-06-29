@@ -1027,69 +1027,6 @@ console.log(JSON.stringify({
     ]
 
 
-def test_pasted_image_hides_prompt_footer_hint(tmp_path: Path) -> None:
-    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
-    runner = """
-import {
-    handlePromptComposerPaste,
-} from "./prompt.js";
-import { els } from "./mockDom.mjs";
-
-globalThis.__draftMentionHintSyncCalls = 0;
-globalThis.FileReader = class {
-    constructor() {
-        this.result = null;
-        this.onload = null;
-        this.onerror = null;
-        this.error = null;
-    }
-    readAsDataURL(file) {
-        this.result = file.__dataUrl;
-        this.onload?.();
-    }
-};
-
-await handlePromptComposerPaste({
-    clipboardData: {
-        items: [
-            {
-                type: "image/png",
-                getAsFile() {
-                    return {
-                        name: "diagram.png",
-                        size: 4,
-                        __dataUrl: "data:image/png;base64,QUJDRA==",
-                    };
-                },
-            },
-        ],
-    },
-    preventDefault() {
-        return undefined;
-    },
-});
-
-console.log(JSON.stringify({
-    attachmentHidden: els.promptAttachments.hidden,
-    footerHintClassName: els.promptInputHint.className,
-    draftMentionHintSyncCalls: globalThis.__draftMentionHintSyncCalls,
-}));
-""".strip()
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=temp_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-    )
-
-    payload = json.loads(result.stdout)
-    assert payload["attachmentHidden"] is False
-    assert "is-hidden" in payload["footerHintClassName"]
-    assert payload["draftMentionHintSyncCalls"] >= 1
-
-
 def _write_new_session_draft_mock(tmp_path: Path) -> None:
     components_dir = tmp_path / "components"
     components_dir.mkdir(exist_ok=True)

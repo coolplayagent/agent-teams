@@ -7108,3 +7108,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused TS coverage migration, targeted Composer verification, and partial legacy harness removal completed for this model-profile save boundary slice. No Composer subsystem PASS, streaming/replay PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 New Session Workspace Flow Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 `test_prompt_yolo_ui.py` harness inventory, V2 `SessionsSidebar` workspace/session creation tests, and the V2 `SessionCreateRequest` contract before editing.
+- Removed two V1-only Python source assertions for the legacy new-session workspace selector dropdown style and outside-click binding. V2 no longer uses that draft-page dropdown; the user-facing equivalent is covered by workspace-group session creation, selected-workspace creation, and stale selected-workspace fallback in `SessionsSidebar.test.tsx`.
+- Left the new-session draft model-profile creation harness in place because `SessionCreateRequest` supports `normal_model_profile`, while V2 sidebar creation currently sends only `workspace_id`; that needs a separate product decision or implementation slice rather than being treated as covered.
+- The legacy Python UI harness now has 4 remaining scenarios: prompt mention/resource autocomplete, title preview event timing, pasted-image footer hint, and new-session draft model-profile creation.
+- This slice is test harness cleanup only; no production UI, sidebar inventory, Settings inventory, backend, desktop, or dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/SessionsSidebar.test.tsx` passed with 26 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 4.
+- `rg -n "test_new_session_workspace_selector|creates a session in the selected workspace|creates a session from a workspace project row|ignores a stale stored workspace id" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/SessionsSidebar.test.tsx` returns only the V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent V1 harness mapping, V2 workspace creation coverage verification, targeted sidebar test execution, and partial legacy harness removal completed for this workspace creation flow slice. No sidebar subsystem PASS, new-session model-profile inheritance PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

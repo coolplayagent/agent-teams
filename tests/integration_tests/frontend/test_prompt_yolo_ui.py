@@ -17,35 +17,6 @@ def _write_prompt_tokens_test_module(tmp_path: Path) -> None:
     (utils_dir / "promptTokens.js").write_text(source, encoding="utf-8")
 
 
-def test_new_session_workspace_selector_uses_composer_menu_style() -> None:
-    source = Path("frontend/dist/js/components/newSessionDraft.js").read_text(
-        encoding="utf-8"
-    )
-    css = Path(
-        "frontend/dist/css/components/new-session-draft-workspace.css"
-    ).read_text(encoding="utf-8")
-
-    assert "new-session-workspace-option-check" in source
-    assert "scrollbar-width: thin;" in css
-    assert ".new-session-workspace-options::-webkit-scrollbar-thumb" in css
-    assert "box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);" in css
-
-
-def test_new_session_workspace_selector_closes_on_outside_click() -> None:
-    source = Path("frontend/dist/js/components/newSessionDraft.js").read_text(
-        encoding="utf-8"
-    )
-
-    assert "bindWorkspaceOutsideClick();" in source
-    assert "document.addEventListener('click', event => {" in source
-    assert "if (!draftWorkspaceMenuOpen || !isNewSessionDraftActive())" in source
-    assert "isDraftWorkspaceActionTarget(event.target)" in source
-    assert "event.stopPropagation();" in source
-    assert (
-        "draftWorkspaceMenuOpen = false;\n        renderWorkspaceSelector();" in source
-    )
-
-
 def test_prompt_role_mentions_offer_autocomplete_and_insert_selection(
     tmp_path: Path,
 ) -> None:

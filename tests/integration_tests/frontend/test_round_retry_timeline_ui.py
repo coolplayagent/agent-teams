@@ -180,59 +180,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_load_session_rounds_ignores_stale_timeline_after_session_switch(
-    tmp_path: Path,
-) -> None:
-    payload = _run_round_timeline_script(
-        tmp_path=tmp_path,
-        runner_source="""
-globalThis.__initialRoundsPage = {
-    items: [
-        { run_id: 'run-2', created_at: '2026-04-25T11:02:00', intent: 'Latest' },
-        { run_id: 'run-1', created_at: '2026-04-25T11:01:00', intent: 'Older' },
-    ],
-    has_more: true,
-    next_cursor: 'run-1',
-};
-globalThis.__timelineRoundsPagePromise = new Promise(resolve => {
-    globalThis.__resolveTimelineRoundsPage = resolve;
-});
-
-const { state } = await import('./mockState.mjs');
-const { loadSessionRounds } = await import('./timeline.mjs');
-const { roundsState } = await import('./mockRoundsState.mjs');
-
-const loadPromise = loadSessionRounds('session-1', { render: false });
-await Promise.resolve();
-await Promise.resolve();
-state.currentSessionId = 'session-2';
-
-globalThis.__resolveTimelineRoundsPage({
-    items: [
-        { run_id: 'foreign-run', created_at: '2026-04-25T12:00:00', intent: 'Foreign' },
-    ],
-    has_more: false,
-    next_cursor: null,
-});
-await loadPromise;
-
-console.log(JSON.stringify({
-    currentRunIds: roundsState.currentRounds.map(round => round.run_id),
-    timelineRunIds: roundsState.timelineRounds.map(round => round.run_id),
-    navigatorSnapshots: globalThis.__navigatorRoundSnapshots.map(snapshot =>
-        snapshot.map(round => round.run_id)
-    ),
-}));
-""".strip(),
-    )
-
-    assert payload == {
-        "currentRunIds": ["run-1", "run-2"],
-        "timelineRunIds": ["run-1", "run-2"],
-        "navigatorSnapshots": [["run-1", "run-2"]],
-    }
-
-
 def test_load_session_rounds_does_not_overwrite_new_session_draft(
     tmp_path: Path,
 ) -> None:

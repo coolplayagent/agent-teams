@@ -7240,3 +7240,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 terminal-close cache refresh implementation, targeted verification, and partial legacy harness removal completed for this terminal round refresh slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Timeline Session Switch Stale Hydration Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Message Timeline / Run Recovery / AG-UI Runtime Stream checklist requirements, remaining old timeline and subagent Python UI harnesses, and current V2 `MessageTimeline` query behavior before editing.
+- Added V2 `MessageTimeline.test.tsx` coverage for a session-switch race: session 1 starts a slow rounds hydration, the UI switches to session 2 and renders fresh messages/round rail data, then the stale session 1 rounds response resolves without polluting the current timeline.
+- Removed the migrated V1 source-copy harness `test_load_session_rounds_ignores_stale_timeline_after_session_switch` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. The old file now has 12 remaining Python UI harness scenarios.
+- This slice proves the V2 React Query session-key boundary for stale round hydration. It does not claim broader terminal-settle parity, new-session draft parity, subagent session-switch parity, Playwright replay sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "stale round hydration"` passed.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 115 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 12.
+- `rg -n "test_load_session_rounds_ignores_stale_timeline_after_session_switch|ignores stale round hydration" tests/integration_tests/frontend/test_round_retry_timeline_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function name.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 stale hydration race coverage, targeted verification, and partial legacy harness removal completed for this session-switch timeline slice. No subsystem PASS or final V2 completion is claimed.

@@ -607,6 +607,107 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".at-round-marker")).toHaveLength(3);
   });
 
+  it("ignores stale round hydration after switching sessions", async () => {
+    const staleRounds = deferredSessionRounds();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: Number.POSITIVE_INFINITY,
+        },
+      },
+    });
+    listSessionMessagesMock.mockImplementation((sessionId: string) =>
+      Promise.resolve([
+        {
+          content: `${sessionId} answer`,
+          message_id: `${sessionId}-assistant`,
+          role_id: "MainAgent",
+          trace_id: `${sessionId}-run`,
+        },
+      ]),
+    );
+    listSessionRoundsMock.mockImplementation((sessionId: string) => {
+      if (sessionId === "session-1") {
+        return staleRounds.promise;
+      }
+      return Promise.resolve({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:44:00Z",
+            run_id: "session-2-run",
+            run_status: "completed",
+            run_user_message: "Fresh session task",
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline
+              sessionId="session-1"
+              runtimeRunId={null}
+              workspaceId={null}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("session-1 answer")).toBeVisible();
+    await waitFor(() =>
+      expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
+        cursorRunId: null,
+        limit: 100,
+      }),
+    );
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline
+              sessionId="session-2"
+              runtimeRunId={null}
+              workspaceId={null}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("session-2 answer")).toBeVisible();
+    expect(await screen.findByRole("button", {
+      name: "Go to round 1: Fresh session task",
+    })).toBeVisible();
+
+    await act(async () => {
+      staleRounds.resolve({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:41:00Z",
+            run_id: "stale-session-1-run",
+            run_status: "completed",
+            run_user_message: "Stale session task",
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    expect(screen.getByText("session-2 answer")).toBeVisible();
+    expect(screen.queryByText("session-1 answer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Go to round 1: Stale session task",
+    })).not.toBeInTheDocument();
+  });
+
   it("does not duplicate round messages that are already in session history", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

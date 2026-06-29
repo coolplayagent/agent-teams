@@ -1,7 +1,7 @@
 import { Alert, App, Button, Form, Input, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, Play, RefreshCw, Save, Square } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getGitHubConfig,
@@ -15,6 +15,8 @@ import {
 } from "../../api/client";
 import type {
   GitHubConnectivityProbeResult,
+  GitHubConnectivityProbeRequest,
+  GitHubConfigUpdate,
   GitHubWebhookConnectivityProbeResult,
   LocalhostRunTunnelStatus,
 } from "../../api/contracts";
@@ -33,6 +35,13 @@ interface Notice {
 
 const MASKED_TOKEN_PLACEHOLDER = "************";
 const GITHUB_CALLBACK_PATH = "/api/triggers/github/deliveries";
+const GITHUB_CONFIG_QUERY_KEY = ["settings", "github"] as const;
+const GITHUB_TUNNEL_QUERY_KEY = [
+  "settings",
+  "github",
+  "webhook",
+  "tunnel",
+] as const;
 
 export function GitHubSettingsSection() {
   const { message } = App.useApp();
@@ -40,17 +49,18 @@ export function GitHubSettingsSection() {
   const t = useTranslations();
   const [form] = Form.useForm<GitHubFormValues>();
   const [tokenDirty, setTokenDirty] = useState(false);
+  const tokenFocusedRef = useRef(false);
   const [tokenNotice, setTokenNotice] = useState<Notice | null>(null);
   const [webhookNotice, setWebhookNotice] = useState<Notice | null>(null);
   const watchedToken = Form.useWatch("token", form);
   const watchedWebhookBaseUrl = Form.useWatch("webhook_base_url", form);
 
   const configQuery = useQuery({
-    queryKey: ["settings", "github"],
+    queryKey: GITHUB_CONFIG_QUERY_KEY,
     queryFn: getGitHubConfig,
   });
   const tunnelQuery = useQuery({
-    queryKey: ["settings", "github", "webhook", "tunnel"],
+    queryKey: GITHUB_TUNNEL_QUERY_KEY,
     queryFn: getGitHubWebhookTunnelStatus,
   });
 
@@ -68,19 +78,17 @@ export function GitHubSettingsSection() {
       webhook_base_url: configQuery.data.webhook_base_url ?? "",
     });
     setTokenDirty(false);
-    setTokenNotice(null);
-    setWebhookNotice(null);
+    tokenFocusedRef.current = false;
   }, [configQuery.data, form]);
 
   function invalidateGitHubQueries() {
-    void queryClient.invalidateQueries({ queryKey: ["settings", "github"] });
-    void queryClient.invalidateQueries({
-      queryKey: ["settings", "github", "webhook", "tunnel"],
-    });
+    void queryClient.invalidateQueries({ queryKey: GITHUB_CONFIG_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: GITHUB_TUNNEL_QUERY_KEY });
   }
 
   const saveTokenMutation = useMutation({
-    mutationFn: () => saveGitHubConfig({ token: draftToken }),
+    mutationFn: () =>
+      saveGitHubConfig(githubTokenUpdate(tokenDirty, draftToken)),
     onSuccess: () => {
       setTokenNotice({ kind: "success", message: t("settingsGitHubTokenSaved") });
       void message.success(t("settingsGitHubSaved"));
@@ -104,7 +112,8 @@ export function GitHubSettingsSection() {
         return;
       }
       form.setFieldsValue({ token });
-      setTokenDirty(true);
+      setTokenDirty(false);
+      tokenFocusedRef.current = false;
       setTokenNotice({
         kind: "info",
         message: t("settingsGitHubTokenRevealed"),
@@ -120,7 +129,8 @@ export function GitHubSettingsSection() {
   });
 
   const probeTokenMutation = useMutation({
-    mutationFn: () => probeGitHubConnectivity({ token: draftToken }),
+    mutationFn: () =>
+      probeGitHubConnectivity(githubTokenProbeRequest(tokenDirty, draftToken)),
     onSuccess: (result) => {
       setTokenNotice(githubProbeNotice(result, t));
     },
@@ -169,17 +179,18 @@ export function GitHubSettingsSection() {
   const startTunnelMutation = useMutation({
     mutationFn: () =>
       startGitHubWebhookTunnel({ auto_save_webhook_base_url: true }),
-    onSuccess: (status) => {
-      queryClient.setQueryData(
-        ["settings", "github", "webhook", "tunnel"],
-        status,
-      );
-      if (status.public_url) {
-        form.setFieldsValue({ webhook_base_url: status.public_url });
+    onSuccess: async (status) => {
+      const nextStatus = await resolveStartedTunnelStatus(status);
+      queryClient.setQueryData(GITHUB_TUNNEL_QUERY_KEY, nextStatus);
+      if (nextStatus.public_url) {
+        form.setFieldsValue({ webhook_base_url: nextStatus.public_url });
+        if (!status.public_url) {
+          await saveGitHubConfig({ webhook_base_url: nextStatus.public_url });
+        }
       }
       setWebhookNotice({
-        kind: status.status === "active" ? "success" : "info",
-        message: tunnelNotice(status, t),
+        kind: nextStatus.status === "active" ? "success" : "info",
+        message: tunnelNotice(nextStatus, t),
       });
       invalidateGitHubQueries();
     },
@@ -196,10 +207,15 @@ export function GitHubSettingsSection() {
     mutationFn: () =>
       stopGitHubWebhookTunnel({ clear_webhook_base_url_if_matching: true }),
     onSuccess: (status) => {
-      queryClient.setQueryData(
-        ["settings", "github", "webhook", "tunnel"],
-        status,
+      const previousPublicUrl = tunnelQuery.data?.public_url ?? null;
+      const publicUrl = status.public_url ?? previousPublicUrl;
+      const currentWebhookBaseUrl = normalizeOptionalString(
+        form.getFieldValue("webhook_base_url"),
       );
+      queryClient.setQueryData(GITHUB_TUNNEL_QUERY_KEY, status);
+      if (publicUrl !== null && currentWebhookBaseUrl === publicUrl) {
+        form.setFieldsValue({ webhook_base_url: "" });
+      }
       setWebhookNotice({ kind: "info", message: tunnelNotice(status, t) });
       invalidateGitHubQueries();
     },
@@ -213,7 +229,7 @@ export function GitHubSettingsSection() {
   });
 
   function testGitHubCli() {
-    if (!hasSavedToken && draftToken === null) {
+    if (!hasEffectiveGitHubToken(hasSavedToken, tokenDirty, draftToken)) {
       setTokenNotice({
         kind: "error",
         message: t("settingsGitHubTokenRequired"),
@@ -273,8 +289,16 @@ export function GitHubSettingsSection() {
                     allowClear
                     autoComplete="new-password"
                     onChange={() => {
+                      if (!tokenFocusedRef.current && hasSavedToken && !tokenDirty) {
+                        queueMicrotask(() => form.setFieldValue("token", ""));
+                        setTokenNotice(null);
+                        return;
+                      }
                       setTokenDirty(true);
                       setTokenNotice(null);
+                    }}
+                    onFocus={() => {
+                      tokenFocusedRef.current = true;
                     }}
                     placeholder={
                       hasSavedToken && !tokenDirty
@@ -436,6 +460,25 @@ export function GitHubSettingsSection() {
       ) : null}
     </SettingsSection>
   );
+
+  async function resolveStartedTunnelStatus(
+    status: LocalhostRunTunnelStatus,
+  ): Promise<LocalhostRunTunnelStatus> {
+    if (status.public_url || status.status !== "starting") {
+      return status;
+    }
+    const cachedStatus = queryClient.getQueryData<LocalhostRunTunnelStatus>(
+      GITHUB_TUNNEL_QUERY_KEY,
+    );
+    if (cachedStatus?.public_url) {
+      return cachedStatus;
+    }
+    try {
+      return await getGitHubWebhookTunnelStatus();
+    } catch {
+      return status;
+    }
+  }
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -461,6 +504,28 @@ function PropertyRow({ label, value }: { label: string; value: string }) {
 function normalizeOptionalString(value: string | null | undefined): string | null {
   const normalized = value?.trim() ?? "";
   return normalized || null;
+}
+
+function githubTokenUpdate(
+  tokenDirty: boolean,
+  token: string | null,
+): GitHubConfigUpdate {
+  return tokenDirty ? { token } : {};
+}
+
+function githubTokenProbeRequest(
+  tokenDirty: boolean,
+  token: string | null,
+): GitHubConnectivityProbeRequest {
+  return tokenDirty ? { token } : {};
+}
+
+function hasEffectiveGitHubToken(
+  hasSavedToken: boolean,
+  tokenDirty: boolean,
+  token: string | null,
+): boolean {
+  return tokenDirty ? token !== null : hasSavedToken;
 }
 
 function buildGitHubCallbackUrl(baseUrl: string | null): string | null {

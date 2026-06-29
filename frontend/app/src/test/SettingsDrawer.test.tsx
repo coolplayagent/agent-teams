@@ -1872,7 +1872,9 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(revealGitHubTokenMock).toHaveBeenCalledTimes(1));
     expect(await screen.findByDisplayValue("ghp_saved")).toBeVisible();
 
-    fireEvent.change(screen.getByLabelText("Token"), {
+    const tokenInput = screen.getByLabelText("Token");
+    fireEvent.focus(tokenInput);
+    fireEvent.change(tokenInput, {
       target: { value: "ghp_next" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Test GitHub CLI" }));

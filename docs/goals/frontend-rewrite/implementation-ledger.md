@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 GitHub Settings TS Migration
+
+### Scope
+- Continued the settings secondary-page parity migration after Commands by selecting `tests/integration_tests/frontend/test_github_settings_ui.py` as the next bounded old Python UI harness to retire.
+- Migrated V1 GitHub settings behavior into focused V2 React coverage in `GitHubSettingsSection.test.tsx`: saved token preservation, unfocused browser-autofill suppression, reveal without dirtying the saved token, focused replacement token probe/save, callback preview updates, empty webhook probe blocking, webhook save payloads, delayed temporary public URL backfill, and matching URL cleanup after tunnel stop.
+- Kept the existing `SettingsDrawer.test.tsx` coverage for opening GitHub through the V1-aligned System secondary page and exercising the real Settings drawer path.
+- Fixed `GitHubSettingsSection` so unchanged saved tokens use empty probe/save payloads instead of clearing the token, unfocused autofill values are discarded, reveal does not dirty the token, delayed tunnel public URLs are fetched and saved back, matching stopped tunnel URLs are cleared from the form, and action notices are not erased by follow-up config refreshes.
+- Deleted `tests/integration_tests/frontend/test_github_settings_ui.py`; 23 frontend integration `.py` files remain after this slice.
+
+### Verification
+- `npm run test -- src/test/GitHubSettingsSection.test.tsx` passed.
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "GitHub|github"` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `Test-Path tests\integration_tests\frontend\test_github_settings_ui.py` returned `False`, confirming the old Python UI harness file has been removed.
+
+### Reviewer
+- Main-agent GitHub settings harness migration completed for this slice. This does not claim full Settings PASS, browser visual sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: live message timeline density and part rendering, interrupted stream replay/continuation browser flows, broad settings secondary-page migration, connectors/memory/board/observability coverage, and the remaining frontend Python UI harness migrations.
+
 ## 2026-06-30 Commands Settings TS Migration
 
 ### Scope

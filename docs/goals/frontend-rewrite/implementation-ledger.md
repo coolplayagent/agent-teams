@@ -5219,3 +5219,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent targeted stream/replay/recovery browser gate execution and screenshot inspection completed for this evidence slice. No Runtime subsystem reviewer PASS, Message Timeline subsystem PASS, Run Recovery subsystem PASS, Browser Checks completion, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Settings Project Shell Browser Evidence Sweep
+
+### Scope
+- Re-checked the active frontend rewrite goal and product parity checklist before running another browser gate. This slice targets the high-level frame, V1-aligned sidebar/settings information architecture, Settings secondary-page behavior, project view, Appearance, and narrow viewport layout.
+- Ran the targeted TS browser gate for shell parity, Settings actions, project view, and Appearance layout. The coverage includes V1 primary sidebar entries, V1 Settings section grouping, System secondary-page grouping, session management, MCP reloads, unread terminal run handling, lazy subagent loading, Settings drawer persistence under outside clicks/drags, Plugins, Hooks, Agent Runtime, Roles, Orchestration, Environment variables, session topology, model profiles, Web settings, remote workspace SSH profiles, project open/reload/close, dark Appearance preset, and narrow sidebar overlay behavior.
+- Kept this as release evidence toward Application Shell, Sessions and Projects, Settings, Observability/Project View, Resource/Assistive layout, and Browser Checks gates. No code changes were needed in this slice.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts browser-tests/v2-settings-actions.spec.ts browser-tests/v2-project-view.spec.ts browser-tests/v2-appearance-layout.spec.ts` passed with 21 tests.
+- Inspected `.tmp/frontend-v2-ts-shell/v2-settings-system-parity.png`; it shows Settings retaining the V1 primary section list while System-owned content opens as a secondary Settings page, with a Back control instead of flattening every subsection into the primary nav.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-agent-runtime-create-delete.png`; it shows Agent Runtime as a System secondary page with real Refresh, registry, create, and list actions.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-remote-workspace-create.png`; it shows Remote workspace as its own Settings section with persisted SSH profile details and test/edit/delete actions.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-detail.png`; it shows a real model profile detail form with save/test/default/delete/back actions and dense, bounded settings layout.
+- Inspected `.tmp/frontend-v2-ts-project-view/v2-project-view-files.png`; it shows the project file view, reload/open-folder controls, file tree, and editor area as a secondary workspace view rather than a flattened sidebar page.
+- Inspected `.tmp/frontend-v2-ts-appearance/v2-narrow-sidebar-overlay.png`; it shows the narrow sidebar overlay covering a fixed workspace without introducing document-level scrolling.
+
+### Reviewer
+- Main-agent targeted browser gate execution and screenshot inspection completed for this evidence slice. No Application Shell subsystem PASS, Settings subsystem PASS, Sessions/Projects subsystem PASS, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

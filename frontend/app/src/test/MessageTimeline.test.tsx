@@ -824,6 +824,83 @@ describe("MessageTimeline", () => {
       .toHaveAttribute("aria-expanded", "true");
   });
 
+  it("deduplicates round transcript messages across collapsed history", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Archived shared transcript",
+        created_at: "2026-06-23T12:40:30Z",
+        message_id: "assistant-archived-shared",
+        role_id: "MainAgent",
+        trace_id: "run-archived",
+      },
+      {
+        content: "Current shared transcript",
+        created_at: "2026-06-23T12:42:30Z",
+        message_id: "assistant-current-shared",
+        role_id: "MainAgent",
+        trace_id: "run-current",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          coordinator_messages: [
+            {
+              content: "Archived shared transcript",
+              created_at: "2026-06-23T12:40:30Z",
+              entry_type: "message",
+              message_id: "assistant-archived-shared",
+              role_id: "MainAgent",
+            },
+          ],
+          created_at: "2026-06-23T12:40:00Z",
+          run_id: "run-archived",
+          run_status: "completed",
+          run_user_message: "Archived task",
+        },
+        {
+          clear_marker_before: { cleared_at: "2026-06-23T12:42:00Z" },
+          coordinator_messages: [
+            {
+              content: "Current shared transcript",
+              created_at: "2026-06-23T12:42:30Z",
+              entry_type: "message",
+              message_id: "assistant-current-shared",
+              role_id: "MainAgent",
+            },
+          ],
+          created_at: "2026-06-23T12:42:00Z",
+          run_id: "run-current",
+          run_status: "completed",
+          run_user_message: "Current task",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Current shared transcript")).toBeVisible();
+    expect(screen.getAllByText("Current shared transcript")).toHaveLength(1);
+    expect(screen.getByText("Rounds 1 · messages 1 hidden before Current task"))
+      .toBeVisible();
+    expect(screen.queryByText("Archived shared transcript")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: /Show history before Current task/,
+    }));
+
+    expect(await screen.findByText("Archived shared transcript")).toBeVisible();
+    expect(screen.getAllByText("Archived shared transcript")).toHaveLength(1);
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts.filter((text) => text.includes("Archived shared transcript")))
+      .toHaveLength(1);
+    expect(rowTexts.filter((text) => text.includes("Current shared transcript")))
+      .toHaveLength(1);
+  });
+
   it("keeps the round rail visible for single-round sessions like V1", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Processed Transcript Grouping TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining V1 frontend UI harnesses, and the Message Timeline / history checklist before editing.
+- Migrated the V1 `test_processed_transcript_grouping_is_shared_and_not_history_scoped` intent from implementation-string assertions to V2 behavior: when the same transcript message arrives through both top-level session messages and round transcript messages, V2 renders it only once, keeps collapsed-history message counts deduplicated, and still restores exactly one archived row when history is expanded.
+- Kept production behavior unchanged because V2 already deduplicates merged timeline messages globally by message id/fingerprint before inserting round markers and history dividers.
+- Removed the replaced V1 Python static source harness from `tests/integration_tests/frontend/test_streaming_tool_ui.py`.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "deduplicates round transcript|collapses round history"` passed with the new dedupe coverage and adjacent collapsed-history behavior.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_streaming_tool_ui.py` passed after deleting the migrated Python function.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `rg -n 'test_processed_transcript_grouping_is_shared_and_not_history_scoped|deduplicates round transcript|normalizeProcessedTranscript|flattenTranscriptMessages|message-history-flow|tool-group-final-divider' tests/integration_tests/frontend/test_streaming_tool_ui.py frontend/app/src/test/MessageTimeline.test.tsx frontend/app/src/features/timeline/MessageTimeline.tsx docs/goals/frontend-rewrite/implementation-ledger.md` returned only the new TS coverage name and ledger note.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test function removal, and focused regression verification completed for this slice. No full Streaming Tool subsystem PASS, Message Timeline subsystem PASS, history/rounds subsystem PASS, Browser Checks completion, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Tagged Read And Bounded Tool Output TS Migration
 
 ### Scope

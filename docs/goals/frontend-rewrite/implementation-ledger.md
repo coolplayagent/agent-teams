@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Terminal Text Finalization TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining legacy `test_stream_session_overlay_ui.py` cases, and V2 `MessageTimeline` terminal text behavior before editing.
+- Fixed V2 runtime row projection so a closed or failed run finalizes any active runtime text segment even when no terminal event row is present in the replayed entries. This preserves unpersisted text recovered from runtime state while removing the live streaming cursor after finalization.
+- Added V2 component coverage for a finalized subagent stream with only a recovered `text_delta`, proving the stale text remains visible, the row is not marked streaming, and no streaming cursor remains.
+- Removed two replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness tests: `test_finalize_stream_preserves_unpersisted_overlay_without_live_state` and `test_finalize_stream_turns_off_streaming_cursor_for_live_subagent_text`.
+- Kept this slice focused on terminal runtime text semantics. No sidebar entries, Settings sections, secondary-page routing, or visible shell layout changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "runtime text cursor|terminal cursor|clears the runtime text streaming cursor|long runtime text streams|unpersisted runtime text"` passed with the new finalized subagent text case and adjacent open/closed text cursor coverage.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_finalize_stream_preserves_unpersisted_overlay_without_live_state|test_finalize_stream_turns_off_streaming_cursor_for_live_subagent_text|stream_finalize_overlay|stream_finalize_cursor|runtime text cursor" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned only the new TS case after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 terminal text finalization implementation, component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Idle Cursor TS Migration
 
 ### Scope

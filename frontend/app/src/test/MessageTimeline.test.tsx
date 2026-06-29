@@ -1877,6 +1877,39 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("turns off the runtime text cursor when a subagent stream is finalized", async () => {
+    setRuntimeEntries([
+      {
+        eventId: 1,
+        id: "subagent_run_1:1:0",
+        instanceId: "inst-sub-1",
+        kind: "text_delta",
+        occurredAt: "2026-06-23T00:00:00Z",
+        payload: { text: "stale overlay" },
+        roleId: "Crafter",
+        runId: "subagent_run_1",
+        sessionId: "session-1",
+        text: "stale overlay",
+      },
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "subagent_run_1",
+    });
+
+    expect(await screen.findByText("stale overlay")).toBeVisible();
+    const messageRow = screen
+      .getByText("stale overlay")
+      .closest("article.at-message");
+    expect(messageRow).not.toBeNull();
+    expect(messageRow).not.toHaveClass("is-streaming");
+    expect(messageRow?.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(messageRow?.querySelector(".streaming-cursor")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
   it("clears the runtime text streaming cursor when a tool call arrives", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({

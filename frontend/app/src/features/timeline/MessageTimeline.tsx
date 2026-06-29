@@ -121,8 +121,8 @@ export function MessageTimeline({
     [hydratedOutputTextByRunId, runtimeRunId, runtimeState.runs, sessionId],
   );
   const runtimeRows = useMemo(
-    () => runtimeEntriesToRows(runtimeEntries),
-    [runtimeEntries],
+    () => runtimeEntriesToRows(runtimeEntries, runtimeState.runs),
+    [runtimeEntries, runtimeState.runs],
   );
   const rows = useMemo(
     () =>
@@ -925,7 +925,10 @@ function roundHasClearMarker(round: SessionRound): boolean {
   return Object.keys(marker).length > 0;
 }
 
-function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
+function runtimeEntriesToRows(
+  entries: TimelineEntry[],
+  runStates: Record<string, RuntimeRunState>,
+): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
   const activeText = new Map<string, RuntimeTextAccumulator>();
@@ -987,7 +990,32 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
     }
     rows.push(runtimeEntryToRow(entry));
   }
+  closeTerminalRuntimeTextSegments(rows, activeText, runStates);
   return rows;
+}
+
+function closeTerminalRuntimeTextSegments(
+  rows: TimelineRow[],
+  activeText: Map<string, RuntimeTextAccumulator>,
+  runStates: Record<string, RuntimeRunState>,
+): void {
+  activeText.forEach((existing, groupKey) => {
+    const runId = existing.row.runId;
+    if (runId !== null && runtimeRunStateClosesText(runStates[runId])) {
+      closeRuntimeTextAccumulator(rows, existing);
+      activeText.delete(groupKey);
+    }
+  });
+}
+
+function runtimeRunStateClosesText(
+  runState: RuntimeRunState | undefined,
+): boolean {
+  return (
+    runState?.status === "closed" ||
+    runState?.status === "failed" ||
+    runState?.terminalEventType !== null
+  );
 }
 
 function rememberResolvedRuntimeToolCall(
@@ -1714,16 +1742,23 @@ function closeRuntimeTextSegment(
   const groupKey = runtimeTextGroupKey(entry);
   const existing = activeText.get(groupKey);
   if (existing !== undefined) {
-    if (existing.placeholder && existing.part.text.length === 0) {
-      const rowIndex = rows.indexOf(existing.row);
-      if (rowIndex >= 0) {
-        rows.splice(rowIndex, 1);
-      }
-    } else {
-      existing.part.streaming = false;
-    }
+    closeRuntimeTextAccumulator(rows, existing);
   }
   activeText.delete(groupKey);
+}
+
+function closeRuntimeTextAccumulator(
+  rows: TimelineRow[],
+  existing: RuntimeTextAccumulator,
+): void {
+  if (existing.placeholder && existing.part.text.length === 0) {
+    const rowIndex = rows.indexOf(existing.row);
+    if (rowIndex >= 0) {
+      rows.splice(rowIndex, 1);
+    }
+    return;
+  }
+  existing.part.streaming = false;
 }
 
 function timelineTextPart(text: string, streaming = false): TimelineTextPart {

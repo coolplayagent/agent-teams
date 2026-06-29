@@ -6,6 +6,38 @@ import { describe, expect, it } from "vitest";
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
 
 describe("shell layout CSS", () => {
+  it("keeps the chat shell locked to one page with independent scroll regions", () => {
+    expect(themeCss).toMatch(
+      /body,\s*#root\s*{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?width:\s*100%;/,
+    );
+    expect(themeCss).toMatch(/body\s*{[\s\S]*?overflow:\s*hidden;/);
+    expect(themeCss).toMatch(/#root\s*{[\s\S]*?display:\s*flex;[\s\S]*?overflow:\s*hidden;/);
+    expect(themeCss).toMatch(
+      /#root > \.ant-app\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-shell\s*{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-body\s*{[\s\S]*?height:\s*calc\(100dvh - 52px\);[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-sidebar \.ant-layout-sider-children\s*{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-session-list\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-timeline-frame\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-timeline\s*{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*auto;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-composer\s*{[\s\S]*?max-height:\s*min\(38dvh, 320px\);[\s\S]*?overflow:\s*auto;/,
+    );
+  });
+
   it("keeps the desktop sidebar separated by the V1 resize gutter", () => {
     expect(themeCss).toMatch(
       /\.at-sidebar\s*{[\s\S]*?margin-right:\s*6px;/,

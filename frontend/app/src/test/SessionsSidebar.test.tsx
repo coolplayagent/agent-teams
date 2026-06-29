@@ -983,6 +983,11 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("No subagent sessions")).toBeVisible();
     expect(listSessionSubagentsMock).toHaveBeenCalledTimes(1);
+    expect(listSessionSubagentsMock).toHaveBeenNthCalledWith(
+      1,
+      "session-parent",
+      false,
+    );
 
     await act(async () => {
       await queryClient.invalidateQueries({
@@ -992,6 +997,11 @@ describe("SessionsSidebar", () => {
 
     expect(await screen.findByText("Explorer review")).toBeVisible();
     expect(listSessionSubagentsMock).toHaveBeenCalledTimes(2);
+    expect(listSessionSubagentsMock).toHaveBeenNthCalledWith(
+      2,
+      "session-parent",
+      true,
+    );
   });
 
   it("selects a cross-workspace parent before opening its subagent session", async () => {

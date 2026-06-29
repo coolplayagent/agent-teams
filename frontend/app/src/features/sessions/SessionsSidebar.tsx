@@ -985,11 +985,20 @@ function SessionSubagentList({
   onSubagentSelected,
   parentSession,
 }: SessionSubagentListProps) {
+  const queryClient = useQueryClient();
   const t = useTranslations();
   const language = useUiStore((state) => state.language);
+  const subagentQueryKey = useMemo(
+    () => ["sessions", parentSession.session_id, "subagents"] as const,
+    [parentSession.session_id],
+  );
   const subagentsQuery = useQuery({
-    queryKey: ["sessions", parentSession.session_id, "subagents"],
-    queryFn: () => listSessionSubagents(parentSession.session_id, false),
+    queryKey: subagentQueryKey,
+    queryFn: () =>
+      listSessionSubagents(
+        parentSession.session_id,
+        queryClient.getQueryState(subagentQueryKey)?.isInvalidated === true,
+      ),
     staleTime: 5000,
   });
   const subagents = useMemo(

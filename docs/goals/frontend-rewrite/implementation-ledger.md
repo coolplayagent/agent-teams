@@ -7387,3 +7387,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 no-session stale hydration/cursor serialization/round refresh coverage, focused verification, and full retirement of the round timeline Python harness file completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Sidebar Refresh Force Refresh
+
+### Scope
+- Re-checked the active frontend rewrite goal, the product parity checklist subagent/stream requirements, the remaining frontend Python UI harness inventory, and the live `/app/` browser shell state before editing.
+- Browser DOM/layout inspection showed the current V2 shell URL at `http://127.0.0.1:8000/app/`, the body/document height fixed to the 1280x720 viewport, and the sidebar exposing the V1-aligned primary navigation/workspace structure. The in-app screenshot API timed out twice, so this slice uses DOM/layout metrics only and does not claim visual sign-off.
+- Fixed `SessionsSidebar` subagent discovery so the first expanded subagent request remains a normal cacheable request, while a React Query invalidation from stream/recovery paths refetches with `force_refresh=true`.
+- Extended `SessionsSidebar.test.tsx` to prove the first nested subagent request calls `listSessionSubagents("session-parent", false)` and the post-invalidation refresh calls `listSessionSubagents("session-parent", true)`.
+- Kept V1 secondary-surface behavior untouched: no sidebar item inventory, settings navigation, subagent view routing, composer, message timeline, desktop shell, or built dist behavior changed.
+- Did not delete `tests/integration_tests/frontend/test_subagent_sessions_ui.py` in this slice because its background-task/subagent-memory cases still need separate V2 TS mapping. The global Python UI harness migration remains incomplete.
+- This slice tightens subagent refresh recovery semantics. It does not claim complete subagent stream/replay PASS, background-task subagent discovery parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx` passed with 27 tests.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `rg -n "^def test_" tests/integration_tests/frontend/test_subagent_sessions_ui.py` still returns remaining Python UI harness scenarios, so the subagent harness retirement is still pending.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, live browser layout inspection, V2 subagent refresh implementation, focused TS coverage, and targeted verification completed for this slice. No subsystem PASS or final V2 completion is claimed.

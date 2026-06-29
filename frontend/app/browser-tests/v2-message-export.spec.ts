@@ -55,17 +55,60 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     await htmlDialogContent.screenshot({
       path: screenshotPath("v2-message-export-round-selection.png", SCREENSHOT_FOLDER),
     });
-    await htmlDialog
+
+    const allHtmlDownloadPromise = page.waitForEvent("download");
+    await htmlDialog.getByRole("button", { name: "Export selected" }).click();
+    const allHtmlDownload = await allHtmlDownloadPromise;
+    expect(allHtmlDownload.suggestedFilename()).toBe(`${SESSION_ID}-messages.html`);
+    const allHtmlPath = testInfo.outputPath(
+      `all-${allHtmlDownload.suggestedFilename()}`,
+    );
+    await allHtmlDownload.saveAs(allHtmlPath);
+    const allHtml = await readFile(allHtmlPath, "utf8");
+    const allHtmlSummary = await summarizeExportHtml(page, allHtml);
+    expect(allHtmlSummary.hasLegacyShareClasses).toBe(true);
+    expect(allHtmlSummary.turnCount).toBe(2);
+    expect(allHtmlSummary.messageCount).toBe(8);
+    expect(allHtmlSummary.labels).toEqual(
+      expect.arrayContaining([
+        "Round 1",
+        "Round 1 prompt",
+        "MainAgent",
+        "Round 1 pending approvals",
+        "Round 1 pending user questions",
+        "Round 1 retry 1",
+        "Round 1 diagnostic",
+        "Round 2",
+        "Round 2 prompt",
+      ]),
+    );
+    expect(allHtmlSummary.bodyText).toContain("First user prompt");
+    expect(allHtmlSummary.bodyText).toContain("First agent answer.");
+    expect(allHtmlSummary.bodyText).toContain("Tool call: read_file");
+    expect(allHtmlSummary.bodyText).toContain("src/a.py");
+    expect(allHtmlSummary.bodyText).toContain("2 pending tool approval(s).");
+    expect(allHtmlSummary.bodyText).toContain("1 pending user question(s).");
+    expect(allHtmlSummary.bodyText).toContain("rate limited");
+    expect(allHtmlSummary.bodyText).toContain("Waiting for user confirmation");
+    expect(allHtmlSummary.bodyText).toContain("Second agent answer.");
+
+    await page.getByRole("button", { name: "Export messages" }).click();
+    await page.getByRole("menuitem", { name: "HTML" }).click();
+    const selectedHtmlDialog = page.getByRole("dialog", { name: "Select rounds" });
+    await expect(selectedHtmlDialog).toBeVisible();
+    await selectedHtmlDialog
       .locator(".at-message-export-selection-row")
       .filter({ hasText: "First user prompt" })
       .getByRole("checkbox")
       .uncheck();
-    await expect(htmlDialog).toContainText("1 of 2 selected");
+    await expect(selectedHtmlDialog).toContainText("1 of 2 selected");
     const htmlDownloadPromise = page.waitForEvent("download");
-    await htmlDialog.getByRole("button", { name: "Export selected" }).click();
+    await selectedHtmlDialog.getByRole("button", { name: "Export selected" }).click();
     const htmlDownload = await htmlDownloadPromise;
     expect(htmlDownload.suggestedFilename()).toBe(`${SESSION_ID}-messages.html`);
-    const htmlPath = testInfo.outputPath(htmlDownload.suggestedFilename());
+    const htmlPath = testInfo.outputPath(
+      `selected-${htmlDownload.suggestedFilename()}`,
+    );
     await htmlDownload.saveAs(htmlPath);
     const html = await readFile(htmlPath, "utf8");
     expect(html).toContain(`<title>${SESSION_ID} transcript</title>`);
@@ -114,7 +157,7 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     expect(pngDecode.width).toBeGreaterThan(0);
     expect(pngDecode.height).toBeGreaterThan(0);
 
-    expect(roundsRequestCount).toBe(roundsRequestCountBeforeExport + 2);
+    expect(roundsRequestCount).toBe(roundsRequestCountBeforeExport + 3);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     await appServer.close();

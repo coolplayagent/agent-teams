@@ -5255,3 +5255,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent desktop smoke execution, screenshot inspection, and independent reviewer PASS recording completed for this evidence slice. No Desktop subsystem PASS, full Reviewer Gate completion, final visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Message Export Tool Status Evidence Tightening
+
+### Scope
+- Re-checked the active frontend rewrite goal, reviewer PASS residual risks, current message export implementation, and current browser coverage before editing. This slice targets a narrow evidence gap: the export browser gate proved round selection/filtering, but did not positively prove the tool/status-heavy round is present in the structured HTML export when all rounds are selected.
+- Extended `frontend/app/browser-tests/v2-message-export.spec.ts` so the HTML flow first exports the default all-selected round set and asserts the V1-like HTML structure includes both rounds, tool-call content, tool arguments, pending approval count, pending user-question count, retry error text, diagnostic text, and the second-round answer.
+- Kept the existing second HTML export path that reopens the selection dialog, deselects the first round, and proves selected-round filtering excludes the tool/status-heavy round.
+- Re-checked for remaining Python browser UI scenarios with targeted searches for `test_browser_`, Playwright, Selenium, and page navigation patterns. No legacy Python browser UI scenario names remain; the remaining Python matches are non-browser UI tests or backend/system references.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-message-export.spec.ts` passed with 1 test covering all-selected HTML export, filtered HTML export, PNG export, structured export classes, PNG byte/decode validation, and strict unhandled-route coverage.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-message-export/v2-message-export-round-selection.png`; it still captures the actual round-selection modal with both rounds selected and the export action visible.
+- `rg -n "def test_browser|browser_test|Browser|Playwright|page\\.goto|selenium" -g "*.py" tests src frontend` found no remaining Python browser UI test scenario that needs migration.
+- `rg -n "test_browser_" tests src frontend` returned no matches.
+
+### Reviewer
+- Main-agent browser test tightening, frontend typecheck, screenshot inspection, and Python browser-test scan completed for this evidence slice. This closes the reviewer residual risk around positive tool/status-heavy HTML export evidence, but no full Export subsystem PASS, browser-suite completion, final naming cleanup sign-off, or V2 frontend completion is claimed.

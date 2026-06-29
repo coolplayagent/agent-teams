@@ -708,6 +708,86 @@ describe("MessageTimeline", () => {
     })).not.toBeInTheDocument();
   });
 
+  it("ignores stale round hydration after switching to no selected session", async () => {
+    const staleRounds = deferredSessionRounds();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: Number.POSITIVE_INFINITY,
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "session-1 answer",
+        message_id: "session-1-assistant",
+        role_id: "MainAgent",
+        trace_id: "session-1-run",
+      },
+    ]);
+    listSessionRoundsMock.mockReturnValue(staleRounds.promise);
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline
+              sessionId="session-1"
+              runtimeRunId={null}
+              workspaceId={null}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("session-1 answer")).toBeVisible();
+    await waitFor(() =>
+      expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
+        cursorRunId: null,
+        limit: 100,
+      }),
+    );
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline
+              sessionId={null}
+              runtimeRunId={null}
+              workspaceId={null}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Select a session")).toBeVisible();
+
+    await act(async () => {
+      staleRounds.resolve({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:41:00Z",
+            run_id: "stale-session-1-run",
+            run_status: "completed",
+            run_user_message: "Stale session task",
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    expect(screen.getByText("Select a session")).toBeVisible();
+    expect(screen.queryByText("session-1 answer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Go to round 1: Stale session task",
+    })).not.toBeInTheDocument();
+  });
+
   it("renders messages before slow round rail hydration finishes", async () => {
     const slowRounds = deferredSessionRounds();
     listSessionMessagesMock.mockResolvedValue([
@@ -766,6 +846,164 @@ describe("MessageTimeline", () => {
       .toBeVisible();
     expect(screen.getByRole("button", { name: "Go to round 3: Newest task" }))
       .toBeVisible();
+  });
+
+  it("serializes round rail page fetches through the returned cursor", async () => {
+    const firstPage = deferredSessionRounds();
+    const secondPage = deferredSessionRounds();
+    const pageRequests: Array<{ cursorRunId: string | null; sessionId: string }> = [];
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Older answer",
+        message_id: "assistant-older",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+      },
+      {
+        content: "Latest answer",
+        message_id: "assistant-latest",
+        role_id: "MainAgent",
+        trace_id: "run-2",
+      },
+    ]);
+    listSessionRoundsMock.mockImplementation((sessionId, options = {}) => {
+      const cursorRunId = options.cursorRunId ?? null;
+      pageRequests.push({ cursorRunId, sessionId });
+      if (cursorRunId === null) {
+        return firstPage.promise;
+      }
+      if (cursorRunId === "run-1") {
+        return secondPage.promise;
+      }
+      return Promise.reject(new Error(`Unexpected cursor: ${cursorRunId}`));
+    });
+
+    renderTimeline();
+
+    expect(await screen.findByText("Latest answer")).toBeVisible();
+    await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(1));
+    expect(pageRequests).toEqual([{ cursorRunId: null, sessionId: "session-1" }]);
+
+    await act(async () => {
+      firstPage.resolve({
+        has_more: true,
+        items: [
+          {
+            created_at: "2026-06-23T12:41:00Z",
+            run_id: "run-1",
+            run_status: "completed",
+            run_user_message: "Older task",
+          },
+        ],
+        next_cursor: "run-1",
+      });
+    });
+
+    await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(2));
+    expect(pageRequests).toEqual([
+      { cursorRunId: null, sessionId: "session-1" },
+      { cursorRunId: "run-1", sessionId: "session-1" },
+    ]);
+
+    await act(async () => {
+      secondPage.resolve({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:00Z",
+            run_id: "run-2",
+            run_status: "completed",
+            run_user_message: "Latest task",
+          },
+        ],
+        next_cursor: null,
+      });
+    });
+
+    expect(await screen.findByRole("button", { name: "Go to round 1: Older task" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "Go to round 2: Latest task" }))
+      .toBeVisible();
+  });
+
+  it("replaces stale round rail data after a rounds refresh", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: Number.POSITIVE_INFINITY,
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Newer answer",
+        message_id: "assistant-run-2",
+        role_id: "MainAgent",
+        trace_id: "run-2",
+      },
+    ]);
+    listSessionRoundsMock
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            coordinator_messages: [],
+            created_at: "2026-06-23T12:41:00Z",
+            has_user_messages: true,
+            run_id: "run-1",
+            run_status: "completed",
+            run_user_message: "approval-only run",
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:00Z",
+            run_id: "run-2",
+            run_status: "completed",
+            run_user_message: "newer",
+          },
+        ],
+        next_cursor: null,
+      });
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline
+              sessionId="session-1"
+              runtimeRunId={null}
+              workspaceId={null}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Newer answer")).toBeVisible();
+    expect(await screen.findByRole("button", {
+      name: "Go to round 1: approval-only run",
+    })).toBeVisible();
+    expect(container.querySelector(".at-round-marker")).toBeNull();
+
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-1", "rounds", "rail"],
+      });
+    });
+
+    expect(await screen.findByRole("button", { name: "Go to round 1: newer" }))
+      .toBeVisible();
+    expect(screen.queryByRole("button", {
+      name: "Go to round 1: approval-only run",
+    })).not.toBeInTheDocument();
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent("completed");
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps hydrated messages visible when round rail hydration fails", async () => {

@@ -7366,3 +7366,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 active retrying and stale terminal hydration coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Round Timeline Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining `test_round_retry_timeline_ui.py` V1 harnesses, and V2 `MessageTimeline` query/session behavior before editing.
+- Added V2 `MessageTimeline.test.tsx` coverage proving stale round hydration cannot repopulate the UI after switching to no selected session, preserving the new-session/no-session surface instead of rendering stale round navigation.
+- Added V2 coverage proving round rail page fetching is serialized through the returned cursor: page 2 is not requested until page 1 resolves with `next_cursor`, and the final rail renders both ordered rounds.
+- Added V2 coverage proving a rounds refresh replaces stale rail data: an approval-only old round is removed after the refreshed rail source returns the newer run, and the marker/rail now point at the refreshed run.
+- Retired the remaining V1 source-copy harnesses in `tests/integration_tests/frontend/test_round_retry_timeline_ui.py` and deleted that file. The broader frontend integration directory still contains other Python UI harnesses that must be handled separately.
+- This slice closes the round retry/timeline Python harness file. It does not claim complete Message Timeline PASS, all frontend Python UI migrations, browser stream/replay sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "no selected session|round rail data|serializes round rail|slow round rail"` passed with 4 tests.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 122 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend` passed.
+- `Test-Path tests\integration_tests\frontend\test_round_retry_timeline_ui.py` returned `False`.
+- `rg -n "^def test_" tests/integration_tests/frontend -g "*.py"` still returns other frontend Python UI harnesses outside the retired round timeline file, so the global Python UI migration remains incomplete.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 no-session stale hydration/cursor serialization/round refresh coverage, focused verification, and full retirement of the round timeline Python harness file completed for this slice. No subsystem PASS or final V2 completion is claimed.

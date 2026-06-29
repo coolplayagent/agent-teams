@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Round Prompt Marker TS Closure
+
+### Scope
+- Re-checked the active frontend rewrite goal and current V2/V1 parity gaps before editing. This slice targets the message timeline round marker, which is part of the core chat path, while leaving the V1-style secondary-page Settings structure and sidebar item set unchanged.
+- Added round prompt metadata to preserve the raw `run_user_message` / intent text separately from the normalized marker title.
+- Restored compact V1-style readability for long or multiline round prompts by rendering them as a collapsed marker disclosure. Short round prompts remain a plain single-line marker title, so the first-level message timeline does not become a flattened round detail page.
+- Rebuilt `frontend/dist/app` so the backend-served `/app/` bundle includes the marker and CSS changes.
+
+### Verification
+- `npm run test -- src/test/roundMetadata.test.ts src/test/MessageTimeline.test.tsx` passed with 77 focused Vitest tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and refreshed `frontend/dist/app`; Vite reported only the existing chunk-size warning.
+- Browser reload at `http://127.0.0.1:8000/app/` loaded the new `/app/assets/index-MZk0-t4z.js` and `/app/assets/index-H2TuRu0a.css` bundle hashes. Layout readback at 1280x720 reported shell 1280x720, timeline 994x500, composer 994x136, and no document-level scroll.
+- Attempted viewport screenshot capture through the in-app browser twice, but `Page.captureScreenshot` timed out both times. No screenshot evidence is claimed for this slice.
+
+### Reviewer
+- Main-agent source fix, focused TS unit/component coverage, frontend lint/typecheck/build, dist refresh, and browser layout readback completed for this slice. No stream/replay sign-off, browser-suite migration sign-off, final V1/V2 visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Agent Runtime Role Binding TS Browser Closure
 
 ### Scope

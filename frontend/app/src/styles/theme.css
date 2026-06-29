@@ -4416,6 +4416,46 @@ body {
   white-space: nowrap;
 }
 
+.at-round-marker-intent {
+  min-width: 0;
+}
+
+.at-round-marker-intent-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.at-round-marker-intent-summary::-webkit-details-marker {
+  display: none;
+}
+
+.at-round-marker-intent-summary::before {
+  content: ">";
+  flex: 0 0 auto;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.at-round-marker-intent[open] .at-round-marker-intent-summary::before {
+  transform: rotate(90deg);
+}
+
+.at-round-marker-intent-body {
+  margin-top: 6px;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+  color: var(--at-text);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .at-message {
   position: absolute;
   left: 0;

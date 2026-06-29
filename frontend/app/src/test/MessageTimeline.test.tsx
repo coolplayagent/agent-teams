@@ -375,6 +375,53 @@ describe("MessageTimeline", () => {
     expect(followUpRound).not.toHaveAttribute("aria-current");
   });
 
+  it("keeps long round prompts collapsed with raw text available in the marker", async () => {
+    const prompt = [
+      "Create a migration plan for the frontend rewrite.",
+      "Keep the settings navigation aligned with V1.",
+      "Do not flatten secondary screens into the first-level workspace.",
+    ].join("\n");
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Plan ready",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-long",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-long",
+          run_status: "completed",
+          run_user_message: prompt,
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Plan ready")).toBeVisible();
+    const details = container.querySelector("details.at-round-marker-intent");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    const summary = details?.querySelector(".at-round-marker-intent-summary");
+    expect(summary).not.toBeNull();
+    expect(summary).toHaveTextContent(
+      "Create a migration plan for the frontend rewrite. Keep the settings navigation aligned with V1.",
+    );
+    const body = details?.querySelector(".at-round-marker-intent-body");
+    expect(body).toHaveTextContent("Keep the settings navigation aligned with V1.");
+    expect(body?.textContent).toContain("\nDo not flatten secondary screens");
+
+    fireEvent.click(summary as Element);
+
+    expect(details).toHaveAttribute("open");
+  });
+
   it("shows terminal runtime status when a persisted round status is stale", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

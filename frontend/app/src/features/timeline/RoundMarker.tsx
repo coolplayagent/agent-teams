@@ -46,7 +46,16 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
           <span key={item}>{item}</span>
         ))}
       </div>
-      <div className="at-round-marker-title">{summary.title}</div>
+      {summary.promptCollapsible ? (
+        <details className="at-round-marker-intent">
+          <summary className="at-round-marker-intent-summary">
+            <span className="at-round-marker-title">{summary.title}</span>
+          </summary>
+          <div className="at-round-marker-intent-body">{summary.promptText}</div>
+        </details>
+      ) : (
+        <div className="at-round-marker-title">{summary.title}</div>
+      )}
     </div>
   );
 }

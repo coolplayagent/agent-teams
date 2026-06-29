@@ -40,6 +40,8 @@ export interface RoundSummary {
   outputTokens: number;
   pendingApprovalCount: number;
   pendingQuestionCount: number;
+  promptCollapsible: boolean;
+  promptText: string;
   retry: RoundRetrySummary | null;
   statusLabel: string | null;
   timeLabel: string;
@@ -52,6 +54,7 @@ export function roundSummary(round: SessionRound, index: number): RoundSummary {
   const retry = roundRetrySummary(round);
   const pendingApprovalCount = positiveNumber(round.pending_tool_approval_count);
   const pendingQuestionCount = positiveNumber(round.pending_user_question_count);
+  const promptText = roundPromptText(round);
   return {
     diagnosticLabel: roundDiagnosticLabel(round),
     durationLabel: roundDurationLabel(round),
@@ -60,6 +63,8 @@ export function roundSummary(round: SessionRound, index: number): RoundSummary {
     outputTokens: roundOutputTokens(round),
     pendingApprovalCount,
     pendingQuestionCount,
+    promptCollapsible: roundPromptCollapsible(promptText),
+    promptText,
     retry,
     statusLabel: roundStatusLabel(round),
     timeLabel: roundTimeLabel(round.created_at, index),
@@ -75,14 +80,18 @@ export function roundSummary(round: SessionRound, index: number): RoundSummary {
 }
 
 export function roundTitle(round: SessionRound, index: number): string {
-  const intentText = normalizedText(round.run_user_message)
-    || normalizedText(roundIntentText(round))
-    || normalizedText(round.intent)
+  const intentText = normalizedText(roundPromptText(round))
     || normalizedText(round.run_diagnostic_message);
   if (intentText) {
     return intentText;
   }
   return `Round ${index + 1}`;
+}
+
+export function roundPromptText(round: SessionRound): string {
+  return rawText(round.run_user_message)
+    || rawText(roundIntentText(round))
+    || rawText(round.intent);
 }
 
 export function roundTimeLabel(value: string | undefined, index: number): string {
@@ -114,6 +123,14 @@ function roundIntentText(round: SessionRound): string {
     .map((part) => contentPartText(part))
     .filter((text): text is string => text !== null && text.trim().length > 0)
     .join("");
+}
+
+function roundPromptCollapsible(value: string): boolean {
+  return value.includes("\n") || value.length > 140;
+}
+
+function rawText(value: string | null | undefined): string {
+  return value?.trim() ?? "";
 }
 
 function normalizedText(value: string | null | undefined): string {

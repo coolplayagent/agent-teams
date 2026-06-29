@@ -212,7 +212,7 @@ describe("RecoveryBar", () => {
     fireEvent.click(screen.getByLabelText("其他"));
     expect(screen.queryByLabelText("Approval feedback")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Additional answer")).not.toBeInTheDocument();
-    const supplement = screen.getByLabelText("补充回答");
+    const supplement = screen.getByLabelText("补充回答 - 其他");
     expect(supplement).toHaveAttribute("placeholder", "补充说明");
     expect(screen.getByRole("button", { name: /回\s*答/ })).toBeVisible();
   });
@@ -275,13 +275,27 @@ describe("RecoveryBar", () => {
     renderRecoveryBar();
 
     fireEvent.click(await screen.findByLabelText("Go - Continue"));
+    fireEvent.change(screen.getByLabelText("Additional answer - Go"), {
+      target: { value: "Keep the fast path" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Answer" }));
 
     await waitFor(() =>
       expect(answerUserQuestionMock).toHaveBeenCalledWith(
         "sub-run-1",
         "question-1",
-        { answers: [{ selections: [{ label: "Go" }] }] },
+        {
+          answers: [
+            {
+              selections: [
+                {
+                  label: "Go",
+                  supplement: "Keep the fast path",
+                },
+              ],
+            },
+          ],
+        },
       ),
     );
   });
@@ -351,7 +365,7 @@ describe("RecoveryBar", () => {
 
     expect(screen.queryByText("__none_of_the_above__")).not.toBeInTheDocument();
     fireEvent.click(await screen.findByLabelText("Other"));
-    fireEvent.change(screen.getByLabelText("Additional answer"), {
+    fireEvent.change(screen.getByLabelText("Additional answer - Other"), {
       target: { value: "Try a narrower search" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Answer" }));

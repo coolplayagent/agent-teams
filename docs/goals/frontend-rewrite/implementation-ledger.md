@@ -4573,3 +4573,27 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining-scenario scan, and cleanup completed for this slice. No Message Timeline subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, full browser-suite migration sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Recovery Question Supplement Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal and remaining browser-suite migration surface before editing. This slice keeps focus on Run Recovery parity and the requirement to move UI/browser coverage out of Python.
+- Fixed a V1/V2 recovery behavior gap: V2 now keeps supplemental answers per selected option, not only for the reserved "Other" option, and submits those supplements in the user-question answer payload for both single-choice and multiple-choice prompts.
+- Added explicit recovery focus-refresh handling so the recovery snapshot can be force-refreshed on window focus without relying on React Query's default focus behavior. The TS browser scenario verifies that an in-progress composition/focused supplemental answer survives the refresh.
+- Extended `frontend/app/browser-tests/v2-recovery.spec.ts` with TS browser coverage for multi-prompt user-question supplements, force refresh, focus preservation, payload shape, and fixed-shell no-document-scroll behavior.
+- Removed the replaced `test_browser_ask_question_recovery_card_submits_answers` scenario and its now-unused `_wait_for_open_user_questions` helper from `tests/integration_tests/browser/test_browser_smoke.py`.
+- Rebuilt `frontend/dist` from the V2 source changes so dist-served browser tests exercise the updated behavior instead of stale assets.
+- Kept this as targeted Run Recovery and browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 18 legacy scenarios in `test_browser_smoke.py`, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test -- RecoveryBar.test.tsx` passed with 25 frontend unit tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-recovery.spec.ts` passed with 7 TS browser tests.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "test_browser_ask_question_recovery_card_submits_answers|_wait_for_open_user_questions|sync_playwright|playwright\.sync_api|^def test_browser_" tests/integration_tests/browser frontend/app/browser-tests` confirms the migrated ask-question scenario is gone and only `test_browser_smoke.py` remains as the legacy Python browser file.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent TS browser, frontend lint/typecheck/build, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Run Recovery subsystem sign-off, browser-suite migration sign-off, Application Shell sign-off, Settings sign-off, or V2 frontend completion is claimed.

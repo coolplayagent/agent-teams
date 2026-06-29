@@ -58,8 +58,24 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     queryKey: ["sessions", sessionId, "recovery"],
     queryFn: () => getRecoverySnapshot(sessionId ?? ""),
     enabled: sessionId !== null,
+    refetchOnWindowFocus: false,
     refetchInterval: 10000,
   });
+
+  useEffect(() => {
+    if (sessionId === null) {
+      return undefined;
+    }
+    const refreshRecovery = () => {
+      void queryClient.fetchQuery({
+        queryKey: ["sessions", sessionId, "recovery"],
+        queryFn: () => getRecoverySnapshot(sessionId, true),
+        staleTime: 0,
+      }).catch(() => undefined);
+    };
+    window.addEventListener("focus", refreshRecovery);
+    return () => window.removeEventListener("focus", refreshRecovery);
+  }, [queryClient, sessionId]);
 
   const activeRun = recoveryQuery.data?.active_run ?? null;
   const pendingApprovals = recoveryQuery.data?.pending_tool_approvals ?? [];
@@ -363,10 +379,10 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
                 [selectionKey(questionId, promptIndex)]: selectedLabels,
               }));
             }}
-            onSupplementChange={(questionId, promptIndex, supplement) => {
+            onSupplementChange={(questionId, promptIndex, label, supplement) => {
               setQuestionSupplements((current) => ({
                 ...current,
-                [selectionKey(questionId, promptIndex)]: supplement,
+                [supplementKey(questionId, promptIndex, label)]: supplement,
               }));
             }}
             questions={pendingQuestions}
@@ -671,6 +687,7 @@ interface PendingQuestionsProps {
   onSupplementChange: (
     questionId: string,
     promptIndex: number,
+    label: string,
     supplement: string,
   ) => void;
   questions: PendingUserQuestion[];
@@ -714,14 +731,14 @@ function PendingQuestions({
                 onSelectionChange={(selectedLabels) =>
                   onSelectionChange(question.question_id, index, selectedLabels)
                 }
-                onSupplementChange={(supplement) =>
-                  onSupplementChange(question.question_id, index, supplement)
+                onSupplementChange={(label, supplement) =>
+                  onSupplementChange(question.question_id, index, label, supplement)
                 }
                 disabled={disabled}
                 prompt={prompt}
                 selectedLabels={selections[selectionKey(question.question_id, index)] ?? []}
-                selectedSupplement={
-                  supplements[selectionKey(question.question_id, index)] ?? ""
+                selectedSupplement={(label) =>
+                  supplements[supplementKey(question.question_id, index, label)] ?? ""
                 }
               />
             ))}
@@ -744,10 +761,10 @@ function PendingQuestions({
 interface QuestionPromptControlProps {
   disabled: boolean;
   onSelectionChange: (selectedLabels: string[]) => void;
-  onSupplementChange: (supplement: string) => void;
+  onSupplementChange: (label: string, supplement: string) => void;
   prompt: UserQuestionPrompt;
   selectedLabels: string[];
-  selectedSupplement: string;
+  selectedSupplement: (label: string) => string;
 }
 
 function QuestionPromptControl({
@@ -761,37 +778,86 @@ function QuestionPromptControl({
   const t = useTranslations();
   const options = prompt.options.map((option) => ({
     label: questionOptionLabel(option.label, option.description, t("recoveryOtherOption")),
+    supplementLabel: questionSupplementLabel(option.label, t("recoveryOtherOption")),
     value: option.label,
   }));
-  const showSupplement = selectedLabels.includes(NONE_OF_THE_ABOVE_OPTION_LABEL);
+  const toggleCheckboxLabel = (label: string, checked: boolean) => {
+    const nextLabels = checked
+      ? [...selectedLabels, label].filter(uniqueLabel)
+      : selectedLabels.filter((value) => value !== label);
+    onSelectionChange(nextLabels);
+  };
   return (
     <div className="at-recovery-prompt">
       <Typography.Text>{prompt.question}</Typography.Text>
       {prompt.multiple === true ? (
-        <Checkbox.Group
-          disabled={disabled || options.length === 0}
-          onChange={(values) => onSelectionChange(values.map(String))}
-          options={options}
-          value={selectedLabels}
-        />
+        <div className="at-recovery-option-list">
+          {options.map((option) => {
+            const selected = selectedLabels.includes(option.value);
+            return (
+              <div className="at-recovery-option" key={option.value}>
+                <Checkbox
+                  checked={selected}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    toggleCheckboxLabel(option.value, event.target.checked)
+                  }
+                >
+                  {option.label}
+                </Checkbox>
+                {selected ? (
+                  <Input
+                    aria-label={`${t("recoverySupplementLabel")} - ${option.supplementLabel}`}
+                    className="at-recovery-option-supplement"
+                    disabled={disabled}
+                    onChange={(event) =>
+                      onSupplementChange(option.value, event.target.value)
+                    }
+                    placeholder={
+                      prompt.placeholder?.trim() || t("recoverySupplementPlaceholder")
+                    }
+                    size="small"
+                    value={selectedSupplement(option.value)}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <Radio.Group
           disabled={disabled || options.length === 0}
           onChange={(event) => onSelectionChange([String(event.target.value)])}
-          options={options}
           value={selectedLabels[0] ?? null}
-        />
+        >
+          <div className="at-recovery-option-list">
+            {options.map((option) => {
+              const selected = selectedLabels.includes(option.value);
+              return (
+                <div className="at-recovery-option" key={option.value}>
+                  <Radio value={option.value}>{option.label}</Radio>
+                  {selected ? (
+                    <Input
+                      aria-label={`${t("recoverySupplementLabel")} - ${option.supplementLabel}`}
+                      className="at-recovery-option-supplement"
+                      disabled={disabled}
+                      onChange={(event) =>
+                        onSupplementChange(option.value, event.target.value)
+                      }
+                      placeholder={
+                        prompt.placeholder?.trim()
+                        || t("recoverySupplementPlaceholder")
+                      }
+                      size="small"
+                      value={selectedSupplement(option.value)}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </Radio.Group>
       )}
-      {showSupplement ? (
-        <Input
-          aria-label={t("recoverySupplementLabel")}
-          disabled={disabled}
-          onChange={(event) => onSupplementChange(event.target.value)}
-          placeholder={prompt.placeholder?.trim() || t("recoverySupplementPlaceholder")}
-          size="small"
-          value={selectedSupplement}
-        />
-      ) : null}
     </div>
   );
 }
@@ -807,9 +873,7 @@ function buildQuestionAnswer(
     return {
       selections: selectedLabels.map((label) => {
         const supplement =
-          label === NONE_OF_THE_ABOVE_OPTION_LABEL
-            ? supplements[key]?.trim()
-            : "";
+          supplements[supplementKey(question.question_id, index, label)]?.trim() ?? "";
         return supplement ? { label, supplement } : { label };
       }),
     };
@@ -841,8 +905,27 @@ function questionOptionLabel(
   return description?.trim() ? `${label} - ${description}` : label;
 }
 
+function questionSupplementLabel(label: string, otherLabel: string): string {
+  if (label === NONE_OF_THE_ABOVE_OPTION_LABEL) {
+    return otherLabel;
+  }
+  return label;
+}
+
 function selectionKey(questionId: string, promptIndex: number): string {
   return `${questionId}:${promptIndex}`;
+}
+
+function supplementKey(
+  questionId: string,
+  promptIndex: number,
+  label: string,
+): string {
+  return `${selectionKey(questionId, promptIndex)}:${label}`;
+}
+
+function uniqueLabel(label: string, index: number, labels: string[]): boolean {
+  return labels.indexOf(label) === index;
 }
 
 function removeRecordKey(

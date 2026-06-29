@@ -100,6 +100,105 @@ test("resolves pending recovery approvals and user questions", async ({
   }
 });
 
+test("submits multi-prompt question supplements after focus refresh", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = recoveryMockState({
+    phase: "awaiting_user_question",
+    questionRecord: complexUserQuestionRecord(),
+    status: "paused",
+    toolApprovalPending: false,
+  });
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRecoveryApi(context, state),
+      sessionTitle: "TS recovery question supplements",
+    });
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const recovery = page.locator(".at-recovery");
+    await expect(recovery.getByText("Planner needs input")).toBeVisible();
+    await expect(recovery.getByText("Pick the labels to apply")).toBeVisible();
+    await expect(recovery.getByText("Pick the handoff mode")).toBeVisible();
+
+    await recovery.getByLabel("Ship", { exact: true }).check();
+    await recovery.getByLabel("Docs", { exact: true }).check();
+    const docsSupplement = recovery.getByLabel("Additional answer - Docs");
+    await docsSupplement.fill("Ship code now, docs follow immediately.");
+    await docsSupplement.focus();
+    await docsSupplement.evaluate((element) => {
+      element.dispatchEvent(
+        new CompositionEvent("compositionstart", { data: "测" }),
+      );
+    });
+
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect
+      .poll(() => state.recoveryForceRefreshRequests, {
+        message: "focus should force-refresh recovery",
+      })
+      .toBeGreaterThan(0);
+    await expect(docsSupplement).toBeFocused();
+    await expect(docsSupplement).toHaveValue(
+      "Ship code now, docs follow immediately.",
+    );
+    await docsSupplement.evaluate((element) => {
+      element.dispatchEvent(
+        new CompositionEvent("compositionend", { data: "试" }),
+      );
+    });
+
+    await recovery.getByLabel("Other", { exact: true }).check();
+    await recovery
+      .getByLabel("Additional answer - Other")
+      .fill("Ship now, docs follow immediately.");
+    await recovery.getByRole("button", { name: "Answer" }).click();
+
+    await expect(recovery.getByText("Planner needs input")).toHaveCount(0);
+    expect(state.questionAnswerRequests).toEqual([
+      {
+        payload: {
+          answers: [
+            {
+              selections: [
+                {
+                  label: "Ship",
+                },
+                {
+                  label: "Docs",
+                  supplement: "Ship code now, docs follow immediately.",
+                },
+              ],
+            },
+            {
+              selections: [
+                {
+                  label: "__none_of_the_above__",
+                  supplement: "Ship now, docs follow immediately.",
+                },
+              ],
+            },
+          ],
+        },
+        questionId: QUESTION_ID,
+        runId: RUN_ID,
+      },
+    ]);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "question supplement recovery should stay inside the fixed V2 shell",
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("keeps recovery action errors visible and retryable", async ({ page }) => {
   const appServer = await serveFrontendDist();
   const state = recoveryMockState({
@@ -510,6 +609,9 @@ async function handleRecoveryApi(
   state: RecoveryMockState,
 ): Promise<boolean> {
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/recovery`) {
+    if (context.url.searchParams.get("force_refresh") === "true") {
+      state.recoveryForceRefreshRequests += 1;
+    }
     await context.fulfillJson(recoverySnapshotResponse(state));
     return true;
   }
@@ -638,6 +740,8 @@ interface RecoveryMockState {
   questionAnswerRequests: RecoveryQuestionAnswerRequest[];
   questionDescription: string;
   questionPending: boolean;
+  questionRecord: Record<string, unknown> | null;
+  recoveryForceRefreshRequests: number;
   resumeRunRequests: string[];
   shouldShowRecover: boolean;
   status: string;
@@ -672,6 +776,7 @@ interface RecoveryMockStateOptions {
   phase?: string;
   questionDescription?: string;
   questionPending?: boolean;
+  questionRecord?: Record<string, unknown> | null;
   shouldShowRecover?: boolean;
   status?: string;
   toolApprovalPending?: boolean;
@@ -692,6 +797,8 @@ function recoveryMockState(
     questionAnswerRequests: [],
     questionDescription: options.questionDescription ?? "Keep streaming",
     questionPending: options.questionPending ?? true,
+    questionRecord: options.questionRecord ?? null,
+    recoveryForceRefreshRequests: 0,
     resumeRunRequests: [],
     shouldShowRecover: options.shouldShowRecover ?? false,
     status: options.status ?? "paused",
@@ -721,7 +828,7 @@ function recoverySnapshotResponse(
     paused_subagent: state.pausedSubagent,
     pending_tool_approvals: state.toolApprovalPending ? [toolApprovalRecord()] : [],
     pending_user_questions: state.questionPending
-      ? [userQuestionRecord(state.questionDescription)]
+      ? [state.questionRecord ?? userQuestionRecord(state.questionDescription)]
       : [],
   };
 }
@@ -848,6 +955,32 @@ function userQuestionRecord(description: string): Record<string, unknown> {
           },
         ],
         question: "Pick next step",
+      },
+    ],
+    role_id: "Planner",
+    run_id: RUN_ID,
+  };
+}
+
+function complexUserQuestionRecord(): Record<string, unknown> {
+  return {
+    question_id: QUESTION_ID,
+    questions: [
+      {
+        multiple: true,
+        options: [
+          { label: "Ship" },
+          { label: "Docs" },
+        ],
+        question: "Pick the labels to apply",
+      },
+      {
+        multiple: false,
+        options: [
+          { label: "Defer" },
+          { label: "__none_of_the_above__" },
+        ],
+        question: "Pick the handoff mode",
       },
     ],
     role_id: "Planner",

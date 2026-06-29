@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Runtime Parallel Tool Ordering TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current V2 shell screenshot/DOM evidence, the Message Timeline and AG-UI Runtime Stream checklist items, and the remaining legacy `test_stream_session_overlay_ui.py` cases before editing.
+- Added V2 `MessageTimeline` component coverage for a parallel tool stream boundary where one tool result arrives before its matching tool call, another tool call arrives in between, and the matching late tool call must merge its args into the completed result instead of rendering a duplicate pending call.
+- Updated V2 runtime timeline row construction to consume late tool calls that match already resolved tool results or validation rows, preserving the completed result row's position and preview while retaining the late call args in details.
+- Removed the replaced V1 `frontend/dist/js/components/messageRenderer/stream.js` Python harness test `test_stream_overlay_merges_out_of_order_parallel_tool_events`.
+- Kept this slice focused on stream/replay rendering semantics. No sidebar entries, Settings sections, secondary-page routing, shell layout, static dist bundle, or visible Appearance page controls changed.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "out-of-order parallel runtime tool|completed runtime tool results"` passed with the new boundary test and the adjacent stale-event guard test.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_stream_session_overlay_ui.py` passed for the edited Python test file.
+- `rg -n "test_stream_overlay_merges_out_of_order_parallel_tool_events|stream_overlay_parallel_tools" tests/integration_tests/frontend/test_stream_session_overlay_ui.py frontend/app/src/test/MessageTimeline.test.tsx` returned no matches after removal.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the V2 static app bundle.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V2 component coverage, old Python UI test removal, and focused regression verification completed for this slice. No full Message Timeline subsystem PASS, AG-UI Runtime Stream subsystem PASS, interrupted recovery reviewer sign-off, final visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Runtime Injection Overlay TS Migration
 
 ### Scope

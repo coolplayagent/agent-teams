@@ -1299,6 +1299,49 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
+  it("merges out-of-order parallel runtime tool calls into completed results", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: { ok: true, output: "b done" },
+          tool_call_id: "call-b",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "echo a" },
+          tool_call_id: "call-a",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "echo b" },
+          tool_call_id: "call-b",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    const resultTitle = await screen.findByText("Tool result: shell");
+    expect(screen.getByText("Tool call: shell")).toBeVisible();
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(2);
+    expect(toolPreviewTexts(container)).toEqual(["b done", "echo a"]);
+    expect(toolPreElement(screenElement(resultTitle)).textContent).toContain(
+      "echo b",
+    );
+  });
+
   it("unwraps successful tool return envelopes to the useful output", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

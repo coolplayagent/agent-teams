@@ -984,6 +984,9 @@ function runtimeEntriesToRows(entries: TimelineEntry[]): TimelineRow[] {
     if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
       removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
     }
+    if (mergeRuntimeToolCallIntoResolvedRow(rows, entry, resolvedToolCallIds)) {
+      continue;
+    }
     rows.push(runtimeEntryToRow(entry));
   }
   return rows;
@@ -1046,6 +1049,74 @@ function timelineRowIsPendingToolCall(
     tool.callId.length === 0 ||
     !resolvedToolCallIds.has(runtimeToolCallKey(row.runId, tool.callId))
   );
+}
+
+function mergeRuntimeToolCallIntoResolvedRow(
+  rows: TimelineRow[],
+  entry: TimelineEntry,
+  resolvedToolCallIds: Set<string>,
+): boolean {
+  if (entry.kind !== "tool_call") {
+    return false;
+  }
+  const callId = runtimeEntryToolCallId(entry);
+  if (callId.length === 0) {
+    return false;
+  }
+  if (!resolvedToolCallIds.has(runtimeToolCallKey(entry.runId, callId))) {
+    return false;
+  }
+  const callPart = runtimeToolPart(entry);
+  if (callPart === null || callPart.phase !== "call") {
+    return true;
+  }
+  const resolvedTool = findResolvedRuntimeToolPart(rows, entry.runId, callId);
+  if (resolvedTool === null) {
+    return false;
+  }
+  resolvedTool.body = appendToolCallArgsToResultBody(
+    resolvedTool.body,
+    callPart.body,
+  );
+  return true;
+}
+
+function findResolvedRuntimeToolPart(
+  rows: TimelineRow[],
+  runId: string,
+  callId: string,
+): TimelineToolPart | null {
+  for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+    const row = rows[rowIndex];
+    if (row === undefined || row.runId !== runId) {
+      continue;
+    }
+    const tool = row.parts.find(
+      (part): part is TimelineToolPart =>
+        part.kind === "tool" &&
+        part.callId === callId &&
+        (part.phase === "result" || part.phase === "validation"),
+    );
+    if (tool !== undefined) {
+      return tool;
+    }
+  }
+  return null;
+}
+
+function appendToolCallArgsToResultBody(resultBody: string, argsBody: string): string {
+  const trimmedArgs = argsBody.trim();
+  if (trimmedArgs.length === 0) {
+    return resultBody;
+  }
+  const trimmedResult = resultBody.trim();
+  if (trimmedResult.length === 0) {
+    return trimmedArgs;
+  }
+  if (trimmedResult.includes(trimmedArgs)) {
+    return trimmedResult;
+  }
+  return `${trimmedResult}\n\n${trimmedArgs}`;
 }
 
 function runtimeEntryToolCallId(entry: TimelineEntry): string {

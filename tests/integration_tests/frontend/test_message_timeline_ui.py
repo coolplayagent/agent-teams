@@ -79,49 +79,6 @@ console.log(JSON.stringify({
     assert normal_child["parts"][0]["tool_call_id"] == "call-1"
 
 
-def test_message_timeline_gives_disconnected_text_without_event_ids_unique_ids() -> (
-    None
-):
-    repo_root = Path(__file__).resolve().parents[3]
-    runner = """
-import {
-  applyRunEventToTimeline,
-} from './frontend/dist/js/components/messageTimeline/actions.js';
-import {
-  clearTimelineState,
-  getRunTimelineSnapshot,
-} from './frontend/dist/js/components/messageTimeline/store.js';
-
-clearTimelineState();
-
-applyRunEventToTimeline('text_delta', { text: 'first' }, { run_id: 'run-1' });
-applyRunEventToTimeline(
-  'tool_call',
-  { tool_name: 'shell', tool_call_id: 'call-1', args: { command: 'pwd' } },
-  { run_id: 'run-1' },
-);
-applyRunEventToTimeline('text_delta', { text: 'second' }, { run_id: 'run-1' });
-
-console.log(JSON.stringify(getRunTimelineSnapshot('run-1').coordinator.parts));
-""".strip()
-
-    completed = subprocess.run(
-        ["node", "--input-type=module", "-e", runner],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        timeout=10,
-    )
-
-    parts = json.loads(completed.stdout)
-    assert [part["kind"] for part in parts] == ["text", "tool", "text"]
-    assert parts[0]["id"].endswith("::text::text-0")
-    assert parts[2]["id"].endswith("::text::text-1")
-    assert parts[0]["id"] != parts[2]["id"]
-
-
 def test_message_timeline_keeps_completed_tool_status_when_call_arrives_late() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     runner = """

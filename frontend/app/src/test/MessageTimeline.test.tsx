@@ -1528,6 +1528,47 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
   });
 
+  it("keeps cursorless runtime text segments unique around tool events", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: null,
+        event_type: "text_delta",
+        occurred_at: undefined,
+        payload_json: JSON.stringify({ text: "first cursorless chunk" }),
+      }),
+      relayRunEvent({
+        event_id: null,
+        event_type: "tool_call",
+        occurred_at: undefined,
+        payload_json: JSON.stringify({
+          args: { command: "pwd" },
+          tool_call_id: "call-cursorless",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: null,
+        event_type: "text_delta",
+        occurred_at: undefined,
+        payload_json: JSON.stringify({ text: "second cursorless chunk" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("first cursorless chunk")).toBeVisible();
+    expect(screen.getByText("Tool call: shell")).toBeVisible();
+    expect(screen.getByText("second cursorless chunk")).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual(["pwd"]);
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts[0]).toContain("first cursorless chunk");
+    expect(rowTexts[1]).toContain("Tool call: shell");
+    expect(rowTexts[2]).toContain("second cursorless chunk");
+  });
+
   it("keeps runtime injection rows at their live event position between tool and text", async () => {
     setRuntimeEntries([
       runtimeToolCallEntry({

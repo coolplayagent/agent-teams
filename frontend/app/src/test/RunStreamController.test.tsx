@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
+import { listSessionRounds } from "../api/client";
+import type { SessionRound } from "../api/contracts";
 import type { RuntimeState } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 import type {
@@ -11,6 +13,10 @@ import type {
   RunStreamOptions,
 } from "../runtime/streamClient";
 import { useRunStreamController } from "../runtime/useRunStreamController";
+
+vi.mock("../api/client", () => ({
+  listSessionRounds: vi.fn(),
+}));
 
 const streamMocks = vi.hoisted(() => ({
   handles: [] as Array<{ close: ReturnType<typeof vi.fn> }>,
@@ -36,6 +42,8 @@ vi.mock("../runtime/streamClient", () => ({
   openMultiplexedRunStream: streamMocks.openMultiplexedRunStream,
   openRunStream: streamMocks.openRunStream,
 }));
+
+const listSessionRoundsMock = vi.mocked(listSessionRounds);
 
 afterEach(() => {
   cleanup();
@@ -169,6 +177,136 @@ describe("useRunStreamController", () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
+    });
+  });
+
+  it("waits for terminal round history to include streamed tool calls before refreshing rounds", async () => {
+    vi.useFakeTimers();
+    listSessionRoundsMock
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [roundWithToolCalls("run-1", ["call-1"])],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [roundWithToolCalls("run-1", ["call-1", "call-2", "call-3"])],
+        next_cursor: null,
+      });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    const closedState = runtimeStateWithClosedToolCalls([
+      "call-1",
+      "call-2",
+      "call-3",
+    ]);
+    act(() => {
+      options.onState(closedState);
+      options.onClosed?.(closedState);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+    expect(listSessionRoundsMock).toHaveBeenNthCalledWith(1, "session-1", {
+      forceRefresh: true,
+      limit: 100,
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
+    expect(listSessionRoundsMock).toHaveBeenNthCalledWith(2, "session-1", {
+      forceRefresh: true,
+      limit: 100,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+  });
+
+  it("retries transient terminal round history fetch errors until history is safe", async () => {
+    vi.useFakeTimers();
+    listSessionRoundsMock
+      .mockRejectedValueOnce(new Error("round not indexed yet"))
+      .mockRejectedValueOnce(new Error("round history temporarily unavailable"))
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [roundWithToolCalls("run-1", ["call-1", "call-2"])],
+        next_cursor: null,
+      });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    const closedState = runtimeStateWithClosedToolCalls(["call-1", "call-2"]);
+    act(() => {
+      options.onState(closedState);
+      options.onClosed?.(closedState);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(3);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
     });
   });
 
@@ -1353,6 +1491,54 @@ function runtimeStateWithPausedRun(lastEventId: number): RuntimeState {
         terminalEventType: "run_paused",
       },
     },
+  };
+}
+
+function runtimeStateWithClosedToolCalls(toolCallIds: string[]): RuntimeState {
+  return {
+    activeRunIds: [],
+    runs: {
+      "run-1": {
+        entries: toolCallIds.map((toolCallId, index) => ({
+          eventId: index + 1,
+          id: `run-1:${index + 1}:${index}`,
+          kind: "tool_call",
+          occurredAt: "2026-06-30T00:00:00Z",
+          payload: {
+            tool_call_id: toolCallId,
+            tool_name: "spawn_subagent",
+          },
+          roleId: "MainAgent",
+          runId: "run-1",
+          sessionId: "session-1",
+          text: "spawn_subagent",
+        })),
+        lastEventId: toolCallIds.length + 1,
+        runId: "run-1",
+        seenEventKeys: toolCallIds.map((toolCallId) => `run-1:${toolCallId}`),
+        status: "closed",
+        terminalEventType: "run_completed",
+      },
+    },
+  };
+}
+
+function roundWithToolCalls(runId: string, toolCallIds: string[]): SessionRound {
+  return {
+    coordinator_messages: [
+      {
+        message: {
+          parts: toolCallIds.map((toolCallId) => ({
+            part_kind: "tool-call",
+            tool_call_id: toolCallId,
+            tool_name: "spawn_subagent",
+          })),
+        },
+      },
+    ],
+    created_at: "2026-06-30T00:00:00Z",
+    run_id: runId,
+    run_status: "completed",
   };
 }
 

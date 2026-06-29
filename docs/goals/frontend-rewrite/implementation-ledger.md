@@ -7302,3 +7302,27 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, actual browser layout inspection, V2 bootstrap shell fix, focused TS coverage, dist rebuild, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Terminal Round History Settle Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, Message Timeline / AG-UI Runtime Stream / Run Recovery requirements, and the remaining old timeline Python UI harness inventory before editing.
+- Implemented a V2 terminal round history settle path in `useRunStreamController`: when a terminal stream closes after locally observed `tool_call` events, the controller force-refreshes session rounds until the persisted round contains the expected tool call IDs before invalidating the round rail query.
+- Kept ordinary terminal closes without local tool calls on the existing immediate rounds refresh path, so plain text runs, paused runs, background closes, and existing cache refresh behavior are not delayed.
+- Added bounded retry behavior for transient round-history fetch errors and incomplete early responses. If the expected tool calls never appear within the cap, this terminal-close pass does not publish an incomplete round refresh.
+- Added V2 `RunStreamController.test.tsx` coverage for waiting through an incomplete persisted round and retrying transient history fetch failures until the history is safe.
+- Removed the migrated V1 source-copy harnesses `test_terminal_round_refresh_waits_for_expected_tool_calls_from_history` and `test_terminal_round_refresh_retries_transient_fetch_errors` from `tests/integration_tests/frontend/test_round_retry_timeline_ui.py`. The old file now has 8 remaining Python UI harness scenarios.
+- Rebuilt `frontend/dist/app` so the served V2 app includes the runtime stream-controller change.
+- This slice improves terminal stream finalization and persisted round replay safety. It does not claim complete stream/replay recovery PASS, session-switch settle cancellation parity, incomplete-history cap parity, subagent terminal settle parity, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test -- src/test/RunStreamController.test.tsx -t "terminal round history"` passed.
+- `npm run test -- src/test/RunStreamController.test.tsx` passed with 28 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_round_retry_timeline_ui.py` passed.
+- `npm run build` passed and rebuilt `frontend/dist/app`.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_round_retry_timeline_ui.py` returned 8.
+- `rg -n "test_terminal_round_refresh_waits_for_expected_tool_calls_from_history|test_terminal_round_refresh_retries_transient_fetch_errors|waits for terminal round history|retries transient terminal round" tests\integration_tests\frontend\test_round_retry_timeline_ui.py frontend\app\src\test\RunStreamController.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 terminal round settle implementation, focused TS coverage, dist rebuild, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

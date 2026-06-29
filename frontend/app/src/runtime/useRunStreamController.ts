@@ -2,6 +2,8 @@ import { App } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { listSessionRounds } from "../api/client";
+import type { JsonValue, SessionRound } from "../api/contracts";
 import {
   openMultiplexedRunStream,
   openRunStream,
@@ -10,11 +12,14 @@ import {
   type RunStreamTarget,
 } from "./streamClient";
 import { useRuntimeStore } from "./runtimeStore";
-import type { RuntimeState } from "./reducers";
+import type { RuntimeRunState, RuntimeState, TimelineEntry } from "./reducers";
 
 const RECOVERY_CONTINUITY_REFRESH_MS = 10000;
 const RUN_STREAM_MANUAL_RECONNECT_GRACE_MS = 3500;
 const RUN_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
+const TERMINAL_ROUND_SETTLE_DELAY_MS = 900;
+const TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS = 24;
+const TERMINAL_ROUND_SETTLE_PAGE_LIMIT = 100;
 
 export interface StartRunStreamOptions {
   runId: string;
@@ -170,6 +175,11 @@ export function useRunStreamController(): RunStreamController {
     sessionId: string,
     terminalTargets: StartRunStreamTarget[],
   ) => {
+    const roundSettleTargets = terminalRoundSettleTargets(
+      terminalTargets,
+      runtimeStateRef.current,
+    );
+    const streamGeneration = streamGenerationRef.current;
     clearReconnectTimer();
     reconnectAttemptRef.current = 0;
     stopContinuityRefresh();
@@ -181,9 +191,22 @@ export function useRunStreamController(): RunStreamController {
     void queryClient.invalidateQueries({
       queryKey: ["sessions", sessionId, "messages"],
     });
-    void queryClient.invalidateQueries({
-      queryKey: ["sessions", sessionId, "rounds"],
-    });
+    const refreshRounds = () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", sessionId, "rounds"],
+      });
+    };
+    if (roundSettleTargets.length === 0) {
+      refreshRounds();
+    } else {
+      void settleTerminalRoundsFromHistory({
+        currentStreamGeneration: () => streamGenerationRef.current,
+        onReady: refreshRounds,
+        sessionId,
+        streamGeneration,
+        targets: roundSettleTargets,
+      });
+    }
     void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     refreshRecoverySnapshot(sessionId);
     void queryClient.invalidateQueries({
@@ -422,4 +445,153 @@ function trackedRunTargetsClosed(
 
 function activeTrackedRunIds(runIds: string[], runtimeState: RuntimeState): string[] {
   return runIds.filter((runId) => runtimeState.runs[runId]?.status !== "closed");
+}
+
+interface TerminalRoundSettleTarget {
+  expectedToolCallIds: string[];
+  runId: string;
+}
+
+interface TerminalRoundSettleOptions {
+  currentStreamGeneration: () => number;
+  onReady: () => void;
+  sessionId: string;
+  streamGeneration: number;
+  targets: TerminalRoundSettleTarget[];
+}
+
+function terminalRoundSettleTargets(
+  runs: StartRunStreamTarget[],
+  runtimeState: RuntimeState,
+): TerminalRoundSettleTarget[] {
+  return normalizeRunTargets(runs)
+    .map((run) => ({
+      expectedToolCallIds: runtimeToolCallIds(runtimeState.runs[run.runId]),
+      runId: run.runId,
+    }))
+    .filter((target) => target.expectedToolCallIds.length > 0);
+}
+
+async function settleTerminalRoundsFromHistory({
+  currentStreamGeneration,
+  onReady,
+  sessionId,
+  streamGeneration,
+  targets,
+}: TerminalRoundSettleOptions): Promise<void> {
+  const isCurrentGeneration = () => currentStreamGeneration() === streamGeneration;
+  for (let attempt = 0; attempt < TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS; attempt += 1) {
+    if (!isCurrentGeneration()) {
+      return;
+    }
+    try {
+      const page = await listSessionRounds(sessionId, {
+        forceRefresh: true,
+        limit: TERMINAL_ROUND_SETTLE_PAGE_LIMIT,
+      });
+      if (!isCurrentGeneration()) {
+        return;
+      }
+      if (terminalRoundsHaveExpectedToolCalls(page.items, targets)) {
+        onReady();
+        return;
+      }
+    } catch {
+      if (!isCurrentGeneration()) {
+        return;
+      }
+    }
+    if (attempt + 1 < TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS) {
+      await terminalRoundSettleDelay();
+    }
+  }
+}
+
+function terminalRoundSettleDelay(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, TERMINAL_ROUND_SETTLE_DELAY_MS);
+  });
+}
+
+function terminalRoundsHaveExpectedToolCalls(
+  rounds: SessionRound[],
+  targets: TerminalRoundSettleTarget[],
+): boolean {
+  const roundsByRunId = new Map(rounds.map((round) => [round.run_id, round]));
+  return targets.every((target) => {
+    const toolCallIds = persistedRoundToolCallIds(roundsByRunId.get(target.runId));
+    return target.expectedToolCallIds.every((toolCallId) =>
+      toolCallIds.has(toolCallId),
+    );
+  });
+}
+
+function runtimeToolCallIds(runState: RuntimeRunState | undefined): string[] {
+  if (runState === undefined) {
+    return [];
+  }
+  const toolCallIds: string[] = [];
+  for (const entry of runState.entries) {
+    if (entry.kind !== "tool_call") {
+      continue;
+    }
+    const toolCallId = timelineEntryToolCallId(entry);
+    if (toolCallId !== null && !toolCallIds.includes(toolCallId)) {
+      toolCallIds.push(toolCallId);
+    }
+  }
+  return toolCallIds;
+}
+
+function timelineEntryToolCallId(entry: TimelineEntry): string | null {
+  const payload = jsonObject(entry.payload);
+  if (payload === null) {
+    return null;
+  }
+  return jsonString(payload.tool_call_id);
+}
+
+function persistedRoundToolCallIds(round: SessionRound | undefined): ReadonlySet<string> {
+  const toolCallIds = new Set<string>();
+  if (round === undefined) {
+    return toolCallIds;
+  }
+  for (const message of round.coordinator_messages ?? []) {
+    for (const part of message.message?.parts ?? []) {
+      const toolCallId = jsonString(part.tool_call_id ?? null);
+      if (toolCallId !== null && roundPartIsToolCall(part.kind, part.part_kind)) {
+        toolCallIds.add(toolCallId);
+      }
+    }
+    for (const part of message.content_parts ?? []) {
+      const toolCallId = "tool_call_id" in part
+        ? jsonString(part.tool_call_id ?? null)
+        : null;
+      const kind = "kind" in part ? part.kind : undefined;
+      const partKind = "part_kind" in part ? part.part_kind : undefined;
+      if (toolCallId !== null && roundPartIsToolCall(kind, partKind)) {
+        toolCallIds.add(toolCallId);
+      }
+    }
+  }
+  return toolCallIds;
+}
+
+function roundPartIsToolCall(
+  kind: string | undefined,
+  partKind: string | undefined,
+): boolean {
+  return kind === "tool-call" || kind === "tool_call" || partKind === "tool-call";
+}
+
+function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+function jsonString(value: JsonValue | undefined | null): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }

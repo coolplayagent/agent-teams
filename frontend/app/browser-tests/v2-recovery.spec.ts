@@ -25,6 +25,8 @@ const BACKGROUND_SUBAGENT_ID = "background-subagent-1";
 const BACKGROUND_TASK_ID = "background-task-1";
 const BACKGROUND_RUN_ID = "background-run-1";
 const TOOL_CALL_ID = "tool-approval-1";
+const WEBFETCH_TOOL_CALL_ID = "call-webfetch-1";
+const WEBFETCH_APPROVAL_URL = "https://localhost/one";
 const QUESTION_ID = "question-1";
 
 test("resolves pending recovery approvals and user questions", async ({
@@ -94,6 +96,61 @@ test("resolves pending recovery approvals and user questions", async ({
     await expectNoDocumentScroll(
       page,
       "recovery actions should stay inside the fixed V2 shell",
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("renders one host-scoped webfetch recovery approval", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const state = recoveryMockState({
+    questionPending: false,
+    toolApprovalRecord: webfetchApprovalRecord(),
+    toolCallId: WEBFETCH_TOOL_CALL_ID,
+  });
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleRecoveryApi(context, state),
+      sessionTitle: "TS webfetch approval",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const recovery = page.locator(".at-recovery");
+    await expect(recovery.getByText(`Run ${RUN_ID} is awaiting_tool_approval`))
+      .toBeVisible();
+    const approval = recovery.locator(".at-recovery-item");
+    await expect(approval).toHaveCount(1);
+    await expect(approval).toContainText("webfetch");
+    await expect(approval).toContainText(WEBFETCH_APPROVAL_URL);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath("v2-recovery-webfetch-approval.png", SCREENSHOT_FOLDER),
+    });
+
+    await approval.getByRole("button", { name: "Approve" }).click();
+
+    await expect(approval).toHaveCount(0);
+    expect(state.toolApprovalRequests).toEqual([
+      {
+        payload: {
+          action: "approve",
+        },
+        runId: RUN_ID,
+        toolCallId: WEBFETCH_TOOL_CALL_ID,
+      },
+    ]);
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "webfetch approval recovery should stay inside the fixed V2 shell",
     );
   } finally {
     await appServer.close();
@@ -617,7 +674,7 @@ async function handleRecoveryApi(
   }
   if (
     context.method === "POST" &&
-    context.path === `/ag-ui/runs/${RUN_ID}/tool-approvals/${TOOL_CALL_ID}:resolve`
+    context.path === `/ag-ui/runs/${RUN_ID}/tool-approvals/${state.toolCallId}:resolve`
   ) {
     await handleToolApproval(context, state);
     return true;
@@ -652,7 +709,7 @@ async function handleToolApproval(
   state.toolApprovalRequests.push({
     payload,
     runId: RUN_ID,
-    toolCallId: TOOL_CALL_ID,
+    toolCallId: state.toolCallId,
   });
   if (state.failNextToolApproval) {
     state.failNextToolApproval = false;
@@ -745,8 +802,10 @@ interface RecoveryMockState {
   resumeRunRequests: string[];
   shouldShowRecover: boolean;
   status: string;
+  toolApprovalRecord: Record<string, unknown>;
   toolApprovalPending: boolean;
   toolApprovalRequests: RecoveryToolApprovalRequest[];
+  toolCallId: string;
 }
 
 interface RecoveryToolApprovalRequest {
@@ -779,12 +838,15 @@ interface RecoveryMockStateOptions {
   questionRecord?: Record<string, unknown> | null;
   shouldShowRecover?: boolean;
   status?: string;
+  toolApprovalRecord?: Record<string, unknown>;
   toolApprovalPending?: boolean;
+  toolCallId?: string;
 }
 
 function recoveryMockState(
   options: RecoveryMockStateOptions = {},
 ): RecoveryMockState {
+  const toolCallId = options.toolCallId ?? TOOL_CALL_ID;
   return {
     activeRun: options.activeRun ?? true,
     backgroundTaskStopRequests: [],
@@ -802,8 +864,10 @@ function recoveryMockState(
     resumeRunRequests: [],
     shouldShowRecover: options.shouldShowRecover ?? false,
     status: options.status ?? "paused",
+    toolApprovalRecord: options.toolApprovalRecord ?? toolApprovalRecord(toolCallId),
     toolApprovalPending: options.toolApprovalPending ?? true,
     toolApprovalRequests: [],
+    toolCallId,
   };
 }
 
@@ -826,7 +890,9 @@ function recoverySnapshotResponse(
       : null,
     background_tasks: state.backgroundTasks,
     paused_subagent: state.pausedSubagent,
-    pending_tool_approvals: state.toolApprovalPending ? [toolApprovalRecord()] : [],
+    pending_tool_approvals: state.toolApprovalPending
+      ? [state.toolApprovalRecord]
+      : [],
     pending_user_questions: state.questionPending
       ? [state.questionRecord ?? userQuestionRecord(state.questionDescription)]
       : [],
@@ -919,7 +985,7 @@ function pausedSubagentRecord(): Record<string, unknown> {
   };
 }
 
-function toolApprovalRecord(): Record<string, unknown> {
+function toolApprovalRecord(toolCallId = TOOL_CALL_ID): Record<string, unknown> {
   return {
     acp_options: [
       {
@@ -934,8 +1000,16 @@ function toolApprovalRecord(): Record<string, unknown> {
       },
     ],
     args_preview: "{\"path\":\"README.md\"}",
-    tool_call_id: TOOL_CALL_ID,
+    tool_call_id: toolCallId,
     tool_name: "read",
+  };
+}
+
+function webfetchApprovalRecord(): Record<string, unknown> {
+  return {
+    args_preview: JSON.stringify({ url: WEBFETCH_APPROVAL_URL }),
+    tool_call_id: WEBFETCH_TOOL_CALL_ID,
+    tool_name: "webfetch",
   };
 }
 

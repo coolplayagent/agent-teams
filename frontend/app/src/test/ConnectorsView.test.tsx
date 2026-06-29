@@ -11,6 +11,10 @@ import {
   startRuntimeToolDownload,
   testConnector,
 } from "../api/client";
+import type {
+  BinaryToolListResponse,
+  ConnectorListResponse,
+} from "../api/contracts";
 import { ConnectorsView } from "../features/connectors/ConnectorsView";
 import { useUiStore } from "../runtime/uiStore";
 
@@ -32,45 +36,7 @@ const testConnectorMock = vi.mocked(testConnector);
 
 beforeEach(() => {
   useUiStore.setState({ language: "en" });
-  listConnectorsMock.mockResolvedValue({
-    summary: {
-      connected: 1,
-      disabled: 0,
-      error: 0,
-      needs_config: 1,
-      total: 2,
-    },
-    items: [
-      {
-        account_count: 2,
-        auth_type: "api_token",
-        capabilities: ["repositories", "pull_requests"],
-        category: "development",
-        connector_id: "github",
-        description: "Connect repositories and pull requests.",
-        display_name: "GitHub",
-        enabled_count: 1,
-        last_activity_at: "2026-06-24T03:00:00Z",
-        last_error: null,
-        provider: "github",
-        status: "connected",
-      },
-      {
-        account_count: 0,
-        auth_type: "username_password",
-        capabilities: ["w3_auth"],
-        category: "auth",
-        connector_id: "w3",
-        description: "Connect W3 authentication.",
-        display_name: "W3",
-        enabled_count: 0,
-        last_activity_at: null,
-        last_error: "Missing credentials",
-        provider: "w3",
-        status: "needs_config",
-      },
-    ],
-  });
+  listConnectorsMock.mockResolvedValue(defaultConnectorsResponse());
   testConnectorMock.mockResolvedValue({
     account_count: 2,
     capabilities: ["repositories"],
@@ -86,71 +52,7 @@ beforeEach(() => {
     runtime_running: null,
     status: "connected",
   });
-  listRuntimeToolsMock.mockResolvedValue({
-    system_path: {
-      added: false,
-      bin_dir: "C:\\Users\\yex\\.agent-teams\\bin",
-      supported: true,
-    },
-    items: [
-      {
-        display_name: "ripgrep",
-        download_job_id: null,
-        error_message: null,
-        executable_name: "rg.exe",
-        path: "C:\\Users\\yex\\.agent-teams\\bin\\rg.exe",
-        path_source: "managed",
-        source_kind: "github_release",
-        status: "ready",
-        target_version: null,
-        tool_id: "rg",
-        update_available: false,
-        version: "14.1.1",
-      },
-      {
-        display_name: "GitHub CLI",
-        download_job_id: null,
-        error_message: null,
-        executable_name: "gh.exe",
-        path: null,
-        path_source: null,
-        source_kind: "github_release",
-        status: "missing",
-        target_version: "2.74.2",
-        tool_id: "gh",
-        update_available: false,
-        version: null,
-      },
-      {
-        display_name: "ClawHub CLI",
-        download_job_id: null,
-        error_message: "Install failed",
-        executable_name: "clawhub.cmd",
-        path: null,
-        path_source: null,
-        source_kind: "npm_global",
-        status: "error",
-        target_version: null,
-        tool_id: "clawhub",
-        update_available: false,
-        version: null,
-      },
-      {
-        display_name: "Relay Knowledge CLI",
-        download_job_id: null,
-        error_message: null,
-        executable_name: "relay-knowledge.exe",
-        path: "C:\\Users\\yex\\.agent-teams\\bin\\relay-knowledge.exe",
-        path_source: "managed",
-        source_kind: "github_release",
-        status: "ready",
-        target_version: "0.4.0",
-        tool_id: "relay-knowledge",
-        update_available: true,
-        version: "0.3.0",
-      },
-    ],
-  });
+  listRuntimeToolsMock.mockResolvedValue(defaultRuntimeToolsResponse());
   startRuntimeToolDownloadMock.mockResolvedValue({
     downloaded_bytes: 100,
     error_message: null,
@@ -217,6 +119,46 @@ describe("ConnectorsView", () => {
     expect(screen.getAllByText("Missing credentials").length).toBeGreaterThan(0);
   });
 
+  it("hides the internal Relay Knowledge connector while keeping its CLI card", async () => {
+    const response = defaultConnectorsResponse();
+    listConnectorsMock.mockResolvedValue({
+      summary: {
+        connected: 2,
+        disabled: 0,
+        error: 0,
+        needs_config: 1,
+        total: 3,
+      },
+      items: [
+        ...response.items,
+        {
+          account_count: 1,
+          auth_type: "cli",
+          capabilities: ["cli_upgrade"],
+          category: "development",
+          connector_id: "relay-knowledge",
+          description: "Install and update the Relay Knowledge CLI.",
+          display_name: "Relay Knowledge",
+          enabled_count: 1,
+          last_activity_at: null,
+          last_error: null,
+          provider: "relay-knowledge",
+          status: "connected",
+        },
+      ],
+    });
+
+    renderView();
+
+    expect(await screen.findByTestId("connector-card-github")).toBeVisible();
+    expect(screen.getByTestId("connector-card-w3")).toBeVisible();
+    expect(screen.queryByTestId("connector-card-relay-knowledge")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("connector-detail-relay-knowledge")).not.toBeInTheDocument();
+    expect(screen.getAllByText("1/2").length).toBeGreaterThan(0);
+    expect(await screen.findByTestId("runtime-tool-card-relay-knowledge")).toBeVisible();
+    expect(screen.getByText("Relay Knowledge CLI")).toBeVisible();
+  });
+
   it("runs a real connector test action and displays the probe result", async () => {
     renderView();
 
@@ -228,6 +170,25 @@ describe("ConnectorsView", () => {
     expect(
       await screen.findByText("GitHub connection is healthy."),
     ).toBeVisible();
+  });
+
+  it("does not show connector empty states before connector items load", async () => {
+    let resolveConnectors: (value: ConnectorListResponse) => void = () => undefined;
+    listConnectorsMock.mockReturnValue(
+      new Promise<ConnectorListResponse>((resolve) => {
+        resolveConnectors = resolve;
+      }),
+    );
+
+    renderView();
+
+    expect(await screen.findByTestId("connectors-view")).toBeVisible();
+    expect(screen.queryByText("No connectors reported.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No matching connectors.")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("connector-card-github")).not.toBeInTheDocument();
+
+    resolveConnectors(defaultConnectorsResponse());
+    expect(await screen.findByTestId("connector-card-github")).toBeVisible();
   });
 
   it("renders V1 runtime tool cards and wires tool actions", async () => {
@@ -245,6 +206,9 @@ describe("ConnectorsView", () => {
     expect(screen.getByText("ripgrep")).toBeVisible();
     await waitFor(() => expect(ripgrepCard).toHaveTextContent("Version 14.1.1"));
     expect(ripgrepCard).toHaveTextContent("Managed");
+    expect(ripgrepCard).not.toHaveTextContent(
+      "C:\\Users\\yex\\.agent-teams\\bin\\rg.exe",
+    );
     expect(screen.getByText("Relay Knowledge CLI")).toBeVisible();
     expect(screen.getByTestId("runtime-tool-card-relay-knowledge")).toHaveTextContent(
       "Update 0.4.0",
@@ -277,12 +241,64 @@ describe("ConnectorsView", () => {
     );
   });
 
+  it("keeps fixed CLI cards visible while runtime tool items load", async () => {
+    let resolveRuntimeTools: (value: BinaryToolListResponse) => void = () => undefined;
+    listRuntimeToolsMock.mockReturnValue(
+      new Promise<BinaryToolListResponse>((resolve) => {
+        resolveRuntimeTools = resolve;
+      }),
+    );
+
+    renderView();
+
+    expect(await screen.findByTestId("runtime-tools-section")).toBeVisible();
+    expect(screen.getByTestId("runtime-tool-card-rg")).toHaveTextContent("Loading");
+    expect(screen.getByTestId("runtime-tool-card-gh")).toHaveTextContent("Loading");
+    expect(screen.getByTestId("runtime-tool-card-clawhub")).toHaveTextContent("Loading");
+    expect(screen.getByTestId("runtime-tool-card-relay-knowledge")).toHaveTextContent(
+      "Loading",
+    );
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Update" })).not.toBeInTheDocument();
+
+    resolveRuntimeTools(defaultRuntimeToolsResponse());
+    await waitFor(() =>
+      expect(screen.getByTestId("runtime-tool-card-rg")).toHaveTextContent(
+        "Version 14.1.1",
+      ),
+    );
+  });
+
+  it("keeps CLI cards and retry affordance when runtime tool loading fails", async () => {
+    listRuntimeToolsMock.mockRejectedValue(new Error("Runtime tools unavailable"));
+
+    renderView();
+
+    expect(await screen.findByText("Runtime tool status is unavailable.")).toBeVisible();
+    expect(screen.getAllByText("Runtime tools unavailable").length).toBeGreaterThan(1);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+    expect(screen.getByTestId("runtime-tool-card-rg")).toHaveTextContent("Error");
+    expect(screen.getByTestId("runtime-tool-card-gh")).toHaveTextContent("Error");
+    expect(screen.getByTestId("runtime-tool-card-clawhub")).toHaveTextContent("Error");
+    expect(screen.getByTestId("runtime-tool-card-relay-knowledge")).toHaveTextContent(
+      "Error",
+    );
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(listRuntimeToolsMock).toHaveBeenCalledTimes(2));
+  });
+
   it("surfaces connector load errors", async () => {
     listConnectorsMock.mockRejectedValue(new Error("backend offline"));
 
     renderView();
 
     expect(await screen.findByText("Could not load connectors.")).toBeVisible();
+    expect(screen.queryByTestId("connector-card-github")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh connectors" }));
+    await waitFor(() => expect(listConnectorsMock).toHaveBeenCalledTimes(2));
   });
 });
 
@@ -304,4 +320,114 @@ function renderView() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+function defaultConnectorsResponse(): ConnectorListResponse {
+  return {
+    summary: {
+      connected: 1,
+      disabled: 0,
+      error: 0,
+      needs_config: 1,
+      total: 2,
+    },
+    items: [
+      {
+        account_count: 2,
+        auth_type: "api_token",
+        capabilities: ["repositories", "pull_requests"],
+        category: "development",
+        connector_id: "github",
+        description: "Connect repositories and pull requests.",
+        display_name: "GitHub",
+        enabled_count: 1,
+        last_activity_at: "2026-06-24T03:00:00Z",
+        last_error: null,
+        provider: "github",
+        status: "connected",
+      },
+      {
+        account_count: 0,
+        auth_type: "username_password",
+        capabilities: ["w3_auth"],
+        category: "auth",
+        connector_id: "w3",
+        description: "Connect W3 authentication.",
+        display_name: "W3",
+        enabled_count: 0,
+        last_activity_at: null,
+        last_error: "Missing credentials",
+        provider: "w3",
+        status: "needs_config",
+      },
+    ],
+  };
+}
+
+function defaultRuntimeToolsResponse(): BinaryToolListResponse {
+  return {
+    system_path: {
+      added: false,
+      bin_dir: "C:\\Users\\yex\\.agent-teams\\bin",
+      supported: true,
+    },
+    items: [
+      {
+        display_name: "ripgrep",
+        download_job_id: null,
+        error_message: null,
+        executable_name: "rg.exe",
+        path: "C:\\Users\\yex\\.agent-teams\\bin\\rg.exe",
+        path_source: "managed",
+        source_kind: "github_release",
+        status: "ready",
+        target_version: null,
+        tool_id: "rg",
+        update_available: false,
+        version: "14.1.1",
+      },
+      {
+        display_name: "GitHub CLI",
+        download_job_id: null,
+        error_message: null,
+        executable_name: "gh.exe",
+        path: null,
+        path_source: null,
+        source_kind: "github_release",
+        status: "missing",
+        target_version: "2.74.2",
+        tool_id: "gh",
+        update_available: false,
+        version: null,
+      },
+      {
+        display_name: "ClawHub CLI",
+        download_job_id: null,
+        error_message: "Install failed",
+        executable_name: "clawhub.cmd",
+        path: null,
+        path_source: null,
+        source_kind: "npm_global",
+        status: "error",
+        target_version: null,
+        tool_id: "clawhub",
+        update_available: false,
+        version: null,
+      },
+      {
+        display_name: "Relay Knowledge CLI",
+        download_job_id: null,
+        error_message: null,
+        executable_name: "relay-knowledge.exe",
+        path: "C:\\Users\\yex\\.agent-teams\\bin\\relay-knowledge.exe",
+        path_source: "managed",
+        source_kind: "github_release",
+        status: "ready",
+        target_version: "0.4.0",
+        tool_id: "relay-knowledge",
+        update_available: true,
+        version: "0.3.0",
+      },
+    ],
+  };
 }

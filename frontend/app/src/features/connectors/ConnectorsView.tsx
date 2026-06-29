@@ -35,6 +35,7 @@ const defaultSummary: ConnectorSummary = {
   needs_config: 0,
   total: 0,
 };
+const HIDDEN_CONNECTOR_IDS = new Set(["relay-knowledge"]);
 
 export function ConnectorsView() {
   const t = useTranslations();
@@ -60,8 +61,17 @@ export function ConnectorsView() {
     },
   });
 
-  const items = connectorsQuery.data?.items ?? [];
-  const summary = connectorsQuery.data?.summary ?? defaultSummary;
+  const items = useMemo(
+    () => visibleConnectorItems(connectorsQuery.data?.items ?? []),
+    [connectorsQuery.data?.items],
+  );
+  const summary = useMemo(
+    () =>
+      connectorsQuery.data === undefined
+        ? defaultSummary
+        : connectorSummaryForItems(items),
+    [connectorsQuery.data, items],
+  );
   const filteredItems = useMemo(
     () => filterConnectors(items, query, statusFilter),
     [items, query, statusFilter],
@@ -431,6 +441,25 @@ function filterConnectors(
       }
       return connectorSearchText(item).includes(normalizedQuery);
     });
+}
+
+function visibleConnectorItems(items: ConnectorItem[]): ConnectorItem[] {
+  return items.filter(
+    (item) =>
+      !HIDDEN_CONNECTOR_IDS.has(normalizeSearchText(item.connector_id)) &&
+      !HIDDEN_CONNECTOR_IDS.has(normalizeSearchText(item.provider)),
+  );
+}
+
+function connectorSummaryForItems(items: ConnectorItem[]): ConnectorSummary {
+  const summary: ConnectorSummary = {
+    ...defaultSummary,
+    total: items.length,
+  };
+  items.forEach((item) => {
+    summary[item.status] += 1;
+  });
+  return summary;
 }
 
 function connectorSearchText(item: ConnectorItem): string {

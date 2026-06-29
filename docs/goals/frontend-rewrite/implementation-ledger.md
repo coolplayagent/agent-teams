@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Connector Cards TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and remaining V1 `test_connector_cards_ui.py` harness before editing, then moved this slice to V2 component coverage instead of continuing to assert generated `frontend/dist` markup strings.
+- Preserved the V1 connector/runtime-tool separation: the internal `relay-knowledge` connector is no longer rendered as a connector card or detail panel, while `Relay Knowledge CLI` remains visible and actionable in the CLI tools section.
+- Added V2 coverage for connector loading without false empty states, fixed CLI tool cards during runtime-tool loading, runtime-tool load failure with retry, hidden full install paths with copy action, update/download actions, and system PATH action wiring.
+- Removed `tests/integration_tests/frontend/test_connector_cards_ui.py` after its remaining behavior was covered by V2 TypeScript tests or by V2's non-fake loading state.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle includes the connector visibility filtering.
+
+### Verification
+- `npm run test -- src/test/ConnectorsView.test.tsx` passed all 8 ConnectorsView tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-E62bjsBv.js`, `index-Bng0LR7m.css`).
+
+### Reviewer
+- Main-agent V2 production filtering, component coverage, old Python UI harness removal, and focused regression verification completed for this slice. No full Connector subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Round Scroll Controller TS Migration
 
 ### Scope

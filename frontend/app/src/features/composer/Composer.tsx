@@ -14,7 +14,12 @@ import type { SenderRef } from "@ant-design/x/es/sender";
 import { Mic, MicOff, Pause, Play, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 
 import {
   createRun,
@@ -42,6 +47,7 @@ import type {
   RunThinkingConfig,
   SessionMode,
   SessionRecord,
+  SessionSidebarRecord,
   ThinkingEffort,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
@@ -50,6 +56,7 @@ import {
   buildPromptInputParts,
   PromptAttachments,
   readPastedImageAttachments,
+  summarizePromptAttachments,
   type PromptAttachment,
 } from "./PromptAttachments";
 import { PromptMentionMenu } from "./PromptMentionMenu";
@@ -104,6 +111,73 @@ function sessionTopologyLockQueryKey(sessionId: string | null) {
 
 function sessionRecoveryQueryKey(sessionId: string) {
   return ["sessions", sessionId, "recovery"] as const;
+}
+
+function sessionsSidebarQueryKey() {
+  return ["sessions", "sidebar"] as const;
+}
+
+function previewSessionTitleInSidebarCache(
+  queryClient: QueryClient,
+  sessionId: string,
+  title: string,
+  session: SessionRecord | undefined,
+) {
+  const safeSessionId = sessionId.trim();
+  const safeTitle = title.trim();
+  if (!safeSessionId || !safeTitle) {
+    return;
+  }
+  const updatedAt = new Date().toISOString();
+  queryClient.setQueryData<SessionSidebarRecord[] | undefined>(
+    sessionsSidebarQueryKey(),
+    (current) => {
+      if (current === undefined) {
+        return current;
+      }
+      const existingIndex = current.findIndex(
+        (record) => record.session_id === safeSessionId,
+      );
+      if (existingIndex === -1) {
+        const workspaceId = session?.workspace_id.trim() ?? "";
+        if (!workspaceId) {
+          return current;
+        }
+        return [
+          ...current,
+          sessionWithTitlePreview(
+            {
+              session_id: safeSessionId,
+              workspace_id: workspaceId,
+            },
+            safeTitle,
+            updatedAt,
+          ),
+        ];
+      }
+      return current.map((record, index) =>
+        index === existingIndex
+          ? sessionWithTitlePreview(record, safeTitle, updatedAt)
+          : record,
+      );
+    },
+  );
+}
+
+function sessionWithTitlePreview(
+  session: SessionSidebarRecord,
+  title: string,
+  updatedAt: string,
+): SessionSidebarRecord {
+  return {
+    ...session,
+    metadata: {
+      ...(session.metadata ?? {}),
+      title,
+    },
+    title,
+    updated_at: updatedAt,
+  };
 }
 
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
@@ -373,9 +447,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       if (generalConfigQuery.data !== undefined) {
         request.shell_safety_policy_enabled = shellSafetyPolicyEnabled;
       }
-      return createRun(request);
+      const titlePreview =
+        effectivePromptText || summarizePromptAttachments(promptAttachments);
+      const result = await createRun(request);
+      return { result, titlePreview };
     },
-    onSuccess: (result) => {
+    onSuccess: ({ result, titlePreview }) => {
       setDraft("");
       setPromptAttachments([]);
       setSelectedPromptSkill(null);
@@ -384,7 +461,19 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       queryClient.setQueryData<SessionRecord | undefined>(
         sessionDetailQueryKey(result.session_id),
         (current) =>
-          current === undefined ? current : { ...current, can_switch_mode: false },
+          current === undefined
+            ? current
+            : {
+                ...current,
+                can_switch_mode: false,
+                title: titlePreview || current.title,
+              },
+      );
+      previewSessionTitleInSidebarCache(
+        queryClient,
+        result.session_id,
+        titlePreview,
+        sessionQuery.data,
       );
       const foreground = sessionIdRef.current === result.session_id;
       runStreamController.startRunStream({
@@ -395,7 +484,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       void queryClient.invalidateQueries({
         queryKey: ["sessions", result.session_id, "messages"],
       });
-      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void queryClient.invalidateQueries({ queryKey: sessionsSidebarQueryKey() });
     },
     onError: (error) => {
       void message.error(error instanceof Error ? error.message : t("composerRunCreationFailed"));

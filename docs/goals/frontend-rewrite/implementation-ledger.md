@@ -7162,3 +7162,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, focused V2 assertion hardening, targeted Composer verification, and partial legacy harness removal completed for this pasted-image attachment slice. No full Composer subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Composer Title Preview Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the remaining V1 `test_prompt_yolo_ui.py` harness inventory, and the V1 `agent-teams-session-title-previewed` event path before editing.
+- Implemented the V2 equivalent without reintroducing a global DOM event: once `createRun` resolves, Composer now writes the submitted prompt preview into the React Query sidebar session cache using `metadata.title`, preserves the legacy `title` field for compatibility, updates the session detail cache title, and still invalidates the sidebar query for backend reconciliation.
+- Preserved the V1 boundary that the title preview is not emitted before a run exists. The new V2 test holds `createRun` pending, proves the sidebar cache remains on the old title, then resolves the run and proves the optimistic title appears.
+- Removed the migrated V1 Python UI harness scenario for title preview event timing. The legacy Python UI harness now has 1 remaining scenario: prompt mention/resource autocomplete and insertion.
+- This slice is a production behavior parity fix plus focused test migration; no visual layout, Settings/sidebar item inventory, backend contract, desktop shell, stream/replay transport, or built dist behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 73 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `rg -c "^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py` returned 1.
+- `rg -n "test_handle_send_emits_title_preview_only_after_run_created|previews the submitted prompt title only after run creation succeeds|previewSessionTitleInSidebarCache|agent-teams-session-title-previewed|^def test_" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx frontend/app/src/features/composer/Composer.tsx` returns only the new V2 TS coverage, the V2 implementation, and the one remaining legacy Python autocomplete test.
+
+### Reviewer
+- Main-agent V1 behavior mapping, V2 React Query implementation, focused TS coverage, targeted type/test verification, and partial legacy harness removal completed for this title preview slice. No full Composer subsystem PASS, final V1/V2 visual audit sign-off, streaming/replay PASS, release cleanup sign-off, or V2 frontend completion is claimed.

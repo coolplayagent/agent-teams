@@ -24,7 +24,11 @@ import {
   fetchSpeechConfig,
 } from "../api/speech";
 import { Composer } from "../features/composer/Composer";
-import type { RecoverySnapshot, SessionRecord } from "../api/contracts";
+import type {
+  RecoverySnapshot,
+  SessionRecord,
+  SessionSidebarRecord,
+} from "../api/contracts";
 import { useUiStore } from "../runtime/uiStore";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
@@ -335,6 +339,84 @@ describe("Composer", () => {
     });
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
+    });
+  });
+
+  it("previews the submitted prompt title only after run creation succeeds", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    const runCreation = deferred<Awaited<ReturnType<typeof createRun>>>();
+    createRunMock.mockReturnValue(runCreation.promise);
+    const controller = runStreamController();
+    const queryClient = createComposerQueryClient();
+    queryClient.setQueryData<SessionRecord>(["sessions", "detail", "session-1"], {
+      can_switch_mode: true,
+      session_id: "session-1",
+      title: "Old title",
+      workspace_id: "workspace-1",
+    });
+    const sidebarRows: SessionSidebarRecord[] = [
+      {
+        metadata: {
+          title: "Old title",
+        },
+        session_id: "session-1",
+        title: "Old title",
+        updated_at: "2026-06-30T00:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ];
+    queryClient.setQueryData<SessionSidebarRecord[]>(
+      ["sessions", "sidebar"],
+      sidebarRows,
+    );
+
+    renderComposerWithClient(queryClient, controller);
+
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "preview after run" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(queryClient.getQueryData(["sessions", "sidebar"])).toEqual(sidebarRows);
+
+    await act(async () => {
+      runCreation.resolve({
+        run_id: "run-1",
+        session_id: "session-1",
+      });
+      await runCreation.promise;
+    });
+
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<SessionSidebarRecord[]>([
+          "sessions",
+          "sidebar",
+        ])?.[0],
+      ).toMatchObject({
+        metadata: {
+          title: "preview after run",
+        },
+        session_id: "session-1",
+        title: "preview after run",
+      }),
+    );
+    expect(
+      queryClient.getQueryData<SessionRecord>([
+        "sessions",
+        "detail",
+        "session-1",
+      ]),
+    ).toMatchObject({
+      can_switch_mode: false,
+      title: "preview after run",
+    });
+    expect(controller.startRunStream).toHaveBeenCalledWith({
+      runId: "run-1",
+      sessionId: "session-1",
     });
   });
 
@@ -935,7 +1017,7 @@ describe("Composer", () => {
   it("falls back to a slash skill without workspace command resolution", async () => {
     getSessionMock.mockResolvedValue({
       session_id: "session-1",
-      workspace_id: null,
+      workspace_id: "",
       session_mode: "normal",
       normal_root_role_id: null,
       normal_model_profile: null,

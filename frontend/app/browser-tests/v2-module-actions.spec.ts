@@ -54,9 +54,9 @@ test("persists V2 sidebar mouse resize after reload", async ({ page }) => {
     await page.goto(`${appServer.url}/app/`);
     await waitForV2Shell(page);
 
-    await expect.poll(() => sidebarWidth(page)).toBe(260);
+    await expect.poll(() => sidebarWidth(page)).toBe(280);
     const resizer = page.locator(".at-sidebar-resizer");
-    await expect(resizer).toHaveAttribute("aria-valuenow", "260");
+    await expect(resizer).toHaveAttribute("aria-valuenow", "280");
     const box = await resizer.boundingBox();
     expect(box).not.toBeNull();
     if (box === null) {
@@ -78,7 +78,7 @@ test("persists V2 sidebar mouse resize after reload", async ({ page }) => {
     await expect
       .poll(() =>
         page.evaluate(() =>
-          window.localStorage.getItem("agentTeams.sidebarWidthMigratedTo260"),
+          window.localStorage.getItem("agentTeams.sidebarWidthMigratedTo280"),
         ),
       )
       .toBe("true");

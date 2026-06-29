@@ -5291,3 +5291,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent naming scan, route-switch browser gate, and screenshot inspection completed for this evidence slice. Final promotion still needs the migration boundary removed or renamed, a full V1/V2 visual audit, subsystem reviewer sign-offs, release cleanup decisions, and final full-check execution.
+
+## 2026-06-29 V1 Sidebar Width Alignment
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, and current live browser UI before editing. This slice targets a framework-level V1/V2 visual gap found from screenshots and layout metrics instead of another isolated component detail.
+- Captured the live new shell at `http://127.0.0.1:8000/app/` and measured `document`, `#root`, top bar, sidebar, main workspace, and composer rectangles. The fixed-page shell was already healthy, but the V2 sidebar measured `260px` while V1 measured `280px`.
+- Changed the new shell default sidebar width back to the V1-sized `280px`, migrated previous generated `260px` defaults to `280px`, and preserved compact user-resized widths that were already marked by the older `260px` migration.
+- Rebuilt `frontend/dist/app` so the packaged V2 shell uses the restored V1-width sidebar.
+
+### Verification
+- `npm run test -- src/test/uiStore.test.ts` passed with 8 tests covering the default width, old generated-width migration, and preservation of user-resized compact sidebars.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+- `npm run test:browser -- browser-tests/v2-module-actions.spec.ts -g "persists V2 sidebar mouse resize after reload"` passed after the dist rebuild, covering default `280px`, resize to `220px`, persistence, and no document-level scroll.
+- Inspected `.tmp/frontend-v1-v2-visual-audit/v1-current-loaded-viewport.png`; V1 measured sidebar `280px`, main `x=286`, and document `1280x720`.
+- Inspected `.tmp/frontend-v2-live-audit/current-app-after-sidebar-280.png`; V2 now measures sidebar `280px`, main `x=286`, composer `x=286`, and document `1280x720` with no body/page growth.
+
+### Reviewer
+- Main-agent screenshot comparison, implementation, targeted unit/browser verification, dist rebuild, and live browser inspection completed for this framework slice. No Application Shell subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

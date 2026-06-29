@@ -18,11 +18,13 @@ interface UiState {
   setSelectedWorkspaceId: (workspaceId: string | null) => void;
 }
 
-export const sidebarWidthDefault = 260;
+export const sidebarWidthDefault = 280;
 export const sidebarWidthMin = 220;
 export const sidebarWidthMax = 320;
 export const sidebarWidthStorageKey = "agentTeams.sidebarWidth";
-export const sidebarWidthMigrationStorageKey = "agentTeams.sidebarWidthMigratedTo260";
+export const sidebarWidthMigrationStorageKey = "agentTeams.sidebarWidthMigratedTo280";
+const sidebarWidthCompactMigrationStorageKey =
+  "agentTeams.sidebarWidthMigratedTo260";
 export const themeModeStorageKey = "agentTeams.themeMode";
 export const legacyThemeStorageKey = "agent_teams_theme";
 
@@ -76,7 +78,7 @@ function storedSidebarWidth(): number {
   if (!Number.isFinite(parsed)) {
     return sidebarWidthDefault;
   }
-  if (legacyGeneratedSidebarWidth(parsed) && !sidebarWidthMigrationApplied()) {
+  if (legacyGeneratedSidebarWidth(parsed)) {
     window.localStorage.setItem(sidebarWidthStorageKey, String(sidebarWidthDefault));
     window.localStorage.setItem(sidebarWidthMigrationStorageKey, "true");
     return sidebarWidthDefault;
@@ -85,11 +87,26 @@ function storedSidebarWidth(): number {
 }
 
 function legacyGeneratedSidebarWidth(width: number): boolean {
-  return width === 220 || width === 248 || width === 274 || width === 280;
+  if (sidebarWidthMigrationApplied()) {
+    return false;
+  }
+  if (width === 260) {
+    return true;
+  }
+  if (compactSidebarWidthMigrationApplied()) {
+    return false;
+  }
+  return width === 220 || width === 248 || width === 274;
 }
 
 function sidebarWidthMigrationApplied(): boolean {
   return window.localStorage.getItem(sidebarWidthMigrationStorageKey) === "true";
+}
+
+function compactSidebarWidthMigrationApplied(): boolean {
+  return (
+    window.localStorage.getItem(sidebarWidthCompactMigrationStorageKey) === "true"
+  );
 }
 
 function storedThemeMode(): ThemeMode {

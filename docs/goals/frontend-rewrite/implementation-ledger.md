@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 I18n TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and remaining V1 `test_i18n_ui.py` harness before editing.
+- Migrated the V1 i18n module intent to V2 TypeScript coverage: core shell copy translates between English and Chinese, Chinese authentication/model labels remain readable, and translated status messages interpolate runtime values.
+- Reused existing `AppShell.test.tsx` coverage for the user-visible shell language toggle instead of preserving V1's DOM `data-i18n` scanner implementation.
+- Removed `tests/integration_tests/frontend/test_i18n_ui.py` after its remaining V2-relevant behavior was covered by `i18n.test.ts` and existing shell language-switch coverage.
+
+### Verification
+- `npm run test -- src/test/i18n.test.ts` passed all 3 i18n tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed after deleting the old Python UI harness file.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+
+### Reviewer
+- Main-agent V2 i18n coverage, old Python UI harness removal, and focused regression verification completed for this slice. No full settings/shell subsystem PASS, Browser Checks completion, reviewer sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-30 Session View Boundary TS Migration
 
 ### Scope

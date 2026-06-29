@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Settings Accessibility TS Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining `test_settings_accessibility_ui.py` source-string assertions before editing. This slice targets checklist item 9 by replacing legacy dist markup checks with real V2 SettingsDrawer accessibility coverage.
+- Restored the Role detail memory control in V2 by adding a `Memory enabled` switch bound to `memory_profile.enabled`; saving a Role now reflects the user-edited memory state in the real role config payload.
+- Added focused TS coverage that navigates through the V1-aligned Settings secondary pages and verifies model profile, proxy, remote workspace, and role controls are reachable through accessible labels or switch names.
+- Extended the existing Role save test to turn off `Memory enabled` and assert the saved `memory_profile.enabled` payload changes from `true` to `false`.
+- Removed the replaced `tests/unit_tests/frontend/test_settings_accessibility_ui.py` Python source-string test.
+- No Settings section or sidebar entries were added or removed.
+
+### Verification
+- `npm run test -- src/test/SettingsDrawer.test.tsx -t "links migrated settings labels|saves editable role configs"` passed with 2 focused Vitest tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `git diff --check` passed.
+- `rg --files tests\unit_tests\frontend | rg "test_settings_accessibility_ui\.py$"` returned no matches after removal.
+
+### Reviewer
+- Main-agent V2 settings implementation, focused TS component coverage, old Python file removal, frontend lint/typecheck, and diff check completed for this slice. No Settings subsystem PASS, full settings migration, browser visual audit sign-off, Electron sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Model Profile API Key And Image Capability V2 Parity
 
 ### Scope

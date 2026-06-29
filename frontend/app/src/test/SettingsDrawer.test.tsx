@@ -1576,6 +1576,58 @@ describe("SettingsDrawer", () => {
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
   }, 70000);
 
+  it("links migrated settings labels to real controls across secondary pages", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Models" }));
+    const visionRow = (await screen.findByText("vision")).closest(".at-model-profile-row");
+    expect(visionRow).not.toBeNull();
+    fireEvent.click(within(visionRow as HTMLElement).getByRole("button", { name: /vision/ }));
+    expect(await screen.findByLabelText("Profile ID")).toBeVisible();
+    expect(screen.getByLabelText("Model")).toBeVisible();
+    expect(screen.getByLabelText("Base URL")).toBeVisible();
+    expect(screen.getByLabelText("API Key")).toBeVisible();
+    expect(screen.getByLabelText("Image Input")).toBeVisible();
+    expect(screen.getByLabelText("Temperature")).toBeVisible();
+    expect(screen.getByLabelText("Top P")).toBeVisible();
+    expect(screen.getByLabelText("Max tokens")).toBeVisible();
+    expect(screen.getByLabelText("Context window")).toBeVisible();
+    expect(screen.getByLabelText("Timeout seconds")).toBeVisible();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Proxy" }));
+    expect(await screen.findByLabelText("HTTP Proxy")).toBeVisible();
+    expect(screen.getByLabelText("HTTPS Proxy")).toBeVisible();
+    expect(screen.getByLabelText("ALL Proxy")).toBeVisible();
+    expect(screen.getByLabelText("NO_PROXY")).toBeVisible();
+    expect(screen.getByLabelText("Target URL")).toBeVisible();
+    expect(screen.getByLabelText("Timeout (ms)")).toBeVisible();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Remote workspace" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(await screen.findByLabelText("Profile ID")).toHaveValue("devbox");
+    expect(screen.getByLabelText("Host")).toBeInTheDocument();
+    expect(screen.getByLabelText("Username")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    expect(screen.getByLabelText("Port")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remote shell")).toBeInTheDocument();
+    expect(screen.getByLabelText("Connect timeout (s)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Private key")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+    const reviewerRoleRow = (await screen.findByText("Reviewer")).closest("button");
+    expect(reviewerRoleRow).not.toBeNull();
+    fireEvent.click(reviewerRoleRow as HTMLElement);
+    expect(await screen.findByLabelText("Role ID")).toBeVisible();
+    expect(screen.getByLabelText("Role name")).toBeVisible();
+    expect(screen.getByLabelText("Version")).toBeVisible();
+    expect(screen.getByLabelText("Model profile")).toBeVisible();
+    expect(screen.getByRole("switch", { name: "Memory enabled" })).toBeVisible();
+  }, 30000);
+
   it("manages plugins from the System secondary page", async () => {
     renderDrawer();
 
@@ -2068,6 +2120,9 @@ describe("SettingsDrawer", () => {
     fireEvent.change(screen.getByDisplayValue("Review carefully."), {
       target: { value: "Review deeply before approving." },
     });
+    const memorySwitch = screen.getByRole("switch", { name: "Memory enabled" });
+    expect(memorySwitch).toBeChecked();
+    fireEvent.click(memorySwitch);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saveRoleConfigMock).toHaveBeenCalledTimes(1));
@@ -2081,7 +2136,7 @@ describe("SettingsDrawer", () => {
         description: "Review changes carefully",
         mcp_servers: ["filesystem"],
         memory_profile: {
-          enabled: true,
+          enabled: false,
         },
         role_id: "reviewer",
         skills: ["review"],

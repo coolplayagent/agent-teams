@@ -746,6 +746,13 @@ function RoleConfigDetail({
             <Form.Item label={t("settingsRoleModelProfile")} name="model_profile">
               <Input autoComplete="off" />
             </Form.Item>
+            <Form.Item
+              label={t("settingsRoleMemoryEnabled")}
+              name="memory_enabled"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
             <Form.Item label={t("settingsRoleBoundAgent")} name="bound_agent_id">
               <Select
                 allowClear
@@ -2001,6 +2008,7 @@ interface SettingsListItem {
 interface RoleConfigForm {
   bound_agent_id?: string;
   description?: string;
+  memory_enabled?: boolean;
   mode?: string;
   model_profile?: string;
   name?: string;
@@ -2161,6 +2169,7 @@ function roleConfigFormValues(document: RoleConfigDocument): RoleConfigForm {
   return {
     bound_agent_id: document.bound_agent_id ?? "",
     description: document.description ?? "",
+    memory_enabled: document.memory_profile?.enabled === true,
     mode: document.mode ?? "",
     model_profile: document.model_profile ?? "",
     name: document.name ?? "",
@@ -2182,6 +2191,10 @@ function updateRoleConfigDocument(
     description: textValue(values.description),
     mode: mode || document.mode,
     model_profile: nullableText(values.model_profile),
+    memory_profile: {
+      ...(document.memory_profile ?? {}),
+      enabled: values.memory_enabled === true,
+    },
     name: textValue(values.name),
     role_id: roleId || document.role_id,
     system_prompt: values.system_prompt ?? "",

@@ -5273,3 +5273,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser test tightening, frontend typecheck, screenshot inspection, and Python browser-test scan completed for this evidence slice. This closes the reviewer residual risk around positive tool/status-heavy HTML export evidence, but no full Export subsystem PASS, browser-suite completion, final naming cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Naming Cleanup Boundary Audit
+
+### Scope
+- Re-checked the active frontend rewrite goal, Naming Cleanup Gate, current product source, published HTML entry points, and route-switch browser evidence before claiming any progress on release cleanup.
+- Audited user-facing `V2/v2/新版/旧版` naming in the React source and published entry HTML. The product source does not expose final-state `V2` branding; remaining source matches are the Chinese "latest version" placeholder for skill installation and a real `/api/v2/` default endpoint URL.
+- Confirmed the remaining migration labels are boundary-only: V1's published shell still exposes `Open new interface`, and the new shell exposes a `V1` return control. These are intentionally kept during coexistence and must be removed or neutralized only during final promotion.
+- Kept this as naming-boundary evidence only. No final naming cleanup, release promotion, route removal, or V2 frontend completion is claimed.
+
+### Verification
+- `rg -n "V2|v2|新版|旧版" frontend/app/src --glob '!**/*.test.*' --glob '!**/__snapshots__/**'` returned only `skillsInstallVersionPlaceholder: "最新版本"` and the Settings ClawHub `/api/v2/` default URL.
+- `rg -n "new interface|old interface|Open new|V1|V2|新版|旧版" frontend/app/src frontend/app/index.html frontend/dist/app/index.html frontend/dist/index.html --glob '!**/*.test.*'` returned the expected migration controls plus an SVG path-data false positive.
+- `npm run test:browser -- browser-tests/v2-route-switch.spec.ts` passed with 1 test covering V1 to new shell switching and return to V1.
+- Inspected `.tmp/frontend-v2-ts-route-switch/ts-v2-after-new-ui-switch.png`; it shows the new shell with the temporary `V1` return button but no permanent `V2/新版` product branding.
+- Inspected `.tmp/frontend-v2-ts-route-switch/ts-v1-root-before-switch.png`; it shows the V1 shell with the temporary `New UI` entry that remains part of the coexistence boundary.
+
+### Reviewer
+- Main-agent naming scan, route-switch browser gate, and screenshot inspection completed for this evidence slice. Final promotion still needs the migration boundary removed or renamed, a full V1/V2 visual audit, subsystem reviewer sign-offs, release cleanup decisions, and final full-check execution.

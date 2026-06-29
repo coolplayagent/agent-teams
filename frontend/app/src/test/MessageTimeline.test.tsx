@@ -1008,6 +1008,66 @@ describe("MessageTimeline", () => {
     )).toBe(true);
   });
 
+  it("scopes and deduplicates runtime stream rows by run", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        instance_id: "inst-orch",
+        role_id: "writer",
+        run_id: "run-parent",
+        trace_id: "run-parent",
+        payload_json: JSON.stringify({ text: "parent hello" }),
+      }),
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        instance_id: "inst-orch",
+        role_id: "writer",
+        run_id: "run-parent",
+        trace_id: "run-parent",
+        payload_json: JSON.stringify({ text: "parent hello" }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        instance_id: "inst-child",
+        role_id: "runner",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          args: { command: "echo ok" },
+          tool_call_id: "call-1",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const parentTimeline = renderTimeline("session-1", {
+      runtimeRunId: "run-parent",
+    });
+
+    expect(await screen.findByText("parent hello")).toBeVisible();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    expect(
+      parentTimeline.container.querySelectorAll("article.at-message"),
+    ).toHaveLength(1);
+
+    parentTimeline.unmount();
+
+    const childTimeline = renderTimeline("session-1", {
+      runtimeRunId: "subagent_run_1",
+    });
+
+    expect(await screen.findByText("Tool call: shell")).toBeVisible();
+    expect(screen.queryByText("parent hello")).not.toBeInTheDocument();
+    expect(toolPreviewTexts(childTimeline.container)).toEqual(["echo ok"]);
+    expect(
+      childTimeline.container.querySelectorAll("article.at-message"),
+    ).toHaveLength(1);
+  });
+
   it("unwraps successful tool return envelopes to the useful output", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -3179,7 +3239,14 @@ describe("MessageTimeline", () => {
   });
 });
 
-function renderTimeline(sessionId: string | null = "session-1") {
+interface RenderTimelineOptions {
+  runtimeRunId?: string | null;
+}
+
+function renderTimeline(
+  sessionId: string | null = "session-1",
+  options: RenderTimelineOptions = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -3192,7 +3259,10 @@ function renderTimeline(sessionId: string | null = "session-1") {
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
-          <MessageTimeline sessionId={sessionId} />
+          <MessageTimeline
+            sessionId={sessionId}
+            runtimeRunId={options.runtimeRunId ?? null}
+          />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,

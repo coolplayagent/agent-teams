@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-29 Tool Return Media Preview Parity
+
+### Scope
+- Re-checked the active frontend rewrite goal and the product parity checklist before editing, then selected a Message Timeline / Resource parity gap from the remaining `test_message_rich_content_ui.py` V1 harness instead of staying on the last visual complaint.
+- Updated V2 `MessageTimeline` tool result rendering so persisted `tool-return` content and live/replayed `tool_result` payloads extract nested `media_ref` entries from real tool result containers such as `data.content`, `content`, `parts`, `output`, or `result`.
+- Reused the existing `MessageMediaPreview` component inside tool result details, so image results open through the same Ant Image preview path as normal message media and non-image media keep the existing resource-link behavior.
+- Preserved the previous workspace text image preview behavior and added adjacent TS coverage for both persisted and runtime tool-return media previews.
+- Removed the replaced V1 rich-content Python UI harness: `tests/integration_tests/frontend/test_message_rich_content_ui.py`.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle includes the tool-return media preview fix.
+- While running the full `MessageTimeline` component suite, tightened two existing test edges: round rail selection now uses explicit timeline geometry instead of JSDOM zero-layout assumptions, and the injection supersede assertion ignores the intentional open-stream idle cursor row while still verifying the visible content rows.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "tool result media_ref|persisted tool returns|workspace image previews|image media references|runtime tool results"` passed with nine focused media/tool cases.
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with all 100 component tests.
+- `npm run lint` passed for the frontend and desktop TypeScript projects.
+- `npm run build` passed and regenerated the static app bundle (`index-CsttXSIX.js`).
+- `rg --files tests/integration_tests/frontend | rg "test_message_rich_content_ui\\.py|message_rich_content"` returned no matches after deleting the legacy Python UI harness.
+
+### Reviewer
+- Main-agent V2 tool-return media preview implementation, focused and full component coverage, old Python UI harness removal, static bundle rebuild, and scoped regression verification completed for this slice. No full Message Timeline subsystem PASS, Resource/Assistive Features PASS, AG-UI Runtime Stream subsystem PASS, Browser Checks completion, final V1/V2 visual audit sign-off, Electron sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
 ## 2026-06-29 Workspace Text Image Preview Parity
 
 ### Scope

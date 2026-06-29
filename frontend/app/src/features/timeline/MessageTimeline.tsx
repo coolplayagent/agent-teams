@@ -400,6 +400,7 @@ interface TimelineToolPart {
   callId: string;
   error: boolean;
   kind: "tool";
+  mediaParts: TimelineMediaPart[];
   phase:
     | "approval-requested"
     | "approval-resolved"
@@ -1679,6 +1680,14 @@ function visibleRunIdFromRenderedRows(container: HTMLElement): string | null {
   const rows = Array.from(
     container.querySelectorAll<HTMLElement>(".at-timeline-row[data-run-id]"),
   );
+  if (isTimelineNearBottom(container)) {
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const runId = rows[index]?.dataset.runId;
+      if (runId !== undefined && runId.trim().length > 0) {
+        return runId;
+      }
+    }
+  }
   for (const row of rows) {
     const runId = row.dataset.runId;
     if (runId === undefined || runId.trim().length === 0) {
@@ -1697,6 +1706,9 @@ function syncActiveRunIdFromViewport(
   pendingRoundRunIdRef: { current: string | null },
   setActiveRunId: (runId: string) => void,
 ): void {
+  if (scrollMetric(container.clientHeight) <= 0 || scrollMetric(container.scrollHeight) <= 0) {
+    return;
+  }
   const visibleRunId = visibleRunIdFromRenderedRows(container);
   if (visibleRunId === null) {
     return;
@@ -2849,7 +2861,10 @@ function MessageToolBlock({
 }) {
   const title = `${toolPhaseLabel(tool, t)}: ${tool.toolName}`;
   const preview = toolSummaryPreview(tool);
-  const hasDetails = tool.callId.trim().length > 0 || tool.body.trim().length > 0;
+  const hasDetails =
+    tool.callId.trim().length > 0 ||
+    tool.body.trim().length > 0 ||
+    tool.mediaParts.length > 0;
   return (
     <details className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
       <summary className="at-message-tool-summary">
@@ -2866,6 +2881,13 @@ function MessageToolBlock({
           {tool.callId ? (
             <div className="at-message-tool-meta">{t("timelineCallId")}: {tool.callId}</div>
           ) : null}
+          {tool.mediaParts.map((media, index) => (
+            <MessageMediaPreview
+              key={`tool-media:${index}:${media.url}`}
+              media={media}
+              t={t}
+            />
+          ))}
           {tool.body ? <pre>{tool.body}</pre> : null}
         </div>
       ) : null}
@@ -3156,6 +3178,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: false,
       kind: "tool",
+      mediaParts: [],
       phase: "call",
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
     };
@@ -3169,6 +3192,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error,
       kind: "tool",
+      mediaParts: toolReturnMediaParts(content),
       phase: "result",
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
     };
@@ -3180,6 +3204,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: true,
       kind: "tool",
+      mediaParts: [],
       phase: "validation",
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
     };
@@ -3218,6 +3243,7 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
     callId,
     error: entry.kind === "tool_approval_resolved" && approvalActionIsError(action),
     kind: "tool",
+    mediaParts: [],
     phase: entry.kind === "tool_approval_requested"
       ? "approval-requested"
       : "approval-resolved",
@@ -3364,6 +3390,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       callId,
       error: false,
       kind: "tool",
+      mediaParts: [],
       phase: "call",
       toolName,
     };
@@ -3379,6 +3406,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       callId,
       error: true,
       kind: "tool",
+      mediaParts: [],
       phase: "validation",
       toolName,
     };
@@ -3394,6 +3422,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     callId,
     error,
     kind: "tool",
+    mediaParts: toolReturnMediaParts(result),
     phase: "result",
     toolName,
   };
@@ -3462,6 +3491,51 @@ function contentPartMedia(part: ContentPart): TimelineMediaPart | null {
     });
   }
   return null;
+}
+
+function toolReturnMediaParts(value: unknown): TimelineMediaPart[] {
+  const mediaParts: TimelineMediaPart[] = [];
+  const seenUrls = new Set<string>();
+  for (const candidate of toolReturnMediaCandidates(value)) {
+    const media = mediaPartFromRecord(candidate);
+    if (media === null || seenUrls.has(media.url)) {
+      continue;
+    }
+    seenUrls.add(media.url);
+    mediaParts.push(media);
+  }
+  return mediaParts;
+}
+
+function toolReturnMediaCandidates(value: unknown): Record<string, JsonValue>[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(toolReturnMediaCandidates);
+  }
+  const object = unknownJsonObject(value);
+  if (object === null) {
+    return [];
+  }
+  const candidates: Record<string, JsonValue>[] = [];
+  const kind = objectString(object, "kind") || objectString(object, "part_kind");
+  if (kind === "media_ref") {
+    candidates.push(object);
+  }
+  for (const key of ["content", "parts", "output", "data", "result"] as const) {
+    const child = object[key];
+    if (child !== undefined) {
+      candidates.push(...toolReturnMediaCandidates(child));
+    }
+  }
+  return candidates;
+}
+
+function mediaPartFromRecord(object: Record<string, JsonValue>): TimelineMediaPart | null {
+  return mediaPartFromFields({
+    mimeType: objectString(object, "mime_type") || objectString(object, "media_type"),
+    modality: objectString(object, "modality"),
+    name: objectString(object, "name"),
+    url: objectString(object, "url"),
+  });
 }
 
 function mediaPartFromFields({

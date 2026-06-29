@@ -335,86 +335,96 @@ describe("MessageTimeline", () => {
   });
 
   it("renders the round rail from session rounds and marks selected rounds", async () => {
-    listSessionMessagesMock.mockResolvedValue([
-      {
-        content: "Initial answer",
-        message_id: "assistant-1",
-        role_id: "MainAgent",
-        trace_id: "run-1",
-      },
-      {
-        content: "Follow-up answer",
-        message_id: "assistant-2",
-        role_id: "MainAgent",
-        trace_id: "run-2",
-      },
-    ]);
-    listSessionRoundsMock.mockResolvedValue({
-      has_more: false,
-      items: [
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 220,
+      rowHeight: 86,
+    });
+    const restoreRects = mockTimelineRects();
+    try {
+      listSessionMessagesMock.mockResolvedValue([
         {
-          created_at: "2026-06-23T12:42:33Z",
-          coordinator_messages: [
-            {
-              message: {
-                parts: [{ part_kind: "tool-call", tool_name: "read" }],
-                usage: { input_tokens: 1532, output_tokens: 42 },
-              },
-            },
-          ],
-          run_id: "run-1",
-          run_started_at: "2026-06-23T12:42:50Z",
-          run_status: "completed",
-          run_updated_at: "2026-06-23T12:42:56Z",
-          run_user_message: "Initial task",
+          content: "Initial answer",
+          message_id: "assistant-1",
+          role_id: "MainAgent",
+          trace_id: "run-1",
         },
         {
-          created_at: "2026-06-23T12:43:04Z",
-          coordinator_messages: [
-            {
-              message: {
-                parts: [{ part_kind: "tool-call", tool_name: "shell" }],
-                usage: { input_tokens: 2048, output_tokens: 80 },
-              },
-            },
-          ],
-          run_id: "run-2",
-          run_status: "completed",
-          run_user_message: "Follow-up task",
+          content: "Follow-up answer",
+          message_id: "assistant-2",
+          role_id: "MainAgent",
+          trace_id: "run-2",
         },
-      ],
-      next_cursor: null,
-    });
+      ]);
+      listSessionRoundsMock.mockResolvedValue({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:33Z",
+            coordinator_messages: [
+              {
+                message: {
+                  parts: [{ part_kind: "tool-call", tool_name: "read" }],
+                  usage: { input_tokens: 1532, output_tokens: 42 },
+                },
+              },
+            ],
+            run_id: "run-1",
+            run_started_at: "2026-06-23T12:42:50Z",
+            run_status: "completed",
+            run_updated_at: "2026-06-23T12:42:56Z",
+            run_user_message: "Initial task",
+          },
+          {
+            created_at: "2026-06-23T12:43:04Z",
+            coordinator_messages: [
+              {
+                message: {
+                  parts: [{ part_kind: "tool-call", tool_name: "shell" }],
+                  usage: { input_tokens: 2048, output_tokens: 80 },
+                },
+              },
+            ],
+            run_id: "run-2",
+            run_status: "completed",
+            run_user_message: "Follow-up task",
+          },
+        ],
+        next_cursor: null,
+      });
 
-    const { container } = renderTimeline();
+      const { container } = renderTimeline();
 
-    const roundRail = await screen.findByRole("navigation", { name: "Rounds" });
-    expect(roundRail).toBeVisible();
-    expect(container.querySelector(".at-timeline-frame")).toHaveClass("has-round-rail");
-    expect(roundRail.closest(".at-timeline-frame")).toHaveClass("has-round-rail");
-    const initialRound = await screen.findByRole("button", {
-      name: "Go to round 1: Initial task",
-    });
-    const followUpRound = await screen.findByRole("button", {
-      name: "Go to round 2: Follow-up task",
-    });
-    expect(followUpRound).toBeVisible();
-    expect(container.querySelector('article[data-run-id="run-2"]')).not.toBeNull();
-    expect(container.querySelectorAll(".at-round-marker")).toHaveLength(2);
-    expect(screen.getAllByText("Input 1.5k")[0]).toBeVisible();
-    expect(screen.getAllByText("Tools 1")[0]).toBeVisible();
-    expect(screen.getAllByText("completed")[0]).toBeVisible();
-    expect(screen.getByText("6s")).toBeVisible();
-    expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
-      cursorRunId: null,
-      limit: 100,
-    });
-    expect(followUpRound).toHaveAttribute("aria-current", "step");
+      const roundRail = await screen.findByRole("navigation", { name: "Rounds" });
+      expect(roundRail).toBeVisible();
+      expect(container.querySelector(".at-timeline-frame")).toHaveClass("has-round-rail");
+      expect(roundRail.closest(".at-timeline-frame")).toHaveClass("has-round-rail");
+      const initialRound = await screen.findByRole("button", {
+        name: "Go to round 1: Initial task",
+      });
+      const followUpRound = await screen.findByRole("button", {
+        name: "Go to round 2: Follow-up task",
+      });
+      expect(followUpRound).toBeVisible();
+      expect(container.querySelector('article[data-run-id="run-2"]')).not.toBeNull();
+      expect(container.querySelectorAll(".at-round-marker")).toHaveLength(2);
+      expect(screen.getAllByText("Input 1.5k")[0]).toBeVisible();
+      expect(screen.getAllByText("Tools 1")[0]).toBeVisible();
+      expect(screen.getAllByText("completed")[0]).toBeVisible();
+      expect(screen.getByText("6s")).toBeVisible();
+      expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
+        cursorRunId: null,
+        limit: 100,
+      });
+      await waitFor(() => expect(initialRound).toHaveAttribute("aria-current", "step"));
 
-    fireEvent.click(initialRound);
+      fireEvent.click(followUpRound);
 
-    expect(initialRound).toHaveAttribute("aria-current", "step");
-    expect(followUpRound).not.toHaveAttribute("aria-current");
+      await waitFor(() => expect(followUpRound).toHaveAttribute("aria-current", "step"));
+      expect(initialRound).not.toHaveAttribute("aria-current");
+    } finally {
+      restoreRects();
+      restoreMeasurements();
+    }
   });
 
   it("collects paged round rail history before sorting and rendering", async () => {
@@ -1452,6 +1462,55 @@ describe("MessageTimeline", () => {
       .not.toBeInTheDocument();
   });
 
+  it("renders media_ref previews from persisted tool returns", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-tool-image",
+        message: {
+          parts: [
+            {
+              content: {
+                data: {
+                  content: [
+                    {
+                      kind: "media_ref",
+                      mime_type: "image/png",
+                      modality: "image",
+                      name: "example.png",
+                      url: "/api/sessions/session-1/media/asset-1/file",
+                    },
+                  ],
+                  path: "docs/example.png",
+                  type: "image",
+                },
+                error: null,
+                ok: true,
+              },
+              part_kind: "tool-return",
+              tool_call_id: "call-read-image",
+              tool_name: "read",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    const resultTitle = await screen.findByText("Tool result: read");
+    expect(resultTitle).toBeVisible();
+    fireEvent.click(resultTitle);
+    const image = await screen.findByRole("img", { name: "example.png" });
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/sessions/session-1/media/asset-1/file",
+    );
+    expect(image.closest(".at-message-tool")).not.toBeNull();
+    expect(container.querySelectorAll(".at-message-tool .at-message-media"))
+      .toHaveLength(1);
+  });
+
   it("renders non-image media references as resource links", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -1847,6 +1906,49 @@ describe("MessageTimeline", () => {
     expect(resultDetails).toBeVisible();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
+  });
+
+  it("renders runtime tool result media_ref previews", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: {
+            data: {
+              content: [
+                {
+                  kind: "media_ref",
+                  mime_type: "image/png",
+                  modality: "image",
+                  name: "runtime-tool.png",
+                  url: "/api/sessions/session-1/media/runtime-tool/file",
+                },
+              ],
+              type: "image",
+            },
+            ok: true,
+          },
+          tool_call_id: "call-runtime-image",
+          tool_name: "read",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    const resultTitle = await screen.findByText("Tool result: read");
+    expect(resultTitle).toBeVisible();
+    fireEvent.click(resultTitle);
+    const image = await screen.findByRole("img", { name: "runtime-tool.png" });
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/sessions/session-1/media/runtime-tool/file",
+    );
+    expect(container.querySelectorAll(".at-message-tool .at-message-media"))
+      .toHaveLength(1);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
   });
 
   it("renders runtime tool results without a prior tool call", async () => {
@@ -2983,10 +3085,12 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("pwd")).not.toBeInTheDocument();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(3);
-    expect(rowTexts[0]).toContain("Injection applied: Use ls instead");
-    expect(rowTexts[1]).toContain("Tool call: shell");
-    expect(rowTexts[2]).toContain("Tool result: shell");
+    const contentRowTexts = rowTexts.filter((text) => text.trim().length > 0);
+    expect(contentRowTexts).toHaveLength(3);
+    expect(contentRowTexts[0]).toContain("Injection applied: Use ls instead");
+    expect(contentRowTexts[1]).toContain("Tool call: shell");
+    expect(contentRowTexts[2]).toContain("Tool result: shell");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
   });
 
   it("splits runtime text segments around approval and thinking events", async () => {
@@ -4993,6 +5097,64 @@ function mockElementMeasurements(
     restoreProperty(HTMLElement.prototype, "offsetHeight", heightDescriptor);
     restoreProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
     restoreProperty(HTMLElement.prototype, "offsetWidth", widthDescriptor);
+  };
+}
+
+function mockTimelineRects(): () => void {
+  const rectDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "getBoundingClientRect",
+  );
+  Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value(this: HTMLElement) {
+      if (this.classList.contains("at-timeline")) {
+        return domRect(0, 0, 1024, this.clientHeight);
+      }
+      if (this.classList.contains("at-timeline-row")) {
+        const timeline = this.closest<HTMLElement>(".at-timeline");
+        const top = translateY(this) - (timeline?.scrollTop ?? 0);
+        return domRect(0, top, 1024, this.offsetHeight);
+      }
+      return domRect(0, 0, 0, 0);
+    },
+  });
+  return () => {
+    restoreProperty(
+      HTMLElement.prototype,
+      "getBoundingClientRect",
+      rectDescriptor,
+    );
+  };
+}
+
+function domRect(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+): DOMRect {
+  return {
+    bottom: top + height,
+    height,
+    left,
+    right: left + width,
+    top,
+    width,
+    x: left,
+    y: top,
+    toJSON() {
+      return {
+        bottom: top + height,
+        height,
+        left,
+        right: left + width,
+        top,
+        width,
+        x: left,
+        y: top,
+      };
+    },
   };
 }
 

@@ -6169,3 +6169,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent source scan, Composer implementation, targeted unit/browser verification, dist rebuild, and screenshot inspection completed for this Composer/Accessibility quality slice. No Composer subsystem PASS, final placeholder cleanup sign-off, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Round Diagnostics And Message Dedupe Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current V2 shell screenshot, live DOM layout, remaining Python UI harness inventory, and V1 diagnostics coverage before editing. The current V2 shell is fixed to one viewport with a V1-width sidebar, so this slice moved from framework layout back to a message-timeline quality gap.
+- Migrated the old `test_diagnostics_ui.py` coverage away from `frontend/dist` static assertions and into V2 TS source tests. The old Python UI harness was deleted.
+- Added V2 round diagnostic sanitization so raw verification/guardrail diagnostics such as `runtime_guardrail:pre_execution_boundary` collapse to `Verification not passed.` unless the existing Appearance diagnostics switch has set `document.documentElement.dataset.diagnosticsVisible`.
+- Kept ordinary explanatory text visible and kept the existing Appearance settings item/list structure unchanged.
+- Fixed a visible message-timeline duplication found during browser screenshot inspection: round coordinator messages are now deduped against already-loaded session history by message id and by run/timestamp/role/text fingerprint.
+- Rebuilt `frontend/dist/app` so the served V2 shell includes the diagnostic and dedupe changes.
+
+### Verification
+- Captured and inspected `.tmp/frontend-v2-gap-audit/external-v2-online.png`; it shows the current V2 shell in the fixed one-page layout with sidebar, round rail, token bar, and bottom composer contained in the viewport.
+- `npm run test -- src/test/roundMetadata.test.ts src/test/MessageTimeline.test.tsx` passed with 119 tests covering hidden raw diagnostics, visible diagnostics mode, safe fallback round titles, message-timeline diagnostic rendering, and session/round duplicate suppression.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+- `npm run test:browser -- browser-tests/v2-rounds.spec.ts -g "keeps verification failed rounds in the warning lane"` passed, covering warning tone, sanitized diagnostic detail, no raw guardrail leak, and no duplicate visible output.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-rounds/v2-round-verification-warning.png`; it shows one visible `Verification warning output`, safe `Diagnostic: Verification not passed.` text in the marker/detail, and the fixed shell with no document-level page growth.
+- `rg -n "test_diagnostics_ui|diagnostics_text_is_hidden|diagnostics_renders_from_rich|Verification not passed|runtime_guardrail:pre_execution_boundary|Persisted shared answer" frontend/app/src frontend/app/browser-tests tests docs/goals/frontend-rewrite/implementation-ledger.md` returns only the new TS/browser coverage, production sanitizer label, backend guardrail tests, and this ledger entry for the migrated behavior.
+
+### Reviewer
+- Main-agent screenshot inspection, implementation, targeted TS/browser verification, dist rebuild, lint, and Python UI harness deletion completed for this Message Timeline diagnostics slice. No Message Timeline subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

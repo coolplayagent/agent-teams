@@ -50,6 +50,8 @@ export interface RoundSummary {
   toolCount: number;
 }
 
+const VERIFICATION_NOT_PASSED_LABEL = "Verification not passed.";
+
 export function roundSummary(round: SessionRound, index: number): RoundSummary {
   const retry = roundRetrySummary(round);
   const pendingApprovalCount = positiveNumber(round.pending_tool_approval_count);
@@ -81,11 +83,23 @@ export function roundSummary(round: SessionRound, index: number): RoundSummary {
 
 export function roundTitle(round: SessionRound, index: number): string {
   const intentText = normalizedText(roundPromptText(round))
-    || normalizedText(round.run_diagnostic_message);
+    || roundDiagnosticText(round);
   if (intentText) {
     return intentText;
   }
   return `Round ${index + 1}`;
+}
+
+export function sanitizeRoundDiagnosticText(value: string): string {
+  const text = normalizedText(value);
+  if (text.length === 0 || areDiagnosticsVisible()) {
+    return text;
+  }
+  const lowerText = text.toLowerCase();
+  if (isVerificationDiagnostic(lowerText)) {
+    return hiddenVerificationDiagnosticText(text, lowerText);
+  }
+  return text;
 }
 
 export function roundPromptText(round: SessionRound): string {
@@ -207,8 +221,12 @@ function roundMicrocompactSummary(round: SessionRound): RoundMicrocompactSummary
 }
 
 function roundDiagnosticLabel(round: SessionRound): string | null {
-  const diagnostic = normalizedText(round.run_diagnostic_message);
+  const diagnostic = roundDiagnosticText(round);
   return diagnostic.length > 0 ? truncateLabel(diagnostic) : null;
+}
+
+function roundDiagnosticText(round: SessionRound): string {
+  return sanitizeRoundDiagnosticText(round.run_diagnostic_message ?? "");
 }
 
 function roundRetrySummary(round: SessionRound): RoundRetrySummary | null {
@@ -291,6 +309,39 @@ function roundStatusLabel(round: SessionRound): string | null {
 
 function roundVerificationStatus(round: SessionRound): string {
   return normalizedText(round.verification_status).toLowerCase();
+}
+
+function areDiagnosticsVisible(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  return document.documentElement.dataset.diagnosticsVisible === "true";
+}
+
+function isVerificationDiagnostic(lowerText: string): boolean {
+  if (
+    lowerText.includes("runtime_guardrail:") ||
+    lowerText.includes("pre-execution guardrail") ||
+    lowerText.includes("guardrail block")
+  ) {
+    return true;
+  }
+  return lowerText === "verification failed" ||
+    lowerText === "verification failed." ||
+    lowerText === "verification not passed" ||
+    lowerText === "verification not passed." ||
+    lowerText.includes("verification did not pass");
+}
+
+function hiddenVerificationDiagnosticText(text: string, lowerText: string): string {
+  const verificationIndex = lowerText.indexOf("verification failed");
+  if (verificationIndex <= 0) {
+    return VERIFICATION_NOT_PASSED_LABEL;
+  }
+  const prefix = text.slice(0, verificationIndex).trim().replace(/[.\s]+$/u, "");
+  return prefix.length > 0
+    ? `${prefix}. ${VERIFICATION_NOT_PASSED_LABEL}`
+    : VERIFICATION_NOT_PASSED_LABEL;
 }
 
 function roundDurationLabel(round: SessionRound): string | null {

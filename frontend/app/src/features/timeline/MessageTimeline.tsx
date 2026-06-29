@@ -1772,16 +1772,18 @@ function mergeTimelineMessages(
   rounds: SessionRound[],
 ): TimelineMessage[] {
   const merged = messages.map((message, index) => ({ index, message }));
-  const seen = new Set(messages.map(timelineMessageDedupeKey));
+  const seen = new Set(messages.flatMap(timelineMessageDedupeKeys));
   let nextIndex = messages.length;
   for (const round of rounds) {
     for (const roundMessage of roundMessages(round)) {
       const message = roundMessageToTimelineMessage(roundMessage, round.run_id);
-      const key = timelineMessageDedupeKey(message);
-      if (seen.has(key)) {
+      const keys = timelineMessageDedupeKeys(message);
+      if (keys.some((key) => seen.has(key))) {
         continue;
       }
-      seen.add(key);
+      for (const key of keys) {
+        seen.add(key);
+      }
       merged.push({ index: nextIndex, message });
       nextIndex += 1;
     }
@@ -1898,13 +1900,25 @@ function roundMessagePartText(part: SessionRoundMessagePart): string {
   return jsonValueText(part.content ?? null);
 }
 
-function timelineMessageDedupeKey(message: TimelineMessage): string {
+function timelineMessageDedupeKeys(message: TimelineMessage): string[] {
+  return [
+    timelineMessageIdDedupeKey(message),
+    timelineMessageFingerprintDedupeKey(message),
+  ].filter((key): key is string => key !== null);
+}
+
+function timelineMessageIdDedupeKey(message: TimelineMessage): string | null {
   const messageId = message.message_id?.trim() ?? "";
   if (messageId.length > 0) {
     return `id:${messageId}`;
   }
+  return null;
+}
+
+function timelineMessageFingerprintDedupeKey(message: TimelineMessage): string {
   return [
     "fingerprint",
+    message.run_id ?? message.trace_id ?? "",
     message.created_at ?? "",
     message.entry_type ?? "",
     message.role_id ?? message.role ?? "",

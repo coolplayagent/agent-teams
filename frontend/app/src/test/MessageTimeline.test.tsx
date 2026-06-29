@@ -42,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  delete document.documentElement.dataset.diagnosticsVisible;
   useRuntimeStore.getState().resetRuntimeState();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
@@ -415,8 +416,13 @@ describe("MessageTimeline", () => {
         cursorRunId: null,
         limit: 100,
       });
-      await waitFor(() => expect(initialRound).toHaveAttribute("aria-current", "step"));
+      await waitFor(() => expect(followUpRound).toHaveAttribute("aria-current", "step"));
+      expect(initialRound).not.toHaveAttribute("aria-current");
 
+      fireEvent.click(initialRound);
+
+      await waitFor(() => expect(initialRound).toHaveAttribute("aria-current", "step"));
+      expect(followUpRound).not.toHaveAttribute("aria-current");
       fireEvent.click(followUpRound);
 
       await waitFor(() => expect(followUpRound).toHaveAttribute("aria-current", "step"));
@@ -601,6 +607,46 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".at-round-marker")).toHaveLength(3);
   });
 
+  it("does not duplicate round messages that are already in session history", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T12:42:34Z",
+        message: {
+          parts: [{ content: "Persisted shared answer", part_kind: "text" }],
+        },
+        message_id: "message-shared-answer",
+        role_id: "MainAgent",
+        run_id: "run-shared",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          coordinator_messages: [
+            {
+              created_at: "2026-06-23T12:42:34Z",
+              message: {
+                parts: [{ content: "Persisted shared answer", part_kind: "text" }],
+              },
+              role_id: "MainAgent",
+            },
+          ],
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-shared",
+          run_status: "completed",
+          run_user_message: "Shared answer task",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    renderTimeline();
+
+    expect(await screen.findByText("Persisted shared answer")).toBeVisible();
+    expect(screen.getAllByText("Persisted shared answer")).toHaveLength(1);
+  });
+
   it("keeps long round prompts collapsed with raw text available in the marker", async () => {
     const prompt = [
       "Create a migration plan for the frontend rewrite.",
@@ -774,6 +820,78 @@ describe("MessageTimeline", () => {
     expect(detail).toHaveTextContent("Capture approval result");
     expect(detail).toHaveTextContent("Pending");
     expect(container.querySelector(".at-round-rail-dot")).not.toBeNull();
+  });
+
+  it("hides raw verification diagnostics in round markers until diagnostics are visible", async () => {
+    const rawDiagnostic = "verification_failedruntime_guardrail:pre_execution_boundary";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Verification kept the previous answer.",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_diagnostic_message: rawDiagnostic,
+          run_id: "run-1",
+          run_status: "completed",
+          run_user_message: "Run verification",
+          verification_status: "failed",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Verification kept the previous answer."))
+      .toBeVisible();
+    expect(screen.getAllByText("Diagnostic: Verification not passed."))
+      .toHaveLength(2);
+    expect(screen.queryByText(new RegExp(rawDiagnostic))).not.toBeInTheDocument();
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent(
+      "verification failed",
+    );
+  });
+
+  it("shows raw verification diagnostics when diagnostics are visible", async () => {
+    const rawDiagnostic = "verification_failedruntime_guardrail:pre_execution_boundary";
+    document.documentElement.dataset.diagnosticsVisible = "true";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Verification kept the previous answer.",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_diagnostic_message: rawDiagnostic,
+          run_id: "run-1",
+          run_status: "completed",
+          run_user_message: "Run verification",
+          verification_status: "failed",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    renderTimeline();
+
+    expect(await screen.findByText("Verification kept the previous answer."))
+      .toBeVisible();
+    expect(screen.getAllByText(`Diagnostic: ${rawDiagnostic}`)).toHaveLength(2);
+    expect(screen.queryByText("Diagnostic: Verification not passed."))
+      .not.toBeInTheDocument();
   });
 
   it("projects live retry events into round summaries and clears them after completion", async () => {

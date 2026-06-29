@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { SessionRound } from "../api/contracts";
-import { roundSummary } from "../features/timeline/roundMetadata";
+import {
+  roundSummary,
+  sanitizeRoundDiagnosticText,
+} from "../features/timeline/roundMetadata";
+
+afterEach(() => {
+  delete document.documentElement.dataset.diagnosticsVisible;
+});
 
 describe("roundMetadata", () => {
   it("keeps verification failures in the warning lane instead of failed-run error tone", () => {
@@ -54,6 +61,44 @@ describe("roundMetadata", () => {
     expect(summary.title).toBe("Review deployment");
     expect(summary.promptText).toBe("Review deployment");
     expect(summary.promptCollapsible).toBe(false);
+  });
+
+  it("hides raw verification diagnostics until diagnostics are enabled", () => {
+    const rawDiagnostic = "verification_failedruntime_guardrail:pre_execution_boundary";
+
+    expect(sanitizeRoundDiagnosticText(rawDiagnostic)).toBe(
+      "Verification not passed.",
+    );
+    expect(
+      sanitizeRoundDiagnosticText(
+        "The verification_failed error code means the run did not satisfy a verifier.",
+      ),
+    ).toBe(
+      "The verification_failed error code means the run did not satisfy a verifier.",
+    );
+
+    document.documentElement.dataset.diagnosticsVisible = "true";
+
+    expect(sanitizeRoundDiagnosticText(rawDiagnostic)).toBe(rawDiagnostic);
+  });
+
+  it("uses safe diagnostic text for fallback round titles and labels", () => {
+    const summary = roundSummary(
+      round({
+        run_diagnostic_message: [
+          "Kept answer.",
+          "",
+          "Verification failed.",
+          "Failed:",
+          "[FAIL] runtime_guardrail:pre_execution_boundary -- blocked.",
+        ].join("\n"),
+        run_user_message: "",
+      }),
+      0,
+    );
+
+    expect(summary.title).toBe("Kept answer. Verification not passed.");
+    expect(summary.diagnosticLabel).toBe("Kept answer. Verification not passed.");
   });
 });
 

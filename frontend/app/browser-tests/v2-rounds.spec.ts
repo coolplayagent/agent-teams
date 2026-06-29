@@ -245,7 +245,12 @@ test("keeps verification failed rounds in the warning lane", async ({ page }) =>
     const detail = page.getByLabel("Round detail");
     await expect(detail).toBeVisible();
     await expect(detail.getByText("verification failed")).toBeVisible();
-    await expect(page.getByText("Verification warning output")).toBeVisible();
+    await expect(detail.getByText("Diagnostic: Verification not passed.")).toBeVisible();
+    await expect(page.getByText("runtime_guardrail:pre_execution_boundary"))
+      .toHaveCount(0);
+    await expect(
+      page.locator(".at-message", { hasText: "Verification warning output" }),
+    ).toHaveCount(1);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
@@ -584,6 +589,8 @@ function verificationWarningRound(): Record<string, unknown> {
     run_id: VERIFICATION_RUN_ID,
     run_phase: "terminal",
     run_status: "failed",
+    run_diagnostic_message:
+      "verification_failedruntime_guardrail:pre_execution_boundary",
     run_user_message: "Verify deploy guardrail",
     verification_status: "failed",
   };

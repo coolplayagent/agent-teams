@@ -5195,13 +5195,14 @@ body {
   align-items: center;
   column-gap: 8px !important;
   display: flex !important;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   padding-bottom: 2px;
-  row-gap: 0 !important;
+  row-gap: 6px !important;
   scrollbar-width: thin;
+  width: 100%;
 }
 
 .at-composer-control-set > .ant-space-item {

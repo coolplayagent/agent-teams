@@ -146,7 +146,7 @@ describe("shell layout CSS", () => {
       /\.at-composer-controls\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;[\s\S]*?column-gap:\s*10px;[\s\S]*?row-gap:\s*6px;[\s\S]*?min-width:\s*0;/,
     );
     expect(themeCss).toMatch(
-      /\.at-composer-control-set\s*{[\s\S]*?column-gap:\s*8px !important;[\s\S]*?display:\s*flex !important;[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?min-width:\s*0;[\s\S]*?overflow-x:\s*auto;[\s\S]*?overflow-y:\s*hidden;[\s\S]*?row-gap:\s*0 !important;/,
+      /\.at-composer-control-set\s*{[\s\S]*?column-gap:\s*8px !important;[\s\S]*?display:\s*flex !important;[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?min-width:\s*0;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overflow-y:\s*hidden;[\s\S]*?row-gap:\s*6px !important;[\s\S]*?width:\s*100%;/,
     );
     expect(themeCss).toMatch(
       /\.at-composer-field\s*{[\s\S]*?display:\s*inline-flex;[\s\S]*?align-items:\s*center;[\s\S]*?gap:\s*6px;[\s\S]*?min-width:\s*0;/,

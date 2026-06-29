@@ -6908,3 +6908,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent coverage review, targeted TS migration, broad stream/runtime verification, and Python UI harness deletion completed for this Run Events migration slice. No Runtime Stream subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Route Switch Framework Screenshot Audit
+
+### Scope
+- Re-checked the active frontend rewrite goal and used the V1/V2 route-switch browser gate as a framework audit before editing. The in-app V2 DOM check showed the shell fixed to one viewport (`body` overflow hidden and document height equal to viewport height), then the Playwright gate produced current V1 and V2 screenshots for direct structure comparison.
+- Fixed a V2 framework regression found by the screenshot/browser pass: the desktop Composer control strip could let the `YOLO` control's bounding box overlap the right-side `Send` action at 1280x720.
+- Changed the desktop Composer control set to wrap within the left grid column instead of relying on horizontal overflow. This keeps controls visible and prevents the left control group from entering the Send column while preserving the existing mobile single-column Composer layout.
+- Rebuilt `frontend/dist/app` so the served V2 route includes the corrected Composer layout.
+
+### Verification
+- In-app V2 DOM inspection at `http://127.0.0.1:8000/app/` reported `bodyOverflow: "hidden"` and document/client/body heights of `720`, confirming the live shell is fixed to the viewport.
+- `npm run test:browser -- browser-tests/v2-route-switch.spec.ts` first failed with `YOLO overlaps Send`, then passed after the Composer layout fix.
+- Updated screenshots were generated under `.tmp/frontend-v2-ts-route-switch/`: `ts-v1-root-before-switch.png`, `ts-v2-after-new-ui-switch.png`, and `ts-v1-after-return.png`.
+- `npm run test -- src/test/ShellLayoutCss.test.ts src/test/Composer.test.tsx` passed with 67 tests.
+- `npm run build` passed, including frontend typecheck, desktop typecheck/build, and Vite dist rebuild.
+
+### Reviewer
+- Main-agent screenshot comparison, implementation, targeted unit/browser verification, and dist rebuild completed for this framework/composer slice. No Application Shell subsystem PASS, Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

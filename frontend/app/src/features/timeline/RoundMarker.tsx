@@ -2,6 +2,7 @@ import type { SessionRound } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
 import {
   formatRoundTokens,
+  type RoundMicrocompactSummary,
   type RoundRetrySummary,
   roundSummary,
 } from "./roundMetadata";
@@ -30,6 +31,7 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
       ? t("timelinePendingQuestions", { count: summary.pendingQuestionCount })
       : "",
     summary.retry !== null ? roundRetryMeta(summary.retry, t) : "",
+    summary.microcompact !== null ? roundMicrocompactMeta(summary.microcompact, t) : "",
     summary.diagnosticLabel !== null
       ? `${t("timelineRoundDiagnostic")}: ${summary.diagnosticLabel}`
       : "",
@@ -47,6 +49,16 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
       <div className="at-round-marker-title">{summary.title}</div>
     </div>
   );
+}
+
+function roundMicrocompactMeta(
+  microcompact: RoundMicrocompactSummary,
+  t: Translate,
+): string {
+  return t("timelineMicrocompact", {
+    after: formatRoundTokens(microcompact.estimatedTokensAfter),
+    before: formatRoundTokens(microcompact.estimatedTokensBefore),
+  });
 }
 
 function roundRetryMeta(retry: RoundRetrySummary, t: Translate): string {

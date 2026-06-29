@@ -447,6 +447,13 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           pending_tool_approval_count: 2,
           pending_user_question_count: 1,
+          microcompact: {
+            applied: true,
+            compacted_message_count: 3,
+            compacted_part_count: 7,
+            estimated_tokens_before: 9800,
+            estimated_tokens_after: 3200,
+          },
           retry_events: [
             {
               attempt_number: 3,
@@ -481,6 +488,7 @@ describe("MessageTimeline", () => {
     expect(screen.getAllByText("1 pending questions")).toHaveLength(2);
     expect(screen.getAllByText("Retry scheduled: attempt 3/5 · in 3s · rate limited"))
       .toHaveLength(2);
+    expect(screen.getAllByText("Microcompact 9.8k -> 3.2k")).toHaveLength(2);
     expect(screen.getAllByText("Diagnostic: Waiting for user confirmation"))
       .toHaveLength(2);
     expect(screen.getByRole("button", { name: "Go to round 1: Approve deployment" }))

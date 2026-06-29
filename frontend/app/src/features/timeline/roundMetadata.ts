@@ -25,10 +25,18 @@ export interface RoundRetrySummary {
   totalAttempts: number;
 }
 
+export interface RoundMicrocompactSummary {
+  compactedMessageCount: number;
+  compactedPartCount: number;
+  estimatedTokensAfter: number;
+  estimatedTokensBefore: number;
+}
+
 export interface RoundSummary {
   diagnosticLabel: string | null;
   durationLabel: string | null;
   inputTokens: number;
+  microcompact: RoundMicrocompactSummary | null;
   outputTokens: number;
   pendingApprovalCount: number;
   pendingQuestionCount: number;
@@ -48,6 +56,7 @@ export function roundSummary(round: SessionRound, index: number): RoundSummary {
     diagnosticLabel: roundDiagnosticLabel(round),
     durationLabel: roundDurationLabel(round),
     inputTokens: roundInputTokens(round),
+    microcompact: roundMicrocompactSummary(round),
     outputTokens: roundOutputTokens(round),
     pendingApprovalCount,
     pendingQuestionCount,
@@ -149,6 +158,35 @@ function isToolCallPart(part: SessionRoundMessagePart): boolean {
 
 function positiveNumber(value: number | undefined): number {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function roundMicrocompactSummary(round: SessionRound): RoundMicrocompactSummary | null {
+  const microcompact = round.microcompact;
+  if (microcompact === null || microcompact === undefined) {
+    return null;
+  }
+  const compactedMessageCount = positiveNumber(
+    microcompact.compacted_message_count,
+  );
+  const compactedPartCount = positiveNumber(microcompact.compacted_part_count);
+  const estimatedTokensBefore = positiveNumber(
+    microcompact.estimated_tokens_before,
+  );
+  const estimatedTokensAfter = positiveNumber(
+    microcompact.estimated_tokens_after,
+  );
+  const applied = microcompact.applied === true ||
+    compactedMessageCount > 0 ||
+    compactedPartCount > 0;
+  if (!applied) {
+    return null;
+  }
+  return {
+    compactedMessageCount,
+    compactedPartCount,
+    estimatedTokensAfter,
+    estimatedTokensBefore,
+  };
 }
 
 function roundDiagnosticLabel(round: SessionRound): string | null {

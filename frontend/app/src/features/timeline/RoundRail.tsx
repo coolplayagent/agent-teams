@@ -2,7 +2,13 @@ import { useState, type FocusEvent, type MouseEvent } from "react";
 
 import type { SessionRound, SessionRoundTodoItem } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
-import { type RoundRetrySummary, roundSummary, type RoundSummary } from "./roundMetadata";
+import {
+  formatRoundTokens,
+  type RoundMicrocompactSummary,
+  type RoundRetrySummary,
+  roundSummary,
+  type RoundSummary,
+} from "./roundMetadata";
 
 interface RoundRailProps {
   activeRunId: string | null;
@@ -176,10 +182,21 @@ function roundDetailMetaItems(summary: RoundSummary, t: Translate): string[] {
       ? t("timelinePendingQuestions", { count: summary.pendingQuestionCount })
       : "",
     summary.retry !== null ? roundRetryMeta(summary.retry, t) : "",
+    summary.microcompact !== null ? roundMicrocompactMeta(summary.microcompact, t) : "",
     summary.diagnosticLabel !== null
       ? `${t("timelineRoundDiagnostic")}: ${summary.diagnosticLabel}`
       : "",
   ].filter(Boolean);
+}
+
+function roundMicrocompactMeta(
+  microcompact: RoundMicrocompactSummary,
+  t: Translate,
+): string {
+  return t("timelineMicrocompact", {
+    after: formatRoundTokens(microcompact.estimatedTokensAfter),
+    before: formatRoundTokens(microcompact.estimatedTokensBefore),
+  });
 }
 
 function roundRetryMeta(retry: RoundRetrySummary, t: Translate): string {

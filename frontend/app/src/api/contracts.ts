@@ -1854,6 +1854,14 @@ export interface SessionRoundTodoSnapshot {
   version?: number;
 }
 
+export interface SessionRoundMicrocompact {
+  applied?: boolean;
+  compacted_message_count?: number;
+  compacted_part_count?: number;
+  estimated_tokens_after?: number;
+  estimated_tokens_before?: number;
+}
+
 export interface SessionRound {
   clear_marker_before?: JsonValue;
   compaction_marker_before?: JsonValue;
@@ -1864,6 +1872,7 @@ export interface SessionRound {
   injection_messages?: SessionRoundMessage[];
   intent?: string;
   intent_parts?: ContentPart[];
+  microcompact?: SessionRoundMicrocompact | null;
   pending_tool_approval_count?: number;
   pending_tool_approvals?: JsonValue[];
   pending_user_question_count?: number;

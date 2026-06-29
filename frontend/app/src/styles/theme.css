@@ -5047,7 +5047,7 @@ body {
   display: grid;
   grid-template-rows: max-content max-content;
   align-content: start;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   max-height: 100%;
   margin: 0;
@@ -5056,7 +5056,7 @@ body {
   border-radius: 10px;
   background: var(--at-surface);
   box-shadow: 0 2px 8px rgba(32, 35, 31, 0.08);
-  overflow: auto;
+  overflow: hidden;
 }
 
 .at-composer-sender.ant-sender {
@@ -5186,22 +5186,26 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  column-gap: 14px;
-  row-gap: 8px;
+  column-gap: 10px;
+  row-gap: 6px;
   min-width: 0;
 }
 
 .at-composer-control-set {
   align-items: center;
-  column-gap: 10px !important;
+  column-gap: 8px !important;
   display: flex !important;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
-  row-gap: 8px !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  row-gap: 0 !important;
+  scrollbar-width: thin;
 }
 
 .at-composer-control-set > .ant-space-item {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -5239,7 +5243,7 @@ body {
 
 .at-session-mode-control {
   min-width: 0;
-  width: 178px;
+  width: 118px;
 }
 
 .at-session-mode-control .ant-segmented-item {
@@ -5255,15 +5259,15 @@ body {
 
 .at-normal-root-role-select,
 .at-orchestration-preset-select {
-  width: clamp(150px, 14vw, 210px);
+  width: clamp(96px, 9vw, 136px);
 }
 
 .at-role-select {
-  width: clamp(132px, 12vw, 180px);
+  width: clamp(88px, 8vw, 120px);
 }
 
 .at-model-profile-select {
-  width: clamp(142px, 13vw, 190px);
+  width: clamp(96px, 9vw, 136px);
 }
 
 .at-thinking-effort-select {
@@ -5272,6 +5276,12 @@ body {
 
 .at-shell-safety-checkbox {
   white-space: nowrap;
+}
+
+.at-composer .ant-select-disabled .ant-select-selector,
+.at-composer .ant-segmented-disabled {
+  background: var(--at-surface-muted) !important;
+  color: var(--at-text-muted) !important;
 }
 
 .at-voice-input-button[data-voice-state="listening"] {

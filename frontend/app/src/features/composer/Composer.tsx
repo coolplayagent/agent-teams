@@ -618,7 +618,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           </Typography.Text>
         ) : null}
         <div className="at-composer-controls">
-          <Space className="at-composer-control-set" size={6} wrap>
+          <Space className="at-composer-control-set" size={6}>
             <div className="at-composer-field at-composer-mode-field">
               <Typography.Text className="at-composer-field-label">
                 {t("composerMode")}

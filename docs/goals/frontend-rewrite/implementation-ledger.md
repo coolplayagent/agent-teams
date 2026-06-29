@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Screenshot-Driven Composer Framework Alignment
+
+### Scope
+- Re-checked the active frontend rewrite goal and the Application Shell / Composer parity checklist before editing, then captured V1 and V2 1280x720 browser screenshots plus layout metrics for the large-frame comparison.
+- Confirmed the V2 page shell was already fixed to a single viewport like V1 (`documentElement.scrollHeight == body.scrollHeight == 720`), so this slice did not retune global page scrolling or sidebar items.
+- Found the remaining visible framework issue in the bottom composer: V2 wrapped topology controls into two rows and made disabled controls visually heavier than V1, which reduced workspace density and made Shell / YOLO feel squeezed.
+- Updated `Composer` and shell CSS so the desktop composer control strip stays on one row, uses compact fixed/responsive widths, keeps the send action pinned on the right, softens disabled select/segmented states, and preserves the existing control set without adding or removing sidebar/settings entries.
+- Rebuilt `frontend/dist/app` so the served V2 bundle matches the React source changes.
+- Re-captured the post-change V2 screenshot and metrics at 1280x720: fixed page height remained 720, composer height dropped to 134, `.at-composer-control-set` stayed visible without horizontal overflow (`scrollWidth == clientWidth == 830`), and all composer controls remained reachable on the row.
+- Evidence paths are under `.tmp/frontend-v1-v2-framework/`: `v1-framework.png`, `v2-framework.png`, `v2-framework-after-composer-fit.png`, and the matching JSON metric files.
+
+### Verification
+- `npm run test -- src/test/ShellLayoutCss.test.ts -t "composer controls"` passed.
+- `npm run test -- src/test/Composer.test.tsx -t "localizes the persistent composer frame|keeps composer topology controls"` passed.
+- `npm run build` passed, including typecheck, desktop build, and Vite bundle generation.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent screenshot-driven composer framework alignment completed for this slice. This does not claim full Application Shell PASS, Message Timeline PASS, AG-UI Runtime Stream PASS, replay/continuation PASS, Settings PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+- Remaining high-priority gaps after this slice: message timeline density and part rendering, stream/replay continuation edges, settings secondary-page parity with V1, subagent/right-rail behavior, and the 3 remaining old Python UI harness tests that still need TS migration.
+
 ## 2026-06-30 Active Run Subagent Discovery Refresh
 
 ### Scope

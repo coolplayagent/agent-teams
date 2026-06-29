@@ -6964,3 +6964,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, implementation, targeted TS verification, dist rebuild, lint, and partial legacy harness removal completed for this Composer slash skill slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Selected Command Slash Fallback Migration
+
+### Scope
+- Continued the Composer/run-controls migration by mapping the next three V1 `test_prompt_yolo_ui.py` selected-command slash edge cases onto V2 TS coverage.
+- Added V2 Composer tests for selected command becoming unavailable and falling back to a same-named skill, selected command falling back to skill when there is no active workspace for command resolution, and explicitly selected command resolving without accidentally submitting a same-named skill.
+- Removed the corresponding three legacy Python UI scenarios from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`. The file now has 21 remaining legacy UI scenarios.
+- This slice is test coverage and harness cleanup only; no production UI, Settings, sidebar, or backend contract behavior changed.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 66 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `rg -n "test_stale_selected_command|test_selected_same_named_command|falls back to a slash skill when a selected command|falls back to a slash skill without workspace|does not submit a same-named skill" tests/integration_tests/frontend/test_prompt_yolo_ui.py frontend/app/src/test/Composer.test.tsx` returns only the new V2 TS coverage and no migrated V1 Python function names.
+
+### Reviewer
+- Main-agent V1 harness mapping, focused TS coverage migration, targeted verification, and partial legacy harness removal completed for this Composer slash fallback slice. No Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

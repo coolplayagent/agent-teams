@@ -746,6 +746,206 @@ describe("Composer", () => {
     );
   });
 
+  it("falls back to a slash skill when a selected command becomes unavailable", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [
+        {
+          aliases: [],
+          allowed_modes: ["normal"],
+          argument_hint: "",
+          description: "Command probe",
+          discovery_source: "app",
+          name: "dedupe-probe",
+          scope: "app",
+          source_path: "C:/commands/dedupe-probe.md",
+          template: "Command {{args}}",
+        },
+      ],
+      workspaces: [],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: false,
+      raw_text: "/dedupe-probe topic",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/dedu" } });
+    const commandOption = await screen.findByText("Command probe");
+    const commandButton = commandOption.closest("button");
+    if (commandButton === null) {
+      throw new Error("Command suggestion button was not rendered.");
+    }
+    fireEvent.mouseDown(commandButton);
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [],
+      workspaces: [],
+    });
+    fireEvent.change(prompt, { target: { value: "/dedupe-probe topic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(resolveCommandPromptMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-1",
+        raw_text: "/dedupe-probe topic",
+        mode: "normal",
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [{ kind: "text", text: "topic" }],
+        skills: ["dedupe-probe"],
+      }),
+    );
+  });
+
+  it("falls back to a slash skill without workspace command resolution", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: null,
+      session_mode: "normal",
+      normal_root_role_id: null,
+      normal_model_profile: null,
+      orchestration_preset_id: null,
+      can_switch_mode: true,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [
+        {
+          aliases: [],
+          allowed_modes: ["normal"],
+          argument_hint: "",
+          description: "Command probe",
+          discovery_source: "app",
+          name: "dedupe-probe",
+          scope: "app",
+          source_path: "C:/commands/dedupe-probe.md",
+          template: "Command {{args}}",
+        },
+      ],
+      workspaces: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/dedu" } });
+    const commandOption = await screen.findByText("Command probe");
+    const commandButton = commandOption.closest("button");
+    if (commandButton === null) {
+      throw new Error("Command suggestion button was not rendered.");
+    }
+    fireEvent.mouseDown(commandButton);
+    fireEvent.change(prompt, { target: { value: "/dedupe-probe topic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(resolveCommandPromptMock).not.toHaveBeenCalled();
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [{ kind: "text", text: "topic" }],
+        skills: ["dedupe-probe"],
+      }),
+    );
+  });
+
+  it("does not submit a same-named skill when an explicitly selected command resolves", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+      skills: [
+        {
+          description: "Skill probe",
+          name: "dedupe-probe",
+          ref: "dedupe-probe",
+          source: "project",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [
+        {
+          aliases: [],
+          allowed_modes: ["normal"],
+          argument_hint: "",
+          description: "Command probe",
+          discovery_source: "app",
+          name: "dedupe-probe",
+          scope: "app",
+          source_path: "C:/commands/dedupe-probe.md",
+          template: "Command {{args}}",
+        },
+      ],
+      workspaces: [],
+    });
+    resolveCommandPromptMock.mockResolvedValue({
+      matched: true,
+      raw_text: "/dedupe-probe topic",
+      expanded_prompt: "Command ran.",
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.change(prompt, { target: { value: "/dedu" } });
+    const commandOption = await screen.findByText("Command probe");
+    const commandButton = commandOption.closest("button");
+    if (commandButton === null) {
+      throw new Error("Command suggestion button was not rendered.");
+    }
+    fireEvent.mouseDown(commandButton);
+    fireEvent.change(prompt, { target: { value: "/dedupe-probe topic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(resolveCommandPromptMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-1",
+        raw_text: "/dedupe-probe topic",
+        mode: "normal",
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [{ kind: "text", text: "Command ran." }],
+      }),
+    );
+    expect(createRunMock.mock.calls[0]?.[0]).not.toHaveProperty("skills");
+  });
+
   it("shows workspace resource suggestions from prompt mentions", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

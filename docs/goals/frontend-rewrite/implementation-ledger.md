@@ -5022,3 +5022,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Read-only reviewer returned PASS for the replay/reconnect boundary and recommended the initial-multiplex guard that was added before commit. Main-agent source fix, targeted runtime unit tests, frontend typecheck/build, diff check, and current browser-test tree scan completed for this slice. No AG-UI Runtime Stream subsystem sign-off, browser-suite sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Real SSE Terminal Background Subagent Reconnect Browser Coverage
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, current worktree, and existing TS stream/recovery browser coverage before editing. This slice targets AG-UI runtime stream interrupted-recovery evidence rather than the latest visual feedback.
+- Extended `frontend/app/browser-tests/v2-real-sse-stale-recovery.spec.ts` with a real SSE browser scenario where recovery opens a multiplex stream for the active parent run and a background subagent run, the subagent run reaches `run.completed`, and the subsequent manual reconnect must reopen only the still-active parent run at `after_event_id=6`.
+- Kept the existing all-active multiplex reconnect scenario but made it less brittle by no longer requiring an intermediate native `Last-Event-ID` empty reconnect before the manual fallback. The test still proves the final per-run cursor reconnect.
+- Updated two existing real SSE browser assertions to match current UI behavior: supplemental user-question inputs are now option-specific, and the real HTTP harness may render the composer in Chinese while the behavior under test remains the same.
+- Kept this as targeted AG-UI Runtime Stream browser evidence only. Remaining frontend rewrite work still includes final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts -g "drops a terminal real SSE background subagent"` passed.
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts -g "resumes a real SSE recoverable run before answering user question|reconnects a real SSE interruption from the runtime cursor|reconnects real SSE multiplexed background streams from per-run cursors|drops a terminal real SSE background subagent"` passed with 4 tests.
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts` passed with 17 tests.
+- `npx tsc --noEmit --pretty false --project tsconfig.json` passed.
+- `git diff --check` passed.
+- Inspected `.tmp/frontend-v2-ts-stream/v2-real-sse-background-subagent-terminal-reconnect.png`; it shows the fixed V2 shell with unchanged sidebar structure, main run output resumed after the subagent terminal event, the composer contained at the bottom, and no document-level scroll. No `frontend/dist` rebuild was needed because only browser-test code and this ledger changed.
+
+### Reviewer
+- Main-agent TS browser coverage, typecheck, diff check, screenshot inspection, and Playwright artifact cleanup completed for this slice. No AG-UI Runtime Stream subsystem sign-off, browser-suite sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

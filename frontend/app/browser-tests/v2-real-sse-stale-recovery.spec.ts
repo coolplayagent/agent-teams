@@ -27,6 +27,8 @@ const SUBAGENT_MULTIPLEX_CHUNK = "real SSE subagent multiplex chunk";
 const MAIN_MULTIPLEX_RESUMED_CHUNK = "real SSE main multiplex resumed chunk";
 const SUBAGENT_MULTIPLEX_RESUMED_CHUNK =
   "real SSE subagent multiplex resumed chunk";
+const MAIN_MULTIPLEX_AFTER_SUBAGENT_DONE_CHUNK =
+  "real SSE main resumed after subagent terminal";
 const DUPLICATE_REPLAY_CHUNK = "real SSE after duplicate replay";
 const FAILURE_MESSAGE = "real SSE provider failed before completion";
 const QUEUED_INJECTION = "real SSE queued follow-up";
@@ -232,6 +234,14 @@ test("reconnects real SSE multiplexed background streams from per-run cursors", 
   });
 });
 
+test("drops a terminal real SSE background subagent from reconnect targets", async ({
+  page,
+}) => {
+  await runRealSseTerminalBackgroundSubagentReconnectScenario(page, {
+    screenshotName: "v2-real-sse-background-subagent-terminal-reconnect.png",
+  });
+});
+
 test("streams only the real SSE background subagent for a recoverable parent", async ({
   page,
 }) => {
@@ -285,6 +295,10 @@ interface RealSseBackgroundSubagentReconnectOptions {
   screenshotName: string;
 }
 
+interface RealSseTerminalBackgroundSubagentReconnectOptions {
+  screenshotName: string;
+}
+
 interface RealSseStandaloneResumeOptions {
   mode: "recoverable-resume";
   screenshotName: string;
@@ -316,6 +330,7 @@ interface RealSseState {
   stopRequests: unknown[];
   streamRequests: RealSseRequest[];
   subagentStreamRequests: RealSseRequest[];
+  terminalSubagentReconnect: boolean;
 }
 
 interface RealSseInjectionRequest {
@@ -357,10 +372,10 @@ async function runRealSseStaleRecoveryScenario(
     await waitForV2Shell(page);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
 
-    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    const prompt = page.getByRole("textbox", { name: /^(Prompt|提示词)$/ });
     await expect(prompt).toBeEnabled();
     await prompt.fill(PROMPT);
-    await page.getByRole("button", { exact: true, name: "Send" }).click();
+    await page.getByRole("button", { name: /^(Send|发送)$/ }).click();
 
     await expect.poll(() => state.streamRequests).toEqual([
       {
@@ -376,7 +391,7 @@ async function runRealSseStaleRecoveryScenario(
     await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^(Send|发送)$/ })).toBeVisible();
     await expect(prompt).toBeEnabled();
     await expect(page.locator(".at-recovery")).toHaveCount(0);
 
@@ -601,7 +616,9 @@ async function runRealSseRecoveryActionScenario(
       await expect(recovery.getByRole("button", { name: "Resume" })).toHaveCount(0);
       await recovery.getByLabel("Ship - Deploy now").click();
       await recovery.getByLabel("Other").click();
-      await recovery.getByLabel("Additional answer").fill(RECOVERY_QUESTION_SUPPLEMENT);
+      await recovery
+        .getByRole("textbox", { name: "Additional answer - Other" })
+        .fill(RECOVERY_QUESTION_SUPPLEMENT);
       await recovery.getByRole("button", { name: "Answer" }).click();
       await expect.poll(() => state.questionAnswers).toEqual([
         {
@@ -945,10 +962,10 @@ async function runRealSseRuntimeCursorReconnectScenario(
     await waitForV2Shell(page);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
 
-    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    const prompt = page.getByRole("textbox", { name: /^(Prompt|提示词)$/ });
     await expect(prompt).toBeEnabled();
     await prompt.fill(PROMPT);
-    await page.getByRole("button", { exact: true, name: "Send" }).click();
+    await page.getByRole("button", { name: /^(Send|发送)$/ }).click();
 
     const firstChunkMessage = page.locator(".at-message").filter({
       hasText: FIRST_CHUNK,
@@ -966,7 +983,7 @@ async function runRealSseRuntimeCursorReconnectScenario(
     await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^(Send|发送)$/ })).toBeVisible();
     expect(state.runCreateCount).toBe(1);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
@@ -1087,12 +1104,6 @@ async function runRealSseBackgroundSubagentReconnectScenario(
 
     await expect.poll(() => state.multiplexRequests.some(
       (request) =>
-        request.lastEventId === "2" &&
-        request.runOffsets[RUN_ID] === "5" &&
-        request.runOffsets[SUBAGENT_RUN_ID] === "0",
-    )).toBe(true);
-    await expect.poll(() => state.multiplexRequests.some(
-      (request) =>
         request.lastEventId === null &&
         request.runOffsets[RUN_ID] === "6" &&
         request.runOffsets[SUBAGENT_RUN_ID] === "2",
@@ -1118,6 +1129,75 @@ async function runRealSseBackgroundSubagentReconnectScenario(
     await expectNoDocumentScroll(
       page,
       "real SSE multiplex interruption should reconnect each run from its latest cursor inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
+async function runRealSseTerminalBackgroundSubagentReconnectScenario(
+  page: Page,
+  options: RealSseTerminalBackgroundSubagentReconnectOptions,
+): Promise<void> {
+  const state = createRealSseState({
+    backgroundSubagentRecovery: true,
+    lastEventId: 5,
+    runCreated: true,
+    terminalSubagentReconnect: true,
+  });
+  const unhandledApiRoutes: string[] = [];
+  const appServer = await serveFrontendDist({
+    handleRequest: (request, response) =>
+      handleRuntimeCursorHttpApi(request, response, state, unhandledApiRoutes),
+  });
+  try {
+    await installShellState(page);
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    await expect.poll(() => state.multiplexRequests.at(0)).toEqual({
+      lastEventId: null,
+      runOffsets: {
+        [RUN_ID]: "5",
+        [SUBAGENT_RUN_ID]: "0",
+      },
+    });
+    await expectTimelineTextVisible(page, MAIN_MULTIPLEX_CHUNK);
+
+    await expect.poll(() => state.streamRequests.some(
+      (request) => request.afterEventId === "6" && request.lastEventId === null,
+    )).toBe(true);
+    expect(state.multiplexRequests.some(
+      (request) =>
+        request.lastEventId === null &&
+        request.runOffsets[RUN_ID] === "6" &&
+        request.runOffsets[SUBAGENT_RUN_ID] === "2",
+    )).toBe(false);
+
+    await expectTimelineTextVisible(page, MAIN_MULTIPLEX_AFTER_SUBAGENT_DONE_CHUNK);
+    await expect(
+      page.locator(".at-message").filter({ hasText: MAIN_MULTIPLEX_CHUNK }),
+    ).toHaveCount(1);
+    await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { name: /^(Send|发送)$/ })).toBeVisible();
+    await expect(page.getByRole("button", { exact: true, name: "Queue" })).toBeHidden();
+    await expect(
+      page.getByRole("button", { exact: true, name: "Interrupt" }),
+    ).toBeHidden();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "terminal background subagent should be filtered out of real SSE reconnect targets",
     );
     await expectComposerControlsDoNotOverlap(page);
     await page.mouse.move(320, 120);
@@ -1520,6 +1600,11 @@ function handleBackgroundSubagentReconnectSse(
     "X-Accel-Buffering": "no",
   });
 
+  if (state.terminalSubagentReconnect) {
+    writeTerminalSubagentReconnectSse(response, state, lastEventId, runOffsets);
+    return;
+  }
+
   if (
     runOffsets[RUN_ID] === "6" &&
     runOffsets[SUBAGENT_RUN_ID] === "2"
@@ -1608,6 +1693,54 @@ function handleBackgroundSubagentReconnectSse(
   response.end();
 }
 
+function writeTerminalSubagentReconnectSse(
+  response: ServerResponse,
+  state: RealSseState,
+  lastEventId: string | null,
+  runOffsets: Record<string, string>,
+): void {
+  if (
+    lastEventId === null &&
+    runOffsets[RUN_ID] === "5" &&
+    runOffsets[SUBAGENT_RUN_ID] === "0"
+  ) {
+    state.lastEventId = 6;
+    response.write("retry: 100\n\n");
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 6,
+        payload: { text: MAIN_MULTIPLEX_CHUNK },
+        relayEventType: "text_delta",
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 6,
+    }));
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 2,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        roleId: "reviewer",
+        runId: SUBAGENT_RUN_ID,
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 2,
+    }));
+    response.end();
+    return;
+  }
+
+  if (lastEventId !== null) {
+    response.write("retry: 60000\n\n");
+    response.end();
+    return;
+  }
+
+  response.end();
+}
+
 function handleRuntimeCursorSse(
   request: IncomingMessage,
   response: ServerResponse,
@@ -1629,6 +1762,33 @@ function handleRuntimeCursorSse(
     "Content-Type": "text/event-stream",
     "X-Accel-Buffering": "no",
   });
+  if (state.terminalSubagentReconnect && afterEventId === "6") {
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 7,
+        payload: { text: ` ${MAIN_MULTIPLEX_AFTER_SUBAGENT_DONE_CHUNK}` },
+        relayEventType: "text_delta",
+        type: "message.text.delta",
+      }),
+      event: "message.text.delta",
+      id: 7,
+    }));
+    response.write(sseFrame({
+      data: runEvent({
+        eventId: 8,
+        payload: { status: "completed" },
+        relayEventType: "run_completed",
+        type: "run.completed",
+      }),
+      event: "run.completed",
+      id: 8,
+    }));
+    state.completed = true;
+    state.backgroundSubagentRecovery = false;
+    state.lastEventId = 8;
+    response.end();
+    return;
+  }
   if (afterEventId === "2") {
     response.write(sseFrame({
       data: runEvent({
@@ -2495,6 +2655,7 @@ function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState
     stopRequests: [],
     streamRequests: [],
     subagentStreamRequests: [],
+    terminalSubagentReconnect: false,
     ...overrides,
   };
 }

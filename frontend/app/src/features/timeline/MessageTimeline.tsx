@@ -2217,7 +2217,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   if (kind === "tool-call" || contentPartHasToolCallShape(part)) {
     return {
       action: "",
-      body: jsonValueText("args" in part ? part.args ?? null : null),
+      body: toolArgsBody("args" in part ? part.args ?? null : null),
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: false,
       kind: "tool",
@@ -2425,7 +2425,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     }
     return {
       action: "",
-      body: jsonValueText(payload.args ?? null),
+      body: toolArgsBody(payload.args ?? null),
       callId,
       error: false,
       kind: "tool",
@@ -2896,6 +2896,14 @@ function toolSummaryPreview(tool: TimelineToolPart): string {
 function toolCallPreview(body: string): string {
   const parsed = parseJsonObjectText(body);
   if (parsed !== null) {
+    const raw = objectRawString(parsed, "__raw");
+    if (raw.length > 0) {
+      return raw;
+    }
+    const items = jsonStringArrayInlineText(parsed.__items);
+    if (items.length > 0) {
+      return items;
+    }
     return (
       objectRawString(parsed, "command") ||
       objectRawString(parsed, "cmd") ||
@@ -2907,6 +2915,45 @@ function toolCallPreview(body: string): string {
     );
   }
   return firstNonEmptyLine(body);
+}
+
+function toolArgsBody(value: unknown): string {
+  return jsonValueText(normalizedToolArgs(value));
+}
+
+function normalizedToolArgs(value: unknown): JsonValue {
+  if (typeof value !== "string") {
+    return jsonCompatibleValue(value);
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as JsonValue;
+    if (Array.isArray(parsed)) {
+      return { __items: parsed };
+    }
+    return parsed;
+  } catch {
+    return { __raw: value };
+  }
+}
+
+function jsonCompatibleValue(value: unknown): JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(jsonCompatibleValue);
+  }
+  const object = unknownJsonObject(value);
+  return object ?? "";
 }
 
 function parseJsonObjectText(value: string): Record<string, JsonValue> | null {

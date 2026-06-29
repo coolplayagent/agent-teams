@@ -931,6 +931,83 @@ describe("MessageTimeline", () => {
     expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
   });
 
+  it("normalizes string tool args for persisted and runtime tool calls", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: "{\"query\":\"Anthropic funding 2026\"}",
+          tool_call_id: "call-live",
+          tool_name: "websearch",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: "[\"one\",\"two\"]",
+          tool_call_id: "call-array",
+          tool_name: "batch",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: "not json",
+          tool_call_id: "call-raw",
+          tool_name: "raw",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              args: "{\"query\":\"Anthropic safety policy\"}",
+              kind: "tool-call",
+              tool_call_id: "call-history",
+              tool_name: "websearch",
+            },
+          ],
+        },
+        message_id: "assistant-string-tool-args",
+        role_id: "MainAgent",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findAllByText("Tool call: websearch")).toHaveLength(2);
+    expect(screen.getByText("Tool call: batch")).toBeVisible();
+    expect(screen.getByText("Tool call: raw")).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual([
+      "Anthropic safety policy",
+      "Anthropic funding 2026",
+      "one, two",
+      "not json",
+    ]);
+    const details = toolPreElements(container).map(
+      (element) => element.textContent ?? "",
+    );
+    expect(details.some((detail) =>
+      detail.includes("\"query\": \"Anthropic safety policy\""),
+    )).toBe(true);
+    expect(details.some((detail) =>
+      detail.includes("\"query\": \"Anthropic funding 2026\""),
+    )).toBe(true);
+    expect(details.some((detail) =>
+      detail.includes("\"__items\"") &&
+        detail.includes("\"one\"") &&
+        detail.includes("\"two\""),
+    )).toBe(true);
+    expect(details.some((detail) =>
+      detail.includes("\"__raw\": \"not json\""),
+    )).toBe(true);
+  });
+
   it("unwraps successful tool return envelopes to the useful output", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

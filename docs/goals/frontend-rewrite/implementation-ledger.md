@@ -6926,3 +6926,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent screenshot comparison, implementation, targeted unit/browser verification, and dist rebuild completed for this framework/composer slice. No Application Shell subsystem PASS, Composer subsystem PASS, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-30 Prompt YOLO Payload Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining Python UI harness inventory before editing. This slice targets a bounded Composer/run-controls migration rather than treating the whole `test_prompt_yolo_ui.py` file as complete.
+- Added V2 Composer TS coverage proving the actual YOLO checkbox state is sent in the AG-UI `createRun` request after the user toggles it off.
+- Removed the matching legacy V1 `sendUserPrompt` payload assertions for YOLO/thinking and explicit input parts from `tests/integration_tests/frontend/test_prompt_yolo_ui.py`. Explicit inline-media input parts are already covered by the V2 Composer pasted-image tests.
+- Left the rest of `test_prompt_yolo_ui.py` in place because it still contains unmigrated behavior lines, especially slash command/skill same-name selection semantics and new-session draft model-profile creation. The file now has 29 remaining legacy UI scenarios.
+
+### Verification
+- `npm run test -- src/test/Composer.test.tsx` passed with 57 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_prompt_yolo_ui.py` passed.
+- `git diff --check` passed.
+- `rg -n "test_send_user_prompt_includes_yolo|test_send_user_prompt_uses_explicit_input_parts|passes the selected YOLO mode|yolo: false" frontend/app/src/test/Composer.test.tsx tests/integration_tests/frontend/test_prompt_yolo_ui.py` returns only the new V2 YOLO test and no legacy V1 payload test names.
+
+### Reviewer
+- Main-agent coverage mapping, targeted TS migration, focused verification, and partial legacy harness removal completed for this Composer/run-controls slice. No Composer subsystem PASS, slash skill parity completion, final V1/V2 visual audit sign-off, release cleanup sign-off, or V2 frontend completion is claimed.

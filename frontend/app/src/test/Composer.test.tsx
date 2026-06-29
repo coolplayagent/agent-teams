@@ -1560,6 +1560,40 @@ describe("Composer", () => {
     expect(localStorage.getItem("agent_teams_thinking_effort")).toBe("high");
   });
 
+  it("passes the selected YOLO mode to AG-UI run creation", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    const yoloToggle = await screen.findByRole("checkbox", { name: "YOLO" });
+    expect(yoloToggle).toBeChecked();
+    fireEvent.click(yoloToggle);
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Run with explicit approval boundaries" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(createRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: [
+            {
+              kind: "text",
+              text: "Run with explicit approval boundaries",
+            },
+          ],
+          yolo: false,
+        }),
+      ),
+    );
+  });
+
   it("passes the shell safety policy override to AG-UI run creation", async () => {
     getGeneralConfigMock.mockResolvedValue({
       shell_safety_policy_enabled: false,

@@ -711,6 +711,7 @@ body {
 }
 
 .at-session-run-indicator.is-failed .at-session-run-indicator-glyph,
+.at-session-run-indicator.is-unread .at-session-run-indicator-glyph,
 .at-session-run-indicator.is-stopped .at-session-run-indicator-glyph {
   width: 7px;
   height: 7px;
@@ -727,15 +728,22 @@ body {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--at-warning) 14%, transparent);
 }
 
+.at-session-run-indicator.is-unread .at-session-run-indicator-glyph {
+  background: var(--at-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--at-primary) 14%, transparent);
+}
+
 .at-session-item.has-run-indicator .at-session-time {
   display: none;
 }
 
+.at-session-item.is-selected.has-run-indicator-unread .at-session-time,
 .at-session-item.is-selected.has-run-indicator-failed .at-session-time,
 .at-session-item.is-selected.has-run-indicator-stopped .at-session-time {
   display: inline;
 }
 
+.at-session-item.is-selected.has-run-indicator-unread .at-session-run-indicator,
 .at-session-item.is-selected.has-run-indicator-failed .at-session-run-indicator,
 .at-session-item.is-selected.has-run-indicator-stopped .at-session-run-indicator {
   display: none;

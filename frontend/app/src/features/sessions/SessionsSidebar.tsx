@@ -50,7 +50,7 @@ const initialVisibleSessionsPerGroup = 10;
 const visibleSessionIncrement = 20;
 const activeRunIndicatorStatuses = new Set(["queued", "running", "stopping"]);
 
-type SessionRunIndicatorType = "failed" | "running" | "stopped";
+type SessionRunIndicatorType = "failed" | "running" | "stopped" | "unread";
 type WorkspaceSortMode = "project_updated" | "project_created";
 
 export interface SidebarNavigationItem {
@@ -1185,6 +1185,9 @@ function sessionRunIndicatorType(
   if (status === "stopped") {
     return "stopped";
   }
+  if (session.has_unread_terminal_run === true) {
+    return "unread";
+  }
   return null;
 }
 
@@ -1197,6 +1200,9 @@ function sessionRunIndicatorLabel(
   }
   if (indicatorType === "failed") {
     return t("sidebarSessionFailed");
+  }
+  if (indicatorType === "unread") {
+    return t("sidebarSessionUnread");
   }
   return t("sidebarSessionStopped");
 }

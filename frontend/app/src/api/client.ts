@@ -1288,6 +1288,15 @@ export function updateSession(
   );
 }
 
+export function markSessionTerminalRunViewed(
+  sessionId: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/sessions/${encodeURIComponent(sessionId)}/terminal-view`,
+    { method: "POST" },
+  );
+}
+
 export function deleteSession(
   sessionId: string,
   request: DeleteSessionRequest = { cascade: true, force: true },

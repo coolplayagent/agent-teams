@@ -607,6 +607,16 @@ describe("SessionsSidebar", () => {
         updated_at: "2026-06-23T09:00:00Z",
         workspace_id: "workspace-1",
       },
+      {
+        has_unread_terminal_run: true,
+        latest_terminal_run_id: "run-completed",
+        latest_terminal_run_status: "completed",
+        latest_terminal_run_updated_at: "2026-06-23T08:30:00Z",
+        session_id: "session-unread",
+        title: "Unread terminal session",
+        updated_at: "2026-06-23T08:30:00Z",
+        workspace_id: "workspace-1",
+      },
     ]);
 
     renderSidebar();
@@ -617,13 +627,19 @@ describe("SessionsSidebar", () => {
     const stoppedRow = screen.getByText("Stopped session").closest(
       ".at-session-item",
     );
+    const unreadRow = screen.getByText("Unread terminal session").closest(
+      ".at-session-item",
+    );
 
     expect(failedRow).toHaveClass("has-run-indicator-failed");
     expect(stoppedRow).toHaveClass("has-run-indicator-stopped");
+    expect(unreadRow).toHaveClass("has-run-indicator-unread");
     expect(screen.getByTitle("Run failed")).toHaveClass("is-failed");
     expect(screen.getByTitle("Run stopped")).toHaveClass("is-stopped");
+    expect(screen.getByTitle("Unread terminal run")).toHaveClass("is-unread");
     expect(screen.queryByText("failed")).not.toBeInTheDocument();
     expect(screen.queryByText("stopped")).not.toBeInTheDocument();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
   });
 
   it("keeps subagent sessions nested under their parent and opens a secondary selection", async () => {

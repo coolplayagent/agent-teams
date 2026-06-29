@@ -102,6 +102,7 @@ import {
   searchClawHubSkillMarket,
   searchMemories,
   searchWorkspacePaths,
+  markSessionTerminalRunViewed,
   markBoardTodoDone,
   stopBackgroundTask,
   stopGitHubWebhookTunnel,
@@ -214,7 +215,7 @@ describe("api client", () => {
     );
   });
 
-  it("updates and deletes sessions through the session metadata endpoints", async () => {
+  it("updates, marks terminal view, and deletes sessions through session endpoints", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(() =>
@@ -227,6 +228,9 @@ describe("api client", () => {
     await expect(
       updateSession("session-1", { title: "Readable name" }),
     ).resolves.toEqual({ status: "ok" });
+    await expect(markSessionTerminalRunViewed("session-1")).resolves.toEqual({
+      status: "ok",
+    });
     await expect(deleteSession("session-1")).resolves.toEqual({ status: "ok" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -239,6 +243,13 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
+      "/api/sessions/session-1/terminal-view",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       "/api/sessions/session-1",
       expect.objectContaining({
         body: JSON.stringify({ cascade: true, force: true }),

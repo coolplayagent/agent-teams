@@ -1467,6 +1467,12 @@ export interface SessionSidebarRecord {
   pending_user_question_count?: number;
   background_task_count?: number;
   subagent_count?: number;
+  last_viewed_terminal_run_id?: string | null;
+  latest_terminal_run_id?: string | null;
+  latest_terminal_run_status?: string | null;
+  latest_terminal_run_updated_at?: string | null;
+  latest_terminal_run_verification_status?: string | null;
+  has_unread_terminal_run?: boolean;
 }
 
 export interface SessionSubagentRecord {

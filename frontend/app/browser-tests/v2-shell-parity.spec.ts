@@ -15,6 +15,7 @@ import {
 } from "./support/frontend-app";
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-shell";
+const UNREAD_TERMINAL_SESSION_ID = "session-v2-terminal-unread";
 
 test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
   page,
@@ -256,6 +257,69 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
   }
 });
 
+test("marks unread terminal runs viewed and keeps them viewed after reload", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: TerminalViewedState = {
+    terminalViewRequests: [],
+    unread: true,
+  };
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleTerminalViewedApi(context, state),
+      sessionTitle: "Terminal view control",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const unreadButton = page.getByRole("button", {
+      name: "Unread terminal session",
+    });
+    await expect(unreadButton).toBeVisible();
+    const unreadItem = page.locator(".at-session-item").filter({
+      has: unreadButton,
+    });
+    await expect(unreadItem).toHaveClass(/has-run-indicator-unread/);
+    await expect(unreadItem.getByTitle("Unread terminal run")).toBeVisible();
+
+    await unreadButton.click();
+    await expect.poll(() => state.terminalViewRequests)
+      .toEqual([UNREAD_TERMINAL_SESSION_ID]);
+    await expect(unreadItem).not.toHaveClass(/has-run-indicator-unread/);
+    await expect(unreadItem.getByTitle("Unread terminal run")).toHaveCount(0);
+
+    await page.reload();
+    await waitForV2Shell(page);
+    const reloadedUnreadButton = page.getByRole("button", {
+      name: "Unread terminal session",
+    });
+    const reloadedUnreadItem = page.locator(".at-session-item").filter({
+      has: reloadedUnreadButton,
+    });
+    await expect(reloadedUnreadItem).toBeVisible();
+    await expect(reloadedUnreadItem).not.toHaveClass(/has-run-indicator-unread/);
+    await expect(reloadedUnreadItem.getByTitle("Unread terminal run")).toHaveCount(0);
+    expect(state.terminalViewRequests).toEqual([UNREAD_TERMINAL_SESSION_ID]);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "terminal viewed reload state should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-terminal-viewed-reload.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openSystemPage(
   settings: Locator,
   systemPages: Locator,
@@ -289,6 +353,125 @@ async function handleParityApi(
   }
   await context.fulfillJson(response);
   return true;
+}
+
+interface TerminalViewedState {
+  terminalViewRequests: string[];
+  unread: boolean;
+}
+
+async function handleTerminalViewedApi(
+  context: MockApiRouteContext,
+  state: TerminalViewedState,
+): Promise<boolean> {
+  if (context.method === "POST") {
+    if (context.path === `/sessions/${UNREAD_TERMINAL_SESSION_ID}/terminal-view`) {
+      state.terminalViewRequests.push(UNREAD_TERMINAL_SESSION_ID);
+      state.unread = false;
+      await context.fulfillJson({ status: "ok" });
+      return true;
+    }
+    return false;
+  }
+  if (context.method !== "GET") {
+    return false;
+  }
+  if (context.path === "/sessions/sidebar") {
+    await context.fulfillJson(terminalViewedSidebarRecords(state.unread));
+    return true;
+  }
+  if (context.path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: terminalViewedSidebarRecords(state.unread),
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (context.path === `/sessions/${UNREAD_TERMINAL_SESSION_ID}`) {
+    await context.fulfillJson(
+      terminalViewedSessionRecord(
+        UNREAD_TERMINAL_SESSION_ID,
+        "Unread terminal session",
+      ),
+    );
+    return true;
+  }
+  if (context.path === `/sessions/${UNREAD_TERMINAL_SESSION_ID}/messages`) {
+    await context.fulfillJson([]);
+    return true;
+  }
+  if (context.path === `/sessions/${UNREAD_TERMINAL_SESSION_ID}/rounds`) {
+    await context.fulfillJson({ has_more: false, items: [], next_cursor: null });
+    return true;
+  }
+  if (context.path === `/sessions/${UNREAD_TERMINAL_SESSION_ID}/recovery`) {
+    await context.fulfillJson({
+      active_run: null,
+      background_tasks: [],
+      paused_subagents: [],
+      pending_tool_approvals: [],
+      pending_user_questions: [],
+      recoverable_stopped_run: null,
+    });
+    return true;
+  }
+  if (context.path === `/sessions/${UNREAD_TERMINAL_SESSION_ID}/token-usage`) {
+    await context.fulfillJson({ by_role: {}, input_tokens: 0, output_tokens: 0 });
+    return true;
+  }
+  for (const suffix of ["/subagents", "/agents", "/tasks"]) {
+    if (context.path === `/sessions/${UNREAD_TERMINAL_SESSION_ID}${suffix}`) {
+      await context.fulfillJson([]);
+      return true;
+    }
+  }
+  return false;
+}
+
+function terminalViewedSidebarRecords(
+  unread: boolean,
+): Record<string, unknown>[] {
+  return [
+    {
+      active_run_status: null,
+      has_unread_terminal_run: unread,
+      latest_terminal_run_id: "run-v2-terminal-completed",
+      latest_terminal_run_status: "completed",
+      latest_terminal_run_updated_at: "2026-06-25T08:35:00Z",
+      message_count: 2,
+      session_id: UNREAD_TERMINAL_SESSION_ID,
+      title: "Unread terminal session",
+      updated_at: "2026-06-25T08:35:00Z",
+      workspace_id: WORKSPACE_ID,
+    },
+    {
+      active_run_status: null,
+      message_count: 1,
+      session_id: "session-v2-shell",
+      title: "Terminal view control",
+      updated_at: "2026-06-25T08:34:00Z",
+      workspace_id: WORKSPACE_ID,
+    },
+  ];
+}
+
+function terminalViewedSessionRecord(
+  sessionId: string,
+  title: string,
+): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: "2026-06-25T08:00:00Z",
+    normal_model_profile: null,
+    normal_root_role_id: "MainAgent",
+    orchestration_preset_id: null,
+    session_id: sessionId,
+    session_mode: "normal",
+    title,
+    updated_at: "2026-06-25T08:35:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
 }
 
 function parityResponse(path: string): unknown | undefined {

@@ -19,8 +19,8 @@ import {
   Sun,
   Wrench,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent } from "react";
 
 import {
@@ -28,6 +28,7 @@ import {
   getSession,
   listSidebarSessions,
   listWorkspaces,
+  markSessionTerminalRunViewed,
 } from "../../api/client";
 import type { SessionSidebarRecord } from "../../api/contracts";
 import { AutomationView } from "../automation/AutomationView";
@@ -80,6 +81,7 @@ type ShellHistoryMode = "push" | "replace";
 
 export function AppShell() {
   const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const t = useTranslations();
   const [activeView, setActiveView] = useState<ShellView>(
     () => readInitialShellView(),
@@ -87,6 +89,7 @@ export function AppShell() {
   const [activeSubagent, setActiveSubagent] =
     useState<ActiveSubagentSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const terminalViewMarksRef = useRef(new Set<string>());
   const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
@@ -204,6 +207,40 @@ export function AppShell() {
     setSelectedWorkspaceId,
     sidebarSessionsQuery.data,
   ]);
+
+  useEffect(() => {
+    if (selectedSession === null || selectedSession.has_unread_terminal_run !== true) {
+      return;
+    }
+    const sessionId = selectedSession.session_id.trim();
+    if (!sessionId) {
+      return;
+    }
+    const terminalMarkKey = terminalViewMarkKey(selectedSession);
+    if (terminalViewMarksRef.current.has(terminalMarkKey)) {
+      return;
+    }
+    terminalViewMarksRef.current.add(terminalMarkKey);
+    queryClient.setQueryData<SessionSidebarRecord[]>(
+      ["sessions", "sidebar"],
+      (current) => markSidebarTerminalRunViewed(current, sessionId),
+    );
+    void markSessionTerminalRunViewed(sessionId)
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+        void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", "detail", sessionId],
+        });
+      })
+      .catch(() => {
+        void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+        void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", "detail", sessionId],
+        });
+      });
+  }, [queryClient, selectedSession]);
 
   const topbarWorkspaceId =
     selectedWorkspaceId ??
@@ -551,6 +588,29 @@ export function AppShell() {
 
 function readSidebarOverlayMode(): boolean {
   return window.matchMedia(sidebarOverlayMediaQuery).matches;
+}
+
+function terminalViewMarkKey(session: SessionSidebarRecord): string {
+  return [
+    session.session_id,
+    session.latest_terminal_run_id ?? "",
+    session.latest_terminal_run_status ?? "",
+    session.latest_terminal_run_updated_at ?? "",
+  ].join(":");
+}
+
+function markSidebarTerminalRunViewed(
+  sessions: SessionSidebarRecord[] | undefined,
+  sessionId: string,
+): SessionSidebarRecord[] | undefined {
+  if (sessions === undefined) {
+    return undefined;
+  }
+  return sessions.map((session) => (
+    session.session_id === sessionId
+      ? { ...session, has_unread_terminal_run: false }
+      : session
+  ));
 }
 
 function readInitialShellView(): ShellPrimaryView {

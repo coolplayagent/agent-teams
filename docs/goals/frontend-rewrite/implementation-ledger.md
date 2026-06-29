@@ -4678,3 +4678,27 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent TS browser, frontend lint/typecheck, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Composer subsystem sign-off, AG-UI Runtime Stream subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.
+
+## 2026-06-29 Terminal Run Viewed State V2 Parity And Browser Harness TS Migration Batch
+
+### Scope
+- Re-checked the active frontend rewrite goal, parity checklist, current worktree, and remaining `test_browser_smoke.py` surface before editing. This slice targets Sessions And Projects, Message Timeline terminal state, and refresh recovery parity.
+- Fixed a V1/V2 parity gap: V2 now consumes sidebar `has_unread_terminal_run` and latest terminal run fields, renders an unread terminal indicator when no active run indicator takes precedence, and marks the selected unread terminal session viewed through `POST /api/sessions/{session_id}/terminal-view`.
+- Added optimistic sidebar cache clearing for terminal-view marks in the shell layer so sidebar, search, and automation session selections share the same viewed-state behavior. Failed marks invalidate the session caches back to backend truth.
+- Added `markSessionTerminalRunViewed` to the V2 API client, extended the sidebar session contract, and added the unread terminal run accessible label/styling without changing the broader sidebar structure.
+- Extended unit coverage in `SessionsSidebar.test.tsx` and `apiClient.test.ts`, added TS browser coverage in `v2-shell-parity.spec.ts` for unread terminal indicator clearing and reload persistence, and removed the replaced `test_browser_terminal_run_viewed_state_survives_reload` Python browser scenario plus its private helpers.
+- Rebuilt `frontend/dist` from the V2 source change so dist-served browser tests exercise the updated terminal viewed behavior.
+- Kept this as targeted terminal viewed-state parity and browser-suite migration progress only. Remaining frontend rewrite work still includes migrating the remaining 13 legacy scenarios in `test_browser_smoke.py`, deeper stream replay/interrupted recovery review, final V1/V2 visual audit, Electron release checks, V2 naming cleanup, parity checklist completion, and reviewer sign-off.
+
+### Verification
+- `npm run test -- SessionsSidebar.test.tsx apiClient.test.ts` passed with 51 frontend unit tests.
+- `npm run lint` passed for the frontend TypeScript and desktop TypeScript projects.
+- `npm run build` passed and refreshed `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-shell-parity.spec.ts` passed with 3 TS browser tests.
+- `uv run --extra dev python -m py_compile tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `uv run --extra dev ruff check tests\integration_tests\browser\test_browser_smoke.py` passed.
+- `rg -n "^def test_browser_|^@pytest\.mark\.skip" tests/integration_tests/browser/test_browser_smoke.py` reports 13 remaining legacy Python browser scenarios.
+- Cleaned `frontend/app/test-results` after verifying the resolved path stayed under the workspace.
+
+### Reviewer
+- Main-agent source fix, TS unit tests, TS browser, frontend lint/typecheck/build, Python syntax/lint, remaining Python browser scan, and cleanup completed for this slice. No Sessions subsystem sign-off, Message Timeline subsystem sign-off, browser-suite migration sign-off, final visual audit sign-off, or V2 frontend completion is claimed.

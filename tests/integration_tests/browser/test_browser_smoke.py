@@ -1935,77 +1935,6 @@ def test_browser_burst_new_session_starts_stay_within_request_budget(
     assert len(get_model_profiles) <= 2
 
 
-def test_browser_terminal_run_viewed_state_survives_reload(
-    browser_page: Page,
-    integration_env: IntegrationEnvironment,
-    api_client: httpx.Client,
-) -> None:
-    session_id = create_session(
-        api_client,
-        session_id=new_session_id("browser-terminal-view"),
-    )
-    run_id = create_run(
-        api_client,
-        session_id=session_id,
-        intent="你好",
-        execution_mode="ai",
-    )
-    events = stream_run_until_terminal(
-        api_client,
-        run_id=run_id,
-        timeout_seconds=60.0,
-    )
-    assert events[-1]["event_type"] == "run_completed"
-    assert _session_has_unread_terminal_run(api_client, session_id) is True
-    create_session(
-        api_client,
-        session_id=new_session_id("browser-terminal-view-control"),
-    )
-
-    page = browser_page
-    _open_app(page, integration_env)
-    session_item = page.locator(f'.session-item[data-session-id="{session_id}"]').first
-    expect(session_item).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    expect(session_item).to_have_class(
-        re.compile(r"\bhas-run-indicator-unread\b"),
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-
-    with page.expect_response(
-        lambda response: (
-            response.request.method == "POST"
-            and response.url
-            == f"{integration_env.api_base_url}/api/sessions/{session_id}/terminal-view"
-            and response.ok
-        ),
-        timeout=_WAIT_TIMEOUT_MS,
-    ):
-        session_item.click(force=True)
-    expect(page.locator(".session-item.active")).to_have_attribute(
-        "data-session-id",
-        session_id,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    _wait_for_terminal_viewed(api_client, session_id)
-
-    page.reload(wait_until="domcontentloaded")
-    expect(page.locator("#backend-status-label")).to_contain_text(
-        _CONNECTED_LABEL,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    reloaded_item = page.locator(f'.session-item[data-session-id="{session_id}"]').first
-    expect(reloaded_item).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
-    expect(reloaded_item).not_to_have_class(
-        re.compile(r"\bhas-run-indicator-unread\b"),
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    expect(reloaded_item.locator(".session-run-indicator")).to_have_count(
-        0,
-        timeout=_WAIT_TIMEOUT_MS,
-    )
-    assert _session_has_unread_terminal_run(api_client, session_id) is False
-
-
 def _open_app(page: Page, integration_env: IntegrationEnvironment) -> None:
     page.goto(integration_env.api_base_url, wait_until="domcontentloaded")
     expect(page.locator("#backend-status-label")).to_contain_text(
@@ -2199,35 +2128,6 @@ def _first_workspace_id(page: Page) -> str:
         if workspace_id:
             return workspace_id
     raise AssertionError("No workspace was available for browser session creation.")
-
-
-def _session_has_unread_terminal_run(
-    client: httpx.Client,
-    session_id: str,
-) -> bool:
-    response = client.get(f"/api/sessions/{session_id}")
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise AssertionError(f"Invalid session response: {payload}")
-    unread = payload.get("has_unread_terminal_run")
-    if not isinstance(unread, bool):
-        raise AssertionError(f"Missing unread terminal state: {payload}")
-    return unread
-
-
-def _wait_for_terminal_viewed(
-    client: httpx.Client,
-    session_id: str,
-    *,
-    timeout_seconds: float = 5.0,
-) -> None:
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        if not _session_has_unread_terminal_run(client, session_id):
-            return
-        time.sleep(0.1)
-    raise AssertionError(f"Timed out waiting for terminal view mark: {session_id}")
 
 
 def _wait_for_new_session_id(page: Page, existing_session_ids: set[str]) -> str:

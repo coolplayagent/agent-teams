@@ -192,6 +192,21 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), max\(0px, calc\(100% - 288px\)\)\);[\s\S]*?margin:\s*0 auto;/,
     );
+    expect(themeCss).toMatch(
+      /\.at-round-rail-item:hover,[\s\S]*?\.at-round-rail-item:focus-visible,[\s\S]*?\.at-round-rail-item\.is-active\s*{[\s\S]*?background:\s*var\(--at-surface-muted\);[\s\S]*?outline:\s*none;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-rail-title\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-rail-todo li\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;[\s\S]*?min-width:\s*0;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-rail-todo li span\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-rail-todo li em\s*{[\s\S]*?font-style:\s*normal;[\s\S]*?white-space:\s*nowrap;/,
+    );
   });
 
   it("keeps desktop composer controls readable inside the V1-wide shell", () => {

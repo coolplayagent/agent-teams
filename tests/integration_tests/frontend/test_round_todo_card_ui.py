@@ -1199,25 +1199,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_round_nav_css_keeps_todo_status_readable_and_focus_subtle() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    css = (
-        repo_root
-        / "frontend"
-        / "dist"
-        / "css"
-        / "components"
-        / "rounds"
-        / "navigator.css"
-    ).read_text(encoding="utf-8")
-
-    assert ".round-nav-item:focus-visible" in css
-    assert "outline: none;" in css
-    assert "min-width: 4.75rem;" in css
-    assert "max-width: 5.4rem;" not in css
-    assert "white-space: nowrap;" in css
-
-
 def test_round_nav_density_degrades_before_overlap(tmp_path: Path) -> None:
     payload = _run_round_nav_script(
         tmp_path=tmp_path,

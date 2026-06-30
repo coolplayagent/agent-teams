@@ -7611,3 +7611,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 running-stream cursor harness mapping, V2 recovery cursor implementation, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Sidebar Status Refresh Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the remaining `test_subagent_sessions_ui.py` inventory, and the V1 status-event/sidebar-refresh harness before editing.
+- Split the old V1 source-copy harness into V2 responsibilities: `RunStreamController.test.tsx` already covers subagent runtime events invalidating the current session subagent query and sidebar query, while the new `SessionsSidebar.test.tsx` coverage proves expanded subagent rows redraw status from refreshed authoritative backend records.
+- Added V2 sidebar coverage for a running subagent changing to stopped and then back to running after query invalidations, with force-refresh requests after invalidation.
+- Removed the migrated V1 source-copy harness `test_subagent_status_update_emits_sidebar_refresh_event` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- Kept sidebar/settings item inventory, secondary-surface routing, appearance layout, production visual CSS, stream controller production code, and built dist unchanged in this slice.
+- This slice tightens subagent status-refresh parity. It does not claim complete subagent stream/replay PASS, gate parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "subagent status|subagent cache refresh|subagent discovery"` passed with 2 focused tests.
+- `npm test -- RunStreamController.test.tsx -t "subagent events|subagent discovery"` passed with 2 focused tests.
+- `npm test -- SessionsSidebar.test.tsx` passed with 29 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `npm run lint` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 1 remaining Python UI harness scenario.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 mixed status harness mapping, V2 sidebar status-refresh coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

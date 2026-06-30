@@ -1004,6 +1004,113 @@ describe("SessionsSidebar", () => {
     );
   });
 
+  it("updates expanded subagent status from refreshed authoritative records", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-parent",
+        subagent_count: 1,
+        title: "Parent session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    listSessionSubagentsMock
+      .mockResolvedValueOnce([
+        {
+          instance_id: "subagent-instance-1",
+          role_id: "explorer",
+          run_id: "subagent_run_1",
+          run_status: "running",
+          session_id: "session-parent",
+          status: "running",
+          subagent_kind: "normal",
+          title: "Explorer review",
+          updated_at: "2026-06-23T10:03:00Z",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          instance_id: "subagent-instance-1",
+          role_id: "explorer",
+          run_id: "subagent_run_1",
+          run_status: "stopped",
+          session_id: "session-parent",
+          status: "stopped",
+          subagent_kind: "normal",
+          title: "Explorer review",
+          updated_at: "2026-06-23T10:04:00Z",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          instance_id: "subagent-instance-1",
+          role_id: "explorer",
+          run_id: "subagent_run_1",
+          run_status: "running",
+          session_id: "session-parent",
+          status: "running",
+          subagent_kind: "normal",
+          title: "Explorer review",
+          updated_at: "2026-06-23T10:05:00Z",
+        },
+      ]);
+
+    const queryClient = renderSidebar();
+
+    expect(await screen.findByText("Parent session")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Toggle subagent sessions",
+    }));
+
+    const subagentRow = () =>
+      screen.getByRole("button", { name: "Open subagent session Explorer review" });
+
+    expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(within(subagentRow()).getByText("running")).toBeVisible();
+
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-parent", "subagents"],
+      });
+    });
+
+    await waitFor(() =>
+      expect(within(subagentRow()).getByText("stopped")).toBeVisible(),
+    );
+
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-parent", "subagents"],
+      });
+    });
+
+    await waitFor(() =>
+      expect(within(subagentRow()).getByText("running")).toBeVisible(),
+    );
+    expect(listSessionSubagentsMock).toHaveBeenNthCalledWith(
+      1,
+      "session-parent",
+      false,
+    );
+    expect(listSessionSubagentsMock).toHaveBeenNthCalledWith(
+      2,
+      "session-parent",
+      true,
+    );
+    expect(listSessionSubagentsMock).toHaveBeenNthCalledWith(
+      3,
+      "session-parent",
+      true,
+    );
+  });
+
   it("limits expanded subagent backend loads to two at a time", async () => {
     const sessionIds = Array.from({ length: 5 }, (_, index) => `session-${index}`);
     let activeLoads = 0;

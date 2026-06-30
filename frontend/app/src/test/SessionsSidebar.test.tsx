@@ -1483,6 +1483,56 @@ describe("SessionsSidebar", () => {
       name: "Show more sessions in Agent Teams",
     })).not.toBeInTheDocument();
   }, 10000);
+
+  it("indexes search and run indicators from loaded sidebar records only", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue(
+      Array.from({ length: 50 }, (_, index) => {
+        const ordinal = 50 - index;
+        const sessionId = `session-${String(ordinal).padStart(2, "0")}`;
+        return {
+          ...(ordinal === 50 ? { active_run_status: "running" } : {}),
+          session_id: sessionId,
+          title: `Loaded session ${String(ordinal).padStart(2, "0")}`,
+          updated_at: `2026-06-23T10:${String(ordinal).padStart(2, "0")}:00Z`,
+          workspace_id: "workspace-1",
+        };
+      }),
+    );
+
+    renderSidebar();
+
+    expect(await screen.findByText("Loaded session 50")).toBeVisible();
+    expect(screen.getByTitle("Running")).toHaveClass(
+      "at-session-run-indicator",
+      "is-running",
+    );
+    expect(screen.queryByText("Loaded session 01")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hidden active session")).not.toBeInTheDocument();
+
+    window.dispatchEvent(new Event("agent-teams-focus-session-search"));
+    const searchbox = await screen.findByRole("searchbox", {
+      name: "Search sessions",
+    });
+    fireEvent.change(searchbox, {
+      target: { value: "Loaded session 01" },
+    });
+
+    expect(await screen.findByText("Loaded session 01")).toBeVisible();
+    expect(screen.queryByText("Hidden active session")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Show more sessions in Agent Teams",
+    })).not.toBeInTheDocument();
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
+    expect(listSidebarSessionsMock).toHaveBeenCalledWith(false);
+    expect(listSessionSubagentsMock).not.toHaveBeenCalled();
+  });
 });
 
 function renderSidebar(props?: {

@@ -7778,3 +7778,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent screenshot comparison, focused composer CSS implementation, browser readability guard update, production build, and V1/V2 screenshot refresh completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Loaded Sidebar Session Index Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, stream/recovery quality gates, remaining Projects Sidebar Python harness inventory, and current V2 sidebar/session tests before editing.
+- Mapped the V1 `test_projects_sidebar_indexes_search_and_streams_from_loaded_session_pages` harness to the V2 architecture: V2 sidebar search and compact run indicators are derived from the `listSidebarSessions` query records, while stream continuation is owned by the AG-UI recovery/run-controller layer rather than a sidebar-local background stream sync helper.
+- Added `SessionsSidebar.test.tsx` coverage proving a large loaded sidebar result set indexes searchable hidden-by-cap sessions, renders the active run indicator from the loaded sidebar record, does not surface a hidden active session that is not in the sidebar query payload, and does not trigger subagent/background discovery as a side effect of search indexing.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept production UI code, sidebar/settings item inventory, visual layout, secondary-page routing, build output, and stream controller behavior unchanged in this slice.
+- This slice retires one Projects Sidebar Python UI harness and tightens the V2 sidebar search/run-indicator boundary. It does not claim complete stream/replay PASS, complete Sessions Sidebar PASS, broader Python UI harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "loaded sidebar records|filtered workspace results|compact session status"` passed with 3 focused tests.
+- `npm test -- SessionsSidebar.test.tsx` passed with 30 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `rg -n "test_projects_sidebar_indexes_search_and_streams_from_loaded_session_pages|indexes_search_and_streams_from_loaded_session_pages" tests\integration_tests\frontend frontend\app\src\test` returned no matches.
+
+### Reviewer
+- Main-agent V1 harness mapping, V2 sidebar query/search/status coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

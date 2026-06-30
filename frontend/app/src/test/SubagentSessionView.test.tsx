@@ -61,6 +61,9 @@ describe("SubagentSessionView", () => {
     const { unmount } = renderSubagentSessionView({ controller });
 
     expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(screen.getByText("Read-only subagent session")).toBeVisible();
+    expect(screen.getByText("explorer")).toBeVisible();
+    expect(screen.getByText("subagent-instance-1")).toBeVisible();
     expect(await screen.findByText("Live subagent output")).toBeVisible();
     expect(listAgentMessagesMock).toHaveBeenCalledWith(
       "session-parent",

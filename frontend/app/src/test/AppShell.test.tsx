@@ -220,7 +220,13 @@ vi.mock("../features/sessions/SubagentSessionView", () => ({
     onBack: () => void;
     subagent: ActiveSubagentSession;
   }) => (
-    <div data-testid="subagent-session-view">
+    <div
+      data-instance-id={subagent.instanceId}
+      data-run-id={subagent.runId}
+      data-run-status={subagent.runStatus}
+      data-session-id={subagent.sessionId}
+      data-testid="subagent-session-view"
+    >
       <span>{subagent.title}</span>
       <button onClick={onBack} type="button">
         Back to chat
@@ -1107,7 +1113,15 @@ describe("AppShell", () => {
 
     fireEvent.click(screen.getByTestId("open-subagent-session"));
 
-    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+    const subagentSurface = await screen.findByTestId("subagent-session-view");
+    expect(subagentSurface).toBeVisible();
+    expect(subagentSurface).toHaveAttribute("data-session-id", "session-1");
+    expect(subagentSurface).toHaveAttribute(
+      "data-instance-id",
+      "subagent-instance-1",
+    );
+    expect(subagentSurface).toHaveAttribute("data-run-id", "subagent-run-1");
+    expect(subagentSurface).toHaveAttribute("data-run-status", "running");
     expect(screen.getByText("Subagent Explorer")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();

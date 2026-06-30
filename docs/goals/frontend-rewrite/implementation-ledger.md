@@ -7504,3 +7504,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell return-to-chat coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Open Surface Harness Retirement
+
+### Scope
+- Re-checked the remaining `test_subagent_sessions_ui.py` inventory and selected `test_opening_subagent_session_hides_main_input_container` only after mapping its V1 assertions across V2 AppShell routing and the real `SubagentSessionView`.
+- Strengthened `AppShell.test.tsx` so opening a subagent secondary surface asserts the passed session id, instance id, run id, and run status, while the main timeline/composer and old right-drawer entrypoints are absent.
+- Strengthened `SubagentSessionView.test.tsx` so the real subagent view proves the read-only header metadata, agent message query, checkpoint-based foreground stream start, and cleanup path.
+- Removed the migrated V1 source-copy harness `test_opening_subagent_session_hides_main_input_container` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- Kept V1 secondary-surface semantics intact and did not change sidebar/settings item inventory, production UI, stream controller, or built dist behavior.
+- This slice reduces the subagent Python UI harness count. It does not claim complete subagent stream/replay PASS, gate resolution parity, running-stream sync parity, terminal-settle parity, background-task subagent discovery parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- AppShell.test.tsx -t "subagent"` passed with 6 tests.
+- `npm test -- SubagentSessionView.test.tsx` passed with 8 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 6 remaining Python UI harness scenarios.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell and SubagentSessionView coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

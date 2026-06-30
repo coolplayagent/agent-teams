@@ -1459,24 +1459,26 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("Plan ready")).toBeVisible();
-    const details = container.querySelector("details.at-round-marker-intent");
-    expect(details).not.toBeNull();
-    expect(details).not.toHaveAttribute("open");
-    const summary = details?.querySelector(".at-round-marker-intent-summary");
+    const marker = container.querySelector(".at-round-marker-intent");
+    expect(marker).not.toBeNull();
+    expect(marker).toHaveAttribute("data-open", "false");
+    const summary = marker?.querySelector(".at-round-marker-intent-summary");
     expect(summary).not.toBeNull();
     expect(summary).toHaveTextContent(
       "Create a migration plan for the frontend rewrite. Keep the settings navigation aligned with V1.",
     );
-    const action = details?.querySelector(".at-round-marker-intent-action");
+    const action = marker?.querySelector(".at-round-marker-intent-action");
     expect(action?.textContent).toBe("Expand");
-    const body = details?.querySelector(".at-round-marker-intent-body");
-    expect(body).toHaveTextContent("Keep the settings navigation aligned with V1.");
-    expect(body?.textContent).toContain("\nDo not flatten secondary screens");
+    expect(marker?.querySelector(".at-round-marker-intent-body")).toBeNull();
 
     fireEvent.click(summary as Element);
 
-    expect(details).toHaveAttribute("open");
-    expect(action?.textContent).toBe("Collapse");
+    expect(marker).toHaveAttribute("data-open", "true");
+    expect(marker?.querySelector(".at-round-marker-intent-action")?.textContent)
+      .toBe("Collapse");
+    const body = marker?.querySelector(".at-round-marker-intent-body");
+    expect(body).toHaveTextContent("Keep the settings navigation aligned with V1.");
+    expect(body?.textContent).toContain("\nDo not flatten secondary screens");
     expect(summary).not.toHaveTextContent(
       "Create a migration plan for the frontend rewrite.",
     );
@@ -1510,19 +1512,19 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("已提问“请选择一个方向？”，用户选择了方向A。"))
       .toBeVisible();
-    const details = container.querySelector("details.at-round-marker-intent");
-    expect(details).not.toBeNull();
-    expect(details).not.toHaveAttribute("open");
-    expect(details?.querySelector(".at-round-marker-intent-action"))
+    const marker = container.querySelector(".at-round-marker-intent");
+    expect(marker).not.toBeNull();
+    expect(marker).toHaveAttribute("data-open", "false");
+    expect(marker?.querySelector(".at-round-marker-intent-action"))
       .toHaveTextContent(/^Expand$/);
-    const summary = details?.querySelector(".at-round-marker-intent-summary");
+    const summary = marker?.querySelector(".at-round-marker-intent-summary");
     fireEvent.click(summary as Element);
-    expect(details).toHaveAttribute("open");
-    expect(details?.querySelector(".at-round-marker-intent-action"))
+    expect(marker).toHaveAttribute("data-open", "true");
+    expect(marker?.querySelector(".at-round-marker-intent-action"))
       .toHaveTextContent(/^Collapse$/);
     expect(summary).not.toHaveTextContent(prompt);
     expect(summary?.querySelector(".at-round-marker-title")).toBeNull();
-    expect(details?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);
+    expect(marker?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);
     expect(summary).not.toHaveTextContent("问题工具位置验证-1782803930917");
     expect(
       textOccurrenceCount(container.querySelector(".at-round-marker")?.textContent ?? "", prompt),
@@ -3629,6 +3631,74 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Tool call: read")).toBeVisible();
     expect(container.querySelector(".at-message-role")).toBeNull();
     expect(screen.queryByText("Explorer")).not.toBeInTheDocument();
+  });
+
+  it("renders subagent panel background updates as output without internal labels", async () => {
+    setRuntimeEntries(
+      [
+        runtimeGenericEntry({
+          id: "subagent-panel-noise:1:0",
+          kind: "subagent_session_status_changed",
+          text: "subagent session status changed",
+          eventId: 1,
+          payload: {
+            run_phase: "subagent_running",
+            status: "running",
+            subagent_instance_id: "subagent-instance-1",
+            subagent_role_id: "Explorer",
+            title: "Explore skill implementation",
+          },
+        }),
+        runtimeGenericEntry({
+          id: "subagent-panel-noise:2:1",
+          kind: "background_task_started",
+          text: "background task started",
+          eventId: 2,
+          payload: {
+            background_task_id: "background-task-1",
+            command: "python stream.py",
+            kind: "command",
+            status: "running",
+          },
+        }),
+        runtimeGenericEntry({
+          id: "subagent-panel-noise:3:2",
+          kind: "background_task_updated",
+          text: "background task updated",
+          eventId: 3,
+          payload: {
+            background_task_id: "background-task-1",
+            delta: "SUBAGENT_STREAM_1",
+            status: "running",
+          },
+        }),
+        runtimeGenericEntry({
+          id: "subagent-panel-noise:4:3",
+          kind: "background_task_completed",
+          text: "background task completed",
+          eventId: 4,
+          payload: {
+            background_task_id: "background-task-1",
+            output_excerpt: "SUBAGENT_STREAM_DONE",
+            status: "completed",
+          },
+        }),
+      ],
+      "open",
+    );
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline("session-1", {
+      runtimeRunId: "run-output",
+      variant: "subagent-panel",
+    });
+
+    expect(await screen.findByText("SUBAGENT_STREAM_1")).toBeVisible();
+    expect(screen.queryByText(/Subagent status/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Background task/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Explore skill implementation/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/python stream.py/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SUBAGENT_STREAM_DONE/)).not.toBeInTheDocument();
   });
 
   it("does not leave a streaming cursor on a completed subagent stream", async () => {
@@ -6729,6 +6799,42 @@ describe("MessageTimeline", () => {
       ),
     ).toBeVisible();
     expect(screen.queryByText("todo updated")).not.toBeInTheDocument();
+  });
+
+  it("does not treat generic tool run identifiers as subagent previews", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-shell-result:1:0",
+        kind: "tool_result",
+        text: "tool result",
+        eventId: 1,
+        payload: {
+          result: {
+            instance_id: "shell-instance-1",
+            output: "SHELL_DONE",
+            role_id: "Crafter",
+            run_id: "shell-run-1",
+          },
+          tool_call_id: "call-shell-1",
+          tool_name: "shell",
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() =>
+      expect(container.querySelector(".at-message-tool-title"))
+        .toHaveTextContent("Tool result: shell"),
+    );
+    const tool = container.querySelector(".at-message-tool");
+    expect(tool).not.toBeNull();
+    expect(tool).not.toHaveClass("is-openable-subagent");
+    expect(container.querySelector(".at-message-tool-preview"))
+      .toHaveTextContent("SHELL_DONE");
+    expect(container.querySelector(".at-message-tool-preview"))
+      .not.toHaveTextContent("Crafter");
   });
 
   it("strips frontmatter and renders markdown tables, links, and code blocks", async () => {

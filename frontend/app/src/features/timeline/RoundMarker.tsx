@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useState } from "react";
 
 import type { SessionRound } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
@@ -41,8 +41,7 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     summary.statusLabel ?? "",
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
-  const handlePromptSummaryClick = (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
+  const handlePromptSummaryClick = () => {
     setPromptOpen((current) => !current);
   };
   const promptActionLabel = promptOpen
@@ -57,23 +56,27 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
         ))}
       </div>
       {summary.promptCollapsible ? (
-        <details
+        <div
           className="at-round-marker-intent"
-          open={promptOpen}
+          data-open={promptOpen ? "true" : "false"}
         >
-          <summary
+          <button
+            type="button"
+            aria-expanded={promptOpen}
             className="at-round-marker-intent-summary"
             onClick={handlePromptSummaryClick}
           >
             {promptOpen ? null : (
               <span className="at-round-marker-title">{summary.title}</span>
             )}
-            <span className="at-round-marker-intent-action" aria-hidden="true">
+            <span className="at-round-marker-intent-action">
               {promptActionLabel}
             </span>
-          </summary>
-          <div className="at-round-marker-intent-body">{summary.promptText}</div>
-        </details>
+          </button>
+          {promptOpen ? (
+            <div className="at-round-marker-intent-body">{summary.promptText}</div>
+          ) : null}
+        </div>
       ) : (
         <div className="at-round-marker-title">{summary.title}</div>
       )}

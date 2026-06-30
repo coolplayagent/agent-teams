@@ -251,8 +251,8 @@ export function MessageTimeline({
     ],
   );
   const runtimeRows = useMemo(
-    () => runtimeEntriesToRows(runtimeEntries, runtimeState.runs),
-    [runtimeEntries, runtimeState.runs],
+    () => runtimeEntriesToRows(runtimeEntries, runtimeState.runs, variant),
+    [runtimeEntries, runtimeState.runs, variant],
   );
   const rows = useMemo(
     () =>
@@ -1746,6 +1746,7 @@ function roundHasClearMarker(round: SessionRound): boolean {
 function runtimeEntriesToRows(
   entries: TimelineEntry[],
   runStates: Record<string, RuntimeRunState>,
+  variant: "session" | "subagent-panel",
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
@@ -1771,7 +1772,7 @@ function runtimeEntriesToRows(
         continue;
       }
       closeRuntimeTextSegment(entry, rows, activeText);
-      rows.push(runtimeEntryToRow(entry));
+      rows.push(runtimeEntryToRow(entry, variant));
       continue;
     }
     if (entry.kind === "output_delta") {
@@ -1786,13 +1787,13 @@ function runtimeEntriesToRows(
         continue;
       }
       closeRuntimeTextSegment(entry, rows, activeText);
-      rows.push(runtimeEntryToRow(entry));
+      rows.push(runtimeEntryToRow(entry, variant));
       continue;
     }
     if (isThinkingEvent(entry.kind)) {
       closeRuntimeTextSegment(entry, rows, activeText);
       if (!applyRuntimeThinkingEvent(entry, rows, activeThinking)) {
-        rows.push(runtimeEntryToRow(entry));
+        rows.push(runtimeEntryToRow(entry, variant));
       }
       continue;
     }
@@ -1815,7 +1816,7 @@ function runtimeEntriesToRows(
     if (mergeRuntimeToolResultIntoPendingRow(rows, entry)) {
       continue;
     }
-    rows.push(runtimeEntryToRow(entry));
+    rows.push(runtimeEntryToRow(entry, variant));
   }
   closeTerminalRuntimeTextSegments(rows, activeText, runStates);
   return rows;
@@ -2023,8 +2024,11 @@ function runtimeToolCallKey(runId: string, callId: string): string {
   return `${runId}:${callId}`;
 }
 
-function runtimeEntryToRow(entry: TimelineEntry): TimelineRow {
-  const parts = runtimeEntryParts(entry);
+function runtimeEntryToRow(
+  entry: TimelineEntry,
+  variant: "session" | "subagent-panel",
+): TimelineRow {
+  const parts = runtimeEntryParts(entry, variant);
   return runtimeEntryToRowWithParts(entry, parts, `runtime:${entry.id}`);
 }
 
@@ -2560,7 +2564,7 @@ function runtimeEntriesAfterHydration(
     hydratedThinkingText === undefined &&
     hydratedToolKeys.size === 0
   ) {
-    return openRuntimeEntriesWithIdleCursor(runState, scopedEntries);
+    return openRuntimeEntriesWithIdleCursor(runState, scopedEntries, variant);
   }
   if (runState.status === "closed") {
     return scopedEntries.filter((entry) =>
@@ -2593,12 +2597,13 @@ function runtimeEntriesAfterHydration(
     hydratedEntries.push(entry);
     suppressCoveredText = false;
   }
-  return openRuntimeEntriesWithIdleCursor(runState, hydratedEntries);
+  return openRuntimeEntriesWithIdleCursor(runState, hydratedEntries, variant);
 }
 
 function openRuntimeEntriesWithIdleCursor(
   runState: RuntimeRunState,
   entries: TimelineEntry[],
+  variant: "session" | "subagent-panel",
 ): TimelineEntry[] {
   if (runState.status === "closed" || entries.length === 0) {
     return entries;
@@ -2606,13 +2611,13 @@ function openRuntimeEntriesWithIdleCursor(
   const visibleEntries = entries.filter(
     (entry) =>
       runtimeEntryShouldRenderChatContent(entry) &&
-      !runtimeSilentOpenLifecycleEntry(entry),
+      !runtimeSilentOpenLifecycleEntry(entry, variant),
   );
   const rowPipelineEntries = entries.filter(
     (entry) =>
       (
         runtimeEntryShouldRenderChatContent(entry) &&
-        !runtimeSilentOpenLifecycleEntry(entry)
+        !runtimeSilentOpenLifecycleEntry(entry, variant)
       ) ||
       runtimeHiddenEntryClosesText(entry),
   );
@@ -2623,7 +2628,7 @@ function openRuntimeEntriesWithIdleCursor(
   ) {
     return [...rowPipelineEntries, runtimeIdleCursorEntry(latestVisibleEntry)];
   }
-  if (visibleEntries.some(runtimeEntryProducesRenderableRow)) {
+  if (visibleEntries.some((entry) => runtimeEntryProducesRenderableRow(entry, variant))) {
     return rowPipelineEntries;
   }
   const latestEntry = entries.at(-1);
@@ -2633,15 +2638,24 @@ function openRuntimeEntriesWithIdleCursor(
   return rowPipelineEntries;
 }
 
-function runtimeSilentOpenLifecycleEntry(entry: TimelineEntry): boolean {
+function runtimeSilentOpenLifecycleEntry(
+  entry: TimelineEntry,
+  variant: "session" | "subagent-panel",
+): boolean {
   if (entry.kind !== "run_started" && entry.kind !== "run_resumed") {
     return false;
   }
-  return runtimeStructuredEventText(entry) === null;
+  return runtimeStructuredEventText(entry, variant) === null;
 }
 
-function runtimeEntryProducesRenderableRow(entry: TimelineEntry): boolean {
-  return runtimeEntryShouldRenderChatContent(entry) && runtimeEntryParts(entry).length > 0;
+function runtimeEntryProducesRenderableRow(
+  entry: TimelineEntry,
+  variant: "session" | "subagent-panel",
+): boolean {
+  return (
+    runtimeEntryShouldRenderChatContent(entry) &&
+    runtimeEntryParts(entry, variant).length > 0
+  );
 }
 
 function runtimeEntryRestoresIdleCursor(entry: TimelineEntry): boolean {
@@ -3667,7 +3681,10 @@ function runtimeStreamKey(entry: TimelineEntry): string {
   return entry.instanceId || entry.roleId;
 }
 
-function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
+function runtimeEntryParts(
+  entry: TimelineEntry,
+  variant: "session" | "subagent-panel",
+): TimelineRenderPart[] {
   if (!runtimeEntryShouldRenderChatContent(entry)) {
     return [];
   }
@@ -3687,7 +3704,11 @@ function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
   if (approval !== null) {
     return [approval];
   }
-  const structuredText = runtimeStructuredEventText(entry);
+  const subagentPanelParts = runtimeSubagentPanelStructuredEventParts(entry, variant);
+  if (subagentPanelParts !== null) {
+    return subagentPanelParts;
+  }
+  const structuredText = runtimeStructuredEventText(entry, variant);
   if (structuredText !== null) {
     return [timelineTextPart(structuredText)];
   }
@@ -3785,7 +3806,45 @@ function runtimeFallbackText(entry: TimelineEntry): string {
   return entry.text;
 }
 
-function runtimeStructuredEventText(entry: TimelineEntry): string | null {
+function runtimeSubagentPanelStructuredEventParts(
+  entry: TimelineEntry,
+  variant: "session" | "subagent-panel",
+): TimelineRenderPart[] | null {
+  if (variant !== "subagent-panel") {
+    return null;
+  }
+  if (
+    entry.kind === "subagent_session_status_changed" ||
+    entry.kind === "background_task_started" ||
+    entry.kind === "background_task_completed" ||
+    entry.kind === "background_task_stopped"
+  ) {
+    return [];
+  }
+  if (entry.kind !== "background_task_updated") {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return [];
+  }
+  const text = runtimeBackgroundTaskPrimaryText(entry.kind, payload);
+  return text.trim().length > 0 ? [timelineTextPart(text)] : [];
+}
+
+function runtimeStructuredEventText(
+  entry: TimelineEntry,
+  variant: "session" | "subagent-panel",
+): string | null {
+  if (
+    variant === "subagent-panel" &&
+    (
+      entry.kind === "subagent_session_status_changed" ||
+      entry.kind.startsWith("background_task_")
+    )
+  ) {
+    return null;
+  }
   if (entry.kind === "token_usage") {
     return runtimeTokenUsageText(entry);
   }
@@ -5445,7 +5504,7 @@ function subagentReferenceFromValues({
   const candidateObjects = subagentCandidateObjects(payload);
   const hasSubagentShape =
     toolActionCategory(toolName) === "subagent" ||
-    candidateObjects.some(subagentObjectHasReferenceFields);
+    candidateObjects.some(subagentObjectHasExplicitReferenceFields);
   if (!hasSubagentShape) {
     return null;
   }
@@ -5566,13 +5625,13 @@ function subagentCandidateObjects(
   return [];
 }
 
-function subagentObjectHasReferenceFields(object: Record<string, JsonValue>): boolean {
+function subagentObjectHasExplicitReferenceFields(
+  object: Record<string, JsonValue>,
+): boolean {
   return [
     "subagent_instance_id",
     "subagent_run_id",
     "subagent_role_id",
-    "instance_id",
-    "run_id",
   ].some((key) => objectString(object, key).length > 0);
 }
 

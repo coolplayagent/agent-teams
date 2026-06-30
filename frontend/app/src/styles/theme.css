@@ -4633,8 +4633,15 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
   min-width: 0;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   list-style: none;
 }
 
@@ -4651,11 +4658,11 @@ body {
   transition: transform 120ms ease;
 }
 
-.at-round-marker-intent[open] .at-round-marker-intent-summary::before {
+.at-round-marker-intent[data-open="true"] .at-round-marker-intent-summary::before {
   transform: rotate(90deg);
 }
 
-.at-round-marker-intent[open] .at-round-marker-title {
+.at-round-marker-intent[data-open="true"] .at-round-marker-title {
   display: none;
 }
 

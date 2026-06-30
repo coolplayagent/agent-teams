@@ -21,6 +21,8 @@ describe("RoundMarker", () => {
     expect(screen.getByText("Collapse")).toBeVisible();
     expect(screen.queryByText("Expand")).not.toBeInTheDocument();
     expect(screen.getAllByText(prompt)).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Collapse" }))
+      .not.toHaveTextContent("Run a long streaming validation prompt");
   });
 });
 

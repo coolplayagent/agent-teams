@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Session Switch Stream Recovery Browser Coverage
+
+### Scope
+- Re-checked the closure matrix before editing, then selected `STREAM-02` / `SESS-03` as the next P0 timeline gap because session switching during a live stream still lacked browser evidence for exact content restoration.
+- Upgraded `v2-session-switch-stream.spec.ts` from a stale "close stream on switch" assertion to the current target behavior: the foreground stream can continue in the background, the newly selected session is not polluted, switching back restores the original run content, and terminal completion removes the streaming cursor.
+- Added exact browser row assertions for event-ordered text recovery across session switching: event 2 text, hidden background event 3 text, and foreground event 4 continuation render as one ordered message with no duplicate rows.
+- Fixed the terminal stream close path so the active session sidebar refetches immediately instead of waiting for delayed round-history settlement; the selected session no longer keeps a running indicator after the timeline and composer have already settled.
+- Synced the round marker `<details>` native toggle state back into React state and added a one-line prompt assertion so expanded markers do not show the same prompt in both the header and body.
+- Kept `SESS-03` and `STREAM-02` at `In progress`; this slice covers the TS browser mock SSE path for one normal-mode session switch, not full interrupted recovery, orchestration mode, real-backend streaming, or hard-refresh replay.
+
+### Verification
+- `npm test -- --run src/test/RunStreamController.test.tsx src/test/MessageTimeline.test.tsx` passed.
+- `npm run build` passed.
+- `npm run test:browser -- v2-session-switch-stream.spec.ts --project=chromium` passed.
+- `npm run test:browser -- v2-rounds.spec.ts --project=chromium --grep "does not repeat the round prompt title"` passed.
+- Browser screenshot artifact updated at `.tmp/frontend-v2-ts-session-switch/v2-active-stream-session-switch.png`.
+- Prompt expansion screenshot artifact updated at `.tmp/frontend-v2-ts-rounds/v2-round-marker-expanded-no-duplicate.png`.
+
+### Reviewer
+- Main-agent browser coverage completed for active-stream session switching, including terminal sidebar status cleanup and prompt expansion de-duplication. Remaining before row verification: real-backend or real-SSE session-switch sampling, hard-refresh replay comparison after switch-back, orchestration-mode session switching, and row snapshots for tool/thinking-heavy runs.
+
 ## 2026-06-30 Timeline Hydration Stability And Prompt Expansion Closure
 
 ### Scope

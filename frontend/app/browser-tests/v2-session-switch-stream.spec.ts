@@ -29,18 +29,26 @@ interface CapturedRunCreateRequest {
   session_id?: string;
 }
 
-test("clears an active foreground stream when switching sessions", async ({
+interface SessionSwitchMockState {
+  completed: boolean;
+  runCreateRequests: CapturedRunCreateRequest[];
+}
+
+test("isolates an active foreground stream and restores exact content after switching back", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
-  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  const state: SessionSwitchMockState = {
+    completed: false,
+    runCreateRequests: [],
+  };
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
     await installMockEventSource(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) =>
-        handleSessionSwitchApi(context, runCreateRequests),
+        handleSessionSwitchApi(context, state),
       sessionTitle: "TS active stream source",
     });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
@@ -53,8 +61,8 @@ test("clears an active foreground stream when switching sessions", async ({
     await prompt.fill(promptText);
     await page.getByRole("button", { name: "Send" }).click();
 
-    await expect.poll(() => runCreateRequests.length).toBe(1);
-    expect(runCreateRequests[0]).toMatchObject({
+    await expect.poll(() => state.runCreateRequests.length).toBe(1);
+    expect(state.runCreateRequests[0]).toMatchObject({
       input: [{ kind: "text", text: promptText }],
       session_id: SESSION_ID,
     });
@@ -86,22 +94,58 @@ test("clears an active foreground stream when switching sessions", async ({
     await expect(page.getByText(streamedText)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
     await expect(prompt).toBeEnabled();
-    await expect.poll(() => eventSourceOpenCount(page)).toBe(0);
+    await expect.poll(() => eventSourceOpenCount(page)).toBe(1);
 
+    const hiddenBackgroundChunk = "Late source-session chunk should stay hidden.";
     await dispatchRunEvent(page, {
       eventId: 3,
-      payload: { text: "Late source-session chunk should stay hidden." },
+      payload: { text: hiddenBackgroundChunk },
       relayEventType: "text_delta",
       sourceIndex: 0,
       type: "message.text.delta",
     });
-    await expect(page.getByText("Late source-session chunk should stay hidden."))
+    await expect(page.getByText(hiddenBackgroundChunk)).toHaveCount(0);
+
+    await page.getByRole("button", { name: "TS active stream source" }).click();
+    await expect(page.getByText("Second session hydrated output")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expect(page.getByText(streamedText)).toHaveCount(1);
+    await expect(page.getByText(hiddenBackgroundChunk)).toHaveCount(1);
+    await expect.poll(() => timelineMessageTexts(page)).toEqual([
+      `${streamedText}${hiddenBackgroundChunk}`,
+    ]);
+
+    const foregroundContinuation = " Foreground continuation after switching back.";
+    await dispatchRunEvent(page, {
+      eventId: 4,
+      payload: { text: foregroundContinuation },
+      relayEventType: "text_delta",
+      sourceIndex: 0,
+      type: "message.text.delta",
+    });
+    await expect.poll(() => timelineMessageTexts(page)).toEqual([
+      `${streamedText}${hiddenBackgroundChunk}${foregroundContinuation}`,
+    ]);
+    state.completed = true;
+    await dispatchRunEvent(page, {
+      eventId: 5,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      sourceIndex: 0,
+      type: "run.completed",
+    });
+    await expect.poll(() => eventSourceOpenCount(page)).toBe(0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(page.locator(".at-session-item.is-selected.has-run-indicator-running"))
+      .toHaveCount(0);
+    await expect(page.locator(".at-session-item.is-selected").getByText("Running"))
       .toHaveCount(0);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
-      "active stream session switch should stay inside the fixed V2 shell",
+      "active stream session switch recovery should stay inside the fixed V2 shell",
     );
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
@@ -117,10 +161,11 @@ test("clears an active foreground stream when switching sessions", async ({
 
 async function handleSessionSwitchApi(
   context: MockApiRouteContext,
-  runCreateRequests: CapturedRunCreateRequest[],
+  state: SessionSwitchMockState,
 ): Promise<boolean> {
   if (context.method === "POST" && context.path === "/ag-ui/runs") {
-    runCreateRequests.push(readRunCreateRequest(context.route.request().postData()));
+    state.runCreateRequests.push(readRunCreateRequest(context.route.request().postData()));
+    state.completed = false;
     await context.fulfillJson({
       run_id: RUN_ID,
       session_id: SESSION_ID,
@@ -133,7 +178,7 @@ async function handleSessionSwitchApi(
   }
   if (context.path === "/sessions/sidebar") {
     await context.fulfillJson([
-      sourceSessionSidebarRecord(),
+      sourceSessionSidebarRecord(state),
       secondarySessionSidebarRecord(),
     ]);
     return true;
@@ -141,7 +186,7 @@ async function handleSessionSwitchApi(
   if (context.path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
     await context.fulfillJson({
       has_more: false,
-      items: [sourceSessionSidebarRecord(), secondarySessionSidebarRecord()],
+      items: [sourceSessionSidebarRecord(state), secondarySessionSidebarRecord()],
       next_cursor: null,
     });
     return true;
@@ -195,6 +240,15 @@ async function handleSessionSwitchApi(
   return false;
 }
 
+async function timelineMessageTexts(page: Page): Promise<string[]> {
+  return page.locator(".at-timeline article.at-message")
+    .allTextContents()
+    .then((texts) =>
+      texts.map((text) => text.replace(/\s+/g, " ").trim())
+        .filter((text) => text.length > 0),
+    );
+}
+
 function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {
   if (body === null || !body.trim()) {
     return {};
@@ -206,9 +260,9 @@ function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {
   return parsed as CapturedRunCreateRequest;
 }
 
-function sourceSessionSidebarRecord(): Record<string, unknown> {
+function sourceSessionSidebarRecord(state: SessionSwitchMockState): Record<string, unknown> {
   return {
-    active_run_status: "running",
+    active_run_status: state.completed ? null : "running",
     created_at: "2026-06-25T08:00:00Z",
     message_count: 1,
     session_id: SESSION_ID,

@@ -113,6 +113,14 @@ export function useRunStreamController(): RunStreamController {
     void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
   };
 
+  const refreshSidebarSessions = () => {
+    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    void queryClient.refetchQueries({
+      queryKey: ["sessions", "sidebar"],
+      type: "active",
+    });
+  };
+
   const refreshSubagentDiscoveryForNewEvents = (
     sessionId: string,
     nextRuntimeState: RuntimeState,
@@ -240,6 +248,7 @@ export function useRunStreamController(): RunStreamController {
     foregroundRunIdsRef.current = [];
     setActiveRunIdsIfChanged([]);
     setTrackedRunIds([]);
+    refreshSidebarSessions();
     const refreshHydratedSession = () => {
       void queryClient.invalidateQueries({
         queryKey: ["sessions", sessionId, "messages"],
@@ -247,7 +256,7 @@ export function useRunStreamController(): RunStreamController {
       void queryClient.invalidateQueries({
         queryKey: ["sessions", sessionId, "rounds"],
       });
-      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      refreshSidebarSessions();
       void queryClient.refetchQueries({
         queryKey: ["sessions", sessionId, "messages"],
         type: "active",

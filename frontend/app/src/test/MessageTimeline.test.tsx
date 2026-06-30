@@ -1474,7 +1474,11 @@ describe("MessageTimeline", () => {
     fireEvent.click(summary as Element);
     expect(details).toHaveAttribute("open");
     expect(summary).not.toHaveTextContent(prompt);
+    expect(summary?.querySelector(".at-round-marker-title")).toBeNull();
     expect(details?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);
+    expect(
+      textOccurrenceCount(container.querySelector(".at-round-marker")?.textContent ?? "", prompt),
+    ).toBe(1);
   });
 
   it("shows terminal runtime status when a persisted round status is stale", async () => {
@@ -7420,6 +7424,13 @@ function toolPreElement(container: ParentNode): HTMLElement {
     throw new Error("Expected a tool details pre element.");
   }
   return element;
+}
+
+function textOccurrenceCount(text: string, needle: string): number {
+  if (needle.length === 0) {
+    return 0;
+  }
+  return text.split(needle).length - 1;
 }
 
 function screenElement(element: HTMLElement): HTMLElement {

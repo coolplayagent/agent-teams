@@ -333,6 +333,9 @@ describe("useRunStreamController", () => {
       forceRefresh: true,
       limit: 100,
     });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });

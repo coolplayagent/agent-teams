@@ -44,6 +44,7 @@ test("opens round rail retry and todo detail", async ({ page }) => {
     });
     await expect(roundButton).toBeVisible();
     await expect(roundButton).toHaveClass(/is-warning/);
+    await expect(roundButton.locator(".at-round-rail-dot")).not.toHaveAttribute("title", /.+/);
     await roundButton.hover();
 
     const detail = page.getByLabel("Round detail");

@@ -1419,39 +1419,6 @@ def test_round_nav_css_keeps_todo_status_readable_and_focus_subtle() -> None:
     assert "white-space: nowrap;" in css
 
 
-def test_round_nav_pending_approval_uses_warning_dot(tmp_path: Path) -> None:
-    payload = _run_round_nav_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const rounds = [
-    {
-        run_id: 'run-1',
-        intent: 'Approve command',
-        run_status: 'completed',
-        pending_tool_approval_count: 2,
-    },
-];
-
-const { renderRoundNavigator } = await import('./navigator.mjs');
-renderRoundNavigator(rounds, () => undefined, { activeRunId: 'run-1' });
-
-const nav = document.getElementById('round-nav-float');
-const node = nav.querySelector('.round-nav-node[data-run-id="run-1"]');
-
-console.log(JSON.stringify({
-    stateTone: node?.dataset?.stateTone || null,
-    dotTitle: node?.querySelector('.round-nav-dot')?.title || null,
-    hasWarningMeta: node?.querySelector('.round-nav-state-warning') !== null,
-}));""".strip(),
-    )
-
-    assert payload == {
-        "stateTone": "warning",
-        "dotTitle": "rounds.pending_approvals",
-        "hasWarningMeta": False,
-    }
-
-
 def test_round_nav_density_degrades_before_overlap(tmp_path: Path) -> None:
     payload = _run_round_nav_script(
         tmp_path=tmp_path,

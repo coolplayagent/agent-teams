@@ -96,9 +96,9 @@ The current batch closes these rows first:
 
 | Row | Required Fix | Verification |
 | --- | --- | --- |
-| MSG-01 | Prompt appears only in the round marker, not duplicated as a user row. | Added round-marker expanded browser fixture; still must replay complex histories and hard refresh the same session. |
-| MSG-02 | Live stream has no giant blank cursor row and no stray internal `passed` text. | 250ms live samples from send to terminal, then refresh and compare rows. |
-| MSG-03 | Thinking appears once and folds into `已处理` after terminal state. | Live stream, terminal replay, expanded/collapsed processed group. |
-| MSG-04 | Tool call and result occupy one lifecycle card: running while pending, filled when done, compact after processed. | Tool-heavy normal and orchestration sessions. |
-| MSG-05 | `已处理` is a real compact fold control, not divider decoration, and preserves virtualizer measurements. | Click test and screenshot. |
-| STREAM-02 | Switching sessions during an active stream and returning restores exact run content by event order. | Start run, sample rows, switch session, switch back, compare runId/event content. |
+| MSG-01 | Prompt appears only in the round marker, not duplicated as a user row. | Added expanded prompt browser fixture and controlled `RoundMarker` unit coverage; still must hard-refresh complex histories in browser. |
+| MSG-02 | Live stream has no giant blank cursor row and no stray internal `passed` text. | `MessageTimeline.test.tsx` now covers stale runtime suppression and completed subagent cursor cleanup; still needs 250ms live browser samples from send to terminal, then refresh comparison. |
+| MSG-03 | Thinking appears once and folds into `已处理` after terminal state. | `MessageTimeline.test.tsx` now covers hydrated closed-stream thinking folded into processed work without replay duplication; still needs live stream, terminal replay, expanded/collapsed browser screenshots. |
+| MSG-04 | Tool call and result occupy one lifecycle card: running while pending, filled when done, compact after processed. | `MessageTimeline.test.tsx` now covers live tool/approval rows, reconnected tool results, and compact tool previews; still needs tool-heavy normal and orchestration browser sessions. |
+| MSG-05 | `已处理` is a real compact fold control, not divider decoration, and preserves virtualizer measurements. | Unit coverage now exercises processed group folding in hydrated thinking/tool flows; still needs click screenshot and virtualizer measurement evidence. |
+| STREAM-02 | Switching sessions during an active stream and returning restores exact run content by event order. | Unit coverage now covers reconnected text/tool-result ordering; still needs browser start-run, sample rows, switch session, switch back, compare runId/event content. |

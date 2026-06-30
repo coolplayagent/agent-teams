@@ -42,10 +42,8 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
   const handlePromptSummaryClick = (event: MouseEvent<HTMLElement>) => {
-    const details = event.currentTarget.parentElement;
-    if (details instanceof HTMLDetailsElement) {
-      setPromptOpen(!details.open);
-    }
+    event.preventDefault();
+    setPromptOpen((current) => !current);
   };
 
   return (
@@ -58,7 +56,7 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
       {summary.promptCollapsible ? (
         <details
           className="at-round-marker-intent"
-          onToggle={(event) => setPromptOpen(event.currentTarget.open)}
+          open={promptOpen}
         >
           <summary
             className="at-round-marker-intent-summary"

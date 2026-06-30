@@ -245,8 +245,7 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findByText(resumedText)).toBeVisible();
-    expect(screen.queryAllByText(resumedText)).toHaveLength(1);
+    await waitForSingleVisibleText(resumedText);
   });
 
   it("copies the latest non-user answer", async () => {
@@ -1910,12 +1909,16 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Fallback model is now active.")).toBeVisible();
-    expect(screen.getAllByText(`Fallback: to ${unsafeTarget}`)).toHaveLength(2);
+    await waitForSingleVisibleText("Fallback model is now active.");
+    await waitFor(() => {
+      expect(screen.getAllByText(`Fallback: to ${unsafeTarget}`)).toHaveLength(2);
+    });
     expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByRole("button", {
-      name: "Go to round 1: Switch model after provider failure",
-    })).toHaveClass("is-warning");
+    await waitFor(() => {
+      expect(screen.getByRole("button", {
+        name: "Go to round 1: Switch model after provider failure",
+      })).toHaveClass("is-warning");
+    });
   });
 
   it("collapses round history before a clear marker and expands it on demand", async () => {
@@ -2135,11 +2138,15 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    const copyButton = await screen.findByRole("button", {
-      name: "Copy last answer",
-    });
-    await waitFor(() => expect(copyButton).toBeEnabled());
-    fireEvent.click(copyButton);
+    await waitForSingleVisibleText("Full persisted answer");
+    await waitFor(() =>
+      expect(screen.queryByText("final chunk only")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Copy last answer" }))
+        .toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy last answer" }));
 
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith("Full persisted answer"),
@@ -2187,8 +2194,7 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("already persisted")).toBeVisible();
-    expect(screen.queryAllByText("already persisted")).toHaveLength(1);
+    await waitForSingleVisibleText("already persisted");
     const streamingText = container.querySelector<HTMLElement>(
       ".at-message-streaming-text",
     );
@@ -2258,8 +2264,12 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-thinking",
     });
 
+    await waitFor(() =>
+      expect(container.querySelector("details.at-processed-group")).not.toBeNull(),
+    );
+    openProcessedGroup(container);
     expect(await screen.findByText("Thinking")).toBeInTheDocument();
-    expect(screen.getAllByText(thinkingText)).toHaveLength(1);
+    await waitFor(() => expect(screen.queryAllByText(thinkingText)).toHaveLength(1));
     expect(container.querySelectorAll(".at-message-thinking")).toHaveLength(1);
   });
 
@@ -2318,11 +2328,10 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-live-overlay",
     });
 
-    expect(await screen.findByText("already persisted")).toBeVisible();
-    expect(screen.queryAllByText("already persisted")).toHaveLength(1);
-    expect(screen.getByText("Tool call: shell")).toBeVisible();
-    expect(screen.getByText("Approval requested: execute_command")).toBeVisible();
-    expect(toolPreviewTexts(container)).toEqual([
+    await waitForSingleVisibleText("already persisted");
+    expect(await screen.findByText("Tool call: shell")).toBeVisible();
+    expect(await screen.findByText("Approval requested: execute_command")).toBeVisible();
+    await waitForToolPreviews(container, [
       "date",
       "Args: npm test",
     ]);
@@ -2576,11 +2585,10 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-rebind-text",
     });
 
-    expect(await screen.findByText("hello")).toBeVisible();
-    expect(screen.queryAllByText("hello")).toHaveLength(1);
-    expect(screen.getByText("world")).toBeVisible();
-    expect(screen.getByText("Tool call: shell")).toBeVisible();
-    expect(toolPreviewTexts(container)).toEqual(["pwd"]);
+    await waitForSingleVisibleText("hello");
+    expect(await screen.findByText("world")).toBeVisible();
+    expect(await screen.findByText("Tool call: shell")).toBeVisible();
+    await waitForToolPreviews(container, ["pwd"]);
     const streamingText = container.querySelector<HTMLElement>(
       ".at-message-streaming-text",
     );
@@ -3142,10 +3150,12 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findAllByText("Tool call: websearch")).toHaveLength(2);
+    await waitFor(() =>
+      expect(screen.getAllByText("Tool call: websearch")).toHaveLength(2),
+    );
     expect(screen.getByText("Tool call: batch")).toBeVisible();
     expect(screen.getByText("Tool call: raw")).toBeVisible();
-    expect(toolPreviewTexts(container)).toEqual([
+    await waitForToolPreviews(container, [
       "Anthropic safety policy",
       "Anthropic funding 2026",
       "one, two",
@@ -3525,10 +3535,12 @@ describe("MessageTimeline", () => {
       variant: "subagent-panel",
     });
 
-    expect(await screen.findByText("Subagent final answer")).toBeVisible();
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-    expect(container.querySelectorAll(".is-streaming")).toHaveLength(0);
-    expect(container.querySelectorAll('[data-streaming="true"]')).toHaveLength(0);
+    await waitForSingleVisibleText("Subagent final answer");
+    await waitFor(() => {
+      expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+      expect(container.querySelectorAll(".is-streaming")).toHaveLength(0);
+      expect(container.querySelectorAll('[data-streaming="true"]')).toHaveLength(0);
+    });
   });
 
   it("renders MainAgent tool calls before role metadata hydration", async () => {
@@ -4057,12 +4069,11 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-rebind-tool",
     });
 
-    expect(await screen.findByText("hello")).toBeVisible();
-    expect(screen.queryAllByText("hello")).toHaveLength(1);
+    await waitForSingleVisibleText("hello");
     expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
-    const resultTitle = screen.getByText("Tool result: shell");
+    const resultTitle = await screen.findByText("Tool result: shell");
     expect(resultTitle).toBeVisible();
-    expect(toolPreviewTexts(container)).toEqual(["done"]);
+    await waitForToolPreviews(container, ["done"]);
     const resultDetails = toolPreElement(screenElement(resultTitle));
     expect(resultDetails).toHaveTextContent(/done/);
     expect(resultDetails).toHaveTextContent(/echo hi/);
@@ -7022,6 +7033,28 @@ function openProcessedGroup(container: HTMLElement): HTMLDetailsElement {
   fireEvent.click(summary);
   expect(group).toHaveAttribute("open");
   return group;
+}
+
+async function waitForSingleVisibleText(text: string): Promise<HTMLElement> {
+  let visibleElement: HTMLElement | null = null;
+  await waitFor(() => {
+    const matches = screen.queryAllByText(text);
+    expect(matches).toHaveLength(1);
+    const [match] = matches;
+    expect(match).toBeVisible();
+    visibleElement = match;
+  });
+  if (visibleElement === null) {
+    throw new Error(`Text did not become visible: ${text}`);
+  }
+  return visibleElement;
+}
+
+async function waitForToolPreviews(
+  container: HTMLElement,
+  expected: string[],
+): Promise<void> {
+  await waitFor(() => expect(toolPreviewTexts(container)).toEqual(expected));
 }
 
 function relayRunEvent(overrides: Partial<RelayRunEvent>): RelayRunEvent {

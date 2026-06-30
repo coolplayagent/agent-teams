@@ -5826,16 +5826,27 @@ function jsonStringArrayInlineText(value: JsonValue | undefined): string {
 function toolSummaryPreview(tool: TimelineToolPart): string {
   if (tool.subagent !== null) {
     return truncatePreview(
-      tool.subagent.title ??
-        tool.subagent.description ??
-        tool.subagent.roleId ??
-        "",
+      firstNonEmptyString([
+        tool.subagent.title,
+        tool.subagent.description,
+        tool.subagent.roleId,
+      ]),
     );
   }
   if (tool.phase === "call") {
     return truncatePreview(toolCallPreview(tool.body));
   }
   return truncatePreview(firstNonEmptyLine(tool.body));
+}
+
+function firstNonEmptyString(values: Array<string | undefined>): string {
+  for (const value of values) {
+    const candidate = value?.trim() ?? "";
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return "";
 }
 
 function toolCallPreview(body: string): string {

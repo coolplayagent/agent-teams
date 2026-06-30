@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Timeline Hydration Stability And Prompt Expansion Closure
+
+### Scope
+- Re-checked the closure matrix before editing, then focused this slice on message timeline hydration/replay defects that were blocking a full `MessageTimeline.test.tsx` pass.
+- Made long round prompt expansion controlled in `RoundMarker`, so the expanded prompt body does not repeat the same prompt text in the summary line and body after virtualizer/session re-renders.
+- Fixed subagent tool-card previews when backend/runtime metadata provides an empty title by falling through to description or role id instead of rendering a blank preview.
+- Stabilized the message timeline regression coverage around final DOM states: closed runtime output hydration, stale runtime delta suppression for copy, live fallback metadata, hydrated thinking folding, open-stream tool/approval rows, reconnected text/tool-result continuation, string tool arg normalization, and completed subagent panel cursor cleanup.
+- Kept the matrix rows `MSG-01`, `MSG-02`, `MSG-03`, `MSG-04`, `MSG-05`, `STREAM-02`, and `SUB-01` at `In progress`; this slice restores the core unit safety net but does not claim full live browser stream parity, session-switch recovery parity, or final V2 completion.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx -t "hides closed runtime output|live fallback targets|does not copy stale runtime|already hydrated|hydrated thinking|live tool and approval|reconnected text|normalizes string tool args|completed subagent stream|MainAgent tool calls|running subagent tool card|hydrated text and idle continuation"` passed with 12 targeted tests.
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 138 tests.
+- `npm run build` passed.
+- In-app browser hard refresh of `http://127.0.0.1:8000/app/` confirmed the expanded round prompt summary only contains the expand/collapse control text while the full prompt appears once in the body, `已处理` remains available, and `.streaming-cursor` count is 0 on the completed session.
+
+### Reviewer
+- Main-agent timeline hydration, prompt expansion, and subagent preview stabilization completed for this slice. Remaining work before any relevant row can move to `Verified`: live browser stream from start to terminal, hard-refresh replay comparison, session-switch recovery while streaming, orchestration-mode coverage, and updated screenshot evidence.
+
 ## 2026-06-30 Timeline Round Marker And Subagent Tool-Card Browser Coverage
 
 ### Scope

@@ -72,6 +72,7 @@ export function useRunStreamController(): RunStreamController {
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const streamGenerationRef = useRef(0);
+  const subagentDiscoveryEventKeysRef = useRef(new Set<string>());
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
   const [suppressedRunIds, setSuppressedRunIds] = useState<string[]>([]);
   const [trackedRunIds, setTrackedRunIds] = useState<string[]>([]);
@@ -101,6 +102,29 @@ export function useRunStreamController(): RunStreamController {
       queryKey: ["sessions", sessionId, "subagents"],
     });
     void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+  };
+
+  const refreshSubagentDiscoveryForNewEvents = (
+    sessionId: string,
+    nextRuntimeState: RuntimeState,
+  ) => {
+    let hasNewSubagentDiscoveryEvent = false;
+    for (const run of Object.values(nextRuntimeState.runs)) {
+      for (const entry of run.entries) {
+        if (!isSubagentDiscoveryEvent(entry)) {
+          continue;
+        }
+        const eventKey = subagentDiscoveryEventKey(entry);
+        if (subagentDiscoveryEventKeysRef.current.has(eventKey)) {
+          continue;
+        }
+        subagentDiscoveryEventKeysRef.current.add(eventKey);
+        hasNewSubagentDiscoveryEvent = true;
+      }
+    }
+    if (hasNewSubagentDiscoveryEvent) {
+      refreshSubagentDiscovery(sessionId);
+    }
   };
 
   const stopContinuityRefresh = () => {
@@ -247,6 +271,7 @@ export function useRunStreamController(): RunStreamController {
         setActiveRunIds(
           activeTrackedRunIds(options.foregroundRunIds ?? [], nextRuntimeState),
         );
+        refreshSubagentDiscoveryForNewEvents(options.sessionId, nextRuntimeState);
       },
       onClosed: () => {
         if (streamGeneration !== streamGenerationRef.current) {
@@ -385,6 +410,45 @@ function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget
 
 function normalizedRunIds(runs: StartRunStreamTarget[]): string[] {
   return normalizeRunTargets(runs).map((run) => run.runId);
+}
+
+function isSubagentDiscoveryEvent(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "subagent_session_status_changed" ||
+    entry.kind === "subagent_stopped" ||
+    entry.kind === "subagent_resumed" ||
+    isSubagentBackgroundTaskEvent(entry)
+  );
+}
+
+function isSubagentBackgroundTaskEvent(entry: TimelineEntry): boolean {
+  if (
+    entry.kind !== "background_task_started" &&
+    entry.kind !== "background_task_updated" &&
+    entry.kind !== "background_task_completed" &&
+    entry.kind !== "background_task_stopped"
+  ) {
+    return false;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null) {
+    return false;
+  }
+  return (
+    jsonString(payload.kind) === "subagent" ||
+    jsonString(payload.subagent_run_id) !== null ||
+    jsonString(payload.subagent_instance_id) !== null
+  );
+}
+
+function subagentDiscoveryEventKey(entry: TimelineEntry): string {
+  return [
+    entry.runId,
+    String(entry.eventId),
+    entry.kind,
+    entry.instanceId ?? "",
+    entry.occurredAt,
+  ].join(":");
 }
 
 function normalizeForegroundRunIds(

@@ -7546,3 +7546,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 concurrency harness mapping, V2 production concurrency guard, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Discovery Event Refresh Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the remaining subagent Python UI harness inventory, and the prior migration ledger before editing so this slice advances the global V2 target rather than only chasing the latest visual note.
+- Added V2 runtime-stream handling that invalidates the current session subagent query and sidebar session query immediately when a newly observed subagent lifecycle event or subagent background-task event arrives.
+- Added per-event dedupe so stream replay, recovery, and repeated `onState` snapshots do not repeatedly refresh the sidebar for the same runtime event.
+- Strengthened `RunStreamController.test.tsx` coverage for immediate subagent discovery refresh on `subagent_session_status_changed`, `subagent_resumed`, and `background_task_completed` events.
+- Removed the migrated V1 source-copy harness `test_background_task_event_records_normal_mode_subagent_immediately` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`. V2 intentionally refreshes React Query backed sidebar/subagent data instead of synthesizing a separate frontend global subagent row cache from copied `frontend/dist` helpers.
+- Kept `test_subagent_status_update_emits_sidebar_refresh_event` for now because it also covers broader V1 parent/child status merge behavior that still needs an explicit V2 mapping before retirement.
+- Kept sidebar/settings item inventory, secondary-surface routing, appearance-page layout, and built dist behavior unchanged in this slice.
+- This slice restores a V2 refresh-recovery path for subagent discovery events. It does not claim complete subagent stream/replay PASS, parent/child subagent status merge parity, terminal-settle parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- RunStreamController.test.tsx -t "subagent events|subagent discovery"` passed with 2 tests.
+- `npm test -- RunStreamController.test.tsx` passed with 31 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `git diff --check` passed.
+- `npm run lint` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 4 remaining Python UI harness scenarios.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 background-task harness mapping, V2 runtime-stream query refresh implementation, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

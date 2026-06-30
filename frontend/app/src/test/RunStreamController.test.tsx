@@ -6,7 +6,7 @@ import type { MockInstance } from "vitest";
 
 import { listSessionRounds } from "../api/client";
 import type { SessionRound } from "../api/contracts";
-import type { RuntimeState } from "../runtime/reducers";
+import type { RuntimeState, TimelineEntry } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 import type {
   MultiplexedRunStreamOptions,
@@ -137,6 +137,101 @@ describe("useRunStreamController", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
+  });
+
+  it("refreshes sidebar subagent discovery immediately for new subagent events", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as {
+      onState: (state: RuntimeState) => void;
+    };
+    expect(subagentDiscoveryRefreshCallCount(invalidateSpy)).toBe(0);
+
+    const statusEntry = runtimeStateEntry({
+      eventId: 5,
+      kind: "subagent_session_status_changed",
+      payload: {
+        status: "running",
+        subagent_instance_id: "subagent-1",
+        subagent_run_id: "subagent-run-1",
+      },
+    });
+    const statusState = runtimeStateWithEntries([statusEntry]);
+    act(() => {
+      options.onState(statusState);
+    });
+
+    expect(subagentDiscoveryRefreshCallCount(invalidateSpy)).toBe(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "subagents"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+
+    act(() => {
+      options.onState(statusState);
+    });
+    expect(subagentDiscoveryRefreshCallCount(invalidateSpy)).toBe(1);
+
+    act(() => {
+      options.onState(runtimeStateWithEntries([
+        statusEntry,
+        runtimeStateEntry({
+          eventId: 6,
+          kind: "subagent_resumed",
+          payload: {
+            instance_id: "subagent-1",
+            task_id: "task-1",
+          },
+        }),
+      ]));
+    });
+
+    expect(subagentDiscoveryRefreshCallCount(invalidateSpy)).toBe(2);
+
+    act(() => {
+      options.onState(runtimeStateWithEntries([
+        statusEntry,
+        runtimeStateEntry({
+          eventId: 6,
+          kind: "subagent_resumed",
+          payload: {
+            instance_id: "subagent-1",
+            task_id: "task-1",
+          },
+        }),
+        runtimeStateEntry({
+          eventId: 7,
+          kind: "background_task_completed",
+          payload: {
+            kind: "subagent",
+            subagent_instance_id: "subagent-2",
+            subagent_run_id: "subagent-run-2",
+          },
+        }),
+      ]));
+    });
+
+    expect(subagentDiscoveryRefreshCallCount(invalidateSpy)).toBe(3);
   });
 
   it("refreshes timeline, sidebar, and session token usage when a run stream closes", async () => {
@@ -1564,6 +1659,16 @@ function recoveryRefreshCallCount(
   ).length;
 }
 
+function subagentDiscoveryRefreshCallCount(
+  invalidateSpy: MockInstance<QueryClient["invalidateQueries"]>,
+): number {
+  return invalidateSpy.mock.calls.filter(
+    ([filters]) =>
+      JSON.stringify(filters) ===
+      JSON.stringify({ queryKey: ["sessions", "session-1", "subagents"] }),
+  ).length;
+}
+
 function runtimeStateWithLastEvent(lastEventId: number): RuntimeState {
   return {
     activeRunIds: ["run-1"],
@@ -1577,6 +1682,48 @@ function runtimeStateWithLastEvent(lastEventId: number): RuntimeState {
         terminalEventType: null,
       },
     },
+  };
+}
+
+function runtimeStateWithEntries(entries: TimelineEntry[]): RuntimeState {
+  const lastEventId = entries.reduce(
+    (latest, entry) => Math.max(latest, entry.eventId),
+    0,
+  );
+  return {
+    activeRunIds: ["run-1"],
+    runs: {
+      "run-1": {
+        entries,
+        lastEventId,
+        runId: "run-1",
+        seenEventKeys: entries.map((entry) => `${entry.runId}:${entry.eventId}`),
+        status: "open",
+        terminalEventType: null,
+      },
+    },
+  };
+}
+
+function runtimeStateEntry({
+  eventId,
+  kind,
+  payload,
+}: {
+  eventId: number;
+  kind: TimelineEntry["kind"];
+  payload: TimelineEntry["payload"];
+}): TimelineEntry {
+  return {
+    eventId,
+    id: `run-1:${eventId}:0`,
+    kind,
+    occurredAt: `2026-06-30T00:00:${String(eventId).padStart(2, "0")}Z`,
+    payload,
+    roleId: "MainAgent",
+    runId: "run-1",
+    sessionId: "session-1",
+    text: kind,
   };
 }
 

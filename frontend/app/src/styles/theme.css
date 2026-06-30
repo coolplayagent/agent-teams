@@ -5210,8 +5210,7 @@ body {
   display: flex !important;
   flex-wrap: wrap;
   min-width: 0;
-  overflow-x: hidden;
-  overflow-y: hidden;
+  overflow: visible;
   padding-bottom: 2px;
   row-gap: 6px !important;
   scrollbar-width: thin;
@@ -5226,7 +5225,7 @@ body {
 .at-composer-field {
   display: inline-flex;
   align-items: center;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   gap: 6px;
   min-width: 0;
 }
@@ -5257,11 +5256,11 @@ body {
 
 .at-session-mode-control {
   min-width: 0;
-  width: 118px;
+  width: 154px;
 }
 
 .at-session-mode-control .ant-segmented-item {
-  min-width: 0;
+  min-width: 62px;
   overflow: hidden;
 }
 
@@ -5273,15 +5272,15 @@ body {
 
 .at-normal-root-role-select,
 .at-orchestration-preset-select {
-  width: clamp(96px, 9vw, 136px);
+  width: 144px;
 }
 
 .at-role-select {
-  width: clamp(88px, 8vw, 120px);
+  width: 132px;
 }
 
 .at-model-profile-select {
-  width: clamp(96px, 9vw, 136px);
+  width: 136px;
 }
 
 .at-thinking-effort-select {

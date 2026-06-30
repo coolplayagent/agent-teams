@@ -7651,3 +7651,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 gate harness mapping, V2 recovery approval refresh coverage, targeted verification, and old subagent session harness file deletion completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Composer Framework Visual Parity Tightening
+
+### Scope
+- Re-checked the active frontend rewrite goal, compared fresh 1280x720 V2 and V1 framework screenshots, and selected the confirmed V1/V2 gap instead of continuing to edit from memory.
+- Fixed the V2 bottom composer control row so desktop-width mode, role, target, and model controls keep V1-level readable text instead of shrinking into ellipses.
+- Kept the full-page shell fixed to one viewport: screenshot DOM metrics after the change show `body` and `#root` at `720/720` with `overflow: hidden`.
+- Kept sidebar/settings item inventory, secondary-page routing, stream controller behavior, and appearance settings navigation unchanged in this slice.
+- This slice is a visual framework tightening only. It does not claim complete visual parity, complete stream/replay PASS, interrupted-stream recovery PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- ShellLayoutCss.test.ts` passed with 12 tests.
+- `git diff --check` passed.
+- `npm run build` passed, including `tsc --noEmit`, `tsc -p tsconfig.desktop.json --noEmit`, desktop build, and Vite production build.
+- Playwright screenshot `frontend-v2-framework-after.png` at 1280x720 verified composer controls are readable; DOM measurements reported no clipped labels for `普通模式`, `编排模式`, `Main Agent`, `目标角色`, or `默认`.
+
+### Reviewer
+- Main-agent V1/V2 screenshot comparison, focused CSS guard update, production build, and browser screenshot/DOM verification completed for this slice. No subsystem PASS or final V2 completion is claimed.

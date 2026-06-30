@@ -25,7 +25,13 @@ const LONG_PROMPT_RUN_ID = "run-v2-long-prompt-marker";
 
 const LONG_PROMPT_PREFIX = "流式从头到尾慢速真实验证-1782818317613";
 const LONG_PROMPT_TEXT =
-  `${LONG_PROMPT_PREFIX}：请启动一个 Explorer 子代理，只读检查下面 10 个文件，并在子代理完成后用中文总结 6 点。`;
+  `${LONG_PROMPT_PREFIX}：请启动一个 Explorer 子代理，只读检查下面 10 个文件，` +
+  "并在子代理完成后用中文总结 6 点：src/relay_teams/skills/__init__.py、" +
+  "src/relay_teams/skills/skill_models.py、src/relay_teams/skills/discovery.py、" +
+  "src/relay_teams/skills/skill_registry.py、src/relay_teams/skills/skill_routing_service.py、" +
+  "src/relay_teams/skills/skill_team_roles.py、src/relay_teams/skills/skill_cli.py、" +
+  "src/relay_teams/skills/config_reload_service.py、src/relay_teams/agent_runtimes/skill_bridge.py、" +
+  "tests/unit_tests/skills/test_skill_registry.py。不要修改任何文件。";
 
 async function useWideRoundRailViewport(page: Page): Promise<void> {
   await page.setViewportSize({ height: 900, width: 1680 });
@@ -195,9 +201,9 @@ test("does not repeat the round prompt title after expanding the marker", async 
     await summary.click();
 
     await expect(marker).toHaveAttribute("data-open", "true");
+    await expect(summary).toHaveText("Collapse");
     await expect(summary).not.toContainText(LONG_PROMPT_TEXT);
     await expect(summary).not.toContainText(LONG_PROMPT_PREFIX);
-    await expect(summary).toContainText("Collapse");
     await expect(summary.locator(".at-round-marker-title")).toHaveCount(0);
     await expect(marker.locator(".at-round-marker-intent-body"))
       .toHaveText(LONG_PROMPT_TEXT);
@@ -901,7 +907,7 @@ function longPromptRound(): Record<string, unknown> {
     run_id: LONG_PROMPT_RUN_ID,
     run_phase: "completed",
     run_status: "completed",
-    run_user_message: LONG_PROMPT_TEXT,
+    run_user_message: null,
     verification_status: "verified",
   };
 }

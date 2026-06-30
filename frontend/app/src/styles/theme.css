@@ -173,6 +173,47 @@ body {
   flex: 0 1 auto;
 }
 
+.at-topbar-health.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 47px;
+  max-width: 88px;
+  padding: 0 8px;
+  border: 1px solid var(--at-border);
+  border-radius: 7px;
+  background: var(--at-surface);
+  color: var(--at-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.at-topbar-health.ant-btn > span:not(.ant-btn-icon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-topbar-health.is-online.ant-btn {
+  color: var(--at-primary);
+}
+
+.at-topbar-health.is-offline.ant-btn {
+  color: var(--at-danger);
+}
+
+.at-topbar-health[aria-busy="true"] .ant-btn-icon svg {
+  animation: at-topbar-health-spin 0.8s linear infinite;
+}
+
+@keyframes at-topbar-health-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .at-message-export-selection {
   display: grid;
   gap: 12px;

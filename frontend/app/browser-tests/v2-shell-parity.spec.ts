@@ -102,6 +102,15 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     await expect(
       page.locator(".at-topbar").getByRole("button", { name: "Settings" }),
     ).toBeVisible();
+    await expect(
+      page
+        .locator(".at-topbar")
+        .getByRole("button", { name: "Backend connected" }),
+    ).toHaveText("ok");
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath("v2-topbar-nav-parity.png", SCREENSHOT_FOLDER),
+    });
 
     await primaryNav.getByRole("button", { name: "Observability" }).click();
     await expect(page.getByRole("heading", { name: "Observability" }))

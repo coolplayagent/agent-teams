@@ -975,6 +975,15 @@ describe("AppShell", () => {
       "aria-busy",
       "false",
     );
+    const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
+    await waitFor(() =>
+      expect(
+        within(topbar).getByRole("button", { name: "Backend connected" }),
+      ).toHaveTextContent("ok"),
+    );
+    expect(
+      within(topbar).getByRole("button", { name: "Backend connected" }),
+    ).toHaveAttribute("aria-busy", "false");
   });
 
   it("keeps the sidebar backend status busy only while health initializes", async () => {
@@ -992,6 +1001,12 @@ describe("AppShell", () => {
     expect(status).toHaveTextContent("Checking backend");
     expect(status).toHaveAttribute("data-tone", "checking");
     expect(status).toHaveAttribute("aria-busy", "true");
+    const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
+    const checkingHealth = within(topbar).getByRole("button", {
+      name: "Checking backend...",
+    });
+    expect(checkingHealth).toHaveTextContent("...");
+    expect(checkingHealth).toHaveAttribute("aria-busy", "true");
 
     resolveHealth({ status: "ok" });
     await waitFor(() =>
@@ -1007,6 +1022,14 @@ describe("AppShell", () => {
       "aria-busy",
       "false",
     );
+    await waitFor(() =>
+      expect(
+        within(topbar).getByRole("button", { name: "Backend connected" }),
+      ).toHaveTextContent("ok"),
+    );
+    expect(
+      within(topbar).getByRole("button", { name: "Backend connected" }),
+    ).toHaveAttribute("aria-busy", "false");
   });
 
   it("keeps V1 topbar actions visible in the narrow shell", async () => {
@@ -1021,6 +1044,11 @@ describe("AppShell", () => {
     expect(
       within(topbar).getByRole("button", { name: "Observability" }),
     ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        within(topbar).getByRole("button", { name: "Backend connected" }),
+      ).toBeVisible(),
+    );
   });
 
   it("resizes the sidebar from the keyboard-accessible separator", async () => {

@@ -10,38 +10,34 @@ const appShellSource = readFileSync("src/features/shell/AppShell.tsx", "utf8");
 describe("shell navigation parity", () => {
   it("keeps the V1 primary sidebar order and labels", () => {
     expect(shellSidebarItems()).toEqual([
-      { key: "search", label: "Search", shortcut: "Ctrl+K" },
-      { key: "skills", label: "Skills" },
+      { key: "chat", label: "Chat" },
       { key: "automation", label: "Automation" },
-      { key: "connectors", label: "Connectors" },
+      { key: "skills", label: "Skills" },
       { key: "board", label: "Board" },
+      { key: "search", label: "Search", shortcut: "Ctrl+K" },
+      { key: "connectors", label: "Connectors" },
       { key: "memory", label: "Memory" },
+      { key: "observability", label: "Observability" },
+      { key: "settings", label: "Settings" },
     ]);
   });
 
-  it("keeps chat, observability, settings, and export out of the sidebar", () => {
+  it("keeps message export out of the sidebar", () => {
     const sidebarBlock = sidebarNavigationBlock();
 
-    for (const key of ["chat", "observability", "settings", "export"]) {
-      expect(sidebarBlock).not.toContain(`key: "${key}"`);
-    }
-    for (const labelKey of [
-      "appChat",
-      "appObservability",
-      "appSettings",
-      "exportMessages",
-    ]) {
-      expect(sidebarBlock).not.toContain(`t("${labelKey}")`);
-    }
+    expect(sidebarBlock).not.toContain('key: "export"');
+    expect(sidebarBlock).not.toContain('t("exportMessages")');
   });
 
-  it("keeps observability, message export, settings, and theme as top bar controls", () => {
+  it("keeps observability, message export, settings, theme, and backend health as top bar controls", () => {
     const topbarBlock = topbarControlsBlock();
 
     expect(topbarBlock).toContain('aria-label={t("appObservability")}');
     expect(topbarBlock).toContain("<MessageExportMenu");
     expect(topbarBlock).toContain('aria-label={t("appSettings")}');
     expect(topbarBlock).toContain('aria-label={t("appToggleTheme")}');
+    expect(topbarBlock).toContain("at-topbar-health");
+    expect(topbarBlock).toContain("healthQuery.refetch()");
   });
 });
 

@@ -1582,6 +1582,108 @@ describe("SettingsDrawer", () => {
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
   }, 70000);
 
+  it("saves speech settings while preserving runtime tuning fields", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      language: "zh-CN",
+      noise_reduction: "near_field",
+      prompt: "existing terms",
+      stt_profile_name: null,
+      vad_prefix_padding_ms: 240,
+      vad_silence_duration_ms: 620,
+      vad_threshold: 0.62,
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Speech" }));
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "STT profile" }), {
+      target: { value: "stt" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
+      target: { value: "en-US" },
+    });
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "edited terms" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveSpeechConfigMock).toHaveBeenCalledWith({
+        language: "en-US",
+        noise_reduction: "near_field",
+        prompt: "edited terms",
+        stt_profile_name: "stt",
+        vad_prefix_padding_ms: 240,
+        vad_silence_duration_ms: 620,
+        vad_threshold: 0.62,
+      }),
+    );
+  });
+
+  it("explains unavailable speech profiles when no realtime STT option can be selected", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      diarize: {
+        model: "gpt-4o-transcribe-diarize",
+        provider: "openai_compatible",
+      },
+      no_speech: {
+        model: "text-only",
+        provider: "openai_compatible",
+        resolved_capabilities: {
+          input: { audio: false, text: true },
+          output: { audio: false, text: true },
+        },
+      },
+      openai: {
+        model: "gpt-5-mini",
+        provider: "openai",
+      },
+      tts: {
+        model: "tts-1",
+        provider: "openai_compatible",
+        resolved_capabilities: {
+          input: { text: true },
+          output: { audio: true, text: true },
+        },
+      },
+      unknown: {
+        model: "custom-voice",
+        provider: "openai_compatible",
+      },
+    });
+    fetchSpeechConfigMock.mockResolvedValue({
+      language: "es-MX",
+      prompt: "",
+      stt_profile_name: "missing-saved-profile",
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Speech" }));
+
+    expect(
+      await screen.findByText("No realtime STT model profiles are available."),
+    ).toBeVisible();
+    expect(screen.getByText("Unavailable profiles")).toBeVisible();
+    expect(screen.getByText("missing-saved-profile")).toBeVisible();
+    expect(
+      screen.getByText("Only OpenAI Compatible profiles can use realtime STT."),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Diarization models are not supported for realtime input."),
+    ).toBeVisible();
+    expect(screen.getByText("This profile is marked as a TTS model.")).toBeVisible();
+    expect(screen.getByText("Speech is disabled for this profile.")).toBeVisible();
+    expect(
+      screen.getByText("Mark this profile as an STT model in Model settings."),
+    ).toBeVisible();
+  });
+
   it("keeps saved ClawHub tokens intact for unchanged probe and save actions", async () => {
     await openClawHubSettings();
 

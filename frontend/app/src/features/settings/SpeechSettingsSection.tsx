@@ -15,6 +15,19 @@ interface SpeechFormValues {
   stt_profile_name: string;
 }
 
+type SpeechProfileUnavailableReason =
+  | "diarize"
+  | "no_speech"
+  | "provider"
+  | "tts"
+  | "unknown";
+
+interface UnavailableSpeechProfile {
+  model: string;
+  name: string;
+  reason: SpeechProfileUnavailableReason;
+}
+
 const SPEECH_LANGUAGE_OPTIONS = [
   ["", "Auto"],
   ["zh-CN", "中文（简体）"],
@@ -73,6 +86,20 @@ export function SpeechSettingsSection() {
   const profileEntries = Object.entries(profilesQuery.data ?? {})
     .filter(([, profile]) => isSpeechProfileCandidate(profile))
     .sort(([left], [right]) => left.localeCompare(right));
+  const unavailableProfileEntries = Object.entries(profilesQuery.data ?? {})
+    .map(([name, profile]) => {
+      const reason = speechProfileUnavailableReason(profile);
+      if (reason === null) {
+        return null;
+      }
+      return {
+        model: profile.model?.trim() || "-",
+        name,
+        reason,
+      };
+    })
+    .filter((entry): entry is UnavailableSpeechProfile => entry !== null)
+    .sort((left, right) => left.name.localeCompare(right.name));
   const selectedLanguage = Form.useWatch("language", form) ?? "";
   const selectedProfile = speechQuery.data?.stt_profile_name ?? "";
   const hasSelectedProfileOption =
@@ -155,6 +182,28 @@ export function SpeechSettingsSection() {
                 <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} />
               </Form.Item>
             </div>
+            {unavailableProfileEntries.length > 0 ? (
+              <div className="at-settings-form-card at-speech-unavailable">
+                <Typography.Text strong>
+                  {t("settingsSpeechUnavailableProfiles")}
+                </Typography.Text>
+                <div className="at-speech-unavailable-list">
+                  {unavailableProfileEntries.map((entry) => (
+                    <div className="at-speech-unavailable-row" key={entry.name}>
+                      <span>
+                        <Typography.Text strong>{entry.name}</Typography.Text>
+                        <Typography.Text className="at-settings-help">
+                          {entry.model}
+                        </Typography.Text>
+                      </span>
+                      <Typography.Text className="at-settings-help">
+                        {speechUnavailableReasonLabel(entry.reason, t)}
+                      </Typography.Text>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
           <Button htmlType="submit" loading={saveMutation.isPending} type="primary">
             {t("settingsSave")}
@@ -177,18 +226,56 @@ function languageOptions(selected: string | undefined): Array<readonly [string, 
 }
 
 function isSpeechProfileCandidate(profile: ModelProfileRecord): boolean {
+  return speechProfileUnavailableReason(profile) === null;
+}
+
+function speechProfileUnavailableReason(
+  profile: ModelProfileRecord,
+): SpeechProfileUnavailableReason | null {
   const provider = profile.provider?.trim() ?? "";
   const model = profile.model?.trim() ?? "";
   if (provider !== "openai_compatible") {
-    return false;
+    return "provider";
   }
   if (resolveRealtimeSpeechModel(profile) === "gpt-4o-transcribe-diarize") {
-    return false;
+    return "diarize";
   }
   if (profile.speech_realtime?.model?.trim()) {
-    return true;
+    return null;
   }
-  return isKnownRealtimeSttModel(model) || resolveSpeechCapability(profile) === "stt";
+  if (isKnownRealtimeSttModel(model)) {
+    return null;
+  }
+  const speechCapability = resolveSpeechCapability(profile);
+  if (speechCapability === "stt") {
+    return null;
+  }
+  if (speechCapability === "tts") {
+    return "tts";
+  }
+  if (speechCapability === "none") {
+    return "no_speech";
+  }
+  return "unknown";
+}
+
+function speechUnavailableReasonLabel(
+  reason: SpeechProfileUnavailableReason,
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (reason === "provider") {
+    return t("settingsSpeechReasonProvider");
+  }
+  if (reason === "diarize") {
+    return t("settingsSpeechReasonDiarize");
+  }
+  if (reason === "tts") {
+    return t("settingsSpeechReasonTts");
+  }
+  if (reason === "no_speech") {
+    return t("settingsSpeechReasonNoSpeech");
+  }
+  return t("settingsSpeechReasonUnknown");
 }
 
 function resolveRealtimeSpeechModel(profile: ModelProfileRecord): string {

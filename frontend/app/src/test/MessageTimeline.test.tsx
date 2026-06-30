@@ -1478,8 +1478,15 @@ describe("MessageTimeline", () => {
     expect(summary).not.toHaveTextContent(prompt);
     expect(summary?.querySelector(".at-round-marker-title")).toBeNull();
     expect(details?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);
+    expect(summary).not.toHaveTextContent("问题工具位置验证-1782803930917");
     expect(
       textOccurrenceCount(container.querySelector(".at-round-marker")?.textContent ?? "", prompt),
+    ).toBe(1);
+    expect(
+      textOccurrenceCount(
+        container.querySelector(".at-round-marker")?.textContent ?? "",
+        "问题工具位置验证-1782803930917",
+      ),
     ).toBe(1);
   });
 

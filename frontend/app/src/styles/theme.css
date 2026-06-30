@@ -6276,6 +6276,11 @@ body {
   .at-appearance-panel-actions {
     flex-wrap: wrap;
   }
+
+  .at-speech-unavailable-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
 }
 
 .at-settings-help {
@@ -6344,6 +6349,38 @@ body {
   font-weight: 520;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.at-speech-unavailable {
+  gap: 12px;
+}
+
+.at-speech-unavailable-list {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+}
+
+.at-speech-unavailable-row {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  min-height: 44px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-speech-unavailable-row:last-child {
+  border-bottom: 0;
+}
+
+.at-speech-unavailable-row > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
 .at-notification-list {

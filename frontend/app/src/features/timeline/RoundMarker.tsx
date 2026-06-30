@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type SyntheticEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 
 import type { SessionRound } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
@@ -41,13 +41,12 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     summary.statusLabel ?? "",
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
-  const handlePromptSummaryClick = (event: MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    setPromptOpen((current) => !current);
-  };
   const handlePromptToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
     const nextOpen = event.currentTarget.open;
     setPromptOpen((current) => current === nextOpen ? current : nextOpen);
+  };
+  const handlePromptSummaryClick = () => {
+    setPromptOpen((current) => !current);
   };
   const promptActionLabel = promptOpen
     ? t("timelineRoundCollapse")
@@ -64,7 +63,6 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
         <details
           className="at-round-marker-intent"
           onToggle={handlePromptToggle}
-          open={promptOpen}
         >
           <summary
             className="at-round-marker-intent-summary"

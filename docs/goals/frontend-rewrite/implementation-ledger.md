@@ -8032,3 +8032,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1/V2 browser comparison, source fix, focused TS tests, CSS test, production build, and live DOM/screenshot verification completed for this slice. No final V2 completion is claimed.
+
+## 2026-07-01 Fixed Shell Scroll Evidence Recheck
+
+### Scope
+- Re-checked the active frontend rewrite goal and `SHELL-03` after the framework-scroll complaints instead of continuing only with message-detail fixes.
+- Used the live in-app browser on `http://127.0.0.1:8000/app/` with the current subagent split panel open, because that state is more likely to expose workspace width and scroll ownership regressions.
+- Measured the shell before and after scrolling the main chat timeline, then saved the raw DOM metrics and a viewport screenshot.
+- Updated `SHELL-03` and the P0 shell framework row from `Gap found` to `In progress`, not `Verified`, because this slice proves current desktop fixed-scroll ownership but does not yet complete narrow/V1 density sign-off.
+- Kept production UI code and build output unchanged in this slice.
+
+### Verification
+- `npm test -- src/test/ShellLayoutCss.test.ts` passed with 18 tests.
+- Browser evidence saved at `.tmp/shell-fixed-scroll-final.json` and `.tmp/shell-fixed-scroll-final.png`.
+- The browser scroll check reported `windowScrollY`, `documentScrollTop`, and `bodyScrollTop` stayed `0`; `bodyScrollHeight` and `documentScrollHeight` stayed equal to the `720px` viewport; `.at-session-list.scrollTop` stayed `0`; the main `.at-timeline.scrollTop` moved from `0` to `304.5`; and the composer stayed pinned at the bottom of the chat grid.
+
+### Reviewer
+- Main-agent matrix scan, live browser scroll measurement, screenshot inspection, focused CSS verification, and matrix status update completed for this slice. No subsystem PASS, narrow-layout PASS, complete shell parity PASS, or final V2 completion is claimed.

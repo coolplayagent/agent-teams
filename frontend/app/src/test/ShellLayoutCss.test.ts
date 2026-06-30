@@ -202,27 +202,33 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-composer-controls > \.ant-space:last-child\s*{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?justify-content:\s*flex-end;/,
     );
-    expect(themeCss).toMatch(/\.at-session-mode-control\s*{[\s\S]*?width:\s*154px;/);
+    expect(themeCss).toMatch(/\.at-session-mode-control\s*{[\s\S]*?width:\s*218px;/);
     expect(themeCss).toMatch(
-      /\.at-session-mode-control \.ant-segmented-item\s*{[\s\S]*?min-width:\s*62px;[\s\S]*?overflow:\s*hidden;/,
+      /\.at-session-mode-control \.ant-segmented-item\s*{[\s\S]*?min-width:\s*96px;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(
       /\.at-session-mode-control \.ant-segmented-item-label\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
     );
     expect(themeCss).toMatch(
-      /\.at-normal-root-role-select,\s*\.at-orchestration-preset-select\s*{[\s\S]*?width:\s*144px;/,
+      /\.at-normal-root-role-select,\s*\.at-orchestration-preset-select\s*{[\s\S]*?width:\s*152px;/,
     );
     expect(themeCss).toMatch(
-      /\.at-role-select\s*{[\s\S]*?width:\s*132px;/,
+      /\.at-role-select\s*{[\s\S]*?width:\s*150px;/,
     );
     expect(themeCss).toMatch(
-      /\.at-model-profile-select\s*{[\s\S]*?width:\s*136px;/,
+      /\.at-model-profile-select\s*{[\s\S]*?width:\s*146px;/,
     );
     expect(themeCss).toMatch(
       /\.at-composer \.ant-select-disabled \.ant-select-selector,[\s\S]*?\.at-composer \.ant-segmented-disabled\s*{[\s\S]*?background:\s*var\(--at-surface-muted\) !important;[\s\S]*?color:\s*var\(--at-text-muted\) !important;/,
     );
     expect(themeCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.at-composer-controls\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 1320px\)[\s\S]*?\.at-composer-controls\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 1320px\)[\s\S]*?\.at-composer-controls > \.ant-space:last-child\s*{[\s\S]*?justify-content:\s*flex-end;[\s\S]*?width:\s*100%;/,
     );
     expect(themeCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.at-composer-control-set > \.ant-space-item:first-child\s*{[\s\S]*?grid-column:\s*1 \/ -1;/,

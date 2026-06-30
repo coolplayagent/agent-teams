@@ -5256,11 +5256,11 @@ body {
 
 .at-session-mode-control {
   min-width: 0;
-  width: 154px;
+  width: 218px;
 }
 
 .at-session-mode-control .ant-segmented-item {
-  min-width: 62px;
+  min-width: 96px;
   overflow: hidden;
 }
 
@@ -5272,15 +5272,15 @@ body {
 
 .at-normal-root-role-select,
 .at-orchestration-preset-select {
-  width: 144px;
+  width: 152px;
 }
 
 .at-role-select {
-  width: 132px;
+  width: 150px;
 }
 
 .at-model-profile-select {
-  width: 136px;
+  width: 146px;
 }
 
 .at-thinking-effort-select {
@@ -5295,6 +5295,18 @@ body {
 .at-composer .ant-segmented-disabled {
   background: var(--at-surface-muted) !important;
   color: var(--at-text-muted) !important;
+}
+
+@media (max-width: 1320px) {
+  .at-composer-controls {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .at-composer-controls > .ant-space:last-child {
+    justify-content: flex-end;
+    width: 100%;
+  }
 }
 
 .at-voice-input-button[data-voice-state="listening"] {

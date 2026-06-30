@@ -7758,3 +7758,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 project-view scroll CSS harness mapping, V2 CSS guard migration, browser screenshot refresh, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Composer Control Readability Visual Tightening
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree status, and the refreshed V1/V2 route-switch screenshots before editing.
+- Fixed the V2 empty-chat composer control row at the 1280px V1 comparison width so short controls such as session mode, target role, and model profile remain readable instead of clipping into `Nor...`, `Orchestr...`, or `Target r...`.
+- Increased the desktop session-mode segmented control and select widths enough for the short V1-parity labels, and let the composer action cluster take its own row below 1320px so the primary controls do not compete with send/toggle actions.
+- Strengthened the shared Playwright browser helper so composer mode labels and the target-role placeholder fail browser tests when they are visually clipped, not merely when controls overlap.
+- Refreshed the route-switch screenshots after the production build. The V2 screenshot now shows readable `Normal`, `Orchestration`, `Target role`, and `Default` labels in the 1280px fixture.
+- Kept sidebar/settings item inventory, secondary-page routing, stream controller behavior, appearance settings content, and Python UI harness inventory unchanged in this slice.
+- This slice tightens one visual parity gap from screenshot review. It does not claim complete visual parity, complete Composer PASS, complete stream/replay PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- ShellLayoutCss.test.ts` passed with 13 tests.
+- `npm run build` passed, including `tsc --noEmit`, `tsc -p tsconfig.desktop.json --noEmit`, desktop build, and Vite production build.
+- `npm run test:browser -- v2-route-switch.spec.ts --project=chromium` passed and refreshed `.tmp/frontend-v2-ts-route-switch/ts-v1-root-before-switch.png` plus `.tmp/frontend-v2-ts-route-switch/ts-v2-after-new-ui-switch.png`.
+- `npm run test:browser -- v2-shell-parity.spec.ts --project=chromium` passed with 5 browser tests and exercised the strengthened composer readability helper across shell surfaces.
+
+### Reviewer
+- Main-agent screenshot comparison, focused composer CSS implementation, browser readability guard update, production build, and V1/V2 screenshot refresh completed for this slice. No subsystem PASS or final V2 completion is claimed.

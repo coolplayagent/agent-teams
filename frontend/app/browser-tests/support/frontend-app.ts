@@ -571,6 +571,43 @@ export async function expectComposerControlsDoNotOverlap(page: Page): Promise<vo
       { message: "composer controls should not visually overlap" },
     )
     .toEqual([]);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const labels = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              [
+                ".at-session-mode-control .ant-segmented-item-label",
+                ".at-role-select .ant-select-selection-placeholder",
+              ].join(", "),
+            ),
+          )
+            .filter((element) => {
+              const style = window.getComputedStyle(element);
+              const box = element.getBoundingClientRect();
+              return (
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                box.width > 0 &&
+                box.height > 0
+              );
+            })
+            .map((element) => ({
+              clientWidth: element.clientWidth,
+              label: element.textContent?.replace(/\s+/g, " ").trim() || "",
+              scrollWidth: element.scrollWidth,
+            }));
+          return labels
+            .filter((label) => label.scrollWidth > label.clientWidth + 1)
+            .map(
+              (label) =>
+                `${label.label} clipped ${label.clientWidth}/${label.scrollWidth}`,
+            );
+        }),
+      { message: "composer short control labels should remain readable" },
+    )
+    .toEqual([]);
 }
 
 export async function expectNoDocumentScroll(

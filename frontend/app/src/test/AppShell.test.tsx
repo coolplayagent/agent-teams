@@ -119,6 +119,10 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
         Open workspace view
       </button>
       <span
+        data-testid="create-new-session-from-sidebar"
+        onClick={onSessionSelected}
+      />
+      <span
         data-testid="select-session-from-sidebar"
         onClick={onSessionSelected}
       />
@@ -1032,6 +1036,31 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("skills-view")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("detaches a stale active foreground stream when creating a session from an empty shell", async () => {
+    window.localStorage.setItem("agentTeams.shellView", "workspace");
+    runStreamControllerMock = createRunStreamController({
+      activeRunId: "run-stale",
+      activeRunIds: ["run-stale"],
+      trackedRunIds: ["run-stale"],
+    });
+    useRunStreamControllerMock.mockReturnValue(runStreamControllerMock);
+    listSidebarSessionsMock.mockResolvedValue([]);
+    useUiStore.setState({
+      selectedSessionId: null,
+      selectedWorkspaceId: "workspace-1",
+    });
+
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("create-new-session-from-sidebar"));
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
     expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
   });
 

@@ -140,7 +140,10 @@ export function AppShell() {
       nextView: ShellPrimaryView,
       historyMode: ShellHistoryMode = "push",
     ) => {
-      if (nextView !== "chat" && runStreamController.activeRunIds.length > 0) {
+      const shouldClearForegroundStream =
+        runStreamController.activeRunIds.length > 0 &&
+        (nextView !== "chat" || selectedSessionId === null);
+      if (shouldClearForegroundStream) {
         runStreamController.clearRunStream();
       }
       const leavingSubagentView = activeSubagent !== null;
@@ -151,7 +154,13 @@ export function AppShell() {
       }
       navigateShellView(nextView, historyMode);
     },
-    [activeSubagent, activeView, navigateShellView, runStreamController],
+    [
+      activeSubagent,
+      activeView,
+      navigateShellView,
+      runStreamController,
+      selectedSessionId,
+    ],
   );
 
   const healthQuery = useQuery({

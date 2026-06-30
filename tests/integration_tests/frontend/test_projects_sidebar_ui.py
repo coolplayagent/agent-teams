@@ -5191,41 +5191,6 @@ console.log(JSON.stringify({
     assert payload["currentMainView"] == "session"
 
 
-def test_projects_sidebar_new_session_detaches_active_stream_without_session(
-    tmp_path: Path,
-) -> None:
-    payload = _run_sidebar_script(
-        tmp_path=tmp_path,
-        runner_source="""
-import {
-    loadProjects,
-} from "./sidebar.mjs";
-import { state } from "./mockState.mjs";
-
-installGlobals(createDomEnvironment());
-state.currentSessionId = null;
-state.currentMainView = "project";
-state.currentProjectViewWorkspaceId = "alpha-project";
-state.activeEventSource = { close() {} };
-
-await loadProjects();
-const featureSection = document.getElementById("projects-list").children[0];
-featureSection.querySelector(".home-new-session-btn").onclick();
-await flushTasks();
-
-console.log(JSON.stringify({
-    detachStreamCalls: globalThis.__detachStreamCalls || 0,
-    openedNewSessionDraftWorkspaceIds: globalThis.__openedNewSessionDraftWorkspaceIds,
-    activeEventSource: state.activeEventSource,
-}));
-""".strip(),
-    )
-
-    assert payload["detachStreamCalls"] == 1
-    assert payload["openedNewSessionDraftWorkspaceIds"] == ["alpha-project"]
-    assert payload["activeEventSource"] is None
-
-
 def test_projects_sidebar_forks_project_and_can_keep_worktree_on_remove(
     tmp_path: Path,
 ) -> None:

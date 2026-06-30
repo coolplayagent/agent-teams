@@ -7691,3 +7691,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, V2 production stream-detach implementation, focused/full AppShell verification, frontend typecheck/build, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Empty Shell New Session Stream Detach Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and continued the adjacent stream/navigation migration rather than switching to unrelated UI polish.
+- Migrated the V1 `test_projects_sidebar_new_session_detaches_active_stream_without_session` behavior into V2 `AppShell.test.tsx`.
+- Updated `AppShell` so a stale active foreground stream is cleared when the shell has no selected session and navigation returns to chat, covering the new-session-from-empty-shell boundary where `ChatWorkspace` has no previous session switch to observe.
+- Kept existing active streams intact when returning to chat with an already selected session, preserving normal foreground stream behavior.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept sidebar/settings item inventory, visible navigation labels, secondary-page routing, appearance layout, and visual framework CSS unchanged in this slice.
+- This slice tightens one more stream/navigation boundary. It does not claim complete stream/replay PASS, interrupted-stream recovery PASS, broader Projects Sidebar Python harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- AppShell.test.tsx -t "stale active foreground stream|foreground stream"` passed with 2 focused tests.
+- `npm test -- AppShell.test.tsx` passed with 33 tests, including the V1 sidebar inventory alignment assertion.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `npm run build` passed, including `tsc --noEmit`, `tsc -p tsconfig.desktop.json --noEmit`, desktop build, and Vite production build.
+- `rg -n "test_projects_sidebar_new_session_detaches_active_stream_without_session|new_session_detaches_active_stream_without_session" tests\integration_tests\frontend frontend\app\src\test\AppShell.test.tsx` returned no matches.
+
+### Reviewer
+- Main-agent V1 harness mapping, V2 production empty-shell stream-detach implementation, focused/full AppShell verification, frontend typecheck/build, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

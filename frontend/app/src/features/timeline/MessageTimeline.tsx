@@ -3111,7 +3111,7 @@ function messagesVisibleInTimelineScope(
   const transcriptMessages = messages.filter(
     (message) => !timelineMessageIsInternalBackgroundTaskNotification(message),
   );
-  if (!timelineScopeIsMainSession(runtimeRunId, fallbackRunId) || rounds.length === 0) {
+  if (!timelineScopeIsMainSession(runtimeRunId, fallbackRunId)) {
     return transcriptMessages;
   }
   const mainRunIds = new Set(
@@ -3119,9 +3119,6 @@ function messagesVisibleInTimelineScope(
       .map((round) => round.run_id.trim())
       .filter((runId) => runId.length > 0),
   );
-  if (mainRunIds.size === 0) {
-    return transcriptMessages;
-  }
   return transcriptMessages.filter((message) => {
     const runId = explicitTimelineMessageRunId(message);
     return (

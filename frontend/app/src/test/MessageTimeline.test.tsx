@@ -3953,6 +3953,42 @@ describe("MessageTimeline", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps orphan subagent messages out before round metadata hydrates", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Now let me read all the core source files concurrently.",
+        created_at: "2026-06-23T10:00:00Z",
+        instance_id: "87f9f69e-8622-4d46-958f-aa0d7d283095",
+        message_id: "explorer-message-without-round",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+      },
+      {
+        content: "Skill 系统的实现总结如下",
+        created_at: "2026-06-23T10:03:00Z",
+        instance_id: "main-instance",
+        message_id: "parent-message-without-round",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByText("Skill 系统的实现总结如下")).toBeVisible();
+    expect(
+      screen.queryByText("Now let me read all the core source files concurrently."),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
   it("keeps subagent round messages injected from replay out of the main timeline", async () => {
     listSessionMessagesMock.mockResolvedValue([]);
     listSessionRoundsMock.mockResolvedValue({

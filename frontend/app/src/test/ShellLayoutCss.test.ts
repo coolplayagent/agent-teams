@@ -153,6 +153,20 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(/@keyframes at-session-switch-spin/);
   });
 
+  it("keeps sidebar session motion limited to status and switch affordances", () => {
+    expect(themeCss).toMatch(/@keyframes at-session-run-indicator-spin/);
+    expect(themeCss).toMatch(
+      /\.at-session-run-indicator\.is-running \.at-session-run-indicator-glyph\s*{[\s\S]*?animation:\s*at-session-run-indicator-spin 0\.82s linear infinite;/,
+    );
+    expect(themeCss).toMatch(/@keyframes at-session-switch-spin/);
+    expect(themeCss).not.toContain("session-item-entering");
+    expect(themeCss).not.toContain("session-item-removing");
+    expect(themeCss).not.toContain("session-item-switch-target");
+    expect(themeCss).not.toContain("sessionItemActivate");
+    expect(themeCss).not.toContain("project-session-list.is-visibility");
+    expect(themeCss).not.toContain("projectSessionVisibility");
+  });
+
   it("keeps subagent sessions locked to the workspace frame", () => {
     expect(themeCss).toMatch(
       /\.at-subagent-session-view\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,

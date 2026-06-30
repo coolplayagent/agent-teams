@@ -999,9 +999,19 @@ describe("SessionsSidebar", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "Toggle subagent sessions",
     }));
-    const subagentRow = await screen.findByRole("button", {
-      name: "Open subagent session Explorer review",
-    });
+    await waitFor(() =>
+      expect(listSessionSubagentsMock).toHaveBeenCalledWith(
+        "session-parent",
+        false,
+      ),
+    );
+    const subagentRow = await screen.findByRole(
+      "button",
+      {
+        name: "Open subagent session Explorer review",
+      },
+      { timeout: 5000 },
+    );
     expect(subagentRow).toHaveClass("is-active");
 
     fireEvent.click(screen.getByRole("button", { name: "Parent session" }));
@@ -1724,6 +1734,63 @@ describe("SessionsSidebar", () => {
     })).toBeVisible();
     expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps a capped workspace capped after creating a new session", async () => {
+    const initialSessions = Array.from({ length: 12 }, (_, index) => ({
+      session_id: `session-${String(index).padStart(2, "0")}`,
+      title: `Existing session ${String(index).padStart(2, "0")}`,
+      updated_at: new Date(Date.UTC(2026, 5, 23, 10, 0, 12 - index))
+        .toISOString(),
+      workspace_id: "workspace-1",
+    }));
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock
+      .mockResolvedValueOnce(initialSessions)
+      .mockResolvedValue([
+        {
+          session_id: "session-new",
+          title: "Fresh session",
+          updated_at: "2026-06-23T11:00:00Z",
+          workspace_id: "workspace-1",
+        },
+        ...initialSessions,
+      ]);
+    createSessionMock.mockResolvedValue({
+      session_id: "session-new",
+      workspace_id: "workspace-1",
+    });
+
+    renderSidebar();
+
+    expect(await screen.findByText("Existing session 09")).toBeVisible();
+    expect(screen.queryByText("Existing session 10")).not.toBeInTheDocument();
+    expect(screen.getByText("10/12")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "New session in Agent Teams",
+    }));
+
+    await waitFor(() =>
+      expect(createSessionMock).toHaveBeenCalledWith({
+        workspace_id: "workspace-1",
+      }),
+    );
+    const freshRow = (await screen.findByText("Fresh session")).closest(
+      ".at-session-item",
+    );
+    expect(freshRow).toHaveClass("is-selected");
+    expect(document.querySelectorAll(".at-session-item")).toHaveLength(10);
+    expect(screen.getByText("10/13")).toBeVisible();
+    expect(screen.queryByText("Existing session 09")).not.toBeInTheDocument();
+    expect(useUiStore.getState().selectedSessionId).toBe("session-new");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+  }, 10000);
 
   it("keeps filtered workspace results uncapped", async () => {
     listWorkspacesMock.mockResolvedValue([

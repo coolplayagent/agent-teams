@@ -7881,3 +7881,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/worktree scan, V1 parent-click/animation harness mapping, V2 SessionsSidebar interaction coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Sidebar New Session Cap And Motion Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree status, and remaining Projects Sidebar Python UI harnesses before selecting this slice.
+- Migrated the behavior core of the V1 `test_projects_sidebar_new_session_keeps_session_visibility_collapsed_and_declares_animations` harness into V2 `SessionsSidebar.test.tsx` and `ShellLayoutCss.test.ts`.
+- Added V2 coverage proving a capped workspace remains capped after creating and selecting a new session, so hidden rows are not expanded into the DOM as a side effect of new session creation.
+- Added V2 CSS coverage proving sidebar session motion is limited to the current run indicator and session-switch affordances, while legacy session item enter/remove/switch-target and project-session visibility animation classes stay absent.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`; historical V1 source-string assertions were not retained as final V2 acceptance criteria.
+- Kept production UI code, sidebar/settings item inventory, secondary-page routing, appearance settings layout, stream controller behavior, replay/recovery code, and build output unchanged in this slice.
+- This slice retires one Projects Sidebar Python UI harness and tightens one sidebar new-session/capped-list boundary. It does not claim complete Sessions Sidebar PASS, complete visual parity, complete stream/replay PASS, interrupted-stream recovery PASS, broader Python UI harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "capped workspace capped after creating|active subagent marker"` passed with 2 focused tests.
+- `npm test -- ShellLayoutCss.test.ts -t "sidebar session motion"` passed with 1 focused test.
+- `npm test -- SessionsSidebar.test.tsx` passed with 37 tests.
+- `npm test -- ShellLayoutCss.test.ts` passed with 14 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `rg -n "test_projects_sidebar_new_session_keeps_session_visibility_collapsed_and_declares_animations|new_session_keeps_session_visibility_collapsed|capped workspace capped after creating|sidebar session motion" tests\integration_tests\frontend frontend\app\src\test` returned only the new V2 TS test names.
+
+### Reviewer
+- Main-agent goal/worktree scan, V1 new-session/animation harness mapping, V2 SessionsSidebar and CSS coverage, focused/full verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

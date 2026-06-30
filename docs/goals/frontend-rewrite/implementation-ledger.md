@@ -7591,3 +7591,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 terminal-settle harness mapping, V2 subagent terminal history settle implementation, timeline hydration de-duplication, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Recovery Cursor Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the remaining `test_subagent_sessions_ui.py` inventory, and the V1 running-subagent stream-sync harness before editing so this slice stays aligned with the broader V2 stream/replay target.
+- Migrated the V2-relevant `last_event_id` continuation behavior from `test_ensure_session_subagents_syncs_running_streams_for_current_session` into `RecoveryBar.test.tsx`.
+- Added `last_event_id` to the V2 `RecoveryBackgroundTask` contract and taught `RecoveryBar` to apply that cursor to background subagent output run targets when starting recovery streams.
+- Strengthened recovery coverage for both active parent multiplex recovery and stopped-parent subagent-only recovery, proving the subagent output stream resumes from the recovered event cursor instead of replaying from an undefined position.
+- Removed the migrated V1 source-copy harness `test_ensure_session_subagents_syncs_running_streams_for_current_session` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- Kept sidebar/settings item inventory, secondary-surface routing, appearance layout, production visual CSS, and built dist unchanged in this slice.
+- This slice improves one stream/replay continuation boundary. It does not claim complete subagent stream/replay PASS, parent/child subagent status merge parity, gate parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- RecoveryBar.test.tsx` passed with 30 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `npm run lint` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 2 remaining Python UI harness scenarios.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 running-stream cursor harness mapping, V2 recovery cursor implementation, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

@@ -2086,6 +2086,7 @@ export interface RecoveryBackgroundTask {
   subagent_task_id?: string | null;
   subagent_instance_id?: string | null;
   subagent_suppress_hooks?: boolean;
+  last_event_id?: number;
   created_at?: string;
   updated_at?: string;
   completed_at?: string | null;

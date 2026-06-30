@@ -1009,13 +1009,13 @@ function buildRecoveryRunStreamTargets(
   for (const task of activeBackgroundTasks) {
     addBackgroundRecoveryRunStreamTarget(
       targets,
-      task.run_id,
+      { runId: task.run_id },
       activeRun,
       activeRunStreamable,
     );
     addBackgroundRecoveryRunStreamTarget(
       targets,
-      backgroundTaskOutputRunId(task),
+      backgroundTaskOutputRunTarget(task),
       activeRun,
       activeRunStreamable,
     );
@@ -1053,11 +1053,11 @@ function foregroundRecoveryRunIdsFor(activeRun: RecoveryRun | null): string[] {
 
 function addBackgroundRecoveryRunStreamTarget(
   targets: StartRunStreamTarget[],
-  runId: string,
+  target: BackgroundRecoveryRunStreamTarget,
   activeRun: RecoveryRun | null,
   activeRunStreamable: boolean,
 ): void {
-  const normalizedRunId = runId.trim();
+  const normalizedRunId = target.runId.trim();
   if (!normalizedRunId) {
     return;
   }
@@ -1065,9 +1065,11 @@ function addBackgroundRecoveryRunStreamTarget(
   if (activeRunId && normalizedRunId === activeRunId && !activeRunStreamable) {
     return;
   }
-  const afterEventId = activeRunStreamable && normalizedRunId === activeRunId
-    ? activeRun?.last_event_id
-    : undefined;
+  const activeRunAfterEventId =
+    activeRunStreamable && normalizedRunId === activeRunId
+      ? activeRun?.last_event_id
+      : undefined;
+  const afterEventId = target.afterEventId ?? activeRunAfterEventId;
   addRecoveryRunStreamTarget(targets, normalizedRunId, afterEventId);
 }
 
@@ -1082,14 +1084,31 @@ function isStreamingRunStatus(status: string | undefined): boolean {
   }
 }
 
-function backgroundTaskOutputRunId(task: RecoveryBackgroundTask): string {
+interface BackgroundRecoveryRunStreamTarget {
+  afterEventId?: number;
+  runId: string;
+}
+
+function backgroundTaskOutputRunTarget(
+  task: RecoveryBackgroundTask,
+): BackgroundRecoveryRunStreamTarget {
   if (task.kind === "subagent") {
     const subagentRunId = task.subagent_run_id?.trim() ?? "";
     if (subagentRunId) {
-      return subagentRunId;
+      return {
+        afterEventId: normalizedRecoveryEventId(task.last_event_id),
+        runId: subagentRunId,
+      };
     }
   }
-  return task.run_id;
+  return { runId: task.run_id };
+}
+
+function normalizedRecoveryEventId(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  return Math.floor(value);
 }
 
 function addRecoveryRunStreamTarget(

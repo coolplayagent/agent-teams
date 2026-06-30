@@ -598,6 +598,7 @@ describe("RecoveryBar", () => {
             status: "running",
             recent_output: [],
             subagent_run_id: "subagent-run-1",
+            last_event_id: 9,
           },
         ],
       }),
@@ -612,7 +613,7 @@ describe("RecoveryBar", () => {
         foregroundRunIds: ["run-1"],
         runs: [
           { afterEventId: 42, runId: "run-1" },
-          { runId: "subagent-run-1" },
+          { afterEventId: 9, runId: "subagent-run-1" },
         ],
         sessionId: "session-1",
       }),
@@ -643,6 +644,7 @@ describe("RecoveryBar", () => {
             status: "running",
             recent_output: [],
             subagent_run_id: "subagent-run-1",
+            last_event_id: 9,
           },
         ],
       }),
@@ -654,7 +656,7 @@ describe("RecoveryBar", () => {
     await screen.findByText("subagent:reviewer");
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
-        afterEventId: undefined,
+        afterEventId: 9,
         foreground: false,
         runId: "subagent-run-1",
         sessionId: "session-1",

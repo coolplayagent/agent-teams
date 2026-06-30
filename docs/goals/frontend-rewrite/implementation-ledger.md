@@ -8086,3 +8086,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, focused V2 browser coverage, screenshot evidence, and matrix/ledger updates completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Processed Group Browser Measurement Coverage
+
+### Scope
+- Re-checked the active frontend rewrite goal and selected `MSG-05` because the processed-work fold was previously reported as confusing divider UI and still lacked browser screenshot plus virtualizer measurement evidence.
+- Added a focused V2 browser spec that serves the built frontend, mocks a completed normal session with thinking, a read tool call/result, and a final answer, then verifies the processed work stays folded behind one compact `Processed` control.
+- The browser assertions prove the final answer remains visible while thinking/tool work is hidden, the old `.at-processed-group-line` divider DOM is absent, expanding the control reveals the tool card without expanding nested thinking text, and both the processed-row height and virtual timeline height increase after remeasurement.
+- Saved screenshot evidence at `.tmp/frontend-v2-ts-processed-group/v2-processed-group-expanded.png`.
+- Kept production source, sidebar/settings inventory, broader visual CSS, stream controller behavior, and built dist unchanged in this slice.
+- This slice strengthens `MSG-05` evidence. It does not claim complete processed-group PASS, complete historical replay PASS, complex-history screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-processed-group.spec.ts --project=chromium` passed with 1 browser test.
+- `npm run test:browser -- v2-rounds.spec.ts -g "does not repeat the round prompt title" --project=chromium` was re-run to confirm the current built V2 browser fixture still keeps an expanded round prompt in one body only, without repeating the title in the open summary row.
+
+### Reviewer
+- Main-agent matrix scan, focused V2 browser coverage, screenshot evidence, and matrix/ledger updates completed for this slice. No subsystem PASS or final V2 completion is claimed.

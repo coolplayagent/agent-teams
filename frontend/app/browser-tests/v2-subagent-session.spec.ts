@@ -19,8 +19,8 @@ import {
   type MockApiRouteContext,
 } from "./support/frontend-app";
 
-const SUBAGENT_INSTANCE_ID = "subagent-instance-browser";
-const SUBAGENT_RUN_ID = "subagent_run_browser_1";
+const SUBAGENT_INSTANCE_ID = "22cd6473-7579-438e-90df-d8177cc31e93";
+const SUBAGENT_RUN_ID = "87f9f69e-8622-4d46-958f-aa0d7d283095";
 const CONTROL_SESSION_ID = "session-v2-subagent-control";
 const PRESSURE_NEW_SESSION_ID = "session-v2-pressure-new";
 const PRESSURE_RUN_ID = "run-v2-pressure-send";
@@ -93,7 +93,16 @@ test("opens a nested subagent session and refreshes history after terminal strea
       relayEventType: "text_delta",
       type: "message.text.delta",
     });
-    await expect(page.getByText("Live browser subagent output.")).toBeVisible();
+    await expect(
+      page.locator(".at-subagent-session-view")
+        .getByText("Live browser subagent output."),
+    ).toBeVisible();
+    await expect(
+      page.locator(".at-chat-view").getByText("Live browser subagent output."),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath("v2-subagent-session-live.png", SCREENSHOT_FOLDER),
+    });
 
     state.completed = true;
     state.delayFinalMessages = true;
@@ -124,6 +133,12 @@ test("opens a nested subagent session and refreshes history after terminal strea
 
     await page.getByRole("button", { name: "Main session" }).click();
     await expect(page.getByText("Parent session output")).toBeVisible();
+    await expect(
+      page.locator(".at-chat-view").getByText("Live browser subagent output."),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".at-chat-view").getByText("Final persisted subagent answer"),
+    ).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Explorer review" }))
       .toHaveCount(0);
     await expectComposerControlsDoNotOverlap(page);

@@ -904,6 +904,9 @@ function activeSubagentFromTimelineReference(
   const instanceId = reference.instanceId?.trim() ?? "";
   const roleId = reference.roleId?.trim() ?? "";
   const title = subagentTitleFromReference(reference);
+  const runPhase = firstNonBlank(reference.runPhase);
+  const runStatus = firstNonBlank(reference.runStatus, reference.status, "running");
+  const status = firstNonBlank(reference.status, reference.runStatus, "running");
   if (
     reference.sessionId.trim().length === 0 ||
     (
@@ -922,10 +925,10 @@ function activeSubagentFromTimelineReference(
     lastEventId: reference.lastEventId ?? null,
     roleId,
     runId,
-    runPhase: reference.runPhase ?? "",
-    runStatus: reference.runStatus ?? reference.status ?? "running",
+    runPhase,
+    runStatus,
     sessionId: reference.sessionId,
-    status: reference.status ?? reference.runStatus ?? "running",
+    status,
     subagentKind: reference.subagentKind ?? "normal",
     title,
     updatedAt: reference.updatedAt ?? "",
@@ -1054,6 +1057,16 @@ function timelineReferenceSubagentMatchScore(
 
 function normalizedSubagentMatchText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function firstNonBlank(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    const trimmed = value?.trim() ?? "";
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return "";
 }
 
 function subagentIsRunning(subagent: ActiveSubagentSession): boolean {

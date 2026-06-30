@@ -85,8 +85,13 @@ export function openSessionSubagentRunStream(
     afterEventId: Math.max(0, options.afterEventId),
     runId: options.runId.trim(),
   };
+  const initialState = runtimeStateWithRunScope(
+    runtimeStateWithReplayCursors(options.initialState, [run]),
+    run.runId,
+    "subagent",
+  );
   return openRunEventSource({
-    initialState: runtimeStateWithReplayCursors(options.initialState, [run]),
+    initialState,
     onActivity: options.onActivity,
     onClosed: options.onClosed,
     onError: options.onError,
@@ -298,6 +303,34 @@ function runtimeStateWithReplayCursors(
   };
 }
 
+function runtimeStateWithRunScope(
+  initialState: RuntimeState,
+  runId: string,
+  scope: NonNullable<RuntimeRunState["scope"]>,
+): RuntimeState {
+  const currentRun = initialState.runs[runId];
+  const scopedRun: RuntimeRunState = {
+    entries: currentRun?.entries ?? [],
+    lastEventId: currentRun?.lastEventId ?? 0,
+    ...optionalRuntimeRunMetadata(currentRun),
+    runId,
+    seenEventKeys: currentRun?.seenEventKeys ?? [],
+    status: currentRun?.status ?? "connecting",
+    terminalEventType: currentRun?.terminalEventType ?? null,
+    scope,
+  };
+  if (currentRun?.replayAfterEventId !== undefined) {
+    scopedRun.replayAfterEventId = currentRun.replayAfterEventId;
+  }
+  return {
+    ...initialState,
+    runs: {
+      ...initialState.runs,
+      [runId]: scopedRun,
+    },
+  };
+}
+
 function optionalRuntimeRunMetadata(
   runState: RuntimeRunState | undefined,
 ): Partial<RuntimeRunState> {
@@ -316,6 +349,9 @@ function optionalRuntimeRunMetadata(
   }
   if (runState.targetRoleId !== undefined) {
     metadata.targetRoleId = runState.targetRoleId;
+  }
+  if (runState.scope !== undefined) {
+    metadata.scope = runState.scope;
   }
   return metadata;
 }

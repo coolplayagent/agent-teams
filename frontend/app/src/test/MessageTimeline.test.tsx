@@ -3439,6 +3439,79 @@ describe("MessageTimeline", () => {
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });
 
+  it("keeps UUID subagent stream rows out while primary role metadata is loading", async () => {
+    const subagentInstanceId = "22cd6473-7579-438e-90df-d8177cc31e93";
+    const subagentRunId = "87f9f69e-8622-4d46-958f-aa0d7d283095";
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          args: {
+            description: "Explore skill implementation",
+            prompt: "Read the project and report back.",
+            role_id: "Explorer",
+          },
+          tool_call_id: "call-spawn-explorer",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        instance_id: subagentInstanceId,
+        role_id: "Explorer",
+        run_id: subagentRunId,
+        trace_id: subagentRunId,
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: "uuid child thought should stay in panel",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        instance_id: subagentInstanceId,
+        role_id: "Explorer",
+        run_id: subagentRunId,
+        trace_id: subagentRunId,
+        payload_json: JSON.stringify({
+          text: "UUID child output should stay in the subagent panel.",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const mainTimeline = renderTimeline("session-1");
+
+    expect(await screen.findByText("Starting subagent")).toBeVisible();
+    expect(
+      screen.queryByText("uuid child thought should stay in panel"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("UUID child output should stay in the subagent panel."),
+    ).not.toBeInTheDocument();
+    expect(mainTimeline.container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+
+    mainTimeline.unmount();
+
+    const subagentTimeline = renderTimeline("session-1", {
+      runtimeRunId: subagentRunId,
+      variant: "subagent-panel",
+    });
+
+    expect(
+      await screen.findByText("UUID child output should stay in the subagent panel."),
+    ).toBeVisible();
+    expect(screen.getByText("uuid child thought should stay in panel")).toBeVisible();
+    expect(subagentTimeline.container.querySelector(".at-message-role")).toBeNull();
+    expect(screen.queryByText("Explorer")).not.toBeInTheDocument();
+  });
+
   it("renders selected subagent stream without repeated role labels", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -3623,6 +3696,7 @@ describe("MessageTimeline", () => {
       roleId: "explorer",
       runId: "subagent_run_1",
       sessionId: "session-1",
+      status: "completed",
       title: "Explore skills implementation",
     }));
   });
@@ -3665,6 +3739,7 @@ describe("MessageTimeline", () => {
       description: "Explore how Skills are implemented in this project",
       roleId: "Explorer",
       sessionId: "session-1",
+      status: "running",
     }));
     expect(toolPreviewTexts(container)).toEqual([
       "Explore how Skills are implemented in this project",
@@ -3676,10 +3751,10 @@ describe("MessageTimeline", () => {
       {
         content: "Explore how Skills are implemented in this project",
         created_at: "2026-06-23T10:00:00Z",
-        instance_id: "subagent-instance-1",
-        message_id: "subagent-message",
+        instance_id: "22cd6473-7579-438e-90df-d8177cc31e93",
+        message_id: "explorer-message",
         role_id: "explorer",
-        run_id: "subagent_run_1",
+        run_id: "87f9f69e-8622-4d46-958f-aa0d7d283095",
       },
       {
         content: "Skill 系统的实现总结如下",

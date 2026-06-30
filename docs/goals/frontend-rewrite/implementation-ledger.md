@@ -2,6 +2,30 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Subagent Stream Scope And UUID Session Parity
+
+### Scope
+- Re-checked the closure matrix after the session-switch slice and selected `SUB-01` plus the related `STREAM-02` leakage edge because subagent runtime rows could still appear in the main timeline during live streaming and session/view switching.
+- Added an explicit `RuntimeRunState.scope` marker for session-scoped subagent SSE streams so right-panel subagent updates are rendered by the subagent timeline without polluting the parent chat timeline.
+- Tightened main timeline filtering for UUID-shaped subagent instance ids and preserved ordinary main-session worker/tool rows, covering the real backend shape where subagent run/instance ids are UUIDs instead of `subagent_*` strings.
+- Removed the stale `subagent_run_` prefix requirement from V2 subagent record normalization so normal subagent records with UUID run ids can reconcile and stream.
+- Fixed subagent tool-card opening status: blank status fields now fall back to `running`, while completed tool-result cards propagate the tool row status so completed subagents do not incorrectly open a live stream.
+- Extended browser coverage to capture both live and completed subagent panel states and to assert the parent `.at-chat-view` never contains the subagent live/final output while the right panel is open or after returning to the main session.
+- Kept `SUB-01` and `STREAM-02` at `In progress`; this slice covers mocked browser SSE, UUID scoping, and normal-mode subagent panel isolation, not real-backend long-running orchestration replay, hard-refresh replay, or full reviewer sign-off.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx` passed with 139 tests.
+- `npm test -- --run src/test/SessionsSidebar.test.tsx src/test/AppShell.test.tsx src/test/SubagentSessionView.test.tsx src/test/streamClient.test.ts src/test/runtimeReducers.test.ts` passed with 131 tests.
+- `npm run build` passed.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 3 browser tests.
+- `npm run test:browser -- v2-session-switch-stream.spec.ts --project=chromium` passed.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-live.png`
+  - `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-completed.png`
+
+### Reviewer
+- Main-agent verification confirmed the live UUID subagent output renders only in the right subagent panel, the parent timeline remains unpolluted, completed subagent history refills without a lingering live cursor, and session-switch stream recovery still passes. Remaining before verification: real backend subagent stream sampling, hard-refresh/replay comparison, orchestration-mode subagent histories, and broader tool/thinking-heavy stream screenshots.
+
 ## 2026-06-30 Session Switch Stream Recovery Browser Coverage
 
 ### Scope

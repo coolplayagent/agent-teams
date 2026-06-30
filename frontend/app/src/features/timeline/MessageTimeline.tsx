@@ -184,8 +184,9 @@ export function MessageTimeline({
         displayRounds,
         runtimeRunId,
         fallbackRunId,
+        primaryRoleId,
       ),
-    [displayRounds, fallbackRunId, messages, runtimeRunId],
+    [displayRounds, fallbackRunId, messages, primaryRoleId, runtimeRunId],
   );
   const persistedMessages = useMemo(
     () => mergeTimelineMessages(scopedMessages, displayRounds),
@@ -2719,7 +2720,7 @@ function runtimeEntryBelongsToMainTimeline(
 ): boolean {
   const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
   if (normalizedPrimaryRole.length === 0) {
-    return !runtimeEntryLooksLikeDetachedSubagent(entry, runState);
+    return !runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId);
   }
   const entryRole = stableTimelineRole(entry.roleId);
   if (entryRole.length > 0) {
@@ -2727,7 +2728,7 @@ function runtimeEntryBelongsToMainTimeline(
   }
   return (
     runtimeRunStateBelongsToMainTimeline(runState, primaryRoleId) &&
-    !runtimeEntryLooksLikeDetachedSubagent(entry, runState)
+    !runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId)
   );
 }
 
@@ -2737,7 +2738,7 @@ function runtimeRunStateBelongsToMainTimeline(
 ): boolean {
   const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
   if (normalizedPrimaryRole.length === 0) {
-    return !runtimeRunStateLooksLikeDetachedSubagent(runState);
+    return !runtimeRunStateLooksLikeDetachedSubagent(runState, primaryRoleId);
   }
   const runRole = stableTimelineRole(runState.targetRoleId ?? "");
   if (runRole === normalizedPrimaryRole) {
@@ -2751,19 +2752,40 @@ function runtimeRunStateBelongsToMainTimeline(
 function runtimeEntryLooksLikeDetachedSubagent(
   entry: TimelineEntry,
   runState: RuntimeRunState,
+  primaryRoleId: string | null,
 ): boolean {
+  if (runState.scope === "subagent") {
+    return true;
+  }
   const identifiers = [
     entry.instanceId ?? "",
     entry.runId,
     runState.runId,
     runState.targetRoleId ?? "",
   ].join(" ").toLowerCase();
-  return identifiers.includes("subagent");
+  if (identifiers.includes("subagent")) {
+    return true;
+  }
+  const instanceId = (entry.instanceId ?? "").trim();
+  if (instanceId.length === 0) {
+    return false;
+  }
+  if (!timelineIdentifierLooksGeneratedAgentInstance(instanceId)) {
+    return false;
+  }
+  const roleId = entry.roleId.trim().length > 0
+    ? entry.roleId
+    : (runState.targetRoleId ?? "");
+  return timelineRoleCanBeDetachedAgent(roleId, primaryRoleId);
 }
 
 function runtimeRunStateLooksLikeDetachedSubagent(
   runState: RuntimeRunState,
+  primaryRoleId: string | null,
 ): boolean {
+  if (runState.scope === "subagent") {
+    return true;
+  }
   const identifiers = [
     runState.runId,
     runState.targetRoleId ?? "",
@@ -2773,7 +2795,12 @@ function runtimeRunStateLooksLikeDetachedSubagent(
       entry.runId,
     ]),
   ].join(" ").toLowerCase();
-  return identifiers.includes("subagent");
+  if (identifiers.includes("subagent")) {
+    return true;
+  }
+  return runState.entries.some((entry) =>
+    runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId),
+  );
 }
 
 function runtimeEntryIsCoveredByHydratedOutput(
@@ -2999,6 +3026,7 @@ function messagesVisibleInTimelineScope(
   rounds: SessionRound[],
   runtimeRunId: string | null,
   fallbackRunId: string | null,
+  primaryRoleId: string | null,
 ): TimelineMessage[] {
   if (!timelineScopeIsMainSession(runtimeRunId, fallbackRunId) || rounds.length === 0) {
     return messages;
@@ -3016,7 +3044,7 @@ function messagesVisibleInTimelineScope(
     return (
       runId.length === 0 ||
       mainRunIds.has(runId) ||
-      !timelineMessageLooksDetachedSubagent(message)
+      !timelineMessageLooksDetachedSubagent(message, primaryRoleId)
     );
   });
 }
@@ -3035,7 +3063,10 @@ function explicitTimelineMessageRunId(message: TimelineMessage): string {
   return (message.run_id ?? message.trace_id ?? "").trim();
 }
 
-function timelineMessageLooksDetachedSubagent(message: TimelineMessage): boolean {
+function timelineMessageLooksDetachedSubagent(
+  message: TimelineMessage,
+  primaryRoleId: string | null,
+): boolean {
   const role = stableTimelineRole(message.role_id ?? message.role ?? "");
   const identifiers = [
     message.instance_id ?? "",
@@ -3046,10 +3077,31 @@ function timelineMessageLooksDetachedSubagent(message: TimelineMessage): boolean
   if (identifiers.includes("subagent")) {
     return true;
   }
+  if (!timelineRoleCanBeDetachedAgent(role, primaryRoleId)) {
+    return false;
+  }
+  const instanceId = (message.instance_id?.trim() ?? "");
+  return (
+    instanceId.length > 0 &&
+    timelineIdentifierLooksGeneratedAgentInstance(instanceId)
+  );
+}
+
+function timelineRoleCanBeDetachedAgent(
+  roleName: string,
+  primaryRoleId: string | null,
+): boolean {
+  const role = stableTimelineRole(roleName);
   if (role === "assistant" || role === "user" || role.length === 0) {
     return false;
   }
-  return (message.instance_id?.trim() ?? "").length > 0;
+  const primaryRole = stableTimelineRole(primaryRoleId ?? "");
+  return primaryRole.length === 0 || role !== primaryRole;
+}
+
+function timelineIdentifierLooksGeneratedAgentInstance(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    .test(value.trim());
 }
 
 function mergeTimelineMessages(
@@ -4307,7 +4359,11 @@ function MessageToolBlock({
   const preview = toolSummaryPreview(tool);
   const status = toolBlockStatus(tool);
   const isRunning = status === "running";
-  const subagentReference = completeSubagentReference(tool.subagent, sessionId);
+  const subagentReference = completeSubagentReference(
+    tool.subagent,
+    sessionId,
+    status,
+  );
   const canOpenSubagent =
     onSubagentOpen !== undefined &&
     subagentReference !== null;
@@ -5368,7 +5424,7 @@ function subagentReferenceFromValues({
     runPhase: subagentStringField(candidateObjects, ["run_phase", "runPhase"]),
     runStatus: subagentStringField(candidateObjects, ["run_status", "runStatus"]),
     sessionId: subagentStringField(candidateObjects, ["session_id", "sessionId"]),
-    status: subagentStringField(candidateObjects, ["status"]),
+    status: subagentStringField(candidateObjects, ["status", "outcome"]),
     subagentKind: subagentStringField(candidateObjects, [
       "subagent_kind",
       "kind",
@@ -5395,14 +5451,35 @@ function subagentReferenceFromValues({
 function completeSubagentReference(
   reference: TimelineSubagentReference | null,
   sessionId: string,
+  fallbackStatus = "",
 ): TimelineSubagentReference | null {
   if (reference === null) {
     return null;
   }
+  const status = firstNonBlankTimelineValue(
+    reference.status,
+    reference.runStatus,
+    fallbackStatus,
+  );
+  const runStatus = firstNonBlankTimelineValue(reference.runStatus, status);
   return {
     ...reference,
+    runStatus,
     sessionId: reference.sessionId.trim() || sessionId,
+    status,
   };
+}
+
+function firstNonBlankTimelineValue(
+  ...values: Array<string | null | undefined>
+): string {
+  for (const value of values) {
+    const trimmed = value?.trim() ?? "";
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return "";
 }
 
 function subagentCandidateObjects(

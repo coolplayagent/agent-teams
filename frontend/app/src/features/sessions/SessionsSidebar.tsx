@@ -1131,9 +1131,6 @@ export function normalizeSessionSubagent(
   if (isReservedRootRoleId(roleId)) {
     return null;
   }
-  if (subagentKind === "normal" && !runId.startsWith("subagent_run_")) {
-    return null;
-  }
   const status = normalizeSubagentStatus(record.status);
   return {
     createdAt: firstTrimmed(record.created_at),

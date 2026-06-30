@@ -27,6 +27,7 @@ export interface RuntimeRunState {
   promptText?: string;
   createdAt?: string;
   targetRoleId?: string;
+  scope?: "session" | "subagent";
   status: StreamStatus;
   lastEventId: number;
   replayAfterEventId?: number;

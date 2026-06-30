@@ -179,16 +179,18 @@ test("does not repeat the round prompt title after expanding the marker", async 
     await waitForV2Shell(page);
 
     await expect(page.getByText("Long prompt marker answer")).toBeVisible();
-    const marker = page.locator("details.at-round-marker-intent");
+    const marker = page.locator(".at-round-marker-intent");
     await expect(marker).toBeVisible();
+    await expect(marker).toHaveAttribute("data-open", "false");
     const summary = marker.locator(".at-round-marker-intent-summary");
     await expect(summary).toContainText("流式从头到尾慢速真实验证");
 
     await summary.click();
 
-    await expect(marker).toHaveAttribute("open", "");
+    await expect(marker).toHaveAttribute("data-open", "true");
     await expect(summary).not.toContainText(LONG_PROMPT_TEXT);
     await expect(summary).toContainText("Collapse");
+    await expect(summary.locator(".at-round-marker-title")).toHaveCount(0);
     await expect(marker.locator(".at-round-marker-intent-body"))
       .toHaveText(LONG_PROMPT_TEXT);
     await expect(
@@ -196,6 +198,14 @@ test("does not repeat the round prompt title after expanding the marker", async 
         .locator(".at-round-marker-intent-body")
         .filter({ hasText: LONG_PROMPT_TEXT }),
     ).toHaveCount(1);
+    await expect
+      .poll(() =>
+        marker.evaluate((element, prompt) => {
+          const markerText = element.textContent ?? "";
+          return markerText.split(prompt).length - 1;
+        }, LONG_PROMPT_TEXT),
+      )
+      .toBe(1);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(

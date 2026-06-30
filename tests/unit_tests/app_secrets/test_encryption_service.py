@@ -52,7 +52,9 @@ def test_decrypt_rejects_plaintext_and_invalid_ciphertext(
         service.decrypt("relay-password")
 
     with pytest.raises(SecretDecryptionError, match="Failed to decrypt"):
-        service.decrypt("ENC:not-valid")
+        service.decrypt("ENC:v1:not-valid")
+
+    assert service.is_encrypted("ENC:not-valid") is False
 
 
 def test_decrypt_legacy_machine_features_marks_migration(
@@ -74,7 +76,9 @@ def test_decrypt_legacy_machine_features_marks_migration(
         lambda: ("", legacy_features),
     )
 
-    assert service.decrypt(f"ENC:{legacy_token.decode('utf-8')}") == "legacy-password"
+    assert (
+        service.decrypt(f"ENC:v1:{legacy_token.decode('utf-8')}") == "legacy-password"
+    )
     assert service.needs_migration is True
 
 
@@ -91,7 +95,7 @@ def test_derive_key_and_collect_machine_features_validate_inputs(
     monkeypatch.setattr(encryption_module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(encryption_module.platform, "release", lambda: "6.1")
 
-    assert service.collect_machine_features() == "machine-123|host-a|Linux-6.1"
+    assert service.collect_machine_features() == "machine-123"
 
     monkeypatch.setattr(service, "_get_machine_id", lambda: "00000000")
     monkeypatch.setattr(encryption_module.socket, "gethostname", str)
@@ -271,12 +275,16 @@ def test_legacy_machine_features_and_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = EncryptionService()
+    monkeypatch.setattr(service, "_get_machine_id", lambda: "machine-123")
     monkeypatch.setattr(service, "_get_mac_fallback", lambda: "001122334455")
     monkeypatch.setattr(encryption_module.socket, "gethostname", lambda: "host-a")
     monkeypatch.setattr(encryption_module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(encryption_module.platform, "release", lambda: "6.1")
 
-    assert service._get_legacy_machine_features() == ("001122334455|host-a|Linux-6.1",)
+    assert service._get_legacy_machine_features() == (
+        "machine-123|host-a|Linux-6.1",
+        "001122334455|host-a|Linux-6.1",
+    )
     assert service._is_valid_id("SERIAL123") is True
     assert service._is_valid_id("00000000") is False
     assert service._normalize_mac("aa-bb-cc-dd-ee-ff") == "aabbccddeeff"
@@ -284,6 +292,10 @@ def test_legacy_machine_features_and_helpers(
     assert service._is_ignored_windows_adapter("Ethernet", "Intel") is False
     assert service._is_ignored_windows_adapter("vethernet", "hyper-v") is True
 
+    def raise_machine_feature_error() -> str:
+        raise MachineFeatureError("missing")
+
+    monkeypatch.setattr(service, "_get_machine_id", raise_machine_feature_error)
     monkeypatch.setattr(service, "_get_mac_fallback", lambda: None)
     assert service._get_legacy_machine_features() == ()
 

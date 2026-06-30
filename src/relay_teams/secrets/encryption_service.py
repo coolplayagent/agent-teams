@@ -32,7 +32,7 @@ class MachineFeatureError(RuntimeError):
 
 class EncryptionService:
     PBKDF2_ITERATIONS = 100_000
-    ENCRYPTION_PREFIX = "ENC:"
+    ENCRYPTION_PREFIX = "ENC:v1:"
 
     def __init__(self) -> None:
         self._cached_key: bytes | None = None
@@ -93,12 +93,9 @@ class EncryptionService:
 
     def collect_machine_features(self) -> str:
         machine_id = self._get_machine_id()
-        hostname = socket.gethostname()
-        os_info = f"{platform.system()}-{platform.release()}"
-        features = f"{machine_id}|{hostname}|{os_info}"
-        if not self._is_valid_id(features):
+        if not self._is_valid_id(machine_id):
             raise MachineFeatureError("Machine features are unavailable.")
-        return features
+        return machine_id
 
     def _get_key(self) -> bytes:
         if self._cached_key is None:
@@ -270,12 +267,21 @@ class EncryptionService:
         return normalized
 
     def _get_legacy_machine_features(self) -> tuple[str, ...]:
-        mac_address = self._get_mac_fallback()
-        if mac_address is None:
-            return ()
+        legacy_features: list[str] = []
         hostname = socket.gethostname()
         os_info = f"{platform.system()}-{platform.release()}"
-        return (f"{mac_address}|{hostname}|{os_info}",)
+        try:
+            machine_id = self._get_machine_id()
+        except MachineFeatureError:
+            machine_id = None
+        if machine_id is not None:
+            legacy_features.append(f"{machine_id}|{hostname}|{os_info}")
+
+        mac_address = self._get_mac_fallback()
+        if mac_address is None:
+            return tuple(dict.fromkeys(legacy_features))
+        legacy_features.append(f"{mac_address}|{hostname}|{os_info}")
+        return tuple(dict.fromkeys(legacy_features))
 
     @staticmethod
     def _run_text_command(

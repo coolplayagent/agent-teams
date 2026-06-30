@@ -283,6 +283,36 @@ def test_legacy_plaintext_model_password_file_secret_is_readable(
     )
 
 
+def test_legacy_plaintext_model_password_with_enc_prefix_is_readable(
+    tmp_path: Path,
+) -> None:
+    store = _FileOnlySecretStore()
+    store._save_index(
+        tmp_path,
+        SecretIndexDocument(
+            entries=(
+                SecretIndexEntry(
+                    namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+                    owner_id="legacy",
+                    field_name=maas_password_secret_field_name(),
+                    storage="file",
+                    value="ENC:legacy-password",
+                ),
+            )
+        ),
+    )
+
+    assert (
+        store.get_secret(
+            tmp_path,
+            namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+            owner_id="legacy",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "ENC:legacy-password"
+    )
+
+
 def test_corrupt_encrypted_model_password_returns_none_and_logs(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -297,7 +327,7 @@ def test_corrupt_encrypted_model_password_returns_none_and_logs(
                     owner_id="broken",
                     field_name=codeagent_password_secret_field_name(),
                     storage="file",
-                    value="ENC:not-valid",
+                    value="ENC:v1:not-valid",
                 ),
             )
         ),

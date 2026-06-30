@@ -4692,6 +4692,10 @@ body {
   transform: rotate(90deg);
 }
 
+.at-processed-group:not([open]) > .at-processed-group-body {
+  display: none;
+}
+
 .at-processed-group-body {
   display: grid;
   gap: 6px;

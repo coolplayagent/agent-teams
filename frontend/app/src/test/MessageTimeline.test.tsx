@@ -393,7 +393,7 @@ describe("MessageTimeline", () => {
     const group = container.querySelector("details.at-processed-group");
     expect(group).not.toBeNull();
     expect(group).not.toHaveAttribute("open");
-    expect(screen.getByText("Processed")).toBeVisible();
+    expect(await screen.findByText("Processed")).toBeVisible();
     expect(screen.getByText("Inspecting the workspace")).not.toBeVisible();
     expect(screen.getByText("Tool result: read")).not.toBeVisible();
 
@@ -410,6 +410,67 @@ describe("MessageTimeline", () => {
     fireEvent.click(copyButton);
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Final answer ready"));
+  });
+
+  it("collapses terminal work-only runs without requiring final answer text", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: "Checking project state",
+              part_kind: "thinking",
+            },
+            {
+              args: { path: "C:\\Users\\yex\\Documents\\workspace\\agent-teams" },
+              part_kind: "tool-call",
+              tool_call_id: "tool-work-only",
+              tool_name: "read",
+            },
+            {
+              content: {
+                path: "C:\\Users\\yex\\Documents\\workspace\\agent-teams",
+                type: "directory",
+              },
+              part_kind: "tool-return",
+              tool_call_id: "tool-work-only",
+              tool_name: "read",
+            },
+          ],
+        },
+        message_id: "assistant-work-only",
+        role_id: "MainAgent",
+        run_id: "run-work-only",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-work-only",
+          run_status: "completed",
+          run_user_message: "Inspect workspace only",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Processed")).toBeVisible();
+    const group = container.querySelector("details.at-processed-group");
+    expect(group).not.toBeNull();
+    expect(group).not.toHaveAttribute("open");
+    expect(screen.getByText("Checking project state")).not.toBeVisible();
+    expect(screen.getByText("Tool result: read")).not.toBeVisible();
+    expect(container.querySelector("article.at-message")).toBeNull();
+
+    openProcessedGroup(container);
+
+    expect(screen.getByText("Thinking")).toBeVisible();
+    expect(screen.getByText("Checking project state")).not.toBeVisible();
+    expect(screen.getByText("Tool result: read")).toBeVisible();
   });
 
   it("renders the round rail from session rounds and marks selected rounds", async () => {
@@ -2441,7 +2502,10 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("duplicated runtime chunk")).not.toBeInTheDocument();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
     expect(screen.queryByText("Tool call: execute_command")).not.toBeInTheDocument();
+    expect(await screen.findByText("Processed")).toBeVisible();
     const toolTitle = await screen.findByText("Tool error: execute_command");
+    expect(toolTitle).not.toBeVisible();
+    openProcessedGroup(container);
     expect(toolTitle).toBeVisible();
     expect(toolPreviewTexts(container)).toEqual(["File not found: ."]);
     const toolBlock = screenElement(toolTitle).closest(".at-message-tool");
@@ -3338,7 +3402,10 @@ describe("MessageTimeline", () => {
 
     expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
     expect(screen.queryByText("Run completed: status completed")).not.toBeInTheDocument();
+    expect(await screen.findByText("Processed")).toBeVisible();
     const resultTitle = await screen.findByText("Tool result: shell");
+    expect(resultTitle).not.toBeVisible();
+    openProcessedGroup(container);
     expect(resultTitle).toBeVisible();
     expect(toolPreviewTexts(container)).toEqual(["late finalized result"]);
     const resultDetails = toolPreElement(screenElement(resultTitle));
@@ -3349,7 +3416,7 @@ describe("MessageTimeline", () => {
       .toHaveAttribute("data-status", "completed");
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
   });
 
   it("keeps hydrated text and idle continuation after a reconnected tool result", async () => {
@@ -3844,7 +3911,7 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("Injection applied: change direction · source user"))
       .toBeVisible();
-    expect(screen.getByText("Processed")).toBeVisible();
+    expect(await screen.findByText("Processed")).toBeVisible();
     expect(screen.getByText("Tool error: shell")).not.toBeVisible();
     expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
     expect(screen.queryByText("Tool call: read_file")).not.toBeInTheDocument();
@@ -3922,9 +3989,14 @@ describe("MessageTimeline", () => {
     });
     listSessionMessagesMock.mockResolvedValue([]);
 
-    renderTimeline();
+    const { container } = renderTimeline();
 
+    expect(await screen.findByText("Processed")).toBeVisible();
     const approvalRequest = await screen.findByText("Approval requested: execute_command");
+    expect(approvalRequest).not.toBeVisible();
+    const approvalDenied = screen.getByText("Approval denied: execute_command");
+    expect(approvalDenied).not.toBeVisible();
+    openProcessedGroup(container);
     expect(approvalRequest).toBeVisible();
     expect(toolPreviewTexts(screenElement(approvalRequest))).toEqual([
       "Args: npm test",
@@ -3933,7 +4005,6 @@ describe("MessageTimeline", () => {
     expect(approvalRequestDetails).not.toBeVisible();
     expect(approvalRequestDetails).toHaveTextContent(/Args: npm test/);
     expect(approvalRequestDetails).toHaveTextContent(/Options: Allow once, Deny/);
-    const approvalDenied = screen.getByText("Approval denied: execute_command");
     expect(approvalDenied).toBeVisible();
     expect(toolPreviewTexts(screenElement(approvalDenied))).toEqual([
       "Action: deny",
@@ -4093,13 +4164,16 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("hello")).toBeVisible();
-    expect(screen.getByText("Tool result: execute_command")).toBeVisible();
+    expect(await screen.findByText("Processed")).toBeVisible();
+    expect(screen.getByText("Tool result: execute_command")).not.toBeVisible();
     const textRow = screen.getByText("hello").closest("article.at-message");
     expect(textRow).not.toBeNull();
     expect(textRow).not.toHaveClass("is-streaming");
     expect(textRow?.querySelector(".streaming-cursor")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    openProcessedGroup(container);
+    expect(screen.getByText("Tool result: execute_command")).toBeVisible();
   });
 
   it("renders long open runtime text streams as one plain text block", async () => {
@@ -4830,7 +4904,8 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Thinking")).toBeVisible();
+    const thinkingTitle = await screen.findByText("Thinking");
+    expect(thinkingTitle).toBeVisible();
     const thinkingBlocks = container.querySelectorAll(".at-message-thinking");
     expect(thinkingBlocks).toHaveLength(1);
     expect(thinkingBlocks[0]).toHaveTextContent("deduped plan");
@@ -4913,7 +4988,11 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Thinking")).toBeVisible();
+    expect(await screen.findByText("Processed")).toBeVisible();
+    const thinkingTitle = await screen.findByText("Thinking");
+    expect(thinkingTitle).not.toBeVisible();
+    openProcessedGroup(container);
+    expect(thinkingTitle).toBeVisible();
     const thinkingBlocks = container.querySelectorAll(".at-message-thinking");
     expect(thinkingBlocks).toHaveLength(1);
     const thinkingBlock = thinkingBlocks[0];
@@ -5468,10 +5547,16 @@ describe("MessageTimeline", () => {
     });
     listSessionMessagesMock.mockResolvedValue([]);
 
-    renderTimeline();
+    const { container } = renderTimeline();
 
     expect(screen.queryByText("Tool call: execute_command")).not.toBeInTheDocument();
-    expect(await screen.findByText("Tool error: execute_command")).toBeVisible();
+    expect(await screen.findByText("Processed")).toBeVisible();
+    const commandError = await screen.findByText("Tool error: execute_command");
+    expect(commandError).not.toBeVisible();
+    expect(screen.getByText("Tool validation: execute_command")).not.toBeVisible();
+    expect(screen.getByText("Tool error: shell")).not.toBeVisible();
+    openProcessedGroup(container);
+    expect(commandError).toBeVisible();
     expect(screen.getByText("Tool validation: execute_command")).toBeVisible();
     expect(screen.getByText("Tool error: shell")).toBeVisible();
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool error: execute_command"))))

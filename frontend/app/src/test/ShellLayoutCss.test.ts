@@ -129,7 +129,16 @@ describe("shell layout CSS", () => {
       /\.at-message\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;/,
     );
     expect(themeCss).toMatch(
-      /\.at-message-actions\s*{[\s\S]*?grid-column:\s*2;[\s\S]*?justify-self:\s*end;/,
+      /\.at-message-actions\s*{[\s\S]*?grid-column:\s*1;[\s\S]*?justify-self:\s*end;/,
+    );
+  });
+
+  it("keeps completed processed work visually folded until opened", () => {
+    expect(themeCss).toMatch(
+      /\.at-processed-group:not\(\[open\]\) > \.at-processed-group-body\s*{[\s\S]*?display:\s*none;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-processed-group\[open\] > \.at-processed-group-summary \.at-processed-group-toggle\s*{[\s\S]*?transform:\s*rotate\(90deg\);/,
     );
   });
 

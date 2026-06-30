@@ -1003,22 +1003,23 @@ function collapseProcessedSegment(
     return segment;
   }
   const finalStart = finalPartLocationAfterWork(groupableRows, lastWork);
-  if (finalStart === null) {
-    return segment;
-  }
+  const finalBoundary = finalStart ?? {
+    partIndex: 0,
+    rowIndex: groupableRows.length,
+  };
 
   const leadingRows = segment.slice(0, firstGroupableIndex);
   const groupedRows: TimelineRow[] = [];
-  const finalSourceRow = groupableRows[finalStart.rowIndex];
-  if (finalSourceRow === undefined) {
+  const finalSourceRow = finalStart === null ? undefined : groupableRows[finalStart.rowIndex];
+  if (finalStart !== null && finalSourceRow === undefined) {
     return segment;
   }
-  const groupedParts = finalSourceRow.parts.slice(0, finalStart.partIndex);
-  const finalParts = finalSourceRow.parts.slice(finalStart.partIndex);
+  const groupedParts = finalSourceRow?.parts.slice(0, finalStart?.partIndex ?? 0) ?? [];
+  const finalParts = finalSourceRow?.parts.slice(finalStart?.partIndex ?? 0) ?? [];
   const visibleRowsBeforeGroup: TimelineRow[] = [];
   const visibleRowsAfterGroup: TimelineRow[] = [];
   let sawWork = false;
-  for (let rowIndex = 0; rowIndex < finalStart.rowIndex; rowIndex += 1) {
+  for (let rowIndex = 0; rowIndex < finalBoundary.rowIndex; rowIndex += 1) {
     const row = groupableRows[rowIndex];
     if (row === undefined) {
       continue;
@@ -1037,7 +1038,7 @@ function collapseProcessedSegment(
       }
     }
   }
-  if (groupedParts.length > 0) {
+  if (finalSourceRow !== undefined && groupedParts.length > 0) {
     const split = splitPartsByWork(groupedParts);
     if (split.workParts.length > 0) {
       groupedRows.push(rowWithParts(finalSourceRow, split.workParts, "processed"));
@@ -1056,13 +1057,15 @@ function collapseProcessedSegment(
     processedGroupRow(groupedRows, runId),
     ...visibleRowsAfterGroup,
   ];
-  const finalRow = finalParts.length === finalSourceRow.parts.length
-    ? finalSourceRow
-    : rowWithParts(finalSourceRow, finalParts, "final");
-  if (timelineRowHasRenderableContent(finalRow)) {
-    collapsedRows.push(finalRow);
+  if (finalSourceRow !== undefined && finalStart !== null) {
+    const finalRow = finalParts.length === finalSourceRow.parts.length
+      ? finalSourceRow
+      : rowWithParts(finalSourceRow, finalParts, "final");
+    if (timelineRowHasRenderableContent(finalRow)) {
+      collapsedRows.push(finalRow);
+    }
+    collapsedRows.push(...groupableRows.slice(finalStart.rowIndex + 1));
   }
-  collapsedRows.push(...groupableRows.slice(finalStart.rowIndex + 1));
   return collapsedRows;
 }
 

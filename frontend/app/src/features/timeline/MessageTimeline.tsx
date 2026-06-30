@@ -2169,10 +2169,46 @@ function roundsWithRuntimeRunState(
     });
     return runtimeRound === null ? [] : [runtimeRound];
   });
-  if (runtimeOnlyRounds.length === 0) {
-    return changed ? nextRounds : rounds;
+  const mergedRounds = runtimeOnlyRounds.length === 0
+    ? (changed ? nextRounds : rounds)
+    : sortRoundsAscending([...nextRounds, ...runtimeOnlyRounds]);
+  return roundsVisibleInTimelineScope(mergedRounds, {
+    primaryRoleId,
+    runtimeRunId,
+    sessionId,
+    variant,
+  });
+}
+
+function roundsVisibleInTimelineScope(
+  rounds: SessionRound[],
+  scope: RuntimeTimelineScope,
+): SessionRound[] {
+  if (
+    scope.sessionId === null ||
+    scope.variant === "subagent-panel" ||
+    (scope.runtimeRunId?.trim() ?? "").length > 0
+  ) {
+    return rounds;
   }
-  return sortRoundsAscending([...nextRounds, ...runtimeOnlyRounds]);
+  return rounds.filter(
+    (round) => !timelineRoundLooksDetachedSubagent(round, scope.primaryRoleId),
+  );
+}
+
+function timelineRoundLooksDetachedSubagent(
+  round: SessionRound,
+  primaryRoleId: string | null,
+): boolean {
+  if (round.run_id.toLowerCase().includes("subagent")) {
+    return true;
+  }
+  return roundMessages(round).some((message) =>
+    timelineMessageLooksDetachedSubagent(
+      roundMessageToTimelineMessage(message, round.run_id),
+      primaryRoleId,
+    ),
+  );
 }
 
 function runtimeRoundFromRunState(
@@ -2754,17 +2790,19 @@ function runtimeEntryBelongsToMainTimeline(
   runState: RuntimeRunState,
   primaryRoleId: string | null,
 ): boolean {
+  if (runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId)) {
+    return false;
+  }
   const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
   if (normalizedPrimaryRole.length === 0) {
-    return !runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId);
+    return true;
   }
   const entryRole = stableTimelineRole(entry.roleId);
   if (entryRole.length > 0) {
     return entryRole === normalizedPrimaryRole;
   }
   return (
-    runtimeRunStateBelongsToMainTimeline(runState, primaryRoleId) &&
-    !runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId)
+    runtimeRunStateBelongsToMainTimeline(runState, primaryRoleId)
   );
 }
 
@@ -2772,9 +2810,12 @@ function runtimeRunStateBelongsToMainTimeline(
   runState: RuntimeRunState,
   primaryRoleId: string | null,
 ): boolean {
+  if (runtimeRunStateLooksLikeDetachedSubagent(runState, primaryRoleId)) {
+    return false;
+  }
   const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
   if (normalizedPrimaryRole.length === 0) {
-    return !runtimeRunStateLooksLikeDetachedSubagent(runState, primaryRoleId);
+    return true;
   }
   const runRole = stableTimelineRole(runState.targetRoleId ?? "");
   if (runRole === normalizedPrimaryRole) {

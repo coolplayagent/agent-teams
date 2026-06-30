@@ -3496,6 +3496,48 @@ describe("MessageTimeline", () => {
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });
 
+  it("keeps scoped subagent runs out even when events carry the primary role", async () => {
+    setRuntimeEntries(
+      [
+        runtimeTextDeltaEntry({
+          eventId: 1,
+          id: "scoped-child-run:1:0",
+          instanceId: "22cd6473-7579-438e-90df-d8177cc31e93",
+          text: "Scoped subagent output should stay in the subagent panel.",
+        }),
+      ],
+      "open",
+      {
+        scope: "subagent",
+        sessionId: "session-1",
+        targetRoleId: "MainAgent",
+      },
+    );
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const mainTimeline = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(
+      screen.queryByText("Scoped subagent output should stay in the subagent panel."),
+    ).not.toBeInTheDocument();
+
+    mainTimeline.unmount();
+
+    const subagentTimeline = renderTimeline("session-1", {
+      runtimeRunId: "run-output",
+      variant: "subagent-panel",
+    });
+
+    expect(
+      await screen.findByText("Scoped subagent output should stay in the subagent panel."),
+    ).toBeVisible();
+    expect(subagentTimeline.container.querySelectorAll("article.at-message"))
+      .toHaveLength(1);
+  });
+
   it("keeps UUID subagent stream rows out while primary role metadata is loading", async () => {
     const subagentInstanceId = "22cd6473-7579-438e-90df-d8177cc31e93";
     const subagentRunId = "87f9f69e-8622-4d46-958f-aa0d7d283095";
@@ -3909,6 +3951,54 @@ describe("MessageTimeline", () => {
     expect(
       screen.queryByText("Explore how Skills are implemented in this project"),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps subagent round messages injected from replay out of the main timeline", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          coordinator_messages: [
+            {
+              content: "Crafter 子代理成功执行命令，运行正常。",
+              message_id: "parent-final",
+              role_id: "MainAgent",
+            },
+          ],
+          created_at: "2026-06-23T10:02:00Z",
+          primary_role_id: "MainAgent",
+          run_id: "parent_run_1",
+          run_status: "completed",
+          run_user_message: "启动 Crafter 子代理验证运行中可打开面板",
+        },
+        {
+          coordinator_messages: [
+            {
+              content: "SUBOPEN_1\nSUBOPEN_2\nSUBOPEN_DONE",
+              message_id: "subagent-output",
+              role_id: "Crafter",
+            },
+          ],
+          created_at: "2026-06-23T10:03:00Z",
+          primary_role_id: "Crafter",
+          run_id: "subagent_run_e56e8720cddb",
+          run_status: "completed",
+          run_user_message: "执行指定 shell 命令",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByText("Crafter 子代理成功执行命令，运行正常。"))
+      .toBeVisible();
+    expect(screen.queryByText(/SUBOPEN_1/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SUBOPEN_DONE/)).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Crafter"]')).toBeNull();
   });
 
   it("keeps same-role runtime streams separate by instance identity", async () => {
@@ -7233,6 +7323,7 @@ interface RuntimeRunStateOptions {
   createdAt?: string;
   promptText?: string;
   sessionId?: string;
+  scope?: RuntimeRunState["scope"];
   targetRoleId?: string;
 }
 
@@ -7242,6 +7333,9 @@ function optionalRuntimeRunStateValues(
   const values: Partial<RuntimeRunState> = {};
   if (options.sessionId !== undefined) {
     values.sessionId = options.sessionId;
+  }
+  if (options.scope !== undefined) {
+    values.scope = options.scope;
   }
   if (options.promptText !== undefined) {
     values.promptText = options.promptText;

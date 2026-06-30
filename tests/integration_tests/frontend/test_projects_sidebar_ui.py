@@ -5698,55 +5698,6 @@ console.log(JSON.stringify({
     assert payload["activeSessionCount"] == 0
 
 
-def test_projects_sidebar_cancels_pending_session_switch_before_workspace_view(
-    tmp_path: Path,
-) -> None:
-    payload = _run_sidebar_script(
-        tmp_path=tmp_path,
-        runner_source="""
-import {
-    loadProjects,
-} from "./sidebar.mjs";
-import { state } from "./mockState.mjs";
-
-installGlobals(createDomEnvironment());
-state.currentSessionId = "session-running";
-state.activeEventSource = { readyState: 1 };
-
-await loadProjects();
-const projectsList = document.getElementById("projects-list");
-const firstProject = projectsList.children.filter(child => child.className === "project-card")[0];
-firstProject.querySelector(".project-title-btn").onclick({ stopPropagation() {} });
-await flushTasks();
-await flushTasks();
-
-console.log(JSON.stringify({
-    currentSessionId: state.currentSessionId,
-    activeEventSource: state.activeEventSource,
-    openedWorkspaceIds: globalThis.__openedWorkspaceIds,
-    detachStreamCalls: globalThis.__detachStreamCalls || 0,
-    detachForegroundSubmissionCalls: globalThis.__detachForegroundSubmissionCalls || 0,
-    stoppedSessionContinuity: globalThis.__stoppedSessionContinuity || [],
-    selectionCancelEvents: globalThis.__documentDispatches
-        .filter(event => event.type === "agent-teams-session-selection-cancelled"),
-}));
-""".strip(),
-    )
-
-    assert payload["currentSessionId"] is None
-    assert payload["activeEventSource"] is None
-    assert payload["openedWorkspaceIds"] == ["alpha-project"]
-    assert payload["detachStreamCalls"] == 1
-    assert payload["detachForegroundSubmissionCalls"] == 1
-    assert payload["stoppedSessionContinuity"] == ["session-running"]
-    assert payload["selectionCancelEvents"] == [
-        {
-            "type": "agent-teams-session-selection-cancelled",
-            "detail": {"reason": "workspace:alpha-project"},
-        }
-    ]
-
-
 def test_projects_sidebar_defers_passive_refresh_while_hovering(
     tmp_path: Path,
 ) -> None:

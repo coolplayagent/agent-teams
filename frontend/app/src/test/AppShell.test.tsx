@@ -1064,6 +1064,31 @@ describe("AppShell", () => {
     expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
   });
 
+  it("detaches the active foreground stream before opening the workspace view", async () => {
+    runStreamControllerMock = createRunStreamController({
+      activeRunId: "run-active",
+      activeRunIds: ["run-active"],
+      trackedRunIds: ["run-active"],
+    });
+    useRunStreamControllerMock.mockReturnValue(runStreamControllerMock);
+
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: "Open workspace view" }),
+    );
+
+    expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+    expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
+    expect(useUiStore.getState().selectedSessionId).toBe("session-1");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+  });
+
   it("keeps observability and settings top bar shortcuts visible", async () => {
     renderShell();
 

@@ -7714,3 +7714,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, V2 production empty-shell stream-detach implementation, focused/full AppShell verification, frontend typecheck/build, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Workspace View Stream Detach Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the remaining Projects Sidebar Python harness inventory, and the stream/replay quality gates before selecting this slice.
+- Migrated the V1 `test_projects_sidebar_cancels_pending_session_switch_before_workspace_view` boundary into V2 `AppShell.test.tsx`.
+- Added coverage proving that opening the workspace secondary surface clears an active foreground run stream before the chat workspace unmounts, while preserving the selected V2 session/workspace shell state.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept sidebar/settings item inventory, visible navigation labels, secondary-page routing, appearance layout, production visual CSS, and production stream controller code unchanged in this slice.
+- This slice tightens one workspace/navigation stream boundary. It does not claim complete stream/replay PASS, interrupted-stream recovery PASS, broader Projects Sidebar Python harness migration PASS, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- AppShell.test.tsx -t "workspace view|foreground stream"` passed with 3 focused tests.
+- `npm test -- AppShell.test.tsx` passed with 34 tests, including the V1 sidebar inventory alignment assertion.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `rg -n "test_projects_sidebar_cancels_pending_session_switch_before_workspace_view|cancels_pending_session_switch_before_workspace_view" tests\integration_tests\frontend frontend\app\src\test\AppShell.test.tsx` returned no matches.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 workspace-navigation stream harness mapping, V2 AppShell coverage, focused/full AppShell verification, frontend typecheck, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

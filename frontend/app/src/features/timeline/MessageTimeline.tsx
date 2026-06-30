@@ -27,7 +27,7 @@ import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
-import { roundTitle } from "./roundMetadata";
+import { roundPromptText, roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
@@ -126,19 +126,22 @@ export function MessageTimeline({
   const persistedRows = useMemo(
     () =>
       mergeToolRowsByCallId(
-        persistedMessages
-          .map((messageItem, index) =>
-            messageToRow(
-              messageItem,
-              index,
-              messageRoundLookup,
-              fallbackRunId,
-              workspaceId,
-            ),
-          )
-          .filter(timelineRowHasRenderableContent),
+        dropRoundPromptDuplicateUserRows(
+          persistedMessages
+            .map((messageItem, index) =>
+              messageToRow(
+                messageItem,
+                index,
+                messageRoundLookup,
+                fallbackRunId,
+                workspaceId,
+              ),
+            )
+            .filter(timelineRowHasRenderableContent),
+          displayRounds,
+        ),
       ),
-    [fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
+    [displayRounds, fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(persistedRows),
@@ -174,11 +177,15 @@ export function MessageTimeline({
   );
   const rows = useMemo(
     () =>
-      insertRoundMarkerRows([
-        ...persistedRows,
-        ...runtimeRows.filter(timelineRowHasRenderableContent),
-      ], displayRounds, expandedHistorySegmentIds),
-    [displayRounds, expandedHistorySegmentIds, persistedRows, runtimeRows],
+      collapseProcessedRows(
+        insertRoundMarkerRows([
+          ...persistedRows,
+          ...runtimeRows.filter(timelineRowHasRenderableContent),
+        ], displayRounds, expandedHistorySegmentIds),
+        displayRounds,
+        runtimeState.runs,
+      ),
+    [displayRounds, expandedHistorySegmentIds, persistedRows, runtimeRows, runtimeState.runs],
   );
   const streamOpenForSession = useMemo(
     () =>
@@ -233,7 +240,11 @@ export function MessageTimeline({
     if (!(target instanceof Element)) {
       return;
     }
-    if (target.closest(".at-message-thinking-summary, .at-message-tool-summary") === null) {
+    if (
+      target.closest(
+        ".at-message-thinking-summary, .at-message-tool-summary, .at-processed-group-summary",
+      ) === null
+    ) {
       return;
     }
     const container = parentRef.current;
@@ -379,13 +390,18 @@ interface TimelineRow {
   role: string;
   instanceId?: string | null;
   text: string;
-  kind: RunEventType | "message" | "round";
+  kind: RunEventType | "message" | "processed" | "round";
   parts: TimelineRenderPart[];
   historyDivider?: TimelineHistoryDivider;
+  processedGroup?: TimelineProcessedGroup;
   roundMarker: TimelineRoundMarker | null;
   runId: string | null;
   source: "message" | "runtime";
   copyable: boolean;
+}
+
+interface TimelineProcessedGroup {
+  rows: TimelineRow[];
 }
 
 interface TimelineHistoryDivider {
@@ -652,6 +668,20 @@ function timelineRowElement(
   onToggleHistorySegment: (segmentId: string) => void,
 ) {
   const style = { transform: `translateY(${start}px)` };
+  if (row.processedGroup !== undefined) {
+    return (
+      <ProcessedGroupRow
+        group={row.processedGroup}
+        index={index}
+        key={row.key}
+        measureElement={measureElement}
+        rowKey={row.key}
+        runId={row.runId}
+        style={style}
+        t={t}
+      />
+    );
+  }
   if (row.historyDivider !== undefined) {
     return (
       <TimelineHistoryDividerRow
@@ -719,6 +749,61 @@ function timelineRowElement(
         />
       ) : null}
     </article>
+  );
+}
+
+function ProcessedGroupRow({
+  group,
+  index,
+  measureElement,
+  rowKey,
+  runId,
+  style,
+  t,
+}: {
+  group: TimelineProcessedGroup;
+  index: number;
+  measureElement: (element: Element | null) => void;
+  rowKey: string;
+  runId: string | null;
+  style: { transform: string };
+  t: Translate;
+}) {
+  return (
+    <section
+      className="at-timeline-row at-processed-group-row"
+      data-index={index}
+      data-row-key={rowKey}
+      data-run-id={runId ?? undefined}
+      ref={measureElement}
+      style={style}
+    >
+      <details className="at-processed-group">
+        <summary className="at-processed-group-summary">
+          <span className="at-processed-group-line" aria-hidden="true" />
+          <span className="at-processed-group-label">{t("timelineProcessedGroup")}</span>
+          <span className="at-processed-group-toggle" aria-hidden="true">{">"}</span>
+          <span className="at-processed-group-line" aria-hidden="true" />
+        </summary>
+        <div className="at-processed-group-body">
+          {group.rows.map((groupRow) => (
+            <div
+              className={[
+                "at-processed-group-item",
+                timelineRowIsToolOnly(groupRow) ? "is-tool-only" : "",
+              ].filter(Boolean).join(" ")}
+              data-instance-id={groupRow.instanceId ?? undefined}
+              data-role-id={groupRow.role}
+              data-row-key={groupRow.key}
+              data-run-id={groupRow.runId ?? undefined}
+              key={groupRow.key}
+            >
+              <MessageRowContent parts={groupRow.parts} t={t} />
+            </div>
+          ))}
+        </div>
+      </details>
+    </section>
   );
 }
 
@@ -803,6 +888,309 @@ function insertRoundMarkerRows(
 ): TimelineRow[] {
   const rowsWithMarkers = insertPlainRoundMarkerRows(baseRows, rounds);
   return insertHistoryDividerRows(rowsWithMarkers, rounds, expandedHistorySegmentIds);
+}
+
+function dropRoundPromptDuplicateUserRows(
+  rows: TimelineRow[],
+  rounds: SessionRound[],
+): TimelineRow[] {
+  const promptByRunId = new Map<string, string>();
+  for (const round of rounds) {
+    const runId = round.run_id.trim();
+    const prompt = normalizedTimelineText(roundPromptText(round));
+    if (runId.length > 0 && prompt.length > 0) {
+      promptByRunId.set(runId, prompt);
+    }
+  }
+  if (promptByRunId.size === 0) {
+    return rows;
+  }
+  return rows.filter((row) => {
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0 || normalizedRole(row.role) !== "user") {
+      return true;
+    }
+    return normalizedTimelineText(row.text) !== promptByRunId.get(runId);
+  });
+}
+
+function collapseProcessedRows(
+  rows: TimelineRow[],
+  rounds: SessionRound[],
+  runStates: Record<string, RuntimeRunState>,
+): TimelineRow[] {
+  const roundByRunId = new Map(
+    rounds.flatMap((round) => {
+      const runId = round.run_id.trim();
+      return runId.length > 0 ? [[runId, round] as const] : [];
+    }),
+  );
+  const collapsedRows: TimelineRow[] = [];
+  let index = 0;
+  while (index < rows.length) {
+    const row = rows[index];
+    if (row === undefined || processedSegmentBoundary(row)) {
+      if (row !== undefined) {
+        collapsedRows.push(row);
+      }
+      index += 1;
+      continue;
+    }
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0 || !runIsTerminal(runId, roundByRunId, runStates)) {
+      collapsedRows.push(row);
+      index += 1;
+      continue;
+    }
+    const segment: TimelineRow[] = [];
+    while (index < rows.length) {
+      const next = rows[index];
+      const nextRunId = next?.runId?.trim() ?? "";
+      if (
+        next === undefined ||
+        processedSegmentBoundary(next) ||
+        nextRunId !== runId
+      ) {
+        break;
+      }
+      segment.push(next);
+      index += 1;
+    }
+    collapsedRows.push(...collapseProcessedSegment(segment, runId));
+  }
+  return collapsedRows;
+}
+
+function processedSegmentBoundary(row: TimelineRow): boolean {
+  return (
+    row.historyDivider !== undefined ||
+    row.processedGroup !== undefined ||
+    row.roundMarker !== null
+  );
+}
+
+function runIsTerminal(
+  runId: string,
+  roundByRunId: ReadonlyMap<string, SessionRound>,
+  runStates: Record<string, RuntimeRunState>,
+): boolean {
+  const runState = runStates[runId];
+  if (runState !== undefined) {
+    return runtimeRunStateClosesText(runState);
+  }
+  const status = roundByRunId.get(runId)?.run_status?.trim().toLowerCase() ?? "";
+  return [
+    "cancelled",
+    "canceled",
+    "completed",
+    "failed",
+    "paused",
+    "stopped",
+  ].includes(status);
+}
+
+function collapseProcessedSegment(
+  segment: TimelineRow[],
+  runId: string,
+): TimelineRow[] {
+  const firstGroupableIndex = segment.findIndex((row) => !timelineRowIsUserPrompt(row));
+  if (firstGroupableIndex < 0) {
+    return segment;
+  }
+  const groupableRows = segment.slice(firstGroupableIndex);
+  const lastWork = lastWorkPartLocation(groupableRows);
+  if (lastWork === null) {
+    return segment;
+  }
+  const finalStart = finalPartLocationAfterWork(groupableRows, lastWork);
+  if (finalStart === null) {
+    return segment;
+  }
+
+  const leadingRows = segment.slice(0, firstGroupableIndex);
+  const groupedRows: TimelineRow[] = [];
+  const finalSourceRow = groupableRows[finalStart.rowIndex];
+  if (finalSourceRow === undefined) {
+    return segment;
+  }
+  const groupedParts = finalSourceRow.parts.slice(0, finalStart.partIndex);
+  const finalParts = finalSourceRow.parts.slice(finalStart.partIndex);
+  const visibleRowsBeforeGroup: TimelineRow[] = [];
+  const visibleRowsAfterGroup: TimelineRow[] = [];
+  let sawWork = false;
+  for (let rowIndex = 0; rowIndex < finalStart.rowIndex; rowIndex += 1) {
+    const row = groupableRows[rowIndex];
+    if (row === undefined) {
+      continue;
+    }
+    const split = splitWorkParts(row);
+    if (split.workParts.length > 0) {
+      groupedRows.push(rowWithParts(row, split.workParts, "processed"));
+      sawWork = true;
+    }
+    if (split.visibleParts.length > 0) {
+      const visibleRow = rowWithParts(row, split.visibleParts, "visible");
+      if (sawWork) {
+        visibleRowsAfterGroup.push(visibleRow);
+      } else {
+        visibleRowsBeforeGroup.push(visibleRow);
+      }
+    }
+  }
+  if (groupedParts.length > 0) {
+    const split = splitPartsByWork(groupedParts);
+    if (split.workParts.length > 0) {
+      groupedRows.push(rowWithParts(finalSourceRow, split.workParts, "processed"));
+    }
+    if (split.visibleParts.length > 0) {
+      visibleRowsAfterGroup.push(rowWithParts(finalSourceRow, split.visibleParts, "visible"));
+    }
+  }
+  if (!groupedRows.some(timelineRowHasWorkPart)) {
+    return segment;
+  }
+
+  const collapsedRows = [
+    ...leadingRows,
+    ...visibleRowsBeforeGroup,
+    processedGroupRow(groupedRows, runId),
+    ...visibleRowsAfterGroup,
+  ];
+  const finalRow = finalParts.length === finalSourceRow.parts.length
+    ? finalSourceRow
+    : rowWithParts(finalSourceRow, finalParts, "final");
+  if (timelineRowHasRenderableContent(finalRow)) {
+    collapsedRows.push(finalRow);
+  }
+  collapsedRows.push(...groupableRows.slice(finalStart.rowIndex + 1));
+  return collapsedRows;
+}
+
+function splitWorkParts(row: TimelineRow): {
+  visibleParts: TimelineRenderPart[];
+  workParts: TimelineRenderPart[];
+} {
+  return splitPartsByWork(row.parts);
+}
+
+function splitPartsByWork(parts: TimelineRenderPart[]): {
+  visibleParts: TimelineRenderPart[];
+  workParts: TimelineRenderPart[];
+} {
+  return parts.reduce<{
+    visibleParts: TimelineRenderPart[];
+    workParts: TimelineRenderPart[];
+  }>(
+    (result, part) => {
+      if (timelinePartIsWork(part)) {
+        result.workParts.push(part);
+      } else {
+        result.visibleParts.push(part);
+      }
+      return result;
+    },
+    { visibleParts: [], workParts: [] },
+  );
+}
+
+function timelineRowIsUserPrompt(row: TimelineRow): boolean {
+  return normalizedRole(row.role) === "user";
+}
+
+function lastWorkPartLocation(
+  rows: TimelineRow[],
+): { rowIndex: number; partIndex: number } | null {
+  for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+    const row = rows[rowIndex];
+    if (row === undefined) {
+      continue;
+    }
+    for (let partIndex = row.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = row.parts[partIndex];
+      if (part !== undefined && timelinePartIsWork(part)) {
+        return { partIndex, rowIndex };
+      }
+    }
+  }
+  return null;
+}
+
+function finalPartLocationAfterWork(
+  rows: TimelineRow[],
+  lastWork: { rowIndex: number; partIndex: number },
+): { rowIndex: number; partIndex: number } | null {
+  for (let rowIndex = lastWork.rowIndex; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    if (row === undefined) {
+      continue;
+    }
+    const partStart = rowIndex === lastWork.rowIndex ? lastWork.partIndex + 1 : 0;
+    for (let partIndex = partStart; partIndex < row.parts.length; partIndex += 1) {
+      const part = row.parts[partIndex];
+      if (part !== undefined && timelinePartIsFinal(part)) {
+        return { partIndex, rowIndex };
+      }
+    }
+  }
+  return null;
+}
+
+function timelinePartIsWork(part: TimelineRenderPart): boolean {
+  return part.kind === "thinking" || part.kind === "tool";
+}
+
+function timelinePartIsFinal(part: TimelineRenderPart): boolean {
+  if (timelinePartIsWork(part)) {
+    return false;
+  }
+  if (part.kind === "text") {
+    return part.text.trim().length > 0;
+  }
+  return part.kind === "media";
+}
+
+function timelineRowHasWorkPart(row: TimelineRow): boolean {
+  return row.parts.some(timelinePartIsWork);
+}
+
+function rowWithParts(
+  row: TimelineRow,
+  parts: TimelineRenderPart[],
+  keySuffix: string,
+): TimelineRow {
+  const text = rowCopyText(parts);
+  return {
+    key: `${row.key}:${keySuffix}`,
+    role: row.role,
+    instanceId: row.instanceId,
+    text,
+    kind: row.kind,
+    parts,
+    historyDivider: row.historyDivider,
+    roundMarker: row.roundMarker,
+    runId: row.runId,
+    source: row.source,
+    copyable: isAnswerRole(row.role) &&
+      text.trim().length > 0 &&
+      parts.every((part) => part.kind === "text"),
+  };
+}
+
+function processedGroupRow(rows: TimelineRow[], runId: string): TimelineRow {
+  const firstKey = rows[0]?.key ?? "start";
+  const lastKey = rows.at(-1)?.key ?? "end";
+  return {
+    key: `processed:${runId}:${firstKey}:${lastKey}`,
+    role: "processed",
+    text: "",
+    kind: "processed",
+    parts: [],
+    processedGroup: { rows },
+    roundMarker: null,
+    runId,
+    source: "message",
+    copyable: false,
+  };
 }
 
 function insertPlainRoundMarkerRows(
@@ -4009,6 +4397,7 @@ function rowCopyText(parts: TimelineRenderPart[]): string {
 
 function timelineRowHasRenderableContent(row: TimelineRow): boolean {
   return (
+    row.processedGroup !== undefined ||
     row.roundMarker !== null ||
     row.parts.length > 0 ||
     row.text.trim().length > 0
@@ -4042,6 +4431,9 @@ function estimateRowSize(row: TimelineRow | undefined): number {
   }
   if (row.roundMarker !== null) {
     return 84;
+  }
+  if (row.processedGroup !== undefined) {
+    return 42;
   }
   const mediaCount = row.parts.filter((part) => part.kind === "media").length;
   const thinkingCount = row.parts.filter((part) => part.kind === "thinking").length;

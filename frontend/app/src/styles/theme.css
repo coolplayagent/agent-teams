@@ -4569,9 +4569,8 @@ body {
   left: 0;
   right: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  column-gap: 8px;
   row-gap: var(--at-message-gap);
   padding: 14px 0;
   border-bottom: 0;
@@ -4617,13 +4616,14 @@ body {
 }
 
 .at-message-actions {
-  grid-column: 2;
-  align-self: start;
+  grid-column: 1;
+  align-self: center;
   justify-self: end;
   display: flex;
   align-items: center;
   gap: 4px;
   min-height: 24px;
+  margin-top: 2px;
 }
 
 .at-message-actions .ant-btn {
@@ -4633,6 +4633,80 @@ body {
 .at-message-actions .ant-btn:not(:disabled):hover {
   color: var(--at-text);
   background: var(--at-surface-muted);
+}
+
+.at-processed-group-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 4px 0;
+}
+
+.at-processed-group {
+  display: block;
+  max-width: 100%;
+}
+
+.at-processed-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+  color: var(--at-text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  list-style: none;
+  user-select: none;
+}
+
+.at-processed-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.at-processed-group-summary:hover {
+  color: var(--at-text);
+}
+
+.at-processed-group-line {
+  flex: 1 1 auto;
+  height: 1px;
+  background: color-mix(in srgb, var(--at-border) 78%, transparent);
+}
+
+.at-processed-group-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.at-processed-group-toggle {
+  flex: 0 0 auto;
+  color: var(--at-text-muted);
+  font-family: var(--at-font-mono);
+  font-size: 13px;
+  line-height: 1;
+  transition: transform 0.16s ease;
+}
+
+.at-processed-group[open] > .at-processed-group-summary .at-processed-group-toggle {
+  transform: rotate(90deg);
+}
+
+.at-processed-group-body {
+  display: grid;
+  gap: 6px;
+  padding: 6px 0 8px;
+  overflow: hidden;
+}
+
+.at-processed-group-item {
+  display: grid;
+  gap: var(--at-message-gap);
+  min-width: 0;
+}
+
+.at-processed-group-item.is-tool-only {
+  gap: 4px;
 }
 
 .at-message-markdown {

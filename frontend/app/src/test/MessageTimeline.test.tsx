@@ -335,6 +335,83 @@ describe("MessageTimeline", () => {
     expect(writeText).not.toHaveBeenCalledWith("Run completed: status completed");
   });
 
+  it("collapses completed thinking and tool work while keeping final answer actions below it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: "Inspecting the workspace",
+              part_kind: "thinking",
+            },
+            {
+              args: { path: "." },
+              part_kind: "tool-call",
+              tool_call_id: "tool-1",
+              tool_name: "read",
+            },
+            {
+              content: { ok: true, data: "workspace ready" },
+              part_kind: "tool-return",
+              tool_call_id: "tool-1",
+              tool_name: "read",
+            },
+            {
+              content: "Final answer ready",
+              part_kind: "text",
+            },
+          ],
+        },
+        message_id: "assistant-processed",
+        role_id: "MainAgent",
+        run_id: "run-processed",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-processed",
+          run_status: "completed",
+          run_user_message: "Run processed group check",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    await waitFor(() => {
+      expect(screen.getByText("Final answer ready")).toBeVisible();
+    });
+    const group = container.querySelector("details.at-processed-group");
+    expect(group).not.toBeNull();
+    expect(group).not.toHaveAttribute("open");
+    expect(screen.getByText("Processed")).toBeVisible();
+    expect(screen.getByText("Inspecting the workspace")).not.toBeVisible();
+    expect(screen.getByText("Tool result: read")).not.toBeVisible();
+
+    const copyButton = screen.getByRole("button", {
+      name: "Copy last answer",
+    });
+    const actions = copyButton.closest(".at-message-actions");
+    expect(actions).not.toBeNull();
+    expect(actions?.previousElementSibling).toHaveClass("at-message-content");
+    expect(copyButton.closest(".at-processed-group")).toBeNull();
+    expect(copyButton.closest("article.at-message"))
+      .toHaveTextContent("Final answer ready");
+
+    fireEvent.click(copyButton);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Final answer ready"));
+  });
+
   it("renders the round rail from session rounds and marks selected rounds", async () => {
     const restoreMeasurements = mockElementMeasurements({
       clientHeight: 220,
@@ -1069,6 +1146,43 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("Persisted shared answer")).toBeVisible();
     expect(screen.getAllByText("Persisted shared answer")).toHaveLength(1);
+  });
+
+  it("uses the round marker instead of duplicating the persisted user prompt row", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Run the verification",
+        message_id: "user-prompt",
+        role: "user",
+        run_id: "run-prompt",
+      },
+      {
+        content: "Verification done",
+        message_id: "assistant-answer",
+        role_id: "MainAgent",
+        run_id: "run-prompt",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-prompt",
+          run_status: "completed",
+          run_user_message: "Run the verification",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Verification done")).toBeVisible();
+    expect(container.querySelector(".at-round-marker"))
+      .toHaveTextContent("Run the verification");
+    expect(container.querySelector('article.at-message[data-role-id="user"]'))
+      .toBeNull();
   });
 
   it("keeps long round prompts collapsed with raw text available in the marker", async () => {
@@ -3730,9 +3844,13 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("Injection applied: change direction · source user"))
       .toBeVisible();
-    expect(screen.getByText("Tool error: shell")).toBeVisible();
+    expect(screen.getByText("Processed")).toBeVisible();
+    expect(screen.getByText("Tool error: shell")).not.toBeVisible();
     expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
     expect(screen.queryByText("Tool call: read_file")).not.toBeInTheDocument();
+    expect(screen.getByText("Tool result: read_file")).not.toBeVisible();
+    openProcessedGroup(container);
+    expect(screen.getByText("Tool error: shell")).toBeVisible();
     expect(screen.getByText("Tool result: read_file")).toBeVisible();
     expect(toolPreviewTexts(container)).toEqual([
       "Shell command failed",
@@ -3740,12 +3858,10 @@ describe("MessageTimeline", () => {
     ]);
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(5);
-    expect(rowTexts[0]).toContain("Tool error: shell");
-    expect(rowTexts[1]).toContain("Injection applied: change direction");
-    expect(rowTexts[2]).toContain("Now let me read more files.");
-    expect(rowTexts[3]).toContain("Tool result: read_file");
-    expect(rowTexts[4]).toContain("done");
+    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts[0]).toContain("Injection applied: change direction");
+    expect(rowTexts[1]).toContain("Now let me read more files.");
+    expect(rowTexts[2]).toContain("done");
     expect(toolPreElement(screenElement(screen.getByText("Tool error: shell"))))
       .toHaveTextContent(/ls missing/);
     expect(toolPreElement(screenElement(screen.getByText("Tool result: read_file"))))
@@ -4220,7 +4336,7 @@ describe("MessageTimeline", () => {
         id: "run-output:3:2",
         text: "after tool",
       }),
-    ]);
+    ], "open");
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline();
@@ -4256,7 +4372,7 @@ describe("MessageTimeline", () => {
         id: "run-output:5:4",
         text: "after tool lifecycle",
       }),
-    ]);
+    ], "open");
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline();
@@ -4341,7 +4457,7 @@ describe("MessageTimeline", () => {
         id: "run-output:3:2",
         text: "Switching the search target to OpenAI.",
       }),
-    ]);
+    ], "open");
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline();
@@ -4484,7 +4600,7 @@ describe("MessageTimeline", () => {
         id: "run-output:5:4",
         text: "after thinking",
       }),
-    ]);
+    ], "open");
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline();
@@ -6200,6 +6316,20 @@ function setRuntimeStateFromEvents(events: RelayRunEvent[]): void {
   useRuntimeStore.setState({
     runtimeState: events.reduce(reduceRunEvent, initialRuntimeState),
   });
+}
+
+function openProcessedGroup(container: HTMLElement): HTMLDetailsElement {
+  const group = container.querySelector("details.at-processed-group");
+  if (!(group instanceof HTMLDetailsElement)) {
+    throw new Error("Processed group was not rendered.");
+  }
+  const summary = group.querySelector(".at-processed-group-summary");
+  if (!(summary instanceof HTMLElement)) {
+    throw new Error("Processed group summary was not rendered.");
+  }
+  fireEvent.click(summary);
+  expect(group).toHaveAttribute("open");
+  return group;
 }
 
 function relayRunEvent(overrides: Partial<RelayRunEvent>): RelayRunEvent {

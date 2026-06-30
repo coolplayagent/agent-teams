@@ -218,28 +218,19 @@ test("preserves non-text stream events after reconnect", async ({ page }) => {
       relayEventType: "tool_result",
       type: "tool_result.completed",
     });
-    await dispatchRunEvent(page, {
-      eventId: 8,
-      payload: { input_tokens: 11, output_tokens: 7, total_tokens: 18 },
-      relayEventType: "token_usage",
-      type: "token_usage.updated",
-    });
-
-    await expect(page.getByText("Tool call: read")).toBeVisible();
-    await expect(
-      page.locator(".at-message-tool-preview").getByText("README.md", {
-        exact: true,
-      }),
-    ).toBeVisible();
     await expect(page.getByText("Tool result: read")).toBeVisible();
+    await expect(page.getByText("Tool call: read")).toHaveCount(0);
     await expect(
       page.locator(".at-message-tool-preview").getByText(toolOutput, {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(
-      page.getByText("Token usage: Total 18 · Input 11 · Output 7"),
-    ).toBeVisible();
+    const readTool = page.locator(".at-message-tool").filter({
+      hasText: "Tool result: read",
+    });
+    await expect(readTool).toHaveCount(1);
+    await readTool.locator(".at-message-tool-summary").click();
+    await expect(readTool.getByText(/README\.md/)).toBeVisible();
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(

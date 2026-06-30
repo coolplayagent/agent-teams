@@ -25,6 +25,10 @@ import type { SessionRecord, SessionSidebarRecord } from "../api/contracts";
 import { ApiError } from "../api/http";
 import { AppShell } from "../features/shell/AppShell";
 import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
+import {
+  useRunStreamController,
+  type RunStreamController,
+} from "../runtime/useRunStreamController";
 import { sidebarWidthDefault, useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
@@ -35,6 +39,10 @@ vi.mock("../api/client", () => ({
   listWorkspaces: vi.fn(),
   markSessionTerminalRunViewed: vi.fn(),
   saveUiLanguageSettings: vi.fn(),
+}));
+
+vi.mock("../runtime/useRunStreamController", () => ({
+  useRunStreamController: vi.fn(),
 }));
 
 vi.mock("../features/composer/Composer", () => ({
@@ -273,10 +281,14 @@ const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 const markSessionTerminalRunViewedMock = vi.mocked(markSessionTerminalRunViewed);
 const saveUiLanguageSettingsMock = vi.mocked(saveUiLanguageSettings);
+const useRunStreamControllerMock = vi.mocked(useRunStreamController);
+let runStreamControllerMock: RunStreamController;
 
 beforeEach(() => {
   window.history.replaceState(null, "", window.location.href);
   mockViewportMatch(false);
+  runStreamControllerMock = createRunStreamController();
+  useRunStreamControllerMock.mockReturnValue(runStreamControllerMock);
   fetchUiLanguageSettingsMock.mockResolvedValue({ language: "en-US" });
   getHealthMock.mockResolvedValue({ status: "ok" });
   getSessionMock.mockResolvedValue({
@@ -1003,6 +1015,26 @@ describe("AppShell", () => {
       .not.toBeInTheDocument();
   });
 
+  it("detaches the active foreground stream before opening a primary feature surface", async () => {
+    runStreamControllerMock = createRunStreamController({
+      activeRunId: "run-active",
+      activeRunIds: ["run-active"],
+      trackedRunIds: ["run-active"],
+    });
+    useRunStreamControllerMock.mockReturnValue(runStreamControllerMock);
+
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
+
+    expect(await screen.findByTestId("skills-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps observability and settings top bar shortcuts visible", async () => {
     renderShell();
 
@@ -1333,6 +1365,21 @@ function renderShell() {
 
 function renderWithStrictModeBoundary(children: ReactNode) {
   return children;
+}
+
+function createRunStreamController(
+  overrides: Partial<RunStreamController> = {},
+): RunStreamController {
+  return {
+    activeRunId: null,
+    activeRunIds: [],
+    clearRunStream: vi.fn(),
+    startRunStream: vi.fn(),
+    startRunStreams: vi.fn(),
+    suppressedRunIds: [],
+    trackedRunIds: [],
+    ...overrides,
+  };
 }
 
 function htmlElement(element: Element | null, label: string): HTMLElement {

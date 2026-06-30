@@ -7669,3 +7669,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1/V2 screenshot comparison, focused CSS guard update, production build, and browser screenshot/DOM verification completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Primary Feature Stream Detach Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the remaining Python frontend harness inventory, and the stream/replay quality gates before selecting this slice.
+- Migrated the V1 `test_projects_sidebar_detaches_active_stream_before_opening_feature_view` behavior into V2 `AppShell.test.tsx`.
+- Updated `AppShell` so opening a primary feature surface such as Skills while a foreground run stream is active clears the foreground run stream before the chat workspace unmounts.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept sidebar/settings item inventory, secondary-page routing, appearance layout, and visual framework CSS unchanged in this slice.
+- This slice tightens one stream/navigation boundary. It does not claim complete stream/replay PASS, interrupted-stream recovery PASS, broader Projects Sidebar Python harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion. The adjacent `test_projects_sidebar_new_session_detaches_active_stream_without_session` Python harness remains as a next migration candidate.
+
+### Verification
+- `npm test -- AppShell.test.tsx -t "foreground stream|routes primary sidebar"` passed with 2 focused tests.
+- `npm test -- AppShell.test.tsx` passed with 32 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `npm run build` passed, including `tsc --noEmit`, `tsc -p tsconfig.desktop.json --noEmit`, desktop build, and Vite production build.
+- `rg -n "test_projects_sidebar_detaches_active_stream_before_opening_feature_view|detaches_active_stream_before_opening_feature_view|active stream before opening feature" tests\integration_tests\frontend frontend\app\src\test\AppShell.test.tsx` returned no matches.
+
+### Reviewer
+- Main-agent V1 harness mapping, V2 production stream-detach implementation, focused/full AppShell verification, frontend typecheck/build, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

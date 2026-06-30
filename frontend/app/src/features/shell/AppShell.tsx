@@ -140,6 +140,9 @@ export function AppShell() {
       nextView: ShellPrimaryView,
       historyMode: ShellHistoryMode = "push",
     ) => {
+      if (nextView !== "chat" && runStreamController.activeRunIds.length > 0) {
+        runStreamController.clearRunStream();
+      }
       const leavingSubagentView = activeSubagent !== null;
       setSettingsOpen(false);
       setActiveSubagent(null);
@@ -148,7 +151,7 @@ export function AppShell() {
       }
       navigateShellView(nextView, historyMode);
     },
-    [activeSubagent, activeView, navigateShellView],
+    [activeSubagent, activeView, navigateShellView, runStreamController],
   );
 
   const healthQuery = useQuery({

@@ -5017,53 +5017,6 @@ export async function enableAutomationProject() {
     assert payload["fetchAutomationProjectsCalls"] == 1
 
 
-def test_projects_sidebar_detaches_active_stream_before_opening_feature_view(
-    tmp_path: Path,
-) -> None:
-    payload = _run_sidebar_script(
-        tmp_path=tmp_path,
-        runner_source="""
-import {
-    loadProjects,
-} from "./sidebar.mjs";
-import { state } from "./mockState.mjs";
-
-installGlobals(createDomEnvironment());
-state.currentSessionId = "session-running";
-state.activeEventSource = { readyState: 1 };
-
-await loadProjects();
-const featureSection = document.getElementById("projects-list").children[0];
-const featureItems = featureSection.querySelectorAll(".home-feature-item");
-featureItems[0]?.onclick?.();
-await flushTasks();
-await flushTasks();
-
-console.log(JSON.stringify({
-    currentSessionId: state.currentSessionId,
-    activeEventSource: state.activeEventSource,
-    currentFeatureViewId: state.currentFeatureViewId,
-    detachStreamCalls: globalThis.__detachStreamCalls || 0,
-    detachSubagentStreamCalls: globalThis.__detachSubagentStreamCalls || 0,
-    detachForegroundSubmissionCalls: globalThis.__detachForegroundSubmissionCalls || 0,
-    stoppedSessionContinuity: globalThis.__stoppedSessionContinuity || [],
-    clearSessionTimelineCalls: globalThis.__clearSessionTimelineCalls || 0,
-    openedSkillsFeatureCount: globalThis.__openedSkillsFeatureCount || 0,
-}));
-""".strip(),
-    )
-
-    assert payload["currentSessionId"] is None
-    assert payload["activeEventSource"] is None
-    assert payload["currentFeatureViewId"] == "skills"
-    assert payload["detachStreamCalls"] == 1
-    assert payload["detachSubagentStreamCalls"] == 1
-    assert payload["detachForegroundSubmissionCalls"] == 1
-    assert payload["stoppedSessionContinuity"] == ["session-running"]
-    assert payload["clearSessionTimelineCalls"] == 1
-    assert payload["openedSkillsFeatureCount"] == 1
-
-
 def test_projects_sidebar_primary_new_session_opens_draft_for_multiple_workspaces(
     tmp_path: Path,
 ) -> None:

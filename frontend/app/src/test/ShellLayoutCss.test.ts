@@ -123,6 +123,21 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(/@keyframes at-session-switch-spin/);
   });
 
+  it("keeps subagent sessions locked to the workspace frame", () => {
+    expect(themeCss).toMatch(
+      /\.at-subagent-session-view\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-subagent-session-title-row\s*{[\s\S]*?grid-template-columns:\s*max-content minmax\(0, 1fr\) max-content;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-subagent-session-title\.ant-typography\s*{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-subagent-session-body\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\);[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+  });
+
   it("keeps the desktop round rail overlaid instead of reserving a chat column", () => {
     expect(themeCss).toMatch(
       /\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,

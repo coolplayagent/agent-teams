@@ -6,20 +6,6 @@ from pathlib import Path
 import subprocess
 
 
-def test_subagent_session_streaming_layout_is_stable() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    css_text = (
-        repo_root / "frontend" / "dist" / "css" / "components" / "subagent.css"
-    ).read_text(encoding="utf-8")
-
-    assert ".chat-container.is-subagent-session-active .chat-scroll" in css_text
-    assert "scrollbar-gutter: stable;" in css_text
-    assert ".subagent-session-body .message" in css_text
-    assert "animation: none;" in css_text
-    body_rule = css_text.split(".subagent-session-body {", 1)[1].split("}", 1)[0]
-    assert "gap:" not in body_rule
-
-
 def test_opening_subagent_session_hides_main_input_container(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[3]
     source_path = (

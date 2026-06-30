@@ -7445,3 +7445,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell coverage strengthening, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Layout CSS Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, current V2 subagent CSS, existing `ShellLayoutCss.test.ts`, and the remaining `test_subagent_sessions_ui.py` Python harness inventory before editing.
+- Added V2 `ShellLayoutCss.test.ts` coverage proving subagent sessions stay locked to the workspace frame: `.at-subagent-session-view` uses a two-row grid with `height: 100%`, `min-height: 0`, and `overflow: hidden`; the title row truncates safely; and `.at-subagent-session-body` keeps its scrollable timeline child inside `minmax(0, 1fr)`.
+- Removed the migrated V1 source-copy harness `test_subagent_session_streaming_layout_is_stable` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`. The removed test only scanned old `frontend/dist/css/components/subagent.css` selectors, while V2 layout lives in `frontend/app/src/styles/theme.css`.
+- No production CSS changed in this slice; this is a test migration only.
+- This slice reduces the subagent Python UI harness count and strengthens V2 layout coverage. It does not claim browser screenshot sign-off, full visual parity, complete subagent stream/replay PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- ShellLayoutCss.test.ts` passed with 12 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 9 remaining Python UI harness scenarios.
+- `rg -n -F "test_subagent_session_streaming_layout_is_stable" tests\integration_tests\frontend\test_subagent_sessions_ui.py frontend\app\src\test\ShellLayoutCss.test.ts docs\goals\frontend-rewrite\implementation-ledger.md` returns only this ledger entry and no remaining Python function definition.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 CSS harness mapping, V2 CSS test coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

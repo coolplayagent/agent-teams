@@ -1199,41 +1199,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_round_nav_density_degrades_before_overlap(tmp_path: Path) -> None:
-    payload = _run_round_nav_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const rounds = [
-    { run_id: 'run-1', intent: 'Inspect issue' },
-];
-const { renderRoundNavigator } = await import('./navigator.mjs');
-
-function renderAtWidth(width) {
-    chatContainer.__rect = { left: 0, top: 0, width, height: 900, right: width, bottom: 900 };
-    renderRoundNavigator(rounds, () => undefined, { activeRunId: 'run-1' });
-    const nav = document.getElementById('round-nav-float');
-    return {
-        navDensity: nav?.dataset?.density || null,
-        chatDensity: chatContainer.dataset.roundTimelineDensity || null,
-    };
-}
-
-console.log(JSON.stringify({
-    full: renderAtWidth(1900),
-    compact: renderAtWidth(1100),
-    dot: renderAtWidth(820),
-    hidden: renderAtWidth(700),
-}));""".strip(),
-    )
-
-    assert payload == {
-        "full": {"navDensity": "full", "chatDensity": "full"},
-        "compact": {"navDensity": "full", "chatDensity": "full"},
-        "dot": {"navDensity": "compact", "chatDensity": "compact"},
-        "hidden": {"navDensity": "dot", "chatDensity": "dot"},
-    }
-
-
 def _run_round_nav_script(tmp_path: Path, runner_source: str) -> dict[str, object]:
     repo_root = Path(__file__).resolve().parents[3]
     source_path = (

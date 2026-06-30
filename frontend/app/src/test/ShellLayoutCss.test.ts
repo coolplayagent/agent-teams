@@ -207,6 +207,9 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-round-rail-todo li em\s*{[\s\S]*?font-style:\s*normal;[\s\S]*?white-space:\s*nowrap;/,
     );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 1160px\)[\s\S]*?\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?\.at-round-rail\s*{[\s\S]*?display:\s*none;/,
+    );
   });
 
   it("keeps desktop composer controls readable inside the V1-wide shell", () => {

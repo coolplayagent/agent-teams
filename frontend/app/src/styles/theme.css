@@ -4655,6 +4655,10 @@ body {
   transform: rotate(90deg);
 }
 
+.at-round-marker-intent[open] .at-round-marker-title {
+  display: none;
+}
+
 .at-round-marker-intent-action {
   flex: 0 0 auto;
   margin-left: auto;
@@ -5201,6 +5205,10 @@ body {
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.at-message-tool[open] .at-message-tool-preview {
+  display: none;
 }
 
 .at-message-tool-spinner {

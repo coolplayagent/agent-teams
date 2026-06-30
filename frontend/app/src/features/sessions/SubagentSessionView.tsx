@@ -7,7 +7,11 @@ import { listAgentMessages, listSessionSubagents } from "../../api/client";
 import type { ContentPart, JsonValue, TimelineMessage } from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
-import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
+import type { RuntimeRunState, RuntimeState, TimelineEntry } from "../../runtime/reducers";
+import {
+  openSessionSubagentRunStream,
+  type RunStreamHandle,
+} from "../../runtime/streamClient";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations } from "../../i18n";
 import { MessageTimeline } from "../timeline/MessageTimeline";
@@ -32,17 +36,15 @@ export function SubagentSessionView({
 }: SubagentSessionViewProps) {
   const queryClient = useQueryClient();
   const t = useTranslations();
-  const runStreamControllerRef = useRef(runStreamController);
-  const previouslyTrackedRunRef = useRef(false);
+  const runtimeState = useRuntimeStore((state) => state.runtimeState);
+  const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
+  const runtimeStateRef = useRef(runtimeState);
+  const latestStreamTargetRef = useRef<SubagentStreamTarget | null>(null);
+  const subagentStreamRef = useRef<RunStreamHandle | null>(null);
+  const streamedRunIdRef = useRef<string | null>(null);
   const [pollSubagentRecord, setPollSubagentRecord] = useState(
     () => subagentHasStreamingStatus(subagent),
   );
-  const runId = subagent.runId.trim();
-  const instanceId = subagent.instanceId.trim();
-  const runtimeRunState = useRuntimeStore((state) =>
-    runId ? state.runtimeState.runs[runId] ?? null : null,
-  );
-  const runtimeTerminalEventType = runtimeRunState?.terminalEventType ?? null;
   const subagentRecordsQuery = useQuery({
     queryKey: ["sessions", subagent.sessionId, "subagents"],
     queryFn: () => listSessionSubagents(subagent.sessionId, true),
@@ -55,6 +57,13 @@ export function SubagentSessionView({
     [subagent, subagentRecordsQuery.data],
   );
   const recordAwareSubagent = latestSubagentRecord ?? subagent;
+  const sessionId = recordAwareSubagent.sessionId;
+  const runId = recordAwareSubagent.runId.trim();
+  const instanceId = recordAwareSubagent.instanceId.trim();
+  const runtimeRunState = useRuntimeStore((state) =>
+    runId ? state.runtimeState.runs[runId] ?? null : null,
+  );
+  const runtimeTerminalEventType = runtimeRunState?.terminalEventType ?? null;
   const displayedSubagent = useMemo(
     () => subagentWithRuntimeTerminalStatus(
       recordAwareSubagent,
@@ -63,17 +72,11 @@ export function SubagentSessionView({
     [recordAwareSubagent, runtimeTerminalEventType],
   );
   const subagentWaitingForOutput = subagentHasStreamingStatus(displayedSubagent);
-  const expectedTerminalToolCallIds = useMemo(
-    () => runtimeToolCallIds(runtimeRunState, subagent.sessionId, runId),
-    [runId, runtimeRunState, subagent.sessionId],
-  );
-  const expectedTerminalToolCallKey = expectedTerminalToolCallIds.join("|");
   const streamStatusKey = [
     displayedSubagent.status,
     displayedSubagent.runStatus,
     displayedSubagent.runPhase,
   ].join("|");
-  const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
   const hasMessageHistoryTarget = instanceId.length > 0;
   const canRenderTimeline = hasMessageHistoryTarget || runId.length > 0;
   const title =
@@ -82,25 +85,34 @@ export function SubagentSessionView({
     displayedSubagent.instanceId;
   const messageQueryKey = useMemo(
     () => subagentMessagesQueryKey(
-      subagent.sessionId,
+      sessionId,
       hasMessageHistoryTarget
         ? instanceId
         : `pending:${runId || title}`,
     ),
-    [hasMessageHistoryTarget, instanceId, runId, subagent.sessionId, title],
+    [hasMessageHistoryTarget, instanceId, runId, sessionId, title],
   );
   const loadSubagentMessages = useCallback(
     () => (
       hasMessageHistoryTarget
-        ? listAgentMessages(subagent.sessionId, instanceId)
+        ? listAgentMessages(sessionId, instanceId)
         : Promise.resolve([])
     ),
-    [hasMessageHistoryTarget, instanceId, subagent.sessionId],
+    [hasMessageHistoryTarget, instanceId, sessionId],
   );
 
   useEffect(() => {
-    runStreamControllerRef.current = runStreamController;
-  }, [runStreamController]);
+    runtimeStateRef.current = runtimeState;
+  }, [runtimeState]);
+
+  useEffect(() => {
+    latestStreamTargetRef.current = {
+      instanceId,
+      messageQueryKey,
+      queryClient,
+      sessionId,
+    };
+  }, [instanceId, messageQueryKey, queryClient, sessionId]);
 
   useEffect(() => {
     setPollSubagentRecord(subagentHasStreamingStatus(subagent));
@@ -123,64 +135,80 @@ export function SubagentSessionView({
   }, [latestSubagentRecord]);
 
   useEffect(() => {
-    let startedRunStream = false;
-    if (
-      shouldStreamSubagentRun(runId, streamStatusKey) &&
-      !runStreamControllerRef.current.trackedRunIds.includes(runId) &&
-      !runStreamControllerRef.current.suppressedRunIds.includes(runId)
-    ) {
-      runStreamControllerRef.current.startRunStream({
-        afterEventId: subagent.lastEventId ?? undefined,
-        foreground: true,
-        runId,
-        sessionId: subagent.sessionId,
-      });
-      startedRunStream = true;
+    if (!shouldStreamSubagentRun(runId, streamStatusKey)) {
+      return;
     }
-    return () => {
-      if (startedRunStream) {
-        runStreamControllerRef.current.clearRunStream();
-      }
-    };
-  }, [runId, streamStatusKey, subagent.lastEventId, subagent.sessionId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const tracked = runId.length > 0 && runStreamController.trackedRunIds.includes(runId);
-    if (previouslyTrackedRunRef.current && !tracked && hasMessageHistoryTarget) {
-      void refreshSubagentTerminalHistory({
-        expectedToolCallIds: expectedTerminalToolCallIds,
-        instanceId: subagent.instanceId,
-        isCancelled: () => cancelled,
-        messageQueryKey,
-        queryClient,
-        sessionId: subagent.sessionId,
-      }).finally(() => {
-        if (cancelled) {
+    if (streamedRunIdRef.current === runId) {
+      return;
+    }
+    subagentStreamRef.current?.close();
+    streamedRunIdRef.current = runId;
+    const currentRuntimeState = runtimeStateRef.current;
+    const streamHandle = openSessionSubagentRunStream({
+      afterEventId: currentRuntimeState.runs[runId]?.lastEventId ?? 0,
+      initialState: currentRuntimeState,
+      onClosed: (closedRuntimeState) => {
+        runtimeStateRef.current = closedRuntimeState;
+        if (streamedRunIdRef.current === runId) {
+          streamedRunIdRef.current = null;
+          subagentStreamRef.current = null;
+        }
+        const latestTarget = latestStreamTargetRef.current;
+        if (latestTarget === null) {
           return;
         }
-        void queryClient.invalidateQueries({
-          queryKey: ["sessions", subagent.sessionId, "subagents"],
+        const terminalInstanceId =
+          latestTarget.instanceId.trim() ||
+          runtimeInstanceId(closedRuntimeState.runs[runId]);
+        void refreshSubagentTerminalHistoryFromRuntime({
+          instanceId: terminalInstanceId,
+          messageQueryKey: latestTarget.messageQueryKey,
+          queryClient: latestTarget.queryClient,
+          runId,
+          runtimeState: closedRuntimeState,
+          sessionId: latestTarget.sessionId,
+        }).then((historyReady) => {
+          if (historyReady) {
+            setRuntimeState(closedRuntimeState);
+          }
         });
-        void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-      });
-    }
-    previouslyTrackedRunRef.current = tracked;
+      },
+      onError: () => {
+        if (streamedRunIdRef.current === runId) {
+          streamedRunIdRef.current = null;
+          subagentStreamRef.current = null;
+        }
+      },
+      onState: (nextRuntimeState) => {
+        runtimeStateRef.current = nextRuntimeState;
+        if (nextRuntimeState.runs[runId]?.status === "closed") {
+          return;
+        }
+        setRuntimeState(nextRuntimeState);
+      },
+      runId,
+      sessionId,
+    });
+    subagentStreamRef.current = streamHandle;
+  }, [runId, sessionId, setRuntimeState, streamStatusKey]);
+
+  useEffect(() => {
     return () => {
-      cancelled = true;
+      if (streamedRunIdRef.current === runId) {
+        subagentStreamRef.current?.close();
+        subagentStreamRef.current = null;
+        streamedRunIdRef.current = null;
+      }
     };
-  }, [
-    expectedTerminalToolCallIds,
-    expectedTerminalToolCallKey,
-    hasMessageHistoryTarget,
-    subagent.instanceId,
-    messageQueryKey,
-    queryClient,
-    runId,
-    subagent.sessionId,
-    trackedRunIdsKey,
-    runStreamController.trackedRunIds,
-  ]);
+  }, [runId, sessionId]);
+
+  useEffect(() => {
+    return () => {
+      subagentStreamRef.current?.close();
+      subagentStreamRef.current = null;
+      streamedRunIdRef.current = null;
+    };
+  }, []);
 
   return (
     <div className="at-subagent-session-view">
@@ -218,7 +246,7 @@ export function SubagentSessionView({
             messageQueryKey={messageQueryKey}
             roundsEnabled={false}
             runtimeRunId={runId}
-            sessionId={subagent.sessionId}
+            sessionId={sessionId}
             variant="subagent-panel"
           />
         ) : (
@@ -238,6 +266,50 @@ function SubagentPendingState({ label }: { label: string }) {
   );
 }
 
+interface SubagentStreamTarget {
+  instanceId: string;
+  messageQueryKey: readonly unknown[];
+  queryClient: ReturnType<typeof useQueryClient>;
+  sessionId: string;
+}
+
+async function refreshSubagentTerminalHistoryFromRuntime({
+  instanceId,
+  messageQueryKey,
+  queryClient,
+  runId,
+  runtimeState,
+  sessionId,
+}: {
+  instanceId: string;
+  messageQueryKey: readonly unknown[];
+  queryClient: ReturnType<typeof useQueryClient>;
+  runId: string;
+  runtimeState: RuntimeState;
+  sessionId: string;
+}): Promise<boolean> {
+  if (instanceId.trim().length === 0) {
+    void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "subagents"] });
+    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    return false;
+  }
+  await refreshSubagentTerminalHistory({
+    expectedToolCallIds: runtimeToolCallIds(
+      runtimeState.runs[runId] ?? null,
+      sessionId,
+      runId,
+    ),
+    instanceId,
+    isCancelled: () => false,
+    messageQueryKey,
+    queryClient,
+    sessionId,
+  });
+  void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "subagents"] });
+  void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+  return true;
+}
+
 async function refreshSubagentTerminalHistory({
   expectedToolCallIds,
   instanceId,
@@ -254,7 +326,16 @@ async function refreshSubagentTerminalHistory({
   sessionId: string;
 }): Promise<void> {
   if (expectedToolCallIds.length === 0) {
-    void queryClient.invalidateQueries({ queryKey: messageQueryKey });
+    try {
+      const latestMessages = await listAgentMessages(sessionId, instanceId);
+      if (!isCancelled()) {
+        queryClient.setQueryData(messageQueryKey, latestMessages);
+      }
+    } catch {
+      if (!isCancelled()) {
+        void queryClient.invalidateQueries({ queryKey: messageQueryKey });
+      }
+    }
     return;
   }
 
@@ -310,6 +391,19 @@ function runtimeToolCallIds(
     }
   }
   return Array.from(toolCallIds);
+}
+
+function runtimeInstanceId(runState: RuntimeRunState | undefined): string {
+  if (runState === undefined) {
+    return "";
+  }
+  for (const entry of runState.entries) {
+    const instanceId = entry.instanceId?.trim() ?? "";
+    if (instanceId.length > 0) {
+      return instanceId;
+    }
+  }
+  return "";
 }
 
 function runtimeEntryMatchesSubagentRun(

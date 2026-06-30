@@ -147,6 +147,9 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-round-marker\s*{[\s\S]*?border-bottom:\s*0;/,
     );
+    expect(themeCss).toMatch(
+      /\.at-round-marker-intent\[open\] \.at-round-marker-title\s*{[\s\S]*?display:\s*none;/,
+    );
   });
 
   it("keeps collapsed tool records compact in the message timeline", () => {
@@ -158,6 +161,9 @@ describe("shell layout CSS", () => {
     );
     expect(themeCss).toMatch(
       /\.at-message\.is-tool-only \.at-message-tool-summary,[\s\S]*?\.at-processed-group-item\.is-tool-only \.at-message-tool-summary\s*{[\s\S]*?min-height:\s*28px;[\s\S]*?padding:\s*4px 8px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-tool\[open\] \.at-message-tool-preview\s*{[\s\S]*?display:\s*none;/,
     );
   });
 

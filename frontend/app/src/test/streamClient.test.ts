@@ -5,8 +5,10 @@ import { initialRuntimeState, type RuntimeState } from "../runtime/reducers";
 import {
   openMultiplexedRunStream,
   openRunStream,
+  openSessionSubagentRunStream,
   type MultiplexedRunStreamOptions,
   type RunStreamOptions,
+  type SessionSubagentRunStreamOptions,
 } from "../runtime/streamClient";
 
 type EventSourceListener = EventListenerOrEventListenerObject;
@@ -351,6 +353,70 @@ describe("openRunStream", () => {
     expect(stream.closedStates).toHaveLength(1);
     expect(stream.closedStates[0].runs["subagent_run_1"]).toMatchObject({
       lastEventId: 11,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+  });
+
+  it("routes selected normal-mode subagent events from the session stream", () => {
+    const stream = openTestSessionSubagentStream({
+      afterEventId: 12,
+      runId: "subagent_run_1",
+      sessionId: "session-parent",
+    });
+
+    expect(String(stream.source.url)).toBe(
+      "/api/sessions/session-parent/subagents/events?after_event_id=12",
+    );
+
+    stream.source.dispatchMessage(
+      "message",
+      JSON.stringify(
+        relayEvent({
+          event_id: 13,
+          payload_json: JSON.stringify({ text: "other subagent" }),
+          run_id: "subagent_run_other",
+          trace_id: "subagent_run_other",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message",
+      JSON.stringify(
+        relayEvent({
+          event_id: 14,
+          instance_id: "inst-sub-1",
+          payload_json: JSON.stringify({ text: "selected subagent output" }),
+          run_id: "subagent_run_1",
+          trace_id: "subagent_run_1",
+        }),
+      ),
+    );
+    stream.source.dispatchMessage(
+      "message",
+      JSON.stringify(
+        relayEvent({
+          event_id: 15,
+          event_type: "run_completed",
+          instance_id: "inst-sub-1",
+          payload_json: JSON.stringify({ status: "completed" }),
+          run_id: "subagent_run_1",
+          trace_id: "subagent_run_1",
+        }),
+      ),
+    );
+
+    expect(stream.states).toHaveLength(2);
+    expect(stream.states[0].runs["subagent_run_other"]).toBeUndefined();
+    expect(stream.states[0].runs["subagent_run_1"].entries[0]).toMatchObject({
+      eventId: 14,
+      instanceId: "inst-sub-1",
+      runId: "subagent_run_1",
+      text: "selected subagent output",
+    });
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0].runs["subagent_run_1"]).toMatchObject({
+      lastEventId: 15,
       status: "closed",
       terminalEventType: "run_completed",
     });
@@ -907,6 +973,50 @@ function openTestMultiplexedStream(
       states.push(state);
     },
     runs: [{ afterEventId: 0, runId: "run-1" }],
+    ...overrides,
+  });
+  return {
+    activities,
+    closedStates,
+    errors,
+    handle,
+    source: latestEventSource(),
+    states,
+  };
+}
+
+function openTestSessionSubagentStream(
+  overrides: Partial<SessionSubagentRunStreamOptions> = {},
+): {
+  activities: string[];
+  closedStates: RuntimeState[];
+  errors: Array<{ kind: string; message: string }>;
+  handle: ReturnType<typeof openSessionSubagentRunStream>;
+  source: MockEventSource;
+  states: RuntimeState[];
+} {
+  vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
+  const activities: string[] = [];
+  const states: RuntimeState[] = [];
+  const errors: Array<{ kind: string; message: string }> = [];
+  const closedStates: RuntimeState[] = [];
+  const handle = openSessionSubagentRunStream({
+    afterEventId: 0,
+    initialState: initialRuntimeState,
+    onActivity: () => {
+      activities.push("activity");
+    },
+    onClosed: (state) => {
+      closedStates.push(state);
+    },
+    onError: (message, kind) => {
+      errors.push({ kind, message });
+    },
+    onState: (state) => {
+      states.push(state);
+    },
+    runId: "subagent_run_1",
+    sessionId: "session-parent",
     ...overrides,
   });
   return {

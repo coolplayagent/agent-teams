@@ -396,7 +396,7 @@ export function MessageTimeline({
     );
   }
 
-  if (messagesQuery.isLoading) {
+  if (messagesQuery.isLoading && rows.length === 0) {
     return (
       <TimelineStateFrame variant={variant}>
         <Skeleton active paragraph={{ rows: 10 }} />
@@ -404,7 +404,7 @@ export function MessageTimeline({
     );
   }
 
-  if (messagesQuery.isError) {
+  if (messagesQuery.isError && rows.length === 0) {
     return (
       <TimelineStateFrame variant={variant}>
         <Empty

@@ -19,8 +19,9 @@ import {
 import { SubagentSessionView } from "../features/sessions/SubagentSessionView";
 import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
 import type { RunEventType } from "../runtime/events";
-import type { TimelineEntry } from "../runtime/reducers";
+import type { RuntimeState, TimelineEntry } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
+import { openSessionSubagentRunStream } from "../runtime/streamClient";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
 vi.mock("../api/client", () => ({
@@ -30,10 +31,15 @@ vi.mock("../api/client", () => ({
   listSessionSubagents: vi.fn(),
 }));
 
+vi.mock("../runtime/streamClient", () => ({
+  openSessionSubagentRunStream: vi.fn(),
+}));
+
 const listAgentMessagesMock = vi.mocked(listAgentMessages);
 const listSessionMessagesMock = vi.mocked(listSessionMessages);
 const listSessionRoundsMock = vi.mocked(listSessionRounds);
 const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
+const openSessionSubagentRunStreamMock = vi.mocked(openSessionSubagentRunStream);
 
 beforeEach(() => {
   listAgentMessagesMock.mockResolvedValue([]);
@@ -44,6 +50,7 @@ beforeEach(() => {
     next_cursor: null,
   });
   listSessionSubagentsMock.mockResolvedValue([]);
+  openSessionSubagentRunStreamMock.mockReturnValue({ close: vi.fn() });
 });
 
 afterEach(() => {
@@ -69,7 +76,7 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Explore skills implementation")).toBeVisible();
     expect(screen.getByText("Starting subagent...")).toBeVisible();
     expect(listAgentMessagesMock).not.toHaveBeenCalled();
-    expect(controller.startRunStream).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
   });
 
   it("streams a running subagent panel before its instance id is known", async () => {
@@ -95,16 +102,60 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Live subagent output")).toBeVisible();
     expect(listAgentMessagesMock).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(controller.startRunStream).toHaveBeenCalledWith({
-        afterEventId: undefined,
-        foreground: true,
+      expectSubagentSessionStreamStarted({
+        afterEventId: 42,
         runId: "subagent_run_1",
         sessionId: "session-parent",
       }),
     );
   });
 
-  it("shows a waiting state while a running subagent has no output yet", async () => {
+  it("hydrates a running subagent id from the latest record before streaming", async () => {
+    const controller = createRunStreamController();
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-hydrated",
+        last_event_id: 41,
+        role_id: "explorer",
+        run_id: "subagent_run_hydrated",
+        run_phase: "running",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Explore skills implementation",
+        updated_at: "2026-06-23T10:03:00Z",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Explore skills implementation")).toBeVisible();
+    await waitFor(() =>
+      expect(listAgentMessagesMock).toHaveBeenCalledWith(
+        "session-parent",
+        "subagent-instance-hydrated",
+      ),
+    );
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
+        runId: "subagent_run_hydrated",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
+  it("replays a running subagent from the beginning when no live cursor exists", async () => {
     const controller = createRunStreamController();
 
     renderSubagentSessionView({
@@ -127,16 +178,15 @@ describe("SubagentSessionView", () => {
       "subagent-instance-1",
     );
     await waitFor(() =>
-      expect(controller.startRunStream).toHaveBeenCalledWith({
-        afterEventId: 41,
-        foreground: true,
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
         runId: "subagent_run_1",
         sessionId: "session-parent",
       }),
     );
   });
 
-  it("streams an active subagent run from the last checkpoint", async () => {
+  it("streams an active subagent run from the live runtime cursor", async () => {
     setRuntimeEntries([
       runtimeMessageEntry({
         instanceId: "subagent-instance-1",
@@ -160,9 +210,8 @@ describe("SubagentSessionView", () => {
     expect(listSessionMessagesMock).not.toHaveBeenCalled();
     expect(listSessionRoundsMock).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(controller.startRunStream).toHaveBeenCalledWith({
-        afterEventId: 41,
-        foreground: true,
+      expectSubagentSessionStreamStarted({
+        afterEventId: 42,
         runId: "subagent_run_1",
         sessionId: "session-parent",
       }),
@@ -170,7 +219,38 @@ describe("SubagentSessionView", () => {
 
     unmount();
 
-    expect(controller.clearRunStream).toHaveBeenCalledTimes(1);
+    expect(latestSubagentStreamHandle().close).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps live subagent runtime rows visible while persisted history is loading", async () => {
+    const loadingHistory = deferredAgentMessages();
+    listAgentMessagesMock.mockReturnValueOnce(loadingHistory.promise);
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live output while history loads",
+      }),
+    ]);
+
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Live output while history loads")).toBeVisible();
+    expect(screen.queryByText("No subagent activity")).not.toBeInTheDocument();
+
+    await act(async () => {
+      loadingHistory.resolve([
+        {
+          content: "Persisted subagent output",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await loadingHistory.promise;
+    });
+
+    expect(await screen.findByText("Persisted subagent output")).toBeVisible();
   });
 
   it("does not render parent round summary chrome in the subagent panel", async () => {
@@ -209,12 +289,7 @@ describe("SubagentSessionView", () => {
     expect(screen.queryByText("Input")).not.toBeInTheDocument();
   });
 
-  it("refreshes subagent history when the tracked run closes", async () => {
-    const initialController = createRunStreamController({
-      activeRunIds: ["subagent_run_1"],
-      trackedRunIds: ["subagent_run_1"],
-    });
-    const closedController = createRunStreamController();
+  it("refreshes subagent history when the subagent stream closes", async () => {
     listAgentMessagesMock
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -225,27 +300,16 @@ describe("SubagentSessionView", () => {
           run_id: "subagent_run_1",
         },
       ]);
-    const { queryClient, rerenderWithController } = renderSubagentSessionView({
-      controller: initialController,
-    });
+    const { queryClient } = renderSubagentSessionView();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
 
-    rerenderWithController(closedController);
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
-    expect(closedController.startRunStream).not.toHaveBeenCalled();
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: [
-        "sessions",
-        "session-parent",
-        "agents",
-        "subagent-instance-1",
-        "messages",
-      ],
-    });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-parent", "subagents"],
     });
@@ -255,11 +319,6 @@ describe("SubagentSessionView", () => {
   });
 
   it("keeps existing subagent history visible while the terminal refresh is pending", async () => {
-    const initialController = createRunStreamController({
-      activeRunIds: ["subagent_run_1"],
-      trackedRunIds: ["subagent_run_1"],
-    });
-    const closedController = createRunStreamController();
     const refreshedMessages = deferredAgentMessages();
     listAgentMessagesMock
       .mockResolvedValueOnce([
@@ -271,13 +330,12 @@ describe("SubagentSessionView", () => {
         },
       ])
       .mockReturnValueOnce(refreshedMessages.promise);
-    const { rerenderWithController } = renderSubagentSessionView({
-      controller: initialController,
-    });
+    renderSubagentSessionView();
 
     expect(await screen.findByText("Existing subagent answer")).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
 
-    rerenderWithController(closedController);
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Existing subagent answer")).toBeVisible();
@@ -297,21 +355,57 @@ describe("SubagentSessionView", () => {
 
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
     expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
-    expect(closedController.startRunStream).not.toHaveBeenCalled();
+  });
+
+  it("keeps live subagent runtime rows visible while terminal history is pending", async () => {
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live runtime output before terminal history",
+      }),
+    ]);
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(refreshedMessages.promise);
+
+    renderSubagentSessionView();
+
+    expect(
+      await screen.findByText("Live runtime output before terminal history"),
+    ).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Live runtime output before terminal history"))
+      .toBeVisible();
+    expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: "Final subagent answer",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
   });
 
   it("waits for terminal history to contain streamed tool calls before replacing visible history", async () => {
-    const initialController = createRunStreamController({
-      activeRunIds: ["subagent_run_1"],
-      trackedRunIds: ["subagent_run_1"],
-    });
-    const closedController = createRunStreamController();
-    setRuntimeTerminalEntries([
+    const terminalEntries = [
       runtimeToolCallEntry({
         runId: "subagent_run_1",
         toolCallId: "call-terminal-subagent",
       }),
-    ], "run_completed");
+    ];
     listAgentMessagesMock
       .mockResolvedValueOnce([
         {
@@ -346,13 +440,14 @@ describe("SubagentSessionView", () => {
           run_id: "subagent_run_1",
         },
       ]);
-    const { rerenderWithController } = renderSubagentSessionView({
-      controller: initialController,
-    });
+    renderSubagentSessionView();
 
     expect(await screen.findByText("Existing subagent answer")).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
 
-    rerenderWithController(closedController);
+    closeLatestSubagentStream(
+      closedRuntimeState("subagent_run_1", terminalEntries),
+    );
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Existing subagent answer")).toBeVisible();
@@ -367,7 +462,6 @@ describe("SubagentSessionView", () => {
     expect(
       screen.queryByText("Incomplete persisted subagent answer"),
     ).not.toBeInTheDocument();
-    expect(closedController.startRunStream).not.toHaveBeenCalled();
   });
 
   it.each(["paused", "stopped"])(
@@ -394,7 +488,7 @@ describe("SubagentSessionView", () => {
 
       expect(await screen.findByText(`Persisted ${terminalStatus} output`))
         .toBeVisible();
-      expect(controller.startRunStream).not.toHaveBeenCalled();
+      expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
     },
   );
 
@@ -415,7 +509,7 @@ describe("SubagentSessionView", () => {
 
       expect(await screen.findByText("Explorer review")).toBeVisible();
       expect(screen.getByText(expectedStatus)).toBeVisible();
-      expect(controller.startRunStream).not.toHaveBeenCalled();
+      expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
     },
   );
 
@@ -510,6 +604,80 @@ function deferredAgentMessages(): {
   return {
     promise,
     resolve: resolveMessages,
+  };
+}
+
+function expectSubagentSessionStreamStarted({
+  afterEventId,
+  runId,
+  sessionId,
+}: {
+  afterEventId: number;
+  runId: string;
+  sessionId: string;
+}): void {
+  expect(openSessionSubagentRunStreamMock).toHaveBeenCalledWith(
+    expect.objectContaining({
+      afterEventId,
+      initialState: expect.any(Object),
+      onClosed: expect.any(Function),
+      onError: expect.any(Function),
+      onState: expect.any(Function),
+      runId,
+      sessionId,
+    }),
+  );
+}
+
+function latestSubagentStreamOptions(): Parameters<
+  typeof openSessionSubagentRunStream
+>[0] {
+  const call = openSessionSubagentRunStreamMock.mock.calls.at(-1);
+  if (call === undefined) {
+    throw new Error("Subagent stream was not opened.");
+  }
+  return call[0];
+}
+
+function closeLatestSubagentStream(runtimeState: RuntimeState): void {
+  const onClosed = latestSubagentStreamOptions().onClosed;
+  if (onClosed === undefined) {
+    throw new Error("Subagent stream did not register an onClosed callback.");
+  }
+  onClosed(runtimeState);
+}
+
+function latestSubagentStreamHandle(): ReturnType<
+  typeof openSessionSubagentRunStream
+> {
+  const result = openSessionSubagentRunStreamMock.mock.results.at(-1);
+  if (result === undefined || result.type !== "return") {
+    throw new Error("Subagent stream handle was not returned.");
+  }
+  return result.value;
+}
+
+function closedRuntimeState(
+  runId: string,
+  entries: TimelineEntry[] = [],
+  terminalEventType: RunEventType = "run_completed",
+): RuntimeState {
+  const lastEventId = entries.reduce(
+    (latest, entry) => Math.max(latest, entry.eventId),
+    43,
+  );
+  return {
+    activeRunIds: [],
+    runs: {
+      [runId]: {
+        entries,
+        lastEventId,
+        runId,
+        seenEventKeys: [],
+        status: "closed",
+        terminalEventType,
+      },
+    },
   };
 }
 

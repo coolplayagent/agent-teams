@@ -36,6 +36,17 @@ export interface MultiplexedRunStreamOptions {
   initialState: RuntimeState;
 }
 
+export interface SessionSubagentRunStreamOptions {
+  sessionId: string;
+  runId: string;
+  afterEventId: number;
+  onState: (state: RuntimeState) => void;
+  onActivity?: () => void;
+  onError: (message: string, kind: RunStreamErrorKind) => void;
+  onClosed?: (state: RuntimeState) => void;
+  initialState: RuntimeState;
+}
+
 export function openRunStream(options: RunStreamOptions): RunStreamHandle {
   const run = {
     afterEventId: Math.max(0, options.afterEventId),
@@ -64,6 +75,24 @@ export function openMultiplexedRunStream(
     onState: options.onState,
     trackedRunIds: runs.map((run) => run.runId),
     url: multiplexedRunStreamUrl(runs),
+  });
+}
+
+export function openSessionSubagentRunStream(
+  options: SessionSubagentRunStreamOptions,
+): RunStreamHandle {
+  const run = {
+    afterEventId: Math.max(0, options.afterEventId),
+    runId: options.runId.trim(),
+  };
+  return openRunEventSource({
+    initialState: runtimeStateWithReplayCursors(options.initialState, [run]),
+    onActivity: options.onActivity,
+    onClosed: options.onClosed,
+    onError: options.onError,
+    onState: options.onState,
+    trackedRunIds: [run.runId],
+    url: sessionSubagentRunStreamUrl(options.sessionId, run.afterEventId),
   });
 }
 
@@ -200,6 +229,15 @@ function multiplexedRunStreamUrl(runs: RunStreamTarget[]): string {
     params.append("after_event_id", String(Math.max(0, run.afterEventId)));
   }
   return `/ag-ui/runs/events?${params.toString()}`;
+}
+
+function sessionSubagentRunStreamUrl(
+  sessionId: string,
+  afterEventId: number,
+): string {
+  const params = new URLSearchParams();
+  params.set("after_event_id", String(Math.max(0, afterEventId)));
+  return `/sessions/${encodeURIComponent(sessionId)}/subagents/events?${params.toString()}`;
 }
 
 function normalizeRunStreamTargets(runs: RunStreamTarget[]): RunStreamTarget[] {

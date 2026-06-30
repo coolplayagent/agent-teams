@@ -1004,6 +1004,97 @@ describe("SessionsSidebar", () => {
     );
   });
 
+  it("limits expanded subagent backend loads to two at a time", async () => {
+    const sessionIds = Array.from({ length: 5 }, (_, index) => `session-${index}`);
+    let activeLoads = 0;
+    let maxActiveLoads = 0;
+    const loadResolvers: Array<() => void> = [];
+
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue(
+      sessionIds.map((sessionId, index) => ({
+        session_id: sessionId,
+        subagent_count: 1,
+        title: `Parent ${index}`,
+        updated_at: `2026-06-23T10:0${index}:00Z`,
+        workspace_id: "workspace-1",
+      })),
+    );
+    listSessionSubagentsMock.mockImplementation((sessionId: string) => {
+      activeLoads += 1;
+      maxActiveLoads = Math.max(maxActiveLoads, activeLoads);
+      return new Promise((resolve) => {
+        loadResolvers.push(() => {
+          activeLoads -= 1;
+          resolve([
+            {
+              created_at: "2026-06-23T10:02:00Z",
+              instance_id: `${sessionId}-subagent`,
+              role_id: "explorer",
+              run_id: `${sessionId}-run`,
+              run_status: "stopped",
+              session_id: sessionId,
+              status: "stopped",
+              subagent_kind: "normal",
+              title: `${sessionId} child`,
+              updated_at: "2026-06-23T10:03:00Z",
+            },
+          ]);
+        });
+      });
+    });
+
+    renderSidebar();
+
+    expect(await screen.findByText("Parent 0")).toBeVisible();
+    for (const toggleButton of screen.getAllByRole("button", {
+      name: "Toggle subagent sessions",
+    })) {
+      fireEvent.click(toggleButton);
+    }
+
+    await waitFor(() => expect(listSessionSubagentsMock).toHaveBeenCalledTimes(2));
+    expect(activeLoads).toBe(2);
+    expect(maxActiveLoads).toBe(2);
+
+    for (let expectedCalls = 3; expectedCalls <= sessionIds.length; expectedCalls += 1) {
+      const releaseLoad = loadResolvers.shift();
+      if (releaseLoad === undefined) {
+        throw new Error("Expected a queued subagent load resolver.");
+      }
+      await act(async () => {
+        releaseLoad();
+        await Promise.resolve();
+      });
+      await waitFor(() =>
+        expect(listSessionSubagentsMock).toHaveBeenCalledTimes(expectedCalls),
+      );
+      expect(activeLoads).toBeLessThanOrEqual(2);
+      expect(maxActiveLoads).toBe(2);
+    }
+
+    while (loadResolvers.length > 0) {
+      const releaseLoad = loadResolvers.shift();
+      if (releaseLoad === undefined) {
+        throw new Error("Expected a pending subagent load resolver.");
+      }
+      await act(async () => {
+        releaseLoad();
+        await Promise.resolve();
+      });
+    }
+
+    expect(new Set(listSessionSubagentsMock.mock.calls.map(([sessionId]) => sessionId)))
+      .toEqual(new Set(sessionIds));
+    expect(maxActiveLoads).toBe(2);
+  });
+
   it("selects a cross-workspace parent before opening its subagent session", async () => {
     const onSubagentSelected = vi.fn();
     useUiStore.setState({

@@ -7525,3 +7525,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell and SubagentSessionView coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Backend Load Concurrency Migration
+
+### Scope
+- Re-checked the remaining `test_subagent_sessions_ui.py` inventory and found that `test_ensure_session_subagents_limits_parallel_backend_loads` represented a real V1 concurrency guarantee that V2 had not yet implemented.
+- Added a narrow `SessionsSidebar` subagent-load queue so expanded subagent lists call the existing `listSessionSubagents` API with at most two concurrent backend requests while preserving the existing force-refresh behavior.
+- Added V2 `SessionsSidebar.test.tsx` coverage that expands five parent sessions, holds each backend request open, and proves only two subagent loads run at once while all five eventually complete.
+- Removed the migrated V1 source-copy harness `test_ensure_session_subagents_limits_parallel_backend_loads` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- Kept sidebar/settings item inventory, subagent secondary-surface routing, stream controller behavior, and built dist unchanged in this slice.
+- This slice restores a V1 refresh-recovery/backpressure guard for V2 sidebar discovery. It does not claim complete subagent stream/replay PASS, running-stream sync parity, terminal-settle parity, background-task subagent discovery parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "limits expanded subagent"` passed.
+- `npm test -- SessionsSidebar.test.tsx` passed with 28 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 5 remaining Python UI harness scenarios.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 concurrency harness mapping, V2 production concurrency guard, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

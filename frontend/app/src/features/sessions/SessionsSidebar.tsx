@@ -58,9 +58,16 @@ import { sessionDisplayLabel } from "./sessionLabels";
 const initialVisibleSessionsPerGroup = 10;
 const visibleSessionIncrement = 20;
 const activeRunIndicatorStatuses = new Set(["queued", "running", "stopping"]);
+const maxConcurrentSessionSubagentLoads = 2;
+let activeSessionSubagentLoads = 0;
+const queuedSessionSubagentLoads: SessionSubagentLoadTask[] = [];
 
 type SessionRunIndicatorType = "failed" | "running" | "stopped" | "unread";
 type WorkspaceSortMode = "project_updated" | "project_created";
+
+interface SessionSubagentLoadTask {
+  run: () => void;
+}
 
 export interface SidebarNavigationItem {
   active?: boolean;
@@ -995,7 +1002,7 @@ function SessionSubagentList({
   const subagentsQuery = useQuery({
     queryKey: subagentQueryKey,
     queryFn: () =>
-      listSessionSubagents(
+      listSessionSubagentsWithLimit(
         parentSession.session_id,
         queryClient.getQueryState(subagentQueryKey)?.isInvalidated === true,
       ),
@@ -1095,6 +1102,36 @@ interface SessionGroup {
 
 function sessionLabel(session: SessionSidebarRecord): string {
   return sessionDisplayLabel(session, session.session_id);
+}
+
+function listSessionSubagentsWithLimit(
+  sessionId: string,
+  forceRefresh: boolean,
+): Promise<SessionSubagentRecord[]> {
+  return new Promise<SessionSubagentRecord[]>((resolve, reject) => {
+    queuedSessionSubagentLoads.push({
+      run: () => {
+        activeSessionSubagentLoads += 1;
+        void Promise.resolve()
+          .then(() => listSessionSubagents(sessionId, forceRefresh))
+          .then(resolve, reject)
+          .finally(() => {
+            activeSessionSubagentLoads -= 1;
+            drainSessionSubagentLoadQueue();
+          });
+      },
+    });
+    drainSessionSubagentLoadQueue();
+  });
+}
+
+function drainSessionSubagentLoadQueue(): void {
+  while (
+    activeSessionSubagentLoads < maxConcurrentSessionSubagentLoads &&
+    queuedSessionSubagentLoads.length > 0
+  ) {
+    queuedSessionSubagentLoads.shift()?.run();
+  }
 }
 
 function normalizeSessionSubagent(

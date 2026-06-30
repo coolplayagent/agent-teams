@@ -6007,6 +6007,60 @@ describe("MessageTimeline", () => {
     expect(thinkingBlocks[1]).toHaveTextContent("Current shape thought");
   });
 
+  it("trims hydrated thinking prefixes from live overlay deltas", async () => {
+    const prefix = "Persisted planning prefix.";
+    const suffix = "Live suffix still streaming.";
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        run_id: "run-thinking-prefix",
+        trace_id: "run-thinking-prefix",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: `${prefix} ${suffix}`,
+        }),
+        run_id: "run-thinking-prefix",
+        trace_id: "run-thinking-prefix",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: prefix,
+              part_index: 0,
+              part_kind: "thinking",
+            },
+          ],
+        },
+        message_id: "assistant-thinking-prefix",
+        role_id: "MainAgent",
+        run_id: "run-thinking-prefix",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-thinking-prefix",
+    });
+
+    expect(await screen.findByText(prefix)).toBeInTheDocument();
+    expect(await screen.findByText(suffix)).toBeVisible();
+    expect(
+      textOccurrenceCount(container.textContent ?? "", prefix),
+    ).toBe(1);
+    expect(
+      textOccurrenceCount(container.textContent ?? "", suffix),
+    ).toBe(1);
+    expect(container.querySelectorAll(".at-message-thinking")).toHaveLength(2);
+  });
+
   it("keeps live thinking open when part index is missing", async () => {
     useRuntimeStore.setState({
       runtimeState: {

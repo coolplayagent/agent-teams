@@ -36,6 +36,12 @@ const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
 const TOOL_RESULT_MAX_CHARS = 12000;
 const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
+const THINKING_DELTA_TEXT_KEYS = [
+  "text",
+  "delta",
+  "content",
+  "message",
+] as const;
 const HIDDEN_RUNTIME_CHAT_EVENT_KINDS = new Set<string>([
   "injection_applied",
   "injection_enqueued",
@@ -2603,15 +2609,24 @@ function runtimeEntriesAfterHydration(
     return openRuntimeEntriesWithIdleCursor(runState, scopedEntries, variant);
   }
   if (runState.status === "closed") {
-    return scopedEntries.filter((entry) =>
-      !runtimeEntryIsCoveredByHydratedOutput(
+    return scopedEntries.flatMap((entry) => {
+      const nextEntry = runtimeEntryAfterThinkingHydration(
         entry,
+        hydratedThinkingText ?? "",
+      );
+      if (nextEntry === null) {
+        return [];
+      }
+      return runtimeEntryIsCoveredByHydratedOutput(
+        nextEntry,
         runState,
         hydratedText ?? "",
         hydratedThinkingText ?? "",
         hydratedToolKeys,
-      ),
-    );
+      )
+        ? []
+        : [nextEntry];
+    });
   }
   const hydratedEntries: TimelineEntry[] = [];
   const safeHydratedText = hydratedText ?? "";
@@ -2620,17 +2635,21 @@ function runtimeEntriesAfterHydration(
     if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolKeys)) {
       continue;
     }
-    if (runtimeEntryIsCoveredByHydratedThinking(entry, hydratedThinkingText ?? "")) {
+    const nextEntry = runtimeEntryAfterThinkingHydration(
+      entry,
+      hydratedThinkingText ?? "",
+    );
+    if (nextEntry === null) {
       continue;
     }
     if (
       suppressCoveredText &&
-      openRuntimeTextCoveredByHydration(entry, safeHydratedText)
+      openRuntimeTextCoveredByHydration(nextEntry, safeHydratedText)
     ) {
-      hydratedEntries.push(runtimeHydrationCursorEntry(entry));
+      hydratedEntries.push(runtimeHydrationCursorEntry(nextEntry));
       continue;
     }
-    hydratedEntries.push(entry);
+    hydratedEntries.push(nextEntry);
     suppressCoveredText = false;
   }
   return openRuntimeEntriesWithIdleCursor(runState, hydratedEntries, variant);
@@ -2920,6 +2939,139 @@ function runtimeEntryIsCoveredByHydratedThinking(
   }
   const text = normalizedTimelineText(thinkingDeltaText(entry));
   return text.length > 0 && hydratedThinkingText.includes(text);
+}
+
+function runtimeEntryAfterThinkingHydration(
+  entry: TimelineEntry,
+  hydratedThinkingText: string,
+): TimelineEntry | null {
+  if (entry.kind !== "thinking_delta" || hydratedThinkingText.length === 0) {
+    return entry;
+  }
+  const text = thinkingDeltaText(entry);
+  const normalizedText = normalizedTimelineText(text);
+  if (normalizedText.length === 0) {
+    return entry;
+  }
+  const normalizedHydratedThinkingText = normalizedTimelineText(
+    hydratedThinkingText,
+  );
+  if (normalizedHydratedThinkingText.includes(normalizedText)) {
+    return null;
+  }
+  const trimmedText = trimHydratedThinkingPrefix(
+    text,
+    normalizedHydratedThinkingText,
+  );
+  if (normalizedTimelineText(trimmedText).length === 0) {
+    return null;
+  }
+  return trimmedText === text
+    ? entry
+    : runtimeThinkingDeltaEntryWithText(entry, trimmedText);
+}
+
+function trimHydratedThinkingPrefix(
+  text: string,
+  normalizedHydratedThinkingText: string,
+): string {
+  const normalizedText = normalizedTimelineText(text);
+  const overlapLength = hydratedThinkingPrefixOverlapLength(
+    normalizedHydratedThinkingText,
+    normalizedText,
+  );
+  const minimumOverlapLength = Math.min(
+    normalizedText.length,
+    Math.max(4, Math.floor(normalizedText.length / 4)),
+  );
+  if (overlapLength < minimumOverlapLength) {
+    return text;
+  }
+  if (overlapLength >= normalizedText.length) {
+    return "";
+  }
+  const rawIndex = rawIndexAfterNormalizedPrefix(text, overlapLength);
+  return text.slice(rawIndex).replace(/^\s+/u, "");
+}
+
+function hydratedThinkingPrefixOverlapLength(
+  normalizedHydratedThinkingText: string,
+  normalizedText: string,
+): number {
+  if (
+    normalizedHydratedThinkingText.length === 0 ||
+    normalizedText.length === 0
+  ) {
+    return 0;
+  }
+  const firstChar = normalizedText[0];
+  if (firstChar === undefined) {
+    return 0;
+  }
+  let index = normalizedHydratedThinkingText.lastIndexOf(firstChar);
+  while (index >= 0) {
+    const suffix = normalizedHydratedThinkingText.slice(index);
+    if (normalizedText.startsWith(suffix)) {
+      return suffix.length;
+    }
+    index = normalizedHydratedThinkingText.lastIndexOf(firstChar, index - 1);
+  }
+  return 0;
+}
+
+function rawIndexAfterNormalizedPrefix(
+  text: string,
+  normalizedPrefixLength: number,
+): number {
+  let normalizedLength = 0;
+  let pendingWhitespace = false;
+  let sawText = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (/\s/u.test(char)) {
+      if (sawText) {
+        pendingWhitespace = true;
+      }
+      continue;
+    }
+    if (pendingWhitespace) {
+      normalizedLength += 1;
+      pendingWhitespace = false;
+    }
+    sawText = true;
+    normalizedLength += 1;
+    if (normalizedLength >= normalizedPrefixLength) {
+      return index + 1;
+    }
+  }
+  return text.length;
+}
+
+function runtimeThinkingDeltaEntryWithText(
+  entry: TimelineEntry,
+  text: string,
+): TimelineEntry {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return entry;
+  }
+  const textKey = thinkingDeltaTextKey(payload);
+  return {
+    ...entry,
+    payload: {
+      ...payload,
+      [textKey]: text,
+    },
+    text,
+  };
+}
+
+function thinkingDeltaTextKey(payload: Record<string, JsonValue>): string {
+  return THINKING_DELTA_TEXT_KEYS.find((key) => typeof payload[key] === "string")
+    ?? "text";
 }
 
 function runtimeEntryShouldRenderChatContent(entry: TimelineEntry): boolean {

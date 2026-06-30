@@ -8049,3 +8049,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, live browser scroll measurement, screenshot inspection, focused CSS verification, and matrix status update completed for this slice. No subsystem PASS, narrow-layout PASS, complete shell parity PASS, or final V2 completion is claimed.
+
+## 2026-07-01 Thinking Hydration Prefix De-Duplication
+
+### Scope
+- Re-checked the active frontend rewrite goal and selected the next P0 message-rendering gap from `MSG-03` instead of only following screenshot-level symptoms.
+- Reproduced the duplicate-thinking boundary in a focused `MessageTimeline` test: persisted thinking text was rendered from hydrated history while the open runtime overlay still carried the same prefix plus a live suffix.
+- Updated runtime hydration so `thinking_delta` entries are normalized before rendering: fully hydrated deltas are dropped, and deltas whose prefix already exists in hydrated thinking history are trimmed before the thinking accumulator appends them.
+- Kept the fix scoped to thinking hydration. Tool cards, subagent panel routing, sidebar/settings inventory, appearance settings, composer controls, and broader visual CSS were not changed in this slice.
+- This slice fixes one `MSG-03` replay/live-overlay duplication boundary. It does not claim complete thinking/reasoning PASS, complete stream/replay PASS, subagent stream PASS, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "trims hydrated thinking prefixes"` passed with the new regression test.
+- `npm test -- src/test/MessageTimeline.test.tsx -t "thinking|hydrated|subagent|stream"` passed with 54 focused timeline tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 147 tests.
+- `npm run build` passed, including frontend typecheck, desktop build, and Vite production build.
+- `npm run test:browser -- v2-rounds.spec.ts -g "does not repeat the round prompt title" --project=chromium` passed.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 4 browser tests.
+- In-app browser refresh confirmed the served V2 app loaded `index-DghzCSxz.js`; existing expanded round markers still reported one title occurrence each after the rebuild.
+
+### Reviewer
+- Main-agent goal/matrix scan, failing-regression reproduction, source fix, focused/full TS verification, production build, browser regression checks, and live in-app bundle/DOM sanity check completed for this slice. No subsystem PASS or final V2 completion is claimed.

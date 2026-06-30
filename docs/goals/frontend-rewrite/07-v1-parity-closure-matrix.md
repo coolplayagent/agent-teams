@@ -76,7 +76,7 @@ session-switch recovery where applicable.
 | PAGE-05 | Connectors | connector list, runtime tools, enable/status/detail flows | `ConnectorsView.tsx`, `RuntimeToolsSection.tsx` | V1/V2 screenshot and tests | Not checked |  |
 | PAGE-06 | Memory | memory facts, sessions, edit/delete if V1 has it | `MemoryView.tsx` | V1/V2 screenshot and tests | Not checked |  |
 | PAGE-07 | Observability | metrics, events, trends, lineage panels | `ObservabilityPanel.tsx`, `ObservabilityTrends.tsx`, `SpecLineagePanel.tsx` | V1/V2 screenshot and tests | Not checked |  |
-| SUB-01 | Subagent rail/session | subagent list, active/stopped/resumed, parent-child relation | `SubagentSessionView.tsx`, sidebar subagent UI | Complex orchestration history replay and live stream | In progress | Browser coverage now opens subagents from the parent tool card, verifies UUID session-scoped subagent streaming, delayed terminal history refill, send/switch pressure, parent hydration race, and parent timeline isolation while the right panel streams. The panel now suppresses internal subagent/background lifecycle labels, renders live background output as normal text, and no longer treats generic tool `run_id`/`role_id` payloads as subagent previews. Evidence: `.tmp/subagent-clean-live-samples.json`, `.tmp/subagent-clean-final-panel-now.json`, `.tmp/subagent-panel-clean-replay-final.json`, `.tmp/subagent-panel-clean-final.png`, `.tmp/final-browser-dom-check.json`. Resizable panel, hard-refresh replay, and broader orchestration replay still remain. |
+| SUB-01 | Subagent rail/session | subagent list, active/stopped/resumed, parent-child relation | `SubagentSessionView.tsx`, sidebar subagent UI | Complex orchestration history replay and live stream | In progress | Browser coverage now opens subagents from the parent tool card, verifies UUID session-scoped subagent streaming, delayed terminal history refill, send/switch pressure, parent hydration race, and parent timeline isolation while the right panel streams. The panel now suppresses internal subagent/background lifecycle labels, renders live background output as normal text, no longer treats generic tool `run_id`/`role_id` payloads as subagent previews, and clamps the resizable side panel to the actual workspace width so ARIA, CSS, grid, and measured panel width stay aligned. Evidence: `.tmp/subagent-clean-live-samples.json`, `.tmp/subagent-clean-final-panel-now.json`, `.tmp/subagent-panel-clean-replay-final.json`, `.tmp/subagent-panel-clean-final.png`, `.tmp/final-browser-dom-check.json`, `.tmp/subagent-panel-width-clamp-final.json`, `.tmp/subagent-panel-width-clamp-final.png`. Hard-refresh replay and broader orchestration replay still remain. |
 | DESK-01 | Desktop packaging | Electron shell, backend process lifecycle, app refresh, deep links if present | desktop target | Desktop run evidence | Not checked |  |
 | CLEAN-01 | V2 cleanup | no user-facing V2 naming except migration boundary | all frontend files | grep and screenshot check | Not checked |  |
 
@@ -91,6 +91,13 @@ For every row moved to `Verified`, record:
 5. Decision: same as V1, intentionally better, or documented product change.
 
 ## Verification Ledger
+
+### 2026-07-01 Subagent Panel Width Clamp
+
+- `SUB-01` tightened: the right subagent panel now derives its maximum width from the live workspace width, preserving a minimum readable main timeline column instead of letting the saved/dragged panel width exceed the actual grid space.
+- Browser verification on `/app/` with the built `index-BdhUluEL.js` bundle kept `aria-valuemax`, `aria-valuenow`, CSS `--at-subagent-panel-width`, `grid-template-columns`, and measured panel width aligned at `646px` after an additional grow keypress.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent panel|right-side panel|available workspace width"`, `npm test -- src/test/ShellLayoutCss.test.ts`, `npm run build`.
+- Browser evidence: `.tmp/subagent-panel-width-clamp-final.json`, `.tmp/subagent-panel-width-clamp-final.png`.
 
 ### 2026-07-01 Round Marker And Subagent Panel Cleanup
 
@@ -133,3 +140,4 @@ The current batch closes these rows first:
 | MSG-04 | Tool call and result occupy one lifecycle card: running while pending, filled when done, compact after processed. | `MessageTimeline.test.tsx` now covers live tool/approval rows, reconnected tool results, and compact tool previews; still needs tool-heavy normal and orchestration browser sessions. |
 | MSG-05 | `已处理` is a real compact fold control, not divider decoration, and preserves virtualizer measurements. | Unit coverage now exercises processed group folding in hydrated thinking/tool flows; still needs click screenshot and virtualizer measurement evidence. |
 | STREAM-02 | Switching sessions during an active stream and returning restores exact run content by event order. | Browser mock SSE now starts a run, switches sessions, receives a hidden background delta, switches back, compares ordered row text, and settles terminal without a cursor; still needs real-SSE/hard-refresh/orchestration variants. |
+| SUB-01 | Right-side subagent panel remains readable and resizable across replay/live panel states. | `AppShell.test.tsx` now clamps panel growth to the measured workspace width; browser verification showed ARIA, CSS, grid, and actual panel width all pinned at `646px` with real subagent content visible. Still needs hard-refresh replay and broader orchestration variants. |

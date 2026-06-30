@@ -81,6 +81,8 @@ const shellViewStorageKey = "agentTeams.shellView";
 const subagentPanelWidthDefault = 620;
 const subagentPanelWidthMin = 420;
 const subagentPanelWidthMax = 1080;
+const subagentPanelMainMinWidth = 340;
+const subagentPanelResizerWidth = 8;
 const subagentPanelWidthStorageKey = "agentTeams.subagentPanelWidth";
 const subagentTimelineResolveAttempts = 8;
 const subagentTimelineResolveDelayMs = 500;
@@ -117,10 +119,14 @@ export function AppShell() {
   const [subagentPanelWidth, setSubagentPanelWidthState] = useState(
     readSubagentPanelWidth,
   );
+  const [subagentPanelLayoutMax, setSubagentPanelLayoutMax] = useState(
+    subagentPanelWidthMax,
+  );
   const [subagentPanelResizing, setSubagentPanelResizing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const terminalViewMarksRef = useRef(new Set<string>());
   const terminalViewRetryTimersRef = useRef(new Set<number>());
+  const chatShellRef = useRef<HTMLDivElement | null>(null);
   const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
@@ -219,6 +225,11 @@ export function AppShell() {
     },
     [queryClient],
   );
+  const refreshSubagentPanelLayoutMax = useCallback(() => {
+    setSubagentPanelLayoutMax(
+      subagentPanelMaxForContainerWidth(chatShellRef.current?.clientWidth ?? 0),
+    );
+  }, []);
 
   const healthQuery = useQuery({
     queryKey: ["server-health"],
@@ -600,7 +611,47 @@ export function AppShell() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [subagentPanelResizing]);
+  }, [subagentPanelLayoutMax, subagentPanelResizing]);
+
+  useEffect(() => {
+    if (activeSubagent === null) {
+      return undefined;
+    }
+    refreshSubagentPanelLayoutMax();
+    const shellElement = chatShellRef.current;
+    if (shellElement === null) {
+      window.addEventListener("resize", refreshSubagentPanelLayoutMax);
+      return () =>
+        window.removeEventListener("resize", refreshSubagentPanelLayoutMax);
+    }
+    if (typeof ResizeObserver !== "undefined") {
+      const resizeObserver = new ResizeObserver(refreshSubagentPanelLayoutMax);
+      resizeObserver.observe(shellElement);
+      window.addEventListener("resize", refreshSubagentPanelLayoutMax);
+      return () => {
+        resizeObserver.disconnect();
+        window.removeEventListener("resize", refreshSubagentPanelLayoutMax);
+      };
+    }
+    window.addEventListener("resize", refreshSubagentPanelLayoutMax);
+    return () =>
+      window.removeEventListener("resize", refreshSubagentPanelLayoutMax);
+  }, [activeSubagent, refreshSubagentPanelLayoutMax]);
+
+  useEffect(() => {
+    if (activeSubagent === null) {
+      return;
+    }
+    const nextWidth = clampSubagentPanelWidth(
+      subagentPanelWidth,
+      subagentPanelLayoutMax,
+    );
+    if (nextWidth === subagentPanelWidth) {
+      return;
+    }
+    window.localStorage.setItem(subagentPanelWidthStorageKey, String(nextWidth));
+    setSubagentPanelWidthState(nextWidth);
+  }, [activeSubagent, subagentPanelLayoutMax, subagentPanelWidth]);
 
   return (
     <Layout className="at-shell">
@@ -746,6 +797,7 @@ export function AppShell() {
                   ? "at-workspace-chat-shell"
                   : "at-workspace-chat-shell has-subagent-panel"
               }
+              ref={chatShellRef}
               style={
                 activeSubagent === null
                   ? undefined
@@ -765,7 +817,7 @@ export function AppShell() {
                   <div
                     aria-label={t("appSubagentPanelResize")}
                     aria-orientation="vertical"
-                    aria-valuemax={subagentPanelWidthMax}
+                    aria-valuemax={subagentPanelLayoutMax}
                     aria-valuemin={subagentPanelWidthMin}
                     aria-valuenow={subagentPanelWidth}
                     className={
@@ -838,9 +890,9 @@ export function AppShell() {
   }
 
   function setSubagentPanelWidth(width: number) {
-    const nextWidth = Math.min(
-      subagentPanelWidthMax,
-      Math.max(subagentPanelWidthMin, Math.round(width)),
+    const nextWidth = clampSubagentPanelWidth(
+      width,
+      subagentPanelLayoutMax,
     );
     window.localStorage.setItem(subagentPanelWidthStorageKey, String(nextWidth));
     setSubagentPanelWidthState(nextWidth);
@@ -885,9 +937,25 @@ function readSubagentPanelWidth(): number {
   if (!Number.isFinite(parsed)) {
     return subagentPanelWidthDefault;
   }
+  return clampSubagentPanelWidth(parsed, subagentPanelWidthMax);
+}
+
+function clampSubagentPanelWidth(width: number, maxWidth: number): number {
+  return Math.min(
+    Math.max(subagentPanelWidthMin, maxWidth),
+    Math.max(subagentPanelWidthMin, Math.round(width)),
+  );
+}
+
+function subagentPanelMaxForContainerWidth(width: number): number {
+  if (!Number.isFinite(width) || width <= 0) {
+    return subagentPanelWidthMax;
+  }
+  const availablePanelWidth =
+    Math.floor(width) - subagentPanelResizerWidth - subagentPanelMainMinWidth;
   return Math.min(
     subagentPanelWidthMax,
-    Math.max(subagentPanelWidthMin, Math.round(parsed)),
+    Math.max(subagentPanelWidthMin, availablePanelWidth),
   );
 }
 

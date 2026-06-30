@@ -1301,6 +1301,37 @@ describe("AppShell", () => {
     expect(screen.queryByText("Subagent Explorer")).not.toBeInTheDocument();
   });
 
+  it("clamps subagent panel resizing to the available workspace width", async () => {
+    const restoreClientWidth = mockClientWidthForClass(
+      "at-workspace-chat-shell",
+      996,
+    );
+    try {
+      renderShell();
+
+      expect(await screen.findByTestId("timeline")).toBeVisible();
+      fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+
+      expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+      const panelResizer = screen.getByRole("separator", {
+        name: "Resize subagent panel",
+      });
+      await waitFor(() =>
+        expect(panelResizer).toHaveAttribute("aria-valuemax", "648"),
+      );
+
+      fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "644");
+      fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
+
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "648");
+      expect(window.localStorage.getItem("agentTeams.subagentPanelWidth"))
+        .toBe("648");
+    } finally {
+      restoreClientWidth();
+    }
+  });
+
   it("opens running subagent timeline cards before backend ids hydrate", async () => {
     let resolveSubagents: ((records: SessionSubagentRecord[]) => void) | undefined;
     listSessionSubagentsMock.mockReturnValue(
@@ -1590,6 +1621,29 @@ function mockViewportMatch(matches: boolean) {
     removeEventListener: vi.fn(),
     removeListener: vi.fn(),
   }));
+}
+
+function mockClientWidthForClass(className: string, width: number): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientWidth",
+  );
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get() {
+      if (this instanceof HTMLElement && this.classList.contains(className)) {
+        return width;
+      }
+      return descriptor?.get?.call(this) ?? 0;
+    },
+  });
+  return () => {
+    if (descriptor === undefined) {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      return;
+    }
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", descriptor);
+  };
 }
 
 interface CapturedAnimationFrames {

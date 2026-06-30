@@ -148,7 +148,7 @@ describe("shell layout CSS", () => {
       /\.at-round-marker\s*{[\s\S]*?border-bottom:\s*0;/,
     );
     expect(themeCss).toMatch(
-      /\.at-round-marker-intent\[open\] \.at-round-marker-title\s*{[\s\S]*?display:\s*none;/,
+      /\.at-round-marker-intent\[data-open="true"\] \.at-round-marker-title\s*{[\s\S]*?display:\s*none;/,
     );
   });
 

@@ -4714,8 +4714,17 @@ body {
   transform: rotate(90deg);
 }
 
+.at-round-marker-intent[data-open="true"] .at-round-marker-intent-summary {
+  justify-content: flex-end;
+}
+
 .at-round-marker-intent[data-open="true"] .at-round-marker-title {
   display: none;
+}
+
+.at-round-marker-intent[data-open="true"] .at-round-marker-intent-action {
+  margin-left: 0;
+  padding-left: 0;
 }
 
 .at-round-marker-intent-action {
@@ -4729,7 +4738,6 @@ body {
 
 .at-round-marker-intent-body {
   margin-top: 6px;
-  padding-left: 18px;
   overflow-wrap: anywhere;
   color: var(--at-text);
   font-size: 13px;

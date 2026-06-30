@@ -163,6 +163,12 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-round-marker-intent\[data-open="true"\] \.at-round-marker-title\s*{[\s\S]*?display:\s*none;/,
     );
+    expect(themeCss).toMatch(
+      /\.at-round-marker-intent\[data-open="true"\] \.at-round-marker-intent-summary\s*{[\s\S]*?justify-content:\s*flex-end;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-marker-intent-body\s*{[\s\S]*?margin-top:\s*6px;[\s\S]*?overflow-wrap:\s*anywhere;/,
+    );
   });
 
   it("keeps collapsed tool records compact in the message timeline", () => {

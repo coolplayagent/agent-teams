@@ -8010,3 +8010,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser reproduction, source fix, focused tests, production build, and live DOM/screenshot verification completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 General Settings V1 Inventory Closure
+
+### Scope
+- Re-checked the active frontend rewrite goal, clean worktree, and `SET-03` before editing.
+- Captured the live V1 General settings DOM and screenshot. V1 General contains Diagnostics, Shell Policy, Speech, and Notifications, with one real General save action.
+- Captured the live V2 General settings DOM and screenshot before editing; it only rendered the Shell safety switch and Save button.
+- Kept the V2 first-level Settings navigation aligned with the current target: Speech, Notifications, and Appearance remain their own pages instead of being flattened back into General.
+- Reworked V2 General into a V1-informed page with a Shell policy card, clear save action, and related entries for diagnostic display, Speech, and Notifications.
+- Verified related entries open the existing second-level pages and that notification rule details are not rendered inside General.
+- Updated `SET-03` to `Verified`. This slice does not claim complete Settings PASS, complete Appearance PASS, complete stream/replay PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "general"` passed with 2 focused tests.
+- `npm test -- --run src/test/ShellLayoutCss.test.ts` passed with 17 tests.
+- `npm run build` passed, including frontend typecheck, desktop build, and Vite production build.
+- Browser V1 evidence saved at `.tmp/v1-general-settings.png` and `.tmp/v1-general-dom.json`.
+- Browser V2 final evidence saved at `.tmp/v2-general-settings-final.png` and `.tmp/v2-general-dom-final.json`; final DOM reported `shellSwitchCount: 1` and `hasV1Text: false`.
+- Browser related-entry click evidence saved at `.tmp/v2-general-related-clicks.json`, confirming General opens Speech, Notifications, and Appearance.
+
+### Reviewer
+- Main-agent V1/V2 browser comparison, source fix, focused TS tests, CSS test, production build, and live DOM/screenshot verification completed for this slice. No final V2 completion is claimed.

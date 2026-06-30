@@ -2846,6 +2846,60 @@ describe("SettingsDrawer", () => {
     );
   });
 
+  it("keeps V1 general items discoverable without flattening their pages", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "General" }));
+
+    expect(await screen.findByText("Shell policy")).toBeVisible();
+    expect(screen.getByText("Related settings")).toBeVisible();
+    expect(
+      screen.getByRole("switch", { name: "Shell safety policy" }),
+    ).toBeVisible();
+
+    const related = screen.getByRole("region", { name: "Related settings" });
+    expect(
+      within(related).getByRole("button", {
+        name: /Show diagnostic information/,
+      }),
+    ).toBeVisible();
+    expect(within(related).getByRole("button", { name: /Speech/ })).toBeVisible();
+    expect(
+      within(related).getByRole("button", { name: /Notifications/ }),
+    ).toBeVisible();
+    expect(screen.queryByText("Tool approval requests")).toBeNull();
+
+    fireEvent.click(within(related).getByRole("button", { name: /Speech/ }));
+    expect(
+      await screen.findByRole("heading", { name: "Speech" }),
+    ).toBeVisible();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "General" }));
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Related settings" })).getByRole(
+        "button",
+        { name: /Notifications/ },
+      ),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Notifications" }),
+    ).toBeVisible();
+
+    fireEvent.click(within(sections).getByRole("button", { name: "General" }));
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Related settings" })).getByRole(
+        "button",
+        { name: /Show diagnostic information/ },
+      ),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Appearance" }),
+    ).toBeVisible();
+  });
+
   it("updates appearance state and applies V1 appearance overrides locally", async () => {
     renderDrawer();
 

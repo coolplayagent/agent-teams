@@ -85,6 +85,11 @@ type SettingsSectionKey =
   | "web"
   | "workspace";
 
+type GeneralRelatedSectionKey = Extract<
+  SettingsSectionKey,
+  "appearance" | "notifications" | "speech"
+>;
+
 const SYSTEM_SETTINGS_PAGE_IDS = [
   "mcp",
   "plugins",
@@ -197,6 +202,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             error={generalQuery.error}
             form={form}
             loading={generalQuery.isLoading}
+            onNavigate={setActiveSection}
             onSubmit={(values) => saveMutation.mutate(values)}
             saving={saveMutation.isPending}
           />
@@ -394,36 +400,108 @@ function SettingsGeneral({
   error,
   form,
   loading,
+  onNavigate,
   onSubmit,
   saving,
 }: {
   error: Error | null;
   form: FormInstance<GeneralConfig>;
   loading: boolean;
+  onNavigate: (section: GeneralRelatedSectionKey) => void;
   onSubmit: (values: GeneralConfig) => void;
   saving: boolean;
 }) {
   const t = useTranslations();
+  const relatedItems: Array<{
+    detail: string;
+    key: GeneralRelatedSectionKey;
+    title: string;
+  }> = [
+    {
+      detail: t("settingsAppearanceShowDiagnosticsHelp"),
+      key: "appearance",
+      title: t("settingsAppearanceShowDiagnostics"),
+    },
+    {
+      detail: t("settingsGeneralSpeechDetail"),
+      key: "speech",
+      title: t("settingsSpeech"),
+    },
+    {
+      detail: t("settingsNotificationsHelp"),
+      key: "notifications",
+      title: t("settingsNotifications"),
+    },
+  ];
+
   return (
     <SettingsSection title={t("settingsGeneral")}>
       <SettingsQueryState error={error} loading={loading} />
       {!loading ? (
         <Form
-          className="at-settings-form"
+          className="at-general-page"
           form={form}
           layout="vertical"
           onFinish={onSubmit}
         >
-          <Form.Item
-            label={t("settingsShellSafetyPolicy")}
-            name="shell_safety_policy_enabled"
-            valuePropName="checked"
-          >
-            <Switch />
-          </Form.Item>
-          <Button htmlType="submit" loading={saving} type="primary">
-            {t("settingsSave")}
-          </Button>
+          <Typography.Text className="at-settings-help">
+            {t("settingsGeneralDescription")}
+          </Typography.Text>
+          <section className="at-general-card">
+            <div className="at-general-card-head">
+              <div className="at-general-card-copy">
+                <Typography.Text strong>
+                  {t("settingsGeneralShellPolicyTitle")}
+                </Typography.Text>
+                <Typography.Text className="at-settings-help">
+                  {t("settingsGeneralShellPolicyHelp")}
+                </Typography.Text>
+              </div>
+              <Form.Item
+                name="shell_safety_policy_enabled"
+                noStyle
+                valuePropName="checked"
+              >
+                <Switch aria-label={t("settingsShellSafetyPolicy")} />
+              </Form.Item>
+            </div>
+            <div className="at-general-field">
+              <Typography.Text>{t("settingsShellSafetyPolicy")}</Typography.Text>
+              <Typography.Text className="at-settings-help">
+                {t("settingsGeneralShellPolicyState")}
+              </Typography.Text>
+            </div>
+          </section>
+
+          <section className="at-general-related" aria-label={t("settingsGeneralRelated")}>
+            <Typography.Text className="at-general-related-title" strong>
+              {t("settingsGeneralRelated")}
+            </Typography.Text>
+            {relatedItems.map((item) => (
+              <button
+                className="at-general-related-row"
+                key={item.key}
+                onClick={() => onNavigate(item.key)}
+                type="button"
+              >
+                <span className="at-general-related-copy">
+                  <Typography.Text strong>{item.title}</Typography.Text>
+                  <Typography.Text className="at-settings-help">
+                    {item.detail}
+                  </Typography.Text>
+                </span>
+                <span className="at-general-related-action">
+                  {t("settingsGeneralOpen")}
+                </span>
+              </button>
+            ))}
+          </section>
+
+          <div className="at-general-actions">
+            <Button htmlType="submit" loading={saving} type="primary">
+              {t("settingsSave")}
+            </Button>
+          </div>
         </Form>
       ) : null}
     </SettingsSection>

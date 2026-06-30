@@ -5678,6 +5678,92 @@ body {
   margin-bottom: 0;
 }
 
+.at-general-page {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 760px);
+}
+
+.at-general-card,
+.at-general-related {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+}
+
+.at-general-card {
+  gap: 0;
+}
+
+.at-general-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-general-card-copy,
+.at-general-related-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.at-general-field {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.at-general-related {
+  gap: 0;
+}
+
+.at-general-related-title {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-general-related-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--at-border);
+  background: transparent;
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-general-related-row:last-child {
+  border-bottom: 0;
+}
+
+.at-general-related-row:hover,
+.at-general-related-row:focus-visible {
+  background: var(--at-surface-muted);
+  outline: none;
+}
+
+.at-general-related-action {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-general-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .at-appearance-page {
   display: grid;
   gap: 14px;

@@ -880,6 +880,16 @@ const messages = {
     settingsDelete: "Delete",
     settingsEdit: "Edit",
     settingsGeneral: "General",
+    settingsGeneralDescription:
+      "Manage global safeguards for future runs. Speech, notifications, and diagnostic display stay on their own pages and are available below.",
+    settingsGeneralOpen: "Open",
+    settingsGeneralRelated: "Related settings",
+    settingsGeneralShellPolicyHelp:
+      "Keep local shell restrictions active for new runs. Turn it off only when you intentionally need unrestricted local commands.",
+    settingsGeneralShellPolicyState: "Applies to future runs after you save.",
+    settingsGeneralShellPolicyTitle: "Shell policy",
+    settingsGeneralSpeechDetail:
+      "Choose the speech-to-text profile, recognition language, and voice input prompt.",
     settingsChannelBrowser: "Browser",
     settingsChannelToast: "Toast",
     settingsDisabled: "Disabled",
@@ -2374,6 +2384,16 @@ const messages = {
     settingsDelete: "删除",
     settingsEdit: "编辑",
     settingsGeneral: "通用",
+    settingsGeneralDescription:
+      "管理会影响后续运行的全局保护设置；语音、通知和诊断显示保留在各自页面，可从下方快速进入。",
+    settingsGeneralOpen: "打开",
+    settingsGeneralRelated: "相关设置",
+    settingsGeneralShellPolicyHelp:
+      "为新运行保留本地 shell 限制；只有在你明确需要不受限本地命令时再关闭。",
+    settingsGeneralShellPolicyState: "保存后会应用到后续运行。",
+    settingsGeneralShellPolicyTitle: "Shell 策略",
+    settingsGeneralSpeechDetail:
+      "选择语音输入使用的 STT 配置、识别语言和提示词。",
     settingsChannelBrowser: "浏览器",
     settingsChannelToast: "Toast",
     settingsDisabled: "禁用",

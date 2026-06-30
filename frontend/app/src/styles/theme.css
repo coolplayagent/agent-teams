@@ -1229,6 +1229,7 @@ body {
 .at-timeline-frame {
   grid-row: 1;
   position: relative;
+  container-type: inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
@@ -4308,7 +4309,7 @@ body {
 }
 
 .at-timeline-frame.has-round-rail .at-timeline-virtual {
-  width: min(var(--at-timeline-column-width), max(0px, calc(100% - 288px)));
+  width: min(var(--at-timeline-column-width), 100%, max(320px, calc(100% - 288px)));
   margin: 0 auto;
 }
 
@@ -4523,6 +4524,16 @@ body {
 @media (max-width: 1160px) {
   .at-timeline-frame.has-round-rail {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-round-rail {
+    display: none;
+  }
+}
+
+@container (max-width: 1048px) {
+  .at-timeline-frame.has-round-rail .at-timeline-virtual {
+    width: min(var(--at-timeline-column-width), 100%);
   }
 
   .at-round-rail {

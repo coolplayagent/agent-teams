@@ -31,6 +31,9 @@ describe("shell layout CSS", () => {
       /\.at-timeline-frame\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(
+      /\.at-timeline-frame\s*{[\s\S]*?container-type:\s*inline-size;/,
+    );
+    expect(themeCss).toMatch(
       /\.at-timeline\s*{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*auto;/,
     );
     expect(themeCss).toMatch(
@@ -122,6 +125,10 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?margin:\s*0 auto;/,
     );
+    expect(themeCss).toContain(
+      "width: min(var(--at-timeline-column-width), 100%, max(320px, calc(100% - 288px)));",
+    );
+    expect(themeCss).not.toContain("max(0px, calc(100% - 288px))");
     expect(themeCss).toMatch(
       /\.at-message-actions\s*{[\s\S]*?min-height:\s*24px;/,
     );
@@ -130,6 +137,12 @@ describe("shell layout CSS", () => {
     );
     expect(themeCss).toMatch(
       /\.at-message-actions\s*{[\s\S]*?grid-column:\s*1;[\s\S]*?justify-self:\s*end;/,
+    );
+  });
+
+  it("hides the round rail before it can collapse a split-panel timeline", () => {
+    expect(themeCss).toMatch(
+      /@container \(max-width: 1048px\)\s*{[\s\S]*?\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?\.at-round-rail\s*{[\s\S]*?display:\s*none;/,
     );
   });
 
@@ -227,7 +240,7 @@ describe("shell layout CSS", () => {
     );
   });
 
-  it("keeps the desktop round rail overlaid instead of reserving a chat column", () => {
+  it("keeps the desktop round rail overlaid without collapsing the chat column", () => {
     expect(themeCss).toMatch(
       /\.at-timeline-frame\.has-round-rail\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
     );
@@ -235,7 +248,7 @@ describe("shell layout CSS", () => {
       /\.at-round-rail\s*{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*16px;[\s\S]*?width:\s*128px;[\s\S]*?background:\s*transparent;/,
     );
     expect(themeCss).toMatch(
-      /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), max\(0px, calc\(100% - 288px\)\)\);[\s\S]*?margin:\s*0 auto;/,
+      /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%, max\(320px, calc\(100% - 288px\)\)\);[\s\S]*?margin:\s*0 auto;/,
     );
     expect(themeCss).toMatch(
       /\.at-round-rail-item:hover,[\s\S]*?\.at-round-rail-item:focus-visible,[\s\S]*?\.at-round-rail-item\.is-active\s*{[\s\S]*?background:\s*var\(--at-surface-muted\);[\s\S]*?outline:\s*none;/,

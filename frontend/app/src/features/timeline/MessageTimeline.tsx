@@ -3180,6 +3180,9 @@ function timelineMessageLooksDetachedSubagent(
   primaryRoleId: string | null,
 ): boolean {
   const role = stableTimelineRole(message.role_id ?? message.role ?? "");
+  if (timelineMessageHasSubagentToolPart(message)) {
+    return false;
+  }
   const identifiers = [
     message.instance_id ?? "",
     message.run_id ?? "",
@@ -3197,6 +3200,19 @@ function timelineMessageLooksDetachedSubagent(
     instanceId.length > 0 &&
     timelineIdentifierLooksGeneratedAgentInstance(instanceId)
   );
+}
+
+function timelineMessageHasSubagentToolPart(message: TimelineMessage): boolean {
+  return messageContentParts(message).some((part) => {
+    const kind = contentPartKind(part);
+    const toolName = "tool_name" in part ? part.tool_name ?? "" : "";
+    return (
+      (kind === "tool-call" ||
+        kind === "tool-return" ||
+        contentPartHasToolCallShape(part)) &&
+      toolActionCategory(toolName) === "subagent"
+    );
+  });
 }
 
 function timelineRoleCanBeDetachedAgent(

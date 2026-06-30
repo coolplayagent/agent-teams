@@ -3868,6 +3868,51 @@ describe("MessageTimeline", () => {
     }));
   });
 
+  it("keeps persisted parent subagent tool cards visible when ids contain subagent", async () => {
+    const onSubagentOpen = vi.fn();
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: {
+                subagent_instance_id: "subagent-instance-1",
+                subagent_role_id: "explorer",
+                subagent_run_id: "subagent_run_1",
+                title: "Explorer review",
+              },
+              kind: "tool-return",
+              outcome: "completed",
+              tool_call_id: "call-parent-subagent",
+              tool_name: "spawn_subagent",
+            },
+          ],
+        },
+        message_id: "parent-subagent-tool",
+        role_id: "MainAgent",
+        run_id: "run-parent-subagent-tool",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const title = await screen.findByText("Subagent started");
+    const tool = title.closest(".at-message-tool");
+    expect(tool).toHaveClass("is-openable-subagent");
+    expect(tool).toHaveAttribute("data-tool-name", "spawn_subagent");
+    expect(toolPreviewTexts(container)).toEqual(["Explorer review"]);
+
+    fireEvent.click(title);
+
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "subagent-instance-1",
+      roleId: "explorer",
+      runId: "subagent_run_1",
+      sessionId: "session-1",
+      title: "Explorer review",
+    }));
+  });
+
   it("opens a running subagent tool card before backend ids are hydrated", async () => {
     const onSubagentOpen = vi.fn();
     setRuntimeStateFromEvents([

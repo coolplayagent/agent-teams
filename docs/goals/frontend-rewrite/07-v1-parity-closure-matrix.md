@@ -134,6 +134,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "subagent round messages|scoped subagent runs|subagent orphan|subagent stream rows|UUID subagent"`, `npm test -- src/test/MessageTimeline.test.tsx -t "subagent orphan messages|orphan subagent messages out before round metadata|subagent round messages|selected subagent stream|live subagent stream rows|UUID subagent"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm run build`.
 - Browser evidence: `.tmp/subagent-main-panel-isolation-final.json`, `.tmp/subagent-main-panel-isolation-final.png`.
 
+### 2026-07-01 Parent Subagent Tool Card Preservation
+
+- `SUB-01` tightened: parent `spawn_subagent` tool-result cards are no longer removed by the detached-subagent replay filter when their message or run identifiers contain `subagent`.
+- This preserves the user-facing "Subagent started" card in the main timeline so clicking it opens the right-side subagent panel, while detached child output remains filtered out of the parent timeline.
+- Browser verification on `/app/` with built `index-BW92pzP9.js` passed all four `v2-subagent-session` scenarios: live subagent streaming, terminal history refill, hard-refresh restoration, send/switch pressure, and parent hydration race.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "persisted parent subagent tool cards|opens the subagent panel|opens a running subagent|subagent orphan|UUID subagent|thinking"`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-live.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-completed.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-hard-refresh-restored.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-send-switch-pressure.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-race.png`.
+
 ### 2026-07-01 Subagent Panel Width Clamp
 
 - `SUB-01` tightened: the right subagent panel now derives its maximum width from the live workspace width, preserving a minimum readable main timeline column instead of letting the saved/dragged panel width exceed the actual grid space.

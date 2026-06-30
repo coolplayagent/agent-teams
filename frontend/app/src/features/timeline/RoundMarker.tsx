@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from "react";
+import { useState, type MouseEvent } from "react";
 
 import type { SessionRound } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
@@ -41,11 +41,8 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     summary.statusLabel ?? "",
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
-  const handlePromptToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
-    const nextOpen = event.currentTarget.open;
-    setPromptOpen((current) => current === nextOpen ? current : nextOpen);
-  };
-  const handlePromptSummaryClick = () => {
+  const handlePromptSummaryClick = (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
     setPromptOpen((current) => !current);
   };
   const promptActionLabel = promptOpen
@@ -62,7 +59,7 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
       {summary.promptCollapsible ? (
         <details
           className="at-round-marker-intent"
-          onToggle={handlePromptToggle}
+          open={promptOpen}
         >
           <summary
             className="at-round-marker-intent-summary"

@@ -125,6 +125,48 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("message")).not.toBeInTheDocument();
   });
 
+  it("hides managed background task notifications from the replay transcript", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: [
+                "A managed background task finished. The notification below includes the same result payload returned by wait_background_task(background_task_id).",
+                "<background-task-notification>",
+                "<background-task-id>background_task_1</background-task-id>",
+                "<tool-call-id>call_1</tool-call-id>",
+                "<kind>subagent</kind>",
+                "<status>failed</status>",
+                "<title>Subagent failed</title>",
+                "</background-task-notification>",
+              ].join("\n"),
+              part_kind: "user-prompt",
+            },
+          ],
+        },
+        message_id: "internal-background-task-notification",
+        role: "user",
+        trace_id: "run-1",
+      },
+      {
+        content: "Subagent failed because the context limit was exceeded.",
+        message_id: "assistant-final",
+        role_id: "MainAgent",
+        trace_id: "run-1",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText("Subagent failed because the context limit was exceeded."),
+    ).toBeVisible();
+    expect(screen.queryByText(/A managed background task finished/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/background-task-notification/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/wait_background_task/)).not.toBeInTheDocument();
+  });
+
   it("does not render protocol fallbacks for empty runtime message events", async () => {
     setRuntimeEntries([
       {

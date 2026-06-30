@@ -3028,8 +3028,11 @@ function messagesVisibleInTimelineScope(
   fallbackRunId: string | null,
   primaryRoleId: string | null,
 ): TimelineMessage[] {
+  const transcriptMessages = messages.filter(
+    (message) => !timelineMessageIsInternalBackgroundTaskNotification(message),
+  );
   if (!timelineScopeIsMainSession(runtimeRunId, fallbackRunId) || rounds.length === 0) {
-    return messages;
+    return transcriptMessages;
   }
   const mainRunIds = new Set(
     rounds
@@ -3037,9 +3040,9 @@ function messagesVisibleInTimelineScope(
       .filter((runId) => runId.length > 0),
   );
   if (mainRunIds.size === 0) {
-    return messages;
+    return transcriptMessages;
   }
-  return messages.filter((message) => {
+  return transcriptMessages.filter((message) => {
     const runId = explicitTimelineMessageRunId(message);
     return (
       runId.length === 0 ||
@@ -3047,6 +3050,38 @@ function messagesVisibleInTimelineScope(
       !timelineMessageLooksDetachedSubagent(message, primaryRoleId)
     );
   });
+}
+
+function timelineMessageIsInternalBackgroundTaskNotification(
+  message: TimelineMessage,
+): boolean {
+  const text = timelineMessageSearchText(message);
+  return (
+    text.includes("<background-task-notification>") ||
+    (
+      text.includes("A managed background task finished.") &&
+      text.includes("wait_background_task(background_task_id)")
+    )
+  );
+}
+
+function timelineMessageSearchText(message: TimelineMessage): string {
+  return [
+    message.content ?? "",
+    message.message?.content ?? "",
+    ...messageContentParts(message).map(contentPartSearchText),
+  ].join("\n");
+}
+
+function contentPartSearchText(part: ContentPart): string {
+  const text = contentPartText(part);
+  if (text !== null) {
+    return text;
+  }
+  if ("content" in part) {
+    return jsonValueText(part.content);
+  }
+  return "";
 }
 
 function timelineScopeIsMainSession(

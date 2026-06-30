@@ -103,59 +103,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_set_active_round_nav_keeps_todo_details_available(tmp_path: Path) -> None:
-    payload = _run_round_nav_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const rounds = [
-    {
-        run_id: 'run-1',
-        intent: 'Inspect issue',
-        todo: {
-            run_id: 'run-1',
-            items: [{ content: 'First task', status: 'pending' }],
-        },
-    },
-    {
-        run_id: 'run-2',
-        intent: 'Implement feature',
-        todo: {
-            run_id: 'run-2',
-            items: [{ content: 'Second task', status: 'in_progress' }],
-        },
-    },
-];
-
-const { renderRoundNavigator, setActiveRoundNav } = await import('./navigator.mjs');
-renderRoundNavigator(rounds, () => undefined, { activeRunId: 'run-2' });
-setActiveRoundNav('run-1');
-
-const nav = document.getElementById('round-nav-float');
-const run1Node = nav.querySelector('.round-nav-node[data-run-id="run-1"]');
-const run2Node = nav.querySelector('.round-nav-node[data-run-id="run-2"]');
-
-console.log(JSON.stringify({
-    activeRunId: nav.querySelector('.round-nav-item.active')?.dataset?.runId || null,
-    run1Active: run1Node?.className.includes('active') || false,
-    run2Active: run2Node?.className.includes('active') || false,
-    run1HasDetail: run1Node?.querySelector('.round-nav-detail') !== null,
-    run2HasDetail: run2Node?.querySelector('.round-nav-detail') !== null,
-    run1HasTodo: run1Node?.querySelector('.round-nav-todo') !== null,
-    run2HasTodo: run2Node?.querySelector('.round-nav-todo') !== null,
-}));""".strip(),
-    )
-
-    assert payload == {
-        "activeRunId": "run-1",
-        "run1Active": True,
-        "run2Active": False,
-        "run1HasDetail": True,
-        "run2HasDetail": True,
-        "run1HasTodo": True,
-        "run2HasTodo": True,
-    }
-
-
 def test_round_nav_rerender_preserves_list_scroll_top(tmp_path: Path) -> None:
     payload = _run_round_nav_script(
         tmp_path=tmp_path,

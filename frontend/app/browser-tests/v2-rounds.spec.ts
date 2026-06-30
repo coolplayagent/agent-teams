@@ -228,6 +228,12 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
       page.locator(".at-message").filter({ hasText: "Audit old replay boundary" }),
     ).toHaveCount(0);
 
+    await latestButton.hover();
+    await expect(archiveButton).toHaveAttribute("aria-current", "step");
+    await expect(roundRail.locator(".at-round-rail-detail.is-open")).toContainText(
+      "Confirm latest handoff",
+    );
+
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
@@ -583,6 +589,18 @@ function pagedLatestRound(): Record<string, unknown> {
     run_phase: "completed",
     run_status: "completed",
     run_user_message: "Paged latest branch",
+    todo: {
+      items: [
+        {
+          content: "Confirm latest handoff",
+          status: "in_progress",
+        },
+      ],
+      run_id: PAGED_LATEST_RUN_ID,
+      session_id: SESSION_ID,
+      updated_at: "2026-06-25T08:00:03Z",
+      version: 3,
+    },
     verification_status: "verified",
   };
 }

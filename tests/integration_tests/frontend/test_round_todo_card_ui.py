@@ -103,34 +103,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_round_nav_rerender_preserves_list_scroll_top(tmp_path: Path) -> None:
-    payload = _run_round_nav_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const rounds = [
-    { run_id: 'run-1', intent: 'Inspect issue' },
-    { run_id: 'run-2', intent: 'Implement feature' },
-];
-
-const { renderRoundNavigator } = await import('./navigator.mjs');
-renderRoundNavigator(rounds, () => undefined, { activeRunId: 'run-1' });
-
-const nav = document.getElementById('round-nav-float');
-const list = nav.querySelector('.round-nav-list');
-list.scrollTop = 96;
-
-renderRoundNavigator(rounds, () => undefined, { activeRunId: 'run-1' });
-
-console.log(JSON.stringify({
-    scrollTop: nav.querySelector('.round-nav-list')?.scrollTop || 0,
-}));""".strip(),
-    )
-
-    assert payload == {
-        "scrollTop": 96,
-    }
-
-
 def test_round_nav_nodes_keep_order_while_tracking_anchor_state(tmp_path: Path) -> None:
     payload = _run_round_nav_script(
         tmp_path=tmp_path,

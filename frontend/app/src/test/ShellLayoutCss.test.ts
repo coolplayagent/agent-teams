@@ -186,6 +186,18 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps markdown code blocks constrained to the message column", () => {
+    expect(themeCss).toMatch(
+      /\.at-message-markdown\s*{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-markdown pre\s*{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow:\s*auto;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-markdown pre code\s*{[\s\S]*?min-width:\s*max-content;[\s\S]*?white-space:\s*pre;/,
+    );
+  });
+
   it("keeps streaming message affordances declared in shared CSS", () => {
     expect(themeCss).toMatch(/@keyframes at-streaming-cursor-pulse/);
     expect(themeCss).toMatch(

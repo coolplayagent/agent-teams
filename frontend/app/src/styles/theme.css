@@ -4892,6 +4892,7 @@ body {
 }
 
 .at-message-markdown {
+  min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
   line-height: var(--at-message-line-height);
@@ -4961,6 +4962,7 @@ body {
 }
 
 .at-message-markdown pre {
+  min-width: 0;
   max-width: 100%;
   padding: 10px 12px;
   overflow: auto;

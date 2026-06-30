@@ -462,6 +462,93 @@ test("resumes a stopped recovery run from its checkpoint", async ({ page }) => {
   }
 });
 
+test("reopens an active recovery stream from the latest checkpoint after refresh", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = recoveryMockState({
+    lastEventId: 17,
+    phase: "running",
+    questionPending: false,
+    status: "running",
+    toolApprovalPending: false,
+  });
+  const persistedMessages: Record<string, unknown>[] = [];
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        if (
+          context.method === "GET" &&
+          context.path === `/sessions/${SESSION_ID}/messages`
+        ) {
+          await context.fulfillJson(persistedMessages);
+          return true;
+        }
+        return handleRecoveryApi(context, state);
+      },
+      sessionTitle: "TS active recovery refresh",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(`/api/ag-ui/runs/${RUN_ID}/events\\?after_event_id=17$`),
+    );
+
+    const firstRecoveredText = "Recovered active stream checkpoint text.";
+    await dispatchRunEvent(page, {
+      eventId: 18,
+      payload: { text: firstRecoveredText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText(firstRecoveredText)).toBeVisible();
+
+    state.lastEventId = 18;
+    persistedMessages.push(recoveredAssistantMessage("active-recovered-18", firstRecoveredText));
+    await page.reload();
+    await waitForV2Shell(page);
+
+    await expect(page.locator(".at-recovery")).toHaveCount(0);
+    await expect(page.locator(".at-message").filter({ hasText: firstRecoveredText }))
+      .toHaveCount(1);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(`/api/ag-ui/runs/${RUN_ID}/events\\?after_event_id=18$`),
+    );
+
+    const secondRecoveredText = "Recovered active stream continued after reload.";
+    await dispatchRunEvent(page, {
+      eventId: 19,
+      payload: { text: secondRecoveredText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText(secondRecoveredText)).toBeVisible();
+    await expect(page.locator(".at-message").filter({ hasText: firstRecoveredText }))
+      .toHaveCount(1);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "active recovery refresh should resume from the checkpoint inside the fixed shell",
+    );
+    await page.mouse.move(320, 120);
+    await page.screenshot({
+      path: screenshotPath("v2-active-recovery-refresh.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("keeps recovered background subagent output out of the parent timeline", async ({
   page,
 }) => {
@@ -1101,6 +1188,26 @@ function webfetchApprovalRecord(): Record<string, unknown> {
     args_preview: JSON.stringify({ url: WEBFETCH_APPROVAL_URL }),
     tool_call_id: WEBFETCH_TOOL_CALL_ID,
     tool_name: "webfetch",
+  };
+}
+
+function recoveredAssistantMessage(
+  messageId: string,
+  content: string,
+): Record<string, unknown> {
+  return {
+    created_at: "2026-06-26T11:00:18Z",
+    message: {
+      parts: [
+        {
+          content,
+          part_kind: "text",
+        },
+      ],
+    },
+    message_id: messageId,
+    role_id: "MainAgent",
+    run_id: RUN_ID,
   };
 }
 

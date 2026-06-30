@@ -262,16 +262,31 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
 
     await expect(page.getByText("Hydrated tool-heavy answer before refresh."))
       .toBeVisible();
-    await expect(page.getByText("Tool call: read")).toBeVisible();
     await expect(page.getByText("Tool result: read")).toBeVisible();
+    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expect(page.locator(".at-message-tool")).toHaveCount(1);
+    await expectToolChromeState(page, {
+      completedCount: 1,
+      errorCount: 0,
+      spinnerCount: 0,
+      validationCount: 0,
+    });
 
     await page.reload();
     await waitForV2Shell(page);
     await expect(page.getByText("Hydrated tool-heavy answer before refresh."))
       .toBeVisible();
-    await expect(page.getByText("Tool call: read")).toBeVisible();
     await expect(page.getByText("Tool result: read")).toBeVisible();
-    await expect(page.locator(".at-message-tool")).toHaveCount(4);
+    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expect(page.getByText("Tool error: shell")).toBeVisible();
+    await expect(page.getByText("Tool call: shell")).toHaveCount(0);
+    await expect(page.locator(".at-message-tool")).toHaveCount(2);
+    await expectToolChromeState(page, {
+      completedCount: 1,
+      errorCount: 1,
+      spinnerCount: 0,
+      validationCount: 0,
+    });
     await waitForEventSourceUrl(
       page,
       /\/api\/ag-ui\/runs\/run-ts-tool-refresh\/events\?after_event_id=5$/,
@@ -287,7 +302,13 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
       type: "message.text.delta",
     });
     await expect(page.getByText(duplicateCursorText)).toHaveCount(0);
-    await expect(page.locator(".at-message-tool")).toHaveCount(4);
+    await expect(page.locator(".at-message-tool")).toHaveCount(2);
+    await expectToolChromeState(page, {
+      completedCount: 1,
+      errorCount: 1,
+      spinnerCount: 0,
+      validationCount: 0,
+    });
 
     await dispatchRunEvent(page, {
       eventId: 6,
@@ -316,7 +337,15 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
 
     await expect(page.getByText("Tool validation: read")).toBeVisible();
     await expect(page.getByText(resumedText)).toBeVisible();
-    await expect(page.locator(".at-message-tool")).toHaveCount(5);
+    await expect(page.locator(".at-message-tool")).toHaveCount(3);
+    await expectToolChromeState(page, {
+      completedCount: 1,
+      errorCount: 1,
+      spinnerCount: 0,
+      validationCount: 1,
+    });
+    await expect(page.getByText(/Token usage:/)).toHaveCount(0);
+    await expect(page.getByText(/Run started:/)).toHaveCount(0);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
@@ -347,6 +376,40 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
     await appServer.close();
   }
 });
+
+async function expectToolChromeState(
+  page: Page,
+  expected: {
+    completedCount: number;
+    errorCount: number;
+    spinnerCount: number;
+    validationCount: number;
+  },
+): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const tools = Array.from(document.querySelectorAll(".at-message-tool"));
+        return {
+          completedCount: tools.filter(
+            (tool) => tool.getAttribute("data-status") === "completed",
+          ).length,
+          errorCount: tools.filter(
+            (tool) => tool.getAttribute("data-status") === "error",
+          ).length,
+          oldStatusCount: document.querySelectorAll(".at-message-tool-status").length,
+          spinnerCount: document.querySelectorAll(".at-message-tool-spinner").length,
+          validationCount: tools.filter(
+            (tool) => tool.getAttribute("data-status") === "validation_failed",
+          ).length,
+        };
+      }),
+    )
+    .toEqual({
+      ...expected,
+      oldStatusCount: 0,
+    });
+}
 
 async function handleRefreshApi(
   context: MockApiRouteContext,

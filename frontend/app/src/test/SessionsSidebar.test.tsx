@@ -981,7 +981,7 @@ describe("SessionsSidebar", () => {
       {
         created_at: activeSubagent.createdAt,
         instance_id: activeSubagent.instanceId,
-        last_event_id: activeSubagent.lastEventId,
+        last_event_id: activeSubagent.lastEventId ?? undefined,
         role_id: activeSubagent.roleId,
         run_id: activeSubagent.runId,
         run_status: activeSubagent.runStatus,

@@ -751,6 +751,20 @@ describe("SessionsSidebar", () => {
     ]);
     listSidebarSessionsMock.mockResolvedValue([
       {
+        active_run_status: "queued",
+        session_id: "session-queued",
+        title: "Queued session",
+        updated_at: "2026-06-23T10:30:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        active_run_status: "stopping",
+        session_id: "session-stopping",
+        title: "Stopping session",
+        updated_at: "2026-06-23T10:15:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
         active_run_status: "failed",
         session_id: "session-failed",
         title: "Failed session",
@@ -781,6 +795,12 @@ describe("SessionsSidebar", () => {
     const failedRow = (await screen.findByText("Failed session")).closest(
       ".at-session-item",
     );
+    const queuedRow = screen.getByText("Queued session").closest(
+      ".at-session-item",
+    );
+    const stoppingRow = screen.getByText("Stopping session").closest(
+      ".at-session-item",
+    );
     const stoppedRow = screen.getByText("Stopped session").closest(
       ".at-session-item",
     );
@@ -788,15 +808,53 @@ describe("SessionsSidebar", () => {
       ".at-session-item",
     );
 
+    expect(queuedRow).toHaveClass("has-run-indicator-running");
+    expect(stoppingRow).toHaveClass("has-run-indicator-running");
     expect(failedRow).toHaveClass("has-run-indicator-failed");
     expect(stoppedRow).toHaveClass("has-run-indicator-stopped");
     expect(unreadRow).toHaveClass("has-run-indicator-unread");
+    expect(screen.getAllByTitle("Running")).toHaveLength(2);
     expect(screen.getByTitle("Run failed")).toHaveClass("is-failed");
     expect(screen.getByTitle("Run stopped")).toHaveClass("is-stopped");
     expect(screen.getByTitle("Unread terminal run")).toHaveClass("is-unread");
     expect(screen.queryByText("failed")).not.toBeInTheDocument();
     expect(screen.queryByText("stopped")).not.toBeInTheDocument();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
+  });
+
+  it("suppresses stale unread terminal indicators for the selected session", async () => {
+    useUiStore.setState({
+      selectedSessionId: "session-selected",
+      selectedWorkspaceId: "workspace-1",
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        has_unread_terminal_run: true,
+        latest_terminal_run_id: "run-failed",
+        latest_terminal_run_status: "failed",
+        latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+        session_id: "session-selected",
+        title: "Current task",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    const selectedRow = (await screen.findByText("Current task")).closest(
+      ".at-session-item",
+    );
+    expect(selectedRow).toHaveClass("is-selected");
+    expect(selectedRow).not.toHaveClass("has-run-indicator-unread");
+    expect(screen.queryByTitle("Unread terminal run")).not.toBeInTheDocument();
   });
 
   it("keeps subagent sessions nested under their parent and opens a secondary selection", async () => {

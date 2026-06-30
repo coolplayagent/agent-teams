@@ -7797,3 +7797,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, V2 sidebar query/search/status coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Sidebar Run Indicator Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal and current implementation ledger before selecting this slice, with the remaining gap still centered on V1 parity, stream/replay/recovery hardening, browser screenshot sign-off, and Python UI harness retirement.
+- Migrated the V1 `test_projects_sidebar_renders_session_run_status_indicators` behavior into V2 `SessionsSidebar.test.tsx`.
+- Added V2 coverage proving queued and stopping sidebar sessions render as active running indicators, failed/stopped/unread terminal states keep compact indicator glyphs instead of raw status text, and the selected session suppresses stale unread terminal indicators.
+- Updated `SessionsSidebar` so a selected session with only stale `has_unread_terminal_run` state no longer receives the unread indicator class or glyph, matching the V1 active-session behavior without changing running/failed/stopped status mapping.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept sidebar/settings item inventory, secondary-page routing, appearance settings layout, broader visual framework CSS, stream controller behavior, and replay/recovery code unchanged in this slice.
+- This slice retires one Projects Sidebar Python UI harness and tightens one sidebar status parity boundary. It does not claim complete Sessions Sidebar PASS, complete visual parity, complete stream/replay PASS, interrupted-stream recovery PASS, broader Python UI harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "terminal run indicators|selected session"` passed with 5 focused tests.
+- `npm test -- SessionsSidebar.test.tsx` passed with 31 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `npm run lint` passed, including `tsc --noEmit --pretty false` and `tsc -p tsconfig.desktop.json --noEmit --pretty false`.
+- `npm run build` passed, including `tsc --noEmit`, `tsc -p tsconfig.desktop.json --noEmit`, desktop build, and Vite production build.
+- `rg -n "test_projects_sidebar_renders_session_run_status_indicators|renders_session_run_status_indicators" tests\integration_tests\frontend frontend\app\src\test` returned no matches.
+
+### Reviewer
+- Main-agent goal/ledger scan, V1 run-indicator harness mapping, V2 production selected-session indicator fix, focused/full SessionsSidebar verification, frontend typecheck/build, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

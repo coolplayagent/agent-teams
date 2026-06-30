@@ -645,8 +645,12 @@ export function SessionsSidebar({
               {groupExpanded && group.sessions.length > 0 ? (
                 <div className="at-workspace-group-sessions">
                   {visibleSessions.map((session) => {
-                    const indicatorType = sessionRunIndicatorType(session);
                     const selected = session.session_id === selectedSessionId;
+                    const rawIndicatorType = sessionRunIndicatorType(session);
+                    const indicatorType =
+                      selected && rawIndicatorType === "unread"
+                        ? null
+                        : rawIndicatorType;
                     const subagentCount = positiveCount(session.subagent_count);
                     const subagentsExpanded =
                       expandedSubagentSessions[session.session_id] === true;

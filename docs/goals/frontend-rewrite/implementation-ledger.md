@@ -7860,3 +7860,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/worktree scan, V1 session-click harness mapping, V2 SessionsSidebar interaction coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Sidebar Parent Click And Animation Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree status, and remaining Projects Sidebar Python UI harnesses before selecting this slice.
+- Migrated the V1 `test_projects_sidebar_parent_session_click_preserves_active_subagent_until_handler` behavior into V2 `SessionsSidebar.test.tsx`.
+- Added V2 coverage proving a parent session click selects the parent and invokes the session handler while preserving the active subagent marker passed into the sidebar, leaving subagent view cleanup to the AppShell handler boundary.
+- Migrated the V1 `test_projects_sidebar_session_click_does_not_add_activation_animation` behavior into V2 `SessionsSidebar.test.tsx`.
+- Added V2 coverage proving repeated session clicks keep the row selected without adding legacy activation classes or scheduling the old 180ms activation timer.
+- Removed the two matching old V1 source-copy Python harness functions from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept production UI code, sidebar/settings item inventory, secondary-page routing, appearance settings layout, visual framework CSS, stream controller behavior, replay/recovery code, and build output unchanged in this slice.
+- This slice retires two Projects Sidebar Python UI harnesses and tightens one sidebar click/subagent boundary. It does not claim complete Sessions Sidebar PASS, complete visual parity, complete stream/replay PASS, interrupted-stream recovery PASS, broader Python UI harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "active subagent marker|activation animation timers"` passed with 2 focused tests.
+- `npm test -- SessionsSidebar.test.tsx` passed with 36 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `rg -n "test_projects_sidebar_parent_session_click_preserves_active_subagent_until_handler|test_projects_sidebar_session_click_does_not_add_activation_animation|parent_session_click_preserves_active_subagent|session_click_does_not_add_activation_animation|active subagent marker|activation animation timers" tests\integration_tests\frontend frontend\app\src\test` returned only the new V2 TS test names.
+
+### Reviewer
+- Main-agent goal/worktree scan, V1 parent-click/animation harness mapping, V2 SessionsSidebar interaction coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

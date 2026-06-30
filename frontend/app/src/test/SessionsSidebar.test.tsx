@@ -944,6 +944,106 @@ describe("SessionsSidebar", () => {
     expect(onSessionSelected).toHaveBeenCalledTimes(2);
   });
 
+  it("preserves the active subagent marker until the parent session handler runs", async () => {
+    const onSessionSelected = vi.fn();
+    const activeSubagent: ActiveSubagentSession = {
+      createdAt: "2026-06-23T10:02:00Z",
+      instanceId: "subagent-instance-1",
+      interactive: false,
+      lastEventId: null,
+      roleId: "explorer",
+      runId: "subagent_run_1",
+      runPhase: "running",
+      runStatus: "running",
+      sessionId: "session-parent",
+      status: "running",
+      subagentKind: "normal",
+      title: "Explorer review",
+      updatedAt: "2026-06-23T10:03:00Z",
+    };
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-parent",
+        subagent_count: 1,
+        title: "Parent session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: activeSubagent.createdAt,
+        instance_id: activeSubagent.instanceId,
+        last_event_id: activeSubagent.lastEventId,
+        role_id: activeSubagent.roleId,
+        run_id: activeSubagent.runId,
+        run_status: activeSubagent.runStatus,
+        session_id: activeSubagent.sessionId,
+        status: activeSubagent.status,
+        subagent_kind: activeSubagent.subagentKind,
+        title: activeSubagent.title,
+        updated_at: activeSubagent.updatedAt,
+      },
+    ]);
+
+    renderSidebar({ activeSubagent, onSessionSelected });
+
+    expect(await screen.findByText("Parent session")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Toggle subagent sessions",
+    }));
+    const subagentRow = await screen.findByRole("button", {
+      name: "Open subagent session Explorer review",
+    });
+    expect(subagentRow).toHaveClass("is-active");
+
+    fireEvent.click(screen.getByRole("button", { name: "Parent session" }));
+
+    expect(useUiStore.getState().selectedSessionId).toBe("session-parent");
+    expect(onSessionSelected).toHaveBeenCalledTimes(1);
+    expect(subagentRow).toHaveClass("is-active");
+  });
+
+  it("keeps session selection free of activation animation timers", async () => {
+    const onSessionSelected = vi.fn();
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-11",
+        title: "Session 11",
+        updated_at: "2026-06-23T10:11:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar({ onSessionSelected });
+
+    const row = (await screen.findByText("Session 11")).closest(".at-session-item");
+    fireEvent.click(screen.getByRole("button", { name: "Session 11" }));
+    fireEvent.click(screen.getByRole("button", { name: "Session 11" }));
+
+    expect(row).toHaveClass("is-selected");
+    expect(row).not.toHaveClass("session-item-activating");
+    expect(row).not.toHaveClass("at-session-item-activating");
+    expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), 180);
+    expect(onSessionSelected).toHaveBeenCalledTimes(2);
+    setTimeoutSpy.mockRestore();
+  });
+
   it("keeps subagent sessions nested under their parent and opens a secondary selection", async () => {
     const onSubagentSelected = vi.fn();
     listWorkspacesMock.mockResolvedValue([
@@ -1712,6 +1812,7 @@ describe("SessionsSidebar", () => {
 });
 
 function renderSidebar(props?: {
+  activeSubagent?: ActiveSubagentSession | null;
   backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
   onOpenWorkspaceView?: () => void;
@@ -1732,6 +1833,7 @@ function renderSidebar(props?: {
       <ConfigProvider>
         <AntApp>
           <SessionsSidebar
+            activeSubagent={props?.activeSubagent}
             backendStatus={props?.backendStatus}
             navigationItems={props?.navigationItems}
             onOpenWorkspaceView={props?.onOpenWorkspaceView}

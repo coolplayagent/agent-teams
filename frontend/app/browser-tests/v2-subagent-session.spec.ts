@@ -149,6 +149,112 @@ test("opens a nested subagent session and refreshes history after terminal strea
   }
 });
 
+test("streams subagent deltas incrementally before terminal history refill", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: false,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.getByText("Parent session output")).toBeVisible();
+
+    await openSubagentPanelFromToolCard(page, "Explorer review");
+    const panel = page.locator(".at-subagent-session-view");
+    await expect(panel.getByText("Persisted subagent checkpoint")).toBeVisible();
+    await expect.poll(() => state.messageRequestCount).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 42,
+      payload: { text: "SUB_STREAM_ALPHA" },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    const liveRow = panel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: "SUB_STREAM_ALPHA" });
+    await expect(liveRow).toHaveCount(1);
+    await expect(liveRow).toContainText("SUB_STREAM_ALPHA");
+    await expect(liveRow).not.toContainText("BETA");
+    await expect(
+      page.locator(".at-chat-view").getByText("SUB_STREAM_ALPHA"),
+    ).toHaveCount(0);
+    await expect(page.getByText("Final persisted subagent answer")).toHaveCount(0);
+    await expect.poll(() => state.messageRequestCount).toBe(1);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { text: " and BETA" },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(liveRow).toHaveCount(1);
+    await expect(liveRow).toContainText("SUB_STREAM_ALPHA and BETA");
+    await expect(
+      page.locator(".at-chat-view").getByText("SUB_STREAM_ALPHA and BETA"),
+    ).toHaveCount(0);
+    await expect.poll(() => state.messageRequestCount).toBe(1);
+
+    state.completed = true;
+    state.delayFinalMessages = true;
+    await dispatchSubagentRunEvent(page, {
+      eventId: 44,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
+    await expect(liveRow).toContainText("SUB_STREAM_ALPHA and BETA");
+    await expect(page.getByText("Final persisted subagent answer")).toHaveCount(0);
+
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-incremental-stream-before-refill.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    releaseFinalSubagentMessages(state);
+    await expect(panel.getByText("Final persisted subagent answer")).toBeVisible();
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("completed");
+    await expect(
+      page.locator(".at-chat-view").getByText("Final persisted subagent answer"),
+    ).toHaveCount(0);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "incremental subagent stream should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+  } finally {
+    releaseFinalSubagentMessages(state);
+    await appServer.close();
+  }
+});
+
 test("restores an open subagent panel after hard refresh without replay leakage", async ({
   page,
 }) => {

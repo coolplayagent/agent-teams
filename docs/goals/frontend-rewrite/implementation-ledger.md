@@ -8087,6 +8087,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Main-agent matrix scan, focused V2 browser coverage, screenshot evidence, and matrix/ledger updates completed for this slice. No subsystem PASS or final V2 completion is claimed.
 
+## 2026-07-01 Subagent Incremental Stream Browser Coverage
+
+### Scope
+- Re-checked the active frontend rewrite goal and selected `SUB-01` because the subagent panel previously had user-visible reports of appearing to wait and then jump straight to final output.
+- Added a strict V2 browser scenario inside the existing `v2-subagent-session.spec.ts` shell fixture instead of relying on a component-only assertion.
+- The scenario opens the right-side subagent panel from the parent `Subagent started` tool card, verifies the initial persisted checkpoint, then dispatches two mock SSE child `message.text.delta` events before terminal state.
+- The browser assertions prove the first delta is visible by itself in the right panel, the second delta appends into the same live row, the parent `.at-chat-view` never receives the child text, no final persisted answer appears before terminal history refill is released, and the live row remains visible while that refill is deliberately delayed.
+- Saved screenshot evidence at `.tmp/frontend-v2-ts-subagent-session/v2-subagent-incremental-stream-before-refill.png`.
+- Kept production UI source and built dist unchanged in this slice; this closes a missing evidence hole rather than claiming a new product behavior.
+- This slice strengthens `SUB-01` and stream/replay evidence. It does not claim complete subagent PASS, real-backend orchestration PASS, broad complex-history replay PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-subagent-session.spec.ts -g "streams subagent deltas incrementally" --project=chromium` passed with 1 browser test.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with all 5 browser tests.
+- Visual inspection of `.tmp/frontend-v2-ts-subagent-session/v2-subagent-incremental-stream-before-refill.png` confirmed the left parent timeline contains only parent output plus the subagent tool card, while the right panel shows `SUB_STREAM_ALPHA and BETA` before final persisted history is released.
+
+### Reviewer
+- Main-agent matrix scan, focused browser stream sampling, screenshot inspection, full subagent browser spec verification, and matrix/ledger updates completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
 ## 2026-07-01 Processed Group Browser Measurement Coverage
 
 ### Scope

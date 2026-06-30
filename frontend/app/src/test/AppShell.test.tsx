@@ -1242,6 +1242,56 @@ describe("AppShell", () => {
     expect(useUiStore.getState().selectedSessionId).toBe("session-1");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
   });
+
+  it("keeps subagent re-entry active when delayed main session hydration settles", async () => {
+    const animationFrame = captureAnimationFrames();
+    let resolveSession: ((session: SessionRecord) => void) | undefined;
+    getSessionMock.mockReturnValue(
+      new Promise<SessionRecord>((resolve) => {
+        resolveSession = resolve;
+      }),
+    );
+
+    try {
+      renderShell();
+
+      expect(await screen.findByTestId("timeline")).toBeVisible();
+      fireEvent.click(screen.getByTestId("open-subagent-session"));
+      expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+      expect(screen.getByText("Subagent Explorer")).toBeVisible();
+
+      fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
+      expect(await screen.findByTestId("timeline")).toBeVisible();
+      expect(screen.getByText("Loading session...")).toBeVisible();
+      expect(animationFrame.pendingCount()).toBe(1);
+
+      fireEvent.click(screen.getByTestId("open-subagent-session"));
+      expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+
+      if (resolveSession === undefined) {
+        throw new Error("Session detail query did not start.");
+      }
+      const resolvePendingSession = resolveSession;
+      await act(async () => {
+        resolvePendingSession({
+          normal_root_role_id: "MainAgent",
+          session_id: "session-1",
+          workspace_id: "workspace-1",
+        });
+      });
+
+      expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+      expect(screen.getByText("Subagent Explorer")).toBeVisible();
+      expect(screen.queryByText("Loading session...")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+      expect(animationFrame.pendingCount()).toBe(0);
+      expect(useUiStore.getState().selectedSessionId).toBe("session-1");
+      expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+    } finally {
+      animationFrame.restore();
+    }
+  });
 });
 
 function renderShell() {
@@ -1285,4 +1335,33 @@ function mockViewportMatch(matches: boolean) {
     removeEventListener: vi.fn(),
     removeListener: vi.fn(),
   }));
+}
+
+interface CapturedAnimationFrames {
+  readonly pendingCount: () => number;
+  readonly restore: () => void;
+}
+
+function captureAnimationFrames(): CapturedAnimationFrames {
+  const originalRequestAnimationFrame = window.requestAnimationFrame;
+  const originalCancelAnimationFrame = window.cancelAnimationFrame;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let frameId = 0;
+
+  window.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+    frameId += 1;
+    callbacks.set(frameId, callback);
+    return frameId;
+  });
+  window.cancelAnimationFrame = vi.fn((id: number) => {
+    callbacks.delete(id);
+  });
+
+  return {
+    pendingCount: () => callbacks.size,
+    restore: () => {
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      window.cancelAnimationFrame = originalCancelAnimationFrame;
+    },
+  };
 }

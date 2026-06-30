@@ -7463,3 +7463,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 CSS harness mapping, V2 CSS test coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Re-entry Hydration Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, the product parity checklist subagent/stream requirements, and the remaining `test_subagent_sessions_ui.py` Python harness inventory before editing.
+- Added V2 `AppShell.test.tsx` coverage for the return-to-main/re-enter-subagent race: a delayed main-session detail query and pending chat loading frame must not remount the main timeline or composer after the user has re-entered the subagent secondary surface.
+- Verified the pending chat loading frame is canceled when `SubagentSessionView` remounts, preserving the V1 secondary-page behavior without changing sidebar/settings item inventory or flattening subagent content into the primary chat surface.
+- Removed the migrated V1 source-copy harness `test_return_to_main_session_ignores_stale_hydration_after_subagent_reentry` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- No production UI, settings navigation, sidebar item list, stream controller, or built dist behavior changed in this slice.
+- This slice reduces the subagent Python UI harness count and strengthens AppShell race coverage. It does not claim complete subagent stream/replay PASS, terminal-settle parity, background-task subagent discovery parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- AppShell.test.tsx -t "subagent re-entry"` passed.
+- `npm test -- AppShell.test.tsx -t "subagent"` passed with 6 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 8 remaining Python UI harness scenarios.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell race coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

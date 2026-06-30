@@ -82,6 +82,8 @@ const subagentPanelWidthDefault = 620;
 const subagentPanelWidthMin = 420;
 const subagentPanelWidthMax = 1080;
 const subagentPanelWidthStorageKey = "agentTeams.subagentPanelWidth";
+const subagentTimelineResolveAttempts = 8;
+const subagentTimelineResolveDelayMs = 500;
 const uiLanguageSettingsQueryKey = ["ui-language-settings"] as const;
 
 type ShellPrimaryView =
@@ -180,18 +182,40 @@ export function AppShell() {
       if (provisionalSubagent !== null) {
         setActiveSubagent(provisionalSubagent);
       }
-      void queryClient.fetchQuery({
-        queryKey: ["sessions", reference.sessionId, "subagents"],
-        queryFn: () => listSessionSubagents(reference.sessionId, true),
-        staleTime: 0,
-      })
-        .then((records) => {
-          const authoritative = matchingSubagentFromRecords(reference, records);
-          if (authoritative !== null) {
-            setActiveSubagent(authoritative);
-          }
+      const resolveAuthoritativeSubagent = (attempt: number) => {
+        void queryClient.fetchQuery({
+          queryKey: ["sessions", reference.sessionId, "subagents"],
+          queryFn: () => listSessionSubagents(reference.sessionId, true),
+          staleTime: 0,
         })
-        .catch(() => undefined);
+          .then((records) => {
+            const authoritative = matchingSubagentFromRecords(reference, records);
+            if (authoritative !== null) {
+              setActiveSubagent((current) =>
+                current === null ||
+                activeSubagentStillMatchesTimelineReference(current, reference)
+                  ? authoritative
+                  : current,
+              );
+              return;
+            }
+            if (attempt + 1 < subagentTimelineResolveAttempts) {
+              window.setTimeout(
+                () => resolveAuthoritativeSubagent(attempt + 1),
+                subagentTimelineResolveDelayMs,
+              );
+            }
+          })
+          .catch(() => {
+            if (attempt + 1 < subagentTimelineResolveAttempts) {
+              window.setTimeout(
+                () => resolveAuthoritativeSubagent(attempt + 1),
+                subagentTimelineResolveDelayMs,
+              );
+            }
+          });
+      };
+      resolveAuthoritativeSubagent(0);
     },
     [queryClient],
   );
@@ -878,7 +902,17 @@ function activeSubagentFromTimelineReference(
 ): ActiveSubagentSession | null {
   const runId = reference.runId?.trim() ?? "";
   const instanceId = reference.instanceId?.trim() ?? "";
-  if (runId.length === 0 && instanceId.length === 0) {
+  const roleId = reference.roleId?.trim() ?? "";
+  const title = subagentTitleFromReference(reference);
+  if (
+    reference.sessionId.trim().length === 0 ||
+    (
+      runId.length === 0 &&
+      instanceId.length === 0 &&
+      roleId.length === 0 &&
+      title === "Subagent"
+    )
+  ) {
     return null;
   }
   return {
@@ -886,14 +920,14 @@ function activeSubagentFromTimelineReference(
     instanceId,
     interactive: reference.interactive ?? false,
     lastEventId: reference.lastEventId ?? null,
-    roleId: reference.roleId ?? "",
+    roleId,
     runId,
     runPhase: reference.runPhase ?? "",
     runStatus: reference.runStatus ?? reference.status ?? "running",
     sessionId: reference.sessionId,
     status: reference.status ?? reference.runStatus ?? "running",
     subagentKind: reference.subagentKind ?? "normal",
-    title: subagentTitleFromReference(reference),
+    title,
     updatedAt: reference.updatedAt ?? "",
   };
 }
@@ -906,17 +940,31 @@ function matchingSubagentFromRecords(
   const instanceId = reference.instanceId?.trim() ?? "";
   const normalized = records
     .map((record) => normalizeSessionSubagent(record, reference.sessionId))
-    .filter((record): record is ActiveSubagentSession => record !== null);
-  if (runId.length === 0 && instanceId.length === 0) {
+    .filter((record): record is ActiveSubagentSession =>
+      record !== null && record.sessionId === reference.sessionId,
+    );
+  if (runId.length === 0 && instanceId.length === 0 && normalized.length === 1) {
     return normalized.length === 1 ? normalized[0] : null;
   }
-  const match = normalized.find((record) => {
-    if (instanceId.length > 0 && record.instanceId === instanceId) {
-      return true;
+  let bestMatch: { record: ActiveSubagentSession; score: number } | null = null;
+  for (const record of normalized) {
+    const score = timelineReferenceSubagentMatchScore(reference, record);
+    if (score <= 0) {
+      continue;
     }
-    return runId.length > 0 && record.runId === runId;
-  });
-  return match ?? null;
+    if (
+      bestMatch === null ||
+      score > bestMatch.score ||
+      (
+        score === bestMatch.score &&
+        subagentIsRunning(record) &&
+        !subagentIsRunning(bestMatch.record)
+      )
+    ) {
+      bestMatch = { record, score };
+    }
+  }
+  return bestMatch?.record ?? null;
 }
 
 function subagentTitleFromReference(reference: TimelineSubagentReference): string {
@@ -928,6 +976,89 @@ function subagentTitleFromReference(reference: TimelineSubagentReference): strin
     reference.instanceId?.trim() ||
     "Subagent"
   );
+}
+
+function activeSubagentStillMatchesTimelineReference(
+  subagent: ActiveSubagentSession | null,
+  reference: TimelineSubagentReference,
+): boolean {
+  if (subagent === null || subagent.sessionId !== reference.sessionId) {
+    return false;
+  }
+  const runId = reference.runId?.trim() ?? "";
+  const instanceId = reference.instanceId?.trim() ?? "";
+  if (runId.length > 0) {
+    return subagent.runId === runId || subagent.runId.length === 0;
+  }
+  if (instanceId.length > 0) {
+    return subagent.instanceId === instanceId || subagent.instanceId.length === 0;
+  }
+  const currentTitle = normalizedSubagentMatchText(subagent.title);
+  const referenceTitle = normalizedSubagentMatchText(subagentTitleFromReference(reference));
+  const currentRole = normalizedSubagentMatchText(subagent.roleId);
+  const referenceRole = normalizedSubagentMatchText(reference.roleId ?? "");
+  return (
+    (referenceTitle.length > 0 && currentTitle === referenceTitle) ||
+    (referenceRole.length > 0 && currentRole === referenceRole)
+  );
+}
+
+function timelineReferenceSubagentMatchScore(
+  reference: TimelineSubagentReference,
+  subagent: ActiveSubagentSession,
+): number {
+  const runId = reference.runId?.trim() ?? "";
+  if (runId.length > 0 && subagent.runId === runId) {
+    return 100;
+  }
+  const instanceId = reference.instanceId?.trim() ?? "";
+  if (instanceId.length > 0 && subagent.instanceId === instanceId) {
+    return 100;
+  }
+  let score = 0;
+  const referenceRole = normalizedSubagentMatchText(reference.roleId ?? "");
+  if (
+    referenceRole.length > 0 &&
+    referenceRole === normalizedSubagentMatchText(subagent.roleId)
+  ) {
+    score += 3;
+  }
+  const referenceTexts = [
+    reference.title ?? "",
+    reference.description ?? "",
+  ]
+    .map(normalizedSubagentMatchText)
+    .filter((text) => text.length > 0);
+  const subagentTexts = [
+    subagent.title,
+    subagent.roleId,
+  ]
+    .map(normalizedSubagentMatchText)
+    .filter((text) => text.length > 0);
+  if (referenceTexts.some((text) => subagentTexts.includes(text))) {
+    score += 4;
+  } else if (
+    referenceTexts.some((referenceText) =>
+      subagentTexts.some((subagentText) =>
+        subagentText.includes(referenceText) || referenceText.includes(subagentText),
+      ),
+    )
+  ) {
+    score += 2;
+  }
+  if (subagentIsRunning(subagent)) {
+    score += 1;
+  }
+  return score;
+}
+
+function normalizedSubagentMatchText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function subagentIsRunning(subagent: ActiveSubagentSession): boolean {
+  const status = `${subagent.runStatus} ${subagent.status}`.toLowerCase();
+  return status.includes("running") || status.includes("starting");
 }
 
 function terminalViewMarkKey(session: SessionSidebarRecord): string {

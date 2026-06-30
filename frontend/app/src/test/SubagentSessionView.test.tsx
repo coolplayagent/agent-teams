@@ -49,6 +49,57 @@ afterEach(() => {
 });
 
 describe("SubagentSessionView", () => {
+  it("shows a startup state before a running subagent id is known", async () => {
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Explore skills implementation")).toBeVisible();
+    expect(screen.getByText("Starting subagent...")).toBeVisible();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(controller.startRunStream).not.toHaveBeenCalled();
+  });
+
+  it("streams a running subagent panel before its instance id is known", async () => {
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "",
+        runId: "subagent_run_1",
+        text: "Live subagent output",
+      }),
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "subagent_run_1",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Live subagent output")).toBeVisible();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: undefined,
+        foreground: true,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
   it("streams an active subagent run from the last checkpoint", async () => {
     setRuntimeEntries([
       runtimeMessageEntry({

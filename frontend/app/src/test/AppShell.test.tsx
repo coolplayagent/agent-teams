@@ -22,7 +22,11 @@ import {
   markSessionTerminalRunViewed,
   saveUiLanguageSettings,
 } from "../api/client";
-import type { SessionRecord, SessionSidebarRecord } from "../api/contracts";
+import type {
+  SessionRecord,
+  SessionSidebarRecord,
+  SessionSubagentRecord,
+} from "../api/contracts";
 import { ApiError } from "../api/http";
 import { AppShell } from "../features/shell/AppShell";
 import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
@@ -80,6 +84,56 @@ vi.mock("../features/recovery/RecoveryBar", () => ({
 }));
 
 vi.mock("../features/sessions/SessionsSidebar", () => ({
+  normalizeSessionSubagent: (
+    record: {
+      created_at?: string;
+      instance_id?: string;
+      interactive?: boolean;
+      last_event_id?: number;
+      role_id?: string;
+      run_id?: string;
+      run_phase?: string;
+      run_status?: string;
+      session_id?: string;
+      status?: string;
+      subagent_instance_id?: string;
+      subagent_kind?: string;
+      subagent_role_id?: string;
+      subagent_run_id?: string;
+      title?: string;
+      updated_at?: string;
+    },
+    fallbackSessionId: string,
+  ) => {
+    const firstTrimmed = (...values: Array<string | undefined>) =>
+      values.map((value) => value?.trim() ?? "").find((value) => value.length > 0) ?? "";
+    const sessionId = firstTrimmed(record.session_id, fallbackSessionId);
+    const instanceId = firstTrimmed(record.subagent_instance_id, record.instance_id);
+    const roleId = firstTrimmed(record.subagent_role_id, record.role_id);
+    const runId = firstTrimmed(record.subagent_run_id, record.run_id);
+    if (!sessionId || !instanceId || !roleId || !runId) {
+      return null;
+    }
+    const status = firstTrimmed(record.status, "idle").toLowerCase();
+    return {
+      createdAt: firstTrimmed(record.created_at),
+      instanceId,
+      interactive: record.interactive === true,
+      lastEventId:
+        typeof record.last_event_id === "number" && record.last_event_id > 0
+          ? Math.floor(record.last_event_id)
+          : null,
+      roleId,
+      runId,
+      runPhase: firstTrimmed(record.run_phase),
+      runStatus: firstTrimmed(record.run_status, status).toLowerCase(),
+      sessionId,
+      status,
+      subagentKind: firstTrimmed(record.subagent_kind, "normal"),
+      title: firstTrimmed(record.title),
+      updatedAt: firstTrimmed(record.updated_at, record.created_at),
+    };
+  },
   SessionsSidebar: ({
     backendStatus,
     navigationItems = [],
@@ -219,6 +273,7 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
     workspaceId,
   }: {
     onSubagentOpen?: (subagent: {
+      description?: string;
       instanceId?: string;
       roleId?: string;
       runId?: string;
@@ -248,6 +303,20 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
         type="button"
       >
         Subagent tool
+      </button>
+      <button
+        data-testid="open-pending-subagent-from-timeline"
+        onClick={() => {
+          onSubagentOpen?.({
+            description: "Explore skills implementation",
+            roleId: "explorer",
+            sessionId: sessionId ?? "session-1",
+            title: "Explore skills implementation",
+          });
+        }}
+        type="button"
+      >
+        Pending subagent tool
       </button>
     </div>
   ),
@@ -1230,6 +1299,64 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("session-search-view")).toBeVisible();
     expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
     expect(screen.queryByText("Subagent Explorer")).not.toBeInTheDocument();
+  });
+
+  it("opens running subagent timeline cards before backend ids hydrate", async () => {
+    let resolveSubagents: ((records: SessionSubagentRecord[]) => void) | undefined;
+    listSessionSubagentsMock.mockReturnValue(
+      new Promise<SessionSubagentRecord[]>((resolve) => {
+        resolveSubagents = resolve;
+      }),
+    );
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-pending-subagent-from-timeline"));
+
+    const subagentSurface = await screen.findByTestId("subagent-session-view");
+    expect(subagentSurface).toHaveAttribute("data-session-id", "session-1");
+    expect(subagentSurface).toHaveAttribute("data-instance-id", "");
+    expect(subagentSurface).toHaveAttribute("data-run-id", "");
+    expect(subagentSurface).toHaveAttribute("data-run-status", "running");
+    expect(screen.getByText("Explore skills implementation")).toBeVisible();
+
+    await waitFor(() =>
+      expect(listSessionSubagentsMock).toHaveBeenCalledWith("session-1", true),
+    );
+    if (resolveSubagents === undefined) {
+      throw new Error("Subagent discovery query did not start.");
+    }
+    const resolveHydratedSubagents = resolveSubagents;
+    await act(async () => {
+      resolveHydratedSubagents([
+        {
+          created_at: "2026-06-23T10:02:00Z",
+          instance_id: "subagent-instance-running",
+          last_event_id: 11,
+          role_id: "explorer",
+          run_id: "subagent_run_running",
+          run_status: "running",
+          session_id: "session-1",
+          status: "running",
+          subagent_instance_id: "subagent-instance-running",
+          subagent_kind: "normal",
+          subagent_role_id: "explorer",
+          subagent_run_id: "subagent_run_running",
+          title: "Explore skills implementation",
+          updated_at: "2026-06-23T10:03:00Z",
+        },
+      ]);
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("subagent-session-view")).toHaveAttribute(
+        "data-instance-id",
+        "subagent-instance-running",
+      ),
+    );
+    expect(screen.getByTestId("subagent-session-view")).toHaveAttribute(
+      "data-run-id",
+      "subagent_run_running",
+    );
   });
 
   it("keeps the subagent surface active when pending main session detail resolves", async () => {

@@ -196,6 +196,10 @@ export function MessageTimeline({
     () => timelineOutputTextByRunId(persistedRows),
     [persistedRows],
   );
+  const hydratedThinkingTextByRunId = useMemo(
+    () => timelineThinkingTextByRunId(persistedRows),
+    [persistedRows],
+  );
   const hydratedToolKeysByRunId = useMemo(
     () => timelineToolKeysByRunId(persistedRows),
     [persistedRows],
@@ -209,11 +213,13 @@ export function MessageTimeline({
             sessionId,
             runtimeRunId,
             hydratedOutputTextByRunId,
+            hydratedThinkingTextByRunId,
             hydratedToolKeysByRunId,
           ),
         ),
     [
       hydratedOutputTextByRunId,
+      hydratedThinkingTextByRunId,
       hydratedToolKeysByRunId,
       runtimeRunId,
       runtimeState.runs,
@@ -2450,19 +2456,51 @@ function timelineToolKeysByRunId(rows: TimelineRow[]): Map<string, Set<string>> 
   return toolKeysByRunId;
 }
 
+function timelineThinkingTextByRunId(rows: TimelineRow[]): Map<string, string> {
+  const textByRunId = new Map<string, string>();
+  for (const row of rows) {
+    if (!isAnswerRole(row.role)) {
+      continue;
+    }
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0) {
+      continue;
+    }
+    const text = normalizedTimelineText(
+      row.parts
+        .filter((part): part is TimelineThinkingPart => part.kind === "thinking")
+        .map((part) => part.text)
+        .join(" "),
+    );
+    if (text.length > 0) {
+      textByRunId.set(
+        runId,
+        [textByRunId.get(runId) ?? "", text].filter(Boolean).join(" "),
+      );
+    }
+  }
+  return textByRunId;
+}
+
 function runtimeEntriesAfterHydration(
   runState: RuntimeRunState,
   sessionId: string | null,
   runtimeRunId: string | null,
   hydratedOutputTextByRunId: Map<string, string>,
+  hydratedThinkingTextByRunId: Map<string, string>,
   hydratedToolKeysByRunId: Map<string, Set<string>>,
 ): TimelineEntry[] {
   const scopedEntries = runState.entries.filter((entry) =>
     runtimeEntryMatchesScope(entry, sessionId, runtimeRunId),
   );
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
+  const hydratedThinkingText = hydratedThinkingTextByRunId.get(runState.runId);
   const hydratedToolKeys = hydratedToolKeysByRunId.get(runState.runId) ?? new Set<string>();
-  if (hydratedText === undefined && hydratedToolKeys.size === 0) {
+  if (
+    hydratedText === undefined &&
+    hydratedThinkingText === undefined &&
+    hydratedToolKeys.size === 0
+  ) {
     return openRuntimeEntriesWithIdleCursor(runState, scopedEntries);
   }
   if (runState.status === "closed") {
@@ -2471,6 +2509,7 @@ function runtimeEntriesAfterHydration(
         entry,
         runState,
         hydratedText ?? "",
+        hydratedThinkingText ?? "",
         hydratedToolKeys,
       ),
     );
@@ -2480,6 +2519,9 @@ function runtimeEntriesAfterHydration(
   let suppressCoveredText = true;
   for (const entry of scopedEntries) {
     if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolKeys)) {
+      continue;
+    }
+    if (runtimeEntryIsCoveredByHydratedThinking(entry, hydratedThinkingText ?? "")) {
       continue;
     }
     if (
@@ -2602,9 +2644,13 @@ function runtimeEntryIsCoveredByHydratedOutput(
   entry: TimelineEntry,
   runState: RuntimeRunState,
   hydratedText: string,
+  hydratedThinkingText: string,
   hydratedToolKeys: Set<string>,
 ): boolean {
   if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolKeys)) {
+    return true;
+  }
+  if (runtimeEntryIsCoveredByHydratedThinking(entry, hydratedThinkingText)) {
     return true;
   }
   if (entry.kind === "text_delta" || entry.kind === "output_delta") {
@@ -2620,6 +2666,17 @@ function runtimeEntryIsCoveredByHydratedOutput(
     entry.kind === "run_resumed" ||
     entry.kind === "run_completed"
   );
+}
+
+function runtimeEntryIsCoveredByHydratedThinking(
+  entry: TimelineEntry,
+  hydratedThinkingText: string,
+): boolean {
+  if (entry.kind !== "thinking_delta" || hydratedThinkingText.length === 0) {
+    return false;
+  }
+  const text = normalizedTimelineText(thinkingDeltaText(entry));
+  return text.length > 0 && hydratedThinkingText.includes(text);
 }
 
 function runtimeEntryShouldRenderChatContent(entry: TimelineEntry): boolean {
@@ -4117,8 +4174,7 @@ function MessageToolBlock({
   const subagentReference = completeSubagentReference(tool.subagent, sessionId);
   const canOpenSubagent =
     onSubagentOpen !== undefined &&
-    subagentReference !== null &&
-    status !== "running";
+    subagentReference !== null;
   const hasDetails =
     tool.callId.trim().length > 0 ||
     tool.body.trim().length > 0 ||

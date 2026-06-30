@@ -1121,6 +1121,25 @@ body {
   padding: 14px 16px 24px;
 }
 
+.at-subagent-session-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: start;
+  justify-self: start;
+  margin: 16px;
+  color: var(--at-text-muted);
+  font-size: 13px;
+}
+
+.at-subagent-session-pending-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--at-primary);
+  animation: at-streaming-cursor-pulse 0.9s ease-in-out infinite alternate;
+}
+
 .at-recovery {
   grid-row: 2;
   justify-self: center;

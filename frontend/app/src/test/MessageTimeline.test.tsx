@@ -2197,6 +2197,67 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("does not replay hydrated thinking from a closed runtime stream", async () => {
+    const thinkingText =
+      "The user wants me to explore the project to understand how the Skill system is implemented.";
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        run_id: "run-thinking",
+        trace_id: "run-thinking",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: thinkingText,
+        }),
+        run_id: "run-thinking",
+        trace_id: "run-thinking",
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "thinking_finished",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        run_id: "run-thinking",
+        trace_id: "run-thinking",
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+        run_id: "run-thinking",
+        trace_id: "run-thinking",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: thinkingText,
+              part_kind: "thinking",
+            },
+          ],
+        },
+        message_id: "assistant-thinking",
+        role_id: "MainAgent",
+        run_id: "run-thinking",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-thinking",
+    });
+
+    expect(await screen.findByText("Thinking")).toBeInTheDocument();
+    expect(screen.getAllByText(thinkingText)).toHaveLength(1);
+    expect(container.querySelectorAll(".at-message-thinking")).toHaveLength(1);
+  });
+
   it("keeps live tool and approval rows after hydrated text in an open stream", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -3338,6 +3399,50 @@ describe("MessageTimeline", () => {
       sessionId: "session-1",
       title: "Explore skills implementation",
     }));
+  });
+
+  it("opens a running subagent tool card before backend ids are hydrated", async () => {
+    const onSubagentOpen = vi.fn();
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+        payload_json: JSON.stringify({
+          args: {
+            description: "Explore how Skills are implemented in this project",
+            prompt: "Explore the project without editing files.",
+            role_id: "Explorer",
+          },
+          tool_call_id: "call-running-subagent",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      onSubagentOpen,
+      runtimeRunId: "run-main-tool",
+    });
+
+    const title = await screen.findByText("Starting subagent");
+    const tool = title.closest(".at-message-tool");
+    expect(tool).toHaveClass("is-openable-subagent");
+
+    fireEvent.click(title);
+
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      description: "Explore how Skills are implemented in this project",
+      roleId: "Explorer",
+      sessionId: "session-1",
+    }));
+    expect(toolPreviewTexts(container)).toEqual([
+      "Explore how Skills are implemented in this project",
+    ]);
   });
 
   it("keeps subagent orphan messages out of the main session timeline", async () => {

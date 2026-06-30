@@ -32,6 +32,7 @@ export function SubagentSessionView({
   const runStreamControllerRef = useRef(runStreamController);
   const previouslyTrackedRunRef = useRef(false);
   const runId = subagent.runId.trim();
+  const instanceId = subagent.instanceId.trim();
   const runtimeRunState = useRuntimeStore((state) =>
     runId ? state.runtimeState.runs[runId] ?? null : null,
   );
@@ -51,18 +52,29 @@ export function SubagentSessionView({
     displayedSubagent.runPhase,
   ].join("|");
   const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
-  const messageQueryKey = useMemo(
-    () => subagentMessagesQueryKey(subagent.sessionId, subagent.instanceId),
-    [subagent.instanceId, subagent.sessionId],
-  );
-  const loadSubagentMessages = useCallback(
-    () => listAgentMessages(subagent.sessionId, subagent.instanceId),
-    [subagent.instanceId, subagent.sessionId],
-  );
+  const hasMessageHistoryTarget = instanceId.length > 0;
+  const canRenderTimeline = hasMessageHistoryTarget || runId.length > 0;
   const title =
     displayedSubagent.title ||
     humanizeRoleId(displayedSubagent.roleId) ||
     displayedSubagent.instanceId;
+  const messageQueryKey = useMemo(
+    () => subagentMessagesQueryKey(
+      subagent.sessionId,
+      hasMessageHistoryTarget
+        ? instanceId
+        : `pending:${runId || title}`,
+    ),
+    [hasMessageHistoryTarget, instanceId, runId, subagent.sessionId, title],
+  );
+  const loadSubagentMessages = useCallback(
+    () => (
+      hasMessageHistoryTarget
+        ? listAgentMessages(subagent.sessionId, instanceId)
+        : Promise.resolve([])
+    ),
+    [hasMessageHistoryTarget, instanceId, subagent.sessionId],
+  );
 
   useEffect(() => {
     runStreamControllerRef.current = runStreamController;
@@ -93,7 +105,7 @@ export function SubagentSessionView({
   useEffect(() => {
     let cancelled = false;
     const tracked = runId.length > 0 && runStreamController.trackedRunIds.includes(runId);
-    if (previouslyTrackedRunRef.current && !tracked) {
+    if (previouslyTrackedRunRef.current && !tracked && hasMessageHistoryTarget) {
       void refreshSubagentTerminalHistory({
         expectedToolCallIds: expectedTerminalToolCallIds,
         instanceId: subagent.instanceId,
@@ -118,6 +130,7 @@ export function SubagentSessionView({
   }, [
     expectedTerminalToolCallIds,
     expectedTerminalToolCallKey,
+    hasMessageHistoryTarget,
     subagent.instanceId,
     messageQueryKey,
     queryClient,
@@ -149,17 +162,24 @@ export function SubagentSessionView({
         </div>
       </header>
       <div className="at-subagent-session-body">
-        <MessageTimeline
-          emptyDescription={t("subagentSessionEmpty")}
-          fallbackRunId={runId}
-          loadErrorDescription={t("subagentSessionLoadError")}
-          loadMessages={loadSubagentMessages}
-          messageQueryKey={messageQueryKey}
-          roundsEnabled={false}
-          runtimeRunId={runId}
-          sessionId={subagent.sessionId}
-          variant="subagent-panel"
-        />
+        {canRenderTimeline ? (
+          <MessageTimeline
+            emptyDescription={t("subagentSessionEmpty")}
+            fallbackRunId={runId}
+            loadErrorDescription={t("subagentSessionLoadError")}
+            loadMessages={loadSubagentMessages}
+            messageQueryKey={messageQueryKey}
+            roundsEnabled={false}
+            runtimeRunId={runId}
+            sessionId={subagent.sessionId}
+            variant="subagent-panel"
+          />
+        ) : (
+          <div className="at-subagent-session-pending" role="status">
+            <span aria-hidden="true" className="at-subagent-session-pending-dot" />
+            <span>{t("subagentSessionStarting")}</span>
+          </div>
+        )}
       </div>
     </div>
   );

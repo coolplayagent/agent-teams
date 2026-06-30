@@ -4574,7 +4574,7 @@ body {
   column-gap: 8px;
   row-gap: var(--at-message-gap);
   padding: 14px 0;
-  border-bottom: 1px solid var(--at-border);
+  border-bottom: 0;
 }
 
 .at-message.is-runtime {
@@ -4833,7 +4833,7 @@ body {
 
 .at-message-thinking {
   max-width: 100%;
-  border: 1px solid var(--at-border);
+  border: 1px solid color-mix(in srgb, var(--at-border) 72%, transparent);
   border-radius: 6px;
   background: var(--at-surface-muted);
   overflow: hidden;
@@ -4904,7 +4904,7 @@ body {
 
 .at-message-tool {
   max-width: 100%;
-  border: 1px solid var(--at-border);
+  border: 1px solid color-mix(in srgb, var(--at-border) 72%, transparent);
   border-radius: 6px;
   background: var(--at-surface);
   overflow: hidden;
@@ -4928,6 +4928,16 @@ body {
   color: var(--at-text);
   font-size: 13px;
   list-style: none;
+}
+
+.at-message-tool:not([open])[data-status="completed"] .at-message-tool-summary {
+  color: color-mix(in srgb, var(--at-text) 82%, var(--at-text-muted));
+}
+
+.at-message-tool:not([open])[data-status="running"] .at-message-tool-summary,
+.at-message-tool:not([open])[data-status="error"] .at-message-tool-summary,
+.at-message-tool:not([open])[data-status="validation_failed"] .at-message-tool-summary {
+  color: var(--at-text);
 }
 
 .at-message-tool-summary::-webkit-details-marker {
@@ -4978,6 +4988,23 @@ body {
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.at-message-tool-spinner {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin-left: auto;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--at-primary) 22%, transparent);
+  border-top-color: var(--at-primary);
+  animation: at-tool-spinner 0.8s linear infinite;
+}
+
+@keyframes at-tool-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .at-message-tool-body {

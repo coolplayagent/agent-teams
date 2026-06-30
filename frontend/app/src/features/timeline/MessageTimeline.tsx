@@ -36,6 +36,17 @@ const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
 const TOOL_RESULT_MAX_CHARS = 12000;
 const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
+const HIDDEN_RUNTIME_CHAT_EVENT_KINDS = new Set<string>([
+  "injection_applied",
+  "injection_enqueued",
+  "model_step_finished",
+  "model_step_started",
+  "run_completed",
+  "run_resumed",
+  "run_started",
+  "token_usage",
+  "tool_call_batch_sealed",
+]);
 const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
@@ -114,17 +125,19 @@ export function MessageTimeline({
   );
   const persistedRows = useMemo(
     () =>
-      persistedMessages
-        .map((messageItem, index) =>
-          messageToRow(
-            messageItem,
-            index,
-            messageRoundLookup,
-            fallbackRunId,
-            workspaceId,
-          ),
-        )
-        .filter(timelineRowHasRenderableContent),
+      mergeToolRowsByCallId(
+        persistedMessages
+          .map((messageItem, index) =>
+            messageToRow(
+              messageItem,
+              index,
+              messageRoundLookup,
+              fallbackRunId,
+              workspaceId,
+            ),
+          )
+          .filter(timelineRowHasRenderableContent),
+      ),
     [fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
   );
   const hydratedOutputTextByRunId = useMemo(
@@ -945,6 +958,178 @@ function historyDividerRow(
   };
 }
 
+function mergeToolRowsByCallId(rows: TimelineRow[]): TimelineRow[] {
+  const mergedRows: TimelineRow[] = [];
+  const toolRowsByKey = new Map<string, { row: TimelineRow; tool: TimelineToolPart }>();
+  for (const originalRow of rows) {
+    const row = mergeToolPartsWithinRow(originalRow);
+    const keptParts: TimelineRenderPart[] = [];
+    const newToolParts: { key: string; tool: TimelineToolPart }[] = [];
+    let changed = false;
+    for (const part of row.parts) {
+      if (!mergeableToolPart(part)) {
+        keptParts.push(part);
+        continue;
+      }
+      const key = timelineToolRowMergeKey(row, part);
+      if (key === null) {
+        keptParts.push(part);
+        continue;
+      }
+      const existing = toolRowsByKey.get(key);
+      if (existing === undefined) {
+        keptParts.push(part);
+        newToolParts.push({ key, tool: part });
+        continue;
+      }
+      mergeToolPartState(existing.tool, part);
+      existing.row.text = rowCopyText(existing.row.parts);
+      existing.row.copyable = false;
+      changed = true;
+    }
+    const nextRow = changed
+      ? {
+          ...row,
+          copyable: row.copyable && keptParts.every((part) => part.kind === "text"),
+          parts: keptParts,
+          text: rowCopyText(keptParts),
+        }
+      : row;
+    if (timelineRowHasRenderableContent(nextRow)) {
+      mergedRows.push(nextRow);
+    }
+    for (const { key, tool } of newToolParts) {
+      toolRowsByKey.set(key, { row: nextRow, tool });
+    }
+  }
+  return dropDuplicateRowsAfterToolMerge(mergedRows);
+}
+
+function mergeToolPartsWithinRow(row: TimelineRow): TimelineRow {
+  const toolPartsByKey = new Map<string, TimelineToolPart>();
+  const mergedParts: TimelineRenderPart[] = [];
+  let changed = false;
+  for (const part of row.parts) {
+    if (!mergeableToolPart(part)) {
+      mergedParts.push(part);
+      continue;
+    }
+    const key = part.callId.trim();
+    const existing = toolPartsByKey.get(key);
+    if (existing === undefined) {
+      toolPartsByKey.set(key, part);
+      mergedParts.push(part);
+      continue;
+    }
+    mergeToolPartState(existing, part);
+    changed = true;
+  }
+  if (!changed) {
+    return row;
+  }
+  return {
+    ...row,
+    copyable: row.copyable && mergedParts.every((part) => part.kind === "text"),
+    parts: mergedParts,
+    text: rowCopyText(mergedParts),
+  };
+}
+
+function mergeableToolPart(part: TimelineRenderPart): part is TimelineToolPart {
+  return (
+    part.kind === "tool" &&
+    part.callId.trim().length > 0 &&
+    part.phase !== "approval-requested" &&
+    part.phase !== "approval-resolved"
+  );
+}
+
+function dropDuplicateRowsAfterToolMerge(rows: TimelineRow[]): TimelineRow[] {
+  const seenNonToolContent = new Set<string>();
+  const dedupedRows: TimelineRow[] = [];
+  for (const row of rows) {
+    const dedupeKey = timelineRowNonToolContentDedupeKey(row);
+    const hasTool = row.parts.some((part) => part.kind === "tool");
+    if (!hasTool && dedupeKey !== null && seenNonToolContent.has(dedupeKey)) {
+      continue;
+    }
+    dedupedRows.push(row);
+    if (dedupeKey !== null) {
+      seenNonToolContent.add(dedupeKey);
+    }
+  }
+  return dedupedRows;
+}
+
+function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
+  const runId = row.runId?.trim() ?? "";
+  if (runId.length === 0) {
+    return null;
+  }
+  const text = normalizedTimelineText(
+    row.parts
+      .map(timelineNonToolPartDedupeText)
+      .filter((partText) => partText.length > 0)
+      .join("\n\n"),
+  );
+  if (text.length === 0) {
+    return null;
+  }
+  return [
+    runId,
+    stableTimelineRole(row.role),
+    row.instanceId ?? "",
+    text,
+  ].join(":");
+}
+
+function timelineNonToolPartDedupeText(part: TimelineRenderPart): string {
+  if (part.kind === "text" || part.kind === "thinking") {
+    return part.text;
+  }
+  if (part.kind === "media") {
+    return part.url;
+  }
+  return "";
+}
+
+function timelineToolRowMergeKey(
+  row: TimelineRow,
+  tool: TimelineToolPart,
+): string | null {
+  const runId = row.runId?.trim() ?? "";
+  const callId = tool.callId.trim();
+  if (runId.length === 0 || callId.length === 0) {
+    return null;
+  }
+  return `${runId}:${callId}`;
+}
+
+function mergeToolPartState(
+  existing: TimelineToolPart,
+  next: TimelineToolPart,
+): void {
+  if (next.phase === "call") {
+    existing.body = appendToolCallArgsToResultBody(existing.body, next.body);
+    if (existing.toolName === "unknown_tool" && next.toolName !== "unknown_tool") {
+      existing.toolName = next.toolName;
+    }
+    return;
+  }
+  const argsBody = existing.phase === "call" ? existing.body : "";
+  const nextBody = next.body.trim().length > 0 ? next.body : existing.body;
+  existing.action = next.action || existing.action;
+  existing.body = argsBody
+    ? appendToolCallArgsToResultBody(nextBody, argsBody)
+    : nextBody;
+  existing.error = next.error;
+  existing.mediaParts = next.mediaParts.length > 0
+    ? next.mediaParts
+    : existing.mediaParts;
+  existing.phase = next.phase;
+  existing.toolName = next.toolName || existing.toolName;
+}
+
 function roundHasClearMarker(round: SessionRound): boolean {
   const marker = round.clear_marker_before;
   if (marker === undefined || marker === null) {
@@ -1021,11 +1206,20 @@ function runtimeEntriesToRows(
     if (entryClosesThinking(entry.kind)) {
       closeActiveThinkingForRun(entry.runId, activeThinking);
     }
-    closeRuntimeTextSegment(entry, rows, activeText);
     if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
       removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
     }
+    if (!runtimeEntryShouldRenderChatContent(entry)) {
+      if (runtimeHiddenEntryClosesText(entry)) {
+        closeRuntimeTextSegment(entry, rows, activeText);
+      }
+      continue;
+    }
+    closeRuntimeTextSegment(entry, rows, activeText);
     if (mergeRuntimeToolCallIntoResolvedRow(rows, entry, resolvedToolCallIds)) {
+      continue;
+    }
+    if (mergeRuntimeToolResultIntoPendingRow(rows, entry)) {
       continue;
     }
     rows.push(runtimeEntryToRow(entry));
@@ -1183,6 +1377,48 @@ function appendToolCallArgsToResultBody(resultBody: string, argsBody: string): s
     return trimmedResult;
   }
   return `${trimmedResult}\n\n${trimmedArgs}`;
+}
+
+function mergeRuntimeToolResultIntoPendingRow(
+  rows: TimelineRow[],
+  entry: TimelineEntry,
+): boolean {
+  if (entry.kind !== "tool_result" && entry.kind !== "tool_input_validation_failed") {
+    return false;
+  }
+  const nextTool = runtimeToolPart(entry);
+  if (nextTool === null || nextTool.callId.trim().length === 0) {
+    return false;
+  }
+  const pendingTool = findPendingRuntimeToolPart(rows, entry.runId, nextTool.callId);
+  if (pendingTool === null) {
+    return false;
+  }
+  mergeToolPartState(pendingTool, nextTool);
+  return true;
+}
+
+function findPendingRuntimeToolPart(
+  rows: TimelineRow[],
+  runId: string,
+  callId: string,
+): TimelineToolPart | null {
+  for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+    const row = rows[rowIndex];
+    if (row === undefined || row.runId !== runId) {
+      continue;
+    }
+    const tool = row.parts.find(
+      (part): part is TimelineToolPart =>
+        part.kind === "tool" &&
+        part.callId === callId &&
+        part.phase === "call",
+    );
+    if (tool !== undefined) {
+      return tool;
+    }
+  }
+  return null;
 }
 
 function runtimeEntryToolCallId(entry: TimelineEntry): string {
@@ -1544,7 +1780,7 @@ function timelineToolKeysByRunId(rows: TimelineRow[]): Map<string, Set<string>> 
         continue;
       }
       const toolKeys = toolKeysByRunId.get(runId) ?? new Set<string>();
-      toolKeys.add(timelineToolHydrationKey(part.callId, part.phase));
+      toolKeys.add(timelineToolHydrationKey(part.callId));
       toolKeysByRunId.set(runId, toolKeys);
     }
   }
@@ -1604,17 +1840,27 @@ function openRuntimeEntriesWithIdleCursor(
     return entries;
   }
   const visibleEntries = entries.filter(
-    (entry) => !runtimeSilentOpenLifecycleEntry(entry),
+    (entry) =>
+      runtimeEntryShouldRenderChatContent(entry) &&
+      !runtimeSilentOpenLifecycleEntry(entry),
+  );
+  const rowPipelineEntries = entries.filter(
+    (entry) =>
+      (
+        runtimeEntryShouldRenderChatContent(entry) &&
+        !runtimeSilentOpenLifecycleEntry(entry)
+      ) ||
+      runtimeHiddenEntryClosesText(entry),
   );
   const latestVisibleEntry = visibleEntries.at(-1);
   if (
     latestVisibleEntry !== undefined &&
     runtimeEntryRestoresIdleCursor(latestVisibleEntry)
   ) {
-    return [...visibleEntries, runtimeIdleCursorEntry(latestVisibleEntry)];
+    return [...rowPipelineEntries, runtimeIdleCursorEntry(latestVisibleEntry)];
   }
   if (visibleEntries.some(runtimeEntryProducesRenderableRow)) {
-    return visibleEntries;
+    return rowPipelineEntries;
   }
   return [...visibleEntries, runtimeIdleCursorEntry(entries[0])];
 }
@@ -1627,7 +1873,7 @@ function runtimeSilentOpenLifecycleEntry(entry: TimelineEntry): boolean {
 }
 
 function runtimeEntryProducesRenderableRow(entry: TimelineEntry): boolean {
-  return runtimeEntryParts(entry).length > 0;
+  return runtimeEntryShouldRenderChatContent(entry) && runtimeEntryParts(entry).length > 0;
 }
 
 function runtimeEntryRestoresIdleCursor(entry: TimelineEntry): boolean {
@@ -1713,6 +1959,18 @@ function runtimeEntryIsCoveredByHydratedOutput(
   );
 }
 
+function runtimeEntryShouldRenderChatContent(entry: TimelineEntry): boolean {
+  return !HIDDEN_RUNTIME_CHAT_EVENT_KINDS.has(entry.kind);
+}
+
+function runtimeHiddenEntryClosesText(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "injection_applied" ||
+    entry.kind === "injection_enqueued" ||
+    entry.kind === "run_completed"
+  );
+}
+
 function runtimeEntryIsCoveredByHydratedTool(
   entry: TimelineEntry,
   hydratedToolKeys: Set<string>,
@@ -1722,8 +1980,7 @@ function runtimeEntryIsCoveredByHydratedTool(
 }
 
 function runtimeToolHydrationKey(entry: TimelineEntry): string | null {
-  const phase = runtimeToolHydrationPhase(entry.kind);
-  if (phase === null) {
+  if (!runtimeEntryIsToolHydrationCandidate(entry.kind)) {
     return null;
   }
   const payload = jsonObject(entry.payload);
@@ -1731,29 +1988,24 @@ function runtimeToolHydrationKey(entry: TimelineEntry): string | null {
     return null;
   }
   const callId = objectString(payload, "tool_call_id");
-  return callId.length > 0 ? timelineToolHydrationKey(callId, phase) : null;
+  return callId.length > 0 ? timelineToolHydrationKey(callId) : null;
 }
 
-function runtimeToolHydrationPhase(
+function runtimeEntryIsToolHydrationCandidate(
   kind: TimelineEntry["kind"],
-): TimelineToolPart["phase"] | null {
+): boolean {
   switch (kind) {
     case "tool_call":
-      return "call";
     case "tool_result":
-      return "result";
     case "tool_input_validation_failed":
-      return "validation";
+      return true;
     default:
-      return null;
+      return false;
   }
 }
 
-function timelineToolHydrationKey(
-  callId: string,
-  phase: TimelineToolPart["phase"],
-): string {
-  return `${callId}:${phase}`;
+function timelineToolHydrationKey(callId: string): string {
+  return callId.trim();
 }
 
 function runtimeHydrationComparisonTexts(entry: TimelineEntry): string[] {
@@ -1995,6 +2247,7 @@ function timelineMessageDedupeKeys(message: TimelineMessage): string[] {
   return [
     timelineMessageIdDedupeKey(message),
     timelineMessageFingerprintDedupeKey(message),
+    timelineMessageContentDedupeKey(message),
   ].filter((key): key is string => key !== null);
 }
 
@@ -2015,6 +2268,33 @@ function timelineMessageFingerprintDedupeKey(message: TimelineMessage): string {
     message.role_id ?? message.role ?? "",
     timelineMessagePrimaryText(message),
   ].join(":");
+}
+
+function timelineMessageContentDedupeKey(message: TimelineMessage): string | null {
+  const runId = (message.run_id ?? message.trace_id ?? "").trim();
+  const text = normalizedTimelineText(timelineMessagePrimaryText(message));
+  if (runId.length === 0 || text.length === 0) {
+    return null;
+  }
+  return [
+    "content",
+    runId,
+    message.entry_type ?? "",
+    timelineMessageStableRole(message),
+    text,
+  ].join(":");
+}
+
+function timelineMessageStableRole(message: TimelineMessage): string {
+  return stableTimelineRole(message.role_id ?? message.role ?? "");
+}
+
+function stableTimelineRole(roleName: string): string {
+  const role = roleName.trim().toLowerCase();
+  if (role === "agent" || role === "assistant" || role === "mainagent") {
+    return "assistant";
+  }
+  return role;
 }
 
 function messageRunId(
@@ -2247,6 +2527,9 @@ function runtimeStreamKey(entry: TimelineEntry): string {
 }
 
 function runtimeEntryParts(entry: TimelineEntry): TimelineRenderPart[] {
+  if (!runtimeEntryShouldRenderChatContent(entry)) {
+    return [];
+  }
   const runtimeMessageParts = runtimeMessageRenderParts(entry);
   if (runtimeMessageParts !== null) {
     return runtimeMessageParts;
@@ -2973,12 +3256,19 @@ function MessageToolBlock({
 }) {
   const title = `${toolPhaseLabel(tool, t)}: ${tool.toolName}`;
   const preview = toolSummaryPreview(tool);
+  const status = toolBlockStatus(tool);
+  const isRunning = status === "running";
   const hasDetails =
     tool.callId.trim().length > 0 ||
     tool.body.trim().length > 0 ||
     tool.mediaParts.length > 0;
   return (
-    <details className={`at-message-tool ${tool.error ? "is-error" : ""}`}>
+    <details
+      className={`at-message-tool ${tool.error ? "is-error" : ""}`}
+      data-status={status}
+      data-tool-call-id={tool.callId || undefined}
+      data-tool-name={tool.toolName}
+    >
       <summary className="at-message-tool-summary">
         <span className="at-message-tool-title">
           <Wrench aria-hidden="true" size={14} />
@@ -2986,6 +3276,9 @@ function MessageToolBlock({
         </span>
         {preview ? (
           <span className="at-message-tool-preview" title={preview}>{preview}</span>
+        ) : null}
+        {isRunning ? (
+          <span className="at-message-tool-spinner" aria-label={t("timelineToolRunningStatus")} />
         ) : null}
       </summary>
       {hasDetails ? (
@@ -3005,6 +3298,21 @@ function MessageToolBlock({
       ) : null}
     </details>
   );
+}
+
+function toolBlockStatus(
+  tool: TimelineToolPart,
+): "completed" | "error" | "running" | "validation_failed" {
+  if (tool.phase === "call" || tool.phase === "approval-requested") {
+    return "running";
+  }
+  if (tool.phase === "validation") {
+    return "validation_failed";
+  }
+  if (tool.error) {
+    return "error";
+  }
+  return "completed";
 }
 
 function MessageMediaPreview({
@@ -3787,15 +4095,107 @@ function toolPhaseLabel(tool: TimelineToolPart, t: Translate): string {
     return t("timelineApprovalResolved");
   }
   if (tool.phase === "call") {
-    return t("timelineToolCall");
+    return toolActionLabel(tool.toolName, "running", t);
   }
   if (tool.phase === "validation") {
     return t("timelineToolValidation");
   }
   if (tool.error) {
-    return t("timelineToolError");
+    return toolActionLabel(tool.toolName, "error", t);
   }
-  return t("timelineToolResult");
+  return toolActionLabel(tool.toolName, "completed", t);
+}
+
+function toolActionLabel(
+  toolName: string,
+  phase: "completed" | "error" | "running",
+  t: Translate,
+): string {
+  const category = toolActionCategory(toolName);
+  if (category === "run") {
+    if (phase === "running") {
+      return t("timelineToolRunningRun");
+    }
+    if (phase === "error") {
+      return t("timelineToolErrorRun");
+    }
+    return t("timelineToolCompletedRun");
+  }
+  if (category === "read") {
+    if (phase === "running") {
+      return t("timelineToolRunningRead");
+    }
+    if (phase === "error") {
+      return t("timelineToolErrorRead");
+    }
+    return t("timelineToolCompletedRead");
+  }
+  if (category === "edit") {
+    if (phase === "running") {
+      return t("timelineToolRunningEdit");
+    }
+    if (phase === "error") {
+      return t("timelineToolErrorEdit");
+    }
+    return t("timelineToolCompletedEdit");
+  }
+  if (category === "search") {
+    if (phase === "running") {
+      return t("timelineToolRunningSearch");
+    }
+    if (phase === "error") {
+      return t("timelineToolErrorSearch");
+    }
+    return t("timelineToolCompletedSearch");
+  }
+  if (phase === "running") {
+    return t("timelineToolRunningGeneric");
+  }
+  if (phase === "error") {
+    return t("timelineToolErrorGeneric");
+  }
+  return t("timelineToolCompletedGeneric");
+}
+
+function toolActionCategory(toolName: string): "edit" | "generic" | "read" | "run" | "search" {
+  const normalized = toolName.trim().toLowerCase().replaceAll("-", "_");
+  if (
+    normalized === "shell" ||
+    normalized === "command" ||
+    normalized === "terminal" ||
+    normalized.includes("exec") ||
+    normalized.includes("run_command")
+  ) {
+    return "run";
+  }
+  if (
+    normalized.includes("apply_patch") ||
+    normalized.includes("patch") ||
+    normalized.includes("edit") ||
+    normalized.includes("replace") ||
+    normalized.includes("update") ||
+    normalized.includes("write")
+  ) {
+    return "edit";
+  }
+  if (
+    normalized.includes("glob") ||
+    normalized.includes("grep") ||
+    normalized === "rg" ||
+    normalized.includes("search") ||
+    normalized.includes("find")
+  ) {
+    return "search";
+  }
+  if (
+    normalized.includes("read") ||
+    normalized.includes("fetch") ||
+    normalized.includes("list") ||
+    normalized.includes("open")
+  ) {
+    return "read";
+  }
+  return "generic";
 }
 
 function displayRole(role: string, t: Translate): string {
@@ -4014,15 +4414,19 @@ function readToolPayloadCandidates(value: unknown): string[] {
 }
 
 function parseTaggedReadPayload(text: string): string {
-  const content = extractTaggedSection(text, "content");
-  if (content.length === 0) {
-    return "";
-  }
   const metadata = [
     taggedMetadataLine(text, "path", "Path"),
     taggedMetadataLine(text, "type", "Type"),
   ].filter((line) => line.length > 0);
-  return [...metadata, "", content].join("\n").trim();
+  const content = extractTaggedSection(text, "content");
+  if (content.length > 0) {
+    return [...metadata, "", content].join("\n").trim();
+  }
+  const entries = extractTaggedSection(text, "entries");
+  if (entries.length > 0) {
+    return [...metadata, "", entries].join("\n").trim();
+  }
+  return metadata.join("\n").trim();
 }
 
 function taggedMetadataLine(text: string, tagName: string, label: string): string {

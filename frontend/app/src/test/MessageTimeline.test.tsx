@@ -320,7 +320,7 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("Streamed answer before terminal state"))
       .toBeVisible();
-    expect(await screen.findByText("Run completed: status completed")).toBeVisible();
+    expect(screen.queryByText("Run completed: status completed")).not.toBeInTheDocument();
     const copyButton = await screen.findByRole("button", {
       name: "Copy last answer",
     });
@@ -2326,12 +2326,13 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Full persisted answer")).toBeVisible();
     expect(screen.queryByText("duplicated runtime chunk")).not.toBeInTheDocument();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
-    expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
-    expect(screen.getByText("Tool error: execute_command")).toBeVisible();
-    expect(toolPreviewTexts(container)).toEqual([
-      "npm test",
-      "File not found: .",
-    ]);
+    expect(screen.queryByText("Tool call: execute_command")).not.toBeInTheDocument();
+    const toolTitle = await screen.findByText("Tool error: execute_command");
+    expect(toolTitle).toBeVisible();
+    expect(toolPreviewTexts(container)).toEqual(["File not found: ."]);
+    const toolBlock = screenElement(toolTitle).closest(".at-message-tool");
+    expect(toolBlock).toHaveAttribute("data-status", "error");
+    expect(toolPreElement(screenElement(toolTitle))).toHaveTextContent(/npm test/);
   });
 
   it("renders image media references with previewable images", async () => {
@@ -2589,25 +2590,92 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
-    expect(screen.getByText("Tool result: execute_command")).toBeVisible();
+    expect(screen.queryByText("Tool call: execute_command")).not.toBeInTheDocument();
+    const resultTitle = await screen.findByText("Tool result: execute_command");
+    expect(resultTitle).toBeVisible();
     expect(screen.getByText("Tool validation: read_file")).toBeVisible();
     expect(screen.getByText("Tool call: glob")).toBeVisible();
-    expect(screen.getByText("Tool call: execute_command"))
-      .toHaveAttribute("title", "Tool call: execute_command");
-    expect(screen.getByText("npm test")).toHaveAttribute("title", "npm test");
-    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(4);
+    expect(resultTitle).toHaveAttribute("title", "Tool result: execute_command");
+    expect(screen.getByText("tests passed")).toHaveAttribute("title", "tests passed");
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(3);
     expect(toolPreviewTexts(container)).toEqual([
-      "npm test",
       "tests passed",
       "path is required",
       "**/*.ts",
     ]);
     expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
 
-    fireEvent.click(screen.getByText("Tool call: execute_command"));
+    fireEvent.click(resultTitle);
 
     expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
+  });
+
+  it("drops duplicate persisted thinking rows left after tool replay merge", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: "Check the workspace state.",
+              part_kind: "thinking",
+            },
+            {
+              args: { command: "pwd" },
+              part_kind: "tool-call",
+              tool_call_id: "call-replayed",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "assistant-call",
+        role_id: "MainAgent",
+        run_id: "run-replayed",
+      },
+      {
+        message: {
+          parts: [
+            {
+              content: "done",
+              part_kind: "tool-return",
+              tool_call_id: "call-replayed",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "assistant-result",
+        role_id: "MainAgent",
+        run_id: "run-replayed",
+      },
+      {
+        message: {
+          parts: [
+            {
+              content: "Check the workspace state.",
+              part_kind: "thinking",
+            },
+            {
+              args: { command: "pwd" },
+              part_kind: "tool-call",
+              tool_call_id: "call-replayed",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "assistant-call-replayed",
+        role_id: "MainAgent",
+        run_id: "run-replayed",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    const resultTitle = await screen.findByText("Tool result: shell");
+    expect(resultTitle).toBeVisible();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Thinking")).toHaveLength(1);
+    expect(toolPreviewTexts(container)).toEqual(["done"]);
+    expect(toolPreElement(screenElement(resultTitle))).toHaveTextContent(/pwd/);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
   it("normalizes string tool args for persisted and runtime tool calls", async () => {
@@ -3154,20 +3222,20 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-output",
     });
 
-    expect(await screen.findByText("Tool call: shell")).toBeVisible();
-    expect(screen.getByText("Run completed: status completed")).toBeVisible();
-    const resultTitle = screen.getByText("Tool result: shell");
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    expect(screen.queryByText("Run completed: status completed")).not.toBeInTheDocument();
+    const resultTitle = await screen.findByText("Tool result: shell");
     expect(resultTitle).toBeVisible();
-    expect(toolPreviewTexts(container)).toEqual([
-      "cat report.txt",
-      "late finalized result",
-    ]);
+    expect(toolPreviewTexts(container)).toEqual(["late finalized result"]);
     const resultDetails = toolPreElement(screenElement(resultTitle));
     expect(resultDetails).not.toBeVisible();
     expect(resultDetails).toHaveTextContent(/late finalized result/);
+    expect(resultDetails).toHaveTextContent(/cat report.txt/);
+    expect(screenElement(resultTitle).closest(".at-message-tool"))
+      .toHaveAttribute("data-status", "completed");
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
   it("keeps hydrated text and idle continuation after a reconnected tool result", async () => {
@@ -3243,12 +3311,13 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("hello")).toBeVisible();
     expect(screen.queryAllByText("hello")).toHaveLength(1);
-    expect(screen.getByText("Tool call: shell")).toBeVisible();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
     const resultTitle = screen.getByText("Tool result: shell");
     expect(resultTitle).toBeVisible();
-    expect(toolPreviewTexts(container)).toEqual(["echo hi", "done"]);
+    expect(toolPreviewTexts(container)).toEqual(["done"]);
     const resultDetails = toolPreElement(screenElement(resultTitle));
     expect(resultDetails).toHaveTextContent(/done/);
+    expect(resultDetails).toHaveTextContent(/echo hi/);
     const streamingText = container.querySelector<HTMLElement>(
       ".at-message-streaming-text",
     );
@@ -3256,7 +3325,7 @@ describe("MessageTimeline", () => {
     expect(streamingText).not.toHaveTextContent("hello");
     expect(streamingText).not.toHaveTextContent("done");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(4);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
   });
 
   it("merges out-of-order parallel runtime tool calls into completed results", async () => {
@@ -3302,6 +3371,9 @@ describe("MessageTimeline", () => {
     const resultTitle = await screen.findByText("Tool result: shell");
     expect(screen.getByText("Tool call: shell")).toBeVisible();
     expect(container.querySelectorAll(".at-message-tool")).toHaveLength(2);
+    const resultTool = screenElement(resultTitle).closest(".at-message-tool");
+    expect(resultTool).toHaveAttribute("data-status", "completed");
+    expect(resultTool?.querySelector(".at-message-tool-spinner")).toBeNull();
     expect(toolPreviewTexts(container)).toEqual(["b done", "echo a"]);
     const resultDetails = toolPreElement(screenElement(resultTitle));
     expect(resultDetails.textContent).toContain("echo b");
@@ -3313,6 +3385,11 @@ describe("MessageTimeline", () => {
     expect(pendingCallRow).toHaveAttribute("data-run-id", "run-output");
     expect(pendingCallRow).toHaveAttribute("data-role-id", "Runner");
     expect(pendingCallRow).toHaveAttribute("data-instance-id", "worker-a");
+    const pendingTool = screenElement(screen.getByText("Tool call: shell"))
+      .closest(".at-message-tool");
+    expect(pendingTool).toHaveAttribute("data-status", "running");
+    expect(pendingTool?.querySelector(".at-message-tool-spinner")).not.toBeNull();
+    expect(container.querySelector(".at-message-tool-status")).toBeNull();
   });
 
   it("keeps same-name runtime tool calls separate when call ids are missing", async () => {
@@ -3654,24 +3731,25 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Injection applied: change direction · source user"))
       .toBeVisible();
     expect(screen.getByText("Tool error: shell")).toBeVisible();
-    expect(screen.getByText("Tool call: read_file")).toBeVisible();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool call: read_file")).not.toBeInTheDocument();
     expect(screen.getByText("Tool result: read_file")).toBeVisible();
     expect(toolPreviewTexts(container)).toEqual([
-      "ls missing",
       "Shell command failed",
-      "plugin_cli.py",
       "file content",
     ]);
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(7);
-    expect(rowTexts[0]).toContain("Tool call: shell");
-    expect(rowTexts[1]).toContain("Tool error: shell");
-    expect(rowTexts[2]).toContain("Injection applied: change direction");
-    expect(rowTexts[3]).toContain("Now let me read more files.");
-    expect(rowTexts[4]).toContain("Tool call: read_file");
-    expect(rowTexts[5]).toContain("Tool result: read_file");
-    expect(rowTexts[6]).toContain("done");
+    expect(rowTexts).toHaveLength(5);
+    expect(rowTexts[0]).toContain("Tool error: shell");
+    expect(rowTexts[1]).toContain("Injection applied: change direction");
+    expect(rowTexts[2]).toContain("Now let me read more files.");
+    expect(rowTexts[3]).toContain("Tool result: read_file");
+    expect(rowTexts[4]).toContain("done");
+    expect(toolPreElement(screenElement(screen.getByText("Tool error: shell"))))
+      .toHaveTextContent(/ls missing/);
+    expect(toolPreElement(screenElement(screen.getByText("Tool result: read_file"))))
+      .toHaveTextContent(/plugin_cli.py/);
   });
 
   it("renders runtime tool approval requests and resolved decisions", async () => {
@@ -4186,16 +4264,17 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("before tool lifecycle")).toBeVisible();
     expect(screen.getByText("during tool lifecycle")).toBeVisible();
     expect(screen.getByText("after tool lifecycle")).toBeVisible();
-    expect(screen.getByText("Tool call: execute_command")).toBeVisible();
+    expect(screen.queryByText("Tool call: execute_command")).not.toBeInTheDocument();
     expect(screen.getByText("Tool result: execute_command")).toBeVisible();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(5);
+    expect(rowTexts).toHaveLength(4);
     expect(rowTexts[0]).toContain("before tool lifecycle");
-    expect(rowTexts[1]).toContain("Tool call: execute_command");
+    expect(rowTexts[1]).toContain("Tool result: execute_command");
     expect(rowTexts[2]).toContain("during tool lifecycle");
-    expect(rowTexts[3]).toContain("Tool result: execute_command");
-    expect(rowTexts[4]).toContain("after tool lifecycle");
+    expect(rowTexts[3]).toContain("after tool lifecycle");
+    expect(toolPreElement(screenElement(screen.getByText("Tool result: execute_command"))))
+      .toHaveTextContent(/npm test/);
   });
 
   it("keeps cursorless runtime text segments unique around tool events", async () => {
@@ -4239,7 +4318,7 @@ describe("MessageTimeline", () => {
     expect(rowTexts[2]).toContain("second cursorless chunk");
   });
 
-  it("keeps runtime injection rows at their live event position between tool and text", async () => {
+  it("keeps runtime injection events out of the chat transcript", async () => {
     setRuntimeEntries([
       runtimeToolCallEntry({
         eventId: 1,
@@ -4268,19 +4347,16 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
-    expect(
-      screen.getByText("Injection applied: Use OpenAI instead · source user"),
-    ).toBeVisible();
+    expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
     expect(screen.getByText("Switching the search target to OpenAI.")).toBeVisible();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts).toHaveLength(2);
     expect(rowTexts[0]).toContain("Tool call: execute_command");
-    expect(rowTexts[1]).toContain("Injection applied: Use OpenAI instead");
-    expect(rowTexts[2]).toContain("Switching the search target to OpenAI.");
+    expect(rowTexts[1]).toContain("Switching the search target to OpenAI.");
   });
 
-  it("splits runtime text around replay-deduped injection rows", async () => {
+  it("keeps replay-deduped injection events hidden between runtime text rows", async () => {
     const injectionEvent = relayRunEvent({
       event_id: 2,
       event_type: "injection_applied",
@@ -4311,17 +4387,15 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("draft answer")).toBeVisible();
     expect(screen.getByText("refined answer")).toBeVisible();
-    expect(screen.getAllByText("Injection applied: Refine the answer · source user"))
-      .toHaveLength(1);
+    expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts).toHaveLength(2);
     expect(rowTexts[0]).toContain("draft answer");
-    expect(rowTexts[1]).toContain("Injection applied: Refine the answer");
-    expect(rowTexts[2]).toContain("refined answer");
+    expect(rowTexts[1]).toContain("refined answer");
   });
 
-  it("removes superseded pending runtime tool calls before rendering the injected replacement", async () => {
+  it("removes superseded pending runtime tool calls without rendering the injection event", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
         event_id: 1,
@@ -4366,23 +4440,21 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(
-      await screen.findByText("Injection applied: Use ls instead · source user"),
-    ).toBeVisible();
-    expect(screen.getAllByText("Tool call: shell")).toHaveLength(1);
+    await screen.findByText("Tool result: shell");
+    expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
     expect(screen.getByText("Tool result: shell")).toBeVisible();
     const previews = toolPreviewTexts(container);
     expect(previews).not.toContain("pwd");
-    expect(previews).toContain("ls");
     expect(previews).toContain("done");
     expect(screen.queryByText("pwd")).not.toBeInTheDocument();
+    expect(toolPreElement(screenElement(screen.getByText("Tool result: shell"))))
+      .toHaveTextContent(/ls/);
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
     const contentRowTexts = rowTexts.filter((text) => text.trim().length > 0);
-    expect(contentRowTexts).toHaveLength(3);
-    expect(contentRowTexts[0]).toContain("Injection applied: Use ls instead");
-    expect(contentRowTexts[1]).toContain("Tool call: shell");
-    expect(contentRowTexts[2]).toContain("Tool result: shell");
+    expect(contentRowTexts).toHaveLength(1);
+    expect(contentRowTexts[0]).toContain("Tool result: shell");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
   });
 
@@ -4647,12 +4719,11 @@ describe("MessageTimeline", () => {
     expect(thinkingBlocks).toHaveLength(1);
     expect(thinkingBlocks[0]).toHaveTextContent("deduped plan");
     expect(thinkingBlocks[0]).not.toHaveTextContent("deduped plandeduped plan");
-    expect(screen.getAllByText("Tool call: shell")).toHaveLength(1);
     expect(screen.getAllByText("Tool result: shell")).toHaveLength(1);
-    expect(toolPreviewTexts(screenElement(screen.getByText("Tool call: shell"))))
-      .toContain("date");
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool result: shell"))))
       .toContain("done");
+    expect(toolPreElement(screenElement(screen.getByText("Tool result: shell"))))
+      .toHaveTextContent(/date/);
   });
 
   it("accumulates runtime thinking events into one collapsible markdown block", async () => {
@@ -4976,7 +5047,8 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("still not persisted")).toBeVisible();
-    expect(screen.getByText("Run completed: status completed")).toBeVisible();
+    expect(screen.queryByText("Run completed: status completed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Model step finished: status completed")).not.toBeInTheDocument();
     const thinkingBlock = container.querySelector(".at-message-thinking");
     expect(thinkingBlock).toHaveTextContent("planning");
     expect(thinkingBlock).toHaveAttribute("data-streaming", "false");
@@ -5126,7 +5198,8 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Run completed: run completed")).toBeVisible();
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(screen.queryByText("Run completed: run completed")).not.toBeInTheDocument();
     expect(container.querySelector(".at-message-thinking")).toBeNull();
     expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
   });
@@ -5281,26 +5354,32 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
-    expect(screen.getByText("Tool error: execute_command")).toBeVisible();
+    expect(screen.queryByText("Tool call: execute_command")).not.toBeInTheDocument();
+    expect(await screen.findByText("Tool error: execute_command")).toBeVisible();
     expect(screen.getByText("Tool validation: execute_command")).toBeVisible();
     expect(screen.getByText("Tool error: shell")).toBeVisible();
-    expect(toolPreviewTexts(screenElement(screen.getByText("Tool call: execute_command"))))
-      .toContain("npm test");
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool error: execute_command"))))
       .toContain("command failed");
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool validation: execute_command"))))
       .toContain("Input validation failed before tool execution.");
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool error: shell"))))
       .toContain("missing");
-    expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
+    const errorDetails = toolPreElement(
+      screenElement(screen.getByText("Tool error: execute_command")),
+    );
+    expect(errorDetails).not.toBeVisible();
+    expect(errorDetails).toHaveTextContent(/"cmd": "npm test"/);
     expect(screen.queryByText(/"ok": false/)).not.toBeInTheDocument();
     expect(screen.queryByText(/"error": "command failed"/)).not.toBeInTheDocument();
+    expect(screenElement(screen.getByText("Tool error: execute_command")).closest(".at-message-tool"))
+      .toHaveAttribute("data-status", "error");
     const validationDetails = toolPreElement(
       screenElement(screen.getByText("Tool validation: execute_command")),
     );
     expect(validationDetails).not.toBeVisible();
     expect(validationDetails).toHaveTextContent(/cmd is required/);
+    expect(screenElement(screen.getByText("Tool validation: execute_command")).closest(".at-message-tool"))
+      .toHaveAttribute("data-status", "validation_failed");
 
     fireEvent.click(screen.getByText("Tool validation: execute_command"));
 
@@ -5390,7 +5469,7 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("hook event visible")).toBeVisible();
   });
 
-  it("renders runtime token usage events as compact usage summaries", async () => {
+  it("keeps runtime token usage events out of the chat transcript", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({
         id: "run-token:1:0",
@@ -5410,11 +5489,12 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
+    expect(await screen.findByText("No messages yet")).toBeVisible();
     expect(
-      await screen.findByText(
+      screen.queryByText(
         "Token usage: Total 18 · Input 11 · Cached 2 · Output 7 · Reasoning 3",
       ),
-    ).toBeVisible();
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("token usage")).not.toBeInTheDocument();
   });
 
@@ -5524,14 +5604,14 @@ describe("MessageTimeline", () => {
     renderTimeline();
 
     expect(
-      await screen.findByText(
-        "Model step started: role coordinator · instance coordinator-1",
-      ),
+      await screen.findByText("Notification: Run failed · type run_failed · channels desktop, feishu"),
     ).toBeVisible();
-    expect(screen.getByText("Model step finished: model pass complete")).toBeVisible();
     expect(
-      screen.getByText("Notification: Run failed · type run_failed · channels desktop, feishu"),
-    ).toBeVisible();
+      screen.queryByText("Model step started: role coordinator · instance coordinator-1"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Model step finished: model pass complete"),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "Background task started: npm run watch · status running · kind command · #background-task-1",
@@ -5669,15 +5749,15 @@ describe("MessageTimeline", () => {
     ).toBeVisible();
     expect(screen.getByText("User question answered: 1 answer · #question-1")).toBeVisible();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Injection queued: Please retry with logs · source user · mode queued · to worker-1",
       ),
-    ).toBeVisible();
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Injection applied: System reminder · source system · mode guidance · to worker-1",
       ),
-    ).toBeVisible();
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText(
         "Subagent status: Review PR · status running · phase subagent_running · role reviewer · instance subagent-1",
@@ -5692,7 +5772,7 @@ describe("MessageTimeline", () => {
       screen.getByText("Subagent resumed: role reviewer · instance subagent-1 · task task-1"),
     ).toBeVisible();
     expect(screen.getByText("Awaiting manual action: root task root-1")).toBeVisible();
-    expect(screen.getByText("Run started: phase: streaming")).toBeVisible();
+    expect(screen.queryByText("Run started: phase: streaming")).not.toBeInTheDocument();
     expect(
       screen.getByText("Run failed: status failed · Provider failed · root task root-1"),
     ).toBeVisible();

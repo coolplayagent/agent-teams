@@ -857,6 +857,93 @@ describe("SessionsSidebar", () => {
     expect(screen.queryByTitle("Unread terminal run")).not.toBeInTheDocument();
   });
 
+  it("clears the unread terminal indicator immediately when selecting that session", async () => {
+    const onSessionSelected = vi.fn();
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        has_unread_terminal_run: true,
+        latest_terminal_run_id: "run-completed",
+        latest_terminal_run_status: "completed",
+        latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+        session_id: "session-unread",
+        title: "Finished task",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-current",
+        title: "Current task",
+        updated_at: "2026-06-23T09:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar({ onSessionSelected });
+
+    const unreadRow = (await screen.findByText("Finished task")).closest(
+      ".at-session-item",
+    );
+    expect(unreadRow).toHaveClass("has-run-indicator-unread");
+
+    fireEvent.click(screen.getByRole("button", { name: "Finished task" }));
+
+    expect(unreadRow).toHaveClass("is-selected");
+    expect(unreadRow).not.toHaveClass("has-run-indicator-unread");
+    expect(screen.queryByTitle("Unread terminal run")).not.toBeInTheDocument();
+    expect(useUiStore.getState().selectedSessionId).toBe("session-unread");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+    expect(onSessionSelected).toHaveBeenCalledTimes(1);
+    expect(updateSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the latest rapid session click selected", async () => {
+    const onSessionSelected = vi.fn();
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-11",
+        title: "Session 11",
+        updated_at: "2026-06-23T10:11:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-10",
+        title: "Session 10",
+        updated_at: "2026-06-23T10:10:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar({ onSessionSelected });
+
+    const firstRow = (await screen.findByText("Session 11")).closest(
+      ".at-session-item",
+    );
+    const secondRow = screen.getByText("Session 10").closest(".at-session-item");
+
+    fireEvent.click(screen.getByRole("button", { name: "Session 11" }));
+    fireEvent.click(screen.getByRole("button", { name: "Session 10" }));
+
+    expect(firstRow).not.toHaveClass("is-selected");
+    expect(secondRow).toHaveClass("is-selected");
+    expect(useUiStore.getState().selectedSessionId).toBe("session-10");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+    expect(onSessionSelected).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps subagent sessions nested under their parent and opens a secondary selection", async () => {
     const onSubagentSelected = vi.fn();
     listWorkspacesMock.mockResolvedValue([

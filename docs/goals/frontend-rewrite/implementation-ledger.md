@@ -7839,3 +7839,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 2000-session DOM-cap harness mapping, V2 SessionsSidebar coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Sidebar Session Click State Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, current worktree status, and remaining Projects Sidebar Python UI harnesses before selecting this slice.
+- Migrated the V1 `test_projects_sidebar_clears_unread_indicator_immediately_on_session_click` behavior into V2 `SessionsSidebar.test.tsx`.
+- Added V2 interaction coverage proving an unread terminal session row first renders with the unread indicator, then immediately becomes selected and loses the unread indicator when clicked, without issuing a session metadata update.
+- Migrated the adjacent V1 `test_projects_sidebar_keeps_latest_rapid_session_click_active` behavior into V2 `SessionsSidebar.test.tsx`.
+- Added V2 coverage proving rapid clicks on two session rows leave the latest clicked session selected and update the selected workspace/session store state.
+- Removed the two matching old V1 source-copy Python harness functions from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept production UI code, sidebar/settings item inventory, secondary-page routing, appearance settings layout, visual framework CSS, stream controller behavior, replay/recovery code, and build output unchanged in this slice.
+- This slice retires two Projects Sidebar Python UI harnesses and tightens one sidebar interaction/state parity boundary. It does not claim complete Sessions Sidebar PASS, complete visual parity, complete stream/replay PASS, interrupted-stream recovery PASS, broader Python UI harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "unread terminal indicator immediately|latest rapid session click"` passed with 2 focused tests.
+- `npm test -- SessionsSidebar.test.tsx` passed with 34 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `rg -n "test_projects_sidebar_clears_unread_indicator_immediately_on_session_click|test_projects_sidebar_keeps_latest_rapid_session_click_active|clears_unread_indicator_immediately|keeps_latest_rapid_session_click|unread terminal indicator immediately|latest rapid session click" tests\integration_tests\frontend frontend\app\src\test` returned only the new V2 TS test names.
+
+### Reviewer
+- Main-agent goal/worktree scan, V1 session-click harness mapping, V2 SessionsSidebar interaction coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

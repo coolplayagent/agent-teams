@@ -514,6 +514,8 @@ export async function handleSend(options = {}) {
     resolvedPrompt.text,
     attachmentSnapshot,
   );
+  const runNormalModelProfile =
+    state.currentSessionMode === "normal" ? resolveSelectedNormalModelProfile() : "";
 
   if (detachedRun) {
     try {
@@ -525,6 +527,9 @@ export async function handleSend(options = {}) {
         thinking: state.thinking,
         targetRoleId,
         detached: true,
+        ...(runNormalModelProfile
+          ? { normalModelProfile: runNormalModelProfile }
+          : {}),
       });
     } finally {
       finishForegroundSubmission(submission);
@@ -576,6 +581,9 @@ export async function handleSend(options = {}) {
         thinking: state.thinking,
         targetRoleId,
         detached: continueDetachedDraftRun,
+        ...(runNormalModelProfile
+          ? { normalModelProfile: runNormalModelProfile }
+          : {}),
         onRunCreated: continueDetachedDraftRun ? null : (run) => {
           if (!isForegroundSubmissionActive(submission)) {
             return;
@@ -583,7 +591,9 @@ export async function handleSend(options = {}) {
           state.currentSessionCanSwitchMode = false;
           refreshSessionTopologyControls();
           emitSessionTitlePreview(runSessionId, promptPreviewText);
-          roundsTimeline.createLiveRound(run.run_id, promptPreviewText, displayInputParts);
+          roundsTimeline.createLiveRound(run.run_id, promptPreviewText, displayInputParts, {
+            normalModelProfile: run?.normal_model_profile || null,
+          });
         },
       },
     );

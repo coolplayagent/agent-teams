@@ -13,28 +13,34 @@ export async function sendUserPrompt(
     inputParts = null,
     skills = null,
     displayInputParts = null,
+    normalModelProfile = null,
 ) {
     const resolvedInput = Array.isArray(inputParts) && inputParts.length > 0
         ? inputParts
         : [{ kind: 'text', text: prompt }];
+    const resolvedNormalModelProfile = String(normalModelProfile || '').trim();
+    const payload = {
+        session_id: sessionId,
+        input: resolvedInput,
+        run_kind: 'conversation',
+        execution_mode: 'ai',
+        yolo: yolo === true,
+        thinking: thinking || { enabled: false, effort: null },
+        target_role_id: targetRoleId || null,
+        skills: Array.isArray(skills) && skills.length > 0 ? skills : null,
+        display_input: Array.isArray(displayInputParts) && displayInputParts.length > 0
+            ? displayInputParts
+            : [],
+    };
+    if (resolvedNormalModelProfile) {
+        payload.normal_model_profile = resolvedNormalModelProfile;
+    }
     return requestJson(
         '/api/runs',
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                session_id: sessionId,
-                input: resolvedInput,
-                run_kind: 'conversation',
-                execution_mode: 'ai',
-                yolo: yolo === true,
-                thinking: thinking || { enabled: false, effort: null },
-                target_role_id: targetRoleId || null,
-                skills: Array.isArray(skills) && skills.length > 0 ? skills : null,
-                display_input: Array.isArray(displayInputParts) && displayInputParts.length > 0
-                    ? displayInputParts
-                    : [],
-            }),
+            body: JSON.stringify(payload),
         },
         'Failed to create run',
     );

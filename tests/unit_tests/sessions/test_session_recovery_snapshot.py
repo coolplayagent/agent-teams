@@ -14,7 +14,8 @@ from relay_teams.agent_runtimes.instances.enums import InstanceStatus
 from relay_teams.sessions.runs.active_run_registry import ActiveSessionRunRegistry
 from relay_teams.sessions.runs.enums import RunEventType
 from relay_teams.sessions.runs.event_stream import RunEventHub
-from relay_teams.sessions.runs.run_models import RunEvent
+from relay_teams.sessions.runs.run_intent_repo import RunIntentRepository
+from relay_teams.sessions.runs.run_models import IntentInput, RunEvent
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
@@ -71,6 +72,7 @@ def _build_service(
         run_runtime_repo=RunRuntimeRepository(db_path),
         token_usage_repo=TokenUsageRepository(db_path),
         run_state_repo=RunStateRepository(db_path),
+        run_intent_repo=RunIntentRepository(db_path),
         background_task_repository=BackgroundTaskRepository(db_path),
         todo_service=TodoService(
             repository=TodoRepository(db_path),
@@ -1054,6 +1056,67 @@ def test_build_session_rounds_excludes_synchronous_subagent_runs(
     rounds = service.build_session_rounds("session-1")
 
     assert [round_item["run_id"] for round_item in rounds] == ["run-main"]
+
+
+def test_session_rounds_include_normal_model_profile(tmp_path: Path) -> None:
+    db_path = tmp_path / "session_round_model_profile.db"
+    service = _build_service(db_path)
+
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _seed_root_task(db_path, run_id="run-model", session_id="session-1")
+    RunRuntimeRepository(db_path).ensure(
+        run_id="run-model",
+        session_id="session-1",
+        root_task_id="task-root-1",
+        status=RunRuntimeStatus.RUNNING,
+        phase=RunRuntimePhase.COORDINATOR_RUNNING,
+    )
+    RunIntentRepository(db_path).upsert(
+        run_id="run-model",
+        session_id="session-1",
+        intent=IntentInput(
+            session_id="session-1",
+            normal_model_profile="precise",
+        ),
+    )
+
+    rounds = service.build_session_rounds("session-1")
+    timeline_rounds = service.build_session_timeline_rounds("session-1")
+
+    assert rounds[0].get("normal_model_profile") == "precise"
+    assert timeline_rounds[0].get("normal_model_profile") == "precise"
+
+
+def test_get_recovery_snapshot_includes_normal_model_profile(tmp_path: Path) -> None:
+    db_path = tmp_path / "recovery_model_profile.db"
+    service = _build_service(db_path)
+
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _seed_root_task(db_path, run_id="run-model", session_id="session-1")
+    RunRuntimeRepository(db_path).ensure(
+        run_id="run-model",
+        session_id="session-1",
+        root_task_id="task-root-1",
+        status=RunRuntimeStatus.RUNNING,
+        phase=RunRuntimePhase.COORDINATOR_RUNNING,
+    )
+    RunIntentRepository(db_path).upsert(
+        run_id="run-model",
+        session_id="session-1",
+        intent=IntentInput(
+            session_id="session-1",
+            normal_model_profile="precise",
+        ),
+    )
+
+    snapshot = service.get_recovery_snapshot("session-1")
+
+    active_run = snapshot.get("active_run")
+    assert isinstance(active_run, dict)
+    assert active_run.get("normal_model_profile") == "precise"
+    round_snapshot = snapshot.get("round_snapshot")
+    assert isinstance(round_snapshot, dict)
+    assert round_snapshot.get("normal_model_profile") == "precise"
 
 
 def test_get_recovery_snapshot_marks_started_main_agent_stop_as_recoverable(

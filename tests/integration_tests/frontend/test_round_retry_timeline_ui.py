@@ -598,6 +598,81 @@ console.log(JSON.stringify({
     }
 
 
+def test_live_round_records_normal_model_profile(tmp_path: Path) -> None:
+    payload = _run_round_timeline_script(
+        tmp_path=tmp_path,
+        runner_source="""
+globalThis.document = { getElementById: () => null };
+const { state } = await import('./mockState.mjs');
+const { createLiveRound } = await import('./timeline.mjs');
+const { roundsState } = await import('./mockRoundsState.mjs');
+
+state.activeSubagentSession = { sessionId: 'session-1' };
+createLiveRound('run-1', 'live run', null, { normalModelProfile: 'precise' });
+
+console.log(JSON.stringify({
+    currentProfile: roundsState.currentRounds[0].normal_model_profile,
+    timelineProfile: roundsState.timelineRounds[0].normal_model_profile,
+}));
+""".strip(),
+    )
+
+    assert payload == {"currentProfile": "precise", "timelineProfile": "precise"}
+
+
+def test_round_meta_uses_token_usage_model_profile_fallback(tmp_path: Path) -> None:
+    payload = _run_round_timeline_script(
+        tmp_path=tmp_path,
+        runner_source="""
+globalThis.document = { getElementById: () => null };
+const {
+    renderRoundMetaTailHtml,
+    renderRoundTokenSummaryHtml,
+    roundUsageModelProfile,
+} = await import('./timeline.mjs');
+
+const usage = {
+    run_id: 'run-1',
+    total_input_tokens: 9500,
+    total_cached_input_tokens: 0,
+    total_output_tokens: 11,
+    total_reasoning_output_tokens: 0,
+    total_tokens: 9511,
+    total_requests: 1,
+    total_tool_calls: 0,
+    by_agent: [
+        {
+            instance_id: 'agent-1',
+            role_id: 'normal',
+            input_tokens: 9500,
+            cached_input_tokens: 0,
+            output_tokens: 11,
+            reasoning_output_tokens: 0,
+            total_tokens: 9511,
+            requests: 1,
+            tool_calls: 0,
+            model_profile: 'minimax',
+        },
+    ],
+};
+
+const modelProfile = roundUsageModelProfile(usage);
+const html = renderRoundMetaTailHtml(renderRoundTokenSummaryHtml(usage, 0), modelProfile);
+const text = html.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();
+
+console.log(JSON.stringify({
+    modelProfile,
+    text,
+}));
+""".strip(),
+    )
+
+    assert payload == {
+        "modelProfile": "minimax",
+        "text": "输入 9.5k 输出 11 minimax",
+    }
+
+
 def test_terminal_round_refresh_waits_for_expected_tool_calls_from_history(
     tmp_path: Path,
 ) -> None:
@@ -894,6 +969,21 @@ def _run_round_timeline_script(tmp_path: Path, runner_source: str) -> dict[str, 
     source_text = source_text.replace(
         "function renderRetryEventMarkup(event, nowMs) {",
         "export function renderRetryEventMarkup(event, nowMs) {",
+        1,
+    )
+    source_text = source_text.replace(
+        "function roundUsageModelProfile(usage) {",
+        "export function roundUsageModelProfile(usage) {",
+        1,
+    )
+    source_text = source_text.replace(
+        "function renderRoundTokenSummaryHtml(usage, renderedToolCallCount = 0) {",
+        "export function renderRoundTokenSummaryHtml(usage, renderedToolCallCount = 0) {",
+        1,
+    )
+    source_text = source_text.replace(
+        "function renderRoundMetaTailHtml(tokenSummaryHtml = '', modelProfile = '') {",
+        "export function renderRoundMetaTailHtml(tokenSummaryHtml = '', modelProfile = '') {",
         1,
     )
     module_under_test_path.write_text(source_text, encoding="utf-8")
@@ -1266,6 +1356,12 @@ export function logError(code, message, payload) {
     (tmp_path / "mockI18n.mjs").write_text(
         """
 const messages = {
+    'rounds.model_profile': '{model}',
+    'rounds.model_profile_title': 'Model profile used for this run: {model}',
+    'rounds.token_title': '输入：{input} | 输出：{output} | 请求：{requests}',
+    'rounds.token_in': '输入 {value}',
+    'rounds.token_out': '输出 {value}',
+    'rounds.token_tools': '工具 {value}',
     'rounds.retry.scheduled_label': 'Retry scheduled',
     'rounds.retry.retrying_label': 'Retrying',
     'rounds.retry.failed_label': 'Retry failed',

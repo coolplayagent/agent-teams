@@ -20,15 +20,26 @@ type RequestJsonCallable = Callable[
 type AutoStartCallable = Callable[[str, bool, bool, bool], None]
 type StreamEventsCallable = Callable[[str, str, bool], None]
 type RunSinglePromptCallable = Callable[
-    [str, bool, SessionMode, str | None, str | None, Path | None, bool, bool], None
+    [
+        str,
+        bool,
+        SessionMode,
+        str | None,
+        str | None,
+        str | None,
+        Path | None,
+        bool,
+        bool,
+    ],
+    None,
 ]
 type ExecutePromptCallable = Callable[..., None]
 
 QUICK_PROMPT_OPTIONS_HINT = (
     "Available quick prompt options: --message <text>, "
     "--mode <normal|orchestration>, --role <role_id>, "
-    "--orchestration <id>, --workspace <path> (defaults to current directory), "
-    "--yolo/--no-yolo."
+    "--orchestration <id>, --model <profile_id>, "
+    "--workspace <path> (defaults to current directory), --yolo/--no-yolo."
 )
 
 
@@ -39,6 +50,7 @@ def root_command(
     mode: SessionMode,
     role: str | None,
     orchestration: str | None,
+    model: str | None,
     workspace: Path | None,
     daemon: bool,
     force: bool,
@@ -49,7 +61,7 @@ def root_command(
         if ctx.invoked_subcommand is not None:
             raise typer.BadParameter("Cannot combine --message with subcommands")
         run_single_prompt(
-            message, yolo, mode, role, orchestration, workspace, daemon, force
+            message, yolo, mode, role, orchestration, model, workspace, daemon, force
         )
         return
 
@@ -57,11 +69,12 @@ def root_command(
         mode != SessionMode.NORMAL
         or role is not None
         or orchestration is not None
+        or model is not None
         or workspace is not None
     ):
         raise typer.BadParameter(
-            "--mode, --role, --orchestration, and --workspace require --message. "
-            f"{QUICK_PROMPT_OPTIONS_HINT}"
+            "--mode, --role, --orchestration, --model, and --workspace require "
+            f"--message. {QUICK_PROMPT_OPTIONS_HINT}"
         )
 
     if ctx.invoked_subcommand is None:
@@ -74,6 +87,7 @@ def run_single_prompt(
     session_mode: SessionMode,
     role_id: str | None,
     orchestration_id: str | None,
+    model_profile: str | None,
     workspace: Path | None,
     daemon: bool,
     force: bool,
@@ -88,6 +102,9 @@ def run_single_prompt(
     normalized_orchestration_id = (
         orchestration_id.strip() if orchestration_id is not None else None
     )
+    normalized_model_profile = (
+        model_profile.strip() if model_profile is not None else None
+    )
     if role_id is not None and not normalized_role_id:
         raise typer.BadParameter(
             f"--role must not be empty. {QUICK_PROMPT_OPTIONS_HINT}"
@@ -95,6 +112,10 @@ def run_single_prompt(
     if orchestration_id is not None and not normalized_orchestration_id:
         raise typer.BadParameter(
             f"--orchestration must not be empty. {QUICK_PROMPT_OPTIONS_HINT}"
+        )
+    if model_profile is not None and not normalized_model_profile:
+        raise typer.BadParameter(
+            f"--model must not be empty. {QUICK_PROMPT_OPTIONS_HINT}"
         )
     if session_mode == SessionMode.ORCHESTRATION and normalized_role_id is not None:
         raise typer.BadParameter(
@@ -108,6 +129,10 @@ def run_single_prompt(
             "--orchestration can only be used with --mode orchestration. "
             + QUICK_PROMPT_OPTIONS_HINT
         )
+    if session_mode == SessionMode.ORCHESTRATION and normalized_model_profile:
+        raise typer.BadParameter(
+            "--model can only be used with --mode normal. " + QUICK_PROMPT_OPTIONS_HINT
+        )
     execute_prompt(
         message=normalized_message,
         session_id=None,
@@ -117,6 +142,7 @@ def run_single_prompt(
         session_mode=session_mode,
         normal_root_role_id=normalized_role_id,
         orchestration_id=normalized_orchestration_id,
+        normal_model_profile=normalized_model_profile,
         workspace=workspace,
         autostart=True,
         daemon=daemon,
@@ -134,6 +160,7 @@ def execute_prompt(
     session_mode: SessionMode,
     normal_root_role_id: str | None,
     orchestration_id: str | None,
+    normal_model_profile: str | None,
     workspace: Path | None,
     autostart: bool,
     daemon: bool,
@@ -184,16 +211,20 @@ def execute_prompt(
             request_json=request_json,
         )
 
+    run_payload: dict[str, object] = {
+        "session_id": resolved_session_id,
+        "input": [{"kind": "text", "text": resolved_message}],
+        "execution_mode": execution_mode,
+        "yolo": yolo,
+    }
+    if normal_model_profile is not None:
+        run_payload["normal_model_profile"] = normal_model_profile
+
     run_response = request_json(
         base_url,
         "POST",
         "/api/runs",
-        {
-            "session_id": resolved_session_id,
-            "input": [{"kind": "text", "text": resolved_message}],
-            "execution_mode": execution_mode,
-            "yolo": yolo,
-        },
+        run_payload,
     )
     run = _require_object_response(run_response, "/api/runs")
     run_id = _require_str_field(run, "run_id")

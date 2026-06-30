@@ -565,6 +565,28 @@ def test_prepare_intent_snapshots_normal_model_profile_for_normal_mode(
     assert prepared.normal_model_profile == "fast"
 
 
+def test_prepare_intent_uses_explicit_normal_model_profile_for_normal_mode(
+    tmp_path: Path,
+) -> None:
+    manager = _build_manager(
+        tmp_path / "run_service_prepare_intent_explicit_model.db",
+        session_repo=_SessionRepo(
+            SessionRecord(
+                session_id="session-1",
+                workspace_id="default",
+                session_mode=SessionMode.NORMAL,
+                normal_model_profile="fast",
+            )
+        ),
+    )
+
+    prepared = manager._prepare_intent(
+        IntentInput(session_id="session-1", normal_model_profile="precise")
+    )
+
+    assert prepared.normal_model_profile == "precise"
+
+
 def test_prepare_intent_clears_normal_model_profile_for_orchestration_mode(
     tmp_path: Path,
 ) -> None:
@@ -585,6 +607,52 @@ def test_prepare_intent_clears_normal_model_profile_for_orchestration_mode(
 
     assert prepared.session_mode == SessionMode.ORCHESTRATION
     assert prepared.normal_model_profile is None
+
+
+def test_prepare_intent_clears_explicit_model_profile_for_orchestration_mode(
+    tmp_path: Path,
+) -> None:
+    manager = _build_manager(
+        tmp_path / "run_service_prepare_intent_orchestration_explicit_model.db",
+        session_repo=_SessionRepo(
+            SessionRecord(
+                session_id="session-1",
+                workspace_id="default",
+                session_mode=SessionMode.ORCHESTRATION,
+                orchestration_preset_id="default",
+            )
+        ),
+    )
+
+    prepared = manager._prepare_intent(
+        IntentInput(session_id="session-1", normal_model_profile="precise")
+    )
+
+    assert prepared.session_mode == SessionMode.ORCHESTRATION
+    assert prepared.normal_model_profile is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_intent_async_uses_explicit_normal_model_profile(
+    tmp_path: Path,
+) -> None:
+    manager = _build_manager(
+        tmp_path / "run_service_prepare_intent_async_explicit_model.db",
+        session_repo=_SessionRepo(
+            SessionRecord(
+                session_id="session-1",
+                workspace_id="default",
+                session_mode=SessionMode.NORMAL,
+                normal_model_profile="fast",
+            )
+        ),
+    )
+
+    prepared = await manager._prepare_intent_async(
+        IntentInput(session_id="session-1", normal_model_profile="precise")
+    )
+
+    assert prepared.normal_model_profile == "precise"
 
 
 @pytest.mark.asyncio

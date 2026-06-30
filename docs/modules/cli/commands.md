@@ -112,6 +112,7 @@ CLI:
 - `relay-teams commands list --workspace .`
 - `relay-teams commands show opsx:propose --workspace . --format json`
 - `relay-teams -m "/opsx:propose add-login"` resolves the command server-side before creating the run.
+- `relay-teams -m "summarize this" --model precise` runs the prompt with the configured `precise` model profile for that run only.
 
 Frontend:
 

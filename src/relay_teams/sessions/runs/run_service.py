@@ -179,9 +179,15 @@ def _run_event_replay_sort_key(run_event: RunEvent) -> int:
     return int(run_event.event_id or 0)
 
 
-def _normal_model_profile_for_intent(session: SessionRecord) -> str | None:
+def _normal_model_profile_for_intent(
+    session: SessionRecord,
+    intent: IntentInput,
+) -> str | None:
     if session.session_mode != SessionMode.NORMAL:
         return None
+    explicit_profile = str(intent.normal_model_profile or "").strip()
+    if explicit_profile:
+        return explicit_profile
     normalized = str(session.normal_model_profile or "").strip()
     return normalized or None
 
@@ -543,7 +549,7 @@ class SessionRunService:
     def _prepare_intent(self, intent: IntentInput) -> IntentInput:
         session = self._session_repo.get(intent.session_id)
         target_role_id = str(intent.target_role_id or "").strip() or None
-        normal_model_profile = _normal_model_profile_for_intent(session)
+        normal_model_profile = _normal_model_profile_for_intent(session, intent)
         skills = tuple(str(skill or "").strip() for skill in (intent.skills or ()))
         skills = tuple(skill for skill in skills if skill) or None
         if self._orchestration_settings_service is None:
@@ -572,7 +578,7 @@ class SessionRunService:
     async def _prepare_intent_async(self, intent: IntentInput) -> IntentInput:
         session = await self._session_repo.get_async(intent.session_id)
         target_role_id = str(intent.target_role_id or "").strip() or None
-        normal_model_profile = _normal_model_profile_for_intent(session)
+        normal_model_profile = _normal_model_profile_for_intent(session, intent)
         skills = tuple(str(skill or "").strip() for skill in (intent.skills or ()))
         skills = tuple(skill for skill in skills if skill) or None
         if self._orchestration_settings_service is None:
@@ -835,6 +841,29 @@ class SessionRunService:
             allow_active_run_attach=False,
             source=InjectionSource.USER,
         )
+
+    async def get_run_intent_snapshot_async(self, run_id: str) -> IntentInput | None:
+        safe_run_id = str(run_id or "").strip()
+        if not safe_run_id:
+            return None
+        if self._should_delegate_to_bound_loop():
+            return await self._call_coroutine_in_bound_loop_async(
+                lambda: self._get_run_intent_snapshot_local_async(safe_run_id)
+            )
+        return await self._get_run_intent_snapshot_local_async(safe_run_id)
+
+    async def _get_run_intent_snapshot_local_async(
+        self, run_id: str
+    ) -> IntentInput | None:
+        pending_intent = self._pending_runs.get(run_id)
+        if pending_intent is not None:
+            return pending_intent.model_copy(deep=True)
+        if self._run_intent_repo is None:
+            return None
+        try:
+            return await self._run_intent_repo.get_async(run_id)
+        except KeyError:
+            return None
 
     def _create_run_local(
         self,

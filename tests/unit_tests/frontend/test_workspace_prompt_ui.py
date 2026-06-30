@@ -151,6 +151,15 @@ def test_workspace_shell_hides_execution_mode_selector() -> None:
     assert "Intent:" not in timeline_script
     assert "round-detail-token-host" in timeline_script
     assert "round-detail-meta" in timeline_script
+    assert "round-model-profile" in timeline_script
+    assert ".round-model-profile" in components_css
+    assert ".round-detail-token-host:empty" in components_css
+    assert (
+        ".round-detail-token-host .round-token-summary + .round-model-profile"
+        in components_css
+    )
+    assert "border-left: 1px solid var(--border-color);" in components_css
+    assert "padding: 0.08rem 0.46rem;" not in components_css
     assert "activateLatestRound" in timeline_script
     assert "schedulePostLayoutRoundSync" in timeline_script
     assert "pendingScrollTargetRunId" in timeline_script

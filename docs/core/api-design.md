@@ -1999,11 +1999,12 @@ Request:
     }
   ],
   "run_kind": "conversation",
-    "generation_config": null,
-    "execution_mode": "ai",
-    "yolo": false,
-    "shell_safety_policy_enabled": true,
-    "target_role_id": "Architect",
+  "generation_config": null,
+  "execution_mode": "ai",
+  "yolo": false,
+  "shell_safety_policy_enabled": true,
+  "target_role_id": "Architect",
+  "normal_model_profile": "precise",
   "thinking": {
     "enabled": false,
     "effort": null
@@ -2055,6 +2056,8 @@ Notes:
 - `thinking.effort` optionally sets provider reasoning effort (`minimal`, `low`, `medium`, `high`); when set, it is forwarded to OpenAI-compatible providers as `openai_reasoning_effort`.
 - `target_role_id` is optional. When set, that run starts from the specified role instead of the session-default root role, without mutating the saved session topology.
 - `target_role_id` may point to `Coordinator`, `MainAgent`, or any normal role known to the role registry.
+- `normal_model_profile` is optional. When set, it must name an existing model profile and overrides the session normal-mode model profile for this run only.
+- `normal_model_profile` is only applied to normal-mode root runs and `target_role_id` runs. Orchestration-mode runs clear the normal-mode override.
 - `orchestration_policy` is optional. When provided, it overrides the selected orchestration preset policy for that run only and is stored in the run topology snapshot.
 - The backend resolves the session mode at run creation time and snapshots the chosen root topology into the run intent for queued and recoverable resume flows.
 - `session_id`, `target_role_id`, `run_id`, and other identifier-style request fields follow the common identifier validation rules above.
@@ -2062,8 +2065,15 @@ Notes:
 Response:
 
 ```json
-{"run_id": "run-1", "session_id": "session-1", "target_role_id": "Architect"}
+{
+  "run_id": "run-1",
+  "session_id": "session-1",
+  "target_role_id": "Architect",
+  "normal_model_profile": "precise"
+}
 ```
+
+- `normal_model_profile` is omitted when no normal-mode model profile is resolved for the run.
 
 ### `GET /runs/events`
 

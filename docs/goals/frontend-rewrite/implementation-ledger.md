@@ -8070,3 +8070,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/matrix scan, failing-regression reproduction, source fix, focused/full TS verification, production build, browser regression checks, and live in-app bundle/DOM sanity check completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Persisted Tool Lifecycle Browser Coverage
+
+### Scope
+- Re-checked the active frontend rewrite goal and selected `MSG-04` because tool lifecycle rendering is still a P0 gap and earlier user feedback called out split tool call/result cards.
+- Added a focused V2 browser spec that serves the built frontend, mocks a normal session where a `tool-call` and matching `tool-return` arrive as separate persisted assistant messages, and verifies the built UI merges them into one completed tool card.
+- The browser assertion checks that the stale `Tool call: read` row is gone, the single card has `data-status="completed"`, no running spinner or legacy status dot is present, details remain collapsed by default, and expanding the card shows both the result body and the original call args.
+- Saved screenshot evidence at `.tmp/frontend-v2-ts-tool-lifecycle/v2-tool-lifecycle-merged-card.png`.
+- Kept production source, sidebar/settings inventory, visual CSS, stream controller behavior, and built dist unchanged in this slice.
+- This slice strengthens `MSG-04` evidence. It does not claim complete tool lifecycle PASS, complete stream/replay PASS, normal/orchestration real-session PASS, browser reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-tool-lifecycle.spec.ts --project=chromium` passed with 1 browser test.
+
+### Reviewer
+- Main-agent matrix scan, focused V2 browser coverage, screenshot evidence, and matrix/ledger updates completed for this slice. No subsystem PASS or final V2 completion is claimed.

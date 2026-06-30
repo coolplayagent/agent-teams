@@ -122,6 +122,15 @@ test("keeps todo details scoped to the round rail", async ({ page }) => {
     await expect(detail.getByText("Implement run todo persistence")).toBeVisible();
     await expect(detail.getByText("Verify browser rendering")).toBeVisible();
     await expect(
+      detail.locator("li").filter({ hasText: "Inspect issue 399 requirements" }),
+    ).toContainText("Completed");
+    await expect(
+      detail.locator("li").filter({ hasText: "Implement run todo persistence" }),
+    ).toContainText("In progress");
+    await expect(
+      detail.locator("li").filter({ hasText: "Verify browser rendering" }),
+    ).toContainText("Pending");
+    await expect(
       detail
         .locator("li")
         .filter({ hasText: "Inspect issue 399 requirements" })

@@ -66,63 +66,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_round_nav_renders_todo_in_timeline_detail(tmp_path: Path) -> None:
-    payload = _run_round_nav_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const rounds = [
-    {
-        run_id: 'run-1',
-        intent: 'Inspect issue',
-        todo: {
-            run_id: 'run-1',
-            items: [{ content: 'First task', status: 'pending' }],
-        },
-    },
-    {
-        run_id: 'run-2',
-        intent: 'Implement feature',
-        todo: {
-            run_id: 'run-2',
-            items: [
-                { content: 'Second task', status: 'in_progress' },
-                { content: 'Verify branch', status: 'completed' },
-            ],
-        },
-    },
-];
-
-const { renderRoundNavigator } = await import('./navigator.mjs');
-renderRoundNavigator(rounds, () => undefined, { activeRunId: 'run-2' });
-
-const nav = document.getElementById('round-nav-float');
-const run1Node = nav.querySelector('.round-nav-node[data-run-id="run-1"]');
-const run2Node = nav.querySelector('.round-nav-node[data-run-id="run-2"]');
-
-console.log(JSON.stringify({
-    oldTodoBranchCount: nav.querySelectorAll('.round-nav-todo-branch').length,
-    oldTodoCardCount: nav.querySelectorAll('.round-todo-card').length,
-    run1HasTodo: run1Node?.querySelector('.round-nav-todo') !== null,
-    run2HasTodo: run2Node?.querySelector('.round-nav-todo') !== null,
-    run2HasTodoClass: run2Node?.className.includes('has-todo') || false,
-    todoItemCount: run2Node?.querySelectorAll('.round-nav-todo-item').length || 0,
-    firstTodoTitle: run2Node?.querySelector('.round-nav-todo-text')?.title || null,
-    firstTodoStatus: run2Node?.querySelector('.round-nav-todo-status')?.textContent || null,
-}));""".strip(),
-    )
-
-    assert payload == {
-        "oldTodoBranchCount": 0,
-        "oldTodoCardCount": 0,
-        "run1HasTodo": True,
-        "run2HasTodo": True,
-        "run2HasTodoClass": True,
-        "todoItemCount": 2,
-        "firstTodoTitle": "Second task",
-        "firstTodoStatus": "rounds.todo.status.in_progress",
-    }
-
-
 def test_round_nav_patches_todo_without_rebuilding_list(tmp_path: Path) -> None:
     payload = _run_round_nav_script(
         tmp_path=tmp_path,

@@ -267,6 +267,41 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("removes resolved approvals after recovery refresh", async () => {
+    getRecoverySnapshotMock
+      .mockResolvedValueOnce(
+        recoverySnapshot({
+          pending_tool_approvals: [
+            {
+              tool_call_id: "tool-call-1",
+              tool_name: "execute_command",
+              args_preview: '{"cmd":"npm test"}',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(recoverySnapshot({ pending_tool_approvals: [] }));
+    resolveToolApprovalMock.mockResolvedValue({ status: "ok" });
+
+    renderRecoveryBar();
+
+    await screen.findByText("execute_command");
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() =>
+      expect(resolveToolApprovalMock).toHaveBeenCalledWith(
+        "run-1",
+        "tool-call-1",
+        "approve",
+        undefined,
+      ),
+    );
+    await waitFor(() => expect(getRecoverySnapshotMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.queryByText("execute_command")).not.toBeInTheDocument(),
+    );
+  });
+
   it("submits selected answers for pending user questions", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

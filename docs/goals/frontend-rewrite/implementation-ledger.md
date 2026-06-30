@@ -7632,3 +7632,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 mixed status harness mapping, V2 sidebar status-refresh coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Gate Resolution Harness Retirement
+
+### Scope
+- Re-checked the active frontend rewrite goal, the final remaining `test_subagent_sessions_ui.py` harness, and the V2 pending-approval ownership before editing.
+- Mapped the old V1 gate-card race to the V2 recovery model: pending gates/tool approvals are rendered from the session recovery snapshot, not inserted into the subagent secondary-page DOM by copied `frontend/dist` helpers.
+- Added `RecoveryBar.test.tsx` coverage proving a resolved pending approval disappears after the success-triggered recovery refresh returns no pending approvals, preventing stale approval UI from surviving resolution.
+- Deleted `tests/integration_tests/frontend/test_subagent_sessions_ui.py`; the old V1 source-copy subagent session harness file is now retired.
+- Kept sidebar/settings item inventory, secondary-surface routing, appearance layout, production visual CSS, stream controller production code, and built dist unchanged in this slice.
+- This slice closes the subagent sessions Python UI harness file. It does not claim complete subagent stream/replay PASS, full Run Recovery PASS, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- RecoveryBar.test.tsx -t "resolved approvals|approval"` passed with 6 focused tests.
+- `npm test -- RecoveryBar.test.tsx` passed with 31 tests.
+- `npm run lint` passed.
+- `Test-Path tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned `False`.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 gate harness mapping, V2 recovery approval refresh coverage, targeted verification, and old subagent session harness file deletion completed for this slice. No subsystem PASS or final V2 completion is claimed.

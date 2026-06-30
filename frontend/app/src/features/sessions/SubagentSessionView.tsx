@@ -182,10 +182,15 @@ export function SubagentSessionView({
         }
       },
       onState: (nextRuntimeState) => {
-        runtimeStateRef.current = nextRuntimeState;
         if (nextRuntimeState.runs[runId]?.status === "closed") {
+          runtimeStateRef.current = subagentClosedRuntimeStateForDisplay({
+            closedRuntimeState: nextRuntimeState,
+            currentRuntimeState: runtimeStateRef.current,
+            runId,
+          });
           return;
         }
+        runtimeStateRef.current = nextRuntimeState;
         setRuntimeState(nextRuntimeState);
       },
       runId,
@@ -301,6 +306,7 @@ function subagentClosedRuntimeStateForDisplay({
         ...closedRun,
         entries: mergedEntries,
         lastEventId: Math.max(closedRun.lastEventId, currentRun.lastEventId),
+        scope: "subagent",
       },
     },
   };

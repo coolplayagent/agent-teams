@@ -401,6 +401,58 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
   });
 
+  it("keeps streamed text visible when terminal refresh still has older history", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live text delta before terminal history",
+      }),
+    ]);
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([
+        {
+          content: "Persisted subagent checkpoint",
+          message_id: "subagent-message-checkpoint",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ])
+      .mockReturnValueOnce(refreshedMessages.promise);
+
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Persisted subagent checkpoint")).toBeVisible();
+    expect(
+      await screen.findByText("Live text delta before terminal history"),
+    ).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("completed")).toBeVisible();
+    expect(screen.getByText("Persisted subagent checkpoint")).toBeVisible();
+    expect(screen.getByText("Live text delta before terminal history"))
+      .toBeVisible();
+    expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: "Final subagent answer",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+  });
+
   it("waits for terminal history to contain streamed tool calls before replacing visible history", async () => {
     const terminalEntries = [
       runtimeToolCallEntry({
@@ -815,6 +867,29 @@ function runtimeMessageEntry({
     id: `${runId}:42:0`,
     instanceId,
     kind: "message",
+    occurredAt: "2026-06-23T10:03:00Z",
+    payload: { text },
+    roleId: "explorer",
+    runId,
+    sessionId: "session-parent",
+    text,
+  };
+}
+
+function runtimeTextDeltaEntry({
+  instanceId,
+  runId,
+  text,
+}: {
+  instanceId: string;
+  runId: string;
+  text: string;
+}): TimelineEntry {
+  return {
+    eventId: 42,
+    id: `${runId}:42:0`,
+    instanceId,
+    kind: "text_delta",
     occurredAt: "2026-06-23T10:03:00Z",
     payload: { text },
     roleId: "explorer",

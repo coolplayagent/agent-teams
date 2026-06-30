@@ -119,6 +119,12 @@ export async function installShellState(page: Page): Promise<void> {
       window.localStorage.setItem("agentTeams.selectedSessionId", sessionId);
       window.localStorage.setItem("agentTeams.selectedWorkspaceId", workspaceId);
       window.localStorage.setItem("agentTeams.shellView", "chat");
+      if (
+        window.sessionStorage.getItem("agentTeams.testShellStateInstalled") !== "1"
+      ) {
+        window.localStorage.removeItem("agentTeams.activeSubagentPanel");
+        window.sessionStorage.setItem("agentTeams.testShellStateInstalled", "1");
+      }
       window.localStorage.removeItem("agentTeams.sidebarWidth");
       window.localStorage.removeItem("agentTeams.sidebarWidthMigratedTo280");
       window.localStorage.removeItem("agentTeams.sidebarWidthMigratedTo260");

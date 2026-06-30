@@ -149,6 +149,82 @@ test("opens a nested subagent session and refreshes history after terminal strea
   }
 });
 
+test("restores an open subagent panel after hard refresh without replay leakage", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: true,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.getByText("Parent session output")).toBeVisible();
+    await openSubagentPanelFromToolCard(page, "Explorer review");
+    await expect(page.getByRole("heading", { name: "Explorer review" }))
+      .toBeVisible();
+    await expect(
+      page.locator(".at-subagent-session-view")
+        .getByText("Final persisted subagent answer"),
+    ).toBeVisible();
+    await expect(
+      page.locator(".at-chat-view").getByText("Final persisted subagent answer"),
+    ).toHaveCount(0);
+    await expect.poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem("agentTeams.activeSubagentPanel"),
+      ),
+    ).not.toBeNull();
+
+    await page.reload();
+    await waitForV2Shell(page);
+    await expect(page.getByRole("heading", { name: "Explorer review" }))
+      .toBeVisible();
+    await expect(
+      page.locator(".at-subagent-session-view")
+        .getByText("Final persisted subagent answer"),
+    ).toBeVisible();
+    await expect(
+      page.locator(".at-chat-view").getByText("Final persisted subagent answer"),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".at-subagent-session-body").getByText("explorer"),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(
+        '.at-chat-view .at-message-tool.is-openable-subagent[data-tool-name="spawn_subagent"]',
+      ).filter({ hasText: "Explorer review" }),
+    )
+      .toHaveCount(1);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "subagent hard-refresh replay should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-hard-refresh-restored.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("keeps send, session switch, and subagent view responsive under sidebar load", async ({
   page,
 }) => {

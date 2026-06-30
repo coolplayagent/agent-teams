@@ -84,6 +84,7 @@ const subagentPanelWidthMax = 1080;
 const subagentPanelMainMinWidth = 340;
 const subagentPanelResizerWidth = 8;
 const subagentPanelWidthStorageKey = "agentTeams.subagentPanelWidth";
+const activeSubagentPanelStorageKey = "agentTeams.activeSubagentPanel";
 const subagentTimelineResolveAttempts = 8;
 const subagentTimelineResolveDelayMs = 500;
 const uiLanguageSettingsQueryKey = ["ui-language-settings"] as const;
@@ -114,8 +115,9 @@ export function AppShell() {
     initialSpecLineageTaskId,
   );
   const [chatContentLoadingKey, setChatContentLoadingKey] = useState(0);
-  const [activeSubagent, setActiveSubagent] =
-    useState<ActiveSubagentSession | null>(null);
+  const [activeSubagent, setActiveSubagent] = useState<ActiveSubagentSession | null>(
+    readActiveSubagentPanel,
+  );
   const [subagentPanelWidth, setSubagentPanelWidthState] = useState(
     readSubagentPanelWidth,
   );
@@ -425,6 +427,26 @@ export function AppShell() {
       terminalViewRetryTimersRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    writeActiveSubagentPanel(activeSubagent);
+  }, [activeSubagent]);
+
+  useEffect(() => {
+    if (activeSubagent === null) {
+      return;
+    }
+    if (activeView !== "chat") {
+      setActiveSubagent(null);
+      return;
+    }
+    if (
+      selectedSessionId !== null &&
+      selectedSessionId !== activeSubagent.sessionId
+    ) {
+      setActiveSubagent(null);
+    }
+  }, [activeSubagent, activeView, selectedSessionId]);
 
   function isRetryableTerminalViewMarkError(error: unknown): boolean {
     if (!(error instanceof ApiError)) {
@@ -938,6 +960,98 @@ function readSubagentPanelWidth(): number {
     return subagentPanelWidthDefault;
   }
   return clampSubagentPanelWidth(parsed, subagentPanelWidthMax);
+}
+
+function readActiveSubagentPanel(): ActiveSubagentSession | null {
+  const raw = window.localStorage.getItem(activeSubagentPanelStorageKey);
+  if (raw === null) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const subagent = activeSubagentPanelFromRecord(parsed);
+    if (subagent !== null) {
+      return subagent;
+    }
+  } catch {
+    // Drop malformed persisted panel state and fall back to the main session.
+  }
+  window.localStorage.removeItem(activeSubagentPanelStorageKey);
+  return null;
+}
+
+function writeActiveSubagentPanel(subagent: ActiveSubagentSession | null): void {
+  if (subagent === null) {
+    window.localStorage.removeItem(activeSubagentPanelStorageKey);
+    return;
+  }
+  window.localStorage.setItem(
+    activeSubagentPanelStorageKey,
+    JSON.stringify({
+      createdAt: subagent.createdAt,
+      instanceId: subagent.instanceId,
+      interactive: subagent.interactive,
+      lastEventId: subagent.lastEventId,
+      roleId: subagent.roleId,
+      runId: subagent.runId,
+      runPhase: subagent.runPhase,
+      runStatus: subagent.runStatus,
+      sessionId: subagent.sessionId,
+      status: subagent.status,
+      subagentKind: subagent.subagentKind,
+      title: subagent.title,
+      updatedAt: subagent.updatedAt,
+    }),
+  );
+}
+
+function activeSubagentPanelFromRecord(
+  value: unknown,
+): ActiveSubagentSession | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const sessionId = stringRecordValue(value, "sessionId");
+  const instanceId = stringRecordValue(value, "instanceId");
+  const runId = stringRecordValue(value, "runId");
+  const title = stringRecordValue(value, "title");
+  if (sessionId.length === 0) {
+    return null;
+  }
+  if (instanceId.length === 0 && runId.length === 0 && title.length === 0) {
+    return null;
+  }
+  return {
+    createdAt: stringRecordValue(value, "createdAt"),
+    instanceId,
+    interactive: value.interactive === true,
+    lastEventId: nullableNumberRecordValue(value, "lastEventId"),
+    roleId: stringRecordValue(value, "roleId"),
+    runId,
+    runPhase: stringRecordValue(value, "runPhase"),
+    runStatus: stringRecordValue(value, "runStatus"),
+    sessionId,
+    status: stringRecordValue(value, "status"),
+    subagentKind: stringRecordValue(value, "subagentKind"),
+    title,
+    updatedAt: stringRecordValue(value, "updatedAt"),
+  };
+}
+
+function stringRecordValue(
+  record: Record<string, unknown>,
+  key: string,
+): string {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function nullableNumberRecordValue(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function clampSubagentPanelWidth(width: number, maxWidth: number): number {

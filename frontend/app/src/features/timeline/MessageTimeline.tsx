@@ -2898,6 +2898,9 @@ function runtimeEntryIsCoveredByHydratedOutput(
     if (entryTexts.some((entryText) => hydratedText.includes(entryText))) {
       return true;
     }
+    if (runState.scope === "subagent") {
+      return false;
+    }
     const replayAfterEventId = runState.replayAfterEventId ?? 0;
     return !(replayAfterEventId > 0 && entry.eventId > replayAfterEventId);
   }

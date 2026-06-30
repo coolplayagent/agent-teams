@@ -68,7 +68,7 @@ class EncryptionService:
                 )
             except InvalidToken:
                 continue
-            except Exception:
+            except (MachineFeatureError, ValueError):
                 continue
             self._needs_migration = True
             return plaintext.decode("utf-8")
@@ -277,8 +277,8 @@ class EncryptionService:
         os_info = f"{platform.system()}-{platform.release()}"
         return (f"{mac_address}|{hostname}|{os_info}",)
 
+    @staticmethod
     def _run_text_command(
-        self,
         command: tuple[str, ...],
     ) -> subprocess.CompletedProcess[str] | None:
         try:
@@ -295,7 +295,8 @@ class EncryptionService:
             return None
         return result
 
-    def _is_valid_id(self, value: str) -> bool:
+    @staticmethod
+    def _is_valid_id(value: str) -> bool:
         normalized = value.strip().lower()
         if len(normalized) < 8:
             return False
@@ -312,7 +313,8 @@ class EncryptionService:
         }
         return normalized not in invalid_values and compact not in invalid_values
 
-    def _normalize_mac(self, value: str) -> str | None:
+    @staticmethod
+    def _normalize_mac(value: str) -> str | None:
         normalized = re.sub(r"[^0-9a-f]", "", value.strip().lower())
         if len(normalized) != 12:
             return None
@@ -320,8 +322,8 @@ class EncryptionService:
             return None
         return normalized
 
+    @staticmethod
     def _is_ignored_windows_adapter(
-        self,
         connection_name: str,
         adapter_name: str,
     ) -> bool:

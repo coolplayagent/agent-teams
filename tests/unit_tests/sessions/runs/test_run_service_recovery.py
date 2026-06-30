@@ -686,6 +686,81 @@ async def test_prepare_intent_async_resolves_topology_with_policy_override(
     assert prepared.topology.orchestration_policy == policy
 
 
+class _IntentSnapshotRepo:
+    def __init__(self, intent: IntentInput | None) -> None:
+        self.intent = intent
+        self.requests: list[str] = []
+
+    async def get_async(self, run_id: str) -> IntentInput:
+        self.requests.append(run_id)
+        if self.intent is None:
+            raise KeyError(run_id)
+        return self.intent
+
+
+@pytest.mark.asyncio
+async def test_get_run_intent_snapshot_async_reads_pending_and_repo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = run_service_module.SessionRunService.__new__(
+        run_service_module.SessionRunService
+    )
+    pending = IntentInput(
+        session_id="session-1",
+        input=content_parts_from_text("queued"),
+    )
+    stored = IntentInput(
+        session_id="session-1",
+        input=content_parts_from_text("stored"),
+    )
+    repo = _IntentSnapshotRepo(stored)
+    manager._pending_runs = {"run-pending": pending}
+    manager._run_intent_repo = cast(RunIntentRepository, repo)
+    monkeypatch.setattr(manager, "_should_delegate_to_bound_loop", lambda: False)
+
+    assert await manager.get_run_intent_snapshot_async("  ") is None
+    pending_snapshot = await manager.get_run_intent_snapshot_async("run-pending")
+    assert pending_snapshot == pending
+    assert pending_snapshot is not pending
+    assert await manager.get_run_intent_snapshot_async("run-stored") == stored
+    assert repo.requests == ["run-stored"]
+
+    manager._run_intent_repo = cast(RunIntentRepository, _IntentSnapshotRepo(None))
+    assert await manager.get_run_intent_snapshot_async("run-missing") is None
+
+
+@pytest.mark.asyncio
+async def test_get_run_intent_snapshot_async_delegates_to_bound_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = run_service_module.SessionRunService.__new__(
+        run_service_module.SessionRunService
+    )
+    stored = IntentInput(
+        session_id="session-1",
+        input=content_parts_from_text("stored"),
+    )
+    manager._pending_runs = {}
+    manager._run_intent_repo = cast(RunIntentRepository, _IntentSnapshotRepo(stored))
+    bound_calls: list[str] = []
+
+    async def call_in_bound_loop(
+        callback: Callable[[], Awaitable[IntentInput | None]],
+    ) -> IntentInput | None:
+        bound_calls.append("called")
+        return await callback()
+
+    monkeypatch.setattr(manager, "_should_delegate_to_bound_loop", lambda: True)
+    monkeypatch.setattr(
+        manager,
+        "_call_coroutine_in_bound_loop_async",
+        call_in_bound_loop,
+    )
+
+    assert await manager.get_run_intent_snapshot_async("run-stored") == stored
+    assert bound_calls == ["called"]
+
+
 def test_get_todo_uses_run_session_from_runtime(
     tmp_path: Path,
 ) -> None:

@@ -543,8 +543,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       const foreground = sessionIdRef.current === result.session_id;
       runStreamController.startRunStream({
         ...(foreground ? {} : { foreground: false }),
+        ...(titlePreview.trim().length > 0 ? { promptText: titlePreview } : {}),
         runId: result.run_id,
         sessionId: result.session_id,
+        ...(result.target_role_id?.trim() ? { targetRoleId: result.target_role_id } : {}),
       });
       void queryClient.invalidateQueries({
         queryKey: ["sessions", result.session_id, "messages"],

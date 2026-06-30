@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 describe("ChatWorkspace", () => {
-  it("clears the active run stream when switching sessions", async () => {
+  it("moves the active run foreground without closing the stream when switching sessions", async () => {
     const runStreamController = createRunStreamController();
     const { rerender } = render(
       <ChatWorkspace
@@ -45,6 +45,8 @@ describe("ChatWorkspace", () => {
     );
 
     expect(runStreamController.clearRunStream).not.toHaveBeenCalled();
+    expect(runStreamController.setForegroundSessionId).toHaveBeenCalledTimes(1);
+    expect(runStreamController.setForegroundSessionId).toHaveBeenLastCalledWith("session-1");
 
     rerender(
       <ChatWorkspace
@@ -55,6 +57,7 @@ describe("ChatWorkspace", () => {
     );
 
     expect(runStreamController.clearRunStream).not.toHaveBeenCalled();
+    expect(runStreamController.setForegroundSessionId).toHaveBeenCalledTimes(1);
 
     rerender(
       <ChatWorkspace
@@ -65,8 +68,10 @@ describe("ChatWorkspace", () => {
     );
 
     await waitFor(() =>
-      expect(runStreamController.clearRunStream).toHaveBeenCalledTimes(1),
+      expect(runStreamController.setForegroundSessionId).toHaveBeenCalledTimes(2),
     );
+    expect(runStreamController.setForegroundSessionId).toHaveBeenLastCalledWith("session-2");
+    expect(runStreamController.clearRunStream).not.toHaveBeenCalled();
 
     rerender(
       <ChatWorkspace
@@ -77,8 +82,10 @@ describe("ChatWorkspace", () => {
     );
 
     await waitFor(() =>
-      expect(runStreamController.clearRunStream).toHaveBeenCalledTimes(2),
+      expect(runStreamController.setForegroundSessionId).toHaveBeenCalledTimes(3),
     );
+    expect(runStreamController.setForegroundSessionId).toHaveBeenLastCalledWith(null);
+    expect(runStreamController.clearRunStream).not.toHaveBeenCalled();
   });
 
   it("moves every session-scoped surface to the new session during a switch", async () => {
@@ -109,8 +116,11 @@ describe("ChatWorkspace", () => {
     );
 
     await waitFor(() =>
-      expect(runStreamController.clearRunStream).toHaveBeenCalledTimes(1),
+      expect(runStreamController.setForegroundSessionId).toHaveBeenLastCalledWith(
+        "session-2",
+      ),
     );
+    expect(runStreamController.clearRunStream).not.toHaveBeenCalled();
     expect(renderedSessionIds()).toEqual({
       composer: "session-2",
       recovery: "session-2",
@@ -233,6 +243,7 @@ function createRunStreamController(): RunStreamController {
     activeRunId: null,
     activeRunIds: [],
     clearRunStream: vi.fn(),
+    setForegroundSessionId: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

@@ -349,8 +349,10 @@ describe("Composer", () => {
       ),
     );
     expect(controller.startRunStream).toHaveBeenCalledWith({
+      promptText: "Draft the update",
       runId: "run-1",
       sessionId: "session-1",
+      targetRoleId: "Writer",
     });
   });
 
@@ -375,6 +377,7 @@ describe("Composer", () => {
 
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
+        promptText: "Start the session",
         runId: "run-1",
         sessionId: "session-1",
       }),
@@ -460,6 +463,7 @@ describe("Composer", () => {
       title: "preview after run",
     });
     expect(controller.startRunStream).toHaveBeenCalledWith({
+      promptText: "preview after run",
       runId: "run-1",
       sessionId: "session-1",
     });
@@ -1710,6 +1714,7 @@ describe("Composer", () => {
     expect(request?.display_input).toEqual(request?.input);
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
+        promptText: "Describe this image",
         runId: "run-1",
         sessionId: "session-1",
       }),
@@ -2247,6 +2252,7 @@ describe("Composer", () => {
 
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
+        promptText: "Start the session",
         runId: "run-1",
         sessionId: "session-1",
       }),
@@ -2290,6 +2296,7 @@ describe("Composer", () => {
 
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
+        promptText: "Start before session detail returns",
         runId: "run-1",
         sessionId: "session-1",
       }),
@@ -2374,6 +2381,7 @@ describe("Composer", () => {
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
         foreground: false,
+        promptText: "hello",
         runId: "run-a",
         sessionId: "session-a",
       }),
@@ -3169,6 +3177,7 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
     activeRunId,
     activeRunIds: activeRunId === null ? [] : [activeRunId],
     clearRunStream: vi.fn(),
+    setForegroundSessionId: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

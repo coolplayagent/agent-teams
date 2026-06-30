@@ -235,6 +235,11 @@ describe("useRunStreamController", () => {
   });
 
   it("refreshes timeline, sidebar, and session token usage when a run stream closes", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [roundWithToolCalls("run-1", [])],
+      next_cursor: null,
+    });
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -456,7 +461,7 @@ describe("useRunStreamController", () => {
     expect(secondStreamOptions.runId).toBe("run-2");
   });
 
-  it("caps incomplete terminal round history follow-ups without refreshing rounds", async () => {
+  it("falls back to refreshing rounds when terminal history stays incomplete", async () => {
     vi.useFakeTimers();
     listSessionRoundsMock.mockResolvedValue({
       has_more: false,
@@ -506,7 +511,7 @@ describe("useRunStreamController", () => {
       await vi.advanceTimersByTimeAsync(900);
     });
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(24);
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
+    expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
   });
@@ -552,11 +557,12 @@ describe("useRunStreamController", () => {
       options.onClosed?.(runtimeStateWithPausedRun(12));
     });
 
-    await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ["sessions", "session-1", "messages"],
-      }),
-    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
     expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
     expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
     expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
@@ -823,6 +829,11 @@ describe("useRunStreamController", () => {
   });
 
   it("routes background stream state and refreshes session caches on terminal close", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [roundWithToolCalls("background-run-1", [])],
+      next_cursor: null,
+    });
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -870,11 +881,12 @@ describe("useRunStreamController", () => {
       ]));
     });
 
-    await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: ["sessions", "session-1", "messages"],
-      }),
-    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
     expect(streamMocks.handles[0]?.close).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
     expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
@@ -931,7 +943,10 @@ describe("useRunStreamController", () => {
       staleOptions.onError("run unavailable", "server");
     });
 
-    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]).toBeUndefined();
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]).toMatchObject({
+      entries: [],
+      status: "connecting",
+    });
     expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
     expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("background-run-1");
     expect(screen.getByTestId("suppressed-run-ids")).toBeEmptyDOMElement();
@@ -1173,8 +1188,13 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("");
   });
 
-  it("does not reconnect transport interruptions after tracked runs are locally terminal", () => {
+  it("does not reconnect transport interruptions after tracked runs are locally terminal", async () => {
     vi.useFakeTimers();
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [roundWithToolCalls("run-1", [])],
+      next_cursor: null,
+    });
     useRuntimeStore.setState({
       runtimeState: runtimeStateWithClosedRun(77),
     });
@@ -1207,6 +1227,7 @@ describe("useRunStreamController", () => {
 
     expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
+    await Promise.resolve();
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
     });

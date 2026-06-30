@@ -83,21 +83,22 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const pausedSubagent = visiblePausedSubagent(
     recoveryQuery.data?.paused_subagent ?? null,
   );
+  const activeBackgroundTasks = useMemo(
+    () =>
+      (recoveryQuery.data?.background_tasks ?? []).filter(isActiveBackgroundTask),
+    [recoveryQuery.data?.background_tasks],
+  );
   const hasPendingRecoveryItems =
     pendingApprovals.length > 0 ||
     pendingQuestions.length > 0 ||
-    pausedSubagent !== null;
+    pausedSubagent !== null ||
+    activeBackgroundTasks.length > 0;
   const visibleActiveRun =
     activeRun !== null &&
     runStreamController.suppressedRunIds.includes(activeRun.run_id) &&
     !hasPendingRecoveryItems
       ? null
       : activeRun;
-  const activeBackgroundTasks = useMemo(
-    () =>
-      (recoveryQuery.data?.background_tasks ?? []).filter(isActiveBackgroundTask),
-    [recoveryQuery.data?.background_tasks],
-  );
   const recoveryRunStreamTargets = useMemo(
     () => buildRecoveryRunStreamTargets(activeRun, activeBackgroundTasks),
     [activeBackgroundTasks, activeRun],
@@ -297,12 +298,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     return null;
   }
   const recoveryPanelRunId = recoveryPanelRunKey(activeRun, activeBackgroundTasks);
-  if (
-    visibleActiveRun === null &&
-    activeBackgroundTasks.length === 0 &&
-    pendingQuestions.length === 0 &&
-    pausedSubagent === null
-  ) {
+  if (!hasPendingRecoveryItems && !showResumeAction) {
     return null;
   }
 
@@ -311,21 +307,26 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
       className="at-recovery"
       message={
         <div className="at-recovery-body">
-          <Space size={8}>
-            <span>
-              {recoveryStatusText(visibleActiveRun, activeBackgroundTasks)}
-            </span>
-            {showResumeAction ? (
-              <Button
-                loading={resumeMutation.isPending}
-                onClick={() => resumeMutation.mutate()}
-                size="small"
-                type="primary"
-              >
-                {t("recoveryResume")}
-              </Button>
-            ) : null}
-          </Space>
+          {showResumeAction || activeBackgroundTasks.length > 0 ? (
+            <Space size={8}>
+              <span>
+                {recoveryStatusText(
+                  showResumeAction ? visibleActiveRun : null,
+                  activeBackgroundTasks,
+                )}
+              </span>
+              {showResumeAction ? (
+                <Button
+                  loading={resumeMutation.isPending}
+                  onClick={() => resumeMutation.mutate()}
+                  size="small"
+                  type="primary"
+                >
+                  {t("recoveryResume")}
+                </Button>
+              ) : null}
+            </Space>
+          ) : null}
           <BackgroundTasksPanel
             activeRunId={recoveryPanelRunId}
             busyTaskId={

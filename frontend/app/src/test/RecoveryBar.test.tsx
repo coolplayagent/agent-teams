@@ -491,7 +491,6 @@ describe("RecoveryBar", () => {
 
     renderRecoveryBar(controller);
 
-    await screen.findByText("Run run-1 is running");
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
         afterEventId: 42,
@@ -500,6 +499,7 @@ describe("RecoveryBar", () => {
         sessionId: "session-1",
       }),
     );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
 
@@ -538,7 +538,10 @@ describe("RecoveryBar", () => {
 
     renderRecoveryBar(controller);
 
-    await screen.findByText("Run run-1 is completed");
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(controller.startRunStream).not.toHaveBeenCalled();
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
@@ -576,7 +579,6 @@ describe("RecoveryBar", () => {
       </TestProviders>,
     );
 
-    await screen.findByText("Run run-b is running");
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
         afterEventId: 88,
@@ -585,6 +587,7 @@ describe("RecoveryBar", () => {
         sessionId: "session-b",
       }),
     );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
 
@@ -962,7 +965,10 @@ describe("RecoveryBar", () => {
 
     renderRecoveryBar(runStreamController("run-1"));
 
-    await screen.findByText("Run run-1 is stopped");
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
   });
 
@@ -1234,6 +1240,7 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
     activeRunId,
     activeRunIds: activeRunId === null ? [] : [activeRunId],
     clearRunStream: vi.fn(),
+    setForegroundSessionId: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

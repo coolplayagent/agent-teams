@@ -3,12 +3,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Composer } from "../composer/Composer";
 import { RecoveryBar } from "../recovery/RecoveryBar";
 import { MessageTimeline } from "../timeline/MessageTimeline";
+import type { TimelineSubagentReference } from "../timeline/MessageTimeline";
 import { useTranslations } from "../../i18n";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { SessionTokenUsage } from "./SessionTokenUsage";
 
 interface ChatWorkspaceProps {
   contentLoadingKey?: number;
+  onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   primaryRoleId: string | null;
   runStreamController: RunStreamController;
   sessionId: string | null;
@@ -17,6 +19,7 @@ interface ChatWorkspaceProps {
 
 export function ChatWorkspace({
   contentLoadingKey,
+  onSubagentOpen,
   primaryRoleId,
   runStreamController,
   sessionId,
@@ -47,11 +50,11 @@ export function ChatWorkspace({
   }, []);
 
   useLayoutEffect(() => {
+    runStreamController.setForegroundSessionId(sessionId);
     if (previousSessionIdRef.current === sessionId) {
       return;
     }
     previousSessionIdRef.current = sessionId;
-    runStreamController.clearRunStream();
 
     if (sessionId === null) {
       cancelSessionSwitchFrame(switchFrameRef.current);
@@ -85,16 +88,20 @@ export function ChatWorkspace({
       aria-busy={switching ? "true" : undefined}
       className={switching ? "at-chat-view is-session-switching" : "at-chat-view"}
     >
-      <RecoveryBar
-        runStreamController={runStreamController}
+      <MessageTimeline
+        onSubagentOpen={onSubagentOpen}
         sessionId={sessionId}
+        workspaceId={workspaceId ?? null}
       />
-      <MessageTimeline sessionId={sessionId} workspaceId={workspaceId ?? null} />
       {switching ? (
         <div className="at-session-switch-loading" role="status">
           {t("sessionSwitchLoading")}
         </div>
       ) : null}
+      <RecoveryBar
+        runStreamController={runStreamController}
+        sessionId={sessionId}
+      />
       <SessionTokenUsage
         primaryRoleId={primaryRoleId}
         sessionId={sessionId}

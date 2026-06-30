@@ -20,19 +20,21 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent } from "react";
+import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 
 import {
   fetchUiLanguageSettings,
   getHealth,
   getSession,
   listSidebarSessions,
+  listSessionSubagents,
   listWorkspaces,
   markSessionTerminalRunViewed,
   saveUiLanguageSettings,
 } from "../../api/client";
 import type {
   SessionSidebarRecord,
+  SessionSubagentRecord,
   UiLanguage,
   UiLanguageSettings,
 } from "../../api/contracts";
@@ -52,8 +54,10 @@ import {
   type ActiveSubagentSession,
   type SidebarBackendStatus,
   type SidebarNavigationItem,
+  normalizeSessionSubagent,
 } from "../sessions/SessionsSidebar";
 import { SubagentSessionView } from "../sessions/SubagentSessionView";
+import type { TimelineSubagentReference } from "../timeline/MessageTimeline";
 import { SettingsDrawer } from "./SettingsDrawer";
 import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
 import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
@@ -74,6 +78,10 @@ const terminalViewMarkRetryDelayMs = 120;
 const sidebarOverlayMediaQuery = "(max-width: 760px)";
 const shellViewHistoryKey = "agentTeamsShellView";
 const shellViewStorageKey = "agentTeams.shellView";
+const subagentPanelWidthDefault = 620;
+const subagentPanelWidthMin = 420;
+const subagentPanelWidthMax = 1080;
+const subagentPanelWidthStorageKey = "agentTeams.subagentPanelWidth";
 const uiLanguageSettingsQueryKey = ["ui-language-settings"] as const;
 
 type ShellPrimaryView =
@@ -104,6 +112,10 @@ export function AppShell() {
   const [chatContentLoadingKey, setChatContentLoadingKey] = useState(0);
   const [activeSubagent, setActiveSubagent] =
     useState<ActiveSubagentSession | null>(null);
+  const [subagentPanelWidth, setSubagentPanelWidthState] = useState(
+    readSubagentPanelWidth,
+  );
+  const [subagentPanelResizing, setSubagentPanelResizing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const terminalViewMarksRef = useRef(new Set<string>());
   const terminalViewRetryTimersRef = useRef(new Set<number>());
@@ -161,6 +173,27 @@ export function AppShell() {
       runStreamController,
       selectedSessionId,
     ],
+  );
+  const handleTimelineSubagentOpen = useCallback(
+    (reference: TimelineSubagentReference) => {
+      const provisionalSubagent = activeSubagentFromTimelineReference(reference);
+      if (provisionalSubagent !== null) {
+        setActiveSubagent(provisionalSubagent);
+      }
+      void queryClient.fetchQuery({
+        queryKey: ["sessions", reference.sessionId, "subagents"],
+        queryFn: () => listSessionSubagents(reference.sessionId, true),
+        staleTime: 0,
+      })
+        .then((records) => {
+          const authoritative = matchingSubagentFromRecords(reference, records);
+          if (authoritative !== null) {
+            setActiveSubagent(authoritative);
+          }
+        })
+        .catch(() => undefined);
+    },
+    [queryClient],
   );
 
   const healthQuery = useQuery({
@@ -520,6 +553,31 @@ export function AppShell() {
     };
   }, [setSidebarWidth, sidebarResizing]);
 
+  useEffect(() => {
+    if (!subagentPanelResizing) {
+      return undefined;
+    }
+
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      setSubagentPanelWidth(window.innerWidth - event.clientX);
+    };
+    const handlePointerUp = () => {
+      setSubagentPanelResizing(false);
+    };
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [subagentPanelResizing]);
+
   return (
     <Layout className="at-shell">
       <Header className="at-topbar">
@@ -598,15 +656,10 @@ export function AppShell() {
             width={sidebarWidth}
           >
             <SessionsSidebar
-              activeSubagent={activeSubagent}
               backendStatus={sidebarBackendStatus}
               navigationItems={sidebarNavigationItems}
               onOpenWorkspaceView={() => openPrimaryShellView("workspace")}
               onSessionSelected={() => openPrimaryShellView("chat", "replace")}
-              onSubagentSelected={(subagent) => {
-                setActiveSubagent(subagent);
-                navigateShellView("subagent-session");
-              }}
               workspaceViewActive={activeView === "workspace"}
             />
             <div
@@ -662,20 +715,55 @@ export function AppShell() {
               sessions={sidebarSessionsQuery.data ?? []}
               workspaces={workspacesQuery.data ?? []}
             />
-          ) : activeView === "subagent-session" && activeSubagent !== null ? (
-            <SubagentSessionView
-              onBack={() => openPrimaryShellView("chat", "replace")}
-              runStreamController={runStreamController}
-              subagent={activeSubagent}
-            />
           ) : (
-            <ChatWorkspace
-              contentLoadingKey={chatContentLoadingKey}
-              primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
-              runStreamController={runStreamController}
-              sessionId={selectedSessionId}
-              workspaceId={sessionDetailQuery.data?.workspace_id ?? selectedSession?.workspace_id ?? null}
-            />
+            <div
+              className={
+                activeSubagent === null
+                  ? "at-workspace-chat-shell"
+                  : "at-workspace-chat-shell has-subagent-panel"
+              }
+              style={
+                activeSubagent === null
+                  ? undefined
+                  : subagentPanelStyle(subagentPanelWidth)
+              }
+            >
+              <ChatWorkspace
+                contentLoadingKey={chatContentLoadingKey}
+                onSubagentOpen={handleTimelineSubagentOpen}
+                primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
+                runStreamController={runStreamController}
+                sessionId={selectedSessionId}
+                workspaceId={sessionDetailQuery.data?.workspace_id ?? selectedSession?.workspace_id ?? null}
+              />
+              {activeSubagent !== null ? (
+                <>
+                  <div
+                    aria-label={t("appSubagentPanelResize")}
+                    aria-orientation="vertical"
+                    aria-valuemax={subagentPanelWidthMax}
+                    aria-valuemin={subagentPanelWidthMin}
+                    aria-valuenow={subagentPanelWidth}
+                    className={
+                      subagentPanelResizing
+                        ? "at-subagent-panel-resizer is-resizing"
+                        : "at-subagent-panel-resizer"
+                    }
+                    onKeyDown={handleSubagentPanelResizeKeyDown}
+                    onPointerDown={handleSubagentPanelResizePointerDown}
+                    role="separator"
+                    tabIndex={0}
+                  />
+                <aside className="at-subagent-side-panel">
+                  <SubagentSessionView
+                    onBack={() => setActiveSubagent(null)}
+                    runStreamController={runStreamController}
+                    subagent={activeSubagent}
+                  />
+                </aside>
+                </>
+              ) : null}
+            </div>
           )}
         </Content>
       </Layout>
@@ -702,6 +790,36 @@ export function AppShell() {
       event.preventDefault();
       setSidebarWidth(sidebarWidth + 16);
     }
+  }
+
+  function handleSubagentPanelResizePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    setSubagentPanelResizing(true);
+    setSubagentPanelWidth(window.innerWidth - event.clientX);
+  }
+
+  function handleSubagentPanelResizeKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setSubagentPanelWidth(subagentPanelWidth + 24);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setSubagentPanelWidth(subagentPanelWidth - 24);
+    }
+  }
+
+  function setSubagentPanelWidth(width: number) {
+    const nextWidth = Math.min(
+      subagentPanelWidthMax,
+      Math.max(subagentPanelWidthMin, Math.round(width)),
+    );
+    window.localStorage.setItem(subagentPanelWidthStorageKey, String(nextWidth));
+    setSubagentPanelWidthState(nextWidth);
   }
 
   function handleSearchSessionSelected(session: SessionSidebarRecord) {
@@ -732,6 +850,84 @@ export function AppShell() {
 
 function readSidebarOverlayMode(): boolean {
   return window.matchMedia(sidebarOverlayMediaQuery).matches;
+}
+
+function readSubagentPanelWidth(): number {
+  const raw = window.localStorage.getItem(subagentPanelWidthStorageKey);
+  if (raw === null) {
+    return subagentPanelWidthDefault;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return subagentPanelWidthDefault;
+  }
+  return Math.min(
+    subagentPanelWidthMax,
+    Math.max(subagentPanelWidthMin, Math.round(parsed)),
+  );
+}
+
+function subagentPanelStyle(width: number): CSSProperties {
+  return {
+    "--at-subagent-panel-width": `${width}px`,
+  } as CSSProperties;
+}
+
+function activeSubagentFromTimelineReference(
+  reference: TimelineSubagentReference,
+): ActiveSubagentSession | null {
+  const runId = reference.runId?.trim() ?? "";
+  const instanceId = reference.instanceId?.trim() ?? "";
+  if (runId.length === 0 && instanceId.length === 0) {
+    return null;
+  }
+  return {
+    createdAt: reference.createdAt ?? "",
+    instanceId,
+    interactive: reference.interactive ?? false,
+    lastEventId: reference.lastEventId ?? null,
+    roleId: reference.roleId ?? "",
+    runId,
+    runPhase: reference.runPhase ?? "",
+    runStatus: reference.runStatus ?? reference.status ?? "running",
+    sessionId: reference.sessionId,
+    status: reference.status ?? reference.runStatus ?? "running",
+    subagentKind: reference.subagentKind ?? "normal",
+    title: subagentTitleFromReference(reference),
+    updatedAt: reference.updatedAt ?? "",
+  };
+}
+
+function matchingSubagentFromRecords(
+  reference: TimelineSubagentReference,
+  records: SessionSubagentRecord[],
+): ActiveSubagentSession | null {
+  const runId = reference.runId?.trim() ?? "";
+  const instanceId = reference.instanceId?.trim() ?? "";
+  const normalized = records
+    .map((record) => normalizeSessionSubagent(record, reference.sessionId))
+    .filter((record): record is ActiveSubagentSession => record !== null);
+  if (runId.length === 0 && instanceId.length === 0) {
+    return normalized.length === 1 ? normalized[0] : null;
+  }
+  const match = normalized.find((record) => {
+    if (instanceId.length > 0 && record.instanceId === instanceId) {
+      return true;
+    }
+    return runId.length > 0 && record.runId === runId;
+  });
+  return match ?? null;
+}
+
+function subagentTitleFromReference(reference: TimelineSubagentReference): string {
+  return (
+    reference.title?.trim() ||
+    reference.description?.trim() ||
+    reference.roleId?.trim() ||
+    reference.runId?.trim() ||
+    reference.instanceId?.trim() ||
+    "Subagent"
+  );
 }
 
 function terminalViewMarkKey(session: SessionSidebarRecord): string {

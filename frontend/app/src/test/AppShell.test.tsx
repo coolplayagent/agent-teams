@@ -1,4 +1,4 @@
-import { App as AntApp, ConfigProvider } from "antd";
+﻿import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -17,6 +17,7 @@ import {
   getHealth,
   getSession,
   listSidebarSessions,
+  listSessionSubagents,
   listWorkspaces,
   markSessionTerminalRunViewed,
   saveUiLanguageSettings,
@@ -36,6 +37,7 @@ vi.mock("../api/client", () => ({
   getHealth: vi.fn(),
   getSession: vi.fn(),
   listSidebarSessions: vi.fn(),
+  listSessionSubagents: vi.fn(),
   listWorkspaces: vi.fn(),
   markSessionTerminalRunViewed: vi.fn(),
   saveUiLanguageSettings: vi.fn(),
@@ -83,7 +85,6 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
     navigationItems = [],
     onOpenWorkspaceView,
     onSessionSelected,
-    onSubagentSelected,
   }: {
     backendStatus?: {
       label: string;
@@ -98,7 +99,6 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
     }>;
     onOpenWorkspaceView?: () => void;
     onSessionSelected?: () => void;
-    onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
   }) => (
     <div data-testid="sessions-sidebar">
       {navigationItems.map((item) => (
@@ -125,46 +125,6 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
       <span
         data-testid="select-session-from-sidebar"
         onClick={onSessionSelected}
-      />
-      <span
-        data-testid="open-subagent-session"
-        onClick={() =>
-          onSubagentSelected?.({
-            createdAt: "2026-06-23T10:02:00Z",
-            instanceId: "subagent-instance-1",
-            interactive: false,
-            lastEventId: 41,
-            roleId: "explorer",
-            runId: "subagent-run-1",
-            runPhase: "running",
-            runStatus: "running",
-            sessionId: "session-1",
-            status: "running",
-            subagentKind: "normal",
-            title: "Subagent Explorer",
-            updatedAt: "2026-06-23T10:03:00Z",
-          })
-        }
-      />
-      <span
-        data-testid="open-subagent-session-b"
-        onClick={() =>
-          onSubagentSelected?.({
-            createdAt: "2026-06-23T11:02:00Z",
-            instanceId: "subagent-instance-2",
-            interactive: false,
-            lastEventId: 64,
-            roleId: "explorer",
-            runId: "subagent-run-2",
-            runPhase: "running",
-            runStatus: "running",
-            sessionId: "session-2",
-            status: "running",
-            subagentKind: "normal",
-            title: "Subagent Research",
-            updatedAt: "2026-06-23T11:03:00Z",
-          })
-        }
       />
       {backendStatus !== undefined ? (
         <div
@@ -254,9 +214,17 @@ vi.mock("../features/shell/SettingsDrawer", () => ({
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
   MessageTimeline: ({
+    onSubagentOpen,
     sessionId,
     workspaceId,
   }: {
+    onSubagentOpen?: (subagent: {
+      instanceId?: string;
+      roleId?: string;
+      runId?: string;
+      sessionId: string;
+      title?: string;
+    }) => void;
     sessionId: string | null;
     workspaceId?: string | null;
   }) => (
@@ -264,7 +232,24 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
       data-session-id={sessionId ?? ""}
       data-testid="timeline"
       data-workspace-id={workspaceId ?? ""}
-    />
+    >
+      <button
+        data-testid="open-subagent-from-timeline"
+        onClick={() => {
+          const secondSession = sessionId === "session-2";
+          onSubagentOpen?.({
+            instanceId: secondSession ? "subagent-instance-2" : "subagent-instance-1",
+            roleId: "explorer",
+            runId: secondSession ? "subagent-run-2" : "subagent-run-1",
+            sessionId: sessionId ?? "session-1",
+            title: secondSession ? "Subagent Research" : "Subagent Explorer",
+          });
+        }}
+        type="button"
+      >
+        Subagent tool
+      </button>
+    </div>
   ),
 }));
 
@@ -282,6 +267,7 @@ const getHealthMock = vi.mocked(getHealth);
 const getSessionMock = vi.mocked(getSession);
 const fetchUiLanguageSettingsMock = vi.mocked(fetchUiLanguageSettings);
 const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
+const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 const markSessionTerminalRunViewedMock = vi.mocked(markSessionTerminalRunViewed);
 const saveUiLanguageSettingsMock = vi.mocked(saveUiLanguageSettings);
@@ -305,6 +291,21 @@ beforeEach(() => {
       session_id: "session-1",
       workspace_id: "workspace-1",
       title: "Session 1",
+    },
+  ]);
+  listSessionSubagentsMock.mockResolvedValue([
+    {
+      created_at: "2026-06-23T10:02:00Z",
+      instance_id: "subagent-instance-1",
+      last_event_id: 41,
+      role_id: "explorer",
+      run_id: "subagent-run-1",
+      run_status: "running",
+      session_id: "session-1",
+      status: "running",
+      subagent_kind: "normal",
+      title: "Subagent Explorer",
+      updated_at: "2026-06-23T10:03:00Z",
     },
   ]);
   listWorkspacesMock.mockResolvedValue([
@@ -633,7 +634,7 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
-    fireEvent.click(screen.getByTestId("open-subagent-session"));
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
 
     fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
@@ -1192,12 +1193,12 @@ describe("AppShell", () => {
     expect(window.localStorage.getItem("agentTeams.shellView")).toBe("chat");
   });
 
-  it("opens subagent sessions as a secondary workspace surface without right drawer entrypoints", async () => {
+  it("opens subagent sessions from the timeline tool card in a right-side panel", async () => {
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
 
-    fireEvent.click(screen.getByTestId("open-subagent-session"));
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
 
     const subagentSurface = await screen.findByTestId("subagent-session-view");
     expect(subagentSurface).toBeVisible();
@@ -1209,8 +1210,16 @@ describe("AppShell", () => {
     expect(subagentSurface).toHaveAttribute("data-run-id", "subagent-run-1");
     expect(subagentSurface).toHaveAttribute("data-run-status", "running");
     expect(screen.getByText("Subagent Explorer")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).toBeVisible();
+    expect(screen.getByTestId("composer")).toBeVisible();
+    expect(document.querySelector(".at-subagent-side-panel")).not.toBeNull();
+    const panelResizer = screen.getByRole("separator", {
+      name: "Resize subagent panel",
+    });
+    expect(panelResizer).toHaveAttribute("aria-valuenow", "620");
+    fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
+    expect(panelResizer).toHaveAttribute("aria-valuenow", "644");
+    expect(window.localStorage.getItem("agentTeams.subagentPanelWidth")).toBe("644");
     expect(document.querySelector("#agent-drawer")).toBeNull();
     expect(document.querySelector("#right-rail")).toBeNull();
     expect(document.querySelector(".agent-panel")).toBeNull();
@@ -1234,7 +1243,7 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
-    fireEvent.click(screen.getByTestId("open-subagent-session"));
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
 
     if (resolveSession === undefined) {
@@ -1251,7 +1260,7 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
     expect(screen.getByText("Subagent Explorer")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).toBeVisible();
   });
 
   it("keeps a cross-session subagent selection out of the main chat hydration path", async () => {
@@ -1301,11 +1310,11 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
-    fireEvent.click(screen.getByTestId("open-subagent-session-b"));
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
 
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
     expect(screen.getByText("Subagent Research")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).toBeVisible();
     await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-2"));
 
     if (resolveSession === undefined) {
@@ -1322,7 +1331,7 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
     expect(screen.getByText("Subagent Research")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).toBeVisible();
     expect(useUiStore.getState().selectedSessionId).toBe("session-2");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
   });
@@ -1331,7 +1340,7 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
-    fireEvent.click(screen.getByTestId("open-subagent-session"));
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
 
     fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
@@ -1360,7 +1369,7 @@ describe("AppShell", () => {
       renderShell();
 
       expect(await screen.findByTestId("timeline")).toBeVisible();
-      fireEvent.click(screen.getByTestId("open-subagent-session"));
+      fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
       expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
       expect(screen.getByText("Subagent Explorer")).toBeVisible();
 
@@ -1369,7 +1378,7 @@ describe("AppShell", () => {
       expect(screen.getByText("Loading session...")).toBeVisible();
       expect(animationFrame.pendingCount()).toBe(1);
 
-      fireEvent.click(screen.getByTestId("open-subagent-session"));
+      fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
       expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
 
       if (resolveSession === undefined) {
@@ -1386,10 +1395,9 @@ describe("AppShell", () => {
 
       expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
       expect(screen.getByText("Subagent Explorer")).toBeVisible();
-      expect(screen.queryByText("Loading session...")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
-      expect(animationFrame.pendingCount()).toBe(0);
+      expect(screen.getByTestId("timeline")).toBeVisible();
+      expect(screen.getByTestId("composer")).toBeVisible();
+      expect(animationFrame.pendingCount()).toBeGreaterThanOrEqual(1);
       expect(useUiStore.getState().selectedSessionId).toBe("session-1");
       expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
     } finally {
@@ -1428,6 +1436,7 @@ function createRunStreamController(
     activeRunId: null,
     activeRunIds: [],
     clearRunStream: vi.fn(),
+    setForegroundSessionId: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

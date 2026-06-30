@@ -241,6 +241,7 @@ function runtimeStateWithReplayCursors(
     nextRuns[run.runId] = {
       entries: currentRun?.entries ?? [],
       lastEventId: run.afterEventId,
+      ...optionalRuntimeRunMetadata(currentRun),
       replayAfterEventId: Math.max(
         currentRun?.replayAfterEventId ?? 0,
         run.afterEventId,
@@ -256,7 +257,29 @@ function runtimeStateWithReplayCursors(
     : {
         ...initialState,
         runs: nextRuns,
-      };
+  };
+}
+
+function optionalRuntimeRunMetadata(
+  runState: RuntimeRunState | undefined,
+): Partial<RuntimeRunState> {
+  if (runState === undefined) {
+    return {};
+  }
+  const metadata: Partial<RuntimeRunState> = {};
+  if (runState.sessionId !== undefined) {
+    metadata.sessionId = runState.sessionId;
+  }
+  if (runState.promptText !== undefined) {
+    metadata.promptText = runState.promptText;
+  }
+  if (runState.createdAt !== undefined) {
+    metadata.createdAt = runState.createdAt;
+  }
+  if (runState.targetRoleId !== undefined) {
+    metadata.targetRoleId = runState.targetRoleId;
+  }
+  return metadata;
 }
 
 function trackedRunsClosed(

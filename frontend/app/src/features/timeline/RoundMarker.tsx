@@ -50,6 +50,14 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
         <details className="at-round-marker-intent">
           <summary className="at-round-marker-intent-summary">
             <span className="at-round-marker-title">{summary.title}</span>
+            <span className="at-round-marker-intent-action" aria-hidden="true">
+              <span className="at-round-marker-intent-action-expand">
+                {t("timelineRoundExpand")}
+              </span>
+              <span className="at-round-marker-intent-action-collapse">
+                {t("timelineRoundCollapse")}
+              </span>
+            </span>
           </summary>
           <div className="at-round-marker-intent-body">{summary.promptText}</div>
         </details>

@@ -134,21 +134,51 @@ describe("shell layout CSS", () => {
   });
 
   it("keeps completed processed work visually folded until opened", () => {
+    expect(themeCss).not.toContain(".at-processed-group-line");
     expect(themeCss).toMatch(
       /\.at-processed-group:not\(\[open\]\) > \.at-processed-group-body\s*{[\s\S]*?display:\s*none;/,
     );
     expect(themeCss).toMatch(
       /\.at-processed-group\[open\] > \.at-processed-group-summary \.at-processed-group-toggle\s*{[\s\S]*?transform:\s*rotate\(90deg\);/,
     );
+    expect(themeCss).toMatch(
+      /\.at-processed-group-summary\s*{[\s\S]*?display:\s*inline-flex;[\s\S]*?min-height:\s*24px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-marker\s*{[\s\S]*?border-bottom:\s*0;/,
+    );
+  });
+
+  it("keeps collapsed tool records compact in the message timeline", () => {
+    expect(themeCss).toMatch(
+      /\.at-message\.is-tool-only\s*{[\s\S]*?padding-top:\s*2px;[\s\S]*?padding-bottom:\s*2px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-tool-summary\s*{[\s\S]*?min-height:\s*30px;[\s\S]*?padding:\s*5px 8px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message\.is-tool-only \.at-message-tool-summary,[\s\S]*?\.at-processed-group-item\.is-tool-only \.at-message-tool-summary\s*{[\s\S]*?min-height:\s*28px;[\s\S]*?padding:\s*4px 8px;/,
+    );
   });
 
   it("keeps streaming message affordances declared in shared CSS", () => {
     expect(themeCss).toMatch(/@keyframes at-streaming-cursor-pulse/);
     expect(themeCss).toMatch(
-      /\.streaming-cursor\s*{[\s\S]*?width:\s*2px;[\s\S]*?animation:\s*at-streaming-cursor-pulse 0\.9s ease-in-out infinite alternate;/,
+      /\.streaming-cursor\s*{[\s\S]*?width:\s*6px;[\s\S]*?height:\s*6px;[\s\S]*?border-radius:\s*50%;[\s\S]*?animation:\s*at-streaming-cursor-pulse 0\.9s ease-in-out infinite alternate;/,
     );
     expect(themeCss).toMatch(
       /\.at-message-plain-stream\s*{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*pre-wrap;/,
+    );
+  });
+
+  it("keeps recovery prompts near the composer instead of above the timeline", () => {
+    expect(themeCss).toMatch(
+      /\.at-chat-view\s*{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\) auto auto auto;/,
+    );
+    expect(themeCss).toMatch(/\.at-timeline-frame\s*{[\s\S]*?grid-row:\s*1;/);
+    expect(themeCss).toMatch(/\.at-recovery\s*{[\s\S]*?grid-row:\s*2;/);
+    expect(themeCss).toMatch(
+      /\.at-recovery-question\s*{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
     );
   });
 
@@ -157,7 +187,7 @@ describe("shell layout CSS", () => {
       /\.at-chat-view\s*{[\s\S]*?position:\s*relative;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(
-      /\.at-session-switch-loading\s*{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*2;[\s\S]*?z-index:\s*5;[\s\S]*?min-height:\s*0;[\s\S]*?pointer-events:\s*none;/,
+      /\.at-session-switch-loading\s*{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*1;[\s\S]*?z-index:\s*5;[\s\S]*?min-height:\s*0;[\s\S]*?pointer-events:\s*none;/,
     );
     expect(themeCss).toMatch(/@keyframes at-session-switch-spin/);
   });

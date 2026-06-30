@@ -651,9 +651,6 @@ export function SessionsSidebar({
                       selected && rawIndicatorType === "unread"
                         ? null
                         : rawIndicatorType;
-                    const subagentCount = positiveCount(session.subagent_count);
-                    const subagentsExpanded =
-                      expandedSubagentSessions[session.session_id] === true;
                     return (
                       <div className="at-session-stack" key={session.session_id}>
                         <div
@@ -678,24 +675,6 @@ export function SessionsSidebar({
                             </button>
                             <div className="at-session-meta-slot">
                               {sessionMeta(session, t, language, indicatorType)}
-                              {subagentCount > 0 ? (
-                                <Tooltip title={t("sidebarSubagentSessionsToggle")}>
-                                  <button
-                                    aria-expanded={subagentsExpanded}
-                                    aria-label={t("sidebarSubagentSessionsToggle")}
-                                    className="at-session-subagent-toggle"
-                                    onClick={() => toggleSessionSubagents(session.session_id)}
-                                    type="button"
-                                  >
-                                    {subagentsExpanded ? (
-                                      <ChevronDown aria-hidden="true" size={12} />
-                                    ) : (
-                                      <ChevronRight aria-hidden="true" size={12} />
-                                    )}
-                                    <span>{subagentCount}</span>
-                                  </button>
-                                </Tooltip>
-                              ) : null}
                             </div>
                           </div>
                           <div className="at-session-actions">
@@ -722,13 +701,6 @@ export function SessionsSidebar({
                             </Tooltip>
                           </div>
                         </div>
-                        {subagentsExpanded ? (
-                          <SessionSubagentList
-                            activeSubagent={activeSubagent}
-                            onSubagentSelected={selectSubagent}
-                            parentSession={session}
-                          />
-                        ) : null}
                       </div>
                     );
                   })}
@@ -1138,7 +1110,7 @@ function drainSessionSubagentLoadQueue(): void {
   }
 }
 
-function normalizeSessionSubagent(
+export function normalizeSessionSubagent(
   record: SessionSubagentRecord,
   fallbackSessionId: string,
 ): ActiveSubagentSession | null {

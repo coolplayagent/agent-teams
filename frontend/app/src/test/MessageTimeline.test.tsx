@@ -16,6 +16,7 @@ import type { RelayRunEvent, StreamStatus } from "../runtime/events";
 import {
   initialRuntimeState,
   reduceRunEvent,
+  type RuntimeRunState,
   type TimelineEntry,
 } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
@@ -552,6 +553,7 @@ describe("MessageTimeline", () => {
       expect(screen.getByText("6s")).toBeVisible();
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
+        forceRefresh: true,
         limit: 100,
       });
       await waitFor(() => expect(followUpRound).toHaveAttribute("aria-current", "step"));
@@ -726,10 +728,12 @@ describe("MessageTimeline", () => {
     await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(2));
     expect(listSessionRoundsMock).toHaveBeenNthCalledWith(1, "session-1", {
       cursorRunId: null,
+      forceRefresh: true,
       limit: 100,
     });
     expect(listSessionRoundsMock).toHaveBeenNthCalledWith(2, "session-1", {
       cursorRunId: "run-middle",
+      forceRefresh: true,
       limit: 100,
     });
     expect(Array.from(roundRail.querySelectorAll("button")).map((button) =>
@@ -801,6 +805,7 @@ describe("MessageTimeline", () => {
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
+        forceRefresh: true,
         limit: 100,
       }),
     );
@@ -884,6 +889,7 @@ describe("MessageTimeline", () => {
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
+        forceRefresh: true,
         limit: 100,
       }),
     );
@@ -989,7 +995,11 @@ describe("MessageTimeline", () => {
   it("serializes round rail page fetches through the returned cursor", async () => {
     const firstPage = deferredSessionRounds();
     const secondPage = deferredSessionRounds();
-    const pageRequests: Array<{ cursorRunId: string | null; sessionId: string }> = [];
+    const pageRequests: Array<{
+      cursorRunId: string | null;
+      forceRefresh: boolean | undefined;
+      sessionId: string;
+    }> = [];
     listSessionMessagesMock.mockResolvedValue([
       {
         content: "Older answer",
@@ -1006,7 +1016,7 @@ describe("MessageTimeline", () => {
     ]);
     listSessionRoundsMock.mockImplementation((sessionId, options = {}) => {
       const cursorRunId = options.cursorRunId ?? null;
-      pageRequests.push({ cursorRunId, sessionId });
+      pageRequests.push({ cursorRunId, forceRefresh: options.forceRefresh, sessionId });
       if (cursorRunId === null) {
         return firstPage.promise;
       }
@@ -1020,7 +1030,9 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("Latest answer")).toBeVisible();
     await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(1));
-    expect(pageRequests).toEqual([{ cursorRunId: null, sessionId: "session-1" }]);
+    expect(pageRequests).toEqual([
+      { cursorRunId: null, forceRefresh: true, sessionId: "session-1" },
+    ]);
 
     await act(async () => {
       firstPage.resolve({
@@ -1039,8 +1051,8 @@ describe("MessageTimeline", () => {
 
     await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(2));
     expect(pageRequests).toEqual([
-      { cursorRunId: null, sessionId: "session-1" },
-      { cursorRunId: "run-1", sessionId: "session-1" },
+      { cursorRunId: null, forceRefresh: true, sessionId: "session-1" },
+      { cursorRunId: "run-1", forceRefresh: true, sessionId: "session-1" },
     ]);
 
     await act(async () => {
@@ -1161,6 +1173,7 @@ describe("MessageTimeline", () => {
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
+        forceRefresh: true,
         limit: 100,
       }),
     );
@@ -1246,6 +1259,132 @@ describe("MessageTimeline", () => {
       .toBeNull();
   });
 
+  it("uses the round marker instead of duplicating localized persisted user prompts", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "你好 连续修复验证 五轮 3",
+        message_id: "localized-user-prompt",
+        role_id: "用户",
+        run_id: "run-localized-prompt",
+      },
+      {
+        content: "第三轮修复验证。",
+        message_id: "localized-assistant-answer",
+        role_id: "MainAgent",
+        run_id: "run-localized-prompt",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-localized-prompt",
+          run_status: "completed",
+          run_user_message: "你好 连续修复验证 五轮 3",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("第三轮修复验证。")).toBeVisible();
+    expect(container.querySelector(".at-round-marker"))
+      .toHaveTextContent("你好 连续修复验证 五轮 3");
+    expect(container.querySelector('article.at-message[data-role-id="用户"]'))
+      .toBeNull();
+  });
+
+  it("renders a runtime-only round marker before visible stream content arrives", async () => {
+    setRuntimeEntries([], "open", {
+      createdAt: "2026-06-23T12:42:33Z",
+      promptText: "Live stream prompt",
+      sessionId: "session-1",
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Live stream prompt")).toBeVisible();
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent("running");
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
+  });
+
+  it("does not render an empty runtime cursor row while waiting for content", async () => {
+    setRuntimeEntries(
+      [
+        runtimeGenericEntry({
+          id: "run-output:1:0",
+          kind: "run_started",
+          text: "run started",
+          eventId: 1,
+          payload: {},
+        }),
+      ],
+      "open",
+      {
+        promptText: "Waiting for first token",
+        sessionId: "session-1",
+      },
+    );
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Waiting for first token")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
+  });
+
+  it("hides internal successful status events after the final runtime answer", async () => {
+    setRuntimeEntries(
+      [
+        runtimeTextDeltaEntry({
+          id: "run-output:1:0",
+          text: "Final answer",
+          eventId: 1,
+        }),
+        runtimeGenericEntry({
+          id: "run-output:2:1",
+          kind: "spec_checkpoint_evaluated",
+          text: "passed",
+          eventId: 2,
+          payload: { status: "passed" },
+        }),
+        runtimeGenericEntry({
+          id: "run-output:3:2",
+          kind: "hook_completed",
+          text: "completed",
+          eventId: 3,
+          payload: { status: "completed" },
+        }),
+        runtimeGenericEntry({
+          id: "run-output:4:3",
+          kind: "runtime_guardrail_report",
+          text: "passed",
+          eventId: 4,
+          payload: {
+            blocked_count: 0,
+            status: "passed",
+            warning_count: 0,
+          },
+        }),
+      ],
+      "closed",
+      {
+        promptText: "Run with internal status events",
+        sessionId: "session-1",
+      },
+    );
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Final answer")).toBeVisible();
+    expect(screen.queryByText("passed")).not.toBeInTheDocument();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
+  });
+
   it("keeps long round prompts collapsed with raw text available in the marker", async () => {
     const prompt = [
       "Create a migration plan for the frontend rewrite.",
@@ -1284,6 +1423,9 @@ describe("MessageTimeline", () => {
     expect(summary).toHaveTextContent(
       "Create a migration plan for the frontend rewrite. Keep the settings navigation aligned with V1.",
     );
+    const action = details?.querySelector(".at-round-marker-intent-action");
+    expect(action).toHaveTextContent("Expand");
+    expect(action).toHaveTextContent("Collapse");
     const body = details?.querySelector(".at-round-marker-intent-body");
     expect(body).toHaveTextContent("Keep the settings navigation aligned with V1.");
     expect(body?.textContent).toContain("\nDo not flatten secondary screens");
@@ -1291,6 +1433,44 @@ describe("MessageTimeline", () => {
     fireEvent.click(summary as Element);
 
     expect(details).toHaveAttribute("open");
+  });
+
+  it("collapses one-line round prompts before the marker title becomes unreadable", async () => {
+    const prompt =
+      "问题工具位置验证-1782803930917：请使用 ask_question 工具问我一个问题，问题内容是“请选择一个方向？”，不要直接给最终回答。";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "已提问“请选择一个方向？”，用户选择了方向A。",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-question",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-question",
+          run_status: "completed",
+          run_user_message: prompt,
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("已提问“请选择一个方向？”，用户选择了方向A。"))
+      .toBeVisible();
+    const details = container.querySelector("details.at-round-marker-intent");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    expect(details?.querySelector(".at-round-marker-intent-action"))
+      .toHaveTextContent("Expand");
+    fireEvent.click(details?.querySelector(".at-round-marker-intent-summary") as Element);
+    expect(details).toHaveAttribute("open");
+    expect(details?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);
   });
 
   it("shows terminal runtime status when a persisted round status is stale", async () => {
@@ -1392,6 +1572,7 @@ describe("MessageTimeline", () => {
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
+        forceRefresh: true,
         limit: 100,
       }),
     );
@@ -2132,7 +2313,7 @@ describe("MessageTimeline", () => {
     expect(thinkingBlock).toHaveAttribute("open");
   });
 
-  it("renders an idle streaming cursor for an open run before output arrives", async () => {
+  it("does not render a blank idle cursor for an open run before output arrives", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
         event_id: 1,
@@ -2148,20 +2329,10 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-idle",
     });
 
-    await waitFor(() =>
-      expect(container.querySelector(".at-message-streaming-text")).not.toBeNull(),
-    );
-    const streamingText = container.querySelector<HTMLElement>(
-      ".at-message-streaming-text",
-    );
-    expect(streamingText).toHaveAttribute("data-streaming", "true");
-    expect(streamingText).not.toHaveTextContent("Run started");
-    expect(streamingText).not.toHaveTextContent("run started");
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
-    expect(container.querySelector("article.at-message"))
-      .toHaveAttribute("data-run-id", "run-idle");
-    expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
     expect(screen.queryByText("Run started")).not.toBeInTheDocument();
     expect(screen.queryByText("run started")).not.toBeInTheDocument();
   });
@@ -3114,8 +3285,9 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-main-tool",
     });
 
-    const toolTitle = await screen.findByText("Tool call: spawn_subagent");
+    const toolTitle = await screen.findByText("Starting subagent");
     expect(toolTitle).toBeVisible();
+    expect(screen.queryByText("Tool call: spawn_subagent")).not.toBeInTheDocument();
     expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
     expect(toolPreviewTexts(container)).toEqual([
       "Explore skills implementation",
@@ -3126,6 +3298,86 @@ describe("MessageTimeline", () => {
     expect(toolRow).toHaveAttribute("data-run-id", "run-main-tool");
     expect(toolRow).toHaveAttribute("data-role-id", "MainAgent");
     expect(toolRow).toHaveAttribute("data-instance-id", "main-instance");
+  });
+
+  it("opens the subagent panel from a completed subagent tool card", async () => {
+    const onSubagentOpen = vi.fn();
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_result",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+        payload_json: JSON.stringify({
+          result: {
+            subagent_instance_id: "subagent-instance-1",
+            subagent_role_id: "explorer",
+            subagent_run_id: "subagent_run_1",
+            title: "Explore skills implementation",
+          },
+          tool_call_id: "call-skills",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline("session-1", {
+      onSubagentOpen,
+      runtimeRunId: "run-main-tool",
+    });
+
+    fireEvent.click(await screen.findByText("Subagent started"));
+
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "subagent-instance-1",
+      roleId: "explorer",
+      runId: "subagent_run_1",
+      sessionId: "session-1",
+      title: "Explore skills implementation",
+    }));
+  });
+
+  it("keeps subagent orphan messages out of the main session timeline", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Explore how Skills are implemented in this project",
+        created_at: "2026-06-23T10:00:00Z",
+        instance_id: "subagent-instance-1",
+        message_id: "subagent-message",
+        role_id: "explorer",
+        run_id: "subagent_run_1",
+      },
+      {
+        content: "Skill 系统的实现总结如下",
+        created_at: "2026-06-23T10:03:00Z",
+        instance_id: "main-instance",
+        message_id: "parent-message",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T10:02:00Z",
+          run_id: "parent_run_1",
+          run_status: "completed",
+          run_user_message: "看一下当前项目，不要修改。看一下skill是怎么实现的",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    renderTimeline();
+
+    expect(await screen.findByText("Skill 系统的实现总结如下")).toBeVisible();
+    expect(
+      screen.queryByText("Explore how Skills are implemented in this project"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps same-role runtime streams separate by instance identity", async () => {
@@ -5833,7 +6085,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("background task started")).not.toBeInTheDocument();
   });
 
-  it("renders runtime coordination events as labelled summaries", async () => {
+  it("hides question coordination events from the transcript while keeping recovery events visible", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({
         id: "run-coordination:1:0",
@@ -5945,10 +6197,15 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
+    await screen.findByText(
+      "Subagent status: Review PR · status running · phase subagent_running · role reviewer · instance subagent-1",
+    );
     expect(
-      await screen.findByText("User question: Pick deployment target · #question-1"),
-    ).toBeVisible();
-    expect(screen.getByText("User question answered: 1 answer · #question-1")).toBeVisible();
+      screen.queryByText("User question: Pick deployment target · #question-1"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("User question answered: 1 answer · #question-1"),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(
         "Injection queued: Please retry with logs · source user · mode queued · to worker-1",
@@ -6317,6 +6574,7 @@ describe("MessageTimeline", () => {
 });
 
 interface RenderTimelineOptions {
+  onSubagentOpen?: Parameters<typeof MessageTimeline>[0]["onSubagentOpen"];
   runtimeRunId?: string | null;
   workspaceId?: string | null;
 }
@@ -6338,6 +6596,7 @@ function renderTimeline(
       <ConfigProvider>
         <AntApp>
           <MessageTimeline
+            onSubagentOpen={options.onSubagentOpen}
             sessionId={sessionId}
             runtimeRunId={options.runtimeRunId ?? null}
             workspaceId={options.workspaceId ?? null}
@@ -6374,27 +6633,56 @@ function deferredSessionRounds(): {
 function setRuntimeEntries(
   entries: TimelineEntry[],
   status: StreamStatus = "closed",
+  options: RuntimeRunStateOptions = {},
 ): void {
   const runId = entries[0]?.runId ?? "run-output";
   const lastEventId = entries.reduce(
     (latest, entry) => Math.max(latest, entry.eventId),
     0,
   );
+  const runState: RuntimeRunState = {
+    runId,
+    ...optionalRuntimeRunStateValues(options),
+    status,
+    lastEventId,
+    seenEventKeys: [],
+    terminalEventType: null,
+    entries,
+  };
   useRuntimeStore.setState({
     runtimeState: {
       activeRunIds: status === "open" ? [runId] : [],
       runs: {
-        [runId]: {
-          runId,
-          status,
-          lastEventId,
-          seenEventKeys: [],
-          terminalEventType: null,
-          entries,
-        },
+        [runId]: runState,
       },
     },
   });
+}
+
+interface RuntimeRunStateOptions {
+  createdAt?: string;
+  promptText?: string;
+  sessionId?: string;
+  targetRoleId?: string;
+}
+
+function optionalRuntimeRunStateValues(
+  options: RuntimeRunStateOptions,
+): Partial<RuntimeRunState> {
+  const values: Partial<RuntimeRunState> = {};
+  if (options.sessionId !== undefined) {
+    values.sessionId = options.sessionId;
+  }
+  if (options.promptText !== undefined) {
+    values.promptText = options.promptText;
+  }
+  if (options.createdAt !== undefined) {
+    values.createdAt = options.createdAt;
+  }
+  if (options.targetRoleId !== undefined) {
+    values.targetRoleId = options.targetRoleId;
+  }
+  return values;
 }
 
 function setRuntimeStateFromEvents(events: RelayRunEvent[]): void {

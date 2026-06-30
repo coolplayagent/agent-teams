@@ -143,8 +143,9 @@ export function SubagentSessionView({
         </div>
         <div className="at-subagent-session-meta">
           <span>{t("subagentSessionReadOnly")}</span>
-          <span>{displayedSubagent.roleId}</span>
-          <span>{displayedSubagent.instanceId}</span>
+          {displayedSubagent.roleId.trim().length > 0 ? (
+            <span>{displayedSubagent.roleId}</span>
+          ) : null}
         </div>
       </header>
       <div className="at-subagent-session-body">
@@ -157,6 +158,7 @@ export function SubagentSessionView({
           roundsEnabled={false}
           runtimeRunId={runId}
           sessionId={subagent.sessionId}
+          variant="subagent-panel"
         />
       </div>
     </div>

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -63,7 +64,7 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Explorer review")).toBeVisible();
     expect(screen.getByText("Read-only subagent session")).toBeVisible();
     expect(screen.getByText("explorer")).toBeVisible();
-    expect(screen.getByText("subagent-instance-1")).toBeVisible();
+    expect(screen.queryByText("subagent-instance-1")).not.toBeInTheDocument();
     expect(await screen.findByText("Live subagent output")).toBeVisible();
     expect(listAgentMessagesMock).toHaveBeenCalledWith(
       "session-parent",
@@ -83,6 +84,42 @@ describe("SubagentSessionView", () => {
     unmount();
 
     expect(controller.clearRunStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render parent round summary chrome in the subagent panel", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["subagent_run_1"],
+        runs: {
+          subagent_run_1: {
+            createdAt: "2026-06-23T10:02:00Z",
+            entries: [
+              runtimeMessageEntry({
+                instanceId: "subagent-instance-1",
+                runId: "subagent_run_1",
+                text: "Subagent scoped output",
+              }),
+            ],
+            lastEventId: 42,
+            promptText: "Parent session prompt should not appear",
+            runId: "subagent_run_1",
+            seenEventKeys: [],
+            sessionId: "session-parent",
+            status: "open",
+            targetRoleId: "explorer",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Subagent scoped output")).toBeVisible();
+    expect(
+      screen.queryByText("Parent session prompt should not appear"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
   });
 
   it("refreshes subagent history when the tracked run closes", async () => {
@@ -237,6 +274,7 @@ describe("SubagentSessionView", () => {
     ).not.toBeInTheDocument();
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(3));
+    fireEvent.click(screen.getByText("Processed"));
     expect(await screen.findByText("Tool call: shell")).toBeVisible();
     expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
     expect(
@@ -379,6 +417,7 @@ function createRunStreamController(
     activeRunId: null,
     activeRunIds: [],
     clearRunStream: vi.fn(),
+    setForegroundSessionId: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

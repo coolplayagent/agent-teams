@@ -140,7 +140,7 @@ function roundIntentText(round: SessionRound): string {
 }
 
 function roundPromptCollapsible(value: string): boolean {
-  return value.includes("\n") || value.length > 140;
+  return value.includes("\n") || value.length > 64;
 }
 
 function rawText(value: string | null | undefined): string {

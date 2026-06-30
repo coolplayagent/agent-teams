@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Copy, Wrench } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
 
 import {
   buildWorkspaceImagePreviewUrl,
@@ -46,6 +46,20 @@ const HIDDEN_RUNTIME_CHAT_EVENT_KINDS = new Set<string>([
   "run_started",
   "token_usage",
   "tool_call_batch_sealed",
+  "user_question_answered",
+  "user_question_requested",
+]);
+const INTERNAL_RUNTIME_STATUS_NOISE_EVENT_KINDS = new Set<string>([
+  "generation_progress",
+  "hook_completed",
+  "hook_decision_applied",
+  "hook_deferred",
+  "hook_failed",
+  "hook_matched",
+  "hook_started",
+  "runtime_guardrail_report",
+  "spec_checkpoint_applied",
+  "spec_checkpoint_evaluated",
 ]);
 const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
@@ -58,10 +72,29 @@ interface MessageTimelineProps {
   loadErrorDescription?: string;
   loadMessages?: (sessionId: string) => Promise<TimelineMessage[]>;
   messageQueryKey?: readonly unknown[];
+  onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
   sessionId: string | null;
+  variant?: "session" | "subagent-panel";
   workspaceId?: string | null;
+}
+
+export interface TimelineSubagentReference {
+  createdAt?: string;
+  description?: string;
+  instanceId?: string;
+  interactive?: boolean;
+  lastEventId?: number | null;
+  roleId?: string;
+  runId?: string;
+  runPhase?: string;
+  runStatus?: string;
+  sessionId: string;
+  status?: string;
+  subagentKind?: string;
+  title?: string;
+  updatedAt?: string;
 }
 
 export function MessageTimeline({
@@ -70,9 +103,11 @@ export function MessageTimeline({
   loadErrorDescription,
   loadMessages = listSessionMessages,
   messageQueryKey,
+  onSubagentOpen,
   roundsEnabled = true,
   runtimeRunId = null,
   sessionId,
+  variant = "session",
   workspaceId = null,
 }: MessageTimelineProps) {
   const { message } = App.useApp();
@@ -99,7 +134,7 @@ export function MessageTimeline({
       sessionId !== null &&
       !messagesQuery.isLoading &&
       !messagesQuery.isError,
-    staleTime: 10000,
+    staleTime: 0,
   });
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
@@ -107,9 +142,13 @@ export function MessageTimeline({
     () => roundsQuery.data ?? [],
     [roundsQuery.data],
   );
+  const roundChromeEnabled = variant === "session";
   const displayRounds = useMemo(
-    () => roundsWithRuntimeRunState(rounds, runtimeState.runs),
-    [rounds, runtimeState.runs],
+    () =>
+      roundChromeEnabled
+        ? roundsWithRuntimeRunState(rounds, runtimeState.runs, sessionId, runtimeRunId)
+        : [],
+    [roundChromeEnabled, rounds, runtimeRunId, runtimeState.runs, sessionId],
   );
   const railRounds = useMemo(
     () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
@@ -119,9 +158,19 @@ export function MessageTimeline({
     () => createMessageRoundLookup(displayRounds),
     [displayRounds],
   );
+  const scopedMessages = useMemo(
+    () =>
+      messagesVisibleInTimelineScope(
+        messages,
+        displayRounds,
+        runtimeRunId,
+        fallbackRunId,
+      ),
+    [displayRounds, fallbackRunId, messages, runtimeRunId],
+  );
   const persistedMessages = useMemo(
-    () => mergeTimelineMessages(messages, displayRounds),
-    [displayRounds, messages],
+    () => mergeTimelineMessages(scopedMessages, displayRounds),
+    [displayRounds, scopedMessages],
   );
   const persistedRows = useMemo(
     () =>
@@ -178,23 +227,27 @@ export function MessageTimeline({
   const rows = useMemo(
     () =>
       collapseProcessedRows(
-        insertRoundMarkerRows([
+        insertRoundMarkerRowsIfEnabled([
           ...persistedRows,
           ...runtimeRows.filter(timelineRowHasRenderableContent),
-        ], displayRounds, expandedHistorySegmentIds),
+        ], displayRounds, expandedHistorySegmentIds, roundChromeEnabled),
         displayRounds,
         runtimeState.runs,
       ),
-    [displayRounds, expandedHistorySegmentIds, persistedRows, runtimeRows, runtimeState.runs],
+    [
+      displayRounds,
+      expandedHistorySegmentIds,
+      persistedRows,
+      roundChromeEnabled,
+      runtimeRows,
+      runtimeState.runs,
+    ],
   );
   const streamOpenForSession = useMemo(
     () =>
       Object.values(runtimeState.runs).some(
-        (runState) =>
-          runState.status !== "closed" &&
-          runState.entries.some((entry) =>
-            runtimeEntryMatchesScope(entry, sessionId, runtimeRunId),
-          ),
+        (runState) => runState.status !== "closed" &&
+          runtimeRunStateMatchesScope(runState, sessionId, runtimeRunId),
       ),
     [runtimeRunId, runtimeState.runs, sessionId],
   );
@@ -213,7 +266,10 @@ export function MessageTimeline({
   const activeRoundRunId =
     activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(railRounds);
   const hasRoundRail =
-    !roundsQuery.isLoading && !roundsQuery.isError && railRounds.length > 0;
+    roundChromeEnabled &&
+    !roundsQuery.isLoading &&
+    !roundsQuery.isError &&
+    railRounds.length > 0;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -300,7 +356,7 @@ export function MessageTimeline({
 
   if (sessionId === null) {
     return (
-      <TimelineStateFrame>
+      <TimelineStateFrame variant={variant}>
         <Empty description={t("timelineSelectSession")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       </TimelineStateFrame>
     );
@@ -308,7 +364,7 @@ export function MessageTimeline({
 
   if (messagesQuery.isLoading) {
     return (
-      <TimelineStateFrame>
+      <TimelineStateFrame variant={variant}>
         <Skeleton active paragraph={{ rows: 10 }} />
       </TimelineStateFrame>
     );
@@ -316,7 +372,7 @@ export function MessageTimeline({
 
   if (messagesQuery.isError) {
     return (
-      <TimelineStateFrame>
+      <TimelineStateFrame variant={variant}>
         <Empty
           description={loadErrorDescription ?? t("timelineLoadError")}
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -327,7 +383,7 @@ export function MessageTimeline({
 
   if (rows.length === 0) {
     return (
-      <TimelineStateFrame>
+      <TimelineStateFrame variant={variant}>
         <Empty
           description={emptyDescription ?? t("timelineNoMessages")}
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -337,7 +393,13 @@ export function MessageTimeline({
   }
 
   return (
-    <div className={hasRoundRail ? "at-timeline-frame has-round-rail" : "at-timeline-frame"}>
+    <div
+      className={[
+        "at-timeline-frame",
+        hasRoundRail ? "has-round-rail" : "",
+        variant === "subagent-panel" ? "is-subagent-panel" : "",
+      ].filter(Boolean).join(" ")}
+    >
       <div
         className="at-timeline"
         onPointerDown={handleTimelinePointerDown}
@@ -359,6 +421,8 @@ export function MessageTimeline({
               streamOpenForSession,
               handleCopyAnswer,
               handleToggleHistorySegment,
+              onSubagentOpen,
+              sessionId,
             ),
           )}
         </div>
@@ -375,9 +439,20 @@ export function MessageTimeline({
   );
 }
 
-function TimelineStateFrame({ children }: { children: ReactNode }) {
+function TimelineStateFrame({
+  children,
+  variant = "session",
+}: {
+  children: ReactNode;
+  variant?: "session" | "subagent-panel";
+}) {
   return (
-    <div className="at-timeline-frame">
+    <div
+      className={[
+        "at-timeline-frame",
+        variant === "subagent-panel" ? "is-subagent-panel" : "",
+      ].filter(Boolean).join(" ")}
+    >
       <div className="at-timeline at-timeline-empty">
         {children}
       </div>
@@ -450,6 +525,7 @@ interface TimelineToolPart {
     | "call"
     | "result"
     | "validation";
+  subagent: TimelineSubagentReference | null;
   toolName: string;
 }
 
@@ -666,6 +742,8 @@ function timelineRowElement(
   streamOpenForSession: boolean,
   onCopyAnswer: (row: TimelineRow | undefined) => void,
   onToggleHistorySegment: (segmentId: string) => void,
+  onSubagentOpen: ((subagent: TimelineSubagentReference) => void) | undefined,
+  sessionId: string,
 ) {
   const style = { transform: `translateY(${start}px)` };
   if (row.processedGroup !== undefined) {
@@ -675,8 +753,10 @@ function timelineRowElement(
         index={index}
         key={row.key}
         measureElement={measureElement}
+        onSubagentOpen={onSubagentOpen}
         rowKey={row.key}
         runId={row.runId}
+        sessionId={sessionId}
         style={style}
         t={t}
       />
@@ -740,7 +820,12 @@ function timelineRowElement(
           {displayRole(row.role, t)}
         </Typography.Text>
       ) : null}
-      <MessageRowContent parts={row.parts} t={t} />
+      <MessageRowContent
+        onSubagentOpen={onSubagentOpen}
+        parts={row.parts}
+        sessionId={sessionId}
+        t={t}
+      />
       {showActions ? (
         <MessageRowActions
           disabled={streamOpenForSession}
@@ -756,34 +841,48 @@ function ProcessedGroupRow({
   group,
   index,
   measureElement,
+  onSubagentOpen,
   rowKey,
   runId,
+  sessionId,
   style,
   t,
 }: {
   group: TimelineProcessedGroup;
   index: number;
   measureElement: (element: Element | null) => void;
+  onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   rowKey: string;
   runId: string | null;
+  sessionId: string;
   style: { transform: string };
   t: Translate;
 }) {
+  const rowRef = useRef<HTMLElement | null>(null);
+  const setRowRef = useCallback((element: HTMLElement | null) => {
+    rowRef.current = element;
+    measureElement(element);
+  }, [measureElement]);
+  const handleToggle = useCallback(() => {
+    const element = rowRef.current;
+    if (element === null) {
+      return;
+    }
+    window.requestAnimationFrame(() => measureElement(element));
+  }, [measureElement]);
   return (
     <section
       className="at-timeline-row at-processed-group-row"
       data-index={index}
       data-row-key={rowKey}
       data-run-id={runId ?? undefined}
-      ref={measureElement}
+      ref={setRowRef}
       style={style}
     >
-      <details className="at-processed-group">
+      <details className="at-processed-group" onToggle={handleToggle}>
         <summary className="at-processed-group-summary">
-          <span className="at-processed-group-line" aria-hidden="true" />
-          <span className="at-processed-group-label">{t("timelineProcessedGroup")}</span>
           <span className="at-processed-group-toggle" aria-hidden="true">{">"}</span>
-          <span className="at-processed-group-line" aria-hidden="true" />
+          <span className="at-processed-group-label">{t("timelineProcessedGroup")}</span>
         </summary>
         <div className="at-processed-group-body">
           {group.rows.map((groupRow) => (
@@ -798,7 +897,12 @@ function ProcessedGroupRow({
               data-run-id={groupRow.runId ?? undefined}
               key={groupRow.key}
             >
-              <MessageRowContent parts={groupRow.parts} t={t} />
+              <MessageRowContent
+                onSubagentOpen={onSubagentOpen}
+                parts={groupRow.parts}
+                sessionId={sessionId}
+                t={t}
+              />
             </div>
           ))}
         </div>
@@ -888,6 +992,18 @@ function insertRoundMarkerRows(
 ): TimelineRow[] {
   const rowsWithMarkers = insertPlainRoundMarkerRows(baseRows, rounds);
   return insertHistoryDividerRows(rowsWithMarkers, rounds, expandedHistorySegmentIds);
+}
+
+function insertRoundMarkerRowsIfEnabled(
+  baseRows: TimelineRow[],
+  rounds: SessionRound[],
+  expandedHistorySegmentIds: ReadonlySet<string>,
+  enabled: boolean,
+): TimelineRow[] {
+  if (!enabled) {
+    return baseRows;
+  }
+  return insertRoundMarkerRows(baseRows, rounds, expandedHistorySegmentIds);
 }
 
 function dropRoundPromptDuplicateUserRows(
@@ -1224,7 +1340,24 @@ function insertPlainRoundMarkerRows(
     }
     rows.push(row);
   }
+  for (const [runId, marker] of markersByRunId) {
+    if (!insertedRunIds.has(runId) && roundMarkerCanStandAlone(marker.roundMarker?.round)) {
+      rows.push(marker);
+    }
+  }
   return rows;
+}
+
+function roundMarkerCanStandAlone(round: SessionRound | undefined): boolean {
+  const status = round?.run_status?.trim().toLowerCase() ?? "";
+  const phase = round?.run_phase?.trim().toLowerCase() ?? "";
+  return (
+    status === "running" ||
+    status === "queued" ||
+    status === "pending" ||
+    phase === "connecting" ||
+    phase === "running"
+  );
 }
 
 function insertHistoryDividerRows(
@@ -1505,6 +1638,7 @@ function mergeToolPartState(
     if (existing.toolName === "unknown_tool" && next.toolName !== "unknown_tool") {
       existing.toolName = next.toolName;
     }
+    existing.subagent = mergeSubagentReference(existing.subagent, next.subagent);
     return;
   }
   const argsBody = existing.phase === "call" ? existing.body : "";
@@ -1518,7 +1652,36 @@ function mergeToolPartState(
     ? next.mediaParts
     : existing.mediaParts;
   existing.phase = next.phase;
+  existing.subagent = mergeSubagentReference(existing.subagent, next.subagent);
   existing.toolName = next.toolName || existing.toolName;
+}
+
+function mergeSubagentReference(
+  existing: TimelineSubagentReference | null,
+  next: TimelineSubagentReference | null,
+): TimelineSubagentReference | null {
+  if (existing === null) {
+    return next;
+  }
+  if (next === null) {
+    return existing;
+  }
+  return {
+    createdAt: next.createdAt || existing.createdAt,
+    description: next.description || existing.description,
+    instanceId: next.instanceId || existing.instanceId,
+    interactive: next.interactive ?? existing.interactive,
+    lastEventId: next.lastEventId ?? existing.lastEventId,
+    roleId: next.roleId || existing.roleId,
+    runId: next.runId || existing.runId,
+    runPhase: next.runPhase || existing.runPhase,
+    runStatus: next.runStatus || existing.runStatus,
+    sessionId: next.sessionId || existing.sessionId,
+    status: next.status || existing.status,
+    subagentKind: next.subagentKind || existing.subagentKind,
+    title: next.title || existing.title,
+    updatedAt: next.updatedAt || existing.updatedAt,
+  };
 }
 
 function roundHasClearMarker(round: SessionRound): boolean {
@@ -1864,6 +2027,7 @@ async function collectRoundRailRounds(sessionId: string): Promise<SessionRound[]
   for (let pageIndex = 0; pageIndex < ROUND_RAIL_MAX_PAGES; pageIndex += 1) {
     const page: SessionRoundsPage = await listSessionRounds(sessionId, {
       cursorRunId,
+      forceRefresh: true,
       limit: ROUND_RAIL_PAGE_LIMIT,
     });
     rounds.push(...page.items);
@@ -1899,11 +2063,18 @@ function roundSortKey(round: SessionRound): string {
 function roundsWithRuntimeRunState(
   rounds: SessionRound[],
   runStates: Record<string, RuntimeRunState>,
+  sessionId: string | null,
+  runtimeRunId: string | null,
 ): SessionRound[] {
   let changed = false;
+  const existingRunIds = new Set<string>();
   const nextRounds = rounds.map((round) => {
+    const roundRunId = round.run_id.trim();
+    if (roundRunId.length > 0) {
+      existingRunIds.add(roundRunId);
+    }
     let nextRound = round;
-    const runState = runStates[round.run_id.trim()];
+    const runState = runStates[roundRunId];
     const runtimeStatus = runtimeRoundStatusLabel(runState);
     if (
       runtimeStatus !== null &&
@@ -1915,6 +2086,17 @@ function roundsWithRuntimeRunState(
         ...nextRound,
         run_phase: null,
         run_status: runtimeStatus,
+      };
+    }
+    const runtimePrompt = runState?.promptText?.trim() ?? "";
+    if (
+      runtimePrompt.length > 0 &&
+      (nextRound.run_user_message?.trim() ?? "").length === 0
+    ) {
+      changed = true;
+      nextRound = {
+        ...nextRound,
+        run_user_message: runtimePrompt,
       };
     }
     const runtimeRetryEvents = runtimeRetryEventsForRound(runState);
@@ -1930,7 +2112,97 @@ function roundsWithRuntimeRunState(
     }
     return nextRound;
   });
-  return changed ? nextRounds : rounds;
+  const runtimeOnlyRounds = Object.values(runStates).flatMap((runState) => {
+    if (existingRunIds.has(runState.runId)) {
+      return [];
+    }
+    const runtimeRound = runtimeRoundFromRunState(runState, sessionId, runtimeRunId);
+    return runtimeRound === null ? [] : [runtimeRound];
+  });
+  if (runtimeOnlyRounds.length === 0) {
+    return changed ? nextRounds : rounds;
+  }
+  return sortRoundsAscending([...nextRounds, ...runtimeOnlyRounds]);
+}
+
+function runtimeRoundFromRunState(
+  runState: RuntimeRunState,
+  sessionId: string | null,
+  runtimeRunId: string | null,
+): SessionRound | null {
+  const runId = runState.runId.trim();
+  if (runId.length === 0 || !runtimeRunStateMatchesScope(runState, sessionId, runtimeRunId)) {
+    return null;
+  }
+  const promptText = runState.promptText?.trim() ?? "";
+  const hasScopedEntries = runState.entries.some((entry) =>
+    runtimeEntryMatchesScope(entry, sessionId, runtimeRunId),
+  );
+  if (promptText.length === 0 || (!hasScopedEntries && runState.entries.length > 0)) {
+    return null;
+  }
+  const createdAt = runtimeRunCreatedAt(runState);
+  return {
+    ...(createdAt !== undefined ? { created_at: createdAt } : {}),
+    primary_role_id: runState.targetRoleId ?? null,
+    run_id: runId,
+    run_phase: runtimeRoundPhaseLabel(runState),
+    run_status: runtimeOpenRoundStatusLabel(runState),
+    run_user_message: promptText.length > 0 ? promptText : null,
+  };
+}
+
+function runtimeRunStateMatchesScope(
+  runState: RuntimeRunState,
+  sessionId: string | null,
+  runtimeRunId: string | null,
+): boolean {
+  if (sessionId === null) {
+    return false;
+  }
+  const scopedRunId = runtimeRunId?.trim() ?? "";
+  if (scopedRunId.length > 0 && scopedRunId !== runState.runId) {
+    return false;
+  }
+  if ((runState.sessionId?.trim() ?? "") === sessionId) {
+    return true;
+  }
+  return runState.entries.some((entry) => entry.sessionId === sessionId);
+}
+
+function runtimeRunCreatedAt(runState: RuntimeRunState): string | undefined {
+  const explicit = runState.createdAt?.trim() ?? "";
+  if (explicit.length > 0) {
+    return explicit;
+  }
+  for (const entry of runState.entries) {
+    const occurredAt = entry.occurredAt.trim();
+    if (occurredAt.length > 0) {
+      return occurredAt;
+    }
+  }
+  return undefined;
+}
+
+function runtimeRoundPhaseLabel(runState: RuntimeRunState): string | null {
+  if (runState.status === "connecting") {
+    return "connecting";
+  }
+  return null;
+}
+
+function runtimeOpenRoundStatusLabel(runState: RuntimeRunState): string | null {
+  const terminalStatus = runtimeRoundStatusLabel(runState);
+  if (terminalStatus !== null) {
+    return terminalStatus;
+  }
+  if (runState.status === "connecting" || runState.status === "open") {
+    return "running";
+  }
+  if (runState.status === "failed") {
+    return "failed";
+  }
+  return null;
 }
 
 function runtimeRetryEventsForRound(
@@ -2253,7 +2525,7 @@ function openRuntimeEntriesWithIdleCursor(
   if (visibleEntries.some(runtimeEntryProducesRenderableRow)) {
     return rowPipelineEntries;
   }
-  return [...visibleEntries, runtimeIdleCursorEntry(entries[0])];
+  return rowPipelineEntries;
 }
 
 function runtimeSilentOpenLifecycleEntry(entry: TimelineEntry): boolean {
@@ -2351,14 +2623,42 @@ function runtimeEntryIsCoveredByHydratedOutput(
 }
 
 function runtimeEntryShouldRenderChatContent(entry: TimelineEntry): boolean {
-  return !HIDDEN_RUNTIME_CHAT_EVENT_KINDS.has(entry.kind);
+  return (
+    !HIDDEN_RUNTIME_CHAT_EVENT_KINDS.has(entry.kind) &&
+    !runtimeEntryIsInternalStatusNoise(entry)
+  );
+}
+
+function runtimeEntryIsInternalStatusNoise(entry: TimelineEntry): boolean {
+  if (!INTERNAL_RUNTIME_STATUS_NOISE_EVENT_KINDS.has(entry.kind)) {
+    return false;
+  }
+  const payload = jsonObject(entry.payload);
+  const status = payload === null
+    ? ""
+    : objectString(payload, "status") ||
+      objectString(payload, "phase") ||
+      objectString(payload, "result");
+  return runtimeStatusNoiseText(entry.text) || runtimeStatusNoiseText(status);
+}
+
+function runtimeStatusNoiseText(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "passed" ||
+    normalized === "completed" ||
+    normalized === "succeeded" ||
+    normalized === "success"
+  );
 }
 
 function runtimeHiddenEntryClosesText(entry: TimelineEntry): boolean {
   return (
     entry.kind === "injection_applied" ||
     entry.kind === "injection_enqueued" ||
-    entry.kind === "run_completed"
+    entry.kind === "run_completed" ||
+    entry.kind === "user_question_answered" ||
+    entry.kind === "user_question_requested"
   );
 }
 
@@ -2501,30 +2801,177 @@ function roundMessages(round: SessionRound): SessionRoundMessage[] {
   ];
 }
 
+function messagesVisibleInTimelineScope(
+  messages: TimelineMessage[],
+  rounds: SessionRound[],
+  runtimeRunId: string | null,
+  fallbackRunId: string | null,
+): TimelineMessage[] {
+  if (!timelineScopeIsMainSession(runtimeRunId, fallbackRunId) || rounds.length === 0) {
+    return messages;
+  }
+  const mainRunIds = new Set(
+    rounds
+      .map((round) => round.run_id.trim())
+      .filter((runId) => runId.length > 0),
+  );
+  if (mainRunIds.size === 0) {
+    return messages;
+  }
+  return messages.filter((message) => {
+    const runId = explicitTimelineMessageRunId(message);
+    return (
+      runId.length === 0 ||
+      mainRunIds.has(runId) ||
+      !timelineMessageLooksDetachedSubagent(message)
+    );
+  });
+}
+
+function timelineScopeIsMainSession(
+  runtimeRunId: string | null,
+  fallbackRunId: string | null,
+): boolean {
+  return (
+    (runtimeRunId?.trim() ?? "").length === 0 &&
+    (fallbackRunId?.trim() ?? "").length === 0
+  );
+}
+
+function explicitTimelineMessageRunId(message: TimelineMessage): string {
+  return (message.run_id ?? message.trace_id ?? "").trim();
+}
+
+function timelineMessageLooksDetachedSubagent(message: TimelineMessage): boolean {
+  const role = stableTimelineRole(message.role_id ?? message.role ?? "");
+  const identifiers = [
+    message.instance_id ?? "",
+    message.run_id ?? "",
+    message.trace_id ?? "",
+    message.source ?? "",
+  ].join(" ").toLowerCase();
+  if (identifiers.includes("subagent")) {
+    return true;
+  }
+  if (role === "assistant" || role === "user" || role.length === 0) {
+    return false;
+  }
+  return (message.instance_id?.trim() ?? "").length > 0;
+}
+
 function mergeTimelineMessages(
   messages: TimelineMessage[],
   rounds: SessionRound[],
 ): TimelineMessage[] {
   const merged = messages.map((message, index) => ({ index, message }));
-  const seen = new Set(messages.flatMap(timelineMessageDedupeKeys));
+  const mergedByKey = new Map<string, { index: number; message: TimelineMessage }>();
+  for (const item of merged) {
+    for (const key of timelineMessageDedupeKeys(item.message)) {
+      mergedByKey.set(key, item);
+    }
+  }
   let nextIndex = messages.length;
   for (const round of rounds) {
     for (const roundMessage of roundMessages(round)) {
       const message = roundMessageToTimelineMessage(roundMessage, round.run_id);
       const keys = timelineMessageDedupeKeys(message);
-      if (keys.some((key) => seen.has(key))) {
+      const existingItem = keys
+        .map((key) => mergedByKey.get(key))
+        .find((item): item is { index: number; message: TimelineMessage } =>
+          item !== undefined,
+        );
+      if (existingItem !== undefined) {
+        existingItem.message = mergeTimelineMessageData(existingItem.message, message);
+        for (const key of timelineMessageDedupeKeys(existingItem.message)) {
+          mergedByKey.set(key, existingItem);
+        }
         continue;
       }
+      const item = { index: nextIndex, message };
       for (const key of keys) {
-        seen.add(key);
+        mergedByKey.set(key, item);
       }
-      merged.push({ index: nextIndex, message });
+      merged.push(item);
       nextIndex += 1;
     }
   }
   return merged
     .sort((left, right) => compareTimelineMessageItems(left, right))
     .map((item) => item.message);
+}
+
+function mergeTimelineMessageData(
+  existing: TimelineMessage,
+  next: TimelineMessage,
+): TimelineMessage {
+  const merged: TimelineMessage = { ...existing };
+  mergeTimelineMessageStringField(merged, next, "run_id");
+  mergeTimelineMessageStringField(merged, next, "trace_id");
+  mergeTimelineMessageStringField(merged, next, "role_id");
+  mergeTimelineMessageStringField(merged, next, "role");
+  mergeTimelineMessageStringField(merged, next, "instance_id");
+  mergeTimelineMessageStringField(merged, next, "created_at");
+  mergeTimelineMessageStringField(merged, next, "entry_type");
+  mergeTimelineMessageStringField(merged, next, "injection_id");
+  mergeTimelineMessageStringField(merged, next, "injection_status");
+  mergeTimelineMessageStringField(merged, next, "source");
+  mergeTimelineMessageStringField(merged, next, "status");
+  if ((merged.content?.trim() ?? "").length === 0 && (next.content?.trim() ?? "").length > 0) {
+    merged.content = next.content;
+  }
+  if ((merged.parts?.length ?? 0) === 0 && (next.parts?.length ?? 0) > 0) {
+    merged.parts = next.parts;
+  }
+  const messageBody = mergeTimelineMessageBody(merged.message, next.message);
+  if (messageBody !== undefined) {
+    merged.message = messageBody;
+  }
+  return merged;
+}
+
+type TimelineMessageStringField =
+  | "created_at"
+  | "entry_type"
+  | "injection_id"
+  | "injection_status"
+  | "instance_id"
+  | "role"
+  | "role_id"
+  | "run_id"
+  | "source"
+  | "status"
+  | "trace_id";
+
+function mergeTimelineMessageStringField(
+  target: TimelineMessage,
+  source: TimelineMessage,
+  field: TimelineMessageStringField,
+): void {
+  const current = target[field]?.trim() ?? "";
+  const next = source[field]?.trim() ?? "";
+  if (current.length === 0 && next.length > 0) {
+    target[field] = source[field];
+  }
+}
+
+function mergeTimelineMessageBody(
+  existing: TimelineMessage["message"],
+  next: TimelineMessage["message"],
+): TimelineMessage["message"] {
+  if (existing === undefined) {
+    return next;
+  }
+  if (next === undefined) {
+    return existing;
+  }
+  const merged = { ...existing };
+  if ((merged.content?.trim() ?? "").length === 0 && (next.content?.trim() ?? "").length > 0) {
+    merged.content = next.content;
+  }
+  if ((merged.parts?.length ?? 0) === 0 && (next.parts?.length ?? 0) > 0) {
+    merged.parts = next.parts;
+  }
+  return merged;
 }
 
 function compareTimelineMessageItems(
@@ -3525,10 +3972,14 @@ function outputDeltaMediaPart(
 }
 
 function MessageRowContent({
+  onSubagentOpen,
   parts,
+  sessionId,
   t,
 }: {
+  onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   parts: TimelineRenderPart[];
+  sessionId: string;
   t: Translate;
 }) {
   return (
@@ -3540,7 +3991,15 @@ function MessageRowContent({
           );
         }
         if (part.kind === "tool") {
-          return <MessageToolBlock key={`tool:${index}`} tool={part} t={t} />;
+          return (
+            <MessageToolBlock
+              key={`tool:${index}`}
+              onSubagentOpen={onSubagentOpen}
+              sessionId={sessionId}
+              tool={part}
+              t={t}
+            />
+          );
         }
         if (part.kind === "thinking") {
           return (
@@ -3639,28 +4098,55 @@ function MessageThinkingBlock({
 }
 
 function MessageToolBlock({
+  onSubagentOpen,
+  sessionId,
   tool,
   t,
 }: {
+  onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  sessionId: string;
   tool: TimelineToolPart;
   t: Translate;
 }) {
-  const title = `${toolPhaseLabel(tool, t)}: ${tool.toolName}`;
+  const phaseLabel = toolPhaseLabel(tool, t);
+  const displayName = toolDisplayName(tool);
+  const title = displayName === null ? phaseLabel : `${phaseLabel}: ${displayName}`;
   const preview = toolSummaryPreview(tool);
   const status = toolBlockStatus(tool);
   const isRunning = status === "running";
+  const subagentReference = completeSubagentReference(tool.subagent, sessionId);
+  const canOpenSubagent =
+    onSubagentOpen !== undefined &&
+    subagentReference !== null &&
+    status !== "running";
   const hasDetails =
     tool.callId.trim().length > 0 ||
     tool.body.trim().length > 0 ||
     tool.mediaParts.length > 0;
+  const handleSummaryClick = canOpenSubagent
+    ? (event: MouseEvent<HTMLElement>) => {
+        event.preventDefault();
+        onSubagentOpen(subagentReference);
+      }
+    : undefined;
   return (
     <details
-      className={`at-message-tool ${tool.error ? "is-error" : ""}`}
+      className={[
+        "at-message-tool",
+        tool.error ? "is-error" : "",
+        canOpenSubagent ? "is-openable-subagent" : "",
+      ].filter(Boolean).join(" ")}
       data-status={status}
+      data-subagent-instance-id={subagentReference?.instanceId ?? undefined}
+      data-subagent-run-id={subagentReference?.runId ?? undefined}
       data-tool-call-id={tool.callId || undefined}
       data-tool-name={tool.toolName}
     >
-      <summary className="at-message-tool-summary">
+      <summary
+        aria-label={canOpenSubagent ? t("timelineOpenSubagentPanel") : undefined}
+        className="at-message-tool-summary"
+        onClick={handleSummaryClick}
+      >
         <span className="at-message-tool-title">
           <Wrench aria-hidden="true" size={14} />
           <span title={title}>{title}</span>
@@ -3991,6 +4477,11 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       kind: "tool",
       mediaParts: [],
       phase: "call",
+      subagent: subagentReferenceFromValues({
+        callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
+        payload: "args" in part ? jsonCompatibleValue(part.args ?? null) : null,
+        toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
+      }),
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
     };
   }
@@ -4006,6 +4497,11 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       kind: "tool",
       mediaParts: toolReturnMediaParts(content),
       phase: "result",
+      subagent: subagentReferenceFromValues({
+        callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
+        payload: jsonCompatibleValue(content),
+        toolName,
+      }),
       toolName,
     };
   }
@@ -4018,6 +4514,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       kind: "tool",
       mediaParts: [],
       phase: "validation",
+      subagent: null,
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
     };
   }
@@ -4059,6 +4556,7 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
     phase: entry.kind === "tool_approval_requested"
       ? "approval-requested"
       : "approval-resolved",
+    subagent: null,
     toolName: toolName || entry.text || "unknown_tool",
   };
 }
@@ -4205,6 +4703,11 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       kind: "tool",
       mediaParts: [],
       phase: "call",
+      subagent: subagentReferenceFromValues({
+        callId,
+        payload: payload.args ?? null,
+        toolName,
+      }),
       toolName,
     };
   }
@@ -4221,6 +4724,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       kind: "tool",
       mediaParts: [],
       phase: "validation",
+      subagent: null,
       toolName,
     };
   }
@@ -4237,6 +4741,11 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     kind: "tool",
     mediaParts: toolReturnMediaParts(result),
     phase: "result",
+    subagent: subagentReferenceFromValues({
+      callId,
+      payload: result,
+      toolName,
+    }),
     toolName,
   };
 }
@@ -4436,7 +4945,7 @@ function estimateRowSize(row: TimelineRow | undefined): number {
     return 84;
   }
   if (row.processedGroup !== undefined) {
-    return 42;
+    return 34;
   }
   const mediaCount = row.parts.filter((part) => part.kind === "media").length;
   const thinkingCount = row.parts.filter((part) => part.kind === "thinking").length;
@@ -4451,7 +4960,7 @@ function estimateRowSize(row: TimelineRow | undefined): number {
   return 64
     + mediaCount * 138
     + thinkingCount * 52
-    + toolCount * 38
+    + toolCount * 30
     + Math.min(160, Math.ceil(textLength / 110) * 22);
 }
 
@@ -4507,6 +5016,15 @@ function toolActionLabel(
   t: Translate,
 ): string {
   const category = toolActionCategory(toolName);
+  if (category === "subagent") {
+    if (phase === "running") {
+      return t("timelineToolRunningSubagent");
+    }
+    if (phase === "error") {
+      return t("timelineToolErrorSubagent");
+    }
+    return t("timelineToolCompletedSubagent");
+  }
   if (category === "run") {
     if (phase === "running") {
       return t("timelineToolRunningRun");
@@ -4552,8 +5070,13 @@ function toolActionLabel(
   return t("timelineToolCompletedGeneric");
 }
 
-function toolActionCategory(toolName: string): "edit" | "generic" | "read" | "run" | "search" {
+function toolActionCategory(
+  toolName: string,
+): "edit" | "generic" | "read" | "run" | "search" | "subagent" {
   const normalized = toolName.trim().toLowerCase().replaceAll("-", "_");
+  if (normalized.includes("subagent")) {
+    return "subagent";
+  }
   if (
     normalized === "shell" ||
     normalized === "command" ||
@@ -4593,6 +5116,200 @@ function toolActionCategory(toolName: string): "edit" | "generic" | "read" | "ru
   return "generic";
 }
 
+function toolDisplayName(tool: TimelineToolPart): string | null {
+  return toolActionCategory(tool.toolName) === "subagent" ? null : tool.toolName;
+}
+
+function subagentReferenceFromValues({
+  callId,
+  payload,
+  toolName,
+}: {
+  callId: string;
+  payload: JsonValue;
+  toolName: string;
+}): TimelineSubagentReference | null {
+  const candidateObjects = subagentCandidateObjects(payload);
+  const hasSubagentShape =
+    toolActionCategory(toolName) === "subagent" ||
+    candidateObjects.some(subagentObjectHasReferenceFields);
+  if (!hasSubagentShape) {
+    return null;
+  }
+  const textReference = subagentReferenceFromText(jsonValueText(payload));
+  const reference: TimelineSubagentReference = {
+    createdAt: subagentStringField(candidateObjects, ["created_at", "createdAt"]),
+    description: subagentStringField(candidateObjects, [
+      "description",
+      "task",
+      "prompt",
+      "instructions",
+    ]),
+    instanceId: subagentStringField(candidateObjects, [
+      "subagent_instance_id",
+      "instance_id",
+      "instanceId",
+    ]),
+    interactive: subagentBooleanField(candidateObjects, ["interactive"]),
+    lastEventId: subagentNumberField(candidateObjects, [
+      "last_event_id",
+      "checkpoint_event_id",
+      "lastEventId",
+    ]),
+    roleId: subagentStringField(candidateObjects, [
+      "subagent_role_id",
+      "role_id",
+      "roleId",
+    ]),
+    runId: subagentStringField(candidateObjects, [
+      "subagent_run_id",
+      "run_id",
+      "runId",
+    ]),
+    runPhase: subagentStringField(candidateObjects, ["run_phase", "runPhase"]),
+    runStatus: subagentStringField(candidateObjects, ["run_status", "runStatus"]),
+    sessionId: subagentStringField(candidateObjects, ["session_id", "sessionId"]),
+    status: subagentStringField(candidateObjects, ["status"]),
+    subagentKind: subagentStringField(candidateObjects, [
+      "subagent_kind",
+      "kind",
+      "subagentKind",
+    ]),
+    title: subagentStringField(candidateObjects, ["title", "name", "label"]),
+    updatedAt: subagentStringField(candidateObjects, ["updated_at", "updatedAt"]),
+  };
+  const merged = mergeSubagentReference(reference, textReference);
+  if (merged === null) {
+    return null;
+  }
+  const runId = merged.runId?.trim() ?? "";
+  const instanceId = merged.instanceId?.trim() ?? "";
+  if (runId.length === 0 && instanceId.length === 0) {
+    const description = merged.description?.trim() ?? "";
+    if (callId.trim().length === 0 && description.length === 0) {
+      return null;
+    }
+  }
+  return merged;
+}
+
+function completeSubagentReference(
+  reference: TimelineSubagentReference | null,
+  sessionId: string,
+): TimelineSubagentReference | null {
+  if (reference === null) {
+    return null;
+  }
+  return {
+    ...reference,
+    sessionId: reference.sessionId.trim() || sessionId,
+  };
+}
+
+function subagentCandidateObjects(
+  value: JsonValue,
+  depth = 0,
+): Record<string, JsonValue>[] {
+  if (depth > 4) {
+    return [];
+  }
+  const object = jsonObject(value);
+  if (object !== null) {
+    return [
+      object,
+      ...Object.values(object).flatMap((child) =>
+        child === value ? [] : subagentCandidateObjects(child, depth + 1),
+      ),
+    ];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((child) => subagentCandidateObjects(child, depth + 1));
+  }
+  if (typeof value === "string") {
+    const parsed = parseJsonObjectText(value);
+    return parsed === null ? [] : subagentCandidateObjects(parsed, depth + 1);
+  }
+  return [];
+}
+
+function subagentObjectHasReferenceFields(object: Record<string, JsonValue>): boolean {
+  return [
+    "subagent_instance_id",
+    "subagent_run_id",
+    "subagent_role_id",
+    "instance_id",
+    "run_id",
+  ].some((key) => objectString(object, key).length > 0);
+}
+
+function subagentStringField(
+  objects: Record<string, JsonValue>[],
+  keys: string[],
+): string {
+  for (const object of objects) {
+    for (const key of keys) {
+      const value = objectString(object, key);
+      if (value.length > 0) {
+        return value;
+      }
+    }
+  }
+  return "";
+}
+
+function subagentNumberField(
+  objects: Record<string, JsonValue>[],
+  keys: string[],
+): number | null {
+  for (const object of objects) {
+    for (const key of keys) {
+      const value = objectNumber(object, key);
+      if (value > 0) {
+        return value;
+      }
+    }
+  }
+  return null;
+}
+
+function subagentBooleanField(
+  objects: Record<string, JsonValue>[],
+  keys: string[],
+): boolean | undefined {
+  for (const object of objects) {
+    for (const key of keys) {
+      if (object[key] === true || object[key] === false) {
+        return objectBoolean(object, key);
+      }
+    }
+  }
+  return undefined;
+}
+
+function subagentReferenceFromText(text: string): TimelineSubagentReference | null {
+  const runId = firstRegexGroup(
+    text,
+    /(?:subagent_run_id|run_id|runId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
+  );
+  const instanceId = firstRegexGroup(
+    text,
+    /(?:subagent_instance_id|instance_id|instanceId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
+  );
+  const roleId = firstRegexGroup(
+    text,
+    /(?:subagent_role_id|role_id|roleId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
+  );
+  if (runId.length === 0 && instanceId.length === 0 && roleId.length === 0) {
+    return null;
+  }
+  return {
+    instanceId,
+    roleId,
+    runId,
+    sessionId: "",
+  };
+}
+
 function displayRole(role: string, t: Translate): string {
   const normalized = normalizedRole(role);
   if (normalized === "user") {
@@ -4608,7 +5325,17 @@ function displayRole(role: string, t: Translate): string {
 }
 
 function normalizedRole(role: string): string {
-  return role.trim().toLowerCase();
+  const normalized = role.trim().toLowerCase();
+  if (normalized === "用户") {
+    return "user";
+  }
+  if (normalized === "助手" || normalized === "助理") {
+    return "assistant";
+  }
+  if (normalized === "代理") {
+    return "agent";
+  }
+  return normalized;
 }
 
 function approvalBody({

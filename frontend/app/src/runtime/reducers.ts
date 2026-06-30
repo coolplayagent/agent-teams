@@ -23,6 +23,10 @@ export interface TimelineEntry {
 
 export interface RuntimeRunState {
   runId: string;
+  sessionId?: string;
+  promptText?: string;
+  createdAt?: string;
+  targetRoleId?: string;
   status: StreamStatus;
   lastEventId: number;
   replayAfterEventId?: number;
@@ -72,6 +76,7 @@ export function reduceRunEvent(
   const status: StreamStatus = terminalEventType === null ? "open" : "closed";
   const nextRun: RuntimeRunState = {
     ...existing,
+    ...runtimeMetadataFromEvent(existing, event),
     status,
     lastEventId: Math.max(existing.lastEventId, eventId),
     seenEventKeys: dedupeKey === null
@@ -107,6 +112,29 @@ export function reduceRunEvent(
     },
     activeRunIds: Array.from(activeRunIds),
   };
+}
+
+function runtimeMetadataFromEvent(
+  existing: RuntimeRunState,
+  event: ReturnType<typeof parseRunEvent>,
+): Partial<RuntimeRunState> {
+  const metadata: Partial<RuntimeRunState> = {};
+  if (existing.sessionId === undefined && event.session_id.trim().length > 0) {
+    metadata.sessionId = event.session_id;
+  }
+  if (existing.targetRoleId === undefined) {
+    const roleId = event.role_id?.trim() ?? "";
+    if (roleId.length > 0) {
+      metadata.targetRoleId = roleId;
+    }
+  }
+  if (existing.createdAt === undefined) {
+    const occurredAt = event.occurred_at?.trim() ?? "";
+    if (occurredAt.length > 0) {
+      metadata.createdAt = occurredAt;
+    }
+  }
+  return metadata;
 }
 
 function nextTerminalEventType(

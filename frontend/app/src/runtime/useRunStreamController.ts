@@ -25,12 +25,18 @@ export interface StartRunStreamOptions {
   runId: string;
   sessionId: string;
   afterEventId?: number;
+  createdAt?: string;
   foreground?: boolean;
+  promptText?: string;
+  targetRoleId?: string;
 }
 
 export interface StartRunStreamTarget {
   runId: string;
   afterEventId?: number;
+  createdAt?: string;
+  promptText?: string;
+  targetRoleId?: string;
 }
 
 export interface StartRunStreamsOptions {
@@ -43,6 +49,7 @@ export interface RunStreamController {
   activeRunId: string | null;
   activeRunIds: string[];
   clearRunStream: (options?: ClearRunStreamOptions) => void;
+  setForegroundSessionId: (sessionId: string | null) => void;
   startRunStream: (options: StartRunStreamOptions) => void;
   startRunStreams: (options: StartRunStreamsOptions) => void;
   suppressedRunIds: string[];
@@ -69,6 +76,8 @@ export function useRunStreamController(): RunStreamController {
   const runtimeStateRef = useRef(runtimeState);
   const streamHandleRef = useRef<RunStreamHandle | null>(null);
   const continuityRefreshTimerRef = useRef<number | null>(null);
+  const foregroundRunIdsRef = useRef<string[]>([]);
+  const foregroundSessionIdRef = useRef<string | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const streamGenerationRef = useRef(0);
@@ -141,6 +150,12 @@ export function useRunStreamController(): RunStreamController {
     }
   };
 
+  const setActiveRunIdsIfChanged = (nextRunIds: string[]) => {
+    setActiveRunIds((currentRunIds) =>
+      stringArraysEqual(currentRunIds, nextRunIds) ? currentRunIds : nextRunIds,
+    );
+  };
+
   const startContinuityRefresh = (sessionId: string) => {
     stopContinuityRefresh();
     refreshRecoverySnapshot(sessionId);
@@ -157,7 +172,8 @@ export function useRunStreamController(): RunStreamController {
     stopContinuityRefresh();
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
-    setActiveRunIds([]);
+    foregroundRunIdsRef.current = [];
+    setActiveRunIdsIfChanged([]);
     setTrackedRunIds([]);
   };
 
@@ -195,6 +211,17 @@ export function useRunStreamController(): RunStreamController {
     stopActiveRunStream();
   };
 
+  const setForegroundSessionId = (sessionId: string | null) => {
+    foregroundSessionIdRef.current = sessionId;
+    setActiveRunIdsIfChanged(
+      activeTrackedRunIdsForSession(
+        foregroundRunIdsRef.current,
+        runtimeStateRef.current,
+        foregroundSessionIdRef.current,
+      ),
+    );
+  };
+
   const finishClosedRunStream = (
     sessionId: string,
     terminalTargets: StartRunStreamTarget[],
@@ -210,28 +237,41 @@ export function useRunStreamController(): RunStreamController {
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
     suppressRunTargets(terminalTargets);
-    setActiveRunIds([]);
+    foregroundRunIdsRef.current = [];
+    setActiveRunIdsIfChanged([]);
     setTrackedRunIds([]);
-    void queryClient.invalidateQueries({
-      queryKey: ["sessions", sessionId, "messages"],
-    });
-    const refreshRounds = () => {
+    const refreshHydratedSession = () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", sessionId, "messages"],
+      });
       void queryClient.invalidateQueries({
         queryKey: ["sessions", sessionId, "rounds"],
       });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void queryClient.refetchQueries({
+        queryKey: ["sessions", sessionId, "messages"],
+        type: "active",
+      });
+      void queryClient.refetchQueries({
+        queryKey: ["sessions", sessionId, "rounds"],
+        type: "active",
+      });
+      void queryClient.refetchQueries({
+        queryKey: ["sessions", "sidebar"],
+        type: "active",
+      });
     };
     if (roundSettleTargets.length === 0) {
-      refreshRounds();
+      refreshHydratedSession();
     } else {
       void settleTerminalRoundsFromHistory({
         currentStreamGeneration: () => streamGenerationRef.current,
-        onReady: refreshRounds,
+        onReady: refreshHydratedSession,
         sessionId,
         streamGeneration,
         targets: roundSettleTargets,
       });
     }
-    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     refreshRecoverySnapshot(sessionId);
     void queryClient.invalidateQueries({
       queryKey: ["sessions", sessionId, "token-usage"],
@@ -268,8 +308,12 @@ export function useRunStreamController(): RunStreamController {
         reconnectAttemptRef.current = 0;
         runtimeStateRef.current = nextRuntimeState;
         setRuntimeState(nextRuntimeState);
-        setActiveRunIds(
-          activeTrackedRunIds(options.foregroundRunIds ?? [], nextRuntimeState),
+        setActiveRunIdsIfChanged(
+          activeTrackedRunIdsForSession(
+            foregroundRunIdsRef.current,
+            nextRuntimeState,
+            foregroundSessionIdRef.current,
+          ),
         );
         refreshSubagentDiscoveryForNewEvents(options.sessionId, nextRuntimeState);
       },
@@ -341,12 +385,7 @@ export function useRunStreamController(): RunStreamController {
   const startRunStream = (options: StartRunStreamOptions) => {
     startRunStreams({
       sessionId: options.sessionId,
-      runs: [
-        {
-          afterEventId: options.afterEventId,
-          runId: options.runId,
-        },
-      ],
+      runs: [startRunStreamTargetFromOptions(options)],
       foregroundRunIds: options.foreground === false ? [] : [options.runId],
     });
   };
@@ -354,6 +393,8 @@ export function useRunStreamController(): RunStreamController {
   const startRunStreams = (options: StartRunStreamsOptions) => {
     const runs = normalizeRunTargets(options.runs);
     const foregroundRunIds = normalizeForegroundRunIds(options.foregroundRunIds, runs);
+    foregroundRunIdsRef.current = foregroundRunIds;
+    foregroundSessionIdRef.current = options.sessionId;
     streamGenerationRef.current += 1;
     const streamGeneration = streamGenerationRef.current;
     reconnectAttemptRef.current = 0;
@@ -361,7 +402,22 @@ export function useRunStreamController(): RunStreamController {
     stopContinuityRefresh();
     streamHandleRef.current?.close();
     clearSuppressedRunTargets(runs);
-    setActiveRunIds(foregroundRunIds);
+    const nextRuntimeState = runtimeStateWithStartedTargets(
+      runtimeStateRef.current,
+      options.sessionId,
+      runs,
+    );
+    if (nextRuntimeState !== runtimeStateRef.current) {
+      runtimeStateRef.current = nextRuntimeState;
+      setRuntimeState(nextRuntimeState);
+    }
+    setActiveRunIdsIfChanged(
+      activeTrackedRunIdsForSession(
+        foregroundRunIds,
+        nextRuntimeState,
+        foregroundSessionIdRef.current,
+      ),
+    );
     setTrackedRunIds(runs.map((run) => run.runId));
     startContinuityRefresh(options.sessionId);
     openTrackedRunStream(
@@ -378,6 +434,7 @@ export function useRunStreamController(): RunStreamController {
     activeRunId,
     activeRunIds,
     clearRunStream,
+    setForegroundSessionId,
     startRunStream,
     startRunStreams,
     suppressedRunIds,
@@ -386,11 +443,7 @@ export function useRunStreamController(): RunStreamController {
 }
 
 function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget[] {
-  const normalizedRuns = runs.map((run) => ({
-    afterEventId:
-      typeof run.afterEventId === "number" ? Math.max(0, run.afterEventId) : undefined,
-    runId: run.runId.trim(),
-  }));
+  const normalizedRuns = runs.map(normalizeRunTarget);
   if (normalizedRuns.length === 0) {
     throw new Error("At least one run stream target is required.");
   }
@@ -400,12 +453,124 @@ function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget
   const targetsByRunId = new Map<string, StartRunStreamTarget>();
   for (const run of normalizedRuns) {
     const existing = targetsByRunId.get(run.runId);
-    targetsByRunId.set(run.runId, {
-      afterEventId: Math.max(existing?.afterEventId ?? 0, run.afterEventId ?? 0),
-      runId: run.runId,
-    });
+    targetsByRunId.set(run.runId, mergedRunTarget(existing, run));
   }
   return Array.from(targetsByRunId.values());
+}
+
+function startRunStreamTargetFromOptions(
+  options: StartRunStreamOptions,
+): StartRunStreamTarget {
+  return normalizeRunTarget(options);
+}
+
+function normalizeRunTarget(run: StartRunStreamTarget): StartRunStreamTarget {
+  const afterEventId =
+    typeof run.afterEventId === "number" ? Math.max(0, run.afterEventId) : undefined;
+  const createdAt = normalizedOptionalString(run.createdAt);
+  const promptText = normalizedOptionalString(run.promptText);
+  const targetRoleId = normalizedOptionalString(run.targetRoleId);
+  return {
+    ...(afterEventId !== undefined ? { afterEventId } : {}),
+    ...(createdAt !== undefined ? { createdAt } : {}),
+    ...(promptText !== undefined ? { promptText } : {}),
+    runId: run.runId.trim(),
+    ...(targetRoleId !== undefined ? { targetRoleId } : {}),
+  };
+}
+
+function mergedRunTarget(
+  existing: StartRunStreamTarget | undefined,
+  next: StartRunStreamTarget,
+): StartRunStreamTarget {
+  const afterEventId = Math.max(existing?.afterEventId ?? 0, next.afterEventId ?? 0);
+  const createdAt = existing?.createdAt ?? next.createdAt;
+  const promptText = existing?.promptText ?? next.promptText;
+  const targetRoleId = existing?.targetRoleId ?? next.targetRoleId;
+  return {
+    ...(afterEventId > 0 ? { afterEventId } : {}),
+    ...(createdAt !== undefined ? { createdAt } : {}),
+    ...(promptText !== undefined ? { promptText } : {}),
+    runId: next.runId,
+    ...(targetRoleId !== undefined ? { targetRoleId } : {}),
+  };
+}
+
+function normalizedOptionalString(value: string | undefined): string | undefined {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function runtimeStateWithStartedTargets(
+  runtimeState: RuntimeState,
+  sessionId: string,
+  runs: StartRunStreamTarget[],
+): RuntimeState {
+  let nextRuns: Record<string, RuntimeRunState> | null = null;
+  for (const run of runs) {
+    const currentRun = (nextRuns ?? runtimeState.runs)[run.runId];
+    const nextRun = runtimeRunStateWithStartedTarget(currentRun, sessionId, run);
+    if (nextRun === currentRun) {
+      continue;
+    }
+    nextRuns ??= { ...runtimeState.runs };
+    nextRuns[run.runId] = nextRun;
+  }
+  return nextRuns === null
+    ? runtimeState
+    : {
+        ...runtimeState,
+        runs: nextRuns,
+      };
+}
+
+function runtimeRunStateWithStartedTarget(
+  currentRun: RuntimeRunState | undefined,
+  sessionId: string,
+  target: StartRunStreamTarget,
+): RuntimeRunState {
+  const existingRun = currentRun ?? {
+    entries: [],
+    lastEventId: 0,
+    runId: target.runId,
+    seenEventKeys: [],
+    status: "connecting",
+    terminalEventType: null,
+  } satisfies RuntimeRunState;
+  const metadata = runtimeTargetMetadata(existingRun, sessionId, target);
+  const status =
+    existingRun.status === "closed" || existingRun.status === "failed"
+      ? existingRun.status
+      : "connecting";
+  if (Object.keys(metadata).length === 0 && status === existingRun.status) {
+    return existingRun;
+  }
+  return {
+    ...existingRun,
+    ...metadata,
+    status,
+  };
+}
+
+function runtimeTargetMetadata(
+  currentRun: RuntimeRunState,
+  sessionId: string,
+  target: StartRunStreamTarget,
+): Partial<RuntimeRunState> {
+  const metadata: Partial<RuntimeRunState> = {};
+  if (currentRun.sessionId === undefined && sessionId.trim().length > 0) {
+    metadata.sessionId = sessionId;
+  }
+  if (currentRun.promptText === undefined && target.promptText !== undefined) {
+    metadata.promptText = target.promptText;
+  }
+  if (currentRun.createdAt === undefined && target.createdAt !== undefined) {
+    metadata.createdAt = target.createdAt;
+  }
+  if (currentRun.targetRoleId === undefined && target.targetRoleId !== undefined) {
+    metadata.targetRoleId = target.targetRoleId;
+  }
+  return metadata;
 }
 
 function normalizedRunIds(runs: StartRunStreamTarget[]): string[] {
@@ -507,8 +672,31 @@ function trackedRunTargetsClosed(
   );
 }
 
-function activeTrackedRunIds(runIds: string[], runtimeState: RuntimeState): string[] {
-  return runIds.filter((runId) => runtimeState.runs[runId]?.status !== "closed");
+function activeTrackedRunIdsForSession(
+  runIds: string[],
+  runtimeState: RuntimeState,
+  sessionId: string | null,
+): string[] {
+  const scopedSessionId = sessionId?.trim() ?? "";
+  if (scopedSessionId.length === 0) {
+    return [];
+  }
+  return runIds.filter((runId) => {
+    const runState = runtimeState.runs[runId];
+    const runSessionId = runState?.sessionId?.trim();
+    return (
+      runState !== undefined &&
+      runState.status !== "closed" &&
+      (runSessionId === undefined || runSessionId === scopedSessionId)
+    );
+  });
+}
+
+function stringArraysEqual(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 interface TerminalRoundSettleTarget {
@@ -528,12 +716,10 @@ function terminalRoundSettleTargets(
   runs: StartRunStreamTarget[],
   runtimeState: RuntimeState,
 ): TerminalRoundSettleTarget[] {
-  return normalizeRunTargets(runs)
-    .map((run) => ({
-      expectedToolCallIds: runtimeToolCallIds(runtimeState.runs[run.runId]),
-      runId: run.runId,
-    }))
-    .filter((target) => target.expectedToolCallIds.length > 0);
+  return normalizeRunTargets(runs).map((run) => ({
+    expectedToolCallIds: runtimeToolCallIds(runtimeState.runs[run.runId]),
+    runId: run.runId,
+  }));
 }
 
 async function settleTerminalRoundsFromHistory({
@@ -569,6 +755,9 @@ async function settleTerminalRoundsFromHistory({
       await terminalRoundSettleDelay();
     }
   }
+  if (isCurrentGeneration()) {
+    onReady();
+  }
 }
 
 function terminalRoundSettleDelay(): Promise<void> {
@@ -583,7 +772,11 @@ function terminalRoundsHaveExpectedToolCalls(
 ): boolean {
   const roundsByRunId = new Map(rounds.map((round) => [round.run_id, round]));
   return targets.every((target) => {
-    const toolCallIds = persistedRoundToolCallIds(roundsByRunId.get(target.runId));
+    const round = roundsByRunId.get(target.runId);
+    if (round === undefined) {
+      return false;
+    }
+    const toolCallIds = persistedRoundToolCallIds(round);
     return target.expectedToolCallIds.every((toolCallId) =>
       toolCallIds.has(toolCallId),
     );

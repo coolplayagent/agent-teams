@@ -7735,3 +7735,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 workspace-navigation stream harness mapping, V2 AppShell coverage, focused/full AppShell verification, frontend typecheck, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Project View Workbench Scroll Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, the product parity checklist, the quality gates, current browser DOM metrics, and fresh V1/V2 route-switch screenshots before selecting this slice.
+- Confirmed the current V2 shell now keeps `body` and `#root` fixed to the 1280x720 viewport with independent `.at-session-list` and `.at-timeline` scroll regions; the in-app screenshot API itself timed out repeatedly, so this slice used the project Playwright browser harness for screenshot evidence.
+- Migrated the V1 `test_project_view_workbench_uses_independent_scroll_regions` CSS harness into `ShellLayoutCss.test.ts` using the V2 `at-*` project view/workbench structure.
+- Added V2 CSS coverage for project view fixed-frame behavior, workbench toolbar/content sizing, internal file/diff/tree preview scroll regions, and narrow viewport workbench row stacking.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_project_view_ui.py`.
+- Refreshed browser screenshots for route switching and the project view: `.tmp/frontend-v2-ts-route-switch/ts-v1-root-before-switch.png`, `.tmp/frontend-v2-ts-route-switch/ts-v2-after-new-ui-switch.png`, and `.tmp/frontend-v2-ts-project-view/v2-project-view-files.png`.
+- Kept production UI code, sidebar/settings item inventory, visible navigation labels, secondary-page routing, appearance layout, and stream controller behavior unchanged in this slice.
+- Visual follow-up noted from the refreshed V1/V2 screenshots: the V2 empty-chat composer control row still truncates the mode labels more than V1 in the 1280px browser-test fixture. That is not closed by this slice.
+- This slice tightens one project-view layout parity boundary and retires one Python UI harness. It does not claim complete Project View PASS, complete visual parity, complete stream/replay PASS, broader Python UI harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- ShellLayoutCss.test.ts` passed with 13 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_project_view_ui.py` passed.
+- `npm run test:browser -- v2-project-view.spec.ts --project=chromium` passed and refreshed the project-view screenshot.
+- `npm run test:browser -- v2-route-switch.spec.ts --project=chromium` passed and refreshed the V1/V2 route-switch screenshots.
+- `rg -n "test_project_view_workbench_uses_independent_scroll_regions|workbench_uses_independent_scroll_regions" tests\integration_tests\frontend frontend\app\src\test` returned no matches.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 project-view scroll CSS harness mapping, V2 CSS guard migration, browser screenshot refresh, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

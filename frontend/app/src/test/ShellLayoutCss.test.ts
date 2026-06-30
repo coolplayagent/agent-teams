@@ -86,6 +86,36 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps the workspace project view inside independent workbench scroll regions", () => {
+    expect(themeCss).toMatch(
+      /\.at-project-view\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-workspace-workbench\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-workspace-workbench-bar\s*{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?min-height:\s*42px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-workspace-workbench-content\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(260px, 28%\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(240px, 26%\) minmax\(0, 1fr\) minmax\(240px, 24%\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-workspace-tree-list,\s*[\s\S]*?\.at-workspace-file-pane-list\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
+    );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(220px, 0\.64fr\) minmax\(150px, 0\.36fr\);/,
+    );
+    expect(themeCss).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.25fr\) minmax\(220px, 0\.5fr\) minmax\(150px, 0\.25fr\);/,
+    );
+  });
+
   it("keeps the timeline reading column narrower than the composer", () => {
     expect(themeCss).toMatch(/--at-timeline-column-width:\s*760px;/);
     expect(themeCss).not.toMatch(/\.at-timeline-toolbar\s*{/);

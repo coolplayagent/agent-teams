@@ -36,7 +36,7 @@ session-switch recovery where applicable.
 | ID | V1 Surface Or Flow | V1 Items To Capture | V2 Implementation Area | Required Evidence | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | SHELL-01 | Top bar | sidebar toggle, title/session label, language, activity/observability, download/export, settings, theme, health/version controls | `features/shell/*`, `styles/theme.css` | V1/V2 screenshots, focus/keyboard check, button count/name comparison | Gap found | Must not invent or remove global controls. |
-| SHELL-02 | Sidebar primary nav | Chat, automation, skills, boards, search, connectors, memory, observability, settings, workspace/project area | `SessionsSidebar.tsx`, `AppShell.tsx` | DOM/nav list comparison with V1, screenshot, navigation test | Gap found | Entry set and order are judged by V1. |
+| SHELL-02 | Sidebar primary nav | Chat, automation, skills, boards, search, connectors, memory, observability, settings, workspace/project area | `SessionsSidebar.tsx`, `AppShell.tsx` | DOM/nav list comparison with V1, screenshot, navigation test | In progress | V2 primary sidebar now restores the V1 entry set and order: Chat, Automation, Skills, Board, Search, Connectors, Memory, Observability, Settings. The browser parity test clicks every entry through the sidebar, with topbar Observability/Settings kept as additional shortcuts rather than substitutes. Evidence: `.tmp/frontend-v2-ts-shell/v2-sidebar-module-parity.png`; tests: `npm test -- src/test/AppShell.test.tsx`, `npm test -- src/test/SessionsSidebar.test.tsx`, `npm run test:browser -- v2-shell-parity.spec.ts -g "primary sidebar" --project=chromium`, `npm run build`. Needs formal V1 DOM/screenshot pairing before `Verified`. |
 | SHELL-03 | Fixed app layout | fixed viewport, sidebar independent scroll, chat independent scroll, composer pinned | `ChatWorkspace.tsx`, shell CSS | Browser screenshot plus scroll test proving sidebar does not move with chat | In progress | Current live browser split-panel check proves page/body remain viewport-locked, session list does not move with chat scroll, main timeline owns scroll, and composer stays pinned. Evidence: `.tmp/shell-fixed-scroll-final.json`, `.tmp/shell-fixed-scroll-final.png`. Still needs narrow/V1 density sign-off before `Verified`. |
 | SESS-01 | Workspace/project selector | project list, active project, reload, project open/close, path display | `WorkspaceProjectView.tsx`, `SessionsSidebar.tsx` | V1/V2 screenshots and click flow | Not checked |  |
 | SESS-02 | Session list | search, create, refresh, active highlight, unread/background run indicator, delete/rename if present | `SessionsSidebar.tsx` | Browser flow and component tests | Not checked |  |
@@ -91,6 +91,14 @@ For every row moved to `Verified`, record:
 5. Decision: same as V1, intentionally better, or documented product change.
 
 ## Verification Ledger
+
+### 2026-07-01 V1 Primary Sidebar Inventory Restore
+
+- `SHELL-02` tightened: the primary sidebar no longer uses the obsolete six-entry set. It now matches the V1 user-facing order: Chat, Automation, Skills, Board, Search, Connectors, Memory, Observability, Settings.
+- Sidebar Observability and Settings are real entry points that open the module surface and settings drawer; the existing topbar buttons remain visible as shortcuts and no longer mask sidebar parity.
+- Browser verification on `/app/` with built `index-jGtzJpgW.js` clicked every primary sidebar entry and confirmed the real module surfaces opened inside the fixed shell frame.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx`, `npm test -- src/test/SessionsSidebar.test.tsx`, `npm run build`, `npm run test:browser -- v2-shell-parity.spec.ts -g "primary sidebar" --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-shell/v2-sidebar-module-parity.png`.
 
 ### 2026-07-01 Subagent Stream, Terminal Refill, And Hard Refresh
 

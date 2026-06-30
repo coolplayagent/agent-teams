@@ -870,13 +870,16 @@ describe("AppShell", () => {
       .getAllByRole("button")
       .map((button) => button.textContent?.trim() ?? "");
 
-    expect(sidebarButtons.slice(0, 6)).toEqual([
-      "SearchCtrl+K",
-      "Skills",
+    expect(sidebarButtons.slice(0, 9)).toEqual([
+      "Chat",
       "Automation",
-      "Connectors",
+      "Skills",
       "Board",
+      "SearchCtrl+K",
+      "Connectors",
       "Memory",
+      "Observability",
+      "Settings",
     ]);
   });
 
@@ -942,20 +945,22 @@ describe("AppShell", () => {
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label") ?? button.textContent),
     ).toEqual([
-      "Search",
-      "Skills",
+      "Chat",
       "Automation",
-      "Connectors",
+      "Skills",
       "Board",
+      "Search",
+      "Connectors",
       "Memory",
+      "Observability",
+      "Settings",
       "Open workspace view",
     ]);
-    expect(within(sidebar).queryByRole("button", { name: "Chat" }))
-      .not.toBeInTheDocument();
-    expect(within(sidebar).queryByRole("button", { name: "Observability" }))
-      .not.toBeInTheDocument();
-    expect(within(sidebar).queryByRole("button", { name: "Settings" }))
-      .not.toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "Chat" })).toBeVisible();
+    expect(
+      within(sidebar).getByRole("button", { name: "Observability" }),
+    ).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "Settings" })).toBeVisible();
     expect(within(sidebar).getByText("Ctrl+K")).toBeVisible();
     await waitFor(() =>
       expect(within(sidebar).getByRole("status")).toHaveTextContent(
@@ -1048,6 +1053,25 @@ describe("AppShell", () => {
     const sidebar = await screen.findByTestId("sessions-sidebar");
     expect(await screen.findByTestId("timeline")).toBeVisible();
 
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Automation" }));
+
+    expect(await screen.findByTestId("automation-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Chat" }));
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
+
+    expect(await screen.findByTestId("skills-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
+
+    expect(await screen.findByTestId("board-todos-view")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
     fireEvent.click(within(sidebar).getByRole("button", { name: "Search" }));
 
     expect(await screen.findByTestId("session-search-view")).toBeVisible();
@@ -1056,24 +1080,9 @@ describe("AppShell", () => {
       within(screen.getByTestId("session-search-view")).getByText("Session 1"),
     ).toBeVisible();
 
-    fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
-
-    expect(await screen.findByTestId("skills-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
-
-    fireEvent.click(within(sidebar).getByRole("button", { name: "Automation" }));
-
-    expect(await screen.findByTestId("automation-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
-
     fireEvent.click(within(sidebar).getByRole("button", { name: "Connectors" }));
 
     expect(await screen.findByTestId("connectors-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
-
-    fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
-
-    expect(await screen.findByTestId("board-todos-view")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Memory" }));
@@ -1081,12 +1090,14 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("memory-view")).toBeVisible();
     expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
 
-    expect(within(sidebar).queryByRole("button", { name: "Observability" }))
-      .not.toBeInTheDocument();
-    expect(within(sidebar).queryByRole("button", { name: "Settings" }))
-      .not.toBeInTheDocument();
-    expect(within(sidebar).queryByRole("button", { name: "Chat" }))
-      .not.toBeInTheDocument();
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Observability" }));
+
+    expect(await screen.findByTestId("observability")).toBeVisible();
+    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Settings");
   });
 
   it("detaches the active foreground stream before opening a primary feature surface", async () => {
@@ -1195,18 +1206,15 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "EN" }));
 
     expect(screen.getByRole("button", { name: "中文" })).toBeVisible();
-    expect(within(sidebar).getByRole("button", { name: "搜索" })).toBeVisible();
-    expect(within(sidebar).getByRole("button", { name: "技能" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "聊天" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "自动化" })).toBeVisible();
-    expect(within(sidebar).getByRole("button", { name: "连接器" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "技能" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "看板" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "搜索" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "连接器" })).toBeVisible();
     expect(within(sidebar).getByRole("button", { name: "记忆" })).toBeVisible();
-    expect(within(sidebar).queryByRole("button", { name: "聊天" }))
-      .not.toBeInTheDocument();
-    expect(within(sidebar).queryByRole("button", { name: "观测" }))
-      .not.toBeInTheDocument();
-    expect(within(sidebar).queryByRole("button", { name: "设置" }))
-      .not.toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "观测" })).toBeVisible();
+    expect(within(sidebar).getByRole("button", { name: "设置" })).toBeVisible();
     const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
     expect(within(topbar).getByRole("button", { name: "观测" })).toBeVisible();
     expect(within(topbar).getByRole("button", { name: "设置" })).toBeVisible();

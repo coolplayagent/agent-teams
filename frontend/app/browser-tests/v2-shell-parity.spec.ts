@@ -41,12 +41,15 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     await expect
       .poll(() => page.locator(".at-sidebar-nav-label").allInnerTexts())
       .toEqual([
-        "Search",
-        "Skills",
+        "Chat",
         "Automation",
-        "Connectors",
+        "Skills",
         "Board",
+        "Search",
+        "Connectors",
         "Memory",
+        "Observability",
+        "Settings",
       ]);
 
     const primaryNav = page.getByRole("navigation", {
@@ -54,14 +57,18 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     });
     await expect(page.locator(".at-chat-view")).toBeVisible();
     await expect(page.locator(".at-composer")).toBeVisible();
-    await expect(primaryNav.getByRole("button", { name: "Chat" })).toHaveCount(0);
+    await expect(primaryNav.getByRole("button", { name: "Chat" })).toBeVisible();
     await expect(primaryNav.getByRole("button", { name: "Observability" }))
-      .toHaveCount(0);
+      .toBeVisible();
     await expect(primaryNav.getByRole("button", { name: "Settings" }))
-      .toHaveCount(0);
+      .toBeVisible();
 
     await primaryNav.getByRole("button", { name: "Search" }).click();
     await expect(page.getByTestId("session-search-view")).toBeVisible();
+
+    await primaryNav.getByRole("button", { name: "Chat" }).click();
+    await expect(page.locator(".at-chat-view")).toBeVisible();
+    await expect(page.locator(".at-composer")).toBeVisible();
 
     await primaryNav.getByRole("button", { name: "Skills" }).click();
     await expect(page.getByTestId("skills-view")).toBeVisible();
@@ -89,14 +96,19 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     await expect(page.getByRole("heading", { name: "Shell module parity" }))
       .toBeVisible();
 
-    await page.locator(".at-topbar").getByRole("button", { name: "Observability" })
-      .click();
+    await expect(
+      page.locator(".at-topbar").getByRole("button", { name: "Observability" }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".at-topbar").getByRole("button", { name: "Settings" }),
+    ).toBeVisible();
+
+    await primaryNav.getByRole("button", { name: "Observability" }).click();
     await expect(page.getByRole("heading", { name: "Observability" }))
       .toBeVisible();
     await expect(page.getByText("Metrics for the last 24 hours")).toBeVisible();
 
-    await page.locator(".at-topbar").getByRole("button", { name: "Settings" })
-      .click();
+    await primaryNav.getByRole("button", { name: "Settings" }).click();
     const settings = page.getByRole("dialog", { name: "Settings" });
     await expect(settings).toBeVisible();
     await expectSettingsDialogSettled(settings);

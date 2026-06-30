@@ -64,6 +64,49 @@ def _save_w3_credentials(
     )
 
 
+def _model_profile_secret_entry(
+    config_dir: Path,
+    *,
+    owner_id: str,
+    field_name: str,
+) -> dict[str, JsonValue]:
+    payload = cast(
+        dict[str, JsonValue],
+        json.loads((config_dir / "secrets.json").read_text(encoding="utf-8")),
+    )
+    entries = payload["entries"]
+    assert isinstance(entries, list)
+    for entry in entries:
+        candidate = cast(dict[str, JsonValue], entry)
+        if (
+            candidate["namespace"] == "model_profile"
+            and candidate["owner_id"] == owner_id
+            and candidate["field_name"] == field_name
+        ):
+            return candidate
+    raise AssertionError(f"Missing model profile secret entry for {owner_id}")
+
+
+def _assert_model_profile_file_secret_encrypted(
+    config_dir: Path,
+    *,
+    owner_id: str,
+    field_name: str,
+    plaintext: str,
+) -> None:
+    entry = _model_profile_secret_entry(
+        config_dir,
+        owner_id=owner_id,
+        field_name=field_name,
+    )
+    assert entry["storage"] == "file"
+    value = entry["value"]
+    assert isinstance(value, str)
+    assert value.startswith("ENC:")
+    assert value != plaintext
+    assert plaintext not in value
+
+
 def test_get_model_config_returns_empty_when_file_missing(tmp_path: Path) -> None:
     manager = ModelConfigManager(config_dir=tmp_path)
 
@@ -748,6 +791,12 @@ def test_save_model_profile_stores_maas_password_in_secret_store(
         )
         == "relay-password"
     )
+    _assert_model_profile_file_secret_encrypted(
+        tmp_path,
+        owner_id="maas-profile",
+        field_name=maas_password_secret_field_name(),
+        plaintext="relay-password",
+    )
 
 
 def test_save_maas_profile_can_use_w3_auth_source_without_profile_password(
@@ -1036,9 +1085,10 @@ def test_get_model_config_returns_put_compatible_masked_maas_auth(
 def test_save_model_config_migrates_inline_maas_password_into_secret_store(
     tmp_path: Path,
 ) -> None:
+    secret_store = _FileOnlySecretStore()
     manager = ModelConfigManager(
         config_dir=tmp_path,
-        secret_store=_FileOnlySecretStore(),
+        secret_store=secret_store,
     )
     (tmp_path / "model.json").write_text(
         json.dumps(
@@ -1079,13 +1129,22 @@ def test_save_model_config_migrates_inline_maas_password_into_secret_store(
         "auth_source": "profile",
         "username": "relay-user",
     }
-    assert {
-        "namespace": "model_profile",
-        "owner_id": "maas-profile",
-        "field_name": maas_password_secret_field_name(),
-        "storage": "file",
-        "value": "inline-password",
-    } in secrets_payload["entries"]
+    assert secrets_payload["entries"]
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="maas-profile",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "inline-password"
+    )
+    _assert_model_profile_file_secret_encrypted(
+        tmp_path,
+        owner_id="maas-profile",
+        field_name=maas_password_secret_field_name(),
+        plaintext="inline-password",
+    )
 
 
 def test_save_model_profile_rejects_first_maas_password_when_masked(
@@ -2022,6 +2081,12 @@ def test_save_model_profile_stores_codeagent_password_in_secret_store(
         )
         == "relay-password"
     )
+    _assert_model_profile_file_secret_encrypted(
+        tmp_path,
+        owner_id="codeagent-password",
+        field_name=codeagent_password_secret_field_name(),
+        plaintext="relay-password",
+    )
 
 
 def test_save_model_profile_preserves_existing_codeagent_password_when_masked(
@@ -2401,9 +2466,10 @@ def test_save_model_profile_rejects_invalid_codeagent_auth_method(
 def test_save_model_profile_migrates_inline_codeagent_password_into_secret_store(
     tmp_path: Path,
 ) -> None:
+    secret_store = _FileOnlySecretStore()
     manager = ModelConfigManager(
         config_dir=tmp_path,
-        secret_store=_FileOnlySecretStore(),
+        secret_store=secret_store,
     )
     (tmp_path / "model.json").write_text(
         json.dumps(
@@ -2454,13 +2520,22 @@ def test_save_model_profile_migrates_inline_codeagent_password_into_secret_store
         "username": "relay-user",
         "has_password": True,
     }
-    assert {
-        "namespace": "model_profile",
-        "owner_id": "codeagent-profile",
-        "field_name": codeagent_password_secret_field_name(),
-        "storage": "file",
-        "value": "inline-password",
-    } in secrets_payload["entries"]
+    assert secrets_payload["entries"]
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="codeagent-profile",
+            field_name=codeagent_password_secret_field_name(),
+        )
+        == "inline-password"
+    )
+    _assert_model_profile_file_secret_encrypted(
+        tmp_path,
+        owner_id="codeagent-profile",
+        field_name=codeagent_password_secret_field_name(),
+        plaintext="inline-password",
+    )
 
 
 def test_profile_codeagent_secret_accessors_return_none_for_missing_profile_name(

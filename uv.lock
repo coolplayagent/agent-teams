@@ -3936,6 +3936,7 @@ name = "relay-teams"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
+    { name = "cryptography" },
     { name = "defusedxml" },
     { name = "discord-py" },
     { name = "fastapi" },
@@ -3988,6 +3989,7 @@ requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.36.2" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.8.0" },
+    { name = "cryptography", specifier = ">=42.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "discord-py", specifier = ">=2.4.0,<3" },
     { name = "fastapi", specifier = ">=0.100.0" },

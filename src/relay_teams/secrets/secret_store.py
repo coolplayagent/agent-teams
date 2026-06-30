@@ -4,23 +4,30 @@ from __future__ import annotations
 import logging
 from json import dumps, loads
 from pathlib import Path
-from typing import cast
+
+from pydantic import JsonValue
 
 try:
     import keyring
 except Exception:  # pragma: no cover - import availability depends on environment
     keyring = None
 
+from relay_teams.secrets.encryption_service import (
+    SecretDecryptionError,
+    SecretEncryptionError,
+    get_encryption_service,
+)
 from relay_teams.secrets.secret_models import (
     SecretCoordinate,
     SecretIndexDocument,
     SecretIndexEntry,
 )
-from pydantic import JsonValue
 
 _KEYRING_SERVICE_NAME = "agent-teams"
 _SECRETS_FILE_NAME = "secrets.json"
-LOGGER = logging.getLogger(__name__)
+_MODEL_PROFILE_SECRET_NAMESPACE = "model_profile"
+_ENCRYPTED_MODEL_PASSWORD_FIELDS = frozenset({"maas_password", "codeagent_password"})
+LOGGER = logging.getLogger("relay_teams.backend.secrets.secret_store")
 
 
 class AppSecretStore:
@@ -40,7 +47,7 @@ class AppSecretStore:
         index = self._load_index(config_dir)
         entry = _find_entry(index, coordinate)
         if entry is not None and entry.storage == "file":
-            return entry.value
+            return _file_secret_value_for_read(entry.coordinate(), entry.value)
         if not self.has_usable_keyring_backend():
             return None
         return self._get_from_keyring(config_dir, coordinate)
@@ -90,7 +97,7 @@ class AppSecretStore:
                     owner_id=coordinate.owner_id,
                     field_name=coordinate.field_name,
                     storage="file",
-                    value=value,
+                    value=_file_secret_value_for_storage(coordinate, value),
                 ),
             )
             self._save_index(config_dir, index)
@@ -103,7 +110,7 @@ class AppSecretStore:
                 owner_id=coordinate.owner_id,
                 field_name=coordinate.field_name,
                 storage="file",
-                value=value,
+                value=_file_secret_value_for_storage(coordinate, value),
             ),
         )
         self._save_index(config_dir, index)
@@ -259,19 +266,30 @@ class AppSecretStore:
                             owner_id=next_coordinate.owner_id,
                             field_name=next_coordinate.field_name,
                             storage="file",
-                            value=value,
+                            value=_file_secret_value_for_storage(
+                                next_coordinate,
+                                value,
+                            ),
                         )
                     )
                 if self.has_usable_keyring_backend():
                     self._delete_from_keyring(config_dir, coordinate)
                 continue
+            file_value = _file_secret_value_for_read(coordinate, entry.value)
+            if file_value is None:
+                next_value = entry.value
+            else:
+                next_value = _file_secret_value_for_storage(
+                    next_coordinate,
+                    file_value,
+                )
             next_entries.append(
                 SecretIndexEntry(
                     namespace=next_coordinate.namespace,
                     owner_id=next_coordinate.owner_id,
                     field_name=next_coordinate.field_name,
                     storage="file",
-                    value=entry.value,
+                    value=next_value,
                 )
             )
         self._save_index(
@@ -407,27 +425,17 @@ class AppSecretStore:
         try:
             self._set_in_keyring(config_dir, coordinate, value)
         except RuntimeError:
-            payload = {
+            payload: dict[str, JsonValue] = {
                 "config_dir": str(config_dir.expanduser().resolve()),
                 "namespace": coordinate.namespace,
                 "owner_id": coordinate.owner_id,
                 "field_name": coordinate.field_name,
             }
-            try:
-                from relay_teams.logger import log_event
-
-                log_event(
-                    LOGGER,
-                    logging.WARNING,
-                    event="secret_store.keyring_write_failed",
-                    message="Falling back to file-backed secret storage after keyring write failure",
-                    payload=cast(dict[str, JsonValue], payload),
-                )
-            except Exception:
-                LOGGER.warning(
-                    "Falling back to file-backed secret storage after keyring write failure: %s",
-                    payload,
-                )
+            _log_secret_store_warning(
+                event="secret_store.keyring_write_failed",
+                message="Falling back to file-backed secret storage after keyring write failure",
+                payload=payload,
+            )
             return False
         return True
 
@@ -509,3 +517,85 @@ def _drop_entry(
             entry for entry in index.entries if entry.coordinate() != coordinate
         ),
     )
+
+
+def _requires_file_encryption(coordinate: SecretCoordinate) -> bool:
+    return (
+        coordinate.namespace == _MODEL_PROFILE_SECRET_NAMESPACE
+        and coordinate.field_name in _ENCRYPTED_MODEL_PASSWORD_FIELDS
+    )
+
+
+def _file_secret_value_for_storage(
+    coordinate: SecretCoordinate,
+    value: str,
+) -> str:
+    if not _requires_file_encryption(coordinate):
+        return value
+    try:
+        return get_encryption_service().encrypt(value)
+    except SecretEncryptionError as exc:
+        _log_secret_encryption_failure(
+            event="secret_store.file_secret_encrypt_failed",
+            message="Failed to encrypt file-backed secret before storage",
+            coordinate=coordinate,
+        )
+        raise RuntimeError(
+            "Failed to encrypt file-backed secret before storage."
+        ) from exc
+
+
+def _file_secret_value_for_read(
+    coordinate: SecretCoordinate,
+    value: str | None,
+) -> str | None:
+    if value is None:
+        return None
+    if not _requires_file_encryption(coordinate):
+        return value
+    service = get_encryption_service()
+    if not service.is_encrypted(value):
+        return value
+    try:
+        return service.decrypt(value)
+    except SecretDecryptionError:
+        _log_secret_encryption_failure(
+            event="secret_store.file_secret_decrypt_failed",
+            message="Failed to decrypt file-backed secret",
+            coordinate=coordinate,
+        )
+        return None
+
+
+def _log_secret_encryption_failure(
+    *,
+    event: str,
+    message: str,
+    coordinate: SecretCoordinate,
+) -> None:
+    payload: dict[str, JsonValue] = {
+        "namespace": coordinate.namespace,
+        "owner_id": coordinate.owner_id,
+        "field_name": coordinate.field_name,
+    }
+    _log_secret_store_warning(event=event, message=message, payload=payload)
+
+
+def _log_secret_store_warning(
+    *,
+    event: str,
+    message: str,
+    payload: dict[str, JsonValue],
+) -> None:
+    try:
+        LOGGER.log(
+            logging.WARNING,
+            message,
+            extra={
+                "event": event,
+                "payload": payload,
+                "duration_ms": None,
+            },
+        )
+    except Exception:
+        LOGGER.warning("%s: %s", message, payload)

@@ -1016,7 +1016,10 @@ Board configurations are currently held in-memory via `TaskBoardConfig` models. 
   reference to the W3 connector credentials, so W3 password updates do not
   rewrite model profile secrets. For profile-local MaaS and CodeAgent
   password auth, `model.json` stores only the username and saved-password
-  flags; the raw password is stored in the unified secret store. The API
+  flags; the raw password is stored in the unified secret store. If keyring is
+  unavailable and the secret store falls back to `secrets.json`, those
+  profile-local password entries are persisted as local-machine-bound `ENC:`
+  encrypted values while legacy plaintext entries remain readable. The API
   response placeholder `***` is never persisted as a password and only means
   "reuse the existing stored secret" during profile save, probe, and model
   discovery requests.

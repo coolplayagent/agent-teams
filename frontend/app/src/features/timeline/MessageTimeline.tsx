@@ -2626,6 +2626,10 @@ function openRuntimeEntriesWithIdleCursor(
   if (visibleEntries.some(runtimeEntryProducesRenderableRow)) {
     return rowPipelineEntries;
   }
+  const latestEntry = entries.at(-1);
+  if (latestEntry !== undefined) {
+    return [...rowPipelineEntries, runtimePendingCursorEntry(latestEntry, runState)];
+  }
   return rowPipelineEntries;
 }
 
@@ -2683,6 +2687,24 @@ function runtimeIdleCursorEntry(entry: TimelineEntry): TimelineEntry {
       source_event_kind: entry.kind,
       text: "",
     },
+    text: "",
+  };
+}
+
+function runtimePendingCursorEntry(
+  entry: TimelineEntry,
+  runState: RuntimeRunState,
+): TimelineEntry {
+  return {
+    ...entry,
+    id: `${entry.id}:pending-cursor`,
+    kind: "text_delta",
+    payload: {
+      pending_cursor_placeholder: true,
+      source_event_kind: entry.kind,
+      text: "",
+    },
+    roleId: runState.targetRoleId?.trim() || entry.roleId,
     text: "",
   };
 }
@@ -3572,7 +3594,8 @@ function runtimeTextDeltaIsCursorPlaceholder(entry: TimelineEntry): boolean {
   const payload = jsonObject(entry.payload);
   return (
     payload?.hydration_cursor_placeholder === true ||
-    payload?.idle_cursor_placeholder === true
+    payload?.idle_cursor_placeholder === true ||
+    payload?.pending_cursor_placeholder === true
   );
 }
 

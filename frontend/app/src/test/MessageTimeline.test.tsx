@@ -1352,7 +1352,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
   });
 
-  it("does not render an empty runtime cursor row while waiting for content", async () => {
+  it("shows a pending runtime cursor row while waiting for first content", async () => {
     setRuntimeEntries(
       [
         runtimeGenericEntry({
@@ -1374,7 +1374,10 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("Waiting for first token")).toBeVisible();
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector(".at-message-streaming-text")).not.toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(screen.queryByText("run started")).not.toBeInTheDocument();
   });
 
   it("hides internal successful status events after the final runtime answer", async () => {
@@ -2443,7 +2446,7 @@ describe("MessageTimeline", () => {
     expect(thinkingBlock).toHaveAttribute("open");
   });
 
-  it("does not render a blank idle cursor for an open run before output arrives", async () => {
+  it("shows a pending cursor for an open scoped run before output arrives", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
         event_id: 1,
@@ -2459,10 +2462,11 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-idle",
     });
 
-    expect(await screen.findByText("No messages yet")).toBeVisible();
-    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
+    await waitFor(() =>
+      expect(container.querySelectorAll("article.at-message")).toHaveLength(1),
+    );
+    expect(container.querySelector(".at-message-streaming-text")).not.toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
     expect(screen.queryByText("Run started")).not.toBeInTheDocument();
     expect(screen.queryByText("run started")).not.toBeInTheDocument();
   });

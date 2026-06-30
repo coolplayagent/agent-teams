@@ -49,6 +49,9 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     const nextOpen = event.currentTarget.open;
     setPromptOpen((current) => current === nextOpen ? current : nextOpen);
   };
+  const promptActionLabel = promptOpen
+    ? t("timelineRoundCollapse")
+    : t("timelineRoundExpand");
 
   return (
     <div className="at-round-marker-content">
@@ -71,12 +74,7 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
               <span className="at-round-marker-title">{summary.title}</span>
             )}
             <span className="at-round-marker-intent-action" aria-hidden="true">
-              <span className="at-round-marker-intent-action-expand">
-                {t("timelineRoundExpand")}
-              </span>
-              <span className="at-round-marker-intent-action-collapse">
-                {t("timelineRoundCollapse")}
-              </span>
+              {promptActionLabel}
             </span>
           </summary>
           <div className="at-round-marker-intent-body">{summary.promptText}</div>

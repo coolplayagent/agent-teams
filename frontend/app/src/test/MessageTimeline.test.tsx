@@ -1423,8 +1423,7 @@ describe("MessageTimeline", () => {
       "Create a migration plan for the frontend rewrite. Keep the settings navigation aligned with V1.",
     );
     const action = details?.querySelector(".at-round-marker-intent-action");
-    expect(action).toHaveTextContent("Expand");
-    expect(action).toHaveTextContent("Collapse");
+    expect(action?.textContent).toBe("Expand");
     const body = details?.querySelector(".at-round-marker-intent-body");
     expect(body).toHaveTextContent("Keep the settings navigation aligned with V1.");
     expect(body?.textContent).toContain("\nDo not flatten secondary screens");
@@ -1432,6 +1431,7 @@ describe("MessageTimeline", () => {
     fireEvent.click(summary as Element);
 
     expect(details).toHaveAttribute("open");
+    expect(action?.textContent).toBe("Collapse");
     expect(summary).not.toHaveTextContent(
       "Create a migration plan for the frontend rewrite.",
     );
@@ -1469,10 +1469,12 @@ describe("MessageTimeline", () => {
     expect(details).not.toBeNull();
     expect(details).not.toHaveAttribute("open");
     expect(details?.querySelector(".at-round-marker-intent-action"))
-      .toHaveTextContent("Expand");
+      .toHaveTextContent(/^Expand$/);
     const summary = details?.querySelector(".at-round-marker-intent-summary");
     fireEvent.click(summary as Element);
     expect(details).toHaveAttribute("open");
+    expect(details?.querySelector(".at-round-marker-intent-action"))
+      .toHaveTextContent(/^Collapse$/);
     expect(summary).not.toHaveTextContent(prompt);
     expect(summary?.querySelector(".at-round-marker-title")).toBeNull();
     expect(details?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);

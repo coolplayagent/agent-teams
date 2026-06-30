@@ -4668,15 +4668,6 @@ body {
   line-height: 1;
 }
 
-.at-round-marker-intent-action-collapse,
-.at-round-marker-intent[open] .at-round-marker-intent-action-expand {
-  display: none;
-}
-
-.at-round-marker-intent[open] .at-round-marker-intent-action-collapse {
-  display: inline;
-}
-
 .at-round-marker-intent-body {
   margin-top: 6px;
   padding-left: 18px;

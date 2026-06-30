@@ -71,7 +71,9 @@ test("opens round rail retry and todo detail", async ({ page }) => {
     await expect(detail.getByText("2 items")).toBeVisible();
     await expect(detail.getByText("Confirm deploy window")).toBeVisible();
     await expect(detail.getByText("Capture approval result")).toBeVisible();
-    expect(requestedUrls).toContain(`/sessions/${SESSION_ID}/rounds?limit=100`);
+    expect(
+      requestedUrls.some((url) => requestedRoundUrlIncludes(url, { limit: "100" })),
+    ).toBe(true);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectDarkComposerPrompt(page);
@@ -227,12 +229,17 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
     await waitForV2Shell(page);
 
     await expect
-      .poll(() => requestedUrls.includes(`/sessions/${SESSION_ID}/rounds?limit=100`))
+      .poll(() =>
+        requestedUrls.some((url) => requestedRoundUrlIncludes(url, { limit: "100" })),
+      )
       .toBe(true);
     await expect
       .poll(() =>
-        requestedUrls.includes(
-          `/sessions/${SESSION_ID}/rounds?limit=100&cursor_run_id=${PAGED_CURSOR_RUN_ID}`,
+        requestedUrls.some((url) =>
+          requestedRoundUrlIncludes(url, {
+            cursor_run_id: PAGED_CURSOR_RUN_ID,
+            limit: "100",
+          }),
         ),
       )
       .toBe(true);
@@ -365,6 +372,19 @@ async function handleRoundsApi(
     return true;
   }
   return false;
+}
+
+function requestedRoundUrlIncludes(
+  url: string,
+  expectedSearchParams: Readonly<Record<string, string>>,
+): boolean {
+  const parsed = new URL(url, "http://agent-teams.test");
+  if (parsed.pathname !== `/sessions/${SESSION_ID}/rounds`) {
+    return false;
+  }
+  return Object.entries(expectedSearchParams).every(
+    ([name, value]) => parsed.searchParams.get(name) === value,
+  );
 }
 
 async function handlePagedRoundsApi(

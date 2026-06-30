@@ -7987,3 +7987,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/worktree scan, V1 new-session/animation harness mapping, V2 SessionsSidebar and CSS coverage, focused/full verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Round Marker Expanded Prompt De-Duplication
+
+### Scope
+- Re-checked the active frontend rewrite goal and the MSG-01 historical replay row after the user reported that expanded round markers repeated the same prompt in the summary line and body.
+- Reproduced the issue in the real browser first: the stale tab initially loaded old assets and showed the prompt both in `.at-round-marker-intent-summary` and `.at-round-marker-intent-body`.
+- Confirmed the currently served refreshed assets removed the prompt from the expanded summary, then tightened `RoundMarker` so the action label is rendered by React as only the current state (`Expand` or `Collapse`) instead of keeping both labels in the DOM and hiding one with CSS.
+- Removed the obsolete CSS-only expand/collapse text toggles from `theme.css`.
+- Updated `MessageTimeline.test.tsx` so long prompt expansion asserts exact action text and one prompt occurrence.
+- Updated `v2-rounds.spec.ts` to assert round requests by parsed path and required query parameters, because the V2 round rail intentionally sends `force_refresh=true` and exact old query strings made the browser regression brittle.
+- Rebuilt `frontend/dist/app` and verified the live browser loaded the new `index-BUsY0TEx.js` / `index-CXAJ35hq.css` assets.
+- This slice fixes one MSG-01 information-duplication bug. It does not claim complete historical replay PASS, complete stream/replay PASS, full subagent PASS, settings parity, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx -t "round prompts"` passed with 2 focused tests.
+- `npm test -- --run src/test/ShellLayoutCss.test.ts` passed with 17 tests.
+- `npm run build` passed, including frontend typecheck, desktop build, and Vite production build.
+- `npm run test:browser -- v2-rounds.spec.ts --project=chromium` passed with 5 browser tests.
+- Browser DOM check on `流式从头到尾完整验证-1782817107625` after refresh returned `summaryText: "收起"`, `titleText: null`, and `promptOccurrenceCountInMarker: 1`.
+- Screenshot saved at `.tmp/frontend-v2-round-marker-expanded-no-duplicate.png`.
+
+### Reviewer
+- Main-agent browser reproduction, source fix, focused tests, production build, and live DOM/screenshot verification completed for this slice. No subsystem PASS or final V2 completion is claimed.

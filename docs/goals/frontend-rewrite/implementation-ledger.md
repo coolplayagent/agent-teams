@@ -7484,3 +7484,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell race coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Return-To-Chat Hydration Harness Retirement
+
+### Scope
+- Re-checked the remaining `test_subagent_sessions_ui.py` inventory after the subagent re-entry slice and selected the matching return-to-main-session predecessor harness rather than moving to unrelated visual polish.
+- Strengthened the existing V2 `AppShell.test.tsx` return-to-chat coverage so the chat timeline and main-session composer are mounted immediately after leaving a subagent secondary surface, while the subagent view is removed and the chat loading frame is visible.
+- Removed the migrated V1 source-copy harness `test_return_to_main_session_clears_subagent_view_before_hydration` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- Kept V1 secondary-page opening semantics intact: subagent content remains a secondary workspace surface, not flattened into the primary chat, and no sidebar/settings item inventory changed.
+- No production UI, settings navigation, stream controller, or built dist behavior changed in this slice.
+- This slice reduces the subagent Python UI harness count. It does not claim complete subagent stream/replay PASS, gate resolution parity, running-stream sync parity, terminal-settle parity, background-task subagent discovery parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- AppShell.test.tsx -t "sidebar returns to chat|subagent"` passed with 6 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 7 remaining Python UI harness scenarios.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 harness mapping, V2 AppShell return-to-chat coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

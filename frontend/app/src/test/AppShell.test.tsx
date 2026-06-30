@@ -1237,6 +1237,10 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-session-id",
+      "session-1",
+    );
     expect(screen.getByText("Loading session...")).toBeVisible();
     expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
     expect(useUiStore.getState().selectedSessionId).toBe("session-1");

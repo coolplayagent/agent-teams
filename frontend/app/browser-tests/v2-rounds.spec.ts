@@ -23,14 +23,20 @@ const PAGED_CURSOR_RUN_ID = "run-v2-paged-cursor";
 const VERIFICATION_RUN_ID = "run-v2-verification-warning";
 const LONG_PROMPT_RUN_ID = "run-v2-long-prompt-marker";
 
+const LONG_PROMPT_PREFIX = "流式从头到尾慢速真实验证-1782818317613";
 const LONG_PROMPT_TEXT =
-  "流式从头到尾慢速真实验证-1782818317613：请启动一个 Explorer 子代理，只读检查下面 10 个文件，并在子代理完成后用中文总结 6 点。";
+  `${LONG_PROMPT_PREFIX}：请启动一个 Explorer 子代理，只读检查下面 10 个文件，并在子代理完成后用中文总结 6 点。`;
+
+async function useWideRoundRailViewport(page: Page): Promise<void> {
+  await page.setViewportSize({ height: 900, width: 1680 });
+}
 
 test("opens round rail retry and todo detail", async ({ page }) => {
   const appServer = await serveFrontendDist();
   const requestedUrls: string[] = [];
   const unhandledApiRoutes: string[] = [];
   try {
+    await useWideRoundRailViewport(page);
     await installShellState(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) => handleRoundsApi(context, requestedUrls),
@@ -93,6 +99,7 @@ test("keeps todo details scoped to the round rail", async ({ page }) => {
   const appServer = await serveFrontendDist();
   const unhandledApiRoutes: string[] = [];
   try {
+    await useWideRoundRailViewport(page);
     await installShellState(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: handleTodoRailApi,
@@ -183,12 +190,13 @@ test("does not repeat the round prompt title after expanding the marker", async 
     await expect(marker).toBeVisible();
     await expect(marker).toHaveAttribute("data-open", "false");
     const summary = marker.locator(".at-round-marker-intent-summary");
-    await expect(summary).toContainText("流式从头到尾慢速真实验证");
+    await expect(summary).toContainText(LONG_PROMPT_PREFIX);
 
     await summary.click();
 
     await expect(marker).toHaveAttribute("data-open", "true");
     await expect(summary).not.toContainText(LONG_PROMPT_TEXT);
+    await expect(summary).not.toContainText(LONG_PROMPT_PREFIX);
     await expect(summary).toContainText("Collapse");
     await expect(summary.locator(".at-round-marker-title")).toHaveCount(0);
     await expect(marker.locator(".at-round-marker-intent-body"))
@@ -204,6 +212,14 @@ test("does not repeat the round prompt title after expanding the marker", async 
           const markerText = element.textContent ?? "";
           return markerText.split(prompt).length - 1;
         }, LONG_PROMPT_TEXT),
+      )
+      .toBe(1);
+    await expect
+      .poll(() =>
+        marker.evaluate((element, promptPrefix) => {
+          const markerText = element.textContent ?? "";
+          return markerText.split(promptPrefix).length - 1;
+        }, LONG_PROMPT_PREFIX),
       )
       .toBe(1);
 
@@ -228,6 +244,7 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
   const requestedUrls: string[] = [];
   const unhandledApiRoutes: string[] = [];
   try {
+    await useWideRoundRailViewport(page);
     await installShellState(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) => handlePagedRoundsApi(context, requestedUrls),
@@ -323,6 +340,7 @@ test("keeps verification failed rounds in the warning lane", async ({ page }) =>
   const appServer = await serveFrontendDist();
   const unhandledApiRoutes: string[] = [];
   try {
+    await useWideRoundRailViewport(page);
     await installShellState(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: handleVerificationRoundApi,

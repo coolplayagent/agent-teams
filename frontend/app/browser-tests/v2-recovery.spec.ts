@@ -47,11 +47,17 @@ test("resolves pending recovery approvals and user questions", async ({
     await waitForV2Shell(page);
 
     const recovery = page.locator(".at-recovery");
-    await expect(recovery.getByText(`Run ${RUN_ID} is awaiting_tool_approval`))
-      .toBeVisible();
+    await expect(recovery).not.toContainText(`Run ${RUN_ID} is awaiting_tool_approval`);
     await expect(recovery.getByText("read", { exact: true })).toBeVisible();
     await expect(recovery.getByText("Planner needs input")).toBeVisible();
     await expect(recovery.getByText("Pick next step")).toBeVisible();
+    await expectRecoveryBetweenTimelineAndComposer(page);
+    await expectMainTimelineDoesNotContain(page, [
+      "Planner needs input",
+      "Pick next step",
+      QUESTION_ID,
+      "User question",
+    ]);
     await page.mouse.move(320, 120);
     await page.screenshot({
       path: screenshotPath("v2-recovery-actions.png", SCREENSHOT_FOLDER),
@@ -75,6 +81,13 @@ test("resolves pending recovery approvals and user questions", async ({
     await recovery.getByLabel("Continue - Keep streaming").click();
     await recovery.getByRole("button", { name: "Answer" }).click();
     await expect(recovery.getByText("Planner needs input")).toHaveCount(0);
+    await expectMainTimelineDoesNotContain(page, [
+      "Planner needs input",
+      "Pick next step",
+      QUESTION_ID,
+      "User question",
+      "User question answered",
+    ]);
     expect(state.questionAnswerRequests).toEqual([
       {
         payload: {
@@ -122,8 +135,7 @@ test("renders one host-scoped webfetch recovery approval", async ({ page }) => {
     await waitForV2Shell(page);
 
     const recovery = page.locator(".at-recovery");
-    await expect(recovery.getByText(`Run ${RUN_ID} is awaiting_tool_approval`))
-      .toBeVisible();
+    await expect(recovery).not.toContainText(`Run ${RUN_ID} is awaiting_tool_approval`);
     const approval = recovery.locator(".at-recovery-item");
     await expect(approval).toHaveCount(1);
     await expect(approval).toContainText("webfetch");
@@ -182,6 +194,13 @@ test("submits multi-prompt question supplements after focus refresh", async ({
     await expect(recovery.getByText("Planner needs input")).toBeVisible();
     await expect(recovery.getByText("Pick the labels to apply")).toBeVisible();
     await expect(recovery.getByText("Pick the handoff mode")).toBeVisible();
+    await expectRecoveryBetweenTimelineAndComposer(page);
+    await expectMainTimelineDoesNotContain(page, [
+      "Planner needs input",
+      "Pick the labels to apply",
+      "Pick the handoff mode",
+      QUESTION_ID,
+    ]);
 
     await recovery.getByLabel("Ship", { exact: true }).check();
     await recovery.getByLabel("Docs", { exact: true }).check();
@@ -217,6 +236,13 @@ test("submits multi-prompt question supplements after focus refresh", async ({
     await recovery.getByRole("button", { name: "Answer" }).click();
 
     await expect(recovery.getByText("Planner needs input")).toHaveCount(0);
+    await expectMainTimelineDoesNotContain(page, [
+      "Planner needs input",
+      "Pick the labels to apply",
+      "Pick the handoff mode",
+      QUESTION_ID,
+      "User question answered",
+    ]);
     expect(state.questionAnswerRequests).toEqual([
       {
         payload: {
@@ -436,7 +462,7 @@ test("resumes a stopped recovery run from its checkpoint", async ({ page }) => {
   }
 });
 
-test("streams recovered background subagent output into the timeline", async ({
+test("keeps recovered background subagent output out of the parent timeline", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -492,11 +518,11 @@ test("streams recovered background subagent output into the timeline", async ({
     });
 
     await expect(page.getByText(parentText)).toBeVisible();
-    await expect(page.getByText(subagentText)).toBeVisible();
+    await expectMainTimelineDoesNotContain(page, [subagentText]);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
-      "background subagent recovery stream should stay inside the fixed V2 shell",
+      "background subagent recovery should stay isolated from the parent timeline",
     );
     await page.mouse.move(320, 120);
     await page.screenshot({
@@ -632,7 +658,7 @@ test("shows paused subagent recovery without a standalone resume action", async 
     await waitForV2Shell(page);
 
     const recovery = page.locator(".at-recovery");
-    await expect(recovery.getByText("Recovery needs attention")).toBeVisible();
+    await expect(recovery).not.toContainText("Recovery needs attention");
     await expect(recovery.getByText("Paused subagent: reviewer")).toBeVisible();
     await expect(
       recovery.getByText("Waiting for follow-up in the paused subagent panel."),
@@ -644,6 +670,12 @@ test("shows paused subagent recovery without a standalone resume action", async 
     ).toBeVisible();
     await expect(recovery.getByRole("button", { name: "Resume" })).toHaveCount(0);
     await expect.poll(() => eventSourceUrls(page)).toEqual([]);
+    await expectRecoveryBetweenTimelineAndComposer(page);
+    await expectMainTimelineDoesNotContain(page, [
+      "Paused subagent: reviewer",
+      "Waiting for follow-up in the paused subagent panel.",
+      "reviewer-1",
+    ]);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
@@ -699,6 +731,65 @@ async function handleRecoveryApi(
     return true;
   }
   return false;
+}
+
+async function expectRecoveryBetweenTimelineAndComposer(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const recovery = document.querySelector<HTMLElement>(".at-recovery");
+        const timeline = document.querySelector<HTMLElement>(".at-timeline-frame");
+        const composer = document.querySelector<HTMLElement>(".at-composer");
+        if (recovery === null || timeline === null || composer === null) {
+          return null;
+        }
+        const recoveryRect = recovery.getBoundingClientRect();
+        const timelineRect = timeline.getBoundingClientRect();
+        const composerRect = composer.getBoundingClientRect();
+        return {
+          composerTop: Math.round(composerRect.top),
+          recoveryBottom: Math.round(recoveryRect.bottom),
+          recoveryTop: Math.round(recoveryRect.top),
+          timelineBottom: Math.round(timelineRect.bottom),
+        };
+      }),
+    )
+    .toEqual(expect.objectContaining({
+      composerTop: expect.any(Number),
+      recoveryBottom: expect.any(Number),
+      recoveryTop: expect.any(Number),
+      timelineBottom: expect.any(Number),
+    }));
+
+  const metrics = await page.evaluate(() => {
+    const recovery = document.querySelector<HTMLElement>(".at-recovery");
+    const timeline = document.querySelector<HTMLElement>(".at-timeline-frame");
+    const composer = document.querySelector<HTMLElement>(".at-composer");
+    if (recovery === null || timeline === null || composer === null) {
+      throw new Error("Expected recovery, timeline, and composer elements.");
+    }
+    const recoveryRect = recovery.getBoundingClientRect();
+    const timelineRect = timeline.getBoundingClientRect();
+    const composerRect = composer.getBoundingClientRect();
+    return {
+      composerTop: composerRect.top,
+      recoveryBottom: recoveryRect.bottom,
+      recoveryTop: recoveryRect.top,
+      timelineBottom: timelineRect.bottom,
+    };
+  });
+  expect(metrics.recoveryTop).toBeGreaterThanOrEqual(metrics.timelineBottom - 1);
+  expect(metrics.recoveryBottom).toBeLessThanOrEqual(metrics.composerTop + 1);
+}
+
+async function expectMainTimelineDoesNotContain(
+  page: Page,
+  texts: string[],
+): Promise<void> {
+  const timeline = page.locator(".at-timeline-frame");
+  for (const text of texts) {
+    await expect(timeline).not.toContainText(text);
+  }
 }
 
 async function handleToolApproval(

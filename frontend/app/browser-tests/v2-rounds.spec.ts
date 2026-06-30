@@ -198,6 +198,9 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
     await expect(archiveButton).toBeVisible();
     await expect(middleButton).toBeVisible();
     await expect(latestButton).toBeVisible();
+    await expect(latestButton).toHaveAttribute("aria-current", "step");
+    await expect(archiveButton).not.toHaveAttribute("aria-current", "step");
+    await expect(middleButton).not.toHaveAttribute("aria-current", "step");
 
     const timeline = page.locator(".at-timeline");
     const initialScrollTop = await timeline.evaluate((element) => element.scrollTop);
@@ -205,6 +208,8 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
 
     await archiveButton.click();
     await expect(archiveButton).toHaveAttribute("aria-current", "step");
+    await expect(middleButton).not.toHaveAttribute("aria-current", "step");
+    await expect(latestButton).not.toHaveAttribute("aria-current", "step");
     await expect
       .poll(() => timeline.evaluate((element) => element.scrollTop))
       .toBeLessThan(initialScrollTop);

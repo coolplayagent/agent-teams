@@ -156,37 +156,6 @@ console.log(JSON.stringify({
     }
 
 
-def test_round_nav_click_selects_round(tmp_path: Path) -> None:
-    payload = _run_round_nav_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const rounds = [
-    { run_id: 'run-1', intent: 'Inspect issue' },
-    { run_id: 'run-2', intent: 'Implement feature' },
-];
-let selectedRunId = null;
-
-const { renderRoundNavigator } = await import('./navigator.mjs');
-renderRoundNavigator(rounds, round => {
-    selectedRunId = round.run_id;
-}, { activeRunId: 'run-1' });
-
-const nav = document.getElementById('round-nav-float');
-const item = nav.querySelector('.round-nav-item[data-run-id="run-2"]');
-item.onclick();
-
-console.log(JSON.stringify({
-    selectedRunId,
-    activeRunId: nav.querySelector('.round-nav-item.active')?.dataset?.runId || null,
-}));""".strip(),
-    )
-
-    assert payload == {
-        "selectedRunId": "run-2",
-        "activeRunId": "run-2",
-    }
-
-
 def test_round_nav_rerender_preserves_list_scroll_top(tmp_path: Path) -> None:
     payload = _run_round_nav_script(
         tmp_path=tmp_path,

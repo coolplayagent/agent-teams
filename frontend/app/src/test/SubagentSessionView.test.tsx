@@ -380,6 +380,8 @@ describe("SubagentSessionView", () => {
     closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("completed")).toBeVisible();
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
     expect(screen.getByText("Live runtime output before terminal history"))
       .toBeVisible();
     expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();

@@ -148,7 +148,13 @@ export function SubagentSessionView({
       afterEventId: currentRuntimeState.runs[runId]?.lastEventId ?? 0,
       initialState: currentRuntimeState,
       onClosed: (closedRuntimeState) => {
-        runtimeStateRef.current = closedRuntimeState;
+        const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
+          closedRuntimeState,
+          currentRuntimeState: runtimeStateRef.current,
+          runId,
+        });
+        runtimeStateRef.current = displayRuntimeState;
+        setRuntimeState(displayRuntimeState);
         if (streamedRunIdRef.current === runId) {
           streamedRunIdRef.current = null;
           subagentStreamRef.current = null;
@@ -165,12 +171,8 @@ export function SubagentSessionView({
           messageQueryKey: latestTarget.messageQueryKey,
           queryClient: latestTarget.queryClient,
           runId,
-          runtimeState: closedRuntimeState,
+          runtimeState: displayRuntimeState,
           sessionId: latestTarget.sessionId,
-        }).then((historyReady) => {
-          if (historyReady) {
-            setRuntimeState(closedRuntimeState);
-          }
         });
       },
       onError: () => {
@@ -271,6 +273,53 @@ interface SubagentStreamTarget {
   messageQueryKey: readonly unknown[];
   queryClient: ReturnType<typeof useQueryClient>;
   sessionId: string;
+}
+
+function subagentClosedRuntimeStateForDisplay({
+  closedRuntimeState,
+  currentRuntimeState,
+  runId,
+}: {
+  closedRuntimeState: RuntimeState;
+  currentRuntimeState: RuntimeState;
+  runId: string;
+}): RuntimeState {
+  const closedRun = closedRuntimeState.runs[runId];
+  const currentRun = currentRuntimeState.runs[runId];
+  if (closedRun === undefined || currentRun === undefined) {
+    return closedRuntimeState;
+  }
+  const mergedEntries = mergeTimelineEntries(currentRun.entries, closedRun.entries);
+  if (mergedEntries.length === closedRun.entries.length) {
+    return closedRuntimeState;
+  }
+  return {
+    ...closedRuntimeState,
+    runs: {
+      ...closedRuntimeState.runs,
+      [runId]: {
+        ...closedRun,
+        entries: mergedEntries,
+        lastEventId: Math.max(closedRun.lastEventId, currentRun.lastEventId),
+      },
+    },
+  };
+}
+
+function mergeTimelineEntries(
+  currentEntries: TimelineEntry[],
+  closedEntries: TimelineEntry[],
+): TimelineEntry[] {
+  const entriesById = new Map<string, TimelineEntry>();
+  for (const entry of currentEntries) {
+    entriesById.set(entry.id, entry);
+  }
+  for (const entry of closedEntries) {
+    entriesById.set(entry.id, entry);
+  }
+  return Array.from(entriesById.values()).sort(
+    (left, right) => left.eventId - right.eventId,
+  );
 }
 
 async function refreshSubagentTerminalHistoryFromRuntime({
